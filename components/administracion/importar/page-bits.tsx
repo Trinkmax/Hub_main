@@ -1,91 +1,79 @@
-import { ArrowLeft, Hand } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
-/** «← Volver a …» arriba del encabezado (admin-ui §1 «Volver»). Server-safe. */
-export function BackLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0"
-    >
-      <ArrowLeft className="size-3" aria-hidden />
-      {label}
-    </Link>
-  )
-}
-
 /**
- * «¿Qué queda para cargar a mano?» (diseño §4.5): lo que los importadores
- * todavía no traen, dónde se carga y por qué. Plegado, con el link a la guía
- * completa. Server-safe.
+ * «¿Y lo que no viene en ningún archivo?»: lo que ARCA, Mercado Pago y el banco
+ * no traen, por qué, y dónde se carga, con el nombre que cada destino tiene en
+ * su pantalla. Es el puente con «sin factura» (que queda registrado igual) y
+ * con el bar sin punto de venta (las ventas se anotan a mano).
+ *
+ * Plegado: es una consulta, no una tarea. Solo para quien puede cargar (la
+ * página no lo monta en solo lectura). Server-safe.
  */
 export function StillManual({ slug }: { slug: string }) {
   const base = `/${slug}/administracion`
-  const items: Array<{ what: string; where: string; href: string; why: string }> = [
+  const items: ReadonlyArray<{ what: string; why: string; where: string; href: string }> = [
     {
-      what: 'Las ventas de cada día',
-      where: 'Ventas › Cargar cierre',
+      what: 'Lo que se vendió cada día',
+      why: 'No hay punto de venta conectado: se anota a mano.',
+      where: 'Cerrar el día',
       href: `${base}/ventas/cierre`,
-      why: 'Pegás la columna del cierre de caja del sistema que usás hoy.',
     },
     {
-      what: 'Gastos chicos sin factura (hielo, verdulería)',
-      where: 'Nuevo gasto',
-      href: `${base}?accion=gasto`,
-      why: 'No aparecen en ARCA porque no tienen factura a tu nombre.',
+      what: 'Lo que pagaste sin factura (hielo, verdulería, un flete)',
+      why: 'No está en ARCA porque no tiene factura a nombre del bar. Queda registrado igual.',
+      where: 'Pagué algo recién',
+      href: `${base}/importar?accion=gasto`,
     },
     {
-      what: 'Liquidaciones de tarjetas (bruto, arancel, retenciones)',
-      where: 'Registrar un cobro',
-      href: `${base}?accion=cobrar`,
-      why: 'Todavía no hay importador de las procesadoras de tarjetas.',
+      what: 'Lo que te depositó una tarjeta o una app de delivery',
+      why: 'Todavía no hay archivo de las tarjetas.',
+      where: 'Me entró plata',
+      href: `${base}/importar?accion=cobrar`,
     },
     {
-      what: 'Facturas en papel, del exterior o de contingencia',
-      where: 'Compras › Nueva factura',
+      what: 'Facturas en papel o del exterior',
+      why: 'No figuran en Mis Comprobantes.',
+      where: 'Cargar una compra que debo',
       href: `${base}/compras/nueva`,
-      why: 'No figuran en «Mis Comprobantes» de ARCA.',
     },
     {
       what: 'Sueldos y cargas sociales',
-      where: 'Libros › Asiento manual',
-      href: `${base}/libros/asiento-manual`,
-      why: 'Los lleva tu contador o contadora con su propio sistema.',
+      why: 'Los lleva tu contadora con su sistema.',
+      where: 'Sueldos del mes',
+      href: `${base}/libros/asiento-manual?tipo=sueldos`,
     },
   ]
   return (
-    <details className="card-hairline group rounded-xl border bg-card [&_summary::-webkit-details-marker]:hidden">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-xl px-5 py-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-          <Hand className="size-5" aria-hidden />
-        </span>
+    <details className="card-hairline group/manual rounded-2xl border bg-card shadow-xs [&_summary::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-2xl px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5">
         <span className="min-w-0 flex-1">
-          <span className="block font-serif text-lg font-semibold tracking-tight">
-            ¿Qué queda para cargar a mano?
+          <span className="block font-serif text-lg font-semibold leading-snug tracking-tight">
+            ¿Y lo que no viene en ningún archivo?
           </span>
           <span className="block text-sm text-muted-foreground">
-            Lo que estos archivos todavía no traen, y dónde se carga.
+            Cinco cosas que se cargan a mano, y dónde.
           </span>
         </span>
-        <span className="text-xs font-medium text-muted-foreground group-open:hidden">Ver</span>
-        <span className="hidden text-xs font-medium text-muted-foreground group-open:inline">
-          Ocultar
-        </span>
+        <ChevronDown
+          aria-hidden
+          className="size-5 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-out) group-open/manual:rotate-180 motion-reduce:transition-none"
+        />
       </summary>
-      <div className="border-t border-border/60 px-5 py-4">
+      <div className="border-t border-border/60 px-4 py-4 sm:px-5">
         <ul className="divide-y divide-border/60">
           {items.map((item) => (
             <li
               key={item.what}
-              className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4"
+              className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
             >
               <div className="min-w-0">
-                <p className="font-medium">{item.what}</p>
+                <p className="font-medium leading-snug">{item.what}</p>
                 <p className="text-sm text-muted-foreground text-pretty">{item.why}</p>
               </div>
               <Link
                 href={item.href}
-                className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-2 sm:min-h-0 sm:self-center"
+                className="inline-flex min-h-11 items-center gap-1 rounded-sm text-sm font-medium underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:min-h-9"
               >
                 {item.where}
               </Link>
@@ -93,12 +81,12 @@ export function StillManual({ slug }: { slug: string }) {
           ))}
         </ul>
         <p className="mt-4 text-sm text-muted-foreground">
-          La guía completa, con lo que se carga una sola vez y lo de todos los días, está en{' '}
+          ¿No sabés dónde va algo?{' '}
           <Link
-            href={`${base}/guias/como-arrancar`}
-            className="font-medium text-foreground underline underline-offset-2"
+            href={`${base}/guias`}
+            className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Cómo arrancar
+            Mirá la guía
           </Link>
           .
         </p>

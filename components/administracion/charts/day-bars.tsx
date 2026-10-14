@@ -16,7 +16,7 @@ import {
   XTicks,
 } from './chart-parts'
 import { ChartTip } from './chart-tip'
-import { compactCents, pct, percentLabel, ticks, valueY } from './scale'
+import { compactCents, compactCentsFine, pct, percentLabel, ticks, valueY } from './scale'
 
 /**
  * Una columna por día: lo vendido (o lo que sea) contra el objetivo de ese día.
@@ -29,7 +29,9 @@ import { compactCents, pct, percentLabel, ticks, valueY } from './scale'
  * - **El objetivo** es una marca fina horizontal sobre cada día, en la misma
  *   escala (un solo eje).
  * - **Etiquetas selectivas**: el día más alto y hoy. El resto se lee en el eje,
- *   en el globito y en la tabla (`DayBarsTable`).
+ *   en el globito y en la tabla (`DayBarsTable`). Una etiqueta nunca repite
+ *   una marca del eje («$ 2 M» pegado al «$ 2 M» de al lado): va con un
+ *   escalón más de detalle («$ 1,95 M») o, si cae justo en la marca, no va.
  * - **Todo el alto del casillero es la marca**: en un mes de 31 días la barra
  *   mide 5 px, pero se toca la columna entera (y `ChartTip` toma la más
  *   cercana).
@@ -131,6 +133,14 @@ export function DayBars({
   const peak = Math.max(...slots.map((s) => Math.max(s.value ?? 0, s.target ?? 0)))
   const axis = ticks(peak, 3)
   const top = axis[axis.length - 1] ?? peak
+  const axisLabels = new Set(axis.map((t) => compactCents(t)))
+  /** La etiqueta de una columna, que no repite lo que ya dice el eje (`null`: sin etiqueta). */
+  const markLabel = (cents: number): string | null => {
+    const short = compactCents(cents)
+    if (!axisLabels.has(short)) return short
+    const fine = compactCentsFine(cents)
+    return axisLabels.has(fine) ? null : fine
+  }
   const missing = slots.filter((s) => s.kind === 'missing')
   const todayIndex = slots.findIndex((s) => s.day.state === 'today')
   const maxIndex = slots.reduce(
@@ -205,7 +215,7 @@ export function DayBars({
   const hiddenPills = missing.length - pills.length
 
   return (
-    <div className={cn('min-w-0 space-y-3', className)}>
+    <div className={cn('@container min-w-0 space-y-3', className)}>
       <ChartTip>
         <Plot
           ticks={axis.map((t) => ({
@@ -233,7 +243,8 @@ export function DayBars({
               if (s.kind === 'future' && s.target === null) {
                 return <span key={key} aria-hidden className="min-w-0 flex-1" />
               }
-              const targetSub = s.target !== null ? `${targetLabel} ${formatCents(s.target)}` : ''
+              const targetSub =
+                s.target !== null ? `${targetLabel} ${formatCentsShort(s.target)}` : ''
               const today = i === todayIndex
               const title = today ? `${s.title} (hoy)` : s.title
 
@@ -241,8 +252,10 @@ export function DayBars({
               let tipValue: string | undefined
               let tipSub: string | undefined = targetSub || undefined
               if (s.kind === 'value') {
+                // El dato exacto, al centavo, queda en lo que oye un lector de pantalla;
+                // el globito va en pesos, como el resto del tablero.
                 label = `${title}: ${formatCents(s.value)}${targetSub ? `, ${targetSub.toLowerCase()}` : ''}`
-                tipValue = formatCents(s.value)
+                tipValue = formatCentsShort(s.value)
               } else if (s.kind === 'missing') {
                 label = `${title}: falta cargar${s.day.href ? '. Abre la carga de ese día' : ''}`
                 tipValue = 'Falta cargar'
@@ -289,7 +302,7 @@ export function DayBars({
                     <span
                       data-tip-anchor
                       aria-hidden
-                      className="absolute bottom-0 left-1/2 w-[calc(100%-2px)] max-w-6 min-w-[3px] -translate-x-1/2 rounded-t-[4px] border border-b-0 border-dashed border-warning"
+                      className="absolute bottom-0 left-1/2 w-[calc(100%-2px)] max-w-6 min-w-[3px] -translate-x-1/2 rounded-t-[4px] border border-b-0 border-dashed border-warning dark:border-warning/60"
                       style={{
                         height: `${s.target !== null ? Math.max(12, pct(s.target, top)) : MISSING_STUB}%`,
                         ...HATCH_MISSING,
@@ -297,7 +310,7 @@ export function DayBars({
                     />
                   ) : null}
                   {targetTick}
-                  {s.kind === 'value' && labelled.has(i) ? (
+                  {s.kind === 'value' && labelled.has(i) && markLabel(s.value ?? 0) !== null ? (
                     <span
                       aria-hidden
                       className={cn(
@@ -306,7 +319,7 @@ export function DayBars({
                       )}
                       style={{ bottom: `${height}%` }}
                     >
-                      {compactCents(s.value ?? 0)}
+                      {markLabel(s.value ?? 0)}
                     </span>
                   ) : null}
                   {s.kind === 'missing' && n <= 8 ? (
@@ -324,7 +337,15 @@ export function DayBars({
         </Plot>
       </ChartTip>
 
-      {showLegend ? <ChartLegend caption={`${seriesLabel} por día`} rows={rows} /> : null}
+      {showLegend ? (
+        <ChartLegend
+          caption={`${seriesLabel} por día`}
+          rows={rows}
+          // El tope de ancho es para tarjetas anchas: en media columna la leyenda
+          // termina donde termina el dibujo.
+          className="max-w-none @min-[48rem]:max-w-[34rem]"
+        />
+      ) : null}
 
       {missingPills && missing.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -359,7 +380,12 @@ export function DayBars({
   )
 }
 
-/** Los mismos días en filas, para «Ver como tabla». */
+/**
+ * Los mismos días en filas, para «Ver como tabla». Sin centavos: es un tablero
+ * (el dato al centavo vive en el cierre de cada día). Para un mes en curso
+ * conviene pasarle solo los días hasta hoy: los que todavía no llegaron son
+ * filas de rayas.
+ */
 export function DayBarsTable({
   days,
   seriesLabel = 'Vendido',
@@ -388,7 +414,7 @@ export function DayBarsTable({
       rows={slots.map((s) => {
         const value =
           s.kind === 'value' ? (
-            formatCents(s.value)
+            formatCentsShort(s.value)
           ) : s.kind === 'missing' ? (
             <span key="falta" className="text-warning-text">
               Falta cargar
@@ -399,13 +425,13 @@ export function DayBarsTable({
             '—'
           )
         const cells: ReactNode[] = [s.title, value]
-        if (hasTarget) cells.push(s.target !== null ? formatCents(s.target) : '—')
+        if (hasTarget) cells.push(s.target !== null ? formatCentsShort(s.target) : '—')
         return { key: s.day.date, cells, muted: s.kind === 'future' }
       })}
       foot={
         hasTarget
-          ? ['Días cargados', formatCents(total), formatCents(loadedTarget)]
-          : ['Días cargados', formatCents(total)]
+          ? ['Total de los días cargados', formatCentsShort(total), formatCentsShort(loadedTarget)]
+          : ['Total de los días cargados', formatCentsShort(total)]
       }
     />
   )

@@ -2,7 +2,8 @@ import { History } from 'lucide-react'
 import Link from 'next/link'
 import { Amount } from '@/components/administracion/amount'
 import { plural } from '@/components/administracion/format'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { PillLink } from '@/components/administracion/kit/pill'
 import {
   decodePageToken,
   exportHref,
@@ -10,7 +11,7 @@ import {
   listHistory,
   settleQuery,
 } from '@/lib/accounting/queries'
-import { formatDateTime, todayInCordoba } from '@/lib/dates'
+import { todayInCordoba } from '@/lib/dates'
 import { BookPage } from '../_components/book-page'
 import { ExportButton } from '../_components/export-button'
 import { KeysetPagination } from '../_components/keyset-pagination'
@@ -21,27 +22,47 @@ import { keysetPageInfo } from '../_lib/keyset'
 import { requireBooksAccess } from '../_lib/page-access'
 import { bookHref, firstParam, periodParams, resolveBookRange } from '../_lib/periods'
 import { HistoryFilters, type HistoryKindOption } from './_components/history-filters'
+import { groupHistoryByDay, historyText, historyTime, personInitial } from './_lib/days'
 
 export const metadata = { title: 'Historia' }
 
 /** Movimientos por página (la lectura trae de a 100). */
 const PAGE_SIZE = 100
 
+/** Hasta cuántas personas se filtran con píldoras; con más, un desplegable. */
+const MAX_PEOPLE_PILLS = 6
+
 /** Los tipos de la historia (`audit_log.entity`), en palabras. */
 const KINDS: readonly HistoryKindOption[] = [
   { value: 'acc_document', label: 'Comprobantes' },
-  { value: 'acc_allocation', label: 'Imputaciones de pagos y cobros' },
+  { value: 'acc_allocation', label: 'Pagos y cobros' },
   { value: 'acc_period', label: 'Cierres de mes' },
   { value: 'acc_fiscal_year', label: 'Cierres de ejercicio' },
-  { value: 'acc_treasury', label: 'Cajas y cuentas' },
+  { value: 'acc_treasury', label: 'Cajas' },
   { value: 'acc_party', label: 'Proveedores y clientes' },
   { value: 'acc_account', label: 'Plan de cuentas' },
   { value: 'acc_access', label: 'Accesos' },
-  { value: 'acc_export', label: 'Exportes' },
+  { value: 'acc_export', label: 'Descargas' },
 ]
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** Las píldoras de filtro: 44 px donde se toca con el dedo, 36 con mouse (como el período). */
+const FILTER_PILL =
+  'h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
+/** Una fila de filtros que se desliza de costado en el celular y baja de renglón en la compu. */
+const FILTER_ROW =
+  '-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden'
+
+/**
+ * Historia (§F.14): quién cargó, anuló o cerró qué. Agrupada por día («Hoy ·
+ * martes 13/10», «Ayer», «Vie 09/10»), con la inicial de cada persona al
+ * margen: se lee como una bitácora, no como una tabla de auditoría.
+ *
+ * «Qué» y «Quién» viven en la URL (`?tipo=`, `?quien=`), como siempre; ahora
+ * son píldoras (la elegida, rellena). Con más de seis personas «Quién» sigue
+ * siendo un desplegable.
+ */
 export default async function HistoriaPage({
   params,
   searchParams,
@@ -86,6 +107,7 @@ export default async function HistoriaPage({
   const keep = { ...period, quien: person, tipo: kind }
   const page = history?.ok ? history.data : null
   const people = page?.people ?? []
+  const shownPerson = person && people.some((p) => p.userId === person) ? person : null
   const info = page
     ? keysetPageInfo({
         seenBefore: decodePageToken(despues)?.seen ?? 0,
@@ -109,6 +131,9 @@ export default async function HistoriaPage({
           fileName={`administracion-${tenantSlug}-historia-${shown.from}_${shown.to}.csv`}
         />
       }
+      booksPath={`${base}/libros`}
+      book="historia"
+      period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
@@ -117,12 +142,62 @@ export default async function HistoriaPage({
             fiscalYear={ctx.fiscalYear}
             minMonth={ctx.minMonth}
           />
-          <HistoryFilters
-            people={people}
-            kinds={KINDS}
-            person={person && people.some((p) => p.userId === person) ? person : null}
-            kind={kind}
-          />
+          <nav aria-label="Qué pasó">
+            <ul className={FILTER_ROW}>
+              <li className="shrink-0">
+                <PillLink
+                  href={bookHref(path, { ...period, quien: person })}
+                  active={kind === null}
+                  scroll={false}
+                  className={FILTER_PILL}
+                >
+                  Todo
+                </PillLink>
+              </li>
+              {KINDS.map((k) => (
+                <li key={k.value} className="shrink-0">
+                  <PillLink
+                    href={bookHref(path, { ...period, quien: person, tipo: k.value })}
+                    active={kind === k.value}
+                    scroll={false}
+                    className={FILTER_PILL}
+                  >
+                    {k.label}
+                  </PillLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          {people.length > MAX_PEOPLE_PILLS ? (
+            <HistoryFilters people={people} person={shownPerson} />
+          ) : people.length > 1 || shownPerson ? (
+            <nav aria-label="Quién">
+              <ul className={FILTER_ROW}>
+                <li className="shrink-0">
+                  <PillLink
+                    href={bookHref(path, { ...period, tipo: kind })}
+                    active={shownPerson === null}
+                    scroll={false}
+                    className={FILTER_PILL}
+                  >
+                    Todas las personas
+                  </PillLink>
+                </li>
+                {people.map((p) => (
+                  <li key={p.userId} className="shrink-0">
+                    <PillLink
+                      href={bookHref(path, { ...period, tipo: kind, quien: p.userId })}
+                      active={shownPerson === p.userId}
+                      scroll={false}
+                      className={FILTER_PILL}
+                    >
+                      <span className="inline-block max-w-40 truncate align-bottom">{p.name}</span>
+                    </PillLink>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
         </div>
       }
     >
@@ -133,23 +208,31 @@ export default async function HistoriaPage({
 
       {page && info ? (
         page.rows.length === 0 ? (
-          <EmptyState
+          <EmptyTeach
             icon={History}
             title={filtered ? 'Sin resultados' : `No pasó nada en ${shown.label.toLowerCase()}`}
-            description={
-              filtered
-                ? 'Probá con otra persona, otro tipo o un período más largo.'
-                : 'Acá queda registrado quién cargó, anuló o cerró qué, con fecha y hora.'
-            }
-          />
+          >
+            {filtered
+              ? 'Probá con otra persona, otro tipo o un período más largo.'
+              : 'Acá queda registrado quién cargó, anuló o cerró qué, con fecha y hora.'}
+          </EmptyTeach>
         ) : (
           <>
-            <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card">
-              <ul aria-label="Historia contable" className="divide-y divide-border/60">
-                {page.rows.map((row) => (
-                  <HistoryItem key={row.id} row={row} base={base} />
-                ))}
-              </ul>
+            <div className="space-y-5">
+              {groupHistoryByDay(page.rows, today).map((group) => (
+                <section key={group.day || 'sin-fecha'} aria-label={group.label}>
+                  <h2 className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {group.label}
+                  </h2>
+                  <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card">
+                    <ul className="divide-y divide-border/60">
+                      {group.rows.map((row) => (
+                        <HistoryItem key={row.id} row={row} base={base} />
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+              ))}
             </div>
             <KeysetPagination
               info={info}
@@ -167,33 +250,44 @@ export default async function HistoriaPage({
 }
 
 function HistoryItem({ row, base }: { row: HistoryRow; base: string }) {
+  const text = historyText(row.text)
   const what = row.documentId ? (
     <Link
       href={`${base}/comprobantes/${row.documentId}`}
-      className="rounded-sm underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      className="rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {row.text}
+      {text}
     </Link>
   ) : (
-    row.text
+    text
   )
+  const time = historyTime(row.createdAt)
   return (
-    <li className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-sm text-pretty">
-          <span className="font-medium">{row.actorName}</span> {what}
-          {row.documentSeq ? (
-            <span className="text-muted-foreground"> · #{row.documentSeq}</span>
-          ) : null}
-        </p>
-        <p className="text-xs tabular-nums text-muted-foreground">
-          {formatDateTime(row.createdAt)}
-          {row.detail ? ` · ${row.detail}` : ''}
-        </p>
+    <li className="flex items-start gap-3 px-4 py-3">
+      <span
+        aria-hidden
+        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground/80"
+      >
+        {personInitial(row.actorName)}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm text-pretty">
+            <span className="font-medium">{row.actorName}</span> {what}
+            {row.documentSeq ? (
+              <span className="text-muted-foreground"> · #{row.documentSeq}</span>
+            ) : null}
+          </p>
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {time}
+            {time && row.detail ? ' · ' : ''}
+            {row.detail ?? ''}
+          </p>
+        </div>
+        {row.amountCents !== null ? (
+          <Amount cents={row.amountCents} className="shrink-0 text-sm font-medium sm:text-right" />
+        ) : null}
       </div>
-      {row.amountCents !== null ? (
-        <Amount cents={row.amountCents} className="shrink-0 text-sm font-medium sm:text-right" />
-      ) : null}
     </li>
   )
 }

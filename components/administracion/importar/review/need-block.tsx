@@ -6,9 +6,15 @@ import { type ReactNode, useId, useMemo, useState } from 'react'
 import { IIBB_JURISDICTIONS } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/jurisdictions'
 import { supplierHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
-import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
+import {
+  CategoryPicker,
+  ChoiceCard,
+  categoryOptions,
+  featuredCategories,
+  Pill,
+} from '@/components/administracion/kit'
 import { PartyCombobox } from '@/components/administracion/party-combobox'
-import { TreasurySelect } from '@/components/administracion/treasury-select'
+import { TreasuryPicker } from '@/components/administracion/treasury-picker'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -21,246 +27,261 @@ import {
 } from '@/components/ui/select'
 import { WARNING_COPY } from '@/lib/accounting/errors'
 import type { IvaCondition } from '@/lib/accounting/types'
-import { formatCuit } from '@/lib/fiscal'
+import type { ImportNeed, OtherTaxesAs } from '@/lib/imports/server/types'
 import {
-  type ImportNeed,
-  MANUAL_REASON_TEXT,
-  NEED_TEXT,
-  type OtherTaxesAs,
-} from '@/lib/imports/server/types'
-import {
-  formatFxRate,
   IVA_CONDITION_TEXT,
-  MP_CHANNEL_TEXT,
-  OTHER_TAXES_TEXT,
-  PARTY_ROLE_TEXT,
   partyKindsForRole,
   SUPPLIER_IVA_CONDITIONS,
 } from '@/lib/imports/ui/labels'
-import { formatCents } from '@/lib/money'
-import { cn } from '@/lib/utils'
+import { otherTaxesChange } from '@/lib/imports/ui/payloads'
+import {
+  ANSWER,
+  isBeforeStart,
+  needLine,
+  type QuestionCopy,
+  questionFor,
+} from '@/lib/imports/ui/review-copy'
+import { ANSWER_BUTTON, QUIET_ANSWER, QuestionAnswers, QuestionCard } from './question-card'
 import { useReview } from './review-context'
 import type { ProposalView } from './types'
 import { useRowActions } from './use-row-actions'
 
 const SELECT_CLASS = 'w-full data-[size=default]:h-11 md:data-[size=default]:h-10'
-const BUTTON = 'h-11 w-full sm:w-auto md:h-9'
 
-/** El recuadro de algo que falta: qué pasa, en palabras, y cómo se arregla. */
-function Frame({
-  text,
-  children,
-  tone = 'warning',
-}: {
-  text: ReactNode
-  children?: ReactNode
-  tone?: 'warning' | 'muted'
-}) {
-  return (
-    <div
-      className={cn(
-        'space-y-3 rounded-lg border p-3 text-sm',
-        tone === 'warning' ? 'border-warning/40 bg-warning/5' : 'border-border/70 bg-muted/30',
-      )}
-    >
-      <p className="text-pretty">{text}</p>
-      {children ? <div className="space-y-3">{children}</div> : null}
-    </div>
-  )
+/** Lo que rodea a la pregunta: lo pone quien la muestra (la hoja en la mano o un renglón abierto). */
+export type QuestionFrame = {
+  eyebrow?: ReactNode
+  footer?: ReactNode
+  /** Adentro de otra superficie (un renglón abierto de la lista). */
+  inset?: boolean
+  headingLevel?: 'h2' | 'h3'
+  id?: string
+  /** Para llevarle el foco cuando pasa a ser la primera. */
+  tabIndex?: number
+  /** Pasar a la siguiente sin contestar («No sé: lo dejo para después»). */
+  onLater?: () => void
 }
 
-function Actions({ children }: { children: ReactNode }) {
+type Asked = { copy: QuestionCopy; frame: QuestionFrame; children?: ReactNode }
+
+function Ask({ copy, frame, children, context }: Asked & { context?: ReactNode }) {
+  const { onLater: _later, ...card } = frame
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">{children}</div>
+    <QuestionCard
+      {...card}
+      tone={copy.tone}
+      question={copy.question}
+      context={context ?? copy.context ?? undefined}
+    >
+      {children}
+    </QuestionCard>
   )
 }
 
 /**
- * Lo que le falta a una propuesta, con su arreglo en el lugar (diseño §4.1 y
- * §4.2: «Otros tributos», cuenta del proveedor, a quién corresponde, confirmar
- * una conversión…). Cada botón manda UN cambio (`resolveImportNeeds`) y la
- * página se vuelve a armar sola. Quien solo lee ve el texto sin botones.
+ * Lo que le falta a una hoja, como UNA pregunta con sus respuestas grandes («¿En
+ * qué le comprás a…?», «¿Es el mismo o es otro?», «¿A quién le pagaste?»). Cada
+ * respuesta manda el mismo cambio de siempre (`resolveImportNeeds`, uno por
+ * toque) y la página se vuelve a armar sola.
+ *
+ * Quien solo lee no ve la pregunta: ve una línea gris con lo que falta, sin
+ * ningún botón (`NeedLine`).
  */
-export function NeedBlock({ p, need }: { p: ProposalView; need: ImportNeed }) {
-  const { editable, options, slug } = useReview()
+export function NeedQuestion({
+  p,
+  need,
+  frame = {},
+}: {
+  p: ProposalView
+  need: ImportNeed
+  frame?: QuestionFrame
+}) {
+  const { editable, options, slug, booksStartDate } = useReview()
   const partyName = (id: string | null | undefined) => {
     if (!id) return null
     const party = options?.parties.find((x) => x.id === id)
     return party ? (party.tradeName ?? party.name) : null
   }
 
-  if (!editable || !options) return <Frame text={readOnlyText(need, partyName)} tone="muted" />
+  if (!editable || !options) return <NeedLine need={need} />
+
+  const copy = questionFor(need, { partyName, totalCents: p.summary.total_cents, booksStartDate })
 
   switch (need.key) {
     case 'new_supplier':
       return (
-        <Frame
-          text={`${need.name} (CUIT ${formatCuit(need.cuit)}) todavía no está en tus proveedores. Crealo arriba, en «Proveedores nuevos»: con un toque se crean todos.`}
-        >
-          <Actions>
-            <Button asChild variant="outline" className={cn(BUTTON, 'gap-2')}>
+        <Ask copy={copy} frame={frame}>
+          <QuestionAnswers>
+            <Button asChild variant="outline" className={`${ANSWER_BUTTON} gap-2`}>
               <a href="#proveedores-nuevos">
-                Ir a Proveedores nuevos
+                Ir a «¿Los tenés de antes?»
                 <ArrowRight className="size-4" aria-hidden />
               </a>
             </Button>
-          </Actions>
-        </Frame>
+          </QuestionAnswers>
+        </Ask>
       )
     case 'supplier_account':
-      return <SupplierAccount p={p} partyId={need.party_id} partyName={partyName(need.party_id)} />
+      return <SupplierAccount p={p} partyId={need.party_id} copy={copy} frame={frame} />
     case 'supplier_inactive':
       return (
-        <Frame
-          text={`${partyName(need.party_id) ?? 'El proveedor'} está desactivado. Activalo en su ficha y volvé.`}
-        >
-          <Actions>
-            <Button asChild variant="outline" className={BUTTON}>
-              <Link href={supplierHref(slug, need.party_id)}>Abrir la ficha del proveedor</Link>
+        <Ask copy={copy} frame={frame}>
+          <QuestionAnswers>
+            <Button asChild variant="outline" className={ANSWER_BUTTON}>
+              <Link href={supplierHref(slug, need.party_id)}>Abrir su ficha</Link>
             </Button>
-          </Actions>
-        </Frame>
+          </QuestionAnswers>
+        </Ask>
       )
     case 'condition_mismatch':
-      return <ConditionMismatch p={p} need={need} partyName={partyName(need.party_id)} />
+      return <ConditionMismatch p={p} need={need} copy={copy} frame={frame} />
     case 'other_taxes_as':
-      return <OtherTaxes p={p} need={need} partyName={partyName(need.party_id)} />
+      return (
+        <OtherTaxes
+          p={p}
+          need={need}
+          partyName={partyName(need.party_id)}
+          copy={copy}
+          frame={frame}
+        />
+      )
     case 'foreign_currency':
       return (
         <Confirmable
           p={p}
           need="foreign_currency"
-          text={`Está en ${need.currency}: ${formatCents(need.original_total_cents, { currency: false })} ${need.currency} × ${formatFxRate(need.fx_rate)} = ${formatCents(p.summary.total_cents)}. Lo cargamos en pesos con el tipo de cambio de la factura.`}
-          confirmLabel="La conversión está bien"
+          confirmLabel="Sí, está bien"
+          copy={copy}
+          frame={frame}
         />
       )
     case 'possible_duplicate':
-      return <PossibleDuplicate p={p} label={need.label} documentId={need.document_id} />
+      return (
+        <PossibleDuplicate
+          p={p}
+          label={need.label}
+          documentId={need.document_id}
+          copy={copy}
+          frame={frame}
+        />
+      )
     case 'estimated_deductions':
       return (
         <Confirmable
           p={p}
           need="estimated_deductions"
-          text={NEED_TEXT.estimated_deductions}
-          confirmLabel="Están bien así"
+          confirmLabel="Sí, están bien"
+          copy={copy}
+          frame={frame}
         />
       )
     case 'mp_invoice':
-      return <MpInvoice p={p} />
+      return <MpInvoice p={p} copy={copy} frame={frame} />
     case 'channel_method':
-      return <ChannelMethod p={p} channel={need.channel} />
+      return <ChannelMethod p={p} channel={need.channel} copy={copy} frame={frame} />
     case 'pick_party':
-      return <PickParty p={p} role={need.role} suggested={need.suggested_party_id} />
+      return (
+        <PickParty
+          p={p}
+          role={need.role}
+          suggested={need.suggested_party_id}
+          suggestedName={partyName(need.suggested_party_id)}
+          copy={copy}
+          frame={frame}
+        />
+      )
     case 'pick_treasury':
-      return <PickTreasury p={p} suggested={need.suggested_treasury_id} />
+      return <PickTreasury p={p} suggested={need.suggested_treasury_id} copy={copy} frame={frame} />
     case 'counterpart_account':
-      return (
-        <PickAccount
-          p={p}
-          tax={null}
-          text={
-            need.direction === 'in'
-              ? 'Entró plata y no sabemos de qué es: elegí la cuenta (por ejemplo, un aporte de un socio o un ingreso extra).'
-              : 'Salió plata y no sabemos para qué: elegí la cuenta (por ejemplo, un gasto o un retiro de un socio).'
-          }
-        />
-      )
+      return <PickAccount p={p} tax={null} copy={copy} frame={frame} />
     case 'unknown_tax':
-      return (
-        <PickAccount
-          p={p}
-          tax={need.tax}
-          text={`Mercado Pago descontó ${formatCents(Math.abs(need.amount_cents))} de «${need.tax}», un impuesto que no conocemos. ¿A qué cuenta va?`}
-        />
-      )
+      return <PickAccount p={p} tax={need.tax} copy={copy} frame={frame} />
     case 'accept_warning':
-      return <AcceptWarnings p={p} warnings={need.warnings} />
+      return <AcceptWarning p={p} warnings={need.warnings} frame={frame} />
     case 'receipt':
-      return <Receipt p={p} />
+      return <Receipt p={p} copy={copy} frame={frame} />
     case 'engine_error':
-      return <ManualOnly p={p} text={need.message || NEED_TEXT.engine_error} />
+      return isBeforeStart(need) ? (
+        <BeforeStart p={p} copy={copy} frame={frame} />
+      ) : (
+        <ManualOnly p={p} copy={copy} frame={frame} />
+      )
     case 'manual':
-      return (
-        <ManualOnly
-          p={p}
-          text={MANUAL_REASON_TEXT[need.reason]}
-          notOurs={need.reason === 'not_ours'}
-        />
-      )
-    case 'unsupported_voucher':
-      return (
-        <ManualOnly
-          p={p}
-          text={`Este tipo de comprobante (código ${need.code} de ARCA) no se importa todavía: cargalo a mano.`}
-        />
-      )
+      return <ManualOnly p={p} notOurs={need.reason === 'not_ours'} copy={copy} frame={frame} />
     default:
-      return <ManualOnly p={p} text={NEED_TEXT[need.key]} />
+      return <ManualOnly p={p} copy={copy} frame={frame} />
   }
 }
 
-/** El texto para quien solo mira (la contadora): qué falta, sin botones. */
-function readOnlyText(
-  need: ImportNeed,
-  partyName: (id: string | null | undefined) => string | null,
-): string {
-  switch (need.key) {
-    case 'new_supplier':
-      return `${need.name} (CUIT ${formatCuit(need.cuit)}) todavía no está en los proveedores.`
-    case 'manual':
-      return MANUAL_REASON_TEXT[need.reason]
-    case 'engine_error':
-      return need.message || NEED_TEXT.engine_error
-    case 'supplier_account':
-    case 'supplier_inactive':
-    case 'condition_mismatch': {
-      const name = partyName(need.party_id)
-      return name ? `${name}: ${NEED_TEXT[need.key]}` : NEED_TEXT[need.key]
-    }
-    default:
-      return NEED_TEXT[need.key]
+/** Para quien solo mira (la contadora): qué falta, en una línea gris y sin botones. */
+export function NeedLine({ need }: { need: ImportNeed }) {
+  const { options } = useReview()
+  const partyName = (id: string | null | undefined) => {
+    if (!id) return null
+    const party = options?.parties.find((x) => x.id === id)
+    return party ? (party.tradeName ?? party.name) : null
   }
+  return (
+    <p className="text-sm text-muted-foreground text-pretty">{needLine(need, { partyName })}</p>
+  )
 }
 
-// ─── Cada arreglo ────────────────────────────────────────────────────────────
+// ─── Cada pregunta ───────────────────────────────────────────────────────────
 
-function SupplierAccount({
-  p,
-  partyId,
-  partyName,
-}: {
-  p: ProposalView
-  partyId: string
-  partyName: string | null
-}) {
+type Base = { p: ProposalView; copy: QuestionCopy; frame: QuestionFrame }
+
+function SupplierAccount({ p, partyId, copy, frame }: Base & { partyId: string }) {
   const { options, resolve, busyKey } = useReview()
   const id = useId()
+  const labelId = useId()
   const [accountId, setAccountId] = useState<string | null>(null)
+  const [fullPlan, setFullPlan] = useState(false)
+  const accounts = options?.accounts ?? []
   const purchase = useMemo(
-    () => new Set((options?.accounts ?? []).filter((a) => a.purchase).map((a) => a.id)),
-    [options],
+    () => new Set(accounts.filter((a) => a.purchase).map((a) => a.id)),
+    [accounts],
   )
+  const choices = useMemo(
+    () => categoryOptions(accounts, (accId) => purchase.has(accId)),
+    [accounts, purchase],
+  )
+  const featured = useMemo(() => featuredCategories(accounts), [accounts])
+  const outside =
+    accountId && !choices.some((o) => o.id === accountId)
+      ? { id: accountId, name: accounts.find((a) => a.id === accountId)?.name ?? '' }
+      : null
   return (
-    <Frame
-      text={`¿En qué gastás con ${partyName ?? 'este proveedor'}? Lo guardamos en el proveedor y la próxima vez va solo.`}
-    >
-      <div className="grid gap-1.5 sm:max-w-md">
-        <Label htmlFor={id} className="sr-only">
-          Cuenta habitual de {partyName ?? 'el proveedor'}
-        </Label>
-        <AccountCombobox
-          id={id}
-          value={accountId}
-          accounts={options?.accounts ?? []}
-          filter={(a) => purchase.has(a.id)}
-          placeholder="Elegí en qué se gasta"
-          onValueChange={(next) => setAccountId(next)}
-        />
-      </div>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <span id={labelId} className="sr-only">
+        {copy.question}
+      </span>
+      <CategoryPicker
+        aria-labelledby={labelId}
+        options={choices}
+        value={accountId}
+        onChange={(next) => setAccountId(next)}
+        featured={featured}
+        outside={outside}
+        size="touch"
+        onOpenFullPlan={() => setFullPlan(true)}
+      />
+      {fullPlan ? (
+        <div className="grid gap-1.5 sm:max-w-md">
+          <Label htmlFor={id}>Buscar en el plan completo</Label>
+          <AccountCombobox
+            id={id}
+            value={accountId}
+            accounts={accounts}
+            filter={(a) => purchase.has(a.id)}
+            placeholder="Elegí en qué se gasta"
+            onValueChange={(next) => setAccountId(next)}
+          />
+        </div>
+      ) : null}
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={!accountId || busyKey === p.key}
           onClick={() =>
             accountId &&
@@ -269,83 +290,95 @@ function SupplierAccount({
             })
           }
         >
-          Guardar
+          {ANSWER.save}
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
 function ConditionMismatch({
   p,
   need,
-  partyName,
-}: {
-  p: ProposalView
-  need: Extract<ImportNeed, { key: 'condition_mismatch' }>
-  partyName: string | null
-}) {
+  copy,
+  frame,
+}: Base & { need: Extract<ImportNeed, { key: 'condition_mismatch' }> }) {
   const { resolve, busyKey } = useReview()
-  const id = useId()
+  const labelId = useId()
   const [condition, setCondition] = useState<IvaCondition>(
     need.suggested_condition ?? 'responsable_inscripto',
   )
-  const now = IVA_CONDITION_TEXT[need.condition].toLowerCase()
-  const suggested = need.suggested_condition
-    ? IVA_CONDITION_TEXT[need.suggested_condition].toLowerCase()
-    : null
+  // La de la factura va primero (y ya elegida, como siempre).
+  const order = need.suggested_condition
+    ? [
+        need.suggested_condition,
+        ...SUPPLIER_IVA_CONDITIONS.filter((c) => c !== need.suggested_condition),
+      ]
+    : SUPPLIER_IVA_CONDITIONS
   return (
-    <Frame
-      text={`${partyName ?? 'El proveedor'} figura como ${now}, pero este comprobante es ${suggested ? `de un ${suggested}` : 'de otra condición'}. Revisá su constancia de ARCA y actualizalo.`}
-    >
-      <div className="grid gap-1.5 sm:max-w-xs">
-        <Label htmlFor={id}>Condición frente al IVA</Label>
-        <Select value={condition} onValueChange={(v) => setCondition(v as IvaCondition)}>
-          <SelectTrigger id={id} className={SELECT_CLASS}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SUPPLIER_IVA_CONDITIONS.map((c) => (
-              <SelectItem key={c} value={c}>
-                {IVA_CONDITION_TEXT[c]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <span id={labelId} className="sr-only">
+        Cómo factura
+      </span>
+      <fieldset
+        aria-labelledby={labelId}
+        className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0"
+      >
+        {order.map((c) => (
+          <Pill
+            key={c}
+            size="touch"
+            activeTone="brand"
+            active={condition === c}
+            onClick={() => setCondition(c)}
+          >
+            {IVA_CONDITION_TEXT[c]}
+            {c === need.suggested_condition ? ' · según la factura' : ''}
+          </Pill>
+        ))}
+      </fieldset>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
           onClick={() =>
             void resolve(
               p.key,
               [{ kind: 'supplier_condition', partyId: need.party_id, ivaCondition: condition }],
-              { success: 'Listo: actualizamos el proveedor.' },
+              { success: 'Listo: actualicé el proveedor.' },
             )
           }
         >
           Actualizar el proveedor
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
-const OTHER_TAXES_CHOICES: readonly OtherTaxesAs[] = [
-  'perc_iibb',
-  'perc_iva',
-  'internal',
-  'account',
+const OTHER_TAXES_CHOICES: ReadonlyArray<{ value: OtherTaxesAs; title: string; text: string }> = [
+  {
+    value: 'perc_iibb',
+    title: 'Ingresos Brutos',
+    text: 'Lo más común: la provincia te lo cobra por adelantado y después lo descontás.',
+  },
+  { value: 'perc_iva', title: 'IVA', text: 'Un adelanto de IVA que después descontás.' },
+  {
+    value: 'internal',
+    title: 'Impuestos internos',
+    text: 'Típico de bebidas con alcohol o gaseosas: va al costo.',
+  },
+  { value: 'account', title: 'Otra cosa', text: 'Elegís vos a dónde va.' },
 ]
 
 function OtherTaxes({
   p,
   need,
   partyName,
-}: {
-  p: ProposalView
+  copy,
+  frame,
+}: Base & {
   need: Extract<ImportNeed, { key: 'other_taxes_as' }>
   partyName: string | null
 }) {
@@ -359,39 +392,37 @@ function OtherTaxes({
 
   const apply = () => {
     if (!as) return
-    const rememberIt = remember && need.party_id !== null
-    void resolve(
-      p.key,
-      [
-        {
-          kind: 'other_taxes_as',
-          proposalKey: rememberIt ? null : p.key,
-          partyId: rememberIt ? need.party_id : null,
-          as,
-          accountId: as === 'account' ? accountId : null,
-          jurisdictionCode: as === 'perc_iibb' ? jurisdiction : null,
-          remember: rememberIt,
-        },
-      ],
-      {
-        success: rememberIt
-          ? 'Listo: lo aplicamos a todas sus facturas y lo recordamos para la próxima.'
-          : 'Listo, lo tuvimos en cuenta.',
-      },
-    )
+    const change = otherTaxesChange({
+      proposalKey: p.key,
+      partyId: need.party_id,
+      as,
+      accountId,
+      jurisdiction,
+      remember,
+    })
+    void resolve(p.key, [change], {
+      success: change.remember
+        ? 'Listo: lo apliqué a todas sus facturas y lo recuerdo para la próxima.'
+        : 'Listo, lo tuve en cuenta.',
+    })
   }
 
   return (
-    <Frame
-      text={`La factura trae ${formatCents(need.amount_cents)} de «Otros tributos» y ARCA no dice qué son. ¿Qué son?`}
-    >
-      <ChoiceChips
-        label="Qué son los otros tributos"
-        value={as}
-        onChange={setAs}
-        options={OTHER_TAXES_CHOICES.map((o) => ({ value: o, label: OTHER_TAXES_TEXT[o].label }))}
-      />
-      {as ? <p className="text-xs text-muted-foreground">{OTHER_TAXES_TEXT[as].hint}</p> : null}
+    <Ask copy={copy} frame={frame}>
+      <fieldset className="m-0 grid gap-2 border-0 p-0 sm:grid-cols-2">
+        <legend className="sr-only">Qué son los otros impuestos</legend>
+        {OTHER_TAXES_CHOICES.map((choice) => (
+          <ChoiceCard
+            key={choice.value}
+            name={`${base}-as`}
+            value={choice.value}
+            checked={as === choice.value}
+            onChange={() => setAs(choice.value)}
+            title={choice.title}
+            consequence={choice.text}
+          />
+        ))}
+      </fieldset>
       {as === 'perc_iibb' ? (
         <div className="grid gap-1.5 sm:max-w-xs">
           <Label htmlFor={`${base}-jur`}>¿De qué provincia?</Label>
@@ -411,7 +442,7 @@ function OtherTaxes({
       ) : null}
       {as === 'account' ? (
         <div className="grid gap-1.5 sm:max-w-md">
-          <Label htmlFor={`${base}-acc`}>¿A qué cuenta va?</Label>
+          <Label htmlFor={`${base}-acc`}>¿Dónde lo anoto?</Label>
           <AccountCombobox
             id={`${base}-acc`}
             value={accountId}
@@ -421,7 +452,7 @@ function OtherTaxes({
         </div>
       ) : null}
       {need.party_id ? (
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-2.5">
           <Checkbox
             id={`${base}-rem`}
             checked={remember}
@@ -429,51 +460,55 @@ function OtherTaxes({
             className="mt-0.5"
           />
           <Label htmlFor={`${base}-rem`} className="font-normal leading-snug">
-            Recordarlo para {partyName ?? 'este proveedor'} (se aplica a todas sus facturas, también
-            las próximas)
+            Hacer lo mismo con todas las de {partyName ?? 'este proveedor'}, también las próximas
           </Label>
         </div>
       ) : null}
-      <Actions>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={!ready || busyKey === p.key}
           onClick={apply}
         >
-          Guardar
+          {ANSWER.save}
         </Button>
-      </Actions>
-    </Frame>
+        {frame.onLater ? (
+          <button type="button" className={QUIET_ANSWER} onClick={frame.onLater}>
+            {ANSWER.later}
+          </button>
+        ) : null}
+      </QuestionAnswers>
+      <p className="text-xs text-muted-foreground">Si no sabés, preguntale a tu contadora.</p>
+    </Ask>
   )
 }
 
 function Confirmable({
   p,
   need,
-  text,
   confirmLabel,
-}: {
-  p: ProposalView
+  copy,
+  frame,
+}: Base & {
   need: 'foreign_currency' | 'possible_duplicate' | 'estimated_deductions'
-  text: string
   confirmLabel: string
 }) {
   const { resolve, busyKey } = useReview()
   return (
-    <Frame text={text}>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={cn(BUTTON, 'gap-2')}
+          className={`${ANSWER_BUTTON} gap-2`}
           disabled={busyKey === p.key}
           onClick={() => void resolve(p.key, [{ kind: 'confirm', proposalKey: p.key, need }])}
         >
           <Check className="size-4" aria-hidden />
           {confirmLabel}
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
@@ -481,32 +516,42 @@ function PossibleDuplicate({
   p,
   label,
   documentId,
-}: {
-  p: ProposalView
-  label: string
-  documentId: string
-}) {
+  copy,
+  frame,
+}: Base & { label: string; documentId: string }) {
   const { resolve, busyKey, slug } = useReview()
   const { ignore } = useRowActions()
   return (
-    <Frame
-      text={
+    <Ask
+      copy={copy}
+      frame={frame}
+      context={
         <>
           Ya cargaste{' '}
           <Link
             href={`/${slug}/administracion/comprobantes/${documentId}`}
-            className="font-medium underline underline-offset-2"
+            className="rounded-sm font-medium text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {label}
+            {label} ↗
           </Link>{' '}
-          con el mismo proveedor y el mismo total. ¿Es otro comprobante?
+          con el mismo proveedor y el mismo total.
         </>
       }
     >
-      <Actions>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          variant="outline"
+          className={ANSWER_BUTTON}
+          disabled={busyKey === p.key}
+          onClick={() => void ignore(p, 'Ya estaba cargado', 'Listo: no se carga dos veces.')}
+        >
+          {ANSWER.same}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
           onClick={() =>
             void resolve(p.key, [
@@ -514,100 +559,132 @@ function PossibleDuplicate({
             ])
           }
         >
-          Es otro: cargalo
+          {ANSWER.other}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className={BUTTON}
-          disabled={busyKey === p.key}
-          onClick={() => void ignore(p, 'Ya estaba cargado', 'Listo: no se carga dos veces.')}
-        >
-          Es el mismo: no lo cargues
-        </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
-function MpInvoice({ p }: { p: ProposalView }) {
+function MpInvoice({ p, copy, frame }: Base) {
   const { resolve, busyKey } = useReview()
+  const answer = (value: boolean) =>
+    void resolve(p.key, [{ kind: 'settles_commissions', proposalKey: p.key, value }])
   return (
-    <Frame text="¿Es la factura mensual de Mercado Pago por las comisiones que ya te descontó? Si es eso, la cargamos sin volver a pagarla y te deja descontar su IVA.">
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          variant="outline"
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
-          onClick={() =>
-            void resolve(p.key, [{ kind: 'settles_commissions', proposalKey: p.key, value: true }])
-          }
+          onClick={() => answer(true)}
         >
           Sí, es la de comisiones
         </Button>
         <Button
           type="button"
           variant="outline"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
-          onClick={() =>
-            void resolve(p.key, [{ kind: 'settles_commissions', proposalKey: p.key, value: false }])
-          }
+          onClick={() => answer(false)}
         >
           No, es otra compra
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
+
+/** Cuántos medios del cierre se ofrecen como píldora antes de «Otro…». */
+const METHOD_PILLS = 5
 
 function ChannelMethod({
   p,
   channel,
-}: {
-  p: ProposalView
-  channel: Extract<ImportNeed, { key: 'channel_method' }>['channel']
-}) {
+  copy,
+  frame,
+}: Base & { channel: Extract<ImportNeed, { key: 'channel_method' }>['channel'] }) {
   const { options, resolve, busyKey } = useReview()
-  const id = useId()
+  const labelId = useId()
   const [methodId, setMethodId] = useState<string | null>(null)
+  const [more, setMore] = useState(false)
+  const methods = options?.methods ?? []
+  const first = methods.slice(0, METHOD_PILLS)
+  const extra =
+    methodId && !first.some((m) => m.id === methodId)
+      ? (methods.find((m) => m.id === methodId) ?? null)
+      : null
   return (
-    <Frame
-      text={`¿Cómo se llaman los «${MP_CHANNEL_TEXT[channel]}» en tu cierre del día? Lo guardamos para las próximas importaciones.`}
-    >
-      <div className="grid gap-1.5 sm:max-w-xs">
-        <Label htmlFor={id} className="sr-only">
-          Medio del cierre del día
-        </Label>
-        <Select value={methodId ?? undefined} onValueChange={setMethodId}>
-          <SelectTrigger id={id} className={SELECT_CLASS}>
-            <SelectValue placeholder="Elegí el medio" />
+    <Ask copy={copy} frame={frame}>
+      <span id={labelId} className="sr-only">
+        Medio del cierre del día
+      </span>
+      <fieldset
+        aria-labelledby={labelId}
+        className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0"
+      >
+        {first.map((m) => (
+          <Pill
+            key={m.id}
+            size="touch"
+            activeTone="brand"
+            active={methodId === m.id}
+            onClick={() => setMethodId(m.id)}
+          >
+            {m.name}
+          </Pill>
+        ))}
+        {extra ? (
+          <Pill size="touch" activeTone="brand" active>
+            {extra.name}
+          </Pill>
+        ) : null}
+        {methods.length > first.length ? (
+          <Pill size="touch" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+            Otro…
+          </Pill>
+        ) : null}
+      </fieldset>
+      {more ? (
+        <Select
+          value={methodId ?? undefined}
+          onValueChange={(next) => {
+            setMethodId(next)
+            setMore(false)
+          }}
+        >
+          <SelectTrigger
+            aria-label="Otro medio del cierre"
+            className={`${SELECT_CLASS} sm:max-w-xs`}
+          >
+            <SelectValue placeholder="Elegí el medio de cobro" />
           </SelectTrigger>
           <SelectContent>
-            {(options?.methods ?? []).map((m) => (
+            {methods.map((m) => (
               <SelectItem key={m.id} value={m.id}>
                 {m.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <Actions>
+      ) : null}
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={!methodId || busyKey === p.key}
           onClick={() =>
             methodId &&
             void resolve(p.key, [{ kind: 'channel_method', channel, salesMethodId: methodId }], {
-              success: 'Listo: lo guardamos para las próximas.',
+              success: 'Listo: lo guardé para las próximas.',
             })
           }
         >
-          Guardar
+          {ANSWER.save}
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
@@ -615,70 +692,117 @@ function PickParty({
   p,
   role,
   suggested,
-}: {
-  p: ProposalView
+  suggestedName,
+  copy,
+  frame,
+}: Base & {
   role: Extract<ImportNeed, { key: 'pick_party' }>['role']
   suggested: string | null
+  suggestedName: string | null
 }) {
-  const { options, resolve, busyKey } = useReview()
+  const { options, resolve, busyKey, source, setTeach } = useReview()
   const id = useId()
-  const [partyId, setPartyId] = useState<string | null>(suggested)
+  const hasSuggestion = suggested !== null && suggestedName !== null
+  const [other, setOther] = useState(!hasSuggestion)
+  const [partyId, setPartyId] = useState<string | null>(null)
   const kinds = useMemo(() => partyKindsForRole(role), [role])
   const parties = useMemo(
     () => (options?.parties ?? []).filter((x) => !kinds || kinds.includes(x.kind)),
     [options, kinds],
   )
+  const pick = (chosen: string) =>
+    void resolve(p.key, [{ kind: 'pick_party', proposalKey: p.key, partyId: chosen }])
+  const direction = p.summary.detail?.direction
   return (
-    <Frame text={`${PARTY_ROLE_TEXT[role]}.${suggested ? ' Te sugerimos uno: revisalo.' : ''}`}>
-      <div className="grid gap-1.5 sm:max-w-md">
-        <Label htmlFor={id} className="sr-only">
-          {PARTY_ROLE_TEXT[role]}
-        </Label>
-        <PartyCombobox
-          id={id}
-          value={partyId}
-          parties={parties.length > 0 ? parties : (options?.parties ?? [])}
-          placeholder="Elegí a quién"
-          onValueChange={(next) => setPartyId(next)}
-        />
-      </div>
-      <Actions>
-        <Button
+    <Ask copy={copy} frame={frame}>
+      {hasSuggestion ? (
+        <QuestionAnswers>
+          <Button
+            type="button"
+            variant="outline"
+            className={ANSWER_BUTTON}
+            disabled={busyKey === p.key}
+            onClick={() => suggested && pick(suggested)}
+          >
+            Sí: es {suggestedName}
+          </Button>
+          {!other ? (
+            <Button
+              type="button"
+              variant="outline"
+              className={ANSWER_BUTTON}
+              onClick={() => setOther(true)}
+            >
+              Es otro…
+            </Button>
+          ) : null}
+        </QuestionAnswers>
+      ) : null}
+      {other ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="grid flex-1 gap-1.5 sm:max-w-md">
+            <Label htmlFor={id} className="sr-only">
+              {copy.question}
+            </Label>
+            <PartyCombobox
+              id={id}
+              value={partyId}
+              parties={parties.length > 0 ? parties : (options?.parties ?? [])}
+              placeholder="Elegí a quién"
+              onValueChange={(next) => setPartyId(next)}
+            />
+          </div>
+          <Button
+            type="button"
+            className={ANSWER_BUTTON}
+            disabled={!partyId || busyKey === p.key}
+            onClick={() => partyId && pick(partyId)}
+          >
+            {ANSWER.pick}
+          </Button>
+        </div>
+      ) : null}
+      {source === 'bank_statement' ? (
+        <button
           type="button"
-          className={BUTTON}
-          disabled={!partyId || busyKey === p.key}
+          className={QUIET_ANSWER}
           onClick={() =>
-            partyId && void resolve(p.key, [{ kind: 'pick_party', proposalKey: p.key, partyId }])
+            setTeach({
+              label: p.summary.label.slice(0, 120),
+              pattern: p.summary.label.slice(0, 200),
+              direction:
+                direction === 'credit' ? 'credit' : direction === 'debit' ? 'debit' : 'any',
+              kind: direction === 'credit' ? 'collection' : 'payment',
+            })
           }
         >
-          Elegir
-        </Button>
-      </Actions>
-    </Frame>
+          ¿Pasa todas las semanas? Enseñame a reconocerlo
+        </button>
+      ) : null}
+    </Ask>
   )
 }
 
-function PickTreasury({ p, suggested }: { p: ProposalView; suggested: string | null }) {
+function PickTreasury({ p, suggested, copy, frame }: Base & { suggested: string | null }) {
   const { options, resolve, busyKey } = useReview()
-  const id = useId()
-  const [treasuryId, setTreasuryId] = useState<string | null>(suggested)
+  const labelId = useId()
+  const [treasuryId, setTreasuryId] = useState<string | null>(null)
   return (
-    <Frame text="¿De qué cuenta tuya es la otra punta del movimiento (adónde fue o de dónde vino la plata)?">
-      <div className="grid gap-1.5 sm:max-w-md">
-        <Label htmlFor={id} className="sr-only">
-          La otra cuenta
-        </Label>
-        <TreasurySelect
-          id={id}
-          value={treasuryId}
-          treasuries={options?.treasuries ?? []}
-          onValueChange={(next) => setTreasuryId(next)}
-        />
-      </div>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <span id={labelId} className="sr-only">
+        {copy.question}
+      </span>
+      <TreasuryPicker
+        aria-labelledby={labelId}
+        value={treasuryId}
+        treasuries={options?.treasuries ?? []}
+        suggestedId={suggested}
+        onValueChange={(next) => setTreasuryId(next)}
+      />
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={!treasuryId || busyKey === p.key}
           onClick={() =>
             treasuryId &&
@@ -687,14 +811,14 @@ function PickTreasury({ p, suggested }: { p: ProposalView; suggested: string | n
             ])
           }
         >
-          Elegir
+          {ANSWER.pick}
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
-function PickAccount({ p, tax, text }: { p: ProposalView; tax: string | null; text: string }) {
+function PickAccount({ p, tax, copy, frame }: Base & { tax: string | null }) {
   const { options, resolve, busyKey } = useReview()
   const id = useId()
   const [accountId, setAccountId] = useState<string | null>(null)
@@ -703,130 +827,163 @@ function PickAccount({ p, tax, text }: { p: ProposalView; tax: string | null; te
     [options],
   )
   return (
-    <Frame text={text}>
-      <div className="grid gap-1.5 sm:max-w-md">
-        <Label htmlFor={id} className="sr-only">
-          Cuenta
-        </Label>
-        <AccountCombobox
-          id={id}
-          value={accountId}
-          accounts={options?.accounts ?? []}
-          filter={(a) => notTreasury.has(a.id)}
-          onValueChange={(next) => setAccountId(next)}
-        />
-      </div>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="grid flex-1 gap-1.5 sm:max-w-md">
+          <Label htmlFor={id} className="sr-only">
+            {copy.question}
+          </Label>
+          <AccountCombobox
+            id={id}
+            value={accountId}
+            accounts={options?.accounts ?? []}
+            filter={(a) => notTreasury.has(a.id)}
+            placeholder="Buscá qué fue"
+            onValueChange={(next) => setAccountId(next)}
+          />
+        </div>
         <Button
           type="button"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={!accountId || busyKey === p.key}
           onClick={() =>
             accountId &&
             void resolve(p.key, [{ kind: 'pick_account', proposalKey: p.key, accountId, tax }])
           }
         >
-          Elegir
+          {ANSWER.pick}
         </Button>
-      </Actions>
-    </Frame>
+      </div>
+    </Ask>
   )
 }
 
-function AcceptWarnings({
+/** Los avisos se aceptan de a uno: se muestra el primero y, al aceptarlo, el que sigue. */
+function AcceptWarning({
   p,
   warnings,
+  frame,
 }: {
   p: ProposalView
   warnings: Extract<ImportNeed, { key: 'accept_warning' }>['warnings']
+  frame: QuestionFrame
 }) {
   const { resolve, busyKey } = useReview()
+  const warning = warnings[0]
+  if (!warning) return null
+  const { onLater: _later, ...card } = frame
   return (
-    <div className="space-y-2">
-      {warnings.map((w) => (
-        <Frame key={w} text={WARNING_COPY[w].fallback}>
-          <Actions>
-            <Button
-              type="button"
-              className={BUTTON}
-              disabled={busyKey === p.key}
-              onClick={() =>
-                void resolve(p.key, [{ kind: 'accept_warning', proposalKey: p.key, warning: w }])
-              }
-            >
-              {WARNING_COPY[w].confirmLabel}
-            </Button>
-          </Actions>
-        </Frame>
-      ))}
-    </div>
+    <QuestionCard
+      {...card}
+      question={WARNING_COPY[warning].fallback}
+      context={
+        warnings.length > 1
+          ? `Después vas a ver ${warnings.length - 1 === 1 ? 'un aviso más' : `${warnings.length - 1} avisos más`} de esta hoja.`
+          : undefined
+      }
+    >
+      <QuestionAnswers>
+        <Button
+          type="button"
+          className={ANSWER_BUTTON}
+          disabled={busyKey === p.key}
+          onClick={() =>
+            void resolve(p.key, [{ kind: 'accept_warning', proposalKey: p.key, warning }])
+          }
+        >
+          {WARNING_COPY[warning].confirmLabel}
+        </Button>
+      </QuestionAnswers>
+    </QuestionCard>
   )
 }
 
-function Receipt({ p }: { p: ProposalView }) {
+function Receipt({ p, copy, frame }: Base) {
   const { busyKey } = useReview()
   const { ignore, loadByHand } = useRowActions()
   return (
-    <Frame text="Es un recibo. Si es el comprobante de pago de una factura que ya cargaste, no hace falta cargarlo; si es un gasto que no tiene factura, cargalo a mano.">
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          variant="outline"
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
           onClick={() =>
             void ignore(p, 'Recibo de una factura ya cargada', 'Listo: el recibo no se carga.')
           }
         >
-          Es el pago de una factura: no lo cargues
+          Sí: no lo cargues
         </Button>
         <Button
           type="button"
           variant="outline"
-          className={BUTTON}
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
           onClick={() => void loadByHand(p)}
         >
-          Es un gasto: lo cargo a mano
+          No, es un gasto: lo cargo a mano
         </Button>
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
   )
 }
 
-function ManualOnly({
-  p,
-  text,
-  notOurs = false,
-}: {
-  p: ProposalView
-  text: string
-  notOurs?: boolean
-}) {
+function ManualOnly({ p, notOurs = false, copy, frame }: Base & { notOurs?: boolean }) {
   const { busyKey } = useReview()
   const { ignore, loadByHand } = useRowActions()
   return (
-    <Frame text={text}>
-      <Actions>
+    <Ask copy={copy} frame={frame}>
+      <QuestionAnswers>
         <Button
           type="button"
-          className={BUTTON}
+          variant="outline"
+          className={ANSWER_BUTTON}
           disabled={busyKey === p.key}
           onClick={() => void loadByHand(p)}
         >
-          Cargarla a mano
+          {ANSWER.byHand}
         </Button>
         {notOurs ? (
           <Button
             type="button"
             variant="outline"
-            className={BUTTON}
+            className={ANSWER_BUTTON}
             disabled={busyKey === p.key}
             onClick={() => void ignore(p, 'No es de la SAS')}
           >
-            No es nuestro
+            {ANSWER.notOurs}
           </Button>
         ) : null}
-      </Actions>
-    </Frame>
+      </QuestionAnswers>
+    </Ask>
+  )
+}
+
+/**
+ * Lo anterior a la fecha de arranque: el motor lo rechaza, así que «Cargarlo a
+ * mano» chocaría con lo mismo. La salida es sacarlo de este archivo (el mismo
+ * `ignore` con el motivo «Se carga a mano», sin abrir un formulario).
+ */
+function BeforeStart({ p, copy, frame }: Base) {
+  const { busyKey, slug } = useReview()
+  const { ignore } = useRowActions()
+  return (
+    <Ask copy={copy} frame={frame}>
+      <QuestionAnswers>
+        <Button
+          type="button"
+          variant="outline"
+          className={ANSWER_BUTTON}
+          disabled={busyKey === p.key}
+          onClick={() => void ignore(p, 'Se carga a mano', 'Listo: lo saqué de este archivo.')}
+        >
+          {ANSWER.takeOut}
+        </Button>
+        <Link href={`/${slug}/administracion/configurar`} className={QUIET_ANSWER}>
+          Ir a los saldos iniciales
+        </Link>
+      </QuestionAnswers>
+    </Ask>
   )
 }

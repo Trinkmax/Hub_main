@@ -134,6 +134,41 @@ export type UploadFact = {
   tone?: 'default' | 'warning'
 }
 
+/**
+ * Los números del papel «Llegó esto» (lo que acusa recibo antes de subir). Solo
+ * se muestran: NO viajan al servidor (`batchInput` no los copia y el esquema del
+ * lote es estricto). `null` = el archivo no trae ese dato (nunca se dibuja `$ 0`).
+ */
+export type UploadFigures = {
+  /** Comprobantes o movimientos leídos. */
+  items: number
+  // ─ Compras de ARCA
+  creditNotes?: number
+  suppliers?: number
+  /** Hasta tres razones sociales, las de mayor importe (reconocerlas da confianza). */
+  topSuppliers?: string[]
+  /** Total en pesos (las notas de crédito restan). */
+  totalCents?: number
+  foreignCurrency?: number
+  /** Comprobantes a nombre de otra persona. */
+  otherCuit?: number
+  // ─ Mercado Pago y banco: la cuenta a la vista
+  openingCents?: number | null
+  inCents?: number
+  outCents?: number
+  closingCents?: number | null
+  /** ¿El saldo inicial más los movimientos da el final? `null` si no se puede saber. */
+  balance?: 'ok' | 'mismatch' | null
+  /** Por cuánto no cierra (Mercado Pago). */
+  balanceDiffCents?: number | null
+  /** En cuántos renglones no cierra (banco). */
+  mismatchRows?: number
+  /** Plata que Mercado Pago todavía tiene retenida. */
+  reserveCents?: number
+  /** Movimientos en los que no se sabe bien si entró o salió. */
+  guessed?: number
+}
+
 export type UploadPlan = {
   source: UiImportSource
   fileName: string
@@ -146,6 +181,8 @@ export type UploadPlan = {
   /** Lo que se le muestra antes de subir. */
   title: string
   facts: UploadFact[]
+  /** Los números del papel «Llegó esto». Si falta, se pintan los `facts`. */
+  figures?: UploadFigures
   /** Filas que no se pudieron leer (quedan afuera), con su texto. */
   rowErrors: string[]
   /** Avisos del archivo que no frenan (tildes arregladas, saldo que no cierra…). */
@@ -312,6 +349,19 @@ export function planMisComprobantes(
     })
   }
 
+  // Los tres proveedores de mayor importe, por su razón social.
+  const bySupplier = new Map<string, { name: string; cents: number }>()
+  for (const it of pesos) {
+    const entry = bySupplier.get(it.issuerCuit) ?? { name: it.issuerName, cents: 0 }
+    entry.cents += CREDIT_NOTE_CODES.has(it.code) ? -it.total : it.total
+    bySupplier.set(it.issuerCuit, entry)
+  }
+  const topSuppliers = [...bySupplier.values()]
+    .filter((x) => x.name.trim() !== '')
+    .sort((a, b) => b.cents - a.cents)
+    .slice(0, 3)
+    .map((x) => x.name.trim())
+
   const notices = parsed.fileIssues.filter((i) => i.level !== 'error').map(issueText)
   const meta: ImportBatchMeta = {
     ...(parsed.layout ? { layout: parsed.layout } : {}),
@@ -344,6 +394,15 @@ export function planMisComprobantes(
       rows: parsed.items.map(toStagedRow),
       title: `${count(items.length, 'comprobante', 'comprobantes')} de compras`,
       facts,
+      figures: {
+        items: items.length,
+        creditNotes: parsed.stats.creditNotes,
+        suppliers,
+        topSuppliers,
+        totalCents: totalArs,
+        foreignCurrency: parsed.stats.foreignCurrency,
+        otherCuit,
+      },
       rowErrors: rowErrorTexts(parsed.rowErrors),
       notices,
     },
@@ -461,6 +520,16 @@ export function planMercadoPago(
       rows: parsed.items.map(toStagedRow),
       title: `${count(items.length, 'movimiento', 'movimientos')} de Mercado Pago`,
       facts,
+      figures: {
+        items: items.length,
+        openingCents: parsed.initialBalance,
+        inCents: credit,
+        outCents: debit,
+        closingCents: parsed.finalBalance,
+        balance: checks.total === 'ok' || checks.total === 'mismatch' ? checks.total : null,
+        balanceDiffCents: checks.totalDiffCents,
+        reserveCents: Math.abs(checks.openReserveCents),
+      },
       rowErrors: rowErrorTexts(parsed.rowErrors),
       notices: parsed.fileIssues.filter((i) => i.level !== 'error').map(issueText),
     },
@@ -562,6 +631,16 @@ export function planBank(table: OpenedTable, file: FileInfo, ctx: BankContext): 
       rows: parsed.items.map(toStagedRow),
       title: `${count(items.length, 'movimiento', 'movimientos')} del banco`,
       facts,
+      figures: {
+        items: items.length,
+        openingCents: check.opening,
+        inCents: credit,
+        outCents: debit,
+        closingCents: check.closing,
+        balance: check.status === 'ok' || check.status === 'mismatch' ? check.status : null,
+        mismatchRows: check.mismatchRows.length,
+        guessed,
+      },
       rowErrors: rowErrorTexts(parsed.rowErrors),
       notices: parsed.fileIssues.filter((i) => i.level !== 'error').map(issueText),
     },

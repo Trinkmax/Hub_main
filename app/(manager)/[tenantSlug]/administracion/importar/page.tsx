@@ -1,46 +1,45 @@
-import Link from 'next/link'
-import { BlockError } from '@/components/administracion/cajas-ventas/block-error'
-import {
-  HowToBanco,
-  HowToMercadoPago,
-  HowToMisComprobantes,
-} from '@/components/administracion/guias/how-to'
 import { ImportHistory } from '@/components/administracion/importar/import-history'
-import { StillManual } from '@/components/administracion/importar/page-bits'
 import {
-  ImportSourceCard,
-  type SourceOverviewView,
-} from '@/components/administracion/importar/source-card'
+  HistoryEmpty,
+  HistoryList,
+  HistoryPager,
+} from '@/components/administracion/importar/inbox/history-list'
+import { HowItWorks } from '@/components/administracion/importar/inbox/how-it-works'
+import { AgendaLine, NextUp } from '@/components/administracion/importar/inbox/next-up'
+import { ImportTray } from '@/components/administracion/importar/inbox/tray'
+import { StillManual } from '@/components/administracion/importar/page-bits'
+import { AdmHeader, AdmPage, Panel, PanelError, PillLink } from '@/components/administracion/kit'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
+import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
-import { getImportsOverview, listImportBatches } from '@/lib/imports/server/queries'
+import { listTreasuryAccounts } from '@/lib/accounting/queries/treasury'
+import { todayInCordoba } from '@/lib/dates'
+import { listImportBatches } from '@/lib/imports/server/queries'
+import { buildInbox } from '@/lib/imports/ui/inbox'
 import {
   IMPORT_SOURCE_COPY,
   importHref,
   isUiImportSource,
   UI_IMPORT_SOURCES,
-  type UiImportSource,
 } from '@/lib/imports/ui/labels'
-import { cn } from '@/lib/utils'
 import { firstParam, requireImportAccess } from './_lib/page-access'
 
 export const metadata = { title: 'Importar · Administración' }
 
-/** Filas del historial por página. */
+/** Archivos del historial por página. */
 const HISTORY_PAGE = 20
-
-const HOW_TO: Readonly<Record<UiImportSource, typeof HowToMisComprobantes>> = {
-  arca_recibidos: HowToMisComprobantes,
-  mp_release: HowToMercadoPago,
-  bank_statement: HowToBanco,
-}
+/** Con cuántos archivos se arman las bandejas (cobertura, lo que espera y lo que toca). */
+const INBOX_BATCHES = 200
 
 /**
- * «Importar» (diseño §4.0): las tres tarjetas (compras desde ARCA, Mercado
- * Pago y banco), cada una con su última importación, lo que falta revisar y
- * «¿Cómo lo bajo?», y abajo el historial. La contadora ve todo, sin botones.
+ * «Importar»: la bandeja de entrada. Arriba, lo que toca ahora (o «Así
+ * funciona» mientras el bar nunca cargó nada desde un archivo); después las
+ * tres bandejas (ARCA, Mercado Pago, el banco), cada una con lo que falta
+ * traer, lo ya traído y las hojas que esperan; y abajo todo lo que se subió.
+ *
+ * Todo lo que se muestra sale de `buildInbox()` (puro, con tests): acá solo se
+ * lee y se dibuja. La contadora ve las bandejas y el historial, sin ningún
+ * botón de carga.
  */
 export default async function ImportarPage({
   params,
@@ -57,30 +56,49 @@ export default async function ImportarPage({
   const before = /^\d{4}-\d{2}-\d{2}T/.test(antes) ? antes : null
   const { access, canWrite } = await requireImportAccess(tenantSlug, importHref(tenantSlug))
   const tenantId = access.tenant.id
+  const today = todayInCordoba()
+  const paged = source !== null || before !== null
 
-  const [overview, history] = await Promise.all([
-    settleQuery(getImportsOverview(tenantId)),
-    settleQuery(listImportBatches(tenantId, { source, before, limit: HISTORY_PAGE + 1 })),
+  const [batches, page, treasuries, settings] = await Promise.all([
+    settleQuery(listImportBatches(tenantId, { limit: INBOX_BATCHES })),
+    // El historial filtrado o paginado se pide aparte; la primera página sale de la lectura de arriba.
+    paged
+      ? settleQuery(listImportBatches(tenantId, { source, before, limit: HISTORY_PAGE + 1 }))
+      : Promise.resolve(null),
+    settleQuery(listTreasuryAccounts(tenantId)),
+    settleQuery(getAccountingSettings(tenantId)),
   ])
 
-  const cardOverview = (s: UiImportSource): SourceOverviewView => {
-    if (!overview.ok) return null
-    const o = overview.data[s]
-    return {
-      lastBatch: o.lastBatch
-        ? {
-            id: o.lastBatch.id,
-            status: o.lastBatch.status,
-            createdAt: o.lastBatch.createdAt,
-            periodFrom: o.lastBatch.periodFrom,
-            periodTo: o.lastBatch.periodTo,
-            pending: o.lastBatch.pending,
-          }
-        : null,
-      pendingBatches: o.pendingBatches,
-      pendingProposals: o.pendingProposals,
-    }
+  const header = (
+    <AdmHeader
+      title="Importar"
+      badge={<ReadOnlyBadge />}
+      description={
+        canWrite
+          ? 'Lo que ARCA, Mercado Pago y el banco ya saben no hace falta tipearlo: lo bajás de allá, lo subís acá y lo revisás.'
+          : 'Lo que se subió de ARCA, Mercado Pago y el banco, y en qué quedó cada archivo.'
+      }
+    />
+  )
+
+  if (!batches.ok) {
+    return (
+      <AdmPage>
+        {header}
+        <PanelError title="Tus archivos" message={batches.message} />
+      </AdmPage>
+    )
   }
+
+  const inbox = buildInbox({
+    today,
+    batches: batches.data,
+    treasuries: treasuries.ok ? treasuries.data : null,
+    booksStartDate: settings.ok ? (settings.data?.booksStartDate ?? null) : null,
+    hasCuit: settings.ok && settings.data ? settings.data.cuit !== null : null,
+    canWrite,
+    slug: tenantSlug,
+  })
 
   const historyHref = (extra: Record<string, string | null>) => {
     const q = new URLSearchParams()
@@ -89,93 +107,83 @@ export default async function ImportarPage({
     const s = q.toString()
     return `${importHref(tenantSlug)}${s ? `?${s}` : ''}#historial`
   }
+  const history = page ?? batches
   const rows = history.ok ? history.data.slice(0, HISTORY_PAGE) : []
   const hasOlder = history.ok && history.data.length > HISTORY_PAGE
   const last = rows[rows.length - 1]
+  const olderHref = hasOlder && last ? historyHref({ antes: last.createdAt }) : null
+  const newestHref = before ? historyHref({}) : null
 
   return (
-    <PageShell>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Importar <ReadOnlyBadge />
-          </>
-        }
-        description={
-          canWrite
-            ? 'Subí lo que bajás de ARCA, de Mercado Pago y del banco: armamos los comprobantes, vos completás lo poco que falta y los cargás todos juntos. Así no tipeás compras ni cobros a mano.'
-            : 'Lo que se importó de ARCA, Mercado Pago y el banco, y en qué quedó cada importación.'
-        }
-      />
+    <AdmPage>
+      {header}
 
-      {/* Si no se pudo leer nada (p. ej., la función todavía no está), un solo aviso con «Reintentar». */}
-      {!overview.ok && !history.ok ? <BlockError message={overview.message} /> : null}
+      {canWrite && inbox.next ? <NextUp next={inbox.next} /> : null}
+      {canWrite && !inbox.everLoaded ? (
+        <HowItWorks startNote={inbox.startNote} agenda={inbox.agenda} />
+      ) : canWrite && !inbox.next ? (
+        <AgendaLine agenda={inbox.agenda} />
+      ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {UI_IMPORT_SOURCES.map((s) => {
-          const HowTo = HOW_TO[s]
-          return (
-            <ImportSourceCard
-              key={s}
-              slug={tenantSlug}
-              source={s}
-              overview={cardOverview(s)}
-              canWrite={canWrite}
-              howTo={<HowTo className="bg-background/60" />}
-            />
-          )
-        })}
+      {!treasuries.ok || !settings.ok ? (
+        <p className="text-sm text-muted-foreground">
+          No pude leer tus cajas: puede faltar algún aviso.
+        </p>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        {inbox.trays.map((tray) => (
+          <ImportTray key={tray.source} tray={tray} />
+        ))}
       </div>
 
-      {canWrite ? <StillManual slug={tenantSlug} /> : null}
-
-      <section id="historial" aria-labelledby="historial-titulo" className="scroll-mt-24 space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-0.5">
-            <h2 id="historial-titulo" className="font-serif text-xl font-semibold tracking-tight">
-              Historial
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Cada archivo que se subió, del más nuevo al más viejo.
-            </p>
-          </div>
-          <nav aria-label="Filtrar el historial por origen" className="flex flex-wrap gap-2">
+      {history.ok ? (
+        <Panel
+          id="historial"
+          title="Todo lo que subiste"
+          description="Cada archivo, del más nuevo al más viejo."
+        >
+          <nav aria-label="Filtrar los archivos por origen" className="mb-3 flex flex-wrap gap-1.5">
             {[null, ...UI_IMPORT_SOURCES].map((s) => {
-              const active = s === source
               const q = new URLSearchParams()
               if (s) q.set('origen', s)
-              const href = `${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`
               return (
-                <Link
+                <PillLink
                   key={s ?? 'todos'}
-                  href={href}
+                  href={`${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`}
                   scroll={false}
-                  aria-current={active ? 'true' : undefined}
-                  className={cn(
-                    'inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition-colors md:h-9',
-                    active
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:bg-secondary',
-                  )}
+                  active={s === source}
+                  className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
                 >
                   {s ? IMPORT_SOURCE_COPY[s].short : 'Todos'}
-                </Link>
+                </PillLink>
               )
             })}
           </nav>
-        </div>
-        {history.ok ? (
-          <ImportHistory
-            slug={tenantSlug}
-            rows={rows}
-            olderHref={hasOlder && last ? historyHref({ antes: last.createdAt }) : null}
-            newestHref={before ? historyHref({}) : null}
-          />
-        ) : overview.ok ? (
-          <BlockError message={history.message} />
-        ) : null}
-      </section>
-    </PageShell>
+          {canWrite ? (
+            rows.length === 0 ? (
+              <HistoryEmpty newestHref={newestHref} />
+            ) : (
+              <div className="space-y-3">
+                <HistoryList slug={tenantSlug} rows={rows} today={today} />
+                <HistoryPager olderHref={olderHref} newestHref={newestHref} />
+              </div>
+            )
+          ) : (
+            <ImportHistory
+              slug={tenantSlug}
+              rows={rows}
+              today={today}
+              olderHref={olderHref}
+              newestHref={newestHref}
+            />
+          )}
+        </Panel>
+      ) : (
+        <PanelError title="Todo lo que subiste" message={history.message} />
+      )}
+
+      {canWrite ? <StillManual slug={tenantSlug} /> : null}
+    </AdmPage>
   )
 }

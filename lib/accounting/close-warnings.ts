@@ -77,7 +77,7 @@ export function closeWarningText(key: CloseWarningKey, detail: Rec = {}): string
     }
     case 'receivables_overdue':
       if (count !== null && count > 0 && amount !== null) {
-        return `Hay ${plural(count, 'acreditación atrasada', 'acreditaciones atrasadas')} de tarjetas, billeteras o plataformas por ${formatCents(Math.abs(amount))}.`
+        return `Hay ${formatCents(Math.abs(amount))} en camino que ya ${count === 1 ? 'tendría' : 'tendrían'} que haber llegado: ${plural(count, 'cobro', 'cobros')} de tarjetas, billeteras o apps.`
       }
       break
     case 'treasury_negative': {
@@ -95,7 +95,7 @@ export function closeWarningText(key: CloseWarningKey, detail: Rec = {}): string
     }
     case 'treasuries_not_reconciled': {
       const names = namesOf(detail.treasuries)
-      if (names.length > 0) return `Sin «Ajustar saldo» en el mes: ${joinList(names)}.`
+      if (names.length > 0) return `Sin contar en el mes: ${joinList(names)}.`
       break
     }
     case 'vat_pending_documentation':

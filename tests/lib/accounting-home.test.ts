@@ -104,6 +104,7 @@ import {
   homeCashRange,
   homeSpendingRange,
   inOutSummary,
+  integrationForBooks,
   invoicedSplit,
   ivaStrip,
   monthDays,
@@ -113,14 +114,17 @@ import {
   noticeAttention,
   payableAttention,
   payablesTranches,
+  previousMonthBeforeBooks,
   type SpendingAccount,
   type SpendingDocument,
   type SpendingLine,
+  setupNext,
   spendingView,
   type TodayInput,
   type TodayItem,
   treasurySegments,
   treasurySlots,
+  treasuryTones,
   weekBuckets,
 } from '@/lib/accounting/home'
 import { type OnboardingData, onboardingState } from '@/lib/accounting/onboarding'
@@ -135,7 +139,11 @@ import {
   getSupplierCategoryCount,
   spendingAccounts,
 } from '@/lib/accounting/queries/home'
-import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
+import {
+  type IntegrationAttentionItem,
+  type IntegrationsStatus,
+  integrationAttention,
+} from '@/lib/accounting/queries/integrations'
 import type {
   AccSummary,
   SummaryAttentionItem,
@@ -478,6 +486,11 @@ describe('la barra por caja', () => {
       ['caja', 1, p(100_000), 25, '/cajas/caja'],
       ['banco', 3, p(300_000), 75, '/cajas/banco'],
     ])
+    // El color de la barra sale del TIPO de caja, no de cuánta plata tiene ni de su lugar.
+    expect(bar.segments.map((s) => [s.key, s.tone])).toEqual([
+      ['caja', { kind: 'cash', step: 1 }],
+      ['banco', { kind: 'bank', step: 1 }],
+    ])
     expect(bar.totalCents).toBe(p(400_000))
     expect(bar.pendingCents).toBe(p(5_000))
     expect(bar.cardDebtCents).toBe(p(40_000))
@@ -521,6 +534,36 @@ describe('la barra por caja', () => {
       path: null,
     })
     expect(bar.segments.reduce((sum, s) => sum + s.cents, 0)).toBe(bar.totalCents)
+  })
+
+  it('el tono es del tipo; dos del mismo tipo, el mismo tono en otro escalón', () => {
+    const treasuries = [
+      treasury('caja', 'cash', p(100)),
+      treasury('nacion', 'bank', p(100)),
+      treasury('visa', 'credit_card', -p(40)),
+      treasury('mp', 'wallet', 0),
+      treasury('galicia', 'bank', p(100)),
+      treasury('otra', 'other', p(100)),
+      treasury('macro', 'bank', p(100)),
+      treasury('bbva', 'bank', p(100)),
+    ]
+    expect(treasuryTones(treasuries)).toEqual({
+      caja: { kind: 'cash', step: 1 },
+      nacion: { kind: 'bank', step: 1 },
+      // La billetera en cero conserva su tono; la tarjeta no es plata y no entra.
+      mp: { kind: 'wallet', step: 1 },
+      galicia: { kind: 'bank', step: 2 },
+      otra: null,
+      macro: { kind: 'bank', step: 3 },
+      // El cuarto banco ya no tiene escalón propio.
+      bbva: null,
+    })
+    // El escalón no se corre porque otra del mismo tipo quede sin plata.
+    const emptied = treasuries.map((t) => (t.id === 'nacion' ? { ...t, balanceCents: 0 } : t))
+    const galicia = treasurySegments(summary({ treasuries: emptied })).segments.find(
+      (s) => s.key === 'galicia',
+    )
+    expect(galicia?.tone).toEqual({ kind: 'bank', step: 2 })
   })
 
   it('una sola caja sin color conserva su nombre y su link', () => {
@@ -649,6 +692,7 @@ describe('entró y salió por semana', () => {
         from: TODAY,
         to: TODAY,
         label: '13/10',
+        shortLabel: '13/10',
         inCents: p(10),
         outCents: p(4),
         partial: true,
@@ -675,6 +719,14 @@ describe('entró y salió por semana', () => {
       ['2026-09-28', '28/09 al 04/10', p(7), p(3), false],
       ['2026-10-05', '05 al 11/10', 0, 0, false],
       ['2026-10-12', '12 al 13/10', 0, p(9), true],
+    ])
+    // Para el eje, la misma semana en corto: sin «al» y sin ceros adelante.
+    expect(buckets.map((b) => b.shortLabel)).toEqual([
+      '14–20/9',
+      '21–27/9',
+      '28/9–4/10',
+      '5–11/10',
+      '12–13/10',
     ])
     expect(inOutSummary(buckets)).toMatchObject({
       inCents: p(157),
@@ -721,15 +773,31 @@ describe('la deuda en tres tramos', () => {
       { key: 'later', label: 'Más adelante', cents: p(250), percent: 25 },
     ])
     expect(t).toMatchObject({ totalCents: p(1_000), partiesRed: 3, isEmpty: false })
-    expect(t?.title).toBe(`Tenés $${NB}600 vencido`)
+    // El título afirma sin importe (el número del bloque es el total); lo vencido va en la oración.
+    expect(t?.title).toBe('Tenés pagos vencidos con 3 proveedores')
+    expect(t?.sentence).toBe(`$${NB}600 ya venció.`)
   })
 
-  it('los títulos afirman', () => {
-    const title = (overdueCents: number, dueWeekCents: number, totalCents: number) =>
-      payablesTranches({ totalCents, overdueCents, dueWeekCents, partiesRed: 0 })?.title
-    expect(title(0, p(80), p(100))).toBe(`Esta semana vencen $${NB}80`)
-    expect(title(0, 0, p(100))).toBe('Nada vence esta semana')
-    expect(title(0, 0, 0)).toBe('No le debés nada a nadie')
+  it('los títulos afirman, sin repetir un importe al lado del total', () => {
+    const of = (overdueCents: number, dueWeekCents: number, totalCents: number, partiesRed = 0) =>
+      payablesTranches({ totalCents, overdueCents, dueWeekCents, partiesRed })
+    expect(of(p(50), 0, p(100), 1)).toMatchObject({
+      title: 'Tenés pagos vencidos con 1 proveedor',
+      sentence: `$${NB}50 ya venció.`,
+    })
+    // Sin saber con cuántos proveedores, no se inventa la cantidad.
+    expect(of(p(50), 0, p(100))?.title).toBe('Tenés pagos vencidos')
+    expect(of(p(100), 0, p(100), 2)?.sentence).toBe('Ya venció todo.')
+    expect(of(0, p(80), p(100))).toMatchObject({
+      title: 'Tenés pagos que vencen esta semana',
+      sentence: `$${NB}80 vence esta semana.`,
+    })
+    expect(of(0, 0, p(100))).toMatchObject({ title: 'Nada vence esta semana', sentence: null })
+    expect(of(0, 0, 0)).toMatchObject({ title: 'No le debés nada a nadie', sentence: null })
+    // Ningún título lleva plata: dos importes de siete cifras juntos no se leen.
+    for (const t of [of(p(50), 0, p(100), 1), of(0, p(80), p(100)), of(0, 0, p(100))]) {
+      expect(t?.title).not.toContain('$')
+    }
   })
 
   it('en cero: tres tramos vacíos; si los tramos no cierran, no pasan del total', () => {
@@ -754,6 +822,37 @@ describe('la deuda en tres tramos', () => {
     expect(odd?.tranches.map((t) => t.cents)).toEqual([p(90), p(10), 0])
   })
 
+  it('sin saldos iniciales, un cero no es «no le debés nada»: todavía no se sabe', () => {
+    const zero = { totalCents: 0, overdueCents: 0, dueWeekCents: 0, partiesRed: 0 }
+    const unknown = payablesTranches(zero, { openingPending: true })
+    expect(unknown).toMatchObject({
+      unknown: true,
+      isEmpty: true,
+      title: 'Todavía no sé cuánto debés',
+      sentence: 'Lo que ya les debías a tus proveedores entra con los saldos iniciales.',
+      note: null,
+    })
+    // Con los saldos iniciales cargados (o salteados), el cero es un dato.
+    expect(payablesTranches(zero)).toMatchObject({
+      unknown: false,
+      title: 'No le debés nada a nadie',
+      note: null,
+    })
+    // Con algo cargado se muestra, y se avisa que falta lo de antes de arrancar.
+    const partial = payablesTranches(
+      { totalCents: p(192_358), overdueCents: p(192_358), dueWeekCents: 0, partiesRed: 2 },
+      { openingPending: true },
+    )
+    expect(partial).toMatchObject({
+      unknown: false,
+      title: 'Tenés pagos vencidos con 2 proveedores',
+      sentence: 'Ya venció todo.',
+      note: 'Es lo que cargaste hasta ahora: lo que debías de antes entra con los saldos iniciales.',
+    })
+    // Un solo libro: nada sugiere que lo de antes queda afuera.
+    expect(`${unknown?.sentence} ${partial?.note}`).not.toMatch(/en negro|en blanco|afuera/i)
+  })
+
   it('los avisos de pagar van a su panel; el resto, a «Avisos»', () => {
     const list = [
       attention('payable_overdue', { label: 'A' }),
@@ -764,6 +863,12 @@ describe('la deuda en tres tramos', () => {
     ]
     expect(payableAttention(list, 2)).toEqual({ rows: [list[0], list[1]], more: 1 })
     expect(payableAttention(list).more).toBe(0)
+    // La base manda los avisos topeados: con 9 proveedores con algo vencido y 2 renglones
+    // a la vista, quedan 7 (y no el 1 que se alcanza a contar en la lista).
+    expect(payableAttention(list, 2, 9).more).toBe(7)
+    // Si la lista ya trae más de los que dice la cuenta de vencidos, gana la lista.
+    expect(payableAttention(list, 1, 2).more).toBe(2)
+    expect(payableAttention(list, 2, 2).more).toBe(1)
     expect(noticeAttention(list).map((a) => a.kind)).toEqual([
       'missing_daily_close',
       'treasury_unchecked',
@@ -822,7 +927,8 @@ describe('gastos fijos del mes', () => {
     })
     expect(progress.remainingCents).toBe(p(915_000))
     expect(progress.overdueCents).toBe(p(880_000))
-    expect(progress.sentence).toBe(`Te faltan $${NB}915.000: faltan pagar 3.`)
+    // El importe ya lo dice el rótulo («Te falta de gasto fijo»): la oración no lo repite.
+    expect(progress.sentence).toBe('Pagaste 0 de 3 este mes.')
   })
 
   it('con lo pagado: uno pago, uno a medias; «hoy» sale de las filas si no se pasa', () => {
@@ -1273,7 +1379,7 @@ describe('hoy te toca', () => {
         tone: 'info',
         label: 'Bajá Mis Comprobantes de septiembre y subilo: ya están casi todas las facturas.',
         href: '/importar/arca',
-        actionLabel: 'Importar de ARCA',
+        actionLabel: 'Subir las compras de ARCA',
         count: null,
         date: null,
       },
@@ -1542,6 +1648,39 @@ describe('hoy te toca', () => {
     expect(byId(buildToday(today()), 'payables')).toBeUndefined()
   })
 
+  it('pagos que vencen, con los saldos iniciales sin cargar: el cero no se tilda como hecho', () => {
+    const zero = summary({
+      payables: { totalCents: 0, overdueCents: 0, dueWeekCents: 0, partiesRed: 0 },
+    })
+    const pending = { booksStartDate: '2026-09-01', openingStatus: 'pending' as const }
+    const card = byId(buildToday(today({ summary: zero, settings: pending })), 'payables')
+    expect(card).toMatchObject({
+      done: false,
+      tone: 'muted',
+      action: null,
+      status: 'Todavía no cargaste lo que debés: entra con los saldos iniciales.',
+      // Sigue cubriendo sus avisos: no se repiten en «Avisos».
+      covers: ['payable_overdue', 'payable_due_week'],
+    })
+    // La contadora lo lee dicho para ella.
+    expect(
+      byId(buildToday(today({ summary: zero, settings: pending, canWrite: false })), 'payables')
+        ?.status,
+    ).toBe('Los dueños todavía no cargaron lo que se debía al empezar.')
+    // Con los saldos iniciales cargados vuelve a ser un dato; y con deuda, manda la deuda.
+    const posted = { booksStartDate: '2026-09-01', openingStatus: 'posted' as const }
+    expect(byId(buildToday(today({ summary: zero, settings: posted })), 'payables')).toMatchObject({
+      done: true,
+      status: 'No le debés nada a ningún proveedor.',
+    })
+    const owing = summary({
+      payables: { totalCents: p(500), overdueCents: p(500), dueWeekCents: 0, partiesRed: 1 },
+    })
+    expect(
+      byId(buildToday(today({ summary: owing, settings: pending })), 'payables'),
+    ).toMatchObject({ done: false, tone: 'late', action: { label: 'Pagar' } })
+  })
+
   it('gastos fijos: solo los que están dentro de su aviso y todavía no se cargaron', () => {
     const one = byId(buildToday(today({ recurring: [DEMO_FIXED[2] as HomeRecurringRow] })), 'fixed')
     expect(one).toMatchObject({
@@ -1649,7 +1788,8 @@ describe('hoy te toca', () => {
     expect(byId(on13, 'arca_monthly')).toMatchObject({
       title: 'Bajar las compras de ARCA',
       status: 'Ya están casi todas las facturas de septiembre.',
-      action: { href: `${BASE}/importar/arca`, label: 'Importar de ARCA' },
+      // El botón dice lo mismo que la pantalla que abre.
+      action: { href: `${BASE}/importar/arca`, label: 'Subir las compras de ARCA' },
     })
     expect(byId(on13, 'month_close')).toMatchObject({
       title: 'Cerrar el mes pasado',
@@ -1686,6 +1826,140 @@ describe('hoy te toca', () => {
       title: 'Cerrar el mes',
       status: 'Está listo para cerrar.',
     })
+  })
+
+  it('con los libros arrancados este mes no pide bajar de ARCA las compras del mes pasado', () => {
+    // El bar real el 13/10: libros desde el 12/10 y un lote de Mis Comprobantes ya subido,
+    // así que la integración avisa «Bajá Mis Comprobantes de septiembre».
+    const notice: IntegrationAttentionItem = {
+      kind: 'mc_prev_month',
+      tone: 'info',
+      label: 'Bajá Mis Comprobantes de septiembre y subilo: ya están casi todas las facturas.',
+      href: '/importar/arca',
+      actionLabel: 'Subir las compras de ARCA',
+      count: null,
+      date: null,
+    }
+    const started = { booksStartDate: '2026-10-12' }
+    // Ni por el aviso de la integración ni por la guía (del 11 en adelante).
+    expect(
+      byId(buildToday(today({ settings: started, integration: [notice] })), 'arca_monthly'),
+    ).toBeUndefined()
+    expect(
+      byId(
+        buildToday(today({ settings: started, onboarding: onboarding().state })),
+        'arca_monthly',
+      ),
+    ).toBeUndefined()
+    // Con los libros de antes, las dos puertas siguen ofreciéndolo.
+    const older = { booksStartDate: '2026-09-15' }
+    expect(
+      byId(buildToday(today({ settings: older, integration: [notice] })), 'arca_monthly'),
+    ).toMatchObject({ title: 'Bajar las compras de ARCA', covers: ['mc_prev_month'] })
+
+    expect(previousMonthBeforeBooks('2026-10-13', '2026-10-12')).toBe(true)
+    expect(previousMonthBeforeBooks('2026-10-13', '2026-10-01')).toBe(true)
+    expect(previousMonthBeforeBooks('2026-10-13', '2026-09-30')).toBe(false)
+    expect(previousMonthBeforeBooks('2026-11-11', '2026-10-12')).toBe(false)
+    // Sin la fecha de arranque no se saca nada.
+    expect(previousMonthBeforeBooks('2026-10-13', null)).toBe(false)
+
+    // Y el mismo aviso tampoco entra a «Avisos» por la otra puerta; lo demás queda.
+    const review: IntegrationAttentionItem = { ...notice, kind: 'import_review', tone: 'warning' }
+    expect(
+      integrationForBooks([review, notice], { today: '2026-10-13', booksStartDate: '2026-10-12' }),
+    ).toEqual([review])
+    expect(
+      integrationForBooks([review, notice], { today: '2026-10-13', booksStartDate: '2026-09-01' }),
+    ).toEqual([review, notice])
+  })
+})
+
+// ─── «Bajá Mis Comprobantes» y la fecha de arranque ──────────────────────────
+
+describe('la lectura de integraciones no pide un mes anterior a la fecha de arranque', () => {
+  const NO_SOURCE = { lastBatchAt: null, pendingBatches: 0, pendingBatchId: null }
+  const USED = { ...NO_SOURCE, used: true, prevMonthCovered: false }
+
+  /** Un bar que ya subió algo de ARCA, el 13/10 (después del 11: ya se podría pedir). */
+  function status(patch: Partial<IntegrationsStatus> = {}): IntegrationsStatus {
+    return {
+      available: true,
+      today: '2026-10-13',
+      arca: { produccion: null, homologacion: null, vouchersAttention: 0 },
+      mercadoPago: { ...NO_SOURCE, status: 'csv_only', lastSyncAt: null, lastErrorKey: null },
+      bank: { ...NO_SOURCE },
+      arcaImports: USED,
+      ...patch,
+    }
+  }
+  const asked = (patch: Partial<IntegrationsStatus> = {}) =>
+    integrationAttention(status(patch)).filter((item) => item.kind === 'mc_prev_month')
+
+  it('un bar que arranca el 12/10 no ve «de septiembre»: esas compras no se pueden cargar', () => {
+    expect(asked({ booksStartDate: '2026-10-12' })).toEqual([])
+    // Arrancando el 1/10, septiembre entero también es de antes.
+    expect(asked({ booksStartDate: '2026-10-01' })).toEqual([])
+  })
+
+  it('en noviembre sí pide octubre, del 11 en adelante y si ningún archivo lo cubre', () => {
+    const november = { today: '2026-11-11', booksStartDate: '2026-10-12' }
+    expect(asked(november)).toEqual([
+      expect.objectContaining({
+        kind: 'mc_prev_month',
+        label: 'Bajá Mis Comprobantes de octubre y subilo: ya están casi todas las facturas.',
+        href: '/importar/arca',
+      }),
+    ])
+    expect(asked({ ...november, today: '2026-11-10' })).toEqual([])
+    expect(asked({ ...november, arcaImports: { ...USED, prevMonthCovered: true } })).toEqual([])
+  })
+
+  it('un bar que arrancó hace meses lo ve igual que siempre', () => {
+    const expected = [
+      {
+        kind: 'mc_prev_month',
+        tone: 'info',
+        label: 'Bajá Mis Comprobantes de septiembre y subilo: ya están casi todas las facturas.',
+        href: '/importar/arca',
+        // El botón dice lo mismo que la pantalla que abre.
+        actionLabel: 'Subir las compras de ARCA',
+        count: null,
+        date: null,
+      },
+    ]
+    expect(asked({ booksStartDate: '2026-06-01' })).toEqual(expected)
+    // Arrancó el último día de septiembre: ese día ya es suyo.
+    expect(asked({ booksStartDate: '2026-09-30' })).toEqual(expected)
+    // Sin la fecha (no vino, o el bar todavía no la cargó) no se saca nada.
+    expect(asked()).toEqual(expected)
+    expect(asked({ booksStartDate: null })).toEqual(expected)
+    // Y lo de siempre sigue valiendo: antes del 11 o con el mes ya cubierto, no se pide.
+    expect(asked({ booksStartDate: '2026-06-01', today: '2026-10-10' })).toEqual([])
+    expect(
+      asked({ booksStartDate: '2026-06-01', arcaImports: { ...USED, prevMonthCovered: true } }),
+    ).toEqual([])
+  })
+
+  it('no toca los demás avisos, y es la misma regla que usa el Resumen', () => {
+    const pending = { ...USED, pendingBatches: 1, pendingBatchId: 'lote-1' }
+    expect(
+      integrationAttention(status({ booksStartDate: '2026-10-12', arcaImports: pending })).map(
+        (item) => item.kind,
+      ),
+    ).toEqual(['import_review'])
+    for (const [today, start] of [
+      ['2026-10-13', '2026-10-12'],
+      ['2026-10-13', '2026-10-01'],
+      ['2026-10-13', '2026-09-30'],
+      ['2026-11-11', '2026-10-12'],
+      ['2027-01-12', '2027-01-02'],
+      ['2027-01-12', '2026-12-31'],
+    ] as const) {
+      expect(asked({ today, booksStartDate: start }).length === 0, `${today} · ${start}`).toBe(
+        previousMonthBeforeBooks(today, start),
+      )
+    }
   })
 })
 
@@ -1758,9 +2032,43 @@ describe('puesta en marcha', () => {
     expect(strip.next[0]).toMatchObject({
       title: 'Cargá lo que hay hoy en cada caja',
       done: false,
-      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar saldos iniciales' },
+      // El mismo nombre que el botón del héroe: una cosa, un nombre.
+      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar lo que hay' },
     })
     expect(strip.next[2]?.detail).toBe('Falta la CUIT y el domicilio fiscal.')
+
+    // Lo que la pantalla ya ofrece en otro lado no se repite en la franja: el héroe pide los
+    // saldos iniciales y «Hoy te toca» tiene la tarjeta del cierre y la del gasto.
+    const hero = heroState(
+      summary({ treasuries: [treasury('caja', 'cash', 0, { lastMovementDate: null })] }),
+      { openingStatus: 'pending' },
+      { canWrite: true, base: BASE },
+    )
+    expect(hero).toMatchObject({ kind: 'unknown', action: { label: 'Cargar lo que hay' } })
+    const today: TodayItem[] = [
+      {
+        id: 'daily_close',
+        title: 'El cierre de ayer',
+        status: '',
+        tone: 'warn',
+        done: false,
+        action: { kind: 'href', href: `${BASE}/ventas/cierre`, label: 'Cargar el cierre' },
+        covers: [],
+      },
+    ]
+    expect(setupNext(strip, { hero, today }).map((s) => s.id)).toEqual([
+      'sas_data',
+      'suppliers_category',
+      'recurring_amounts',
+    ])
+    // Sin nada que lo cubra, es lo mismo que `next`.
+    expect(setupNext(strip)).toEqual(strip.next)
+    // Una tarjeta ya hecha o sin acción (la contadora) no cubre nada.
+    expect(
+      setupNext(strip, { today: [{ ...(today[0] as TodayItem), done: true, action: null }] }).map(
+        (s) => s.id,
+      ),
+    ).toEqual(['opening', 'first_close', 'sas_data'])
 
     const step = (id: string) => strip.steps.find((s) => s.id === id)
     expect(step('first_expense')).toMatchObject({ done: true, detail: null })
@@ -1772,7 +2080,8 @@ describe('puesta en marcha', () => {
     expect(step('recurring_amounts')).toMatchObject({
       done: false,
       detail: '31 de 31 no tienen monto: sin eso no sabés cuánto te falta pagar.',
-      action: { href: `${BASE}/gastos-fijos` },
+      // «Completar la planilla»: todos de corrido, no la planilla del mes.
+      action: { href: `${BASE}/gastos-fijos/completar`, label: 'Completar los montos' },
     })
     expect(step('mp_connect')?.optional).toBe(true)
     // Lo que pasa afuera de la plataforma lleva a la guía.

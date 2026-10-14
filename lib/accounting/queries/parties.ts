@@ -369,7 +369,11 @@ export async function listPartyBalances(
   return raw.map(parseBalance)
 }
 
-function matchesFilter(row: PartyListRow, filter: PartyListFilter): boolean {
+/**
+ * ¿La fila entra en un filtro de saldos de la lista? Exportado para que la
+ * libreta de proveedores cuente cada píldora con la MISMA regla que filtra.
+ */
+export function matchesPartyFilter(row: PartyListRow, filter: PartyListFilter): boolean {
   switch (filter) {
     case 'with_debt':
       return row.debtCents > 0
@@ -388,7 +392,8 @@ function matchesFilter(row: PartyListRow, filter: PartyListFilter): boolean {
   }
 }
 
-function matchesQuery(row: PartyListRow, q: string): boolean {
+/** ¿La fila coincide con lo buscado (nombre, fantasía o tres dígitos del CUIT en adelante)? */
+export function matchesPartyQuery(row: PartyListRow, q: string): boolean {
   const key = searchKey(q)
   if (!key) return true
   if (searchKey(row.partyName).includes(key)) return true
@@ -432,7 +437,7 @@ export async function listParties(
   const filter = params.filter ?? 'all'
   const q = params.q?.trim() ?? ''
   const rows = all
-    .filter((row) => matchesFilter(row, filter) && matchesQuery(row, q))
+    .filter((row) => matchesPartyFilter(row, filter) && matchesPartyQuery(row, q))
     .sort(
       (a, b) =>
         b.overdueCents - a.overdueCents ||

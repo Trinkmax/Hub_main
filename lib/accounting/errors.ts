@@ -337,7 +337,7 @@ export const ACC_ERRORS = {
   opening_pending: {
     code: 'conflict',
     message:
-      'Antes de cerrar el primer mes, cargá los saldos iniciales o elegí «Arrancar en cero».',
+      'Antes de cerrar el primer mes, cargá los saldos iniciales o tocá «No tengo los números: arrancar todo en cero».',
   },
 
   // ─── Estructura del bundle (errores de programación) ─────────────────────
@@ -561,7 +561,7 @@ export const ACC_ERRORS = {
   same_treasury: { code: 'invalid', message: 'Elegí dos cuentas distintas.' },
   stale_balance: {
     code: 'stale',
-    message: 'El saldo cambió mientras ajustabas. Revisá el número de nuevo.',
+    message: 'El saldo cambió mientras contabas. Revisá el número de nuevo.',
   },
   balance_check_mismatch: {
     code: 'invalid',
@@ -569,7 +569,7 @@ export const ACC_ERRORS = {
   },
   difference_requires_adjustment: {
     code: 'invalid',
-    message: 'Hay diferencia: registrala con «Ajustar saldo».',
+    message: 'Lo que contaste no coincide con el sistema: guardalo como diferencia.',
   },
   adjustment_account_invalid: {
     code: 'invalid',
@@ -685,8 +685,8 @@ export const ACC_ERRORS = {
   },
   iva_settlement_exists: {
     code: 'conflict',
-    message: 'La liquidación de IVA de {mes} ya está registrada.',
-    fallback: 'La liquidación de IVA de ese mes ya está registrada.',
+    message: 'El IVA de {mes} ya está anotado.',
+    fallback: 'El IVA de ese mes ya está anotado.',
   },
   fiscal_year_closed: {
     code: 'conflict',
@@ -876,12 +876,12 @@ export const ACC_ERRORS = {
   import_proposal_posted: {
     code: 'conflict',
     message:
-      'Eso ya quedó contabilizado: no se puede cambiar desde la importación. Recargá la página.',
+      'Eso ya quedó cargado en los libros: no se puede cambiar desde la revisión del archivo. Recargá la página.',
   },
   import_document_mismatch: {
     code: 'error',
     message:
-      'No pudimos vincular el comprobante con la importación. Recargá la página; si sigue, avisanos.',
+      'No pudimos unir el comprobante con el archivo que subiste. Recargá la página; si sigue, avisanos.',
     bug: true,
   },
   // Deshacer una anulación (o una «Anulación con fecha de hoy») de algo que ya
@@ -889,12 +889,12 @@ export const ACC_ERRORS = {
   import_reposted: {
     code: 'conflict',
     message:
-      'Ese comprobante ya se volvió a cargar desde la importación: si deshacés la anulación quedaría dos veces. Anulá primero el que se cargó de nuevo.',
+      'Ese comprobante ya se volvió a cargar desde un archivo que subiste: si deshacés la anulación quedaría dos veces. Anulá primero el que se cargó de nuevo.',
   },
   mp_not_connected: {
     code: 'conflict',
     message:
-      'Mercado Pago no está conectado. Conectalo en Ajustes › Mercado Pago o importá el reporte a mano.',
+      'Mercado Pago no está conectado. Conectalo en Importar › Mercado Pago o subí el reporte a mano.',
   },
   // La clave del servidor no abre lo guardado (cambió o se rotó mal): lo arregla soporte.
   secret_unreadable: {
@@ -1454,9 +1454,9 @@ export function warningCopyWith(
 /** Los avisos del cierre de mes (checklist, C.5.1 paso 4 y F.13). */
 export const CLOSE_WARNING_COPY: Readonly<Record<CloseWarningKey, string>> = {
   missing_daily_closes: 'Faltan cierres del día en el mes.',
-  receivables_overdue: 'Hay acreditaciones de tarjetas, billeteras o plataformas atrasadas.',
+  receivables_overdue: 'Hay plata en camino atrasada (tarjetas, billeteras o apps).',
   treasury_negative: 'Hay cajas de efectivo en negativo al último día del mes.',
-  treasuries_not_reconciled: 'Hay cajas o cuentas sin «Ajustar saldo» en el mes.',
+  treasuries_not_reconciled: 'Hay cajas o cuentas sin contar en el mes.',
   vat_pending_documentation:
     'Hay IVA de comisiones a documentar con más de 45 días: falta la factura.',
   recurring_not_loaded: 'Hay gastos fijos del mes sin cargar.',

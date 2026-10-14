@@ -14,6 +14,8 @@ import { pct, percentLabel } from './scale'
  *   el riel se llena y el `aria-label` dice por cuánto se pasó.
  * - Es una figura, no un gráfico con marcas: no lleva globito. El número va al
  *   lado, escrito por la pantalla.
+ * - Con cero de avance el riel va en CONTORNO (sin relleno): un riel teñido
+ *   de punta a punta se leía como una barra llena cuando no se pagó nada.
  * - Sin total (cero o negativo) no hay avance que medir: queda el riel
  *   punteado y, si llega, el `emptyHint`.
  */
@@ -121,7 +123,11 @@ export function Meter({
     >
       <div
         className="absolute inset-0 overflow-hidden rounded-full"
-        style={{ backgroundColor: track(color) }}
+        style={
+          value > 0
+            ? { backgroundColor: track(color) }
+            : { boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, transparent)` }
+        }
       >
         {value > 0 ? (
           <div

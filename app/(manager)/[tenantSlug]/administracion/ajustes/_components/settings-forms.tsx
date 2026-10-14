@@ -1,30 +1,28 @@
 'use client'
 
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { ChevronRight, Lock } from 'lucide-react'
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type ChoiceChip, ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { DateField } from '@/components/administracion/date-input'
+import { Panel } from '@/components/administracion/kit/panel'
+import { PaperSheet } from '@/components/administracion/kit/paper'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { MoneyField } from '@/components/administracion/money-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import type { AccFailureState } from '@/lib/accounting/action-state'
 import { saveSettings } from '@/lib/accounting/actions/master'
 import type { AccountingSettings } from '@/lib/accounting/queries/settings'
+import { BOOKS_START_MAX_DAYS_BACK } from '@/lib/accounting/schemas'
 import type { SasIvaCondition } from '@/lib/accounting/types'
-import { addDays, formatIsoDay } from '@/lib/dates'
+import { addDays, capitalizeFirst, formatIsoDay, MONTH_NAMES, MONTH_NAMES_SHORT } from '@/lib/dates'
 import { formatCuit, normalizeCuit } from '@/lib/fiscal'
 import { cn } from '@/lib/utils'
 import {
   CLOSED_PERIOD_VOID_LABELS,
-  FISCAL_END_MONTH_OPTIONS,
   IIBB_REGIME_LABELS,
+  monthTitle,
   SAS_IVA_CONDITION_LABELS,
   UNINVOICED_SALES_LABELS,
 } from '../_lib/labels'
@@ -32,12 +30,16 @@ import { bpToPercentInput, parsePercentToBp } from '../_lib/percent'
 import { settingsPayload } from '../_lib/settings-payload'
 import { Callout, describedBy, Field } from './form-bits'
 import { CuitInput, cuitIssue, INPUT_CLASS, PercentInput, SwitchRow } from './inputs'
+import { firstYearSentence } from './settings-views'
 import { useMasterAction } from './use-master-action'
 
 const LOCKED_BY_DOCUMENTS =
   'Ya hay comprobantes cargados: este dato no se puede cambiar. Hablalo con la contadora.'
 const LOCKED_BY_CLOSES =
   'Ya hay meses cerrados o comprobantes: el cierre del ejercicio no se cambia desde acá.'
+/** La fecha de arranque trabada dice por qué, y qué significa (es el piso de toda carga). */
+const BOOKS_START_LOCKED =
+  'Ya hay comprobantes cargados: la fecha de arranque no se puede cambiar desde acá. Todo lo anterior a ese día no se carga.'
 
 /** Errores de `saveSettings` → campos (los de la base sin campo van arriba de los botones). */
 function failureErrors(state: AccFailureState): Record<string, string> {
@@ -64,11 +66,22 @@ function SaveBar({ pending, message }: { pending: boolean; message: string | nul
   return (
     <>
       {message ? <Callout tone="error">{message}</Callout> : null}
-      <div className="flex justify-end">
-        <Button type="submit" className="h-11 min-w-[160px] md:h-9" disabled={pending}>
-          {pending ? 'Guardando…' : 'Guardar cambios'}
-        </Button>
-      </div>
+      <Button type="submit" className="h-11 w-full min-w-[180px] sm:w-auto" disabled={pending}>
+        {pending ? 'Guardando…' : 'Guardar cambios'}
+      </Button>
+    </>
+  )
+}
+
+/** Un dato que ya no se puede cambiar: el valor, un candado y por qué. */
+function Locked({ value, reason }: { value: ReactNode; reason: string }) {
+  return (
+    <>
+      <p className="flex items-center gap-1.5 text-sm font-medium">
+        <Lock aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        {value}
+      </p>
+      <p className="text-xs text-muted-foreground text-pretty">{reason}</p>
     </>
   )
 }
@@ -84,15 +97,32 @@ const IIBB_OPTIONS: readonly ChoiceChip<IibbRegime>[] = (
   Object.keys(IIBB_REGIME_LABELS) as IibbRegime[]
 ).map((value) => ({ value, label: IIBB_REGIME_LABELS[value] }))
 
-/** Ajustes › Datos de la SAS (H.17): los del paso 1 del asistente; lo bloqueado dice por qué. */
+/** Los doce meses como chips cortos («Dic»); el nombre entero va para lectores. */
+const END_MONTH_OPTIONS: readonly ChoiceChip<string>[] = MONTH_NAMES.map((name, index) => ({
+  value: String(index + 1),
+  label: capitalizeFirst(MONTH_NAMES_SHORT[index] ?? name),
+  ariaLabel: capitalizeFirst(name),
+}))
+
+/**
+ * Ajustes › Datos de la SAS: la constancia de inscripción. Los datos van en el
+ * orden del papel, con la CUIT arriba y grande; lo que falta se nota (el
+ * casillero punteado), y lo que ya no se puede cambiar dice por qué.
+ *
+ * Un solo formulario, el mismo envío de siempre: `settingsPayload` con las
+ * mismas nueve claves; lo bloqueado viaja con el valor guardado.
+ */
 export function SasSettingsForm({
   tenantSlug,
   settings,
   today,
+  how,
 }: {
   tenantSlug: string
   settings: AccountingSettings
   today: string
+  /** «¿De dónde saco estos datos?»: los pasos de la guía «Cómo arrancar» (una sola redacción). */
+  how: readonly string[]
 }) {
   const [legalName, setLegalName] = useState(settings.legalName)
   const [cuit, setCuit] = useState(settings.cuit ? formatCuit(settings.cuit) : '')
@@ -110,6 +140,7 @@ export function SasSettingsForm({
   const docsLocked = settings.hasDocuments
   const endLocked = settings.hasDocuments || settings.hasClosedPeriods
   const err = (k: string) => errors[k] ?? null
+  const cuitEmpty = cuit.trim() === ''
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -139,177 +170,244 @@ export function SasSettingsForm({
     )
   }
 
+  const firstYear = firstYearSentence({
+    booksStartDate: docsLocked ? settings.booksStartDate : (booksStart ?? settings.booksStartDate),
+    fiscalYearEndMonth: endLocked ? settings.fiscalYearEndMonth : endMonth,
+  })
+
   return (
     <form
       ref={formRef}
       onSubmit={submit}
       noValidate
-      className="card-hairline space-y-5 rounded-xl border bg-card p-6"
+      className="grid gap-6 lg:grid-cols-12 lg:items-start"
     >
-      <Field id="aj-legal-name" label="Razón social" required error={err('legalName')}>
-        <Input
-          id="aj-legal-name"
-          value={legalName}
-          maxLength={160}
-          aria-invalid={err('legalName') ? true : undefined}
-          aria-describedby={describedBy('aj-legal-name', null, err('legalName'))}
-          onChange={(e) => setLegalName(e.target.value)}
-          className={INPUT_CLASS}
-        />
-      </Field>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field
-          id="aj-cuit"
-          label="CUIT"
-          optional
-          hint={settings.cuit ? undefined : 'Lo necesitan los libros de IVA.'}
-          error={err('cuit')}
-        >
-          <CuitInput
-            id="aj-cuit"
-            value={cuit}
-            invalid={Boolean(err('cuit'))}
-            describedBy={describedBy('aj-cuit', !settings.cuit, err('cuit'))}
-            onChange={setCuit}
-            onBlurCheck={(issue) =>
-              setErrors((prev) => {
-                const { cuit: _cuit, ...rest } = prev
-                return issue ? { ...rest, cuit: issue } : rest
-              })
-            }
-          />
-        </Field>
-        <Field id="aj-address" label="Domicilio fiscal" optional error={err('fiscalAddress')}>
-          <Input
-            id="aj-address"
-            value={address}
-            maxLength={200}
-            aria-invalid={err('fiscalAddress') ? true : undefined}
-            onChange={(e) => setAddress(e.target.value)}
-            className={INPUT_CLASS}
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-1.5">
-        <Label id="aj-iva-label">Condición frente al IVA</Label>
-        {docsLocked ? (
-          <>
-            <p className="text-sm">{SAS_IVA_CONDITION_LABELS[settings.ivaCondition]}</p>
-            <p className="text-xs text-muted-foreground">{LOCKED_BY_DOCUMENTS}</p>
-          </>
-        ) : (
-          <ChoiceChips
-            options={IVA_OPTIONS}
-            value={ivaCondition}
-            labelledBy="aj-iva-label"
-            onChange={setIvaCondition}
-          />
-        )}
-        {err('ivaCondition') ? (
-          <p role="alert" className="text-xs text-destructive">
-            {err('ivaCondition')}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-start">
-        <div className="grid gap-1.5">
-          <Label id="aj-iibb-label">Ingresos Brutos</Label>
-          <ChoiceChips
-            options={IIBB_OPTIONS}
-            value={iibbRegime}
-            labelledBy="aj-iibb-label"
-            onChange={setIibbRegime}
-          />
-        </div>
-        <Field id="aj-iibb-number" label="N° de inscripción" optional error={err('iibbNumber')}>
-          <Input
-            id="aj-iibb-number"
-            value={iibbNumber}
-            maxLength={30}
-            inputMode="numeric"
-            aria-invalid={err('iibbNumber') ? true : undefined}
-            onChange={(e) => setIibbNumber(e.target.value)}
-            className={INPUT_CLASS}
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <DateField
-          id="aj-activity-start"
-          label="Inicio de actividades"
-          optional
-          shortcuts={false}
-          max={today}
-          value={activityStart}
-          error={err('activityStartDate')}
-          onValueChange={setActivityStart}
-        />
-        {docsLocked ? (
-          <div className="grid content-start gap-1.5">
-            <Label>Los libros arrancan el</Label>
-            <p className="text-sm tabular-nums">{formatIsoDay(settings.booksStartDate)}</p>
-            <p className="text-xs text-muted-foreground">{LOCKED_BY_DOCUMENTS}</p>
-          </div>
-        ) : (
-          <DateField
-            id="aj-books-start"
-            label="Los libros arrancan el"
-            required
-            shortcuts={false}
-            min={addDays(today, -400)}
-            max={today}
-            value={booksStart}
-            hint="Es el día del asiento de apertura."
-            error={err('booksStartDate')}
-            onValueChange={setBooksStart}
-          />
-        )}
-      </div>
-
-      <div className="grid gap-1.5">
-        <Label htmlFor="aj-fy-end">Cierre del ejercicio</Label>
-        {endLocked ? (
-          <>
-            <p className="text-sm">
-              {FISCAL_END_MONTH_OPTIONS.find((m) => m.value === settings.fiscalYearEndMonth)
-                ?.label ?? '—'}
-            </p>
-            <p className="text-xs text-muted-foreground">{LOCKED_BY_CLOSES}</p>
-          </>
-        ) : (
-          <Select value={String(endMonth)} onValueChange={(value) => setEndMonth(Number(value))}>
-            <SelectTrigger
-              id="aj-fy-end"
-              className="w-full sm:max-w-xs data-[size=default]:h-11 md:data-[size=default]:h-10"
+      <PaperSheet title="Datos de la SAS" aside="como en la constancia" className="lg:col-span-7">
+        <div className="grid gap-5">
+          {/* La CUIT, arriba y grande, como en el papel. Si falta, el casillero lo dice. */}
+          <div className="grid gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="aj-cuit">CUIT</Label>
+              {cuitEmpty ? <StatusPill tone="warn">Falta</StatusPill> : null}
+            </div>
+            <div
+              className={cn(
+                '[&_input]:h-14 [&_input]:font-mono [&_input]:text-2xl [&_input]:font-semibold [&_input]:tracking-tight md:[&_input]:h-14 md:[&_input]:text-2xl',
+                cuitEmpty &&
+                  '[&_input]:border-dashed [&_input]:border-warning [&_input]:bg-warning/8',
+              )}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FISCAL_END_MONTH_OPTIONS.map((m) => (
-                <SelectItem key={m.value} value={String(m.value)}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        {err('fiscalYearEndMonth') ? (
-          <p role="alert" className="text-xs text-destructive">
-            {err('fiscalYearEndMonth')}
-          </p>
-        ) : null}
-      </div>
+              <CuitInput
+                id="aj-cuit"
+                value={cuit}
+                invalid={Boolean(err('cuit'))}
+                describedBy={describedBy('aj-cuit', cuitEmpty, err('cuit'))}
+                onChange={setCuit}
+                onBlurCheck={(issue) =>
+                  setErrors((prev) => {
+                    const { cuit: _cuit, ...rest } = prev
+                    return issue ? { ...rest, cuit: issue } : rest
+                  })
+                }
+              />
+            </div>
+            {cuitEmpty ? (
+              <p id="aj-cuit-hint" className="text-xs text-muted-foreground text-pretty">
+                La piden los libros de IVA, ARCA y los importadores.
+              </p>
+            ) : null}
+            {err('cuit') ? (
+              <p id="aj-cuit-error" role="alert" className="text-xs text-destructive">
+                {err('cuit')}
+              </p>
+            ) : null}
+          </div>
 
-      <SaveBar pending={pending} message={err('form')} />
+          <Field id="aj-legal-name" label="Razón social" required error={err('legalName')}>
+            <Input
+              id="aj-legal-name"
+              value={legalName}
+              maxLength={160}
+              aria-invalid={err('legalName') ? true : undefined}
+              aria-describedby={describedBy('aj-legal-name', null, err('legalName'))}
+              onChange={(e) => setLegalName(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field id="aj-address" label="Domicilio fiscal" optional error={err('fiscalAddress')}>
+            <Input
+              id="aj-address"
+              value={address}
+              maxLength={200}
+              aria-invalid={err('fiscalAddress') ? true : undefined}
+              onChange={(e) => setAddress(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <div className="grid gap-1.5 sm:max-w-xs">
+            <DateField
+              id="aj-activity-start"
+              label="Inicio de actividades"
+              optional
+              shortcuts={false}
+              max={today}
+              value={activityStart}
+              error={err('activityStartDate')}
+              onValueChange={setActivityStart}
+            />
+            {activityStart ? null : (
+              <div>
+                <StatusPill tone="info">Sin cargar</StatusPill>
+              </div>
+            )}
+          </div>
+
+          <fieldset className="m-0 grid min-w-0 gap-5 border-0 border-t border-border p-0 pt-4">
+            <legend className="sr-only">Impuestos</legend>
+            <p
+              aria-hidden
+              className="font-mono text-[11px] font-semibold tracking-[0.16em] uppercase"
+            >
+              Impuestos
+            </p>
+            <div className="grid gap-1.5">
+              <Label id="aj-iva-label">IVA</Label>
+              {docsLocked ? (
+                <Locked
+                  value={SAS_IVA_CONDITION_LABELS[settings.ivaCondition]}
+                  reason={LOCKED_BY_DOCUMENTS}
+                />
+              ) : (
+                <ChoiceChips
+                  options={IVA_OPTIONS}
+                  value={ivaCondition}
+                  labelledBy="aj-iva-label"
+                  onChange={setIvaCondition}
+                />
+              )}
+              {err('ivaCondition') ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {err('ivaCondition')}
+                </p>
+              ) : null}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-start">
+              <div className="grid gap-1.5">
+                <Label id="aj-iibb-label">Ingresos Brutos</Label>
+                <ChoiceChips
+                  options={IIBB_OPTIONS}
+                  value={iibbRegime}
+                  labelledBy="aj-iibb-label"
+                  onChange={setIibbRegime}
+                />
+              </div>
+              <Field
+                id="aj-iibb-number"
+                label="N.º de inscripción"
+                optional
+                error={err('iibbNumber')}
+              >
+                <Input
+                  id="aj-iibb-number"
+                  value={iibbNumber}
+                  maxLength={30}
+                  inputMode="numeric"
+                  aria-invalid={err('iibbNumber') ? true : undefined}
+                  onChange={(e) => setIibbNumber(e.target.value)}
+                  className={cn(INPUT_CLASS, 'tabular-nums')}
+                />
+              </Field>
+            </div>
+          </fieldset>
+        </div>
+      </PaperSheet>
+
+      <div className="grid gap-6 lg:col-span-5">
+        <Panel title="Los libros" description={firstYear}>
+          <div className="grid gap-5">
+            {docsLocked ? (
+              <div className="grid content-start gap-1.5">
+                <Label>Cargás desde el</Label>
+                <Locked
+                  value={
+                    <span className="tabular-nums">{formatIsoDay(settings.booksStartDate)}</span>
+                  }
+                  reason={BOOKS_START_LOCKED}
+                />
+              </div>
+            ) : (
+              <DateField
+                id="aj-books-start"
+                label="Cargás desde el"
+                required
+                shortcuts={false}
+                min={addDays(today, -BOOKS_START_MAX_DAYS_BACK)}
+                max={today}
+                value={booksStart}
+                hint="Todo lo anterior a ese día no se carga acá: lo de antes entra como saldos iniciales."
+                error={err('booksStartDate')}
+                onValueChange={setBooksStart}
+              />
+            )}
+
+            <div className="grid gap-1.5">
+              <Label id="aj-fy-end-label">El ejercicio cierra en</Label>
+              {endLocked ? (
+                <Locked value={monthTitle(settings.fiscalYearEndMonth)} reason={LOCKED_BY_CLOSES} />
+              ) : (
+                <ChoiceChips
+                  options={END_MONTH_OPTIONS}
+                  value={String(endMonth)}
+                  labelledBy="aj-fy-end-label"
+                  onChange={(value) => setEndMonth(Number(value))}
+                  className="grid grid-cols-4 gap-2 [&>button]:justify-center [&>button]:px-0"
+                />
+              )}
+              {err('fiscalYearEndMonth') ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {err('fiscalYearEndMonth')}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </Panel>
+
+        {how.length > 0 ? (
+          <details className="group/how rounded-2xl bg-secondary/50">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-2xl px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                aria-hidden
+                className="size-4 text-muted-foreground transition-transform group-open/how:rotate-90 motion-reduce:transition-none"
+              />
+              ¿De dónde saco estos datos?
+            </summary>
+            <ol className="grid gap-2.5 px-4 pb-4 text-sm text-muted-foreground">
+              {how.map((step, index) => (
+                <li key={step} className="flex gap-2.5">
+                  <span
+                    aria-hidden
+                    className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-card text-[11px] font-semibold text-foreground tabular-nums"
+                  >
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 text-pretty">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        ) : null}
+
+        <div className="grid gap-3 sm:justify-items-end">
+          <SaveBar pending={pending} message={err('form')} />
+        </div>
+      </div>
     </form>
   )
 }
 
-// ─── Ejercicio y meses ───────────────────────────────────────────────────────
+// ─── Ejercicio ───────────────────────────────────────────────────────────────
 
 type UninvoicedMode = AccountingSettings['uninvoicedSalesMode']
 type VoidMode = AccountingSettings['closedPeriodVoidIvaMode']
@@ -322,7 +420,25 @@ const VOID_OPTIONS: readonly ChoiceChip<VoidMode>[] = (
   Object.keys(CLOSED_PERIOD_VOID_LABELS) as VoidMode[]
 ).map((value) => ({ value, label: CLOSED_PERIOD_VOID_LABELS[value] }))
 
-/** Ajustes › Ejercicio y meses (H.17): cómo se liquida y se cierra cada mes. */
+/** Los campos del grupo plegado: un error en uno de ellos lo abre. */
+const RULE_FIELDS: ReadonlySet<string> = new Set([
+  'ivaSettlementMode',
+  'vatToleranceCents',
+  'bankTaxCreditComputableBp',
+  'bankTaxDebitComputableBp',
+  'uninvoicedSalesMode',
+  'closedPeriodVoidIvaMode',
+])
+
+const RULES_ANCHOR = 'reglas'
+
+/**
+ * Ajustes › Ejercicio: un solo formulario (el mismo envío, las mismas nueve
+ * claves) en dos grupos. Arriba, lo que sí es del dueño: con cuánta
+ * anticipación se le avisa que algo vence y qué día vence cada impuesto.
+ * Plegadas, las reglas contables, que define la contadora. Los campos del
+ * grupo plegado son estado de React: viajan igual aunque esté cerrado.
+ */
 export function PeriodSettingsForm({
   tenantSlug,
   settings,
@@ -340,9 +456,28 @@ export function PeriodSettingsForm({
   const [ivaDueDay, setIvaDueDay] = useState(String(settings.ivaDueDay || ''))
   const [iibbDueDay, setIibbDueDay] = useState(String(settings.iibbDueDay || ''))
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [rulesOpen, setRulesOpen] = useState(false)
   const { pending, run } = useMasterAction()
   const formRef = useFocusFirstError(errors)
   const err = (k: string) => errors[k] ?? null
+
+  // Con `#reglas` en la URL (el link del cajón de la contadora) se abre sola.
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === `#${RULES_ANCHOR}`) {
+        setRulesOpen(true)
+        document.getElementById(RULES_ANCHOR)?.scrollIntoView({ block: 'start' })
+      }
+    }
+    open()
+    window.addEventListener('hashchange', open)
+    return () => window.removeEventListener('hashchange', open)
+  }, [])
+
+  const showErrors = (next: Record<string, string>) => {
+    if (Object.keys(next).some((field) => RULE_FIELDS.has(field))) setRulesOpen(true)
+    setErrors(next)
+  }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -355,7 +490,7 @@ export function PeriodSettingsForm({
     else if (debit.bp === null) local.bankTaxDebitComputableBp = 'Escribí el porcentaje.'
     if (tolerance === null) local.vatToleranceCents = 'Escribí la tolerancia (de $ 0 a $ 1).'
     if (Object.keys(local).length > 0) {
-      setErrors(local)
+      showErrors(local)
       return
     }
     setErrors({})
@@ -375,7 +510,7 @@ export function PeriodSettingsForm({
             iibbDueDay,
           }),
         ),
-      { onFailure: (state) => setErrors(failureErrors(state)) },
+      { onFailure: (state) => showErrors(failureErrors(state)) },
     )
   }
 
@@ -399,119 +534,150 @@ export function PeriodSettingsForm({
   )
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={submit}
-      noValidate
-      className="card-hairline space-y-5 rounded-xl border bg-card p-6"
-    >
-      <SwitchRow
-        id="aj-iva-close"
-        label="Liquidar el IVA al cerrar cada mes"
-        description="Arma el asiento que deja el IVA del mes listo para pagar. Si la contadora prefiere hacerlo ella, apagalo."
-        checked={ivaOnClose}
-        onCheckedChange={setIvaOnClose}
-      />
+    <form ref={formRef} onSubmit={submit} noValidate className="space-y-4">
+      <Panel
+        title="Avisos y vencimientos"
+        description="Con esto te avisamos a tiempo qué hay que pagar."
+      >
+        <div className="grid gap-5 sm:grid-cols-3">
+          <Field
+            id="aj-soon"
+            label="¿Con cuántos días de anticipación te avisamos que algo vence?"
+            hint="De 1 a 30."
+            error={err('dueSoonDays')}
+            className="sm:col-span-3"
+          >
+            {numberInput('aj-soon', soonDays, setSoonDays, 'dueSoonDays', 30)}
+          </Field>
+          <Field
+            id="aj-iva-due"
+            label="El IVA vence el día"
+            hint="Del mes, de 1 a 28."
+            error={err('ivaDueDay')}
+          >
+            {numberInput('aj-iva-due', ivaDueDay, setIvaDueDay, 'ivaDueDay', 28)}
+          </Field>
+          <Field
+            id="aj-iibb-due"
+            label="Ingresos Brutos vence el día"
+            hint="Del mes, de 1 a 28."
+            error={err('iibbDueDay')}
+            className="sm:col-span-2"
+          >
+            {numberInput('aj-iibb-due', iibbDueDay, setIibbDueDay, 'iibbDueDay', 28)}
+          </Field>
+        </div>
+      </Panel>
 
-      <MoneyField
-        id="aj-tolerance"
-        label="Tolerancia del IVA"
-        value={tolerance}
-        maxCents={100}
-        hint="La diferencia de redondeo que se acepta entre el IVA de una factura y el calculado: de $ 0 a $ 1."
-        error={err('vatToleranceCents')}
-        onValueChange={(cents) => setTolerance(cents)}
-        fieldClassName="sm:max-w-xs"
-      />
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field
-          id="aj-bank-credit"
-          label="Impuesto al cheque · créditos"
-          hint="% computable en Ganancias."
-          error={err('bankTaxCreditComputableBp')}
-        >
-          <PercentInput
-            id="aj-bank-credit"
-            value={creditPct}
-            onChange={setCreditPct}
-            invalid={Boolean(err('bankTaxCreditComputableBp'))}
-            describedBy={describedBy('aj-bank-credit', true, err('bankTaxCreditComputableBp'))}
-            className="sm:max-w-[10rem]"
+      <details
+        id={RULES_ANCHOR}
+        open={rulesOpen}
+        onToggle={(e) => setRulesOpen(e.currentTarget.open)}
+        className="group/rules scroll-mt-28 rounded-2xl bg-secondary/50"
+      >
+        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground transition-transform group-open/rules:rotate-90 motion-reduce:transition-none"
           />
-        </Field>
-        <Field
-          id="aj-bank-debit"
-          label="Impuesto al cheque · débitos"
-          hint="% computable en Ganancias."
-          error={err('bankTaxDebitComputableBp')}
-        >
-          <PercentInput
-            id="aj-bank-debit"
-            value={debitPct}
-            onChange={setDebitPct}
-            invalid={Boolean(err('bankTaxDebitComputableBp'))}
-            describedBy={describedBy('aj-bank-debit', true, err('bankTaxDebitComputableBp'))}
-            className="sm:max-w-[10rem]"
+          <span className="min-w-0 text-pretty">
+            Reglas contables{' '}
+            <span className="font-normal text-muted-foreground">(las define la contadora)</span>
+          </span>
+        </summary>
+        <div className="grid gap-5 px-4 pb-4">
+          <SwitchRow
+            id="aj-iva-close"
+            label="Liquidar el IVA al cerrar cada mes"
+            description="Arma el asiento que deja el IVA del mes listo para pagar. Si la contadora prefiere hacerlo ella, apagalo."
+            checked={ivaOnClose}
+            onCheckedChange={setIvaOnClose}
+            className="bg-card"
           />
-        </Field>
-      </div>
-      <p className="-mt-2 text-xs text-muted-foreground text-pretty">
-        Confirmalo con la contadora: 33&nbsp;% por defecto; 100&nbsp;% si la SAS es micro o pequeña
-        MiPyME (Ley&nbsp;25.413).
-      </p>
 
-      <div className="grid gap-1.5">
-        <Label id="aj-uninvoiced-label">Ventas sin factura</Label>
-        <ChoiceChips
-          options={UNINVOICED_OPTIONS}
-          value={uninvoiced}
-          labelledBy="aj-uninvoiced-label"
-          onChange={setUninvoiced}
-        />
-        <p className="text-xs text-muted-foreground">
-          Cómo las registra la contabilidad. Lo define la contadora.
-        </p>
-      </div>
+          <MoneyField
+            id="aj-tolerance"
+            label="Tolerancia del IVA"
+            value={tolerance}
+            maxCents={100}
+            hint="La diferencia de redondeo que se acepta entre el IVA de una factura y el calculado: de $ 0 a $ 1."
+            error={err('vatToleranceCents')}
+            onValueChange={(cents) => setTolerance(cents)}
+            fieldClassName="sm:max-w-xs"
+          />
 
-      <div className="grid gap-1.5">
-        <Label id="aj-void-label">Anulaciones de meses cerrados en el Libro&nbsp;IVA</Label>
-        <ChoiceChips
-          options={VOID_OPTIONS}
-          value={voidMode}
-          labelledBy="aj-void-label"
-          onChange={setVoidMode}
-        />
-      </div>
+          <div className="grid gap-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                id="aj-bank-credit"
+                label="Impuesto al cheque · créditos"
+                hint="% computable en Ganancias."
+                error={err('bankTaxCreditComputableBp')}
+              >
+                <PercentInput
+                  id="aj-bank-credit"
+                  value={creditPct}
+                  onChange={setCreditPct}
+                  invalid={Boolean(err('bankTaxCreditComputableBp'))}
+                  describedBy={describedBy(
+                    'aj-bank-credit',
+                    true,
+                    err('bankTaxCreditComputableBp'),
+                  )}
+                  className="sm:max-w-[10rem]"
+                />
+              </Field>
+              <Field
+                id="aj-bank-debit"
+                label="Impuesto al cheque · débitos"
+                hint="% computable en Ganancias."
+                error={err('bankTaxDebitComputableBp')}
+              >
+                <PercentInput
+                  id="aj-bank-debit"
+                  value={debitPct}
+                  onChange={setDebitPct}
+                  invalid={Boolean(err('bankTaxDebitComputableBp'))}
+                  describedBy={describedBy('aj-bank-debit', true, err('bankTaxDebitComputableBp'))}
+                  className="sm:max-w-[10rem]"
+                />
+              </Field>
+            </div>
+            <p className="text-xs text-muted-foreground text-pretty">
+              Confirmalo con la contadora: 33&nbsp;% por defecto; 100&nbsp;% si la SAS es micro o
+              pequeña MiPyME (Ley&nbsp;25.413).
+            </p>
+          </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field
-          id="aj-soon"
-          label="Días de «vence pronto»"
-          hint="De 1 a 30."
-          error={err('dueSoonDays')}
-        >
-          {numberInput('aj-soon', soonDays, setSoonDays, 'dueSoonDays', 30)}
-        </Field>
-        <Field
-          id="aj-iva-due"
-          label="Vencimiento del IVA"
-          hint="Día del mes, de 1 a 28."
-          error={err('ivaDueDay')}
-        >
-          {numberInput('aj-iva-due', ivaDueDay, setIvaDueDay, 'ivaDueDay', 28)}
-        </Field>
-        <Field
-          id="aj-iibb-due"
-          label="Vencimiento de IIBB"
-          hint="Día del mes, de 1 a 28."
-          error={err('iibbDueDay')}
-        >
-          {numberInput('aj-iibb-due', iibbDueDay, setIibbDueDay, 'iibbDueDay', 28)}
-        </Field>
-      </div>
+          <div className="grid gap-1.5">
+            <Label id="aj-uninvoiced-label">Ventas sin factura</Label>
+            <p className="text-xs text-muted-foreground text-pretty">
+              Cómo se anotan en los libros las ventas del cierre que no tienen factura. Con las dos
+              opciones quedan registradas igual; cambia solo en qué cuenta.
+            </p>
+            <ChoiceChips
+              options={UNINVOICED_OPTIONS}
+              value={uninvoiced}
+              labelledBy="aj-uninvoiced-label"
+              onChange={setUninvoiced}
+            />
+          </div>
 
-      <SaveBar pending={pending} message={err('form')} />
+          <div className="grid gap-1.5">
+            <Label id="aj-void-label">Anulaciones de meses cerrados en el Libro&nbsp;IVA</Label>
+            <ChoiceChips
+              options={VOID_OPTIONS}
+              value={voidMode}
+              labelledBy="aj-void-label"
+              onChange={setVoidMode}
+            />
+          </div>
+        </div>
+      </details>
+
+      <div className="grid gap-3 sm:justify-items-end">
+        <SaveBar pending={pending} message={err('form')} />
+      </div>
     </form>
   )
 }

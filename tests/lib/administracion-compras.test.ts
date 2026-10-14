@@ -88,7 +88,7 @@ describe('links: «Gastos fijos» salió de las pestañas de Compras', () => {
   })
 })
 
-describe('proveedores: el filtro «Sin clasificar»', () => {
+describe('proveedores: el filtro «Sin categoría»', () => {
   it('va al final, después de los que ya estaban', () => {
     expect(SUPPLIER_FILTERS.map((f) => f.label)).toEqual([
       'Todos',
@@ -96,7 +96,18 @@ describe('proveedores: el filtro «Sin clasificar»', () => {
       'Vencidos',
       'A favor',
       'Impuestos y sueldos',
-      'Sin clasificar',
+      'Sin categoría',
+    ])
+  })
+
+  it('el valor de la URL no cambió: los links de antes siguen andando', () => {
+    expect(SUPPLIER_FILTERS.map((f) => f.value)).toEqual([
+      'todos',
+      'con-deuda',
+      'vencidos',
+      'a-favor',
+      'impuestos',
+      'sin-clasificar',
     ])
   })
 

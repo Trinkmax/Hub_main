@@ -5,8 +5,10 @@ import { cn } from '@/lib/utils'
 /**
  * Una acción grande para tocar: el ícono en un círculo, QUÉ querés hacer dicho
  * como lo diría un socio («Pagué algo recién») y, en gris, un ejemplo que lo
- * ancla («El hielo, la verdulería, un flete»). Es la tarjeta del lanzador
- * «¿Qué querés cargar?» y de las recetas de la guía.
+ * ancla («El hielo, la verdulería, un flete»). Es la tarjeta de las recetas de
+ * la guía («¿Qué pasó?»). El lanzador «¿Qué querés cargar?» ya no la usa: tiene
+ * sus propias puertas (dos grandes y seis renglones, `nav/launcher.tsx`), con
+ * los mismos textos.
  *
  * Con `href` es un link; con `onClick`, un botón (abre una hoja). Se levanta
  * al pasar el mouse y se hunde al tocarla (`press-lift`).

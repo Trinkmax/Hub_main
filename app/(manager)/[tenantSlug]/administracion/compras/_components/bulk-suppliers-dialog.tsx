@@ -20,19 +20,28 @@ import { createPartiesBulk } from '@/lib/accounting/actions/master'
 import { parseNameList } from '../_lib/bulk'
 
 /**
- * «Cargar una lista» de proveedores (pedido de los socios, 09/10/2026): se
+ * «Agregar de una lista» de proveedores (pedido de los socios, 09/10/2026): se
  * pega un nombre por renglón (una columna de una planilla, un mensaje) y se
  * cargan todos de una. Los que ya están no se repiten. El resto de la ficha
  * (CUIT, contactos, días de entrega) se completa después en cada uno.
+ *
+ * El botón que lo abre cambia de aspecto según dónde va: callado en la barra
+ * de la libreta (`variant="ghost"`), en link dentro de un estado vacío
+ * (`variant="link"`). Por dentro es el mismo diálogo y manda lo mismo.
  */
 export function BulkSuppliersDialog({
   tenantSlug,
   existingNames,
   className,
+  label = 'Agregar de una lista',
+  variant = 'outline',
 }: {
   tenantSlug: string
   existingNames: readonly string[]
   className?: string
+  /** Lo que dice el botón que lo abre. */
+  label?: string
+  variant?: 'outline' | 'ghost' | 'link'
 }) {
   const router = useRouter()
   const uid = useId()
@@ -79,15 +88,20 @@ export function BulkSuppliersDialog({
     <>
       <Button
         type="button"
-        variant="outline"
-        className={className ?? 'h-11 gap-2 md:h-9'}
+        variant={variant}
+        className={
+          className ??
+          (variant === 'link'
+            ? 'h-auto min-h-11 p-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground md:min-h-0'
+            : 'h-11 gap-2 md:h-9')
+        }
         onClick={() => {
           setError(null)
           setOpen(true)
         }}
       >
-        <ListPlus className="size-4" aria-hidden />
-        Cargar una lista
+        {variant === 'link' ? null : <ListPlus className="size-4" aria-hidden />}
+        {label}
       </Button>
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">

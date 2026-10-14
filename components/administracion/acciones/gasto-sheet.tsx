@@ -14,7 +14,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { toast } from 'sonner'
 import {
   ExpenseTargetPicker,
   payableParties,
@@ -29,6 +28,7 @@ import {
   WarningsDialog,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/form-feedback'
 import { rememberSupplierAccount } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-account'
+import { SupplierInvoicingAsk } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-invoicing-ask'
 import {
   type SavedState,
   useDocumentPosting,
@@ -43,6 +43,7 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/voucher-number-input'
 import { isPurchaseImputation } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/accounts'
 import { documentHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
+import { invoicingGap } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/purchase-paper'
 import {
   amountAfterRecurring,
   buildQuickExpenseValues,
@@ -88,19 +89,23 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
-import { saveParty } from '@/lib/accounting/actions/master'
 import { amountLooksOff, pickTreasury } from '@/lib/accounting/defaults'
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { IvaCondition } from '@/lib/accounting/types'
 import { formatDayLabel, formatIsoDay, formatMonthYear } from '@/lib/dates'
-import { formatCuit } from '@/lib/fiscal'
 import { EMPTY_VALUE, formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
+import {
+  ACTION_SHEET_QUESTION,
+  ACTION_SHEET_QUESTION_FIELD,
+  ActionSheetBody,
+  ActionSheetFooter,
+  ActionSheetHeader,
+  ActionSheetRequiredMark,
+} from '../action-sheet'
 import { AttachmentPicker } from '../adjuntos/attachment-picker'
 import { attachPendingFiles } from '../adjuntos/upload'
 import { DateField } from '../date-input'
@@ -108,7 +113,9 @@ import { EntryPreview } from '../entry-preview'
 import { MoneyField } from '../money-input'
 import { TreasurySelect } from '../treasury-select'
 import {
+  exactAmountText,
   missingForSummary,
+  paidFromWords,
   paperConsequence,
   paperOutcomeNote,
   paperStamp,
@@ -118,6 +125,7 @@ import {
   treasuryMoneyText,
 } from './gasto-papel'
 import {
+  FooterSummary,
   GastoTicket,
   type GastoTicketRow,
   PaperChoices,
@@ -131,8 +139,37 @@ const TITLE = ACTION_TITLES.gasto
 const DESCRIPTION = 'Lo que pagaste en el momento, con o sin factura.'
 const LAST_TREASURY_KEY = 'hub_acc_gasto_caja:'
 
-/** Las cuatro decisiones de la hoja se leen como preguntas (Fraunces); lo demás, como campos. */
-const QUESTION = 'font-serif text-lg leading-snug font-semibold tracking-tight'
+/**
+ * El envoltorio de cada pregunta. Una sola columna que se puede achicar
+ * (`minmax(0, 1fr)`): con la columna automática de un `grid` pelado, un nombre
+ * largo en la tarjeta de lo elegido la estiraba y «Cambiar» se salía de la hoja.
+ */
+const QUESTION_BLOCK = 'grid grid-cols-[minmax(0,1fr)] gap-2.5'
+
+/**
+ * «¿En qué se gastó?» por fuera (`ExpenseTargetPicker` no es de esta hoja):
+ * - aire entre las píldoras y «Buscar otro…» (el `m-0` de su `fieldset` le pisaba el margen);
+ * - en el celular, las seis primeras píldoras (los gastos fijos que vencen y lo más usado):
+ *   las demás siguen en «Buscar otro…», que las lista. Con nueve eran una pantalla entera;
+ * - los ejemplos de los campos vacíos (el CUIT de un proveedor nuevo), más apagados para
+ *   que no parezcan un dato ya cargado;
+ * - en el celular, «Va a «…» · Cambiar» sin el hueco que le dejaban sus 44 px de toque
+ *   (el área de toque no cambia: se compensa con margen negativo);
+ * - en la tarjeta de lo elegido, un nombre largo baja a dos renglones antes de cortarse, y
+ *   en el celular «Gasto fijo «…» · vence el …» baja entero en vez de perder la fecha.
+ */
+const TARGET_BLOCK = cn(
+  QUESTION_BLOCK,
+  '[&_fieldset]:mb-2.5',
+  'max-sm:[&_fieldset>button:nth-of-type(n+7)]:hidden',
+  '[&_input]:placeholder:text-muted-foreground/50',
+  "max-md:[&_button[aria-label^='Cambiar_la_cuenta']]:-my-3",
+  '[&_p.truncate.font-medium]:line-clamp-2 [&_p.truncate.font-medium]:whitespace-normal',
+  'max-sm:[&_p>span.truncate]:whitespace-normal',
+)
+
+/** El ejemplo de un campo vacío («0001-00001234»): apagado, para que no parezca un dato ya cargado. */
+const FAINT_EXAMPLE = 'placeholder:text-muted-foreground/50'
 
 /** Un link de texto dentro del formulario. 44 px de alto en el celular y foco a la vista. */
 const TEXT_LINK =
@@ -142,7 +179,10 @@ const TEXT_LINK =
 const ADD_LINK =
   'inline-flex min-h-11 items-center gap-1.5 justify-self-start rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0'
 
-/** Una de las preguntas de la hoja. El `id` es el que usa su grupo como etiqueta. */
+/**
+ * Una de las cuatro decisiones de la hoja: se lee como pregunta (Fraunces, la voz que
+ * comparten las seis hojas); lo demás, como campos. El `id` es el que usa su grupo como etiqueta.
+ */
 function Question({
   id,
   required = false,
@@ -153,13 +193,9 @@ function Question({
   children: ReactNode
 }) {
   return (
-    <span id={id} className={QUESTION}>
+    <span id={id} className={ACTION_SHEET_QUESTION}>
       {children}
-      {required ? (
-        <span aria-hidden="true" className="ml-1.5 font-sans text-sm text-destructive">
-          *
-        </span>
-      ) : null}
+      {required ? <ActionSheetRequiredMark /> : null}
     </span>
   )
 }
@@ -307,8 +343,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const [recurringMissing, setRecurringMissing] = useState(false)
   const [defaults, setDefaults] = useState<SheetPartyDefaults | null>(null)
   const [duplicate, setDuplicate] = useState<SheetDuplicate | null>(null)
-  const [cuitDraft, setCuitDraft] = useState<string | null>(null)
-  const [cuitSaving, setCuitSaving] = useState(false)
   // Lo que la persona tocó a mano no lo pisa lo que el sistema recuerda.
   const touched = useRef({ voucher: false, treasury: false })
   const defaultsSeq = useRef(0)
@@ -350,7 +384,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       const known = partyById.get(id)
       setDefaults(null)
       setDuplicate(null)
-      setCuitDraft(null)
       // Al toque, con lo que ya está en el catálogo (y el chip). El «Comprobante habitual» de la
       // ficha manda; si no tiene, el último que se le cargó.
       if (!touched.current.voucher && !fromRecurring.current.voucher) {
@@ -612,7 +645,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     }
     // «Cargar otro después»: vacía la hoja y conserva la fecha y la caja. Arriba queda lo que se
     // acaba de cargar (el toast con «Deshacer» sale igual).
-    const savedText = [amount !== null ? formatCentsShort(amount) : null, targetName]
+    const savedText = [amount !== null ? exactAmountText(amount) : null, targetName]
       .filter((part) => part !== null)
       .join(' · ')
     setLastSaved((prev) => ({ text: savedText, count: (prev?.count ?? 0) + 1 }))
@@ -635,7 +668,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     setSubmitted(false)
     setDefaults(null)
     setDuplicate(null)
-    setCuitDraft(null)
     setFiles([])
     // El próximo gasto se puede ir cargando; se guarda cuando terminó de subir la foto de este.
     if (picked.length > 0) setAttaching('staying')
@@ -805,8 +837,17 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     amount !== null && party && defaults?.medianTotalCents
       ? amountLooksOff(amount, defaults.medianTotalCents)
       : false
-  const cuitMissing =
-    target?.kind === 'party' && party !== null && !party.taxId && isInvoiceVoucher(voucher)
+  // Lo que falta saber del proveedor para cargarle ese papel: cómo factura (de quien entró
+  // por una lista no lo sabemos, y el motor no le acepta una factura) o su CUIT.
+  const invoicing =
+    target?.kind === 'party' && party !== null
+      ? invoicingGap({
+          paper: voucher,
+          condition: party.ivaCondition,
+          hasTaxId: Boolean(party.taxId),
+          entersIvaBook: isInvoiceVoucher(voucher),
+        })
+      : null
   const lastVoucher =
     defaults && defaults.pointOfSale !== null && defaults.lastNumber !== null
       ? `${padPos(String(defaults.pointOfSale))}-${padNumber(String(defaults.lastNumber))}`
@@ -826,11 +867,22 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   // ── El ticket: lo que va a pasar, en palabras ──
   const stamp = paperStamp({ voucher, hasParty, condition })
-  const missing = missingForSummary({
+  // Las tres respuestas sin las que no hay nada que resumir.
+  const unanswered = {
     amount: amount === null || amount <= 0,
-    target: target === null,
+    // Un proveedor sin categoría todavía no dice en qué se gastó.
+    target: target === null || (target.kind !== 'account' && target.accountId === null),
     treasury: treasury === undefined,
-  })
+  }
+  // Lo que falta para poder cargarlo: mientras falte, el ticket queda en borrador y lo dice.
+  // Si no es nada de lo que se sabe nombrar pero todavía no hay asiento (un dato de un
+  // proveedor nuevo, la fecha), se avisa igual: el ticket nunca promete lo que no se puede guardar.
+  const missing =
+    missingForSummary({
+      ...unanswered,
+      invoiceNumber: isInvoiceVoucher(voucher) && (pointOfSale === null || number === null),
+    }) ?? (entries.length === 0 ? 'Todavía falta completar un dato.' : null)
+  const answered = !unanswered.amount && !unanswered.target && !unanswered.treasury
   const linkedRecurring = recurringId ? data.recurring.find((r) => r.id === recurringId) : undefined
   const ticketRows: GastoTicketRow[] = split
     ? [
@@ -852,32 +904,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       .filter((part) => part !== null)
       .join(' ')
 
-  const saveCuit = async () => {
-    if (!party || cuitDraft === null) return
-    setCuitSaving(true)
-    try {
-      const result = await saveParty(tenantSlug, {
-        id: party.id,
-        expectedUpdatedAt: party.updatedAt,
-        kind: party.kind,
-        name: party.name,
-        taxIdType: 'cuit',
-        taxId: cuitDraft,
-      })
-      if (!result.ok) {
-        toast.error(result.code === 'stale' ? 'Recargá la hoja y probá de nuevo.' : result.message)
-        return
-      }
-      toast.success(`Listo: ${party.name} ya tiene CUIT.`)
-      setCuitDraft(null)
-      reload()
-    } catch {
-      toast.error(ACC_UNREACHABLE.offline)
-    } finally {
-      setCuitSaving(false)
-    }
-  }
-
   const treasuryChips = activeTreasuries.length <= MAX_TREASURY_CHIPS
   const ids = {
     amount: `${uid}-monto`,
@@ -895,8 +921,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     detail: `${uid}-detalle`,
     another: `${uid}-otro`,
   }
+  // El botón dice el importe tal cual se guarda: con centavos si los tiene, como el ticket.
   const submitLabel =
-    amount !== null && amount > 0 ? `Cargar gasto · ${formatCentsShort(amount)}` : 'Cargar gasto'
+    amount !== null && amount > 0 ? `Cargar gasto · ${exactAmountText(amount)}` : 'Cargar gasto'
 
   if (activeTreasuries.length === 0) {
     return (
@@ -904,7 +931,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
         <ActionSheetBody>
           <SheetLoadError
-            message="No hay cajas ni cuentas activas para pagar. Activá una en Ajustes › Cajas y bancos."
+            message="No hay cajas ni cuentas activas para pagar. Activá una en Ajustes › Cajas y cuentas."
             onRetry={reload}
           />
         </ActionSheetBody>
@@ -956,7 +983,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               }
             }}
             // La etiqueta va como las otras preguntas (Fraunces) y su asterisco, chico como el de ellas.
-            fieldClassName="gap-2 [&>label]:gap-1 [&>label]:font-serif [&>label]:text-lg [&>label]:leading-snug [&>label]:font-semibold [&>label]:tracking-tight [&>label>span[aria-hidden]]:font-sans [&>label>span[aria-hidden]]:text-sm"
+            fieldClassName={ACTION_SHEET_QUESTION_FIELD}
             className="[&_input]:h-16 [&_input]:rounded-2xl [&_input]:bg-card [&_input]:pl-11 [&_input]:font-serif [&_input]:text-[2rem] [&_input]:font-semibold [&_input]:tracking-tight [&>span]:left-4 [&>span]:font-serif [&>span]:text-2xl"
           />
           {looksOff && party && defaults?.medianTotalCents ? (
@@ -967,7 +994,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           ) : null}
 
           {/* ¿En qué se gastó?: un proveedor, un gasto fijo o una categoría */}
-          <div className="grid gap-2.5" ref={targetRef}>
+          <div className={TARGET_BLOCK} ref={targetRef}>
             <Question id={ids.targetLabel} required>
               ¿En qué se gastó?
             </Question>
@@ -1007,7 +1034,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 setTarget(null)
                 setDefaults(null)
                 setDuplicate(null)
-                setCuitDraft(null)
                 touched.current.voucher = false
                 setVoucher('none')
                 setVoucherNumber({ pos: '', number: '' })
@@ -1023,7 +1049,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           </div>
 
           {/* ¿Con qué pagaste?: la caja y cómo queda después de este gasto */}
-          <div className="grid gap-2.5">
+          <div className={QUESTION_BLOCK}>
             <Question id={ids.treasuryLabel} required>
               ¿Con qué pagaste?
             </Question>
@@ -1080,7 +1106,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           </div>
 
           {/* ¿Qué papel te dieron?: cuatro papeles; debajo, lo que pide el elegido */}
-          <div className="grid gap-2.5">
+          <div className={QUESTION_BLOCK}>
             <Question id={ids.paperLabel}>¿Qué papel te dieron?</Question>
             <PaperChoices
               name={ids.paper}
@@ -1113,7 +1139,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                     setRemito(e.target.value)
                     posting.clearFieldErrors()
                   }}
-                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                  className={cn('h-11 text-base tabular-nums md:h-10 md:text-sm', FAINT_EXAMPLE)}
                 />
                 <p id={`${ids.remito}-hint`} className="text-xs text-muted-foreground">
                   Queda anotado en el detalle del gasto.
@@ -1232,16 +1258,20 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                     <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
                   )}
                 </Label>
-                <VoucherNumberInput
-                  id={ids.number}
-                  value={voucherNumber}
-                  onChange={(next) => {
-                    setVoucherNumber(next)
-                    posting.clearFieldErrors()
-                  }}
-                  invalid={Boolean(errors.number ?? errors.pointOfSale)}
-                  describedBy={`${ids.number}-hint`}
-                />
+                {/* Los ejemplos («0003 – 00001290») van apagados: con Factura A el número es
+                    obligatorio y, apurado, el ejemplo parecía un número ya puesto. */}
+                <div className="[&_input]:placeholder:text-muted-foreground/50">
+                  <VoucherNumberInput
+                    id={ids.number}
+                    value={voucherNumber}
+                    onChange={(next) => {
+                      setVoucherNumber(next)
+                      posting.clearFieldErrors()
+                    }}
+                    invalid={Boolean(errors.number ?? errors.pointOfSale)}
+                    describedBy={`${ids.number}-hint`}
+                  />
+                </div>
                 <p id={`${ids.number}-hint`} className="text-xs text-muted-foreground text-pretty">
                   {lastVoucher
                     ? `La última fue ${lastVoucher}. Podés pegar «0003-00001290».`
@@ -1258,48 +1288,16 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               </div>
             ) : null}
 
-            {cuitMissing && party ? (
-              <InlineNotice
-                action={
-                  cuitDraft === null ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-11 md:h-8"
-                      onClick={() => setCuitDraft('')}
-                    >
-                      Agregar CUIT
-                    </Button>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        aria-label={`CUIT de ${party.name}`}
-                        value={cuitDraft}
-                        inputMode="numeric"
-                        placeholder="30-71876543-5"
-                        onChange={(e) => setCuitDraft(e.target.value)}
-                        onBlur={(e) => {
-                          const digits = e.target.value.replace(/\D/g, '')
-                          if (digits.length === 11) setCuitDraft(formatCuit(digits))
-                        }}
-                        className="h-11 w-40 rounded-md border border-input bg-background px-2 text-base tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-8 md:text-xs"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-11 md:h-8"
-                        disabled={cuitSaving || cuitDraft.replace(/\D/g, '').length !== 11}
-                        onClick={() => void saveCuit()}
-                      >
-                        {cuitSaving ? 'Guardando…' : 'Guardar CUIT'}
-                      </Button>
-                    </div>
-                  )
-                }
-              >
-                {party.name} no tiene CUIT cargado: el Libro IVA lo necesita.
-              </InlineNotice>
+            {invoicing && party ? (
+              <SupplierInvoicingAsk
+                key={`${party.id}:${invoicing.kind}:${voucher}`}
+                tenantSlug={tenantSlug}
+                party={party}
+                gap={invoicing}
+                paper={voucher}
+                // La ficha ya quedó guardada: la hoja vuelve a traer sus datos (lo cargado sigue).
+                onSaved={() => reload()}
+              />
             ) : null}
 
             {duplicate ? (
@@ -1320,7 +1318,29 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             ) : null}
           </div>
 
-          {/* Lo demás: la foto, la fecha y el detalle. Una raya lo separa de las cuatro preguntas. */}
+          {/* El ticket: lo que va a pasar, en palabras. Va pegado a «¿Qué papel te dieron?»: el
+              sello cambia a la vista de quien acaba de elegir el papel, y se pasa por él antes
+              de llegar a lo que casi nunca hace falta tocar. */}
+          <GastoTicket
+            title={targetName ?? 'Nuevo gasto'}
+            subtitle={[date ? formatDayLabel(date) : null, categoryName]
+              .filter((part) => Boolean(part))
+              .join(' · ')}
+            stamp={stamp}
+            stampNonce={stampNonce}
+            rows={ticketRows}
+            totalLabel={ticketTotalLabel(treasury ?? null)}
+            total={amount !== null && amount > 0 ? formatCents(amount) : EMPTY_VALUE}
+            totalHint={
+              treasury && amount !== null && amount > 0 ? (
+                <TreasuryAfterHint treasury={treasury} amountCents={amount} />
+              ) : undefined
+            }
+            note={ticketNote}
+            pending={missing !== null}
+          />
+
+          {/* Lo demás: la foto, la fecha y el detalle. Una raya lo separa de las preguntas y su ticket. */}
           <div className="space-y-5 border-t border-border/60 pt-6">
             {/* Foto del comprobante: se sube después de guardar */}
             <AttachmentPicker
@@ -1382,32 +1402,16 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             )}
           </div>
 
-          {/* El ticket: lo que va a pasar, en palabras. El asiento queda plegado debajo. */}
-          <div className="space-y-4">
-            <GastoTicket
-              title={targetName ?? 'Nuevo gasto'}
-              subtitle={[date ? formatDayLabel(date) : null, categoryName]
-                .filter((part) => Boolean(part))
-                .join(' · ')}
-              stamp={stamp}
-              stampNonce={stampNonce}
-              rows={ticketRows}
-              totalLabel={ticketTotalLabel(treasury ?? null)}
-              total={amount !== null && amount > 0 ? formatCents(amount) : EMPTY_VALUE}
-              totalHint={
-                treasury && amount !== null && amount > 0 ? (
-                  <TreasuryAfterHint treasury={treasury} amountCents={amount} />
-                ) : undefined
-              }
-              note={ticketNote}
-              pending={missing !== null}
-            />
-            <EntryPreview
-              entries={entries}
-              label="Ver cómo queda en los libros"
-              emptyText="Completá cuánto, en qué y con qué pagaste para ver cómo queda en los libros."
-            />
-          </div>
+          {/* Para la contadora (y el curioso): el asiento, plegado y al final de todo. */}
+          <EntryPreview
+            entries={entries}
+            label="Ver cómo queda en los libros"
+            emptyText={
+              missing !== null
+                ? `${missing} Completalo y vas a ver cómo queda en los libros.`
+                : undefined
+            }
+          />
 
           {unknownPreviewError ? (
             <FormBanner banner={{ tone: 'error', message: unknownPreviewError }} />
@@ -1415,7 +1419,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           <FormBanner banner={posting.banner} />
         </ActionSheetBody>
 
-        {/* En el celular, el tilde arriba y el botón a todo el ancho abajo, donde llega el pulgar. */}
+        {/* En el celular, el tilde arriba y el botón a todo el ancho abajo, donde llega el pulgar.
+            Entre los dos, apenas están las tres respuestas, el resumen de lo que se va a cargar. */}
         <ActionSheetFooter className="flex-col items-stretch gap-1 pt-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <label
             htmlFor={ids.another}
@@ -1428,6 +1433,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             />
             Cargar otro después
           </label>
+          {answered && treasury ? (
+            <FooterSummary
+              who={targetName ?? 'Gasto'}
+              paper={stamp.text}
+              from={paidFromWords(treasury)}
+              missing={missing}
+            />
+          ) : null}
           <Button
             type="submit"
             disabled={posting.pending || attaching !== null}

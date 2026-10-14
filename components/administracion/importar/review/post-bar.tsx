@@ -1,9 +1,17 @@
 'use client'
 
-import { CheckCircle2, Pause, Play, Upload } from 'lucide-react'
+import { Pause, Play, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
-import { Amount } from '@/components/administracion/amount'
+import {
+  Ticket,
+  TicketHeader,
+  TicketNote,
+  TicketRow,
+  TicketRule,
+  TicketStamp,
+  TicketTotal,
+} from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -23,7 +31,7 @@ import { fetchPostQueue } from '@/lib/imports/review-actions'
 import type { PostQueueItem } from '@/lib/imports/server/review'
 import { type BatchAcceptableWarning, isBatchAcceptable } from '@/lib/imports/server/types'
 import { chunkList, POST_CHUNK_SIZE } from '@/lib/imports/ui/chunks'
-import { BATCH_WARNING_TEXT, importBatchHref } from '@/lib/imports/ui/labels'
+import { BATCH_WARNING_TEXT, importBatchHref, importHref } from '@/lib/imports/ui/labels'
 import {
   count,
   emptyTally,
@@ -33,7 +41,7 @@ import {
   tallyResults,
   tallySummary,
 } from '@/lib/imports/ui/progress'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { OFFLINE_TEXT, useReview } from './review-context'
 
 type Phase =
@@ -42,12 +50,14 @@ type Phase =
   | { kind: 'paused'; done: number; total: number; message: string | null }
   | { kind: 'done'; tally: PostTally }
 
+type MonthRow = { month: string; count: number; totalCents: number }
+
 /** «Cargar 1 compra» / «Cargar 18 compras». */
 function loadLabel(n: number, unit: readonly [string, string]): string {
   return `Cargar ${n === 1 ? `1 ${unit[0]}` : `${n} ${unit[1]}`}`
 }
 
-/** Título y bajada del diálogo en cada momento (mientras carga ya no dice «Antes de cargar»). */
+/** Título y bajada del diálogo en cada momento. */
 const HEADER: Readonly<
   Record<
     Phase['kind'],
@@ -55,8 +65,8 @@ const HEADER: Readonly<
   >
 > = {
   summary: {
-    title: () => 'Antes de cargar',
-    description: 'Revisá el resumen. Cada uno se puede anular después desde su comprobante.',
+    title: (n) => (n === 1 ? '¿Cargamos este?' : `¿Cargamos estos ${n}?`),
+    description: 'Cada uno se puede anular después desde su comprobante. No hay «deshacer todo».',
   },
   running: {
     title: loadLabel,
@@ -64,17 +74,22 @@ const HEADER: Readonly<
   },
   paused: {
     title: loadLabel,
-    description: 'Lo que ya se cargó quedó en los libros. Seguí cuando quieras.',
+    description: 'Lo que ya se cargó quedó registrado. Seguí cuando quieras.',
   },
   done: { title: () => 'Listo', description: 'Esto es lo que pasó con cada uno.' },
 }
 
 /**
- * «Cargar N comprobantes» (diseño §4.0 «Confirmar en tandas»): la barra de
- * abajo con lo que está listo y, al tocarla, el resumen previo (cuántos, cuánta
- * plata, en qué meses del libro y los avisos que se aceptan una sola vez para
- * todo el lote). Después carga de a 15 con su barra («Cargando 45 de 142…»); se
- * puede pausar y seguir, y lo ya cargado nunca se duplica.
+ * «Cargar N comprobantes»: la barra de abajo con lo que está listo y, al
+ * tocarla, el papel «Vas a cargar» (cuántos, de qué meses y, en las compras,
+ * cuánta plata) con los avisos que se leen una sola vez. Después carga de a 15
+ * con su barra («Cargando 45 de 142…»); se puede pausar y seguir, y lo ya
+ * cargado nunca se duplica. Al terminar, el mismo papel con el sello «CARGADO».
+ *
+ * La mecánica es la de siempre (`fetchPostQueue` + `postImportProposals` de a
+ * 15, con pausa, doble toque protegido y aviso al cerrar la pestaña). En el
+ * banco y en Mercado Pago no se muestra importe: sumar lo que entró con lo que
+ * salió no dice nada.
  */
 export function PostBar({
   readyCount,
@@ -83,13 +98,19 @@ export function PostBar({
   movedToOpenMonth,
   warnings,
   unit,
+  showMoney,
+  pendingAnswers,
 }: {
   readyCount: number
   readyCents: number
-  months: Array<{ month: string; count: number; totalCents: number }>
+  months: MonthRow[]
   movedToOpenMonth: number
   warnings: Partial<Record<WarningKey, number>>
   unit: readonly [string, string]
+  /** Solo las compras de ARCA suman un importe que significa algo. */
+  showMoney: boolean
+  /** Preguntas o proveedores sin contestar: el botón queda en contorno (lo primario es la respuesta). */
+  pendingAnswers: number
 }) {
   const { slug, batchId, editable } = useReview()
   const ackId = useId()
@@ -99,6 +120,10 @@ export function PostBar({
   const stopRef = useRef(false)
   const runningRef = useRef(false)
   const queueRef = useRef<{ chunks: PostQueueItem[][]; next: number; tally: PostTally } | null>(
+    null,
+  )
+  // Lo que se iba a cargar al abrir el diálogo: al terminar, la página ya no lo trae como «listo».
+  const [snapshot, setSnapshot] = useState<{ months: MonthRow[]; cents: number; n: number } | null>(
     null,
   )
 
@@ -187,6 +212,11 @@ export function PostBar({
     queueRef.current = null
   }
 
+  const openDialog = () => {
+    setSnapshot({ months, cents: readyCents, n: readyCount })
+    setOpen(true)
+  }
+
   const close = () => {
     if (running) return
     setOpen(false)
@@ -197,30 +227,82 @@ export function PostBar({
   const many = unit[1]
   const tally = phase.kind === 'done' ? phase.tally : null
   const leftForReview = tally ? tally.stale + tally.needsInput + tally.failed : 0
+  const shown = snapshot ?? { months, cents: readyCents, n: readyCount }
+  // El detalle por mes y el total son de lo que se IBA a cargar: al terminar se muestran solo si
+  // entró todo. Si alguno quedó en el camino, el papel dice cuántos se cargaron y nada más (un
+  // total que incluye lo que no entró sería un número falso).
+  const allIn = tally !== null && tally.posted === shown.n
+  const ticket = (stamped: boolean) => (
+    <Ticket className="mx-auto w-full max-w-sm" aria-label="Lo que se carga">
+      <TicketHeader
+        title={stamped ? 'Cargaste' : 'Vas a cargar'}
+        subtitle={count(stamped && tally ? tally.posted : shown.n, unit[0], many)}
+      >
+        {stamped && tally && tally.posted > 0 ? (
+          <TicketStamp tone="ok" animate>
+            Cargado
+          </TicketStamp>
+        ) : null}
+      </TicketHeader>
+      {(!stamped || allIn) && shown.months.length > 0 ? (
+        <>
+          <TicketRule />
+          {shown.months.map((m) => (
+            <TicketRow
+              key={m.month}
+              label={`De ${formatMonthYear(m.month)}`}
+              hint={showMoney ? count(m.count, unit[0], many) : undefined}
+              value={showMoney ? formatCents(m.totalCents) : String(m.count)}
+            />
+          ))}
+        </>
+      ) : null}
+      {showMoney && (!stamped || allIn) ? (
+        <>
+          <TicketRule double />
+          <TicketTotal label="Total" value={formatCents(shown.cents)} />
+        </>
+      ) : null}
+      {movedToOpenMonth > 0 && !stamped ? (
+        <TicketNote>
+          {movedToOpenMonth === 1 ? '1 es' : `${movedToOpenMonth} son`} de un mes que ya cerraste:{' '}
+          {movedToOpenMonth === 1 ? 'queda' : 'quedan'} con fecha del primer día abierto.
+        </TicketNote>
+      ) : null}
+    </Ticket>
+  )
 
   return (
     <>
-      <div className="sticky bottom-0 z-30 -mx-4 border-t border-border/60 bg-background/95 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-xl lg:border lg:px-5 lg:pb-2.5 lg:shadow-md">
+      <div
+        id="cargar"
+        className="sticky bottom-0 z-30 -mx-4 scroll-mt-28 border-t border-border/60 bg-background/95 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-2xl lg:border lg:px-5 lg:pb-2.5 lg:shadow-md"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm">
-            <span className="font-medium">{count(readyCount, 'listo', 'listos')} para cargar</span>{' '}
-            <span className="text-muted-foreground">
-              · <Amount cents={readyCents} decimals={0} />
-            </span>
+            <span className="font-medium">{count(readyCount, 'listo', 'listos')}</span>
+            {showMoney ? (
+              <span className="text-muted-foreground"> · {formatCentsShort(readyCents)}</span>
+            ) : null}
           </p>
           <Button
             type="button"
-            className="h-11 w-full gap-2 sm:w-auto"
+            variant={pendingAnswers > 0 ? 'outline' : 'default'}
+            className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
             disabled={readyCount === 0}
-            onClick={() => setOpen(true)}
+            onClick={openDialog}
           >
             <Upload className="size-4" aria-hidden />
-            {loadLabel(readyCount, unit)}
+            {pendingAnswers > 0
+              ? readyCount === 1
+                ? 'Cargar el que ya está'
+                : `Cargar los ${readyCount} que ya están`
+              : loadLabel(readyCount, unit)}
           </Button>
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
+      <Dialog open={open} onOpenChange={(next) => (next ? openDialog() : close())}>
         <DialogContent
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
           showCloseButton={!running}
@@ -232,7 +314,7 @@ export function PostBar({
           <DialogHeader>
             <DialogTitle>
               {HEADER[phase.kind].title(
-                phase.kind === 'running' || phase.kind === 'paused' ? phase.total : readyCount,
+                phase.kind === 'running' || phase.kind === 'paused' ? phase.total : shown.n,
                 unit,
               )}
             </DialogTitle>
@@ -241,31 +323,10 @@ export function PostBar({
 
           {phase.kind === 'summary' ? (
             <div className="space-y-4 text-sm">
-              <p>
-                Vas a cargar <strong>{count(readyCount, unit[0], many)}</strong> por{' '}
-                <strong>{formatCents(readyCents)}</strong>.
-              </p>
-              {months.length > 0 ? (
-                <ul className="space-y-1 rounded-lg border border-border/70 p-3">
-                  {months.map((m) => (
-                    <li key={m.month} className="flex items-baseline justify-between gap-3">
-                      <span>Libro de {formatMonthYear(m.month)}</span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {m.count} · {formatCents(m.totalCents, { decimals: 0 })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {movedToOpenMonth > 0 ? (
-                <p className="rounded-lg border border-info/30 bg-info/10 p-3 text-pretty">
-                  {count(movedToOpenMonth, 'es', 'son')} de un mes que ya cerraste: se cargan en el
-                  primer día abierto (no cambian los libros cerrados).
-                </p>
-              ) : null}
+              {ticket(false)}
               {needsAck ? (
-                <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3">
-                  <p className="font-medium text-warning-text">Avisos para leer una sola vez</p>
+                <div className="space-y-2 rounded-xl bg-warning/10 p-3.5">
+                  <p className="font-medium text-warning-text">Leé esto una sola vez</p>
                   <ul className="space-y-1.5">
                     {batchWarnings.map(([key, n]) => (
                       <li key={key} className="text-pretty">
@@ -274,7 +335,7 @@ export function PostBar({
                       </li>
                     ))}
                   </ul>
-                  <div className="flex items-start gap-2 pt-1">
+                  <div className="flex items-start gap-2.5 pt-1">
                     <Checkbox
                       id={ackId}
                       checked={accepted}
@@ -282,7 +343,7 @@ export function PostBar({
                       className="mt-0.5"
                     />
                     <Label htmlFor={ackId} className="font-normal leading-snug">
-                      Los leí: cargarlos igual
+                      Lo leí: cargalos igual
                     </Label>
                   </div>
                 </div>
@@ -316,28 +377,26 @@ export function PostBar({
           ) : null}
 
           {tally ? (
-            <div className="space-y-3 text-sm" role="status" aria-live="polite">
-              <p className="flex items-start gap-2 text-pretty">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-                {tallySummary(tally, unit)}
-              </p>
+            <div className="space-y-4 text-sm" role="status" aria-live="polite">
+              {ticket(true)}
+              <p className="text-center text-pretty">{tallySummary(tally, unit)}</p>
             </div>
           ) : null}
 
           <DialogFooter className="gap-2">
             {phase.kind === 'summary' ? (
               <>
-                <Button type="button" variant="outline" className="h-11 md:h-9" onClick={close}>
+                <Button type="button" variant="outline" className="h-11" onClick={close}>
                   Volver
                 </Button>
                 <Button
                   type="button"
-                  className="h-11 gap-2 md:h-9"
+                  className="h-11 gap-2"
                   disabled={needsAck && !accepted}
                   onClick={() => void run(false)}
                 >
                   <Upload className="size-4" aria-hidden />
-                  {loadLabel(readyCount, unit)}
+                  {loadLabel(shown.n, unit)}
                 </Button>
               </>
             ) : null}
@@ -345,7 +404,7 @@ export function PostBar({
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 gap-2 md:h-9"
+                className="h-11 gap-2"
                 onClick={() => {
                   stopRef.current = true
                 }}
@@ -356,10 +415,10 @@ export function PostBar({
             ) : null}
             {phase.kind === 'paused' ? (
               <>
-                <Button type="button" variant="outline" className="h-11 md:h-9" onClick={close}>
+                <Button type="button" variant="outline" className="h-11" onClick={close}>
                   Cerrar
                 </Button>
-                <Button type="button" className="h-11 gap-2 md:h-9" onClick={() => void run(true)}>
+                <Button type="button" className="h-11 gap-2" onClick={() => void run(true)}>
                   <Play className="size-4" aria-hidden />
                   Seguir
                 </Button>
@@ -368,13 +427,16 @@ export function PostBar({
             {phase.kind === 'done' ? (
               <>
                 {leftForReview > 0 ? (
-                  <Button asChild variant="outline" className="h-11 md:h-9">
+                  <Button asChild variant="outline" className="h-11">
                     <Link href={importBatchHref(slug, batchId, { ver: 'revisar' })} onClick={close}>
                       Ver lo que quedó para revisar
                     </Link>
                   </Button>
                 ) : null}
-                <Button type="button" className="h-11 md:h-9" onClick={close}>
+                <Button asChild variant="outline" className="h-11">
+                  <Link href={importHref(slug)}>Volver a Importar</Link>
+                </Button>
+                <Button type="button" className="h-11" onClick={close}>
                   Cerrar
                 </Button>
               </>

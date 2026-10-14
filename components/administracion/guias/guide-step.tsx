@@ -22,8 +22,9 @@ import { GUIDE_STATUS_TEXT_CLASS, GuideStatusDot } from './guide-status'
  * `aria-expanded`, el estado se dice con texto y todo anda con el teclado.
  *
  * Lo usan también las recetas del día a día, que no son pasos numerados ni se marcan: por eso
- * `kicker` (en lugar de «Paso N»), `lead` (un ícono en lugar del número) y un pie con otro rótulo
- * (`footerLabel`) o sin texto. Sin esas props se ve igual que siempre.
+ * `kicker` (en lugar de «Paso N»), `lead` (un ícono en lugar del número), `statusLine` (el estado
+ * ya armado, con su píldora) y un pie con otro rótulo (`footerLabel`) o sin texto. Sin esas props
+ * se ve igual que siempre.
  */
 export function GuideStep({
   id,
@@ -41,6 +42,8 @@ export function GuideStep({
   next,
   kicker,
   lead,
+  statusLine,
+  className,
   defaultOpen = false,
   children,
 }: {
@@ -50,7 +53,8 @@ export function GuideStep({
   n: number
   title: string
   status: GuideStepStatus
-  statusText: string
+  /** El estado en palabras, con el color de `status`. Hace falta si no hay `statusLine`. */
+  statusText?: string
   /** «Hecho el 08/10 por Ana», «Lo confirmamos al probar»… */
   note?: string | null
   /** Las etiquetas de la derecha: dónde se hace y cuánto lleva. */
@@ -68,6 +72,10 @@ export function GuideStep({
   kicker?: ReactNode
   /** Lo que va a la izquierda en lugar del número con su estado (un ícono, por ejemplo). */
   lead?: ReactNode
+  /** El estado ya armado (una píldora y su detalle), en lugar de `statusText` con su color. */
+  statusLine?: ReactNode
+  /** Para la sección: otro margen de salto, otro borde. */
+  className?: string
   /** Sin `GuideNavProvider`: si arranca abierto. */
   defaultOpen?: boolean
   children: ReactNode
@@ -88,6 +96,7 @@ export function GuideStep({
         status === 'todo' && 'border-primary/40',
         status === 'failed' && 'border-destructive/40',
         status === 'check' && 'border-warning/50',
+        className,
       )}
     >
       <h2 className="m-0">
@@ -112,10 +121,12 @@ export function GuideStep({
             >
               {title}
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-              <span className={cn('font-medium', GUIDE_STATUS_TEXT_CLASS[status])}>
-                {statusText}
-              </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+              {statusLine ?? (
+                <span className={cn('font-medium', GUIDE_STATUS_TEXT_CLASS[status])}>
+                  {statusText}
+                </span>
+              )}
               {note ? <span className="text-muted-foreground">· {note}</span> : null}
             </span>
             {chips ? (
@@ -225,12 +236,12 @@ export function GuideTroubles({
       <ul className="divide-y divide-border/60 rounded-lg border border-border/80">
         {items.map((item) => (
           <li key={item.problem}>
-            <details className="group">
+            <details className="group/trouble">
               <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium outline-none hover:bg-cream-tint/60 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                 <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                 <span className="min-w-0 flex-1 text-pretty">{item.problem}</span>
                 <ChevronDown
-                  className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                  className="size-4 shrink-0 text-muted-foreground transition-transform group-open/trouble:rotate-180 motion-reduce:transition-none"
                   aria-hidden
                 />
               </summary>

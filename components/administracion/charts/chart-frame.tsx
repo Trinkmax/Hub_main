@@ -31,6 +31,8 @@ export type ChartFrameProps = {
   table?: ReactNode
   /** Notas al pie: de dónde sale el dato, qué es estimado. */
   footer?: ReactNode
+  /** Un link callado al lado del título («Ver cajas»), junto a «Ver como tabla». */
+  action?: ReactNode
   /** `h3` adentro de un panel con título; `h2` si el marco ES la sección. */
   headingLevel?: 'h2' | 'h3'
   /** Con qué vista arranca. */
@@ -45,6 +47,7 @@ export function ChartFrame({
   chart,
   table,
   footer,
+  action,
   headingLevel = 'h3',
   defaultView = 'chart',
   className,
@@ -69,20 +72,25 @@ export function ChartFrame({
             <p className="max-w-2xl text-sm text-pretty text-muted-foreground">{sentence}</p>
           ) : null}
         </div>
-        {hasTable ? (
-          <button
-            type="button"
-            aria-controls={`${id}-chart ${id}-table`}
-            onClick={() => setAsTable((v) => !v)}
-            className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card px-3.5 text-xs font-medium text-foreground transition-[background-color] duration-(--duration-fast) hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:h-9"
-          >
-            {showTable ? (
-              <ChartLine className="size-3.5" aria-hidden />
-            ) : (
-              <Table2 className="size-3.5" aria-hidden />
-            )}
-            {showTable ? 'Ver como gráfico' : 'Ver como tabla'}
-          </button>
+        {hasTable || action ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
+            {hasTable ? (
+              <button
+                type="button"
+                aria-controls={`${id}-chart ${id}-table`}
+                onClick={() => setAsTable((v) => !v)}
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card px-3.5 text-xs font-medium text-foreground transition-[background-color] duration-(--duration-fast) hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:h-9"
+              >
+                {showTable ? (
+                  <ChartLine className="size-3.5" aria-hidden />
+                ) : (
+                  <Table2 className="size-3.5" aria-hidden />
+                )}
+                {showTable ? 'Ver como gráfico' : 'Ver como tabla'}
+              </button>
+            ) : null}
+            {action}
+          </div>
         ) : null}
       </div>
 

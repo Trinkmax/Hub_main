@@ -1,4 +1,4 @@
-import { ArrowLeft, PartyPopper, RefreshCw } from 'lucide-react'
+import { ChevronRight, PartyPopper, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import {
@@ -11,10 +11,10 @@ import {
 } from '@/components/administracion/guias/arca-guide-model'
 import { MockDataProvider } from '@/components/administracion/guias/arca-mock/mock-data'
 import type { GuideRailItem } from '@/components/administracion/guias/guide-rail'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { RetryButton } from '@/components/administracion/kit/retry-button'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
@@ -30,7 +30,6 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { RetryButton } from '../../_resumen/retry-button'
 import { Callout } from '../_components/form-bits'
 import { ArcaGuideShell } from './_components/arca-guide-shell'
 import {
@@ -138,23 +137,16 @@ export default async function ConectarArcaPage({
     : []
   const cert = certificateNote(connection?.certificate ?? null)
 
+  // Quien ya revisó lo previo (paso 0) no tiene que volver a pasar por las reglas para llegar a
+  // su paso: quedan plegadas, a un toque.
+  const introDone = states.s0_prereq?.status === 'done'
+
   return (
-    <PageShell width="comfortable">
-      <Link
-        href={`${base}/ajustes?tab=arca`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" aria-hidden />
-        Volver a Ajustes
-      </Link>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Conectar ARCA
-            <ReadOnlyBadge />
-          </>
-        }
+    <AdmPage width="comfortable">
+      <AdmHeader
+        back={{ href: `${base}/ajustes?tab=arca`, label: 'ARCA' }}
+        title="Conectar ARCA"
+        badge={<ReadOnlyBadge />}
         description="Unos 40 minutos. Lo hace quien maneja la clave fiscal de la SAS. Vamos marcando cada paso solos."
       />
 
@@ -186,7 +178,7 @@ export default async function ConectarArcaPage({
               facturas en{' '}
               <Link
                 href={`${base}/ajustes?tab=arca`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
+                className="rounded-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Ajustes › ARCA
               </Link>
@@ -213,12 +205,23 @@ export default async function ConectarArcaPage({
         </Callout>
       ) : null}
 
-      <GuideBefore base={base} sasCuit={sas.cuit} />
-      {/* Las mini maquetas de las reglas también muestran la razón social y la CUIT del bar. */}
-      <MockDataProvider value={mockData}>
-        <GoldenRules sasName={mockData.sasName} />
-      </MockDataProvider>
-      <Glossary />
+      <details open={!introDone || undefined} className="group/intro rounded-2xl bg-secondary/50">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground transition-transform group-open/intro:rotate-90 motion-reduce:transition-none"
+          />
+          Antes de arrancar y las 3 reglas de oro
+        </summary>
+        <div className="space-y-4 px-3 pb-3 sm:px-4 sm:pb-4">
+          <GuideBefore base={base} sasCuit={sas.cuit} />
+          {/* Las mini maquetas de las reglas también muestran la razón social y la CUIT del bar. */}
+          <MockDataProvider value={mockData}>
+            <GoldenRules sasName={mockData.sasName} />
+          </MockDataProvider>
+          <Glossary />
+        </div>
+      </details>
 
       <ArcaGuideShell
         items={items}
@@ -243,9 +246,20 @@ export default async function ConectarArcaPage({
         />
         <RenewSection slug={tenantSlug} connection={connection} canWrite={canWrite} />
         <TroublesSection />
-        <DeveloperNote base={base} />
-        <OfficialLinks />
+        <details className="group/links rounded-2xl bg-secondary/50">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-open/links:rotate-90 motion-reduce:transition-none"
+            />
+            Links oficiales y pruebas
+          </summary>
+          <div className="space-y-4 px-3 pb-3 sm:px-4 sm:pb-4">
+            <OfficialLinks />
+            <DeveloperNote base={base} />
+          </div>
+        </details>
       </ArcaGuideShell>
-    </PageShell>
+    </AdmPage>
   )
 }

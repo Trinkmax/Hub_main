@@ -1,74 +1,43 @@
-import { Ban, CheckCircle2, CircleAlert, CircleDashed, Clock, XCircle } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/administracion/kit'
 import type { ImportBatchStatus, ProposalStatus } from '@/lib/imports/server/types'
-import {
-  BATCH_STATUS_COPY,
-  PROPOSAL_STATUS_COPY,
-  TONE_BADGE_CLASS,
-  type UiTone,
-} from '@/lib/imports/ui/labels'
-import { cn } from '@/lib/utils'
+import { displayBatchStatus, type InboxBatch } from '@/lib/imports/ui/inbox'
+import { proposalBadge } from '@/lib/imports/ui/review-copy'
 
-const TONE_ICON: Readonly<Record<UiTone, typeof CheckCircle2>> = {
-  success: CheckCircle2,
-  warning: CircleAlert,
-  danger: XCircle,
-  info: Clock,
-  muted: Ban,
-}
-
-/** Un estado con su ícono y su texto (nunca solo el color). Server-safe. */
-export function ToneBadge({
-  tone,
-  children,
-  icon,
+/**
+ * El estado de un archivo y el de una hoja, como píldora (`StatusPill`: punto +
+ * palabra, nunca el color solo). Las palabras salen de `displayBatchStatus()` y
+ * `proposalBadge()`, así la lista del dueño y la tabla de la contadora dicen lo
+ * mismo («Nada para cargar», «Ya está cargado»…). Server-safe.
+ */
+export function BatchStatusPill({
+  batch,
   className,
 }: {
-  tone: UiTone
-  children: ReactNode
-  icon?: typeof CheckCircle2
+  batch: Pick<InboxBatch, 'status' | 'pending' | 'counts'> & { status: ImportBatchStatus }
   className?: string
 }) {
-  const Icon = icon ?? TONE_ICON[tone]
+  const shown = displayBatchStatus(batch)
   return (
-    <Badge variant="outline" className={cn('gap-1 font-normal', TONE_BADGE_CLASS[tone], className)}>
-      <Icon aria-hidden />
-      {children}
-    </Badge>
+    <span title={shown.hint} className={className}>
+      <StatusPill tone={shown.tone}>{shown.label}</StatusPill>
+    </span>
   )
 }
 
-export function BatchStatusBadge({
+export function ProposalStatusPill({
   status,
-  className,
-}: {
-  status: ImportBatchStatus
-  className?: string
-}) {
-  const copy = BATCH_STATUS_COPY[status]
-  return (
-    <ToneBadge
-      tone={copy.tone}
-      icon={status === 'staging' ? CircleDashed : undefined}
-      className={className}
-    >
-      {copy.label}
-    </ToneBadge>
-  )
-}
-
-export function ProposalStatusBadge({
-  status,
+  reason,
   className,
 }: {
   status: ProposalStatus
+  /** Por qué se salteó (`error.reason`): separa «Ya está cargado» de «No es nuestro». */
+  reason?: string | null
   className?: string
 }) {
-  const copy = PROPOSAL_STATUS_COPY[status]
+  const badge = proposalBadge(status, reason)
   return (
-    <ToneBadge tone={copy.tone} className={className}>
-      {copy.label}
-    </ToneBadge>
+    <StatusPill tone={badge.tone} className={className}>
+      {badge.label}
+    </StatusPill>
   )
 }

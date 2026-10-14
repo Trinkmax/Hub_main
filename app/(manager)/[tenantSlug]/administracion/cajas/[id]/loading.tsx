@@ -1,38 +1,94 @@
+import { AdmPage } from '@/components/administracion/kit'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ListSkeleton } from '@/components/ui/skeleton-list'
 
-/** Movimientos de una caja: volver, la cabecera, tres números, el período y la lista. */
+const ROWS = ['a', 'b', 'c', 'd', 'e', 'f'] as const
+
+/**
+ * La ficha de una caja mientras carga, con su forma: volver, el nombre, la
+ * tarjeta en grande (el número a la izquierda, el conteo a la derecha), el
+ * dibujo, el período y los movimientos día por día.
+ */
 export default function CajaLoading() {
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <Skeleton className="h-3 w-36" />
-      <div className="card-hairline flex items-start gap-4 rounded-xl border bg-card p-5 sm:p-6">
-        <Skeleton className="size-14 rounded-full" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-56" />
-          <Skeleton className="h-3 w-32" />
-        </div>
-        <div className="hidden space-y-2 sm:block">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-8 w-32" />
-        </div>
+    <AdmPage width="comfortable">
+      <div className="space-y-3" aria-hidden="true">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-9 w-56 max-w-full" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        {['a', 'b', 'c'].map((k) => (
-          <div key={k} className="card-hairline space-y-3 rounded-xl border bg-card p-5">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-3 w-24" />
+
+      <div
+        aria-hidden="true"
+        className="card-hairline relative overflow-hidden rounded-2xl border bg-card p-5 pt-[1.625rem] shadow-xs sm:p-6 sm:pt-[1.875rem]"
+      >
+        <Skeleton className="absolute inset-x-0 top-0 h-1.5 rounded-none" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-11 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-3 w-full max-w-md" />
           </div>
-        ))}
+        </div>
+        <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:gap-8">
+          <div className="space-y-2.5">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-12 w-64 max-w-full sm:h-14" />
+            <Skeleton className="h-4 w-full max-w-md" />
+          </div>
+          <div className="space-y-3 rounded-xl bg-secondary/50 p-4">
+            <Skeleton className="h-4 w-56 max-w-full" />
+            <Skeleton className="h-6 w-40 rounded-full" />
+            <Skeleton className="h-12 w-full rounded-full" />
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4">
+          <Skeleton className="h-11 w-32 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-44 rounded-full md:h-9" />
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Skeleton className="h-11 w-56 rounded-xl" />
-        <Skeleton className="h-11 w-24 rounded-full" />
-        <Skeleton className="h-11 w-24 rounded-full" />
+
+      <div
+        aria-hidden="true"
+        className="card-hairline space-y-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5"
+      >
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-80 max-w-full" />
+          <Skeleton className="h-4 w-full max-w-xl" />
+        </div>
+        <Skeleton className="h-40 w-full sm:h-48" />
+        <Skeleton className="h-24 w-full" />
       </div>
-      <ListSkeleton rows={8} />
-    </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3" aria-hidden="true">
+        <div className="flex gap-2">
+          <Skeleton className="h-11 w-44 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-24 rounded-full md:h-9" />
+        </div>
+        <Skeleton className="h-11 w-28 md:h-9" />
+      </div>
+
+      <div
+        aria-hidden="true"
+        className="card-hairline space-y-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5"
+      >
+        <Skeleton className="h-6 w-56" />
+        <div className="flex gap-1.5">
+          <Skeleton className="h-11 w-16 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-16 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-16 rounded-full md:h-9" />
+        </div>
+        <div className="divide-y divide-border/60">
+          {ROWS.map((key) => (
+            <div key={key} className="flex items-center gap-3 py-3">
+              <Skeleton className="size-9 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-40 max-w-full" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-4 w-24 shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </AdmPage>
   )
 }

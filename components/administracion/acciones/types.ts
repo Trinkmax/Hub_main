@@ -32,8 +32,8 @@ export const ACTION_TITLES: Readonly<Record<AccountingAction, string>> = {
   pagar: 'Pagar',
   cobrar: 'Registrar un cobro',
   mover: 'Mover plata',
-  ajustar: 'Ajustar saldo',
-  movimiento: 'Otro ingreso o egreso',
+  ajustar: 'Contar la caja',
+  movimiento: 'Otra entrada o salida',
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

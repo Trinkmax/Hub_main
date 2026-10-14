@@ -1,28 +1,32 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AdmHeader, AdmPage, categoryOptions, PanelError } from '@/components/administracion/kit'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { AccountingContextError, loadPostingCatalog } from '@/lib/accounting/context'
 import { getRecurringExpense, settleQuery } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
-import { BlockError } from '../../_components/block-error'
-import { isPurchaseImputation } from '../../_lib/accounts'
-import { comprasHref, isUuidLike, recurringHref } from '../../_lib/links'
+import { isPurchaseImputation, isQuickExpenseAccount } from '../../_lib/accounts'
+import { gastosFijosHref, isUuidLike, recurringHref } from '../../_lib/links'
 import { requireComprasAccess } from '../../_lib/page-access'
 import { isRecurringFrequency, nextDueFrom } from '../../_lib/recurring'
-import { PURCHASE_VOUCHER_OPTIONS } from '../../_lib/vouchers'
-import { RecurringForm, type RecurringFormValues } from './_components/recurring-form'
+import { RecurringForm } from './_components/recurring-form'
+import type { RecurringFormValues } from './_lib/form-payload'
 
 export const metadata = { title: 'Gasto fijo' }
 
 const PARTY_KINDS = new Set(['supplier', 'other', 'tax_agency'])
 
+const DESCRIPTION =
+  'Lo cargás una vez y aparece todos los meses en tu planilla, con su vencimiento.'
+
 /**
- * Alta (`/gastos-fijos/nuevo`) o edición de un gasto fijo (H.7). La contadora
- * ve un aviso con el link a la lista.
+ * La ficha de un gasto fijo: alta (`/gastos-fijos/nuevo`) o edición. Es un
+ * renglón de la planilla abierto en grande, con todo lo que la planilla no
+ * deja cambiar en el lugar (el papel de siempre, a quién y con qué se paga,
+ * las cuotas, el detalle). Lee lo mismo de siempre: ninguna lectura más.
+ *
+ * A la contadora se le muestra un aviso con la vuelta a la planilla, donde ve
+ * todos los datos en el renglón abierto.
  */
 export default async function GastoFijoPage({
   params,
@@ -32,35 +36,23 @@ export default async function GastoFijoPage({
   const { tenantSlug, id } = await params
   const creating = id === 'nuevo'
   if (!creating && !isUuidLike(id)) notFound()
-  const backHref = comprasHref(tenantSlug, 'gastos-fijos')
+  const backHref = gastosFijosHref(tenantSlug)
+  const back = { href: backHref, label: 'Gastos fijos' }
   const { access, canWrite } = await requireComprasAccess(
     tenantSlug,
     recurringHref(tenantSlug, creating ? 'nuevo' : id),
   )
 
-  const header = (title: string, description: string) => (
-    <>
-      <Link
-        href={backHref}
-        className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0"
-      >
-        <ArrowLeft className="size-3" aria-hidden />
-        Volver a gastos fijos
-      </Link>
-      <PageHeader eyebrow="Administración" title={title} description={description} />
-    </>
-  )
-
   if (!canWrite) {
     return (
-      <PageShell width="compact">
-        {header('Gasto fijo', 'Los recordatorios de alquiler, luz e internet.')}
+      <AdmPage width="compact">
+        <AdmHeader back={back} title="Gasto fijo" description={DESCRIPTION} />
         <ReadOnlyNotice
-          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Gastos fijos."
+          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Gastos fijos: tocá un renglón y se abre con sus datos."
           href={backHref}
           linkLabel="Ir a Gastos fijos"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
@@ -83,8 +75,6 @@ export default async function GastoFijoPage({
   if (rowOutcome?.ok && rowOutcome.data === null) notFound()
   const row = rowOutcome?.ok ? rowOutcome.data : null
   const title = creating ? 'Nuevo gasto fijo' : (row?.name ?? 'Gasto fijo')
-  const description =
-    'No es una deuda hasta que cargás la factura: es un recordatorio para que no se te pase.'
 
   if (!catalogOutcome.ok || (rowOutcome && !rowOutcome.ok)) {
     const message = !catalogOutcome.ok
@@ -93,15 +83,19 @@ export default async function GastoFijoPage({
         ? rowOutcome.message
         : ''
     return (
-      <PageShell width="compact">
-        {header(title, description)}
-        <BlockError message={message} />
-      </PageShell>
+      <AdmPage width="compact">
+        <AdmHeader back={back} title={title} description={DESCRIPTION} />
+        <PanelError title="La ficha del gasto fijo" message={message} />
+      </AdmPage>
     )
   }
 
   const catalog = catalogOutcome.data
   const imputable = new Set(catalog.accounts.filter(isPurchaseImputation).map((a) => a.id))
+  // Los chips de «¿En qué se gasta?»: las categorías pensadas para un gasto. Lo demás que se
+  // puede imputar sigue estando en «Ver el plan completo».
+  const quick = new Set(catalog.accounts.filter(isQuickExpenseAccount).map((a) => a.id))
+  const categories = categoryOptions(catalog.accounts, (accountId) => quick.has(accountId))
   const initial: RecurringFormValues = row
     ? {
         id: row.id,
@@ -145,13 +139,14 @@ export default async function GastoFijoPage({
       }
 
   return (
-    <PageShell width="compact">
-      {header(title, description)}
+    <AdmPage width="comfortable">
+      <AdmHeader back={back} title={title} description={DESCRIPTION} />
       <RecurringForm
         tenantSlug={tenantSlug}
         today={today}
         initial={initial}
         backHref={backHref}
+        categories={categories}
         parties={catalog.parties
           .filter((p) => PARTY_KINDS.has(p.kind) && (p.active || p.id === initial.partyId))
           .map((p) => ({
@@ -179,8 +174,7 @@ export default async function GastoFijoPage({
           balanceCents: t.balanceCents,
           active: t.active,
         }))}
-        voucherOptions={PURCHASE_VOUCHER_OPTIONS}
       />
-    </PageShell>
+    </AdmPage>
   )
 }

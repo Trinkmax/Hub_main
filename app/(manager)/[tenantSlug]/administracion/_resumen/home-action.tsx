@@ -33,7 +33,7 @@ export function HomeActionButton({
 
   // Un texto largo («Cargar el cierre del lunes 12/10») baja a dos renglones
   // en una tarjeta angosta en vez de salirse o cortarse.
-  const classes = cn('h-auto min-h-11 whitespace-normal py-2 text-balance', className)
+  const classes = cn('h-auto min-h-11 whitespace-normal py-2 text-center text-balance', className)
 
   if (action.kind === 'href') {
     return (

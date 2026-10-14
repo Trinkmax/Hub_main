@@ -1,6 +1,6 @@
 'use client'
 
-import { Ellipsis, FilePlus2, HandCoins, Tag } from 'lucide-react'
+import { BookOpen, Ellipsis, FilePlus2, HandCoins, ShoppingBasket, Tag } from 'lucide-react'
 import Link from 'next/link'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { Button } from '@/components/ui/button'
@@ -13,77 +13,95 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useSupplierAccountPicker } from './supplier-account-picker'
 
+const ITEM = 'min-h-11 gap-2 md:min-h-8'
+
 /**
- * Las acciones de un proveedor desde la lista (pedido de los socios,
- * 12/10/2026, que trabajan con cuenta corriente): [⋯] → Cargar compra · Pagar
- * · Elegir cuenta. Un menú y no dos botones: la fila ya lleva el saldo, el
- * vencido y el estado, y en el celular tiene que seguir leyéndose. La
- * contadora no lo ve.
+ * El ⋯ de un proveedor en la libreta: lo que no es LA acción del momento (esa
+ * es [Pagar], que va afuera, al lado del importe). Cargarle una compra a
+ * deber, cargar algo que ya se le pagó, pagarle o dejarle plata a cuenta,
+ * elegir su categoría y abrir su libreta. Las mismas reglas de siempre
+ * (`supplierRowActions`); la contadora no lo ve.
  */
 export function SupplierRowMenu({
   partyId,
   name,
   buyHref,
   canPay,
+  hasDebt,
   account,
+  libretaHref,
 }: {
   partyId: string
   name: string
-  /** La factura de compra con este proveedor ya elegido. `null`: está desactivado. */
+  /** La compra con este proveedor ya elegido. `null`: está desactivado. */
   buyHref: string | null
-  /** Hay algo para pagarle o está activo (un pago a cuenta). */
+  /** Hay algo para pagarle o está activo (plata a cuenta). */
   canPay: boolean
-  /** `pick` le falta la cuenta · `change` ya tiene · `null` se elige desde su ficha. */
+  /** Le debés algo: «Pagarle». Si no, «Dejarle plata a cuenta». */
+  hasDebt: boolean
+  /** `pick` le falta la categoría · `change` ya tiene · `null` se elige desde su hoja. */
   account: 'pick' | 'change' | null
+  /** Su hoja. */
+  libretaHref: string
 }) {
   const { readOnly, openAction } = useAccounting()
   const picker = useSupplierAccountPicker()
   const accountItem = picker && account ? account : null
-  if (readOnly || (!buyHref && !canPay && !accountItem)) return null
+  if (readOnly) return null
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="icon"
-          className="size-11 shrink-0 md:size-8"
-          aria-label={`Acciones con ${name}`}
+          className="size-11 shrink-0 rounded-full text-muted-foreground hover:text-foreground md:size-9"
+          aria-label={`Más acciones con ${name}`}
         >
           <Ellipsis className="size-4" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-64">
         {buyHref ? (
-          <DropdownMenuItem asChild className="min-h-11 gap-2 md:min-h-8">
-            <Link href={buyHref}>
-              <FilePlus2 className="size-4" aria-hidden />
-              Cargar compra
-            </Link>
-          </DropdownMenuItem>
-        ) : null}
-        {canPay ? (
-          <DropdownMenuItem
-            className="min-h-11 gap-2 md:min-h-8"
-            onSelect={() => openAction('pagar', { proveedor: partyId })}
-          >
-            <HandCoins className="size-4" aria-hidden />
-            Pagar
-          </DropdownMenuItem>
-        ) : null}
-        {accountItem ? (
           <>
-            {buyHref || canPay ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem asChild className={ITEM}>
+              <Link href={buyHref}>
+                <FilePlus2 className="size-4" aria-hidden />
+                Cargarle una compra que le debo
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem
-              className="min-h-11 gap-2 md:min-h-8"
-              onSelect={() => picker?.pick(partyId)}
+              className={ITEM}
+              onSelect={() => openAction('gasto', { proveedor: partyId })}
             >
-              <Tag className="size-4" aria-hidden />
-              {accountItem === 'pick' ? 'Elegir cuenta' : 'Cambiar la cuenta'}
+              <ShoppingBasket className="size-4" aria-hidden />
+              Le pagué algo recién
             </DropdownMenuItem>
           </>
         ) : null}
+        {canPay ? (
+          <DropdownMenuItem
+            className={ITEM}
+            onSelect={() => openAction('pagar', { proveedor: partyId })}
+          >
+            <HandCoins className="size-4" aria-hidden />
+            {hasDebt ? 'Pagarle' : 'Dejarle plata a cuenta'}
+          </DropdownMenuItem>
+        ) : null}
+        {buyHref || canPay ? <DropdownMenuSeparator /> : null}
+        {accountItem ? (
+          <DropdownMenuItem className={ITEM} onSelect={() => picker?.pick(partyId)}>
+            <Tag className="size-4" aria-hidden />
+            {accountItem === 'pick' ? 'Elegir categoría' : 'Cambiar la categoría'}
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem asChild className={ITEM}>
+          <Link href={libretaHref}>
+            <BookOpen className="size-4" aria-hidden />
+            Ver su libreta
+          </Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

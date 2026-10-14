@@ -1,48 +1,52 @@
-import { Banknote, CreditCard, Info, Scale, Wallet } from 'lucide-react'
-import Link from 'next/link'
 import { Suspense } from 'react'
-import { BlockError, PeriodError } from '@/components/administracion/cajas-ventas/block-error'
+import { PeriodError } from '@/components/administracion/cajas-ventas/block-error'
+import { ExportButton } from '@/components/administracion/cajas-ventas/export-button'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
 import { RangeFilter } from '@/components/administracion/cajas-ventas/period-filters'
 import { firstParam, resolveRange } from '@/components/administracion/cajas-ventas/periods'
-import { CHECK_STALE_DAYS } from '@/components/administracion/cajas-ventas/treasury-display'
+import { treasuryToneSwatch } from '@/components/administracion/charts/palette'
+import { AdmHeader, AdmPage, PanelError, ViewPills } from '@/components/administracion/kit'
 import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { SectionNav } from '@/components/administracion/section-nav'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { StatCard } from '@/components/ui/stat-card'
 import { CASH_CHART_RANGE_PARAM, resolveCashChartRange } from '@/lib/accounting/cash-daily'
+import { getSubledger } from '@/lib/accounting/queries/books'
 import { getCashDaily } from '@/lib/accounting/queries/cash-flow'
 import { exportHref } from '@/lib/accounting/queries/labels'
+import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import {
   getCashFlow,
   getCashProjection,
-  listTreasuryAccounts,
   listTreasuryBalances,
 } from '@/lib/accounting/queries/treasury'
+import type { TreasuryKind } from '@/lib/accounting/types'
 import {
+  addDays,
   addMonthsToYearMonth,
-  daysBetween,
   formatRange,
   monthOf,
   startOfMonth,
   todayInCordoba,
 } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
-import { cn } from '@/lib/utils'
-import { CajasHeaderActions } from './_components/cajas-header-actions'
-import { CashDailyBody, CashDailyCard, CashDailySkeleton } from './_components/cash-daily-section'
-import { CashFlow, CashProjection } from './_components/cash-flow'
+import { CashMoveBlock, CashMoveSkeleton } from './_components/cash-daily-section'
+import { FlowBlocks } from './_components/flow-blocks'
+import { ProjectionBlock } from './_components/projection-block'
+import { RECENT_DAYS, RecentActivity, RecentActivitySkeleton } from './_components/recent-activity'
 import { type TreasuryBalanceItem, TreasuryBalances } from './_components/treasury-balances'
+import { Wallet } from './_components/wallet'
+import { WalletEmpty, WalletNoTreasuries } from './_components/wallet-empty'
+import { walletHero, walletTones, walletTotals, walletView } from './_lib/wallet-view'
 
 export const metadata = { title: 'Cajas y bancos' }
 
 type Tab = 'saldos' | 'flujo'
 
+/**
+ * Cajas y bancos, «la billetera». Dos vistas en la URL: «Lo que hay» (la de
+ * siempre: el total, una tarjeta por caja, cómo se movió y los últimos
+ * movimientos) y «Entró y salió» (`?tab=flujo`: mes por mes, en qué se fue y si
+ * alcanza para las próximas semanas).
+ */
 export default async function CajasPage({
   params,
   searchParams,
@@ -54,7 +58,7 @@ export default async function CajasPage({
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
   const tab: Tab = firstParam(sp.tab) === 'flujo' ? 'flujo' : 'saldos'
-  const { access } = await requireAdminPage(
+  const { access, canWrite } = await requireAdminPage(
     tenantSlug,
     tab === 'flujo' ? `${base}/cajas?tab=flujo` : `${base}/cajas`,
   )
@@ -62,198 +66,151 @@ export default async function CajasPage({
   const today = todayInCordoba()
 
   return (
-    <PageShell>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Cajas y bancos <ReadOnlyBadge />
-          </>
-        }
-        description="Cuánta plata hay en cada caja, banco y billetera, y cómo se movió."
-        actions={<CajasHeaderActions base={base} />}
-      />
-
-      <SectionNav
+    <AdmPage>
+      <AdmHeader title="Cajas y bancos" badge={<ReadOnlyBadge />} />
+      <ViewPills
         label="Secciones de Cajas y bancos"
-        active={tab}
         items={[
-          { value: 'saldos', label: 'Saldos', href: `${base}/cajas` },
-          { value: 'flujo', label: 'Flujo de caja', href: `${base}/cajas?tab=flujo` },
+          { key: 'saldos', label: 'Lo que hay', href: `${base}/cajas`, active: tab === 'saldos' },
+          {
+            key: 'flujo',
+            label: 'Entró y salió',
+            href: `${base}/cajas?tab=flujo`,
+            active: tab === 'flujo',
+          },
         ]}
       />
 
       {tab === 'saldos' ? (
-        <SaldosTab tenantId={tenantId} tenantSlug={tenantSlug} base={base} today={today} sp={sp} />
+        <LoQueHay
+          tenantId={tenantId}
+          tenantSlug={tenantSlug}
+          base={base}
+          today={today}
+          canWrite={canWrite}
+          sp={sp}
+        />
       ) : (
-        <FlujoTab tenantId={tenantId} tenantSlug={tenantSlug} today={today} sp={sp} />
+        <EntroYSalio
+          tenantId={tenantId}
+          tenantSlug={tenantSlug}
+          base={base}
+          today={today}
+          canWrite={canWrite}
+          sp={sp}
+        />
       )}
 
       <QuickActionsBar />
-    </PageShell>
+    </AdmPage>
   )
 }
 
-async function SaldosTab({
-  tenantId,
-  tenantSlug,
-  base,
-  today,
-  sp,
-}: {
+type TabProps = {
   tenantId: string
   tenantSlug: string
   base: string
   today: string
+  canWrite: boolean
   sp: Record<string, string | string[] | undefined>
-}) {
-  // El gráfico se pide junto con los saldos pero no se espera acá: se dibuja
-  // cuando llega, en su propio Suspense. `settleQuery` nunca rechaza.
+}
+
+async function LoQueHay({ tenantId, tenantSlug, base, today, canWrite, sp }: TabProps) {
+  // El dibujo se pide junto con los saldos pero no se espera acá: llega en su
+  // propio Suspense. `settleQuery` nunca rechaza.
   const chartRange = resolveCashChartRange(firstParam(sp[CASH_CHART_RANGE_PARAM]), today)
   const cashDaily = settleQuery(
     getCashDaily(tenantId, { from: chartRange.from, to: chartRange.to }),
   )
-  const [balances, accounts] = await Promise.all([
+  const [balances, settingsResult] = await Promise.all([
     settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
-    settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })),
+    settleQuery(getAccountingSettings(tenantId)),
   ])
-  if (!balances.ok) return <BlockError message={balances.message} />
+  if (!balances.ok) return <PanelError title="Lo que hay" message={balances.message} />
 
-  const detailById = new Map(
-    (accounts.ok ? accounts.data : []).map((t) => [t.id, t.alias ?? t.bankName ?? null]),
-  )
-  const items: TreasuryBalanceItem[] = balances.data.map((t) => ({
+  const rows = balances.data
+  const settings = settingsResult.ok ? settingsResult.data : null
+  const view = walletView(rows, settings, { today, canWrite, base })
+
+  if (view.kind === 'no_treasuries') return <WalletNoTreasuries view={view} />
+  if (view.kind === 'opening_pending') return <WalletEmpty view={view} canWrite={canWrite} />
+
+  const tones = walletTones(rows)
+  const swatches: Record<string, string> = {}
+  const kinds: Record<string, TreasuryKind> = {}
+  for (const row of rows) {
+    swatches[row.treasuryId] = treasuryToneSwatch(tones[row.treasuryId] ?? null)
+    kinds[row.treasuryId] = row.kind
+  }
+
+  // «Últimos movimientos» mira dos semanas: si ninguna caja se movió en ese
+  // tiempo, la lectura no se pide.
+  const recentFrom = addDays(today, -(RECENT_DAYS - 1))
+  const recent =
+    view.lastMovementDate !== null && view.lastMovementDate >= recentFrom
+      ? settleQuery(getSubledger(tenantId, { kind: 'treasury', from: recentFrom, to: today }))
+      : null
+
+  const items: TreasuryBalanceItem[] = rows.map((t) => ({
     id: t.treasuryId,
     name: t.name,
     kind: t.kind,
     balanceCents: t.balanceCents,
     pendingWalletCents: t.pendingWalletCents,
     lastCheckedOn: t.lastCheckedOn,
+    lastMovementDate: t.lastMovementDate,
     active: t.active,
-    detail: detailById.get(t.treasuryId) ?? null,
+    detail: t.alias ?? t.bankName ?? null,
   }))
 
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        icon={Wallet}
-        title="Todavía no hay cajas ni cuentas"
-        description="Agregá la caja de efectivo, el banco y las billeteras en Ajustes para empezar a cargar."
-        action={
-          <Button asChild>
-            <Link href={`${base}/ajustes?tab=cajas`}>Ir a Ajustes</Link>
-          </Button>
+  return (
+    <div className="space-y-8">
+      <Wallet
+        view={view}
+        base={base}
+        canWrite={canWrite}
+        table={
+          <TreasuryBalances
+            items={items}
+            availableCents={walletTotals(rows).availableCents}
+            today={today}
+            since={settings?.booksStartDate ?? null}
+            base={base}
+            exportHref={exportHref(tenantSlug, 'cajas-y-bancos', { hasta: today })}
+            exportFileName={`administracion-${tenantSlug}-cajas-y-bancos-${today}.csv`}
+          />
         }
       />
-    )
-  }
 
-  const money = items.filter((t) => t.kind !== 'credit_card')
-  const cards = items.filter((t) => t.kind === 'credit_card')
-  const available = money.reduce((acc, t) => acc + t.balanceCents, 0)
-  const pending = money.reduce((acc, t) => acc + t.pendingWalletCents, 0)
-  const cardDebt = cards.reduce((acc, t) => acc + Math.max(0, -t.balanceCents), 0)
-  const unchecked = items.filter(
-    (t) =>
-      t.active &&
-      (t.lastCheckedOn === null || daysBetween(t.lastCheckedOn, today) > CHECK_STALE_DAYS),
-  ).length
-  // Si ninguna se contó nunca, «hace más de 7 días» no es cierto: se dice como en cada fila.
-  const neverChecked = items.filter((t) => t.active && t.lastCheckedOn === null).length
-  const untouched = balances.data.every((t) => t.lastMovementDate === null)
-
-  return (
-    <div className="space-y-6">
-      {/* Tres tarjetas (sin tarjetas de crédito) ocupan el ancho entero, como la tabla de abajo. */}
-      <section
-        className={cn(
-          'grid gap-4 sm:grid-cols-2',
-          cards.length > 0 ? 'xl:grid-cols-4' : 'lg:grid-cols-3',
-        )}
-        aria-label="Resumen de cajas"
-      >
-        <StatCard
-          icon={Banknote}
-          iconClassName="text-success"
-          label="Plata disponible"
-          value={formatCentsShort(available)}
-          hint="En cajas, bancos y billeteras"
-        />
-        <StatCard
-          icon={Wallet}
-          iconClassName="text-info"
-          label="Por acreditar"
-          value={formatCentsShort(pending)}
-          hint={pending > 0 ? 'QR y transferencias que todavía no entraron' : 'Nada pendiente'}
-        />
-        {cards.length > 0 ? (
-          <StatCard
-            icon={CreditCard}
-            iconClassName="text-warning"
-            label="Deuda de tarjetas"
-            value={formatCentsShort(cardDebt)}
-            hint={cardDebt > 0 ? 'Lo que vas a pagar en el resumen' : 'Sin deuda'}
+      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
+        <Suspense fallback={<CashMoveSkeleton className="lg:col-span-8" />}>
+          <CashMoveBlock
+            report={cashDaily}
+            range={chartRange}
+            today={today}
+            base={base}
+            booksStartDate={settings?.booksStartDate ?? null}
+            tones={tones}
+            className="min-w-0 lg:col-span-8"
           />
-        ) : null}
-        <StatCard
-          icon={Scale}
-          iconClassName={unchecked > 0 ? 'text-warning' : 'text-primary'}
-          label="Sin ajustar"
-          value={String(unchecked)}
-          hint={
-            unchecked === 0
-              ? 'Todas contadas esta semana'
-              : neverChecked === unchecked
-                ? unchecked === 1
-                  ? 'Nunca se ajustó'
-                  : 'Nunca se ajustaron'
-                : `Hace más de ${CHECK_STALE_DAYS} días que no se cuentan`
-          }
-        />
-      </section>
-
-      {untouched ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <div className="space-y-1 text-pretty">
-            <p className="font-medium">Todavía no hay movimientos.</p>
-            <p className="text-muted-foreground">
-              Los saldos se mueven solos cuando cargás cierres del día, gastos, cobros y pagos. Si
-              no coinciden con lo que hay de verdad, usá «Ajustar saldo».
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      <TreasuryBalances
-        items={items}
-        availableCents={available}
-        today={today}
-        base={base}
-        exportHref={exportHref(tenantSlug, 'cajas-y-bancos', { hasta: today })}
-        exportFileName={`administracion-${tenantSlug}-cajas-y-bancos-${today}.csv`}
-      />
-
-      <CashDailyCard>
-        <Suspense fallback={<CashDailySkeleton />}>
-          <CashDailyBody report={cashDaily} range={chartRange} today={today} />
         </Suspense>
-      </CashDailyCard>
+        <Suspense fallback={<RecentActivitySkeleton className="lg:col-span-4" />}>
+          <RecentActivity
+            page={recent}
+            base={base}
+            today={today}
+            swatches={swatches}
+            kinds={kinds}
+            lastMovementDate={view.lastMovementDate}
+            className="min-w-0 lg:col-span-4"
+          />
+        </Suspense>
+      </div>
     </div>
   )
 }
 
-async function FlujoTab({
-  tenantId,
-  tenantSlug,
-  today,
-  sp,
-}: {
-  tenantId: string
-  tenantSlug: string
-  today: string
-  sp: Record<string, string | string[] | undefined>
-}) {
+async function EntroYSalio({ tenantId, tenantSlug, base, today, canWrite, sp }: TabProps) {
   // Por defecto, los últimos tres meses (con el actual).
   const fallbackFrom = startOfMonth(addMonthsToYearMonth(monthOf(today), -2))
   const range = resolveRange(sp, today, { kind: 'range', from: fallbackFrom, to: today })
@@ -267,35 +224,52 @@ async function FlujoTab({
         label: formatRange(fallbackFrom, today),
       } as const)
 
-  const [flow, projection] = range.ok
-    ? await Promise.all([
-        settleQuery(getCashFlow(tenantId, { from: range.from, to: range.to })),
-        settleQuery(getCashProjection(tenantId, { asOf: today, weeks: 4 })),
-      ])
-    : [null, null]
+  // Los saldos y la configuración dicen si «la plata de hoy» es un dato (la
+  // proyección no estima nada sobre un cero que no lo es).
+  const [flow, projection, balances, settingsResult] = await Promise.all([
+    range.ok ? settleQuery(getCashFlow(tenantId, { from: range.from, to: range.to })) : null,
+    settleQuery(getCashProjection(tenantId, { asOf: today, weeks: 4 })),
+    settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
+    settleQuery(getAccountingSettings(tenantId)),
+  ])
+  const rows = balances.ok ? balances.data : []
+  const settings = settingsResult.ok ? settingsResult.data : null
+  const known = balances.ok && walletHero(rows, settings, { canWrite, base }).kind === 'normal'
+  const everMoved = rows.some((r) => r.lastMovementDate !== null)
 
   return (
     <div className="space-y-6">
-      <RangeFilter range={picker} today={today} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <RangeFilter range={picker} today={today} />
+        {range.ok ? (
+          <ExportButton
+            href={exportHref(tenantSlug, 'flujo-de-caja', { desde: range.from, hasta: range.to })}
+            fileName={`administracion-${tenantSlug}-flujo-de-caja-${range.from}-${range.to}.csv`}
+            className="h-11 md:h-9"
+          />
+        ) : null}
+      </div>
       {!range.ok ? (
         <PeriodError message={range.message} />
       ) : !flow?.ok ? (
-        <BlockError message={flow?.message ?? ''} />
+        <PanelError title="Entró y salió" message={flow?.message ?? ''} />
       ) : (
-        <CashFlow
+        <FlowBlocks
           rows={flow.data}
           label={range.label}
-          exportHref={exportHref(tenantSlug, 'flujo-de-caja', {
-            desde: range.from,
-            hasta: range.to,
-          })}
-          exportFileName={`administracion-${tenantSlug}-flujo-de-caja-${range.from}-${range.to}.csv`}
+          tableFirst={!canWrite}
+          everMoved={everMoved}
         />
       )}
-      {/* La proyección es opcional (F.9): si la base todavía no la tiene, no se muestra. */}
-      {projection?.ok && projection.data.length > 0 ? (
-        <CashProjection rows={projection.data} />
-      ) : null}
+      <ProjectionBlock
+        // Sin los saldos no hay «plata de hoy» de la que partir: es un error, no un vacío.
+        projection={balances.ok ? projection : balances}
+        availableCents={walletTotals(rows).availableCents}
+        known={known}
+        today={today}
+        base={base}
+        canWrite={canWrite}
+      />
     </div>
   )
 }

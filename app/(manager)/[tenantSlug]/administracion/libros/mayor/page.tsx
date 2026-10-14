@@ -1,8 +1,10 @@
 import { ListTree } from 'lucide-react'
 import type { AccountOption } from '@/components/administracion/account-combobox'
+import { Amount } from '@/components/administracion/amount'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { PillLink } from '@/components/administracion/kit/pill'
 import type { PartyOption } from '@/components/administracion/party-combobox'
 import { type StatementRow, StatementTable } from '@/components/administracion/statement-table'
-import { EmptyState } from '@/components/ui/empty-state'
 import { loadPostingCatalog, type PostingCatalog } from '@/lib/accounting/context'
 import {
   exportHref,
@@ -13,8 +15,9 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { decodePageToken } from '@/lib/accounting/queries/shared'
-import { formatIsoDay, todayInCordoba } from '@/lib/dates'
+import { formatDayMonth, formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { BookPage } from '../_components/book-page'
+import { BookTotals } from '../_components/book-totals'
 import { ExportButton } from '../_components/export-button'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
@@ -56,6 +59,37 @@ function accountOptions(catalog: PostingCatalog, selected: string | null): Accou
       active: true,
       description: a.postable ? a.description : 'Grupo: suma todas sus cuentas.',
     }))
+}
+
+/** Las cuentas del sistema que más se miran en el mayor, con el nombre que les da un socio. */
+const QUICK_SYSTEM_ACCOUNTS: ReadonlyArray<{ systemKey: string; label: string }> = [
+  { systemKey: 'payable_suppliers', label: 'Proveedores' },
+  { systemKey: 'vat_credit', label: 'IVA de compras' },
+  { systemKey: 'vat_debit', label: 'IVA de ventas' },
+  { systemKey: 'vat_payable', label: 'IVA a pagar' },
+]
+
+/**
+ * «Las más buscadas»: una píldora por caja o cuenta del bar y las cuatro del
+ * sistema. El mayor abría vacío y pedía saber qué cuenta buscar entre más de
+ * doscientas; con esto las de todos los días están a un toque.
+ */
+function quickAccounts(catalog: PostingCatalog): Array<{ id: string; label: string }> {
+  const out: Array<{ id: string; label: string }> = []
+  const seen = new Set<string>()
+  const push = (id: string | null | undefined, label: string) => {
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    out.push({ id, label })
+  }
+  for (const treasury of catalog.treasuries) {
+    if (treasury.active) push(treasury.accountId, treasury.name)
+  }
+  for (const quick of QUICK_SYSTEM_ACCOUNTS) {
+    const account = catalog.accounts.find((a) => a.systemKey === quick.systemKey && a.active)
+    push(account?.id, quick.label)
+  }
+  return out
 }
 
 function partyOptions(catalog: PostingCatalog): PartyOption[] {
@@ -131,6 +165,8 @@ export default async function MayorPage({
   const exportAll = exportHref(tenantSlug, 'mayor-general', { desde: shown.from, hasta: shown.to })
   const suffix = `${shown.from}_${shown.to}`
 
+  const totals = page?.account ? page.periodTotals : null
+
   return (
     <BookPage
       backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
@@ -156,6 +192,9 @@ export default async function MayorPage({
           />
         </>
       }
+      booksPath={`${base}/libros`}
+      book="mayor"
+      period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
@@ -175,6 +214,35 @@ export default async function MayorPage({
           ) : null}
         </div>
       }
+      totals={
+        // En la segunda página la base no manda los totales del período: la banda no se dibuja.
+        totals ? (
+          <BookTotals
+            items={[
+              {
+                key: 'anterior',
+                label: 'Saldo anterior',
+                value: <Amount cents={totals.openingCents} side currency={false} />,
+              },
+              {
+                key: 'debe',
+                label: 'Debe',
+                value: <Amount cents={totals.debitCents} currency={false} />,
+              },
+              {
+                key: 'haber',
+                label: 'Haber',
+                value: <Amount cents={totals.creditCents} currency={false} />,
+              },
+              {
+                key: 'saldo',
+                label: `Saldo al ${formatDayMonth(shown.to)}`,
+                value: <Amount cents={totals.closingCents} side currency={false} />,
+              },
+            ]}
+          />
+        ) : null
+      }
     >
       {!range.ok ? <PeriodError message={range.message} /> : null}
       {!catalogResult.ok ? (
@@ -187,12 +255,18 @@ export default async function MayorPage({
             message="Esa cuenta no existe en este bar."
             hint="Elegila de nuevo con el buscador de arriba."
           />
-        ) : catalogResult.ok ? (
-          <EmptyState
-            icon={ListTree}
-            title="Elegí una cuenta"
-            description="El mayor muestra los movimientos de una cuenta con su saldo. Buscala por nombre o por código, con o sin puntos (por ejemplo, «1.1.01.01» o «110101» encuentran Caja y bancos). Si elegís un grupo, suma todas sus cuentas."
-          />
+        ) : catalog ? (
+          <>
+            <QuickAccounts
+              accounts={quickAccounts(catalog)}
+              hrefFor={(id) => bookHref(path, { ...period, cuenta: id })}
+            />
+            <EmptyTeach icon={ListTree} title="O buscá cualquier cuenta arriba">
+              El mayor muestra los movimientos de una cuenta con su saldo. Buscala por nombre o por
+              código, con o sin puntos (por ejemplo, «1.1.01.01» o «110101» encuentran Caja y
+              bancos). Si elegís un grupo, suma todas sus cuentas.
+            </EmptyTeach>
+          </>
         ) : null
       ) : null}
 
@@ -219,6 +293,38 @@ export default async function MayorPage({
         />
       ) : null}
     </BookPage>
+  )
+}
+
+function QuickAccounts({
+  accounts,
+  hrefFor,
+}: {
+  accounts: ReadonlyArray<{ id: string; label: string }>
+  hrefFor: (id: string) => string
+}) {
+  if (accounts.length === 0) return null
+  return (
+    <nav aria-labelledby="mas-buscadas" className="space-y-2">
+      <h2
+        id="mas-buscadas"
+        className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+      >
+        Las más buscadas
+      </h2>
+      <ul className="flex flex-wrap gap-1.5">
+        {accounts.map((account) => (
+          <li key={account.id}>
+            <PillLink
+              href={hrefFor(account.id)}
+              className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+            >
+              {account.label}
+            </PillLink>
+          </li>
+        ))}
+      </ul>
+    </nav>
   )
 }
 
@@ -249,14 +355,10 @@ function rowDetail(row: LedgerRow, isGroup: boolean): string | null {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-function voucherOf(row: LedgerRow): string {
-  const number =
-    row.entryNumber === null
-      ? null
-      : `Asiento ${row.entryNumber}${row.numberIsProvisional ? ' (provisorio)' : ''}`
-  const label = row.documentLabel ?? null
-  if (label && number) return `${label} · ${number}`
-  return label ?? number ?? 'Asiento'
+/** «Asiento 12» (con «(provisorio)» mientras el mes está abierto), o `null` sin número. */
+function entryLabel(row: LedgerRow): string | null {
+  if (row.entryNumber === null) return null
+  return `Asiento ${row.entryNumber}${row.numberIsProvisional ? ' (provisorio)' : ''}`
 }
 
 function LedgerView({
@@ -286,16 +388,26 @@ function LedgerView({
   })
   const singlePage = info.isFirst && !page.nextCursor
 
-  const rows: StatementRow[] = lines.map((row, index) => ({
-    id: `${row.entryId ?? 'linea'}-${seenBefore + index}`,
-    date: row.entryDate ?? page.from,
-    voucher: voucherOf(row),
-    href: row.entryId ? `${base}/asientos/${row.entryId}` : null,
-    detail: rowDetail(row, isGroup),
-    debitCents: row.debitCents || null,
-    creditCents: row.creditCents || null,
-    balanceCents: row.runningBalanceCents,
-  }))
+  const rows: StatementRow[] = lines.map((row, index) => {
+    const entryHref = row.entryId ? `${base}/asientos/${row.entryId}` : null
+    const entry = entryLabel(row)
+    const label = row.documentLabel?.trim() || null
+    // Con comprobante: el nombre lleva a su ficha y «Asiento 12», en gris, a cómo quedó en los
+    // libros. Sin comprobante, el link es al asiento, como siempre.
+    const toDocument = Boolean(label && row.documentId)
+    return {
+      id: `${row.entryId ?? 'linea'}-${seenBefore + index}`,
+      date: row.entryDate ?? page.from,
+      voucher: label ?? entry ?? 'Asiento',
+      href: toDocument ? `${base}/comprobantes/${row.documentId}` : entryHref,
+      secondaryHref: toDocument ? entryHref : null,
+      secondaryLabel: toDocument ? (entry ?? 'Ver el asiento') : undefined,
+      detail: rowDetail(row, isGroup),
+      debitCents: row.debitCents || null,
+      creditCents: row.creditCents || null,
+      balanceCents: row.runningBalanceCents,
+    }
+  })
 
   // En la primera página, el «Saldo anterior» de la base; en las siguientes,
   // el saldo con que arranca la página (para leer de corrido).
@@ -332,7 +444,7 @@ function LedgerView({
             : null
         }
         emptyText="No hay movimientos en este período."
-        footnote="Saldo: D = deudor, A = acreedor. Cada movimiento lleva a su asiento."
+        footnote="Saldo: D = deudor, A = acreedor. El comprobante lleva a su ficha; «Asiento N», a cómo quedó en los libros."
       />
       <KeysetPagination
         info={info}

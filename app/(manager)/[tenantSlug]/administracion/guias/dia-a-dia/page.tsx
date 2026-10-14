@@ -1,6 +1,5 @@
 import { Recipes } from '@/components/administracion/guias/uso/recipes'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { GUIDE_PATHS, GUIDE_RECIPES } from '@/lib/accounting/guides'
 import { settleQuery } from '@/lib/accounting/queries'
@@ -17,6 +16,9 @@ export const metadata = { title: 'El día a día · Guía · Administración' }
  *
  * Las que son rutina dicen solas si estás al día (`acc_report_onboarding`); si esa lectura falla
  * se ven igual, sin marcas. La contadora las lee sin botones de carga.
+ *
+ * Sin el «＋ Cargar» flotante del celular: al lado de un lanzador dibujado con «Tocá acá»
+ * confundía cuál era el de verdad, y cada receta ya termina con su botón.
  */
 export default async function GuiaDiaADiaPage({
   params,
@@ -34,7 +36,15 @@ export default async function GuiaDiaADiaPage({
         back={{ href: `${base}${GUIDE_PATHS.home}`, label: 'Volver a la guía' }}
         title="El día a día, paso a paso"
         badge={<ReadOnlyBadge />}
-        description={`${GUIDE_RECIPES.length} situaciones. En cada una: qué tocar, cómo saber que quedó bien y qué hacer si algo sale mal.`}
+        description={
+          <>
+            {GUIDE_RECIPES.length} situaciones. En cada una: qué tocar, cómo saber que quedó bien y
+            qué hacer si algo sale mal.
+            <span className="mt-1 block text-xs">
+              Las pantallas son dibujos de ejemplo: los importes no son los tuyos.
+            </span>
+          </>
+        }
       />
 
       {canWrite ? null : (
@@ -45,8 +55,6 @@ export default async function GuiaDiaADiaPage({
       )}
 
       <Recipes base={base} overview={onboarding.ok ? onboarding.data : null} />
-
-      <QuickActionsBar />
     </AdmPage>
   )
 }

@@ -33,12 +33,18 @@ import { cn } from '@/lib/utils'
  *   `showPopover`, queda `fixed` y listo.
  * - La marca activa recibe `data-tip-active` para que el dibujo la resalte
  *   (`group-data-[tip-active]/mark:…`).
+ * - **No tapa lo que explica**: sobre una columna que llega al techo del
+ *   dibujo se abre de costado, no encima de su etiqueta y del título.
  */
 
 const MARK = '[data-tip-title]'
 const ANCHOR = '[data-tip-anchor]'
 /** Aire entre el globito y la marca, y contra el borde de la pantalla. */
 const GAP = 8
+/** Hasta qué ancho una marca es «una columna» (y su globito puede ir de costado). */
+const SIDE_MAX_WIDTH = 32
+/** Cuánto puede asomar el globito por arriba del dibujo antes de pasar al costado. */
+const SIDE_SLACK = 4
 
 export type ChartTipProps = {
   children: ReactNode
@@ -99,14 +105,29 @@ export function ChartTip({ children, className, scrub = true, snap = 16 }: Chart
 
     // Arriba de lo que se ve de la marca (la barra, el punto) y centrado; si no
     // entra arriba, abajo. Nunca se sale de la pantalla por los costados.
-    const anchor = mark.querySelector<HTMLElement>(ANCHOR) ?? mark
-    const rect = anchor.getBoundingClientRect()
+    const anchorEl = mark.querySelector<HTMLElement>(ANCHOR)
+    const rect = (anchorEl ?? mark).getBoundingClientRect()
     const width = tip.offsetWidth
     const height = tip.offsetHeight
     const maxX = Math.max(GAP, window.innerWidth - width - GAP)
-    const x = Math.min(maxX, Math.max(GAP, rect.left + rect.width / 2 - width / 2))
     const above = rect.top - height - GAP
-    const y = above >= GAP ? above : rect.bottom + GAP
+    let x = Math.min(maxX, Math.max(GAP, rect.left + rect.width / 2 - width / 2))
+    let y = above >= GAP ? above : rect.bottom + GAP
+
+    // Una columna que llega al techo del dibujo: arriba el globito taparía su
+    // etiqueta y el título del gráfico. Ahí se abre al costado de la barra (a
+    // la derecha si entra; si no, a la izquierda), a la altura del techo.
+    const rootTop = rootRef.current?.getBoundingClientRect().top ?? 0
+    if (anchorEl && rect.width <= SIDE_MAX_WIDTH && above < rootTop - SIDE_SLACK) {
+      const right = rect.right + GAP
+      const left = rect.left - width - GAP
+      const side = right + width + GAP <= window.innerWidth ? right : left >= GAP ? left : null
+      if (side !== null) {
+        x = side
+        const maxY = Math.max(GAP, window.innerHeight - height - GAP)
+        y = Math.min(maxY, Math.max(GAP, rect.top))
+      }
+    }
     tip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
   }, [])
 

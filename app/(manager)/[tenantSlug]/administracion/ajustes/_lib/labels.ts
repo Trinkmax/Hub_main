@@ -33,11 +33,15 @@ export const CLOSED_PERIOD_VOID_LABELS = {
   negative_row: 'Con una fila en negativo',
 } as const
 
-/** Qué pasa con lo cobrado con cada tipo de medio (H.17). */
+/**
+ * Qué pasa con lo cobrado con cada tipo de medio (H.17). Dicho como lo ve el
+ * dueño: «la billetera» y no una marca (hay bares con otra), y «te lo pagan
+ * después» en vez de «queda a cobrar».
+ */
 export const SALES_METHOD_KIND_LABELS = {
   treasury: 'Entra entero a una caja',
-  settled_now: 'Entra a Mercado Pago con descuentos',
-  receivable: 'Queda a cobrar',
+  settled_now: 'Entra a la billetera, con descuentos',
+  receivable: 'Te lo pagan después',
   customer_account: 'Cuenta corriente de un cliente',
   advance: 'Seña ya cobrada',
 } as const

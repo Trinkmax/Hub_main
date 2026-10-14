@@ -6,7 +6,7 @@ import { BalanceArea } from '@/components/administracion/charts/balance-area'
 import { CloseStrip, type CloseStripDay } from '@/components/administracion/charts/close-strip'
 import { DayBars, type DayBarsDay, DayBarsTable } from '@/components/administracion/charts/day-bars'
 import { DueStrip } from '@/components/administracion/charts/due-strip'
-import { InOutBars } from '@/components/administracion/charts/in-out-bars'
+import { InOutBars, InOutBarsTable } from '@/components/administracion/charts/in-out-bars'
 import { Meter } from '@/components/administracion/charts/meter'
 import {
   OTHERS_SWATCH,
@@ -16,6 +16,7 @@ import {
 import { RankBars } from '@/components/administracion/charts/rank-bars'
 import {
   compactCents,
+  compactCentsFine,
   labelIndexes,
   linePaths,
   niceDomain,
@@ -170,6 +171,20 @@ describe('pct / sharePercents / percentLabel', () => {
     expect(percentLabel(0)).toBe(`0${NBSP}%`)
     expect(percentLabel(0, true)).toBe(`menos de 1${NBSP}%`)
     expect(percentLabel(Number.NaN)).toBe('—')
+  })
+})
+
+describe('compactCentsFine', () => {
+  it('un escalón más de detalle que el eje, sin ceros de más', () => {
+    expect(compactCentsFine(1_953_339_20)).toBe(`$${NBSP}1,95${NBSP}M`)
+    expect(compactCentsFine(2_000_000_00)).toBe(`$${NBSP}2${NBSP}M`)
+    expect(compactCentsFine(1_200_000_00)).toBe(`$${NBSP}1,2${NBSP}M`)
+    expect(compactCentsFine(349_560_00)).toBe(`$${NBSP}349,6${NBSP}mil`)
+    expect(compactCentsFine(12_345_00)).toBe(`$${NBSP}12,35${NBSP}mil`)
+    expect(compactCentsFine(850_00)).toBe(`$${NBSP}850`)
+    expect(compactCentsFine(-2_500_000_00)).toBe(`−$${NBSP}2,5${NBSP}M`)
+    expect(compactCentsFine(0)).toBe(`$${NBSP}0`)
+    expect(compactCentsFine(Number.NaN)).toBe('')
   })
 })
 
@@ -441,7 +456,28 @@ describe('DayBars', () => {
     ]
     const out = html(createElement(DayBars, { days }))
     expect(out).toContain(`$${NBSP}15${NBSP}M`)
-    expect(out).toContain(`data-tip-value="$${NBSP}12.345.678,90"`)
+    // El globito va en pesos, como el resto del tablero; el dato al centavo queda en lo
+    // que lee un lector de pantalla.
+    expect(out).toContain(`data-tip-value="$${NBSP}12.345.679"`)
+    expect(out).not.toContain('data-tip-value="$ 12.345.678,90"')
+    expect(labels(out).some((l) => l.includes(`$${NBSP}12.345.678,90`))).toBe(true)
+  })
+
+  it('la etiqueta del día más alto no repite una marca del eje', () => {
+    // $ 1.953.339 abreviado es «$ 2 M», lo mismo que dice el eje al lado: va con más detalle.
+    const near: DayBarsDay[] = [
+      { date: START, label: 'Jue 01/10', cents: 1_953_339_20, state: 'ok' },
+      { date: addDays(START, 1), label: 'Vie 02/10', cents: 800_000_00, state: 'ok' },
+    ]
+    const out = html(createElement(DayBars, { days: near }))
+    expect(count(out, `>$${NBSP}2${NBSP}M<`)).toBe(2) // el eje y su fantasma, no la columna
+    expect(out).toContain(`>$${NBSP}1,95${NBSP}M<`)
+    // Justo en la marca no hay nada más fino que decir: la columna no lleva etiqueta.
+    const exact: DayBarsDay[] = [
+      { date: START, label: 'Jue 01/10', cents: 2_000_000_00, state: 'ok' },
+      { date: addDays(START, 1), label: 'Vie 02/10', cents: 800_000_00, state: 'ok' },
+    ]
+    expect(count(html(createElement(DayBars, { days: exact })), `>$${NBSP}2${NBSP}M<`)).toBe(2)
   })
 
   it('un solo dato se dibuja (no es «sin datos») y lleva su etiqueta', () => {
@@ -467,6 +503,9 @@ describe('DayBars', () => {
     const out = html(createElement(DayBarsTable, { days }))
     expect(out).toContain('Falta cargar')
     expect(count(out, '<tr')).toBe(1 + 31 + 1)
+    // Sin centavos, y el total dice de qué es.
+    expect(out).toContain('Total de los días cargados')
+    expect(out).not.toMatch(/,\d\d</)
   })
 })
 
@@ -602,6 +641,71 @@ describe('InOutBars', () => {
     expect(out).toContain('bg-adm-out')
     // El eje no escribe montos negativos: «salió $ 5 M», no «−$ 5 M».
     expect(out).not.toMatch(/>−\$/)
+  })
+
+  const weeks = [
+    {
+      key: 's1',
+      label: '14 al 20/09',
+      shortLabel: '14–20/9',
+      inCents: 7_319_568_78,
+      outCents: 200_000_00,
+    },
+    {
+      key: 's2',
+      label: '28/09 al 04/10',
+      shortLabel: '28/9–4/10',
+      inCents: 9_210_777_17,
+      outCents: 1_129_010_00,
+    },
+    {
+      key: 's3',
+      label: '12 al 13/10',
+      shortLabel: 'esta semana',
+      inCents: 0,
+      outCents: 0,
+      emptyText: 'Sin movimientos todavía',
+    },
+  ]
+
+  it('abajo reserva solo lo que salió, y cada marca del eje dice su sentido', () => {
+    const out = html(createElement(InOutBars, { buckets: weeks }))
+    // Salió $ 1,1 M como mucho: el eje baja a $ 2 M, no un paso entero del de arriba ($ 5 M).
+    expect(out).toContain(`>↓ $${NBSP}2${NBSP}M<`)
+    expect(out).not.toContain(`↓ $${NBSP}5${NBSP}M`)
+    expect(out).toContain(`>↑ $${NBSP}10${NBSP}M<`)
+    expect(out).toContain(`>↑ $${NBSP}5${NBSP}M<`)
+    // Una sola escala: $ 9,2 M de 12 M de alto total.
+    expect(out).toContain('height:calc(76.76% - 1px)')
+    // El eje usa la etiqueta corta; el globito y el aria-label, la larga.
+    expect(out).toContain('>14–20/9<')
+    expect(out).toContain('>esta semana<')
+    expect(out).toContain('data-tip-title="28/09 al 04/10"')
+    // El globito va sin centavos.
+    expect(out).toContain(`data-tip-value="↑ Entró $${NBSP}9.210.777"`)
+  })
+
+  it('con lo mismo de los dos lados el eje sigue siendo simétrico', () => {
+    const out = html(
+      createElement(InOutBars, {
+        buckets: [{ key: 'a', label: 'Sem 40', inCents: 9_000_000_00, outCents: 8_000_000_00 }],
+      }),
+    )
+    expect(out).toContain(`>↑ $${NBSP}10${NBSP}M<`)
+    expect(out).toContain(`>↓ $${NBSP}10${NBSP}M<`)
+    expect(out).toContain(`>↓ $${NBSP}5${NBSP}M<`)
+  })
+
+  it('la tabla va sin centavos y una semana sin movimientos lo dice con palabras', () => {
+    const out = html(createElement(InOutBarsTable, { buckets: weeks }))
+    expect(out).toContain(`$${NBSP}9.210.777`)
+    expect(out).toContain(`+$${NBSP}8.081.767`)
+    expect(out).not.toMatch(/,\d\d</)
+    expect(out).toContain('Sin movimientos todavía')
+    // Ni en la versión angosta ni en la ancha la semana vacía figura como «$ 0».
+    expect(out).not.toContain(`>$${NBSP}0<`)
+    expect(out).toContain('Diferencia')
+    expect(out).toContain(`+$${NBSP}15.201.336`)
   })
 })
 

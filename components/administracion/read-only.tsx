@@ -3,7 +3,8 @@
 import { Eye, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
+import { DoorSign } from '@/components/administracion/puerta/door-sign'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useAccountingOptional } from './accounting-provider'
@@ -12,8 +13,9 @@ const BANNER_KEY = 'hub_acc_readonly_banner_hidden'
 
 /**
  * La franja de la contadora arriba de Administración (H.19): «Estás en modo
- * lectura…». Se puede ocultar por sesión (sessionStorage; si no hay, vuelve a
- * aparecer, que no es grave).
+ * lectura…». Una línea baja, con el ojo: está siempre a la vista pero no
+ * empuja la pantalla. Se puede ocultar por sesión (sessionStorage; si no hay,
+ * vuelve a aparecer, que no es grave).
  */
 export function ReadOnlyBanner({ className }: { className?: string }) {
   const [hidden, setHidden] = useState(false)
@@ -31,12 +33,12 @@ export function ReadOnlyBanner({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-3 text-sm sm:items-center',
+        'flex items-center gap-2.5 rounded-xl border border-info/30 bg-info/10 py-1 pr-1 pl-3.5 text-sm sm:rounded-full',
         className,
       )}
     >
-      <Eye aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-info sm:mt-0" />
-      <p className="flex-1 text-pretty">
+      <Eye aria-hidden="true" className="size-4 shrink-0 text-info" />
+      <p className="min-w-0 flex-1 py-1 leading-snug text-pretty">
         Estás en modo lectura <span className="text-muted-foreground">(Contabilidad)</span>: podés
         ver y exportar todo.
       </p>
@@ -44,7 +46,7 @@ export function ReadOnlyBanner({ className }: { className?: string }) {
         type="button"
         variant="ghost"
         size="icon"
-        className="-my-1 size-9 shrink-0 text-muted-foreground"
+        className="size-11 shrink-0 rounded-full text-muted-foreground md:size-8"
         aria-label="Ocultar este aviso"
         onClick={() => {
           setHidden(true)
@@ -62,27 +64,27 @@ export function ReadOnlyBanner({ className }: { className?: string }) {
 }
 
 /**
- * La etiqueta «Solo lectura» al lado del título (H.2). Sin `show`, la decide
- * el contexto de Administración (contadora o dueño sin escritura).
+ * La etiqueta «Solo lectura» del título (H.2): una píldora gris con el ojo. Va
+ * en la prop `badge` de `AdmHeader` (`badge={<ReadOnlyBadge />}`) y no trae
+ * margen propio. Sin `show`, la decide el contexto de Administración
+ * (contadora o dueño sin escritura).
  */
 export function ReadOnlyBadge({ show, className }: { show?: boolean; className?: string }) {
   const ctx = useAccountingOptional()
   const visible = show ?? ctx?.readOnly ?? false
   if (!visible) return null
   return (
-    <Badge
-      variant="muted"
-      className={cn('ml-2 align-middle font-sans text-xs tracking-normal', className)}
-    >
+    <StatusPill tone="muted" icon={Eye} className={className}>
       Solo lectura
-    </Badge>
+    </StatusPill>
   )
 }
 
 /**
- * Lo que ve la contadora si entra a una pantalla de carga (H.19): qué es y a
- * dónde ir a verlo. «Esta pantalla es para cargar comprobantes. Con
- * Contabilidad podés verlos en Compras › Comprobantes.» [Ir a Comprobantes].
+ * Lo que ve la contadora si entra a una pantalla de carga (H.19): el cartel
+ * «SOLO LECTURA», qué es esa pantalla y a dónde ir a verlo. «Esta pantalla es
+ * para cargar comprobantes. Con Contabilidad podés verlos en Compras ›
+ * Comprobantes.» [Ir a Comprobantes].
  */
 export function ReadOnlyNotice({
   title = 'Esta pantalla es para cargar',
@@ -100,16 +102,16 @@ export function ReadOnlyNotice({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-14 text-center',
+        'flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/50 px-6 pt-8 pb-10 text-center',
         className,
       )}
     >
-      <div className="mb-5 flex size-14 items-center justify-center rounded-full border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-        <Eye className="size-6" aria-hidden />
-      </div>
-      <p className="font-serif text-lg font-semibold tracking-tight text-foreground">{title}</p>
+      <DoorSign word="Solo lectura" className="mb-6" />
+      <p className="font-serif text-xl font-semibold tracking-tight text-balance text-foreground">
+        {title}
+      </p>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground text-pretty">{description}</p>
-      <Button asChild className="mt-6 h-11 md:h-9">
+      <Button asChild className="mt-6 h-11 px-5">
         <Link href={href}>{linkLabel}</Link>
       </Button>
     </div>

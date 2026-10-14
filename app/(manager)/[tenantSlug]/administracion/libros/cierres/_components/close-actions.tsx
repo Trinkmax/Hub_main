@@ -42,8 +42,12 @@ const DESTRUCTIVE = 'gap-2 bg-destructive text-destructive-foreground hover:bg-d
 
 /**
  * «Cerrar octubre» (H.15, C.5.1): confirma lo irreversible, acepta los avisos
- * que la persona está viendo y, si corresponde, registra la liquidación de
- * IVA con las cifras que se ven (si cambiaron mientras tanto, se recarga).
+ * que la persona está viendo y, si corresponde, anota el IVA del mes con las
+ * cifras que se ven (si cambiaron mientras tanto, se recarga).
+ *
+ * `emphasis` es solo de aspecto: `quiet` lo dibuja en contorno, para cuando
+ * todavía quedan avisos por mirar y el botón que toca es otro (un solo primario
+ * por pantalla). Lo que manda no cambia.
  */
 export function CloseMonthButton({
   tenantSlug,
@@ -52,6 +56,7 @@ export function CloseMonthButton({
   nextMonthNoun,
   warningKeys,
   iva,
+  emphasis = 'primary',
 }: {
   tenantSlug: string
   /** Primer día del mes (`yyyy-MM-01`). */
@@ -67,6 +72,7 @@ export function CloseMonthButton({
    * apagar (no, si hay que reemplazar una liquidación que quedó vieja).
    */
   iva: { expected: IvaPositionExpected; summary: string; optional: boolean } | null
+  emphasis?: 'primary' | 'quiet'
 }) {
   const router = useRouter()
   const switchId = useId()
@@ -123,18 +129,25 @@ export function CloseMonthButton({
 
   const label = `Cerrar ${monthNoun}`
   return (
-    <div className="flex flex-col gap-3 sm:items-end">
+    <div className="flex flex-col gap-3 sm:items-start">
       {iva?.optional ? (
-        <div className="flex min-h-11 items-center gap-3">
+        <div className="flex min-h-11 items-start gap-3">
           <Switch
             id={switchId}
             checked={generate}
             onCheckedChange={setGenerate}
             disabled={pending}
+            aria-describedby={`${switchId}-hint`}
+            className="mt-0.5"
           />
-          <Label htmlFor={switchId} className="text-sm font-normal">
-            Registrar la liquidación del IVA al cerrar
-          </Label>
+          <div className="space-y-0.5">
+            <Label htmlFor={switchId} className="text-sm font-normal">
+              Anotar el IVA del mes al cerrar
+            </Label>
+            <p id={`${switchId}-hint`} className="text-xs text-muted-foreground">
+              Si lo apagás, el mes se cierra sin anotar el IVA.
+            </p>
+          </div>
         </div>
       ) : null}
       <AlertDialog
@@ -148,7 +161,12 @@ export function CloseMonthButton({
           }
         }}
       >
-        <Button type="button" className="h-11 gap-2 md:h-10" onClick={() => setOpen(true)}>
+        <Button
+          type="button"
+          variant={emphasis === 'quiet' ? 'outline' : 'default'}
+          className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
+          onClick={() => setOpen(true)}
+        >
           <Lock className="size-4" aria-hidden />
           {label}
         </Button>
@@ -425,9 +443,9 @@ export function CloseFiscalYearButton({
 
   const resultText =
     resultCents > 0
-      ? `ganancia de ${formatCents(resultCents)}`
+      ? `resultado del ejercicio: ${formatCents(resultCents)}, positivo`
       : resultCents < 0
-        ? `pérdida de ${formatCents(-resultCents)}`
+        ? `resultado del ejercicio: ${formatCents(-resultCents)}, negativo`
         : 'resultado cero'
 
   return (

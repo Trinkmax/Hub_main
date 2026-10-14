@@ -36,7 +36,7 @@ export function SupplierAccountLine({
         aria-label={`Cambiar la cuenta solo para esta carga (ahora va a ${accountName})`}
         className="inline-flex min-h-11 items-center rounded-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
       >
-        Cambiar
+        Cambiar categoría
       </button>
     </div>
   )

@@ -40,9 +40,10 @@ export async function MonthBlock({ data, className }: { data: HomeData; classNam
   const { summary, totals } = projection
   const { base, canWrite } = data
   const month = monthName(Number(data.today.slice(5, 7))) || 'este mes'
-  const days = monthDays(projection, {
-    booksStartDate: settingsResult.ok ? (settingsResult.data?.booksStartDate ?? null) : null,
-  })
+  const booksStartDate = settingsResult.ok ? (settingsResult.data?.booksStartDate ?? null) : null
+  const days = monthDays(projection, { booksStartDate })
+  // Los libros arrancaron a mitad de mes: los días de antes van sin casillero, y se dice por qué.
+  const startedMidMonth = booksStartDate !== null && days.days.some((d) => d.state === 'before')
   const title = monthTitle(summary, month)
   const sentence = monthSentence(projection)
   const hasSales = days.loaded > 0 && summary.soldCents > 0
@@ -68,6 +69,9 @@ export async function MonthBlock({ data, className }: { data: HomeData; classNam
     href: loadHref(d.path),
   }))
   const figures = projectionFigures(summary)
+  // La tabla llega hasta hoy: los días que todavía no llegaron eran 18 filas de rayas.
+  const tableDays = bars.filter((d) => d.state !== 'future')
+  const daysToCome = days.days.filter((d) => d.state === 'future').length
 
   return (
     <Panel className={className}>
@@ -97,14 +101,23 @@ export async function MonthBlock({ data, className }: { data: HomeData; classNam
                 ) : null}
               </div>
             }
-            table={<DayBarsTable days={bars} caption={`Lo vendido cada día de ${month}`} />}
+            table={
+              <div className="space-y-2">
+                <DayBarsTable days={tableDays} caption={`Lo vendido cada día de ${month}`} />
+                {daysToCome > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {daysToCome === 1
+                      ? 'Queda 1 día del mes.'
+                      : `Quedan ${daysToCome} días del mes.`}
+                  </p>
+                ) : null}
+              </div>
+            }
           />
         ) : (
           <EmptyTeach plain title={title} illustration={<ChartSilhouette kind="bars" />}>
             <p>{sentence}</p>
-            <p className="mt-1.5">
-              Cada cierre suma una columna: vas a ver qué días vendiste más y cómo viene el mes.
-            </p>
+            <p className="mt-1.5">Cada cierre suma una columna: vas a ver qué días vendiste más.</p>
           </EmptyTeach>
         )}
       </PanelSection>
@@ -136,17 +149,26 @@ export async function MonthBlock({ data, className }: { data: HomeData; classNam
               </PanelLink>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl bg-secondary/50 px-3 py-2.5">
-              <p className="flex items-center gap-2 text-sm text-pretty">
-                <Target className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                {canWrite
-                  ? 'Poné un objetivo para ver si llegás.'
-                  : 'Este mes no tiene objetivos cargados.'}
-              </p>
-              <PanelLink href={projectionHref}>
-                {canWrite ? 'Cargar objetivos' : 'Ver la proyección'}
-                <ArrowRight className="size-3.5" aria-hidden />
-              </PanelLink>
+            // Un renglón: la invitación ES el link (antes eran la frase y, abajo, «Cargar objetivos»).
+            <div className="rounded-xl bg-secondary/50 px-3 sm:py-2.5">
+              {canWrite ? (
+                <PanelLink href={projectionHref} className="gap-2 whitespace-normal text-pretty">
+                  <Target className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  Poné un objetivo para ver si llegás
+                  <ArrowRight className="size-3.5 shrink-0" aria-hidden />
+                </PanelLink>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-x-4">
+                  <p className="flex items-center gap-2 text-sm text-pretty">
+                    <Target className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    Este mes no tiene objetivos cargados.
+                  </p>
+                  <PanelLink href={projectionHref}>
+                    Ver la proyección
+                    <ArrowRight className="size-3.5" aria-hidden />
+                  </PanelLink>
+                </div>
+              )}
             </div>
           )}
         </PanelSection>
@@ -167,12 +189,19 @@ export async function MonthBlock({ data, className }: { data: HomeData; classNam
                 href: `${base}/ventas/cierre?fecha=${days.firstMissing}`,
                 label: `Cargar el del ${formatDayMonth(days.firstMissing)}`,
               }}
-              className="min-h-11 sm:min-h-9"
+              className="min-h-11 sm:min-h-9 dark:border-foreground/25 dark:bg-transparent"
             />
           ) : undefined
         }
       >
-        <CloseStrip days={strip} showLegend={false} />
+        {startedMidMonth && booksStartDate ? (
+          // A todo el ancho y antes del almanaque: explica los primeros días, que van sin casillero.
+          <p className="mb-2 text-xs text-muted-foreground text-pretty">
+            Llevás la cuenta desde el {formatDayMonth(booksStartDate)}: los días de antes no se
+            cargan.
+          </p>
+        ) : null}
+        <CloseStrip days={strip} showLegend={false} foldFuture />
       </PanelSection>
 
       {hasSales ? (

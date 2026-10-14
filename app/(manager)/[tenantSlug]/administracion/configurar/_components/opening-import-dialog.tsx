@@ -29,7 +29,7 @@ import {
 export type ImportedPayable = OpeningImportLine & { partyId: string }
 
 /**
- * «Cargar una lista» de las deudas con proveedores de los saldos iniciales
+ * «Pegar la lista de mi planilla»: las deudas con proveedores de los saldos iniciales
  * (pedido de los socios, 12/10/2026): se pegan desde la planilla el proveedor
  * y lo que se le debía (y, si están, el vencimiento y el comprobante) y quedan
  * como renglones del formulario, para revisarlos antes de guardar. Los
@@ -104,7 +104,7 @@ export function OpeningImportDialog({
         }}
       >
         <ListPlus className="size-4" aria-hidden />
-        Cargar una lista
+        Pegar la lista de mi planilla
       </Button>
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">

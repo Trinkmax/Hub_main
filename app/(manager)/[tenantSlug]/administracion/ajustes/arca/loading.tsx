@@ -1,22 +1,22 @@
-import { PageShell } from '@/components/ui/page-shell'
+import { AdmPage } from '@/components/administracion/kit/adm-page'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /**
- * «Conectar ARCA» mientras carga: volver, el encabezado, las dos tarjetas de arriba, el riel de
- * pasos (en la compu) o la barra (en el celular) y dos pasos. La forma real, sin spinner.
+ * «Conectar ARCA» mientras carga: el volver, el encabezado, la franja plegada de «Antes de
+ * arrancar», el riel de pasos (en la compu) o la barra (en el celular) y dos pasos. La forma
+ * real, sin spinner.
  */
 export default function ConectarArcaLoading() {
   return (
-    <PageShell width="comfortable">
-      <Skeleton className="h-3 w-28" />
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-28" />
-        <Skeleton className="h-8 w-56" />
-        <Skeleton className="h-4 w-96 max-w-full" />
+    <AdmPage width="comfortable">
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-16" />
+        <div className="space-y-2.5">
+          <Skeleton className="h-9 w-64 max-w-full" />
+          <Skeleton className="h-4 w-[30rem] max-w-full" />
+        </div>
       </div>
-      <Skeleton className="h-28 rounded-xl" />
-      <Skeleton className="h-64 rounded-xl" />
-      <Skeleton className="h-11 rounded-xl" />
+      <Skeleton className="h-12 rounded-2xl" />
       <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
         <div className="card-hairline hidden space-y-3 rounded-xl border bg-card p-4 lg:block">
           <Skeleton className="h-4 w-32" />
@@ -51,6 +51,6 @@ export default function ConectarArcaLoading() {
           ))}
         </div>
       </div>
-    </PageShell>
+    </AdmPage>
   )
 }

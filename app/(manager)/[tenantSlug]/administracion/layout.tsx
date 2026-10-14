@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { AccountingProvider } from '@/components/administracion/accounting-provider'
 import { AdmNav } from '@/components/administracion/nav/adm-nav'
+import { AdmFab } from '@/components/administracion/nav/launcher-fab'
 import { ReadOnlyBanner } from '@/components/administracion/read-only'
 import { resolveSection } from '@/components/shell/section-tabs-config'
 import { loadSectionViewer } from '@/components/shell/section-tabs-server'
@@ -46,6 +47,10 @@ export const maxDuration = 60
  * arriba de todo SOLO en la última fila: nunca en las pantallas de la puerta ni en el asistente.
  * Qué pestañas ve cada uno lo sigue resolviendo `resolveSection` (la misma regla del menú);
  * `AdmNav` solo las ordena y las dibuja.
+ *
+ * `AdmFab` es el «＋ Cargar» flotante del celular: lo pone este marco en las pantallas de primer
+ * nivel (menos Ajustes y la Guía: ver `admFabFromFrame`), para que esté siempre en el mismo
+ * lugar. No se dibuja para la contadora ni en las pantallas de tarea, que tienen su propio pie.
  */
 export default async function AdministracionLayout({
   children,
@@ -113,6 +118,7 @@ export default async function AdministracionLayout({
         </div>
       ) : null}
       {children}
+      <AdmFab />
     </AccountingProvider>
   )
 }

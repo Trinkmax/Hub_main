@@ -1,31 +1,23 @@
+import { AdmPage } from '@/components/administracion/kit'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ListSkeleton } from '@/components/ui/skeleton-list'
+import { CreamHeroSkeleton, LedgerSkeleton } from '../../_components/skeletons'
 
-/** Ficha de un cliente o plataforma: volver, cabecera, números, antigüedad, pestañas y estado de cuenta. */
+/** La ficha de quien te debe: volver, el nombre, cuánto te debe, las tres vistas y lo pendiente. */
 export default function ClienteLoading() {
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <Skeleton className="h-3 w-48" />
-      <div className="card-hairline flex items-start gap-4 rounded-xl border bg-card p-5 sm:p-6">
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-7 w-52" />
-          <Skeleton className="h-4 w-64" />
-          <Skeleton className="h-3 w-40" />
-        </div>
-        <Skeleton className="hidden h-8 w-40 sm:block" />
+    <AdmPage width="comfortable">
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="h-9 w-72 max-w-full" />
+        <Skeleton className="h-4 w-64 max-w-full" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['a', 'b', 'c', 'd'].map((k) => (
-          <div key={k} className="card-hairline space-y-3 rounded-xl border bg-card p-5">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-3 w-32" />
-          </div>
-        ))}
+      <CreamHeroSkeleton />
+      <div className="flex gap-1.5 overflow-hidden py-1">
+        <Skeleton className="h-11 w-36 shrink-0 rounded-full md:h-9" />
+        <Skeleton className="h-11 w-40 shrink-0 rounded-full md:h-9" />
+        <Skeleton className="h-11 w-20 shrink-0 rounded-full md:h-9" />
       </div>
-      <Skeleton className="h-20 w-full rounded-xl" />
-      <Skeleton className="h-9 w-80 max-w-full rounded-lg" />
-      <ListSkeleton rows={6} />
-    </div>
+      <LedgerSkeleton rows={6} />
+    </AdmPage>
   )
 }

@@ -11,8 +11,10 @@ import {
   GUIDE_PATHS,
   type GuidePaper,
   PAPER_FACTS,
+  PAPERS_ANCHOR,
   type PaperAnswer,
   type PaperCase,
+  type PaperRoute,
   recipeAnchor,
 } from '@/lib/accounting/guides'
 import { formatCentsShort } from '@/lib/money'
@@ -31,6 +33,10 @@ import { PaperArt } from './station-art'
 
 const LINK =
   'rounded-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+/* En estas páginas la barra de la sección no queda pegada al bajar: alcanza con el aire del
+   encabezado para que el título no quede tapado (con más, asoma la cola del bloque anterior). */
+const ANCHORED = 'scroll-mt-20'
 
 /** La respuesta de una celda: el ícono dice sí, no o «a veces», y la palabra lo repite. */
 function Answer({ answer, text }: { answer: PaperAnswer; text: string }) {
@@ -79,6 +85,8 @@ function PaperHead({ paper }: { paper: GuidePaper }) {
 /** La fila de «¿Queda en tus números?» va resaltada: es la que no cambia nunca. */
 const KEY_FACT = 'your_numbers'
 
+const FILTER_LABEL = 'En Comprobantes figura como'
+
 /**
  * Los cuatro papeles. En la compu, una grilla: los papeles arriba y una pregunta por renglón, para
  * comparar de un vistazo. En el celular, un papel debajo del otro con sus cuatro respuestas.
@@ -86,6 +94,8 @@ const KEY_FACT = 'your_numbers'
 export function PapersCompare() {
   return (
     <Panel
+      id={PAPERS_ANCHOR.papers}
+      className={ANCHORED}
       title="Los cuatro quedan en tus números. Lo que cambia es el IVA."
       description="Mirá el papel que te dieron y bajá por su columna."
     >
@@ -146,7 +156,7 @@ export function PapersCompare() {
                 scope="row"
                 className="border-t border-border/60 py-3 pr-3 align-top text-sm font-medium text-pretty"
               >
-                En Comprobantes figura como
+                {FILTER_LABEL}
               </th>
               {GUIDE_PAPERS.map((paper) => (
                 <td key={paper.id} className="border-t border-border/60 px-3 py-3 align-top">
@@ -170,9 +180,6 @@ export function PapersCompare() {
                 <p className="mt-1 text-[13px] leading-snug text-muted-foreground text-pretty">
                   {paper.lead}
                 </p>
-                <p className="mt-2">
-                  <StatusPill tone="muted">{paper.filter}</StatusPill>
-                </p>
               </div>
             </div>
             <dl className="mt-3.5 grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-3 gap-y-2.5">
@@ -186,11 +193,55 @@ export function PapersCompare() {
                   </dd>
                 </Fragment>
               ))}
+              {/* Igual que la última fila de la grilla de la compu: sin el rótulo, la píldora
+                  se leía como si fuera el tipo de papel. */}
+              <dt className="text-[13px] leading-snug text-muted-foreground text-pretty">
+                {FILTER_LABEL}
+              </dt>
+              <dd>
+                <StatusPill tone="muted">{paper.filter}</StatusPill>
+              </dd>
             </dl>
           </li>
         ))}
       </ul>
     </Panel>
+  )
+}
+
+/**
+ * «Dónde lo cargo»: lo que se toca, en orden. En la compu va en una línea, y cada paso viaja con
+ * su flechita (si no entra, baja entero: nunca queda una «›» suelta al final del renglón). En el
+ * celular los rótulos son largos y no entran de costado: un paso por renglón, numerado.
+ */
+function RouteSteps({ route, first }: { route: PaperRoute; first: boolean }) {
+  const lead = first ? 'Dónde lo cargo' : null
+  const label = [lead, route.when].filter((part) => part !== null && part !== undefined)
+  return (
+    <div className="sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-2 sm:gap-y-1.5">
+      <p className="text-muted-foreground max-sm:mb-1.5">{label.join(' · ')}:</p>
+      <ol className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-1 sm:gap-y-1.5">
+        {route.steps.map((step, index) => (
+          <li key={step} className="flex items-baseline gap-2 sm:items-center sm:gap-1">
+            <span
+              aria-hidden
+              className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary/50 text-[11px] font-semibold tabular-nums sm:hidden"
+            >
+              {index + 1}
+            </span>
+            {index > 0 ? (
+              <ChevronRight
+                aria-hidden
+                className="hidden size-3.5 shrink-0 text-muted-foreground sm:block"
+              />
+            ) : null}
+            <span className="min-w-0 rounded-md bg-secondary/70 px-1.5 py-0.5 font-medium text-pretty sm:whitespace-nowrap">
+              {step}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }
 
@@ -200,18 +251,12 @@ function CaseRow({ item, base }: { item: PaperCase; base: string }) {
       <PaperArt id={item.art} className="hidden h-[4.5rem] sm:block" />
       <div className="min-w-0">
         <h3 className="font-medium leading-snug text-pretty">{item.title}</h3>
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px]">
-          <span className="mr-0.5 text-muted-foreground">Dónde lo cargo:</span>
-          {item.where.map((step, index) => (
-            <Fragment key={step}>
-              {index > 0 ? (
-                <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-              ) : null}
-              <span className="rounded-md bg-secondary/70 px-1.5 py-0.5 font-medium">{step}</span>
-            </Fragment>
+        <div className="mt-2 space-y-2.5 text-[13px]">
+          {item.where.map((route, index) => (
+            <RouteSteps key={route.steps.join('›')} route={route} first={index === 0} />
           ))}
-        </p>
-        <ul className="mt-2 space-y-0.5 text-sm text-muted-foreground">
+        </div>
+        <ul className="mt-2.5 space-y-0.5 text-sm text-muted-foreground">
           {item.result.map((line) => (
             <li key={line} className="text-pretty">
               {line}
@@ -238,6 +283,8 @@ function CaseRow({ item, base }: { item: PaperCase; base: string }) {
 export function PaperCases({ base }: { base: string }) {
   return (
     <Panel
+      id={PAPERS_ANCHOR.cases}
+      className={ANCHORED}
       title="¿Qué papel tengo y dónde lo cargo?"
       description="Los casos de todos los días. La puerta cambia según si ya pagaste o lo pagás después."
     >
@@ -258,6 +305,8 @@ const INVOICED = 31_000_000
 export function SalesInvoicing({ base }: { base: string }) {
   return (
     <Panel
+      id={PAPERS_ANCHOR.sales}
+      className={ANCHORED}
       title="En las ventas, «sin factura» es lo que queda al restar"
       description="Acá no elegís un papel: cargás lo que facturaste y la plataforma hace la cuenta."
     >

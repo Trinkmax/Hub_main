@@ -37,12 +37,17 @@ import {
  * - Lo que viene después de hoy va atenuado y la leyenda lo llama «estimado».
  * - `compact`: sin ejes, sin etiquetas y sin marcas, para acompañar al número
  *   héroe. `tone="onHero"`: sobre el panel verde, en dorado.
+ * - Un día con `href` se toca: lleva a lo que pasó ese día (los movimientos de
+ *   la caja). Sin `href` el día solo se lee, como siempre. En `compact` no hay
+ *   marcas, así que no hay nada que tocar.
  */
 
 export type BalanceAreaPoint = {
   /** `yyyy-MM-dd`. */
   date: string
   cents: number
+  /** A dónde lleva tocar ese día (sus movimientos). Opcional: sin esto, el día no es un link. */
+  href?: string
 }
 
 export type BalanceAreaProps = {
@@ -290,10 +295,11 @@ export function BalanceArea({
               return (
                 <ChartMark
                   key={p.date}
-                  label={`${title}: ${label.toLowerCase()} ${formatCents(value)}${estimated ? ', estimado' : ''}`}
+                  href={p.href}
+                  label={`${title}: ${label.toLowerCase()} ${formatCents(value)}${estimated ? ', estimado' : ''}${p.href ? '. Abre lo que pasó ese día' : ''}`}
                   tipTitle={title}
                   tipValue={formatCents(value)}
-                  tipSub={estimated ? `${label} estimado` : label}
+                  tipSub={`${estimated ? `${label} estimado` : label}${p.href ? '\nTocá para ver ese día' : ''}`}
                   className="h-full min-w-0 flex-1 rounded-[3px]"
                 >
                   <span

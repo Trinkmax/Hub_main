@@ -1,175 +1,144 @@
-import { ChevronRight } from 'lucide-react'
+import { Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { Amount } from '@/components/administracion/amount'
-import { TrafficStatus } from '@/components/administracion/cajas-ventas/traffic-status'
-import {
-  DataTableBody,
-  DataTableCell,
-  DataTableFooter,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
+import { LedgerList, LedgerRail, LedgerRow } from '@/components/administracion/kit'
+import { ActionButton } from '@/components/administracion/quick-actions'
 import { PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import type { PartyListRow } from '@/lib/accounting/queries/parties'
-import { formatIsoDay } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { formatCentsShort } from '@/lib/money'
+import { receivableMeta, receivableRail, type WalletBox } from '../_lib/incoming'
 
-function displayName(row: Pick<PartyListRow, 'partyName' | 'tradeName'>): string {
+export function partyDisplayName(row: Pick<PartyListRow, 'partyName' | 'tradeName'>): string {
   return row.tradeName && row.tradeName !== row.partyName ? row.tradeName : row.partyName
 }
 
-/** Lo que tiene a favor: el cliente (anticipos, NC) o la plataforma («le debemos»). */
+/** Lo que tiene a favor: el cliente (anticipos, notas de crédito) o la plataforma («le debemos»). */
 function creditText(row: PartyListRow): string | null {
   if (row.creditCents <= 0) return null
-  const amount = formatCents(row.creditCents)
+  const amount = formatCentsShort(row.creditCents)
   return row.partyKind === 'customer' ? `A favor ${amount}` : `Le debemos ${amount}`
 }
 
+const ROW_ACTION = 'h-11 rounded-full px-4 md:pointer-fine:h-9'
+
 /**
- * «Clientes y plataformas» (H.9): Posnet, billeteras, plataformas y empresas
- * con su estado («PedidosYa está atrasada 5 días»), lo que te deben, lo
- * vencido, la próxima acreditación y lo que tienen a favor. Tabla en la compu,
- * tarjetas en el celular. Server-safe.
+ * «Quién te debe»: un renglón por tarjeta, app o cliente con algo abierto. En
+ * el margen, desde cuándo está atrasado o para cuándo llega; en el centro,
+ * quién es y su estado en palabras; a la derecha, cuánto y la acción del
+ * momento: «Ya entró» abre la hoja de cobrar con ese pagador elegido. Una
+ * billetera con su caja no se cobra: se cuenta («Contar Mercado Pago»).
+ *
+ * El renglón entero lleva a la ficha; el botón queda por encima del link.
+ * Quien solo mira ve los mismos renglones sin botones.
  */
 export function ReceivablesList({
   rows,
-  total,
+  wallets,
   base,
+  today,
+  canWrite,
 }: {
   rows: readonly PartyListRow[]
-  total: number
+  /** Los pagadores que son una billetera con su caja. */
+  wallets: ReadonlyMap<string, WalletBox>
+  /** `/<bar>/administracion`. */
   base: string
+  today: string
+  canWrite: boolean
 }) {
   return (
-    <>
-      <DataTableShell className="hidden sm:block">
-        <DataTableScroll>
-          <DataTableRoot>
-            <caption className="sr-only">Lo que te deben tus clientes y plataformas</caption>
-            <DataTableHead>
-              <tr>
-                <DataTableHeader>Cliente o plataforma</DataTableHeader>
-                <DataTableHeader>Estado</DataTableHeader>
-                <DataTableHeader className="text-right">Te debe</DataTableHeader>
-                <DataTableHeader className="text-right">Vencido</DataTableHeader>
-                <DataTableHeader>Próxima acreditación</DataTableHeader>
-                <DataTableHeader className="text-right">A favor</DataTableHeader>
-                <DataTableHeader className="w-8" />
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {rows.map((row) => (
-                <tr
-                  key={row.partyId}
-                  className="group transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint"
-                >
-                  <DataTableCell>
-                    <Link
-                      href={`${base}/ventas/clientes/${row.partyId}`}
-                      className="block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="block truncate font-medium group-hover:text-primary">
-                        {displayName(row)}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {PARTY_KIND_LABELS[row.partyKind] ?? 'Cliente'}
-                        {row.active ? '' : ' · desactivado'}
-                      </span>
-                    </Link>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <TrafficStatus light={row.trafficLight} text={row.trafficText} />
-                  </DataTableCell>
-                  <DataTableCell className="text-right">
-                    {row.debtCents > 0 ? (
-                      <Amount cents={row.debtCents} />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Sin deuda</span>
-                    )}
-                  </DataTableCell>
-                  <DataTableCell className="text-right">
-                    {row.overdueCents > 0 ? (
-                      <Amount cents={row.overdueCents} className="text-destructive" />
-                    ) : (
-                      <span className="text-xs text-muted-foreground/60">—</span>
-                    )}
-                  </DataTableCell>
-                  <DataTableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
-                    {row.nextDueDate ? formatIsoDay(row.nextDueDate) : '—'}
-                  </DataTableCell>
-                  <DataTableCell className="text-right text-xs text-muted-foreground">
-                    {creditText(row) ?? <span className="text-muted-foreground/60">—</span>}
-                  </DataTableCell>
-                  <DataTableCell className="w-8 text-muted-foreground/30 transition-opacity group-hover:text-muted-foreground">
-                    <ChevronRight className="size-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </DataTableCell>
-                </tr>
-              ))}
-            </DataTableBody>
-          </DataTableRoot>
-        </DataTableScroll>
-        <DataTableFooter>
-          <span>
-            Mostrando <strong className="tabular-nums text-foreground">{rows.length}</strong> de{' '}
-            <strong className="tabular-nums text-foreground">{total}</strong>
-          </span>
-        </DataTableFooter>
-      </DataTableShell>
+    <LedgerList aria-label="Quién te debe" bare>
+      {rows.map((row) => {
+        const wallet = wallets.get(row.partyId) ?? null
+        const rail = receivableRail(row, { today, wallet: wallet !== null })
+        const name = partyDisplayName(row)
+        const kind = PARTY_KIND_LABELS[row.partyKind] ?? 'Cliente'
+        const state = receivableMeta(row, { today, walletName: wallet?.name ?? null })
+        return (
+          <LedgerRow
+            key={row.partyId}
+            href={`${base}/ventas/clientes/${row.partyId}`}
+            title={name}
+            muted={!row.active}
+            rail={
+              rail.kind === 'wallet' ? (
+                <LedgerRail icon={Wallet} unit={rail.unit} tone={rail.tone} />
+              ) : (
+                <LedgerRail
+                  label={rail.label}
+                  value={rail.value}
+                  unit={rail.unit}
+                  tone={rail.tone}
+                />
+              )
+            }
+            meta={state ? `${kind} · ${state}` : kind}
+            amount={
+              row.debtCents > 0 ? (
+                <Amount
+                  cents={row.debtCents}
+                  decimals={0}
+                  className="font-serif text-lg font-semibold"
+                />
+              ) : (
+                <span className="text-xs font-normal text-muted-foreground">Sin deuda</span>
+              )
+            }
+            amountNote={creditText(row)}
+            action={
+              canWrite && row.debtCents > 0 ? (
+                wallet ? (
+                  <ActionButton
+                    action="ajustar"
+                    params={{ caja: wallet.treasuryId }}
+                    variant="outline"
+                    className={ROW_ACTION}
+                  >
+                    Contar {wallet.name}
+                  </ActionButton>
+                ) : (
+                  <ActionButton
+                    action="cobrar"
+                    params={{ cliente: row.partyId }}
+                    variant="outline"
+                    className={ROW_ACTION}
+                    aria-label={`Ya entró: anotar lo que pagó ${name}`}
+                  >
+                    Ya entró
+                  </ActionButton>
+                )
+              ) : undefined
+            }
+          />
+        )
+      })}
+    </LedgerList>
+  )
+}
 
-      <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
-        <ul
-          aria-label="Lo que te deben tus clientes y plataformas"
-          className="divide-y divide-border/60"
-        >
-          {rows.map((row) => {
-            const credit = creditText(row)
-            return (
-              <li key={row.partyId}>
-                <Link
-                  href={`${base}/ventas/clientes/${row.partyId}`}
-                  className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint"
-                >
-                  <span className="min-w-0 space-y-1">
-                    <span className="block truncate text-sm font-medium">{displayName(row)}</span>
-                    <TrafficStatus light={row.trafficLight} text={row.trafficText} />
-                    {row.nextDueDate || credit ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {[
-                          row.nextDueDate
-                            ? `Próxima acreditación ${formatIsoDay(row.nextDueDate)}`
-                            : null,
-                          credit,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 text-right">
-                    {row.debtCents > 0 ? (
-                      <Amount cents={row.debtCents} className="text-sm font-medium" />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Sin deuda</span>
-                    )}
-                    {row.overdueCents > 0 ? (
-                      <span className="block text-[11px] tabular-nums text-destructive">
-                        {formatCents(row.overdueCents)} vencido
-                      </span>
-                    ) : null}
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-        <div className="border-t border-border/60 bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
-          Mostrando <strong className="tabular-nums text-foreground">{rows.length}</strong> de{' '}
-          <strong className="tabular-nums text-foreground">{total}</strong>
-        </div>
-      </div>
-    </>
+/** Los que no tienen nada abierto: solo sus nombres, como links a la ficha. */
+export function SettledParties({ rows, base }: { rows: readonly PartyListRow[]; base: string }) {
+  if (rows.length === 0) return null
+  return (
+    <details className="group/fold border-t border-border/60 pt-1">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[11px] tabular-nums">
+          {rows.length}
+        </span>
+        sin nada pendiente
+      </summary>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 pb-1 text-sm">
+        {rows.map((row) => (
+          <li key={row.partyId}>
+            <Link
+              href={`${base}/ventas/clientes/${row.partyId}`}
+              className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:min-h-8"
+            >
+              {partyDisplayName(row)}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

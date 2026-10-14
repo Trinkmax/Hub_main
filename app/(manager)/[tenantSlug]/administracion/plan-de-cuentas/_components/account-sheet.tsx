@@ -29,6 +29,8 @@ export type AccountSheetState =
       parentId: string | null | undefined
       /** Cada «Nueva cuenta» arranca un formulario limpio. */
       nonce: number
+      /** El alta corta de «Tus categorías»: nombre y «para qué se usa»; lo demás, plegado. */
+      simple?: boolean
     }
   | null
 
@@ -79,6 +81,8 @@ export function AccountSheet({
                 </span>
                 {account.name}
               </>
+            ) : creating?.simple ? (
+              'Nueva categoría'
             ) : (
               'Nueva cuenta'
             )}
@@ -86,7 +90,9 @@ export function AccountSheet({
           <SheetDescription className="text-pretty">
             {account
               ? accountKindText(account)
-              : 'Puede ir adentro de cualquier grupo o ser una cuenta principal.'}
+              : creating?.simple
+                ? 'Va a aparecer en «¿En qué se gastó?» cuando cargues un gasto o una compra.'
+                : 'Puede ir adentro de cualquier grupo o ser una cuenta principal.'}
           </SheetDescription>
           {account ? (
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -123,6 +129,7 @@ export function AccountSheet({
             tenantSlug={tenantSlug}
             index={index}
             initialParent={creating.parentId}
+            simple={creating.simple ?? false}
             onBusyChange={setBusy}
             onDone={(saved) => onSaved(saved, true)}
           />

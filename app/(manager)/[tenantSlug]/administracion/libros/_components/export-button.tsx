@@ -1,7 +1,7 @@
 'use client'
 
 import { Download, Loader2 } from 'lucide-react'
-import { type ComponentProps, useState } from 'react'
+import { type ComponentProps, type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ACC_ERRORS, isAccErrorKey } from '@/lib/accounting/errors'
@@ -85,6 +85,7 @@ export function ExportButton({
   pendingLabel = 'Preparando…',
   variant = 'outline',
   size,
+  iconOnly = false,
   className,
 }: {
   href: string
@@ -94,6 +95,11 @@ export function ExportButton({
   pendingLabel?: string
   variant?: ComponentProps<typeof Button>['variant']
   size?: ComponentProps<typeof Button>['size']
+  /**
+   * Solo el ícono (el índice de `/libros`, donde cada renglón ya dice qué libro
+   * es): el `label` pasa a ser su nombre para lectores de pantalla.
+   */
+  iconOnly?: boolean
   className?: string
 }) {
   const [pending, setPending] = useState(false)
@@ -106,6 +112,30 @@ export function ExportButton({
     if (!outcome.ok) toast.error(outcome.message)
   }
 
+  const icon = pending ? (
+    <Loader2 className="size-4 animate-spin" aria-hidden />
+  ) : (
+    <Download className="size-4" aria-hidden />
+  )
+
+  if (iconOnly) {
+    return (
+      <Button
+        type="button"
+        variant={variant === 'outline' ? 'ghost' : variant}
+        size="icon"
+        // 44 px donde se toca con el dedo; 36 con mouse.
+        className={cn('size-11 shrink-0 text-muted-foreground md:pointer-fine:size-9', className)}
+        aria-label={pending ? pendingLabel : label}
+        title={label}
+        aria-busy={pending}
+        onClick={() => void run()}
+      >
+        {icon}
+      </Button>
+    )
+  }
+
   return (
     <Button
       type="button"
@@ -115,26 +145,30 @@ export function ExportButton({
       aria-busy={pending}
       onClick={() => void run()}
     >
-      {pending ? (
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-      ) : (
-        <Download className="size-4" aria-hidden />
-      )}
+      {icon}
       {pending ? pendingLabel : label}
     </Button>
   )
 }
 
 /**
- * «Descargar todos» del Paquete del mes: los baja uno por uno (el `.zip` queda
- * para más adelante). Si alguno falla, sigue con los demás y al final dice
- * cuáles no se bajaron.
+ * «Descargar el paquete del mes»: baja los archivos uno por uno (el `.zip`
+ * queda para más adelante). Si alguno falla, sigue con los demás y al final
+ * dice cuáles no se bajaron. `count` va en su pastilla («15 archivos», «10 de
+ * 15»): cuántos son, antes de tocar.
  */
 export function ExportAllButton({
   files,
+  label = 'Descargar todos',
+  count,
+  variant = 'default',
   className,
 }: {
   files: ReadonlyArray<{ href: string; fileName: string; title: string }>
+  label?: string
+  /** Cuántos archivos baja, en palabras. */
+  count?: ReactNode
+  variant?: ComponentProps<typeof Button>['variant']
   className?: string
 }) {
   const [progress, setProgress] = useState<number | null>(null)
@@ -172,6 +206,7 @@ export function ExportAllButton({
   return (
     <Button
       type="button"
+      variant={variant}
       className={cn('gap-2', className)}
       aria-busy={progress !== null}
       disabled={files.length === 0}
@@ -182,7 +217,17 @@ export function ExportAllButton({
       ) : (
         <Download className="size-4" aria-hidden />
       )}
-      {progress !== null ? `Bajando ${progress} de ${files.length}…` : 'Descargar todos'}
+      {progress !== null ? `Bajando ${progress} de ${files.length}…` : label}
+      {count !== undefined && count !== null && progress === null ? (
+        <span
+          className={cn(
+            'rounded-full px-1.5 py-px font-mono text-[11px] font-normal tabular-nums',
+            variant === 'default' ? 'bg-primary-foreground/15' : 'bg-secondary',
+          )}
+        >
+          {count}
+        </span>
+      ) : null}
     </Button>
   )
 }

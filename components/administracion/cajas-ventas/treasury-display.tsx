@@ -1,6 +1,10 @@
-import { Banknote, CreditCard, Landmark, type LucideIcon, PiggyBank, Wallet } from 'lucide-react'
+import {
+  CHECK_STALE_DAYS,
+  countStatus,
+} from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/wallet-view'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
+import { WALLET_ICONS } from '@/components/administracion/kit/wallet-card'
 import type { TreasuryKind } from '@/lib/accounting/types'
-import { daysBetween, formatIsoDay } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { Amount } from '../amount'
@@ -11,19 +15,16 @@ import { Amount } from '../amount'
  * empresa, negativo = deuda).
  */
 
-export const TREASURY_ICONS: Readonly<Record<TreasuryKind, LucideIcon>> = {
-  cash: Banknote,
-  bank: Landmark,
-  wallet: Wallet,
-  credit_card: CreditCard,
-  other: PiggyBank,
-}
-
-/** Cuántos días sin «Ajustar saldo» hacen que una caja pida que la cuenten. */
-export const CHECK_STALE_DAYS = 7
+/**
+ * `TREASURY_ICONS`: el ícono de cada tipo de caja. Es el mismo mapa que usa la
+ * tarjeta de una caja (`WALLET_ICONS` del kit), para que una caja lleve el mismo
+ * dibujo donde aparezca. `CHECK_STALE_DAYS`: cuántos días sin contar hacen que
+ * una caja pida que la cuenten.
+ */
+export { CHECK_STALE_DAYS, WALLET_ICONS as TREASURY_ICONS }
 
 export function TreasuryIcon({ kind, className }: { kind: TreasuryKind; className?: string }) {
-  const Icon = TREASURY_ICONS[kind]
+  const Icon = WALLET_ICONS[kind]
   return (
     <span
       aria-hidden="true"
@@ -80,36 +81,30 @@ export function TreasuryBalance({
   )
 }
 
-/** «Ajustada hoy» · «Ajustada el 28/09/2026» · «Nunca se ajustó»; aviso si pasó más de una semana. */
+/**
+ * El estado del conteo de una caja, en una píldora: «Contada hace 3 días» ·
+ * «Todavía no la contaste» · «La contaste por última vez el 28/09». La regla
+ * (cuándo va en ámbar) es `countStatus()`: la misma en la billetera, en la
+ * ficha y en la tabla. `since` es el día en que arrancan los libros.
+ */
 export function CheckedStatus({
   lastCheckedOn,
   today,
+  hasMovements,
+  since,
   className,
 }: {
   lastCheckedOn: string | null
   today: string
+  /** La caja tuvo algún movimiento (sin movimientos no hay nada que controlar). */
+  hasMovements: boolean
+  since: string | null
   className?: string
 }) {
-  const stale = lastCheckedOn === null || daysBetween(lastCheckedOn, today) > CHECK_STALE_DAYS
-  const text =
-    lastCheckedOn === null
-      ? 'Nunca se ajustó'
-      : lastCheckedOn === today
-        ? 'Ajustada hoy'
-        : `Ajustada el ${formatIsoDay(lastCheckedOn)}`
+  const status = countStatus({ lastCheckedOn, today, hasMovements, since })
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums',
-        stale ? 'text-warning-text' : 'text-muted-foreground',
-        className,
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn('size-1.5 shrink-0 rounded-full', stale ? 'bg-warning' : 'bg-success')}
-      />
-      {text}
-    </span>
+    <StatusPill tone={status.tone} className={className}>
+      {status.text}
+    </StatusPill>
   )
 }

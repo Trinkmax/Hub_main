@@ -1,7 +1,7 @@
 /**
- * Los filtros de la revisión de un lote (`importar/[batchId]`): qué propuestas
- * se ven según `?ver=` y `?falta=`, con los números de cada pestaña. Puro: lo
- * usan la página (server) y los tests.
+ * Los filtros de la revisión de un archivo (`importar/[batchId]`): qué se ve
+ * según `?ver=` y `?falta=`, con los números de cada vista. Puro: lo usan la
+ * página (server) y los tests.
  */
 
 import {
@@ -18,38 +18,45 @@ export const REVIEW_FILTER_COPY: Readonly<
   Record<ReviewFilter, { label: string; shortLabel?: string; statuses: readonly ProposalStatus[] }>
 > = {
   revisar: {
-    label: 'Para revisar',
-    shortLabel: 'Revisar',
+    label: 'Con una pregunta',
+    shortLabel: 'Preguntas',
     statuses: ['needs_input', 'stale', 'error'],
   },
-  listas: { label: 'Listas para cargar', shortLabel: 'Listas', statuses: ['ready', 'posting'] },
-  cargadas: { label: 'Cargadas', statuses: ['posted'] },
+  listas: { label: 'Listos', statuses: ['ready', 'posting'] },
+  cargadas: { label: 'Cargados', statuses: ['posted'] },
   'no-se-cargan': { label: 'No se cargan', statuses: ['skipped', 'voided'] },
   todos: { label: 'Todos', statuses: [] },
 }
 
-/** Etiqueta corta de cada cosa que falta (los chips de «Para revisar»). */
+/**
+ * Etiqueta corta de cada cosa que falta (los filtros de «Con una pregunta»).
+ *
+ * «Proveedor nuevo», «Otros tributos» y «Se carga a mano» quedan como estaban:
+ * los fija `tests/lib/imports-ui-filters.test.ts`. En pantalla esas dos primeras
+ * se dicen «¿Los tenés de antes?» y «Otros impuestos» (`needPillLabel` de
+ * `review-copy.ts`, que es lo que usa la revisión).
+ */
 export const NEED_SHORT_TEXT: Readonly<Record<NeedKey, string>> = {
   new_supplier: 'Proveedor nuevo',
-  supplier_account: 'En qué gastás',
-  supplier_inactive: 'Proveedor desactivado',
-  condition_mismatch: 'Condición frente al IVA',
+  supplier_account: 'En qué le comprás',
+  supplier_inactive: 'Proveedor dado de baja',
+  condition_mismatch: 'Cómo factura',
   other_taxes_as: 'Otros tributos',
-  vat_rate: 'Sin alícuota de IVA',
-  unsupported_voucher: 'Tipo que no se importa',
+  vat_rate: 'Sin el IVA detallado',
+  unsupported_voucher: 'Tipo que no se trae',
   receipt: 'Recibos',
-  foreign_currency: 'Moneda extranjera',
+  foreign_currency: 'En otra moneda',
   total_gap: 'El total no cierra',
-  possible_duplicate: 'Posible repetido',
+  possible_duplicate: '¿Es el mismo?',
   mp_invoice: 'Factura de Mercado Pago',
-  channel_method: 'Medio del cierre',
-  pick_party: 'A quién corresponde',
-  pick_treasury: 'La otra cuenta',
-  counterpart_account: 'Qué es',
-  unknown_tax: 'Impuesto que no conocemos',
+  channel_method: 'Cómo lo llamás en el cierre',
+  pick_party: 'A quién',
+  pick_treasury: 'A qué cuenta tuya',
+  counterpart_account: 'Qué fue',
+  unknown_tax: 'Impuesto que no conozco',
   estimated_deductions: 'Descuentos estimados',
   accept_warning: 'Avisos',
-  engine_error: 'No se pudo armar',
+  engine_error: 'No lo puedo armar',
   manual: 'Se carga a mano',
 }
 

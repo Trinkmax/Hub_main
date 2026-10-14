@@ -134,12 +134,57 @@ export function treasurySlots(treasuries: readonly TreasuryLike[]): Record<strin
   return out
 }
 
+/** Los tipos de caja que tienen tono propio en la barra del héroe. */
+export type TreasuryToneKind = 'bank' | 'cash' | 'wallet'
+
+/**
+ * El tono de una caja en la barra «dónde está la plata»: el TIPO da el color
+ * (banco, efectivo, billetera) y el escalón distingue dos cuentas del mismo
+ * tipo (el mismo tono, más claro o más oscuro).
+ */
+export type TreasuryTone = { kind: TreasuryToneKind; step: 1 | 2 | 3 }
+
+/** Cuántas cuentas del mismo tipo tienen escalón propio; la cuarta va en neutro. */
+export const TREASURY_TONE_STEPS = 3
+
+function toneKind(kind: TreasuryKind): TreasuryToneKind | null {
+  return kind === 'bank' || kind === 'cash' || kind === 'wallet' ? kind : null
+}
+
+/**
+ * El tono de cada caja. El color es un atributo de la cosa (qué tipo de caja
+ * es), no de cuánta plata tiene hoy: un banco con el 98 % no pinta el héroe de
+ * un color cualquiera, y una caja no cambia de tono porque otra quedó en cero.
+ * El escalón sale del orden entre TODAS las del mismo tipo (el de Ajustes).
+ * `null`: no tiene tono propio (un tipo «otra», o la cuarta del mismo tipo).
+ */
+export function treasuryTones(
+  treasuries: readonly TreasuryLike[],
+): Record<string, TreasuryTone | null> {
+  const out: Record<string, TreasuryTone | null> = {}
+  const seen: Record<TreasuryToneKind, number> = { bank: 0, cash: 0, wallet: 0 }
+  for (const t of treasuries) {
+    if (t.kind === 'credit_card') continue
+    const kind = toneKind(t.kind)
+    if (kind === null) {
+      out[t.id] = null
+      continue
+    }
+    seen[kind] += 1
+    const step = seen[kind]
+    out[t.id] = step === 1 || step === 2 || step === 3 ? { kind, step } : null
+  }
+  return out
+}
+
 export type TreasurySegment = {
   /** El id de la caja, u `otras` para las que no tienen color propio. */
   key: string
   treasuryId: string | null
   name: string
   kind: TreasuryKind | null
+  /** El tono por tipo de caja (`null` en «Otras cajas» y en las que no tienen). */
+  tone: TreasuryTone | null
   /** Saldo, siempre positivo. */
   cents: number
   /** Parte de la barra, de 0 a 100 con un decimal. */
@@ -188,6 +233,7 @@ export function treasurySegments(
   summary: Pick<AccSummary, 'treasuries' | 'pendingWalletCents' | 'cardDebtCents'>,
 ): TreasuryBar {
   const slots = treasurySlots(summary.treasuries)
+  const tones = treasuryTones(summary.treasuries)
   const assets = summary.treasuries.filter((t) => t.kind !== 'credit_card')
   const positive = assets.filter((t) => t.balanceCents > 0)
   const totalCents = positive.reduce((sum, t) => sum + t.balanceCents, 0)
@@ -205,6 +251,7 @@ export function treasurySegments(
       treasuryId: t.id,
       name: t.name,
       kind: t.kind,
+      tone: tones[t.id] ?? null,
       cents: t.balanceCents,
       percent: percentOf(t.balanceCents, totalCents),
       slot,
@@ -221,6 +268,7 @@ export function treasurySegments(
       treasuryId: only ? only.id : null,
       name: only ? only.name : 'Otras cajas',
       kind: only ? only.kind : null,
+      tone: only ? (tones[only.id] ?? null) : null,
       cents,
       percent: percentOf(cents, totalCents),
       slot: null,
@@ -478,6 +526,8 @@ export type WeekBucket = {
   to: string
   /** «14 al 20/09» · «28/09 al 04/10» · «13/10» (un solo día). */
   label: string
+  /** La misma semana para el eje de un gráfico: «14–20/9» · «28/9–4/10» · «13/10». */
+  shortLabel: string
   inCents: number
   outCents: number
   /** La semana no entra entera en el período (la primera y la última). */
@@ -491,6 +541,18 @@ function weekLabel(from: string, to: string): string {
   return from.slice(0, 7) === to.slice(0, 7)
     ? `${from.slice(8, 10)} al ${formatDayMonth(to)}`
     : `${formatDayMonth(from)} al ${formatDayMonth(to)}`
+}
+
+/** Día y mes sin ceros: «4/10». En el eje cada carácter cuenta. */
+function dayMonthShort(iso: string): string {
+  return `${Number(iso.slice(8, 10))}/${Number(iso.slice(5, 7))}`
+}
+
+function weekShortLabel(from: string, to: string): string {
+  if (from === to) return formatDayMonth(from)
+  return from.slice(0, 7) === to.slice(0, 7)
+    ? `${Number(from.slice(8, 10))}–${dayMonthShort(to)}`
+    : `${dayMonthShort(from)}–${dayMonthShort(to)}`
 }
 
 /**
@@ -528,6 +590,7 @@ export function weekBuckets(
       from: weekFrom,
       to: weekTo,
       label: weekLabel(weekFrom, weekTo),
+      shortLabel: weekShortLabel(weekFrom, weekTo),
       inCents: 0,
       outCents: 0,
       partial: weekFrom !== key || weekTo !== weekEnd,
@@ -596,17 +659,34 @@ export type PayablesTranches = {
   partiesRed: number
   /** No se le debe nada a nadie. */
   isEmpty: boolean
-  /** El título que afirma. */
+  /**
+   * El cero no es un dato: faltan los saldos iniciales y todavía no hay ninguna compra a pagar
+   * cargada. No se muestra `$ 0` ni «no le debés nada» (el bar recién configurado).
+   */
+  unknown: boolean
+  /** El título que afirma, sin importe. */
   title: string
+  /** La oración del número: cuánto de eso ya venció o vence esta semana (`null` si nada). */
+  sentence: string | null
+  /** Con deuda cargada y los saldos iniciales pendientes: lo que todavía falta sumar. */
+  note: string | null
 }
 
 /**
  * La deuda con proveedores en tres tramos. «Más adelante» es lo que queda:
  * incluye lo que no tiene vencimiento cargado. `null` si la base todavía no lo
  * calcula (se muestra «—», nunca `$ 0`).
+ *
+ * `openingPending`: los saldos iniciales siguen sin cargar (ahí va lo que el bar
+ * ya debía al empezar). Con eso, un total en cero no es «no le debés nada»: es
+ * «todavía no sé» (`unknown`); y un total con deuda avisa que falta lo de antes.
  */
-export function payablesTranches(payables: AccSummary['payables']): PayablesTranches | null {
+export function payablesTranches(
+  payables: AccSummary['payables'],
+  opts: { openingPending?: boolean } = {},
+): PayablesTranches | null {
   if (!payables) return null
+  const openingPending = opts.openingPending === true
   const totalCents = Math.max(0, payables.totalCents)
   const overdue = Math.min(Math.max(0, payables.overdueCents), totalCents)
   const week = Math.min(Math.max(0, payables.dueWeekCents), totalCents - overdue)
@@ -617,11 +697,26 @@ export function payablesTranches(payables: AccSummary['payables']): PayablesTran
     cents,
     percent: percentOf(cents, totalCents),
   })
+  const partiesRed = Math.max(0, payables.partiesRed)
+  // El título afirma sin importe: el número del bloque es uno solo (el total) y lo
+  // vencido se dice en su oración. Dos importes de siete cifras juntos no se leen.
   let title: string
-  if (totalCents === 0) title = 'No le debés nada a nadie'
-  else if (overdue > 0) title = `Tenés ${pesos(overdue)} vencido`
-  else if (week > 0) title = `Esta semana vencen ${pesos(week)}`
-  else title = 'Nada vence esta semana'
+  let sentence: string | null = null
+  const unknown = openingPending && totalCents === 0
+  if (unknown) {
+    title = 'Todavía no sé cuánto debés'
+    sentence = 'Lo que ya les debías a tus proveedores entra con los saldos iniciales.'
+  } else if (totalCents === 0) title = 'No le debés nada a nadie'
+  else if (overdue > 0) {
+    title =
+      partiesRed > 0
+        ? `Tenés pagos vencidos con ${count(partiesRed, 'proveedor', 'proveedores')}`
+        : 'Tenés pagos vencidos'
+    sentence = overdue === totalCents ? 'Ya venció todo.' : `${pesos(overdue)} ya venció.`
+  } else if (week > 0) {
+    title = 'Tenés pagos que vencen esta semana'
+    sentence = week === totalCents ? 'Vence todo esta semana.' : `${pesos(week)} vence esta semana.`
+  } else title = 'Nada vence esta semana'
   return {
     totalCents,
     tranches: [
@@ -629,9 +724,15 @@ export function payablesTranches(payables: AccSummary['payables']): PayablesTran
       tranche('week', 'Vence esta semana', week),
       tranche('later', 'Más adelante', later),
     ],
-    partiesRed: Math.max(0, payables.partiesRed),
+    partiesRed,
     isEmpty: totalCents === 0,
+    unknown,
     title,
+    sentence,
+    note:
+      openingPending && totalCents > 0
+        ? 'Es lo que cargaste hasta ahora: lo que debías de antes entra con los saldos iniciales.'
+        : null,
   }
 }
 
@@ -640,13 +741,23 @@ const PAYABLE_KINDS: ReadonlySet<string> = new Set(['payable_overdue', 'payable_
 /**
  * Los avisos de «pagar» (los `payable_*` del resumen), para los renglones con
  * [Pagar] de «Lo que tenés que pagar»: los primeros `max` y cuántos quedaron.
+ *
+ * La base manda los avisos topeados, así que contar solo la lista puede quedar
+ * corto («hay 9 con algo vencido», 4 renglones y «4 más»). Con `partiesRed`
+ * (los proveedores con algo vencido, que sí viene entero) `more` nunca es
+ * menos que los vencidos que no se están mostrando.
  */
 export function payableAttention(
   attention: readonly SummaryAttentionItem[],
   max = 4,
+  partiesRed: number | null = null,
 ): { rows: SummaryAttentionItem[]; more: number } {
   const all = attention.filter((item) => PAYABLE_KINDS.has(item.kind))
-  return { rows: all.slice(0, Math.max(0, max)), more: Math.max(0, all.length - max) }
+  const rows = all.slice(0, Math.max(0, max))
+  const listed = Math.max(0, all.length - rows.length)
+  const overdueShown = rows.filter((item) => item.kind === 'payable_overdue').length
+  const overdueLeft = partiesRed === null ? 0 : Math.max(0, partiesRed - overdueShown)
+  return { rows, more: Math.max(listed, overdueLeft) }
 }
 
 /** Lo que queda para «Avisos»: todo menos lo que ya está en «pagar». */
@@ -755,9 +866,11 @@ export function fixedProgress(
   else if (totals.remainingCents === 0) {
     sentence = `Pagaste los ${pesos(totalCents)} de gastos fijos de este mes.`
   } else if (totals.paidCents === 0) {
-    sentence = `Te faltan ${pesos(totals.remainingCents)}: ${
-      pendingRows === 1 ? 'falta pagar 1' : `faltan pagar ${pendingRows}`
-    }.`
+    // El importe ya está arriba («Te falta de gasto fijo»): acá, cuántos son.
+    sentence =
+      pendingRows === 1
+        ? 'Todavía no pagaste el de este mes.'
+        : `Pagaste 0 de ${pendingRows} este mes.`
   } else {
     sentence = `Pagaste ${pesos(totals.paidCents)} de ${pesos(totalCents)}: ${
       pendingRows === 1 ? 'falta 1' : `faltan ${pendingRows}`
@@ -1092,7 +1205,14 @@ function onboardingParts(onboarding: HomeOnboarding | null | undefined): {
 export type TodayInput = {
   /** `null` si el resumen no cargó: salen las tarjetas que no dependen de él. */
   summary: AccSummary | null
-  settings: Pick<AccountingSettings, 'booksStartDate'> | null
+  /**
+   * `openingStatus` es opcional: con los saldos iniciales pendientes, «no le debés nada» no se
+   * afirma (ahí va lo que el bar ya debía al empezar).
+   */
+  settings:
+    | (Pick<AccountingSettings, 'booksStartDate'> &
+        Partial<Pick<AccountingSettings, 'openingStatus'>>)
+    | null
   /**
    * De dónde sale el estado de los cierres: la proyección del mes (ya la pide
    * la página) y/o el calendario de cierres (mira además 30 días atrás). Con
@@ -1337,6 +1457,21 @@ function payablesItem(input: TodayInput): TodayItem | null {
   const week = Math.max(0, payables.dueWeekCents)
 
   if (overdue === 0 && week === 0) {
+    // Sin saldos iniciales y sin ninguna compra a pagar cargada, el cero no es un dato: la
+    // tarjeta no se tilda ni afirma que no se debe nada (el héroe tampoco muestra «$ 0»).
+    if (payables.totalCents <= 0 && input.settings?.openingStatus === 'pending') {
+      return {
+        id: 'payables',
+        title: 'Pagos que vencen',
+        status: input.canWrite
+          ? 'Todavía no cargaste lo que debés: entra con los saldos iniciales.'
+          : 'Los dueños todavía no cargaron lo que se debía al empezar.',
+        tone: 'muted',
+        done: false,
+        action: null,
+        covers,
+      }
+    }
     return {
       id: 'payables',
       title: 'Pagos que vencen',
@@ -1509,8 +1644,36 @@ function previousMonthName(today: string): string {
   return monthName(Number(addDays(startOfMonth(today), -1).slice(5, 7)))
 }
 
+/**
+ * ¿El mes pasado entero es de antes de arrancar los libros? Entonces no hay compras de ese mes
+ * para bajar de ARCA: lo que se debía de antes entra con los saldos iniciales, y una compra con
+ * fecha anterior al arranque no se puede cargar. Es la misma regla de la guía («Bajar las
+ * compras de ARCA: empieza el mes que viene») y la del cierre del mes.
+ */
+export function previousMonthBeforeBooks(
+  today: string,
+  booksStartDate: string | null | undefined,
+): boolean {
+  const start = validDay(booksStartDate)
+  return start !== null && isRealIsoDay(today) && start > addDays(startOfMonth(today), -1)
+}
+
+/**
+ * Los avisos de las integraciones que valen para este bar HOY: «Bajá Mis Comprobantes del mes
+ * pasado» se saca mientras el mes pasado sea de antes de los libros (ni tarjeta en «Hoy te
+ * toca» ni renglón en «Avisos»).
+ */
+export function integrationForBooks<T extends { kind: string }>(
+  items: readonly T[],
+  opts: { today: string; booksStartDate?: string | null },
+): T[] {
+  if (!previousMonthBeforeBooks(opts.today, opts.booksStartDate)) return [...items]
+  return items.filter((item) => item.kind !== 'mc_prev_month')
+}
+
 function arcaMonthlyItem(input: TodayInput, base: string): TodayItem | null {
   if (!input.canWrite) return null
+  if (previousMonthBeforeBooks(input.today, input.settings?.booksStartDate)) return null
   const notice = (input.integration ?? []).find((i) => i.kind === 'mc_prev_month')
   if (notice) {
     return {
@@ -1532,7 +1695,7 @@ function arcaMonthlyItem(input: TodayInput, base: string): TodayItem | null {
     status: `Ya están casi todas las facturas de ${previousMonthName(input.today)}.`,
     tone: 'info',
     done: false,
-    action: link(base, '/importar/arca', 'Importar de ARCA'),
+    action: link(base, '/importar/arca', 'Subir las compras de ARCA'),
     covers: ['mc_prev_month'],
   }
 }
@@ -1719,7 +1882,7 @@ export function buildSetup(input: SetupInput): SetupStrip {
         : 'Los saldos iniciales: cuánta plata hay y cuánto se debe. Sin eso, todo arranca en cero.',
       done: openingDone,
       optional: false,
-      action: link(base, '/configurar', 'Cargar saldos iniciales'),
+      action: link(base, '/configurar', 'Cargar lo que hay'),
     })
   }
   if (input.summary) {
@@ -1760,14 +1923,14 @@ export function buildSetup(input: SetupInput): SetupStrip {
     const n = Math.max(0, input.suppliers.withoutCategory)
     push({
       id: 'suppliers_category',
-      title: 'Decí en qué gastás con cada proveedor',
+      title: 'Decí en qué le comprás a cada proveedor',
       detail:
         n === 0
           ? null
           : `${count(n, 'proveedor no tiene', 'proveedores no tienen')} categoría: con eso, cada compra se ordena sola.`,
       done: n === 0,
       optional: false,
-      // El filtro «Sin clasificar» de la lista: deja solo los que faltan.
+      // «Clasificar proveedores» (`?filtro=sin-clasificar`): deja solo los que faltan.
       action: link(
         base,
         '/compras?tab=proveedores&filtro=sin-clasificar',
@@ -1787,7 +1950,8 @@ export function buildSetup(input: SetupInput): SetupStrip {
           : `${n} de ${live.length} no ${n === 1 ? 'tiene' : 'tienen'} monto: sin eso no sabés cuánto te falta pagar.`,
       done: n === 0,
       optional: false,
-      action: link(base, '/gastos-fijos', 'Completar los montos'),
+      // «Completar la planilla»: los montos de todos de corrido (`gastosFijosFillHref`).
+      action: link(base, '/gastos-fijos/completar', 'Completar los montos'),
     })
   }
 
@@ -1827,6 +1991,33 @@ export function buildSetup(input: SetupInput): SetupStrip {
   }
 
   return stripOf(steps, guideHref)
+}
+
+/**
+ * Lo próximo de la puesta en marcha que la pantalla todavía NO ofrece en otro
+ * lado. El héroe ya pide los saldos iniciales («Cargar lo que hay») y «Hoy te
+ * toca» ya tiene la tarjeta del cierre y la del gasto: repetirlos en la franja
+ * eran dos botones con nombres distintos para la misma cosa. Los pasos siguen
+ * contando para «N de M»; solo no se vuelven a ofrecer.
+ */
+export function setupNext(
+  strip: Pick<SetupStrip, 'steps'>,
+  shown: { hero?: HeroState | null; today?: readonly TodayItem[] | null } = {},
+  max = SETUP_NEXT_MAX,
+): SetupStep[] {
+  const covered = new Set<string>()
+  const hero = shown.hero ?? null
+  if (hero?.kind === 'unknown' && hero.reason === 'opening_pending' && hero.action !== null) {
+    covered.add('opening')
+  }
+  for (const item of shown.today ?? []) {
+    if (item.done || item.action === null) continue
+    if (item.id === 'daily_close') covered.add('first_close')
+    if (item.id === 'expense') covered.add('first_expense')
+  }
+  return strip.steps
+    .filter((s) => !s.optional && !s.done && !covered.has(s.id))
+    .slice(0, Math.max(0, max))
 }
 
 function stripOf(steps: SetupStep[], guideHref: string): SetupStrip {
@@ -1919,7 +2110,7 @@ export type SpendingTotals = {
 export const SPENDING_TAXES_KEY = 'impuestos'
 export const SPENDING_UNCLASSIFIED_KEY = 'sin_clasificar'
 const TAXES_LABEL = 'Impuestos y percepciones'
-const UNCLASSIFIED_LABEL = 'Sin clasificar'
+const UNCLASSIFIED_LABEL = 'Sin categoría'
 
 /**
  * Reparte `amount` centavos en partes proporcionales a `weights`, sin perder

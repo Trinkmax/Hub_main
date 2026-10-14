@@ -1,128 +1,144 @@
-'use client'
-
-import { AlarmClock, HandCoins, Search, Undo2, Users, X } from 'lucide-react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { type FormEvent, useTransition } from 'react'
+import { Search, X } from 'lucide-react'
+import Form from 'next/form'
+import Link from 'next/link'
+import type { ReactNode } from 'react'
+import { PillLink } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { tabHref } from '../_lib/ventas-view'
 
 export type ReceivableFilter = 'todos' | 'con-deuda' | 'atrasados' | 'a-favor'
 
-const TABS: ReadonlyArray<{
-  value: ReceivableFilter
-  label: string
-  icon: typeof Users
-}> = [
-  { value: 'todos', label: 'Todos', icon: Users },
-  { value: 'con-deuda', label: 'Te deben', icon: HandCoins },
-  { value: 'atrasados', label: 'Atrasados', icon: AlarmClock },
-  { value: 'a-favor', label: 'A favor', icon: Undo2 },
+const FILTERS: ReadonlyArray<{ value: ReceivableFilter; label: string }> = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'con-deuda', label: 'Te deben' },
+  { value: 'atrasados', label: 'Atrasados' },
+  { value: 'a-favor', label: 'A favor' },
 ]
 
+/** `?filtro=` de la URL; lo que no se conoce es «Todos». */
+export function parseReceivableFilter(value: string | null): ReceivableFilter {
+  return value === 'con-deuda' || value === 'atrasados' || value === 'a-favor' ? value : 'todos'
+}
+
 /**
- * Filtros de «Clientes y plataformas»: el segmento (con su cantidad) y la
- * búsqueda por nombre o CUIT, en la URL (`?filtro=&q=`), igual que la lista
- * de Clientes del panel.
+ * Los filtros de «Quién te debe»: cuatro píldoras con su cantidad (la elegida
+ * rellena en tinta) y el buscador por nombre o CUIT. Todo vive en la URL
+ * (`?filtro=&q=`), como siempre: los links se pueden compartir.
+ *
+ * El buscador queda a la vista cuando la lista es larga o ya hay una búsqueda;
+ * si no, detrás de «Buscar». No necesita JavaScript propio: es un formulario
+ * que navega (`next/form`).
  */
 export function ReceivablesFilters({
+  base,
   active,
   counts,
+  q,
+  searchOpen,
+  aside,
 }: {
+  /** `/<bar>/administracion`. */
+  base: string
   active: ReceivableFilter
   counts: Readonly<Record<ReceivableFilter, number>>
+  /** La búsqueda de la URL. */
+  q: string | null
+  /** El buscador a la vista sin tocar nada. */
+  searchOpen: boolean
+  /** A la derecha de las píldoras: el exporte. */
+  aside?: ReactNode
 }) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const [pending, start] = useTransition()
+  const hrefOf = (filter: ReceivableFilter) =>
+    tabHref(base, 'clientes', { filtro: filter === 'todos' ? null : filter, q })
 
-  const setParam = (key: string, value: string | null) => {
-    const next = new URLSearchParams(searchParams.toString())
-    if (value && value.length > 0) next.set(key, value)
-    else next.delete(key)
-    start(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }))
-  }
-
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const q = new FormData(e.currentTarget).get('q')
-    setParam('q', typeof q === 'string' ? q.trim() : null)
-  }
-
-  const q = searchParams.get('q') ?? ''
-
-  return (
-    <div className="space-y-2" aria-busy={pending}>
-      <div
-        role="tablist"
-        aria-label="Filtrar clientes y plataformas"
-        className="card-hairline flex w-full overflow-x-auto rounded-xl border bg-card/60 p-1"
-      >
-        {TABS.map((tab) => {
-          const selected = active === tab.value
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setParam('filtro', tab.value === 'todos' ? null : tab.value)}
-              className={cn(
-                // Cada filtro en una línea: en el celular el segmentado se desliza
-                // de costado en vez de partir «Te deben» en dos renglones.
-                'flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:text-sm',
-                selected
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="size-3.5" aria-hidden />
-              <span>{tab.label}</span>
-              <span
-                className={cn(
-                  'ml-1 inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
-                  selected ? 'bg-primary/15 text-primary' : 'bg-secondary/60 text-muted-foreground',
-                )}
-              >
-                {counts[tab.value].toLocaleString('es-AR')}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      <form
-        onSubmit={onSubmit}
-        className="card-hairline flex flex-col gap-2 rounded-xl border bg-card/60 p-2 sm:flex-row sm:items-center"
-      >
-        <label className="relative flex flex-1 items-center">
-          <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
-          <span className="sr-only">Buscar</span>
-          <input
-            name="q"
-            defaultValue={q}
-            placeholder="Buscar por nombre o CUIT…"
-            autoComplete="off"
-            className="h-11 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-base shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40 sm:h-9 sm:text-sm"
-          />
-        </label>
-        {q ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setParam('q', null)}
-            className="h-11 gap-1.5 text-muted-foreground sm:h-9"
-          >
-            <X className="size-3.5" aria-hidden />
-            Limpiar
-          </Button>
-        ) : null}
-        <Button type="submit" size="sm" className="h-11 sm:h-9">
+  const form = (
+    <Form
+      action={`${base}/ventas`}
+      scroll={false}
+      className="flex flex-col gap-2 sm:flex-row sm:items-center"
+    >
+      <input type="hidden" name="tab" value="clientes" />
+      {active === 'todos' ? null : <input type="hidden" name="filtro" value={active} />}
+      <label className="relative flex flex-1 items-center">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute left-3 size-4 text-muted-foreground"
+        />
+        <span className="sr-only">Buscar por nombre o CUIT</span>
+        <input
+          name="q"
+          defaultValue={q ?? ''}
+          placeholder="Buscar por nombre o CUIT…"
+          autoComplete="off"
+          className="h-11 w-full rounded-full border border-border/70 bg-card pr-3 pl-9 text-base outline-none placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:h-9 md:pointer-fine:text-sm"
+        />
+      </label>
+      <div className="flex items-center gap-2">
+        <Button
+          type="submit"
+          variant="outline"
+          className="h-11 flex-1 sm:flex-none md:pointer-fine:h-9"
+        >
           Buscar
         </Button>
-      </form>
+        {q ? (
+          <Button
+            asChild
+            variant="ghost"
+            className="h-11 gap-1.5 text-muted-foreground md:pointer-fine:h-9"
+          >
+            <Link
+              href={tabHref(base, 'clientes', { filtro: active === 'todos' ? null : active })}
+              scroll={false}
+            >
+              <X className="size-3.5" aria-hidden />
+              Limpiar
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </Form>
+  )
+
+  return (
+    <div className="space-y-2">
+      <nav aria-label="Filtrar quién te debe" className="min-w-0 max-w-full">
+        <ul className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+          {FILTERS.map((filter) => (
+            <li key={filter.value} className="shrink-0">
+              <PillLink
+                href={hrefOf(filter.value)}
+                scroll={false}
+                active={active === filter.value}
+                count={counts[filter.value]}
+                size="touch"
+                className="md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+              >
+                {filter.label}
+              </PillLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      {searchOpen ? (
+        <>
+          {form}
+          {aside ? <div className="flex justify-end">{aside}</div> : null}
+        </>
+      ) : (
+        // «Buscar» y el exporte comparten renglón; al abrir, el buscador baja al suyo. El exporte
+        // va AFUERA del <details>: cerrado, lo de adentro no se dibuja.
+        <div className="relative">
+          <details className="group/search">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:min-h-9 [&::-webkit-details-marker]:hidden">
+              <Search aria-hidden className="size-4" />
+              Buscar
+            </summary>
+            <div className="pt-1">{form}</div>
+          </details>
+          {aside ? <div className="absolute top-0 right-0">{aside}</div> : null}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,4 @@
-import { ChevronRight, History } from 'lucide-react'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
   DataTableCell,
@@ -12,95 +10,66 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
 import { formatDateTime, formatRange } from '@/lib/dates'
-import type { ImportBatchCounts, ImportBatchStatus } from '@/lib/imports/server/types'
-import type { ImportSource } from '@/lib/imports/types'
-import { IMPORT_SOURCE_COPY, importBatchHref, isUiImportSource } from '@/lib/imports/ui/labels'
+import { importBatchHref } from '@/lib/imports/ui/labels'
 import { formatCount } from '@/lib/imports/ui/progress'
 import { cn } from '@/lib/utils'
-import { BatchStatusBadge } from './status-badge'
+import {
+  HistoryEmpty,
+  HistoryList,
+  HistoryPager,
+  type HistoryRow,
+  historySourceLabel,
+} from './inbox/history-list'
+import { BatchStatusPill } from './status-badge'
 
-/** Una fila del historial (lo de `listImportBatches`, sin `meta`). */
-export type HistoryRow = {
-  id: string
-  source: ImportSource
-  origin: 'upload' | 'api'
-  fileName: string | null
-  periodFrom: string | null
-  periodTo: string | null
-  status: ImportBatchStatus
-  counts: ImportBatchCounts | null
-  pending: number
-  createdByName: string
-  createdAt: string
-}
-
-function sourceLabel(source: ImportSource): string {
-  return isUiImportSource(source) ? IMPORT_SOURCE_COPY[source].short : 'ARCA (emitidos)'
-}
+export type { HistoryRow }
 
 function n(value: number | undefined): string {
   return formatCount(value ?? 0)
 }
 
 /**
- * «Historial» del hub (diseño §4.0): cada archivo subido, cuándo, de qué
- * período, cuántas filas, cuántas ya estaban, qué falta y quién lo subió. En
- * la compu es una tabla; en el celular, tarjetas. La primera celda lleva a la
- * revisión. Server-safe (la contadora lo ve igual, sin botones).
+ * «Todo lo que subiste» para quien solo lee (la contadora): la tabla densa, con
+ * los títulos en castellano (Subido · Origen · Período · Renglones del archivo ·
+ * Cargados · Pendientes · Estado). La primera celda lleva a la revisión, y no
+ * hay ningún botón. En el celular usa la misma lista con margen que ve el dueño
+ * (una tabla de siete columnas no entra).
+ *
+ * El dueño ve `HistoryList` en todos los anchos. Server-safe.
  */
 export function ImportHistory({
   slug,
   rows,
+  today,
   olderHref,
   newestHref,
 }: {
   slug: string
-  rows: HistoryRow[]
-  /** Siguiente página (más viejas), si hay. */
+  rows: readonly HistoryRow[]
+  today: string
+  /** Siguiente página (más viejos), si hay. */
   olderHref: string | null
-  /** Volver a las más nuevas, si no estamos en la primera página. */
+  /** Volver a los más nuevos, si no estamos en la primera página. */
   newestHref: string | null
 }) {
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon={History}
-        title={newestHref ? 'No hay importaciones más viejas' : 'Todavía no importaste nada'}
-        description={
-          newestHref
-            ? 'Ya viste todo el historial.'
-            : 'Cuando subas un archivo de ARCA, Mercado Pago o el banco, lo vas a ver acá.'
-        }
-        action={
-          newestHref ? (
-            <Button asChild variant="outline" className="h-11 md:h-9">
-              <Link href={newestHref}>Ver las más nuevas</Link>
-            </Button>
-          ) : undefined
-        }
-      />
-    )
-  }
+  if (rows.length === 0) return <HistoryEmpty newestHref={newestHref} reader />
 
   return (
     <div className="space-y-3">
-      {/* Compu: tabla. */}
       <DataTableShell className="hidden sm:block">
         <DataTableScroll>
           <DataTableRoot>
             <DataTableHead>
               <tr>
-                <DataTableHeader>Fecha</DataTableHeader>
+                <DataTableHeader>Subido</DataTableHeader>
                 <DataTableHeader>Origen</DataTableHeader>
                 <DataTableHeader>Período</DataTableHeader>
-                <DataTableHeader className="text-right">Filas</DataTableHeader>
-                {/* «Repetidas» y «Quién», solo con lugar: a 1280 con el menú abierto la tabla se salía
-                    por la derecha y «Estado» quedaba escondido. «Repetidas» (filas que ya estaban
-                    en otra importación) no es «Ya estaban cargados» de la revisión. */}
+                <DataTableHeader className="text-right">Renglones del archivo</DataTableHeader>
+                {/* «Repetidos en otro archivo» y «Quién», solo con lugar: a 1280 con el menú
+                    abierto la tabla se salía por la derecha y «Estado» quedaba escondido. */}
                 <DataTableHeader className="hidden text-right 2xl:table-cell">
-                  Repetidas
+                  Repetidos en otro archivo
                 </DataTableHeader>
                 <DataTableHeader className="text-right">Cargados</DataTableHeader>
                 <DataTableHeader className="text-right">Pendientes</DataTableHeader>
@@ -114,7 +83,7 @@ export function ImportHistory({
                   <DataTableCell className="whitespace-nowrap">
                     <Link
                       href={importBatchHref(slug, r.id)}
-                      className="font-medium underline-offset-2 hover:underline"
+                      className="rounded-sm font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {formatDateTime(r.createdAt)}
                     </Link>
@@ -128,7 +97,7 @@ export function ImportHistory({
                     ) : null}
                   </DataTableCell>
                   <DataTableCell className="whitespace-nowrap">
-                    {sourceLabel(r.source)}
+                    {historySourceLabel(r.source)}
                     {r.origin === 'api' ? (
                       <span className="block text-xs text-muted-foreground">Automática</span>
                     ) : null}
@@ -154,7 +123,7 @@ export function ImportHistory({
                     {n(r.pending)}
                   </DataTableCell>
                   <DataTableCell>
-                    <BatchStatusBadge status={r.status} />
+                    <BatchStatusPill batch={r} />
                   </DataTableCell>
                   <DataTableCell className="hidden max-w-40 truncate text-muted-foreground 2xl:table-cell">
                     {r.createdByName || '—'}
@@ -166,59 +135,14 @@ export function ImportHistory({
         </DataTableScroll>
         <DataTableFooter>
           <span>Mostrando {rows.length}</span>
-          <Pager olderHref={olderHref} newestHref={newestHref} />
+          <HistoryPager olderHref={olderHref} newestHref={newestHref} />
         </DataTableFooter>
       </DataTableShell>
 
-      {/* Celular: tarjetas. */}
-      <ul className="card-hairline divide-y divide-border/60 rounded-xl border bg-card sm:hidden">
-        {rows.map((r) => (
-          <li key={r.id}>
-            <Link
-              href={importBatchHref(slug, r.id)}
-              className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-cream-tint"
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="font-medium">
-                  {sourceLabel(r.source)} · {formatDateTime(r.createdAt)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {r.periodFrom && r.periodTo ? `${formatRange(r.periodFrom, r.periodTo)} · ` : ''}
-                  {n(r.counts?.items)} filas · {n(r.counts?.posted)} cargados
-                  {r.pending > 0 ? ` · ${n(r.pending)} pendientes` : ''}
-                </p>
-                <BatchStatusBadge status={r.status} />
-              </div>
-              <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
-            </Link>
-          </li>
-        ))}
-      </ul>
-      <div className="sm:hidden">
-        <Pager olderHref={olderHref} newestHref={newestHref} />
+      <div className="space-y-3 sm:hidden">
+        <HistoryList slug={slug} rows={rows} today={today} />
+        <HistoryPager olderHref={olderHref} newestHref={newestHref} />
       </div>
     </div>
-  )
-}
-
-function Pager({ olderHref, newestHref }: { olderHref: string | null; newestHref: string | null }) {
-  if (!olderHref && !newestHref) return null
-  return (
-    <nav aria-label="Más importaciones" className="flex items-center gap-2">
-      {newestHref ? (
-        <Button asChild variant="outline" size="sm" className="h-11 md:h-8">
-          <Link href={newestHref} scroll={false}>
-            Más nuevas
-          </Link>
-        </Button>
-      ) : null}
-      {olderHref ? (
-        <Button asChild variant="outline" size="sm" className="h-11 md:h-8">
-          <Link href={olderHref} scroll={false}>
-            Más viejas
-          </Link>
-        </Button>
-      ) : null}
-    </nav>
   )
 }

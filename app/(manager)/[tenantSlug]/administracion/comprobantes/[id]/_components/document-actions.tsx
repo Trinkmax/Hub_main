@@ -52,6 +52,7 @@ export function VoidDocumentButton({
   title,
   siblings,
   appliedCents,
+  extraNotes = [],
 }: {
   tenantSlug: string
   documentId: string
@@ -60,6 +61,8 @@ export function VoidDocumentButton({
   siblings: readonly string[]
   /** Pagos o cobros de otros aplicados sobre sus partidas (factura pagada). */
   appliedCents: number | null
+  /** Otros avisos de la ficha antes de anular (es de un gasto fijo, vino de un archivo). */
+  extraNotes?: readonly string[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -111,7 +114,7 @@ export function VoidDocumentButton({
     })
   }
 
-  const extra = [bundleText(siblings), appliedText(appliedCents)].filter(Boolean)
+  const extra = [bundleText(siblings), appliedText(appliedCents), ...extraNotes].filter(Boolean)
 
   return (
     <AlertDialog
@@ -174,12 +177,14 @@ export function VoidDocumentButton({
           </p>
         ) : null}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending} className="h-11 md:h-9">
+            Cancelar
+          </AlertDialogCancel>
           <Button
             type="button"
             disabled={pending}
             onClick={run}
-            className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="h-11 gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90 md:h-9"
           >
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             {pending ? 'Anulando…' : confirmAgain ? 'Anular igual' : 'Anular'}
@@ -205,6 +210,7 @@ export function ReverseDocumentButton({
   ivaMode,
   hasFiscal,
   appliedCents,
+  extraNotes = [],
 }: {
   tenantSlug: string
   documentId: string
@@ -218,6 +224,8 @@ export function ReverseDocumentButton({
   ivaMode: 'adjustment_only' | 'negative_row' | null
   hasFiscal: boolean
   appliedCents: number | null
+  /** Otros avisos de la ficha antes de anular (es de un gasto fijo, vino de un archivo). */
+  extraNotes?: readonly string[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -291,7 +299,7 @@ export function ReverseDocumentButton({
     : ivaMode === 'negative_row'
       ? `En el Libro IVA${targetMonth ? ` de ${targetMonth}` : ''} aparece el mismo comprobante en negativo («Anulación de …»).`
       : `En el Libro IVA no aparece una fila nueva: la contadora lo ve en la posición de IVA${targetMonth ? ` de ${targetMonth}` : ''} como ajuste de un período cerrado y decide si rectifica.`
-  const extra = [ivaText, appliedText(appliedCents)].filter(Boolean)
+  const extra = [ivaText, appliedText(appliedCents), ...extraNotes].filter(Boolean)
 
   return (
     <AlertDialog
@@ -372,12 +380,14 @@ export function ReverseDocumentButton({
           </p>
         ) : null}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending} className="h-11 md:h-9">
+            Cancelar
+          </AlertDialogCancel>
           <Button
             type="button"
             disabled={pending}
             onClick={run}
-            className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="h-11 gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90 md:h-9"
           >
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             {pending ? 'Anulando…' : confirmAgain ? 'Anular igual' : 'Anular'}

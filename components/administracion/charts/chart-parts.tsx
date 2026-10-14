@@ -103,10 +103,14 @@ export const HATCH_OVER_FILL: CSSProperties = {
     'repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in oklch, var(--card) 55%, transparent) 3px 5px)',
 }
 
-/** Rayado ámbar sobre un hueco: «acá falta cargar». Siempre con su palabra al lado. */
+/**
+ * Rayado ámbar sobre un hueco: «acá falta cargar». Siempre con su palabra al
+ * lado. La tinta del rayado sale de `--adm-hatch-missing` cuando el tema la
+ * define (en oscuro va más tenue: al 30 % le ganaba a las columnas del dato).
+ */
 export const HATCH_MISSING: CSSProperties = {
   backgroundImage:
-    'repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in oklch, var(--warning) 30%, transparent) 3px 5px)',
+    'repeating-linear-gradient(135deg, transparent 0 3px, var(--adm-hatch-missing, color-mix(in oklch, var(--warning) 30%, transparent)) 3px 5px)',
 }
 
 /* ── Leyenda-tabla ──────────────────────────────────────────────────────── */
@@ -156,7 +160,7 @@ export function LegendKey({
     return (
       <span
         aria-hidden
-        className="size-2.5 shrink-0 rounded-[3px] border border-dashed border-warning"
+        className="size-2.5 shrink-0 rounded-[3px] border border-dashed border-warning dark:border-warning/60"
         style={HATCH_MISSING}
       />
     )
@@ -362,6 +366,8 @@ export type XTick = {
   strong?: boolean
   /** Solo entra cuando la tarjeta es ancha (desde 34rem); en el celular se saltea. */
   wideOnly?: boolean
+  /** Entra desde 20rem de tarjeta (un celular de 390 px); en uno de 320 se saltea. */
+  midOnly?: boolean
 }
 
 /**
@@ -378,7 +384,11 @@ export function XTicks({ items, onHero = false }: { items: readonly XTick[]; onH
             <span
               className={cn(
                 'flex-col items-center text-[10px] leading-tight whitespace-nowrap tabular-nums',
-                t.wideOnly ? 'hidden @min-[34rem]:flex' : 'flex',
+                t.wideOnly
+                  ? 'hidden @min-[34rem]:flex'
+                  : t.midOnly
+                    ? 'hidden @min-[20rem]:flex'
+                    : 'flex',
                 t.strong && 'font-semibold',
                 onHero
                   ? t.strong

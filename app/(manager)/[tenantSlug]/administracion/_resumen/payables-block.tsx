@@ -31,7 +31,7 @@ const TRANCHE_SWATCH: Readonly<Record<PayableTrancheKey, string>> = {
 const PAY_WORDS: AttentionWords = { danger: 'Vencido', warning: 'Por vencer', info: 'Aviso' }
 
 /** Cuántos renglones con [Pagar] entran antes de mandar a la lista completa. */
-const MAX_ROWS = 4
+const MAX_ROWS = 3
 
 /**
  * «Lo que tenés que pagar»: cuánto se les debe a los proveedores y cuán
@@ -42,17 +42,28 @@ const MAX_ROWS = 4
  * el «Te falta de gasto fijo» de acá es el «Falta pagar» de allá. Si ninguno
  * tiene monto no se muestra «$ 0» (sería decir «está todo pago»): se dice que
  * faltan los montos.
+ *
+ * Lo mismo con la deuda del bar recién configurado: sin saldos iniciales y sin
+ * ninguna compra a pagar cargada no dice «No le debés nada a nadie · $ 0» al
+ * lado de un héroe que dice «Todavía no sé cuánta plata hay» (`unknown`).
  */
 export async function PayablesBlock({ data, className }: { data: HomeData; className?: string }) {
-  const [summaryResult, recurringResult, paymentsResult] = await Promise.all([
+  const [summaryResult, recurringResult, paymentsResult, settingsResult] = await Promise.all([
     data.summary,
     data.recurring,
     data.payments,
+    data.settings,
   ])
   const { base, canWrite, today } = data
   const summary = summaryResult.ok ? summaryResult.data : null
-  const tranches = summary ? payablesTranches(summary.payables) : null
-  const pay = summary ? payableAttention(summary.attention, MAX_ROWS) : { rows: [], more: 0 }
+  // Con los saldos iniciales sin cargar (ahí va lo que el bar ya debía), un cero no es un dato.
+  const openingPending = settingsResult.ok && settingsResult.data?.openingStatus === 'pending'
+  const tranches = summary ? payablesTranches(summary.payables, { openingPending }) : null
+  // Los avisos llegan topeados: lo que queda se completa con los proveedores con algo
+  // vencido, así «3 renglones y 6 más» suma los 9 que dice el título.
+  const pay = summary
+    ? payableAttention(summary.attention, MAX_ROWS, tranches?.partiesRed ?? null)
+    : { rows: [], more: 0 }
   const views = pay.rows.map((item, index) => attentionView(item, today, base, index))
   const fixed = recurringResult.ok
     ? fixedProgress(recurringResult.data, paymentsResult.ok ? paymentsResult.data : null, today)
@@ -65,19 +76,22 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
       className={className}
     >
       <PanelSection className="space-y-4">
-        {tranches ? (
+        {tranches?.unknown ? (
+          // El bar recién configurado: ni «$ 0» ni «no le debés nada». Qué va a aparecer acá.
+          <div className="space-y-1.5 text-sm">
+            <p className="text-pretty">{tranches.sentence}</p>
+            <p className="text-muted-foreground text-pretty">
+              Y cada compra que cargues para pagar después aparece acá, con su vencimiento.
+            </p>
+          </div>
+        ) : tranches ? (
           <>
             <MoneyHero
               size="md"
               label="Le debés a proveedores"
               cents={tranches.totalCents}
-              sentence={
-                tranches.partiesRed > 0
-                  ? tranches.partiesRed === 1
-                    ? 'Hay 1 proveedor con algo vencido.'
-                    : `Hay ${tranches.partiesRed} proveedores con algo vencido.`
-                  : undefined
-              }
+              // Cuántos proveedores son lo dice el título; acá, cuánto de esto ya venció.
+              sentence={tranches.sentence ?? undefined}
             />
             {tranches.isEmpty ? (
               <p className="flex items-start gap-2 text-sm text-muted-foreground text-pretty">
@@ -94,6 +108,11 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
                 }))}
               />
             )}
+            {tranches.note ? (
+              <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+                {tranches.note}
+              </p>
+            ) : null}
           </>
         ) : (
           <MoneyHero
@@ -110,7 +129,7 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
 
         {views.length > 0 ? (
           <div className="border-t border-border/60 pt-4">
-            <AttentionRows views={views} words={PAY_WORDS} />
+            <AttentionRows views={views} words={PAY_WORDS} quietWhenUniform />
             {pay.more > 0 ? (
               <PanelLink href={`${base}/compras?tab=proveedores`} className="mt-3">
                 {pay.more === 1 ? 'Y 1 más' : `Y ${pay.more} más`}: ver todo lo que debés
@@ -188,7 +207,9 @@ function FixedExpenses({
           </p>
         ) : null}
         {canWrite && fixed.missingAmount > 0 ? (
-          <PanelLink href={href}>
+          // «Completar la planilla» (`gastosFijosFillHref`): los montos de todos de corrido,
+          // sin abrir uno por uno.
+          <PanelLink href={`${href}/completar`}>
             Completar los montos
             <ArrowRight className="size-3.5" aria-hidden />
           </PanelLink>

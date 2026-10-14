@@ -1,70 +1,29 @@
 'use client'
 
-import { Pencil } from 'lucide-react'
-import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { ChevronRight, Pencil } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import type { AccFailureState } from '@/lib/accounting/action-state'
-import { saveParty } from '@/lib/accounting/actions/master'
-import type { CommissionVatMode, PartyKind, PartyRates } from '@/lib/accounting/types'
-import { formatCuit, normalizeCuit } from '@/lib/fiscal'
+import { formatCuit } from '@/lib/fiscal'
 import { cn } from '@/lib/utils'
+import { PARTY_KIND_WORD } from '../_lib/cobros'
 import { COMMISSION_VAT_MODE_LABELS } from '../_lib/labels'
-import { bpToPercentInput, formatBp, parsePercentToBp } from '../_lib/percent'
-import { EditDialog } from './edit-dialog'
-import { describedBy, Field } from './form-bits'
-import { CuitInput, cuitIssue, PercentInput, SwitchRow } from './inputs'
-import { useMasterAction } from './use-master-action'
+import { CHARGING_PARTY_KINDS, type RateKey, type SystemPartyRow } from '../_lib/payloads'
+import { formatBp } from '../_lib/percent'
 
-export type SystemPartyRow = {
-  id: string
-  name: string
-  kind: PartyKind
-  systemKey: string | null
-  taxId: string | null
-  active: boolean
-  commissionVatMode: CommissionVatMode
-  rates: PartyRates
-  updatedAt: string | null
-}
+/**
+ * «CUIT de tarjetas, apps, bancos y organismos»: la lista plegada al pie de
+ * «Medios de cobro». Es lo que quedó de la pestaña «Plataformas» que no es de
+ * un medio en particular: la CUIT de cada uno (la piden los libros de IVA) y,
+ * de los organismos, nada más que eso. Están TODOS los partícipes del sistema
+ * y los bancos, en el orden de siempre: nada de lo que antes se editaba quedó
+ * sin lugar. «Editar» abre el mismo diálogo de siempre.
+ *
+ * Es zona de la contadora: viene plegada para el dueño y abierta para ella, o
+ * cuando se llega con `?tab=participes` o `#cuit`.
+ */
 
-const KIND_LABEL: Readonly<Record<PartyKind, string>> = {
-  supplier: 'Proveedor',
-  customer: 'Clientes',
-  card_processor: 'Tarjetas',
-  payment_wallet: 'Billetera',
-  delivery_platform: 'Plataforma',
-  bank: 'Banco',
-  tax_agency: 'Organismo',
-  payroll: 'Sueldos',
-  partner: 'Socio',
-  other: 'Otro',
-}
-
-/** Los que cobran por nosotros y descuentan comisiones y retenciones. */
-const CHARGES: ReadonlySet<PartyKind> = new Set([
-  'card_processor',
-  'payment_wallet',
-  'delivery_platform',
-  'bank',
-])
-
-type RateKey = keyof PartyRates
-
-const RATE_FIELDS: ReadonlyArray<{ key: RateKey; label: string; only?: PartyKind }> = [
-  { key: 'commissionBp', label: 'Comisión' },
-  { key: 'iibbWithholdingBp', label: 'Retención de IIBB' },
-  { key: 'vatWithholdingBp', label: 'Retención de IVA' },
-  { key: 'incomeTaxWithholdingBp', label: 'Retención de Ganancias' },
-  { key: 'sircupaBp', label: 'SIRCUPA (IIBB de Mercado Pago)', only: 'payment_wallet' },
-]
+export type { SystemPartyRow }
 
 const SHORT: Readonly<Record<RateKey, string>> = {
   commissionBp: 'Comisión',
@@ -74,6 +33,7 @@ const SHORT: Readonly<Record<RateKey, string>> = {
   sircupaBp: 'SIRCUPA',
 }
 
+/** «Comisión 1,5 % · SIRCUPA 3,5 %»: las tasas cargadas, para quien las revisa. */
 function ratesLine(p: SystemPartyRow): string | null {
   const parts = (Object.keys(SHORT) as RateKey[])
     .filter((k) => p.rates[k] !== null && p.rates[k] !== undefined)
@@ -81,280 +41,108 @@ function ratesLine(p: SystemPartyRow): string | null {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-type Draft = {
-  party: SystemPartyRow
-  cuit: string
-  rates: Record<RateKey, string>
-  vatMode: CommissionVatMode
-  active: boolean
-}
+const ANCHOR = 'cuit'
 
-/**
- * Ajustes › Plataformas y organismos (H.17, «partícipes del sistema»): el CUIT
- * de cada uno (los libros de IVA lo piden), las tasas que se precargan en las
- * acreditaciones y cómo factura las comisiones. El tipo y sus cuentas los fija
- * el sistema.
- */
-export function SystemPartiesPanel({
-  tenantSlug,
+export function SystemPartiesList({
   parties,
   readOnly,
+  defaultOpen,
+  onEdit,
 }: {
-  tenantSlug: string
   parties: readonly SystemPartyRow[]
   readOnly: boolean
+  /** Abierta de entrada: la contadora, o quien llegó por `?tab=participes`. */
+  defaultOpen: boolean
+  onEdit: (party: SystemPartyRow) => void
 }) {
-  const { pending, run } = useMasterAction()
-  const [editing, setEditing] = useState<Draft | null>(null)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [message, setMessage] = useState<string | null>(null)
+  const ref = useRef<HTMLDetailsElement>(null)
 
-  const open = (p: SystemPartyRow) => {
-    setEditing({
-      party: p,
-      cuit: p.taxId ? formatCuit(p.taxId) : '',
-      rates: {
-        commissionBp: bpToPercentInput(p.rates.commissionBp),
-        iibbWithholdingBp: bpToPercentInput(p.rates.iibbWithholdingBp),
-        vatWithholdingBp: bpToPercentInput(p.rates.vatWithholdingBp),
-        incomeTaxWithholdingBp: bpToPercentInput(p.rates.incomeTaxWithholdingBp),
-        sircupaBp: bpToPercentInput(p.rates.sircupaBp),
-      },
-      vatMode: p.commissionVatMode,
-      active: p.active,
-    })
-    setErrors({})
-    setMessage(null)
-  }
-
-  const onFailure = (state: AccFailureState) => {
-    const fields = { ...(state.fieldErrors ?? {}) }
-    if (fields.taxIdType && !fields.taxId) fields.taxId = fields.taxIdType
-    setErrors(fields)
-    setMessage(Object.keys(fields).length > 0 ? null : state.message)
-  }
-
-  const save = () => {
-    if (!editing) return
-    const p = editing.party
-    const local: Record<string, string> = {}
-    const issue = cuitIssue(editing.cuit)
-    if (issue) local.taxId = issue
-    const charges = CHARGES.has(p.kind)
-    const rates: Partial<Record<RateKey, number | null>> = {}
-    if (charges) {
-      for (const field of RATE_FIELDS) {
-        if (field.only && field.only !== p.kind) continue
-        const parsed = parsePercentToBp(editing.rates[field.key])
-        if (parsed.ok) rates[field.key] = parsed.bp
-        else local[field.key] = parsed.message
+  // Con `#cuit` en la URL se abre sola y queda a la vista.
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === `#${ANCHOR}` && ref.current) {
+        ref.current.open = true
+        ref.current.scrollIntoView({ block: 'start' })
       }
     }
-    if (Object.keys(local).length > 0) {
-      setErrors(local)
-      return
-    }
-    const taxId = editing.cuit.trim() ? normalizeCuit(editing.cuit) : null
-    run(
-      () =>
-        saveParty(tenantSlug, {
-          id: p.id,
-          expectedUpdatedAt: p.updatedAt,
-          kind: p.kind,
-          name: p.name,
-          taxIdType: taxId ? 'cuit' : 'none',
-          taxId,
-          ...(charges ? { ...rates, commissionVatMode: editing.vatMode } : {}),
-          ...(p.kind === 'delivery_platform' ? { active: editing.active } : {}),
-        }),
-      { onSuccess: () => setEditing(null), onFailure },
-    )
-  }
+    open()
+    window.addEventListener('hashchange', open)
+    return () => window.removeEventListener('hashchange', open)
+  }, [])
 
-  const err = (k: string) => errors[k] ?? null
-  const groups: Array<{ title: string; rows: SystemPartyRow[] }> = [
-    { title: 'Cobros, plataformas y bancos', rows: parties.filter((p) => CHARGES.has(p.kind)) },
-    { title: 'Organismos y otros', rows: parties.filter((p) => !CHARGES.has(p.kind)) },
-  ]
+  if (parties.length === 0) return null
+  const withoutCuit = parties.filter((p) => !p.taxId).length
 
   return (
-    <div className="space-y-4">
-      {groups.map((group) =>
-        group.rows.length === 0 ? null : (
-          <section
-            key={group.title}
-            className="card-hairline overflow-hidden rounded-xl border bg-card"
-          >
-            <header className="border-b border-border/60 px-5 py-4">
-              <h3 className="font-serif text-lg font-semibold tracking-tight">{group.title}</h3>
-            </header>
-            <ul className="divide-y divide-border/60">
-              {group.rows.map((p) => {
-                const rates = CHARGES.has(p.kind) ? ratesLine(p) : null
-                const missingCuit = !p.taxId && CHARGES.has(p.kind)
-                return (
-                  <li
-                    key={p.id}
-                    className="flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className={cn('min-w-0 space-y-0.5', !p.active && 'opacity-60')}>
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        {p.name}
-                        {p.active ? null : <Badge variant="muted">Apagado</Badge>}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {KIND_LABEL[p.kind]} ·{' '}
-                        {p.taxId ? (
-                          <span className="tabular-nums">CUIT {formatCuit(p.taxId)}</span>
-                        ) : (
-                          <span className={missingCuit ? 'text-warning-text' : undefined}>
-                            Sin CUIT
-                          </span>
-                        )}
-                      </p>
-                      {rates ? <p className="text-xs text-muted-foreground">{rates}</p> : null}
-                      {CHARGES.has(p.kind) && p.commissionVatMode !== 'none' ? (
-                        <p className="text-xs text-muted-foreground">
-                          Factura las comisiones:{' '}
-                          {COMMISSION_VAT_MODE_LABELS[p.commissionVatMode].toLowerCase()}
-                        </p>
-                      ) : null}
-                    </div>
-                    {readOnly ? null : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-11 gap-1.5 self-start sm:self-center md:h-8"
-                        onClick={() => open(p)}
-                      >
-                        <Pencil className="size-3.5" aria-hidden />
-                        Editar
-                      </Button>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        ),
-      )}
-      {parties.length === 0 ? (
-        <p className="card-hairline rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-          Todavía no hay plataformas ni organismos cargados.
+    <details
+      ref={ref}
+      id={ANCHOR}
+      open={defaultOpen || undefined}
+      className="group/cuit scroll-mt-28 rounded-2xl bg-secondary/50"
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-4 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open/cuit:rotate-90 motion-reduce:transition-none"
+        />
+        <span className="min-w-0 flex-1 text-sm font-medium text-pretty">
+          CUIT de tarjetas, apps, bancos y organismos
+        </span>
+        <StatusPill tone="muted">
+          {withoutCuit === 0 ? 'Todos con CUIT' : `${withoutCuit} sin CUIT`}
+        </StatusPill>
+      </summary>
+      <div className="px-4 pb-4">
+        <p className="text-sm text-muted-foreground text-pretty">
+          La CUIT de cada uno la piden los libros de IVA. De los organismos solo se carga eso.
         </p>
-      ) : null}
-
-      {readOnly ? null : (
-        <EditDialog
-          open={editing !== null}
-          onOpenChange={(next) => {
-            if (!next) setEditing(null)
-          }}
-          title={editing ? editing.party.name : ''}
-          description="Las tasas sirven para precargar las acreditaciones; nunca se registran solas."
-          pending={pending}
-          message={message}
-          onSubmit={save}
-        >
-          {editing ? (
-            <>
-              <Field
-                id="sp-cuit"
-                label="CUIT"
-                optional
-                hint={CHARGES.has(editing.party.kind) ? 'Lo piden los libros de IVA.' : undefined}
-                error={err('taxId')}
-              >
-                <CuitInput
-                  id="sp-cuit"
-                  value={editing.cuit}
-                  invalid={Boolean(err('taxId'))}
-                  describedBy={describedBy(
-                    'sp-cuit',
-                    CHARGES.has(editing.party.kind),
-                    err('taxId'),
-                  )}
-                  onChange={(cuit) => setEditing({ ...editing, cuit })}
-                  onBlurCheck={(issue) =>
-                    setErrors((prev) => {
-                      const { taxId: _taxId, ...rest } = prev
-                      return issue ? { ...rest, taxId: issue } : rest
-                    })
-                  }
-                />
-              </Field>
-              {CHARGES.has(editing.party.kind) ? (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {RATE_FIELDS.filter((f) => !f.only || f.only === editing.party.kind).map(
-                      (f) => (
-                        <Field
-                          key={f.key}
-                          id={`sp-${f.key}`}
-                          label={f.label}
-                          optional
-                          error={err(f.key)}
-                        >
-                          <PercentInput
-                            id={`sp-${f.key}`}
-                            value={editing.rates[f.key]}
-                            invalid={Boolean(err(f.key))}
-                            describedBy={describedBy(`sp-${f.key}`, null, err(f.key))}
-                            onChange={(text) =>
-                              setEditing({ ...editing, rates: { ...editing.rates, [f.key]: text } })
-                            }
-                          />
-                        </Field>
-                      ),
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground text-pretty">
-                    Cada porcentaje se calcula sobre lo cobrado (la venta), no sobre la comisión. El
-                    IVA de la comisión (21 %) lo calcula el sistema: no va en «Retención de IVA».
-                    {editing.party.kind === 'payment_wallet'
-                      ? ' Si la comisión del QR cambia según cómo te pagan (dinero en cuenta, débito o crédito), poné la más común: la de cada cobro sale del reporte de Mercado Pago.'
-                      : null}
+        <ul className="mt-3 divide-y divide-border/60">
+          {parties.map((p) => {
+            const charges = CHARGING_PARTY_KINDS.has(p.kind)
+            const rates = charges ? ratesLine(p) : null
+            return (
+              <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className={cn('min-w-0', !p.active && 'opacity-60')}>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                    <span className="min-w-0 truncate" title={p.name}>
+                      {p.name}
+                    </span>
+                    {p.active ? null : <StatusPill tone="muted">Apagada</StatusPill>}
                   </p>
-                  <Field id="sp-vat-mode" label="¿Cómo factura las comisiones?">
-                    <Select
-                      value={editing.vatMode}
-                      onValueChange={(v) =>
-                        setEditing({ ...editing, vatMode: v as CommissionVatMode })
-                      }
-                    >
-                      <SelectTrigger
-                        id="sp-vat-mode"
-                        className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(COMMISSION_VAT_MODE_LABELS) as CommissionVatMode[]).map(
-                          (m) => (
-                            <SelectItem key={m} value={m}>
-                              {COMMISSION_VAT_MODE_LABELS[m]}
-                            </SelectItem>
-                          ),
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </>
-              ) : null}
-              {editing.party.kind === 'delivery_platform' ? (
-                <SwitchRow
-                  id="sp-active"
-                  label="Trabajamos con esta plataforma"
-                  description="Para cobrar con ella, prendé también su medio en Medios de cobro."
-                  checked={editing.active}
-                  onCheckedChange={(active) => setEditing({ ...editing, active })}
-                />
-              ) : null}
-            </>
-          ) : null}
-        </EditDialog>
-      )}
-    </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {PARTY_KIND_WORD[p.kind]} ·{' '}
+                    {p.taxId ? (
+                      <span className="tabular-nums">CUIT {formatCuit(p.taxId)}</span>
+                    ) : (
+                      'Sin CUIT'
+                    )}
+                  </p>
+                  {rates ? <p className="text-xs text-muted-foreground">{rates}</p> : null}
+                  {charges && p.commissionVatMode !== 'none' ? (
+                    <p className="text-xs text-muted-foreground">
+                      Factura la comisión:{' '}
+                      {COMMISSION_VAT_MODE_LABELS[p.commissionVatMode].toLowerCase()}
+                    </p>
+                  ) : null}
+                </div>
+                {readOnly ? null : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 shrink-0 gap-1.5 rounded-full px-3.5 md:h-9"
+                    aria-label={`Editar ${p.name}`}
+                    onClick={() => onEdit(p)}
+                  >
+                    <Pencil className="size-3.5" aria-hidden />
+                    Editar
+                  </Button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </details>
   )
 }

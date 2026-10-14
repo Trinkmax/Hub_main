@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
   useEffect,
   useId,
@@ -18,18 +19,18 @@ import { FormBanner, WarningsDialog } from '@/components/administracion/cajas-ve
 import { usePosting, useUndoToast } from '@/components/administracion/cajas-ventas/use-posting'
 import { DateField, DateInput } from '@/components/administracion/date-input'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { MoneyField, MoneyInput } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { postManualEntry } from '@/lib/accounting/actions/documents'
-import { engineErrorsState } from '@/lib/accounting/errors'
-import { payrollTemplateLines } from '@/lib/accounting/posting/manual'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { ManualEntryValues } from '@/lib/accounting/server/document-types'
 import type { PostingContext } from '@/lib/accounting/types'
-import { endOfMonth, formatIsoDay, formatMonthYear } from '@/lib/dates'
+import { endOfMonth, formatIsoDay } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
@@ -41,6 +42,15 @@ import {
   type LineField,
   validateEntry,
 } from '../_lib/manual-entry'
+import {
+  EMPTY_PAYROLL,
+  type PayrollBuild,
+  type PayrollField,
+  type PayrollInputs,
+  PayrollSteps,
+  payrollBuild,
+  payrollDescription,
+} from './payroll-steps'
 
 export type { InitialLine } from '../_lib/manual-entry'
 
@@ -51,12 +61,82 @@ const FIELD_RE = /^lines\.(\d+)\.(accountId|debitCents|creditCents|partyId|dueDa
 const GRID =
   'lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_8.5rem_8.5rem_minmax(0,1.2fr)_9.5rem_2.75rem]'
 
+const HELP =
+  'Usalo para ajustes y para lo que te dicta la contadora. Lo del día a día se carga desde Compras, Ventas y Cajas; para pagar sueldos o impuestos usá «Pagar».'
+
+const PAYROLL_HELP =
+  'Copiá los números del resumen que te manda tu contadora. Queda como deuda con el personal y con los organismos; después los pagás con «Pagar».'
+
+/** Lo que va en `?tipo=` para cada tipo de asiento (el mismo contrato que lee la página). */
+const KIND_PARAM: Readonly<Record<ManualKind, string | null>> = {
+  adjustment: null,
+  payroll: 'sueldos',
+  manual: 'otro',
+  fy_adjustment: 'ajuste-cierre',
+}
+
 /**
- * Asiento manual (H.13): tipo, fecha y concepto, y la grilla Cuenta ·
- * Proveedor o cliente · Debe · Haber · Leyenda · Vence que tiene que cuadrar.
- * El pie dice siempre cuánto falta y de qué lado; «Guardar asiento» no se
- * deshabilita: si no cuadra, frena el envío y lleva el foco al pie. Se guarda
- * con el mismo motor que la vista previa (E.7) y deja «Deshacer».
+ * `?tipo=` en la URL sin pedir la página de nuevo: cambiar de tipo no pierde lo cargado.
+ *
+ * Va con `null` (no con `window.history.state`): así Next se entera del cambio y lo conserva. Con
+ * el estado de Next adentro (`__NA`) lo toma como propio y no lo anota: la barra cambiaba, pero en
+ * el próximo movimiento del router (abrir una hoja, un `refresh()`) volvía el `?tipo=` de antes.
+ */
+function syncKindParam(kind: ManualKind) {
+  try {
+    const url = new URL(window.location.href)
+    const value = KIND_PARAM[kind]
+    if (value) url.searchParams.set('tipo', value)
+    else url.searchParams.delete('tipo')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  } catch {
+    // Sin History API: el formulario funciona igual, solo no queda en la URL.
+  }
+}
+
+/**
+ * Lo que el formulario manda (sin `clientRef` ni `previewHash`, que agrega
+ * `usePosting`). Puro: lo usa el formulario y lo comparan los tests, para que el
+ * camino de «Sueldos del mes» mande exactamente lo mismo que la grilla.
+ */
+export function manualEntryValues(input: {
+  kind: ManualKind
+  date: string | null
+  description: string
+  lines: readonly InitialLine[]
+  correctsId: string | null
+}): Omit<ManualEntryValues, 'clientRef' | 'previewHash'> {
+  return {
+    entryKind: input.kind,
+    date: input.date ?? '',
+    description: input.description.trim(),
+    lines: input.lines.filter(hasContent).map((l) => ({
+      accountId: l.accountId ?? '',
+      debitCents: l.debitCents,
+      creditCents: l.creditCents,
+      partyId: l.partyId,
+      dueDate: l.dueDate,
+      memo: l.memo.trim() === '' ? null : l.memo.trim(),
+    })),
+    correctsDocumentId: input.correctsId,
+  }
+}
+
+/**
+ * Asiento manual (H.13) y «Sueldos del mes»: un solo formulario con dos caras.
+ *
+ * - **Asiento manual** (lo que dicta la contadora): tipo, fecha y concepto, y la
+ *   grilla Cuenta · Proveedor o cliente · Debe · Haber · Leyenda · Vence que
+ *   tiene que cuadrar. El pie dice siempre cuánto falta y de qué lado; «Guardar
+ *   asiento» no se deshabilita: si no cuadra, frena el envío y lleva el foco al
+ *   pie.
+ * - **Sueldos del mes** (`?tipo=sueldos`, para el dueño): los mismos datos en
+ *   tres pasos, con un ticket que se arma solo (`PayrollSteps`). Las líneas se
+ *   rearman con cada dato hasta que se abre «Editar las líneas a mano».
+ *
+ * En los dos casos se guarda con el mismo motor que la vista previa (E.7), con
+ * la misma acción y el mismo envío, y deja «Deshacer». El tipo vive en la URL
+ * (`?tipo=`) sin recargar: cambiarlo no pierde lo cargado.
  */
 export function ManualEntryForm({
   tenantSlug,
@@ -69,6 +149,8 @@ export function ManualEntryForm({
   initialKind,
   initialLines,
   corrects,
+  backHref,
+  notice,
 }: {
   tenantSlug: string
   ctx: PostingContext
@@ -82,6 +164,10 @@ export function ManualEntryForm({
   initialLines: readonly InitialLine[]
   /** «Armar asiento de ajuste» de un comprobante de un mes cerrado. */
   corrects: { id: string; label: string; month: string | null; description: string } | null
+  /** A dónde vuelve el «‹ Libros» del encabezado. */
+  backHref: string
+  /** Un aviso de la página, arriba del formulario (un `?corrige=` que no se puede ajustar). */
+  notice?: ReactNode
 }) {
   const router = useRouter()
   const base = `/${tenantSlug}/administracion`
@@ -100,6 +186,8 @@ export function ManualEntryForm({
     initialKind === 'fy_adjustment' && fyAdjustment ? fyAdjustment.endDate : today,
   )
   const [description, setDescription] = useState(corrects?.description ?? '')
+  // Mientras no lo toquen, el concepto de los sueldos se completa solo y sigue a la fecha.
+  const [descriptionTouched, setDescriptionTouched] = useState(Boolean(corrects?.description))
   const [lines, setLines] = useState<EntryLine[]>(() => {
     const source = initialLines.length > 0 ? initialLines : [emptyLine(), emptyLine()]
     return source.map((l) => ({ ...l, key: newKey() }))
@@ -109,6 +197,29 @@ export function ManualEntryForm({
   const [focusKey, setFocusKey] = useState<string | null>(null)
   /** Qué línea de la grilla fue cada línea enviada (los errores del servidor vienen por posición). */
   const sentKeys = useRef<string[]>([])
+
+  // «Sueldos del mes»: los seis datos del resumen y si las líneas se editan a mano.
+  const [payrollInputs, setPayrollInputs] = useState<PayrollInputs>(EMPTY_PAYROLL)
+  const [payrollError, setPayrollError] = useState<{
+    field: PayrollField
+    message: string
+  } | null>(null)
+  // Con líneas que vienen de un comprobante (`?corrige=`) se arranca en la grilla.
+  const [manualLines, setManualLines] = useState(initialLines.length > 0)
+  const payrollAuto = kind === 'payroll' && !manualLines
+  const payroll = useMemo<PayrollBuild>(
+    () => payrollBuild(payrollInputs, date ?? today, ctx),
+    [payrollInputs, date, today, ctx],
+  )
+  const payrollLines = useMemo<EntryLine[]>(
+    () =>
+      payroll.state === 'ready' ? payroll.lines.map((l, i) => ({ ...l, key: `sueldos-${i}` })) : [],
+    [payroll],
+  )
+  /** Las líneas que se mandan: las del paso a paso de sueldos, o las de la grilla. */
+  const currentLines = payrollAuto ? payrollLines : lines
+  const shownDescription =
+    kind === 'payroll' && !descriptionTouched ? payrollDescription(date ?? today) : description
 
   const undoToast = useUndoToast(tenantSlug)
   const posting = usePosting<ManualEntryValues>({
@@ -134,25 +245,19 @@ export function ManualEntryForm({
   }, [focusKey])
 
   const accountOf = (id: string | null) => (id ? (ctx.accounts.get(id) ?? null) : null)
-  const totals = entryTotals(lines)
-  const movesVat = lines.some((l) => accountOf(l.accountId)?.systemKey?.startsWith('vat_'))
+  const totals = entryTotals(currentLines)
+  const movesVat = currentLines.some((l) => accountOf(l.accountId)?.systemKey?.startsWith('vat_'))
 
   const values = useMemo<Omit<ManualEntryValues, 'clientRef' | 'previewHash'>>(
-    () => ({
-      entryKind: kind,
-      date: date ?? '',
-      description: description.trim(),
-      lines: lines.filter(hasContent).map((l) => ({
-        accountId: l.accountId ?? '',
-        debitCents: l.debitCents,
-        creditCents: l.creditCents,
-        partyId: l.partyId,
-        dueDate: l.dueDate,
-        memo: l.memo.trim() === '' ? null : l.memo.trim(),
-      })),
-      correctsDocumentId: correctsId,
-    }),
-    [kind, date, description, lines, correctsId],
+    () =>
+      manualEntryValues({
+        kind,
+        date,
+        description: shownDescription,
+        lines: currentLines,
+        correctsId,
+      }),
+    [kind, date, shownDescription, currentLines, correctsId],
   )
   const valuesKey = JSON.stringify(values)
 
@@ -160,7 +265,7 @@ export function ManualEntryForm({
     documentRef: 'asiento',
     description: values.description,
     date,
-    lines: lines
+    lines: currentLines
       .filter((l) => l.accountId && ((l.debitCents ?? 0) > 0 || (l.creditCents ?? 0) > 0))
       .map((l) => {
         const account = accountOf(l.accountId)
@@ -225,12 +330,37 @@ export function ManualEntryForm({
     setKind(next)
     if (next === 'fy_adjustment' && fyAdjustment) setDate(fyAdjustment.endDate)
     else if (kind === 'fy_adjustment') setDate(today)
+    posting.setBanner(null)
+    syncKindParam(next)
+  }
+
+  function changeDescription(value: string) {
+    setDescription(value)
+    setDescriptionTouched(true)
+    setLocalErrors((prev) => {
+      if (!prev.description) return prev
+      const next = { ...prev }
+      delete next.description
+      return next
+    })
+    posting.clearFieldError('description')
+  }
+
+  function changeDate(value: string | null) {
+    setDate(value)
+    setLocalErrors((prev) => {
+      if (!prev.date) return prev
+      const next = { ...prev }
+      delete next.date
+      return next
+    })
+    posting.clearFieldError('date')
   }
 
   function focusFirstProblem(onlyBalance: boolean) {
     requestAnimationFrame(() => {
-      if (onlyBalance) {
-        totalsRef.current?.focus()
+      if (onlyBalance && totalsRef.current) {
+        totalsRef.current.focus()
         return
       }
       formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
@@ -239,19 +369,27 @@ export function ManualEntryForm({
 
   function submit() {
     const check = validateEntry({
-      lines,
+      lines: currentLines,
       date,
-      description,
+      description: shownDescription,
       requiresParty: (id) => accountOf(id)?.requiresParty ?? false,
     })
     if (!check.ok) {
       setLocalErrors(check.errors)
-      posting.setBanner({ tone: 'error', message: check.message })
+      // En el paso a paso las líneas no están a la vista: se dice dónde mirarlas.
+      const lineProblem =
+        payrollAuto && !('date' in check.errors) && !('description' in check.errors)
+      posting.setBanner({
+        tone: 'error',
+        message: lineProblem
+          ? `${check.message} Abrí «Editar las líneas a mano» para revisarlas.`
+          : check.message,
+      })
       focusFirstProblem(check.onlyBalance)
       return
     }
     setLocalErrors({})
-    const keys = lines.filter(hasContent).map((l) => l.key)
+    const keys = currentLines.filter(hasContent).map((l) => l.key)
     const preview = previewDocumentForm('manual_entry', values, ctx, {
       // El ajuste de cierre va al período de ajustes del ejercicio, no a un mes.
       firstOpenDate: kind === 'fy_adjustment' ? null : firstOpenDate,
@@ -275,9 +413,41 @@ export function ManualEntryForm({
     posting.submit(values, { hash: preview.hash, warnings: preview.warnings }, valuesKey)
   }
 
+  /**
+   * «Guardar los sueldos»: primero lo que revisaba «Armar las líneas» (mismos
+   * textos, con el foco en el dato que falta) y después el `submit()` de siempre.
+   */
+  function submitPayroll() {
+    if (payroll.state !== 'ready') {
+      setPayrollError({ field: payroll.field, message: payroll.message })
+      posting.setBanner({ tone: 'error', message: payroll.message })
+      focusFirstProblem(false)
+      return
+    }
+    setPayrollError(null)
+    submit()
+  }
+
+  function save() {
+    if (posting.pending) return
+    if (payrollAuto) submitPayroll()
+    else submit()
+  }
+
+  /** «Editar las líneas a mano»: la grilla arranca con las líneas que ya armó el paso a paso. */
+  function editLines() {
+    const source: InitialLine[] =
+      payroll.state === 'ready' ? payroll.lines : [emptyLine(), emptyLine()]
+    setLines(source.map((l) => ({ ...l, key: newKey() })))
+    setLocalErrors({})
+    setPayrollError(null)
+    posting.setBanner(null)
+    setManualLines(true)
+  }
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!posting.pending) submit()
+    save()
   }
 
   /** ⌘↵ guarda; Enter en un campo pasa al siguiente (en la última leyenda, agrega una línea). */
@@ -286,13 +456,13 @@ export function ManualEntryForm({
     const target = event.target as HTMLElement
     if (event.metaKey || event.ctrlKey) {
       event.preventDefault()
-      if (!posting.pending) submit()
+      save()
       return
     }
     if (target.tagName !== 'INPUT') return
     event.preventDefault()
     const lastKey = lines.at(-1)?.key
-    if (target.dataset.lastMemo === 'true' && target.dataset.line === lastKey) {
+    if (!payrollAuto && target.dataset.lastMemo === 'true' && target.dataset.line === lastKey) {
       addLine()
       return
     }
@@ -308,6 +478,8 @@ export function ManualEntryForm({
   const dateError = localErrors.date ?? posting.fieldErrors.date ?? null
   const descriptionError = localErrors.description ?? posting.fieldErrors.description ?? null
   const linesError = localErrors.lines ?? posting.fieldErrors.lines ?? null
+  const dateMin = firstOpenDate ?? ctx.settings.booksStartDate
+  const dateMax = endOfMonth(today)
   const kindOptions = [
     { value: 'adjustment' as const, label: 'Ajuste' },
     { value: 'payroll' as const, label: 'Sueldos' },
@@ -316,225 +488,269 @@ export function ManualEntryForm({
       ? [{ value: 'fy_adjustment' as const, label: 'Ajuste de cierre de ejercicio' }]
       : []),
   ]
+  const warnings = (
+    <WarningsDialog
+      warnings={posting.warnings}
+      pending={posting.pending}
+      onCancel={posting.dismissWarnings}
+      onConfirm={() => posting.confirmWarnings()}
+    />
+  )
+
+  if (payrollAuto) {
+    return (
+      <AdmPage width="comfortable">
+        <AdmHeader
+          back={{ href: backHref, label: 'Libros' }}
+          title="Sueldos del mes"
+          description={PAYROLL_HELP}
+        />
+        {notice}
+        <form ref={formRef} noValidate onSubmit={onSubmit} onKeyDown={onKeyDown}>
+          <PayrollSteps
+            inputs={payrollInputs}
+            onInputsChange={(patch) => {
+              setPayrollInputs((prev) => ({ ...prev, ...patch }))
+              setPayrollError(null)
+            }}
+            build={payroll}
+            fieldError={payrollError}
+            date={date}
+            onDateChange={changeDate}
+            dateMin={dateMin}
+            dateMax={dateMax}
+            dateError={dateError}
+            today={today}
+            description={shownDescription}
+            descriptionId={descriptionId}
+            onDescriptionChange={changeDescription}
+            descriptionError={descriptionError}
+            preview={override ?? [gridPreview]}
+            banner={<FormBanner banner={posting.banner} />}
+            pending={posting.pending}
+            onEditLines={editLines}
+            onOtherKind={() => changeKind('adjustment')}
+          />
+          {warnings}
+        </form>
+      </AdmPage>
+    )
+  }
 
   return (
-    <form
-      ref={formRef}
-      noValidate
-      onSubmit={onSubmit}
-      onKeyDown={onKeyDown}
-      className="card-hairline grid gap-6 rounded-xl border bg-card p-4 sm:p-6"
-    >
-      <div className="grid gap-2">
-        <Label id={`${dateId}-tipo`}>Tipo de asiento</Label>
-        <ChoiceChips
-          options={kindOptions}
-          value={kind}
-          onChange={changeKind}
-          labelledBy={`${dateId}-tipo`}
-        />
-        {kind === 'fy_adjustment' ? (
-          <p className="text-xs text-muted-foreground">
-            Para amortizaciones, existencias y reclasificaciones de la contadora. Va con fecha del
-            último día del ejercicio, al período de ajustes.
-          </p>
-        ) : null}
-      </div>
-
-      {kind === 'payroll' ? (
-        <PayrollTemplate
-          ctx={ctx}
-          date={date ?? today}
-          replaces={lines.some(hasContent)}
-          onApply={(templateLines) => {
-            setLines(templateLines.map((l) => ({ ...l, key: newKey() })))
-            setLocalErrors({})
-            if (!description.trim()) setDescription(`Sueldos de ${formatMonthYear(date ?? today)}`)
-          }}
-        />
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-[14rem_minmax(0,1fr)]">
-        {kind === 'fy_adjustment' && fyAdjustment ? (
-          <div className="grid content-start gap-1.5">
-            <Label htmlFor={dateId}>Fecha</Label>
-            <Input
-              id={dateId}
-              value={formatIsoDay(fyAdjustment.endDate)}
-              readOnly
-              aria-describedby={`${dateId}-hint`}
-              className="h-11 text-base md:h-10 md:text-sm"
-            />
-            <p id={`${dateId}-hint`} className="text-xs text-muted-foreground">
-              Fin del ejercicio ({fyAdjustment.label}).
-            </p>
-          </div>
-        ) : (
-          <DateField
-            id={dateId}
-            label="Fecha"
-            required
-            value={date}
-            onValueChange={(v) => {
-              setDate(v)
-              setLocalErrors((prev) => {
-                if (!prev.date) return prev
-                const next = { ...prev }
-                delete next.date
-                return next
-              })
-              posting.clearFieldError('date')
-            }}
-            min={firstOpenDate ?? ctx.settings.booksStartDate}
-            max={endOfMonth(today)}
-            today={today}
-            error={dateError}
-            hint={
-              firstOpenDate
-                ? `Desde el ${formatIsoDay(firstOpenDate)}: lo de un mes cerrado se ajusta en un mes abierto.`
-                : undefined
-            }
+    <AdmPage width="comfortable">
+      <AdmHeader
+        back={{ href: backHref, label: 'Libros' }}
+        title="Asiento manual"
+        description={HELP}
+      />
+      {notice}
+      <form
+        ref={formRef}
+        noValidate
+        onSubmit={onSubmit}
+        onKeyDown={onKeyDown}
+        className="card-hairline grid gap-6 rounded-2xl border bg-card p-4 shadow-xs sm:p-6"
+      >
+        <div className="grid gap-2">
+          <Label id={`${dateId}-tipo`}>Tipo de asiento</Label>
+          <ChoiceChips
+            options={kindOptions}
+            value={kind}
+            onChange={changeKind}
+            labelledBy={`${dateId}-tipo`}
           />
-        )}
-        <div className="grid content-start gap-1.5">
-          <Label htmlFor={descriptionId}>
-            Concepto
-            <span aria-hidden="true" className="ml-0.5 text-destructive">
-              *
-            </span>
-          </Label>
-          <Input
-            id={descriptionId}
-            value={description}
-            maxLength={200}
-            placeholder="Por ejemplo: amortización de equipos de octubre"
-            aria-invalid={descriptionError ? true : undefined}
-            aria-describedby={descriptionError ? `${descriptionId}-error` : undefined}
-            onChange={(e) => {
-              setDescription(e.target.value)
-              setLocalErrors((prev) => {
-                if (!prev.description) return prev
-                const next = { ...prev }
-                delete next.description
-                return next
-              })
-              posting.clearFieldError('description')
-            }}
-            className="h-11 text-base md:h-10 md:text-sm"
-          />
-          {descriptionError ? (
-            <p id={`${descriptionId}-error`} role="alert" className="text-xs text-destructive">
-              {descriptionError}
+          {kind === 'fy_adjustment' ? (
+            <p className="text-xs text-muted-foreground">
+              Para amortizaciones, existencias y reclasificaciones de la contadora. Va con fecha del
+              último día del ejercicio, al período de ajustes.
             </p>
           ) : null}
         </div>
-      </div>
 
-      {corrects && correctsId ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <div className="min-w-0 flex-1 space-y-2 text-pretty">
-            <p>
-              <span className="font-medium">Corrige {corrects.label}</span>
-              {corrects.month ? ` (${corrects.month}, cerrado)` : ''}. Las líneas son las de ese
-              comprobante al revés: dejá solo lo que haya que corregir.
+        {kind === 'payroll' ? (
+          <PayrollTemplate
+            inputs={payrollInputs}
+            onInputsChange={(patch) => setPayrollInputs((prev) => ({ ...prev, ...patch }))}
+            build={payroll}
+            replaces={lines.some(hasContent)}
+            onApply={(templateLines) => {
+              setLines(templateLines.map((l) => ({ ...l, key: newKey() })))
+              setLocalErrors({})
+            }}
+            onBackToSteps={() => {
+              setManualLines(false)
+              setLocalErrors({})
+              posting.setBanner(null)
+            }}
+          />
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-[14rem_minmax(0,1fr)]">
+          {kind === 'fy_adjustment' && fyAdjustment ? (
+            <div className="grid content-start gap-1.5">
+              <Label htmlFor={dateId}>Fecha</Label>
+              <Input
+                id={dateId}
+                value={formatIsoDay(fyAdjustment.endDate)}
+                readOnly
+                aria-describedby={`${dateId}-hint`}
+                className="h-11 text-base md:h-10 md:text-sm"
+              />
+              <p id={`${dateId}-hint`} className="text-xs text-muted-foreground">
+                Fin del ejercicio ({fyAdjustment.label}).
+              </p>
+            </div>
+          ) : (
+            <DateField
+              id={dateId}
+              label="Fecha"
+              required
+              value={date}
+              onValueChange={changeDate}
+              min={dateMin}
+              max={dateMax}
+              today={today}
+              error={dateError}
+              hint={
+                firstOpenDate
+                  ? `Desde el ${formatIsoDay(firstOpenDate)}: lo de un mes cerrado se ajusta en un mes abierto.`
+                  : undefined
+              }
+            />
+          )}
+          <div className="grid content-start gap-1.5">
+            <Label htmlFor={descriptionId}>
+              Concepto
+              <span aria-hidden="true" className="ml-0.5 text-destructive">
+                *
+              </span>
+            </Label>
+            <Input
+              id={descriptionId}
+              value={shownDescription}
+              maxLength={200}
+              placeholder="Por ejemplo: amortización de equipos de octubre"
+              aria-invalid={descriptionError ? true : undefined}
+              aria-describedby={descriptionError ? `${descriptionId}-error` : undefined}
+              onChange={(e) => changeDescription(e.target.value)}
+              className="h-11 text-base md:h-10 md:text-sm"
+            />
+            {descriptionError ? (
+              <p id={`${descriptionId}-error`} role="alert" className="text-xs text-destructive">
+                {descriptionError}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {corrects && correctsId ? (
+          <div className="flex flex-col gap-3 rounded-xl bg-secondary/50 p-4 text-sm sm:flex-row sm:items-start sm:justify-between">
+            <p className="flex min-w-0 flex-wrap items-start gap-x-2.5 gap-y-1.5 text-pretty">
+              <StatusPill tone="info">Vinculado</StatusPill>
+              <span className="min-w-0 flex-1 basis-64">
+                Este ajuste queda vinculado a <span className="font-medium">{corrects.label}</span>
+                {corrects.month ? ` (${corrects.month.toLowerCase()}, cerrado)` : ''}. Las líneas
+                son las de ese comprobante al revés: dejá solo lo que haya que corregir.
+              </span>
             </p>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-11 gap-1.5 md:h-8"
+              className="h-11 shrink-0 gap-1.5 md:pointer-fine:h-8"
               onClick={() => setCorrectsId(null)}
             >
               <Link2Off className="size-3.5" aria-hidden />
               No vincularlo
             </Button>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      <section aria-labelledby={`${dateId}-lineas`} className="grid gap-3">
-        <h2 id={`${dateId}-lineas`} className="font-serif text-lg font-semibold tracking-tight">
-          Líneas
-        </h2>
-        <div
-          aria-hidden
-          className={cn(
-            'hidden gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid',
-            GRID,
-          )}
-        >
-          <span>Cuenta</span>
-          <span>Proveedor o cliente</span>
-          <span className="text-right">Debe</span>
-          <span className="text-right">Haber</span>
-          <span>Leyenda</span>
-          <span>Vence</span>
-          <span />
-        </div>
-        <ol className="grid gap-3 lg:gap-1.5">
-          {lines.map((line, index) => (
-            <LineRow
-              key={line.key}
-              line={line}
-              index={index}
-              isLast={index === lines.length - 1}
-              canRemove={lines.length > 2}
-              requiresParty={accountOf(line.accountId)?.requiresParty ?? false}
-              accounts={accounts}
-              parties={parties}
-              today={today}
-              errorOf={(field) => errorOf(line.key, field)}
-              onChange={(patch) => updateLine(line.key, patch)}
-              onRemove={() => removeLine(line.key)}
-            />
-          ))}
-        </ol>
-        <div>
-          <Button type="button" variant="outline" className="h-11 gap-2 md:h-9" onClick={addLine}>
-            <Plus className="size-4" aria-hidden />
-            Agregar línea
+        <section aria-labelledby={`${dateId}-lineas`} className="grid gap-3">
+          <h2 id={`${dateId}-lineas`} className="font-serif text-lg font-semibold tracking-tight">
+            Líneas
+          </h2>
+          <div
+            aria-hidden
+            className={cn(
+              'hidden gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid',
+              GRID,
+            )}
+          >
+            <span>Cuenta</span>
+            <span>Proveedor o cliente</span>
+            {/* Con el mismo margen que el número adentro del campo: si no, «Haber» se pega a «Leyenda». */}
+            <span className="pr-3 text-right">Debe</span>
+            <span className="pr-3 text-right">Haber</span>
+            <span className="pl-0.5">Leyenda</span>
+            <span>Vence</span>
+            <span />
+          </div>
+          <ol className="grid gap-3 lg:gap-1.5">
+            {lines.map((line, index) => (
+              <LineRow
+                key={line.key}
+                line={line}
+                index={index}
+                isLast={index === lines.length - 1}
+                canRemove={lines.length > 2}
+                requiresParty={accountOf(line.accountId)?.requiresParty ?? false}
+                accounts={accounts}
+                parties={parties}
+                today={today}
+                errorOf={(field) => errorOf(line.key, field)}
+                onChange={(patch) => updateLine(line.key, patch)}
+                onRemove={() => removeLine(line.key)}
+              />
+            ))}
+          </ol>
+          <div>
+            <Button type="button" variant="outline" className="h-11 gap-2 md:h-9" onClick={addLine}>
+              <Plus className="size-4" aria-hidden />
+              Agregar línea
+            </Button>
+          </div>
+
+          <TotalsBar
+            ref={totalsRef}
+            debit={totals.debit}
+            credit={totals.credit}
+            error={linesError}
+          />
+        </section>
+
+        {movesVat ? (
+          <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
+            <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+            <p className="text-pretty">
+              Este asiento mueve IVA, pero no entra al Libro IVA: ahí van solo los comprobantes.
+            </p>
+          </div>
+        ) : null}
+
+        <EntryPreview
+          entries={override ?? [gridPreview]}
+          emptyText="Elegí las cuentas y cargá los importes para ver el asiento."
+        />
+
+        <FormBanner banner={posting.banner} />
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <p className="hidden text-xs text-muted-foreground lg:block">⌘↵ para guardar</p>
+          <Button
+            type="submit"
+            disabled={posting.pending}
+            className="h-11 min-w-[160px] gap-2 md:h-10"
+          >
+            {posting.pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+            {posting.pending ? 'Guardando…' : 'Guardar asiento'}
           </Button>
         </div>
 
-        <TotalsBar ref={totalsRef} debit={totals.debit} credit={totals.credit} error={linesError} />
-      </section>
-
-      {movesVat ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <p className="text-pretty">
-            Este asiento mueve IVA, pero no entra al Libro IVA: ahí van solo los comprobantes.
-          </p>
-        </div>
-      ) : null}
-
-      <EntryPreview
-        entries={override ?? [gridPreview]}
-        emptyText="Elegí las cuentas y cargá los importes para ver el asiento."
-      />
-
-      <FormBanner banner={posting.banner} />
-
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <p className="hidden text-xs text-muted-foreground lg:block">⌘↵ para guardar</p>
-        <Button
-          type="submit"
-          disabled={posting.pending}
-          className="h-11 min-w-[160px] gap-2 md:h-10"
-        >
-          {posting.pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          {posting.pending ? 'Guardando…' : 'Guardar asiento'}
-        </Button>
-      </div>
-
-      <WarningsDialog
-        warnings={posting.warnings}
-        pending={posting.pending}
-        onCancel={posting.dismissWarnings}
-        onConfirm={() => posting.confirmWarnings()}
-      />
-    </form>
+        {warnings}
+      </form>
+    </AdmPage>
   )
 }
 
@@ -783,113 +999,92 @@ function TotalsBar({
 }
 
 /**
- * «Sueldos del mes» (E13): con los tres números del resumen de la contadora
- * arma las líneas (sueldos y contribuciones al Debe; neto a pagar, cargas
- * sociales y sindicato al Haber). Después se pueden tocar en la grilla.
+ * «Sueldos del mes» dentro de la grilla (E13), para quien abrió «Editar las
+ * líneas a mano»: los mismos seis datos del paso a paso y el botón que arma (o
+ * reemplaza) las líneas, que después se tocan en la grilla. Es el camino de
+ * antes; los datos son los del formulario, así que no se pierden al ir y venir.
  */
 function PayrollTemplate({
-  ctx,
-  date,
+  inputs,
+  onInputsChange,
+  build,
   replaces,
   onApply,
+  onBackToSteps,
 }: {
-  ctx: PostingContext
-  date: string
+  inputs: PayrollInputs
+  onInputsChange: (patch: Partial<PayrollInputs>) => void
+  build: PayrollBuild
   replaces: boolean
   onApply: (lines: InitialLine[]) => void
+  onBackToSteps: () => void
 }) {
-  const [gross, setGross] = useState<number | null>(null)
-  const [contributions, setContributions] = useState<number | null>(null)
-  const [withheld, setWithheld] = useState<number | null>(null)
-  const [union, setUnion] = useState<number | null>(null)
-  const [salariesDue, setSalariesDue] = useState<string | null>(null)
-  const [socialDue, setSocialDue] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   function apply() {
-    if (gross === null || gross <= 0) {
-      setError('Cargá los sueldos brutos del mes.')
-      return
-    }
-    if (contributions === null || withheld === null) {
-      setError('Cargá las contribuciones patronales y los aportes (pueden ser cero).')
-      return
-    }
-    const built = payrollTemplateLines(
-      {
-        grossSalariesCents: gross,
-        employerContributionsCents: contributions,
-        withheldContributionsCents: withheld,
-        unionDuesCents: union ?? 0,
-        date,
-        salariesDueDate: salariesDue,
-        socialSecurityDueDate: socialDue,
-      },
-      ctx,
-    )
-    if (!built.ok) {
-      setError(engineErrorsState(built.errors).message)
+    if (build.state !== 'ready') {
+      setError(build.message)
       return
     }
     setError(null)
-    onApply(
-      built.lines.map((l) => ({
-        accountId: l.accountId,
-        debitCents: l.debitCents,
-        creditCents: l.creditCents,
-        partyId: l.partyId,
-        dueDate: l.dueDate,
-        memo: l.memo ?? '',
-      })),
-    )
+    onApply(build.lines)
   }
 
   return (
-    <section className="grid gap-4 rounded-xl border border-border/70 bg-secondary/20 p-4">
-      <div className="space-y-0.5">
-        <h2 className="font-serif text-lg font-semibold tracking-tight">Sueldos del mes</h2>
-        <p className="text-xs text-muted-foreground">
-          Con los números del resumen de la contadora armamos las líneas. Después las podés tocar.
-        </p>
+    <section className="grid gap-4 rounded-xl bg-secondary/50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div className="space-y-0.5">
+          <h2 className="font-serif text-lg font-semibold tracking-tight">Sueldos del mes</h2>
+          <p className="text-xs text-muted-foreground">
+            Con los números del resumen de la contadora armamos las líneas. Después las podés tocar.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBackToSteps}
+          className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+        >
+          Volver al paso a paso
+        </button>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <MoneyField
           label="Sueldos brutos"
-          value={gross}
-          onValueChange={(c) => setGross(c)}
+          value={inputs.gross}
+          onValueChange={(c) => onInputsChange({ gross: c })}
           required
         />
         <MoneyField
           label="Contribuciones patronales"
-          value={contributions}
-          onValueChange={(c) => setContributions(c)}
+          value={inputs.contributions}
+          onValueChange={(c) => onInputsChange({ contributions: c })}
           required
         />
         <MoneyField
           label="Aportes retenidos"
           hint="Lo que se descuenta del recibo (jubilación, obra social, PAMI)."
-          value={withheld}
-          onValueChange={(c) => setWithheld(c)}
+          value={inputs.withheld}
+          onValueChange={(c) => onInputsChange({ withheld: c })}
           required
         />
         <MoneyField
           label="Cuota sindical"
           optional
-          value={union}
-          onValueChange={(c) => setUnion(c)}
+          value={inputs.union}
+          onValueChange={(c) => onInputsChange({ union: c })}
         />
         <DateField
           label="Vencen los sueldos"
           optional
-          value={salariesDue}
-          onValueChange={setSalariesDue}
+          value={inputs.salariesDue}
+          onValueChange={(iso) => onInputsChange({ salariesDue: iso })}
           shortcuts={false}
         />
         <DateField
           label="Vencen las cargas sociales"
           optional
-          value={socialDue}
-          onValueChange={setSocialDue}
+          value={inputs.socialDue}
+          onValueChange={(iso) => onInputsChange({ socialDue: iso })}
           shortcuts={false}
         />
       </div>

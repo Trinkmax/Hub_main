@@ -315,6 +315,87 @@ describe('Banco', () => {
   })
 })
 
+describe('los números del papel «Llegó esto» (`figures`)', () => {
+  it('ARCA: comprobantes, proveedores (hasta tres nombres) y el total, y nada de eso viaja', async () => {
+    const f = await open(IMPORT_FIXTURES.mcG3Dic)
+    const r = planMisComprobantes(
+      f.table,
+      { fileName: f.name, fileSize: f.size },
+      { sasCuit: SAS_CUIT },
+    )
+    if (!r.ok || !('plan' in r)) throw new Error('no armó el plan')
+    const figures = r.plan.figures
+    if (!figures) throw new Error('sin números')
+    expect(figures.items).toBe(r.plan.rows.length)
+    expect(figures.suppliers).toBeGreaterThan(0)
+    expect(figures.topSuppliers?.length).toBeGreaterThan(0)
+    expect(figures.topSuppliers?.length).toBeLessThanOrEqual(3)
+    expect(figures.topSuppliers?.every((name) => name.trim() !== '')).toBe(true)
+    expect(Number.isInteger(figures.totalCents)).toBe(true)
+    // El lote que se manda es el de siempre: `meta` no trae los números ni los nombres.
+    const meta = JSON.stringify(r.plan.meta)
+    for (const name of figures.topSuppliers ?? []) expect(meta).not.toContain(name)
+    expect(Object.keys(r.plan.meta)).not.toContain('figures')
+    const withFigures = createImportBatchSchema.safeParse({
+      source: r.plan.source,
+      fileSha256: SHA,
+      fileSize: r.plan.fileSize,
+      figures,
+    })
+    expect(withFigures.success).toBe(false)
+  })
+
+  it('Mercado Pago: la cuenta a la vista (saldo al empezar, entró, salió, saldo al terminar)', async () => {
+    const f = await open(IMPORT_FIXTURES.mpRelease)
+    const r = planMercadoPago(
+      f.table,
+      { fileName: f.name, fileSize: f.size },
+      { sasCuit: SAS_CUIT, ownCbus: [OWN_CBU], cutoffHour: 0 },
+    )
+    if (!r.ok || !('plan' in r)) throw new Error('no armó el plan')
+    const figures = r.plan.figures
+    if (!figures) throw new Error('sin números')
+    expect(figures.items).toBe(r.plan.rows.length)
+    expect(figures.inCents).toBeGreaterThanOrEqual(0)
+    expect(figures.outCents).toBeGreaterThanOrEqual(0)
+    expect(figures.openingCents).toBe(r.plan.meta.initialBalanceCents ?? null)
+    expect(figures.closingCents).toBe(r.plan.meta.finalBalanceCents ?? null)
+    expect(['ok', 'mismatch', null]).toContain(figures.balance)
+    // Si el archivo trae los dos saldos y cierra, la cuenta da.
+    if (
+      figures.balance === 'ok' &&
+      typeof figures.openingCents === 'number' &&
+      typeof figures.closingCents === 'number'
+    ) {
+      expect(figures.openingCents + (figures.inCents ?? 0) - (figures.outCents ?? 0)).toBe(
+        figures.closingCents,
+      )
+    }
+  })
+
+  it('banco: lo que entró y lo que salió; sin saldos en el archivo quedan en null (nunca cero)', async () => {
+    for (const file of [
+      IMPORT_FIXTURES.bankDc,
+      IMPORT_FIXTURES.bankSigned,
+      IMPORT_FIXTURES.bankBalance,
+    ]) {
+      const f = await open(file)
+      const r = planBank(
+        f.table,
+        { fileName: f.name, fileSize: f.size },
+        { treasuryAccountId: TREASURY_ID, layout: null },
+      )
+      if (!r.ok || !('plan' in r)) throw new Error(`${file}: no armó el plan`)
+      const figures = r.plan.figures
+      if (!figures) throw new Error(`${file}: sin números`)
+      expect(figures.items, file).toBe(r.plan.rows.length)
+      expect(figures.openingCents, file).toBe(r.plan.meta.initialBalanceCents ?? null)
+      expect(figures.closingCents, file).toBe(r.plan.meta.finalBalanceCents ?? null)
+      expect((figures.inCents ?? 0) + (figures.outCents ?? 0), file).toBeGreaterThan(0)
+    }
+  })
+})
+
 describe('archivos rotos', () => {
   it('vacío, PDF o demasiado grande: un texto claro, sin tirar', async () => {
     const empty = await openImportFile({ bytes: new Uint8Array(), fileName: 'x.csv' })

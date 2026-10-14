@@ -215,6 +215,12 @@ function ActionSheetHost({
             // Es la carga de todos los días: entra rápido (frena al llegar) y sale más rápido.
             'ease-(--ease-out) data-[state=closed]:duration-200 data-[state=open]:duration-300',
             'motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none',
+            // En oscuro, un tilde marcado va RELLENO (dorado), como en claro va relleno de verde.
+            // El `Checkbox` del panel pinta su fondo de oscuro (`dark:bg-input/30`) por encima
+            // del de «marcado» y quedaba un cuadradito con borde y un tilde que casi no se ve:
+            // en «Pagar» costaba saber qué facturas se estaban pagando. Se corrige acá, para
+            // las seis hojas, sin tocar la pieza compartida.
+            'dark:[&_[data-slot=checkbox][data-state=checked]]:bg-primary',
           )}
           onPointerDownOutside={keepOpenOnToast}
           onInteractOutside={keepOpenOnToast}

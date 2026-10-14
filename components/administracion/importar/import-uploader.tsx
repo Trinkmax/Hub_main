@@ -1,13 +1,13 @@
 'use client'
 
-import { ArrowRight, FileCheck2, RotateCcw } from 'lucide-react'
+import { ArrowRight, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { StepCard, StepRail, type StepRailItem } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { Stepper } from '@/components/ui/stepper'
+import { formatDayMonth } from '@/lib/dates'
 import {
   addImportItems,
   buildImportProposals,
@@ -20,13 +20,16 @@ import { sha256Hex } from '@/lib/imports/hash'
 import type { DetectedSource } from '@/lib/imports/types'
 import { findSavedLayout, type SavedLayout } from '@/lib/imports/ui/bank-mapping'
 import { chunkByRowsAndBytes } from '@/lib/imports/ui/chunks'
+import { rowsBeforeStart, type WantedRange } from '@/lib/imports/ui/inbox'
 import {
   IMPORT_SOURCE_COPY,
   importBatchHref,
+  importHref,
   importSourceHref,
   type UiImportSource,
 } from '@/lib/imports/ui/labels'
-import { count, progressPercent, progressText } from '@/lib/imports/ui/progress'
+import { batchInput } from '@/lib/imports/ui/payloads'
+import { count, progressText } from '@/lib/imports/ui/progress'
 import {
   openImportFile,
   type PlanResult,
@@ -38,9 +41,13 @@ import {
   wrongPlace,
 } from '@/lib/imports/ui/upload'
 import { defaultInflateRaw } from '@/lib/imports/zip'
-import { cn } from '@/lib/utils'
 import { BankColumnMapper, type MapperPreview } from './bank-column-mapper'
 import { FileDropZone } from './file-drop-zone'
+import { SourceMark } from './inbox/source-mark'
+import { ANSWER_BUTTON, QUIET_ANSWER, QuestionAnswers, QuestionCard } from './review/question-card'
+import { ArrivalTicket } from './upload/arrival-ticket'
+import { UploadProgress } from './upload/upload-progress'
+import { WantRange } from './upload/want-range'
 
 /** Lo que cada pantalla le pasa al cargador (todo serializable, desde el servidor). */
 export type UploaderContext =
@@ -76,56 +83,87 @@ const UNREACHABLE = 'Sin conexión: no se pudo subir. Revisá internet y tocá �
 const DROP_COPY: Readonly<Record<UiImportSource, { title: string; hint: string; accept: string }>> =
   {
     arca_recibidos: {
-      title: 'Soltá acá el ZIP de Mis Comprobantes',
-      hint: 'El de «Recibidos», tal cual lo bajaste de ARCA (no lo abras con Excel). También sirve el CSV o el Excel. Hasta 20 MB.',
+      title: 'Soltá acá el ZIP que bajaste de ARCA',
+      hint: 'Tal cual vino, sin abrirlo con Excel. También sirve el CSV o el Excel. Hasta 20 MB.',
       accept: '.zip,.csv,.txt,.xlsx,.xls',
     },
     mp_release: {
       title: 'Soltá acá el reporte de Liquidaciones',
-      hint: 'El CSV que te manda Mercado Pago por mail, sin abrirlo con Excel. Hasta 20 MB.',
+      hint: 'El .csv que te llegó por mail, sin abrirlo con Excel. Hasta 20 MB.',
       accept: '.csv,.txt,.zip,.xlsx',
     },
     bank_statement: {
-      title: 'Soltá acá el extracto del banco',
-      hint: 'Lo que exportás del home banking: CSV, TXT o Excel. Hasta 20 MB.',
+      title: 'Soltá acá lo que exportaste del banco',
+      hint: 'CSV, TXT o Excel. Hasta 20 MB.',
       accept: '.csv,.txt,.xls,.xlsx,.html,.htm,.zip',
     },
   }
 
-const STEPS = [
-  { label: 'Elegí el archivo', description: 'Lo leemos en tu compu' },
-  { label: 'Mirá lo que leímos', description: 'Antes de subir nada' },
-  { label: 'Lo guardamos', description: 'Sin cargar los libros' },
-  { label: 'Revisá y cargá', description: 'En la pantalla siguiente' },
-]
+const STEP_ONE_TITLE: Readonly<Record<UiImportSource, string>> = {
+  arca_recibidos: 'Bajalo de ARCA',
+  mp_release: 'Bajalo de Mercado Pago',
+  bank_statement: 'Bajalo del home banking',
+}
+
+/** Solo en pantallas angostas: bajar el archivo es cosa de compu. */
+const NARROW_NOTE: Readonly<Partial<Record<UiImportSource, string>>> = {
+  arca_recibidos: 'Es más cómodo desde una compu: hay que entrar con clave fiscal.',
+  mp_release: 'Mercado Pago no arma este reporte desde el celular: hacelo desde una compu.',
+}
 
 function errorKey(detail: Record<string, unknown> | undefined): string | null {
   return typeof detail?.key === 'string' ? detail.key : null
 }
 
 /**
- * Subir un archivo (diseño §4.0): se lee y se reconoce en el navegador, se
- * muestra qué encontramos (período, filas, totales) y recién ahí se sube: el
- * lote, las filas en tandas (≤ 500 o ≤ 1 MB) con su barra de progreso, y el
- * armado de los comprobantes. Al terminar va a la revisión. Si se corta, se
- * retoma desde la tanda que faltó (reenviar no duplica), y si el archivo ya se
- * había subido, se sigue en ese lote o se ofrece abrirlo.
+ * Subir un archivo, en tres pasos a la vista: ① bajalo de allá (qué fechas
+ * pedir y cómo se baja), ② subilo acá (se lee y se reconoce en el navegador, se
+ * muestra el papel «Llegó esto» y recién ahí se sube) y ③ revisá y cargá (en la
+ * pantalla siguiente). Es un asistente porque se hace una vez por semana o por
+ * mes, y porque el paso 1 pasa en otra página.
+ *
+ * La subida es la de siempre: el lote, las filas en tandas (≤ 500 o ≤ 1 MB) con
+ * su barra, y el armado. Si se corta, se retoma desde la tanda que faltó
+ * (reenviar no duplica), y si el archivo ya se había subido, se sigue en ese
+ * lote o se ofrece abrirlo. Lo que se manda no cambió (`batchInput`).
  */
 export function ImportUploader({
   slug,
   context,
   blockedReason,
+  howTo,
+  wanted,
+  firstTime,
+  booksStartDate,
+  account,
+  notice,
+  stepOneExtra,
 }: {
   slug: string
   context: UploaderContext
   /** Algo que falta antes de poder subir (la billetera, la cuenta del banco). */
   blockedReason?: string | null
+  /** El «cómo se baja» de este origen (los pasos y las maquetas del portal). */
+  howTo: ReactNode
+  /** Qué fechas pedir. */
+  wanted: WantedRange
+  /** Nunca se subió nada de este origen: el paso 1 arranca abierto. */
+  firstTime: boolean
+  /** La fecha de arranque del bar (para avisar lo que no se va a poder cargar). */
+  booksStartDate: string | null
+  /** Banco: «¿De qué cuenta es?», arriba de la ranura. */
+  account?: ReactNode
+  /** Un aviso calmo del paso 2 que no frena (ARCA sin el CUIT del bar). */
+  notice?: ReactNode
+  /** Algo más del paso 1 (Mercado Pago: completar el cierre con el mismo archivo). */
+  stepOneExtra?: ReactNode
 }) {
   const router = useRouter()
   const live = useId()
-  const summaryRef = useRef<HTMLHeadingElement | null>(null)
+  const summaryRef = useRef<HTMLDivElement | null>(null)
   const errorRef = useRef<HTMLDivElement | null>(null)
   const uploadingRef = useRef(false)
+  const [active, setActive] = useState<1 | 2>(firstTime ? 1 : 2)
   const [reading, setReading] = useState(false)
   const [readError, setReadError] = useState<{
     message: string
@@ -165,6 +203,23 @@ export function ImportUploader({
   }, [file, ctx, bankLayout])
 
   const running = job.kind === 'running'
+  const readyPlan = plan?.ok === true ? plan.plan : null
+  // Renglones del archivo con fecha anterior al arranque: esos no se van a poder cargar.
+  const beforeStart = useMemo(
+    () => (readyPlan ? rowsBeforeStart(source, readyPlan.rows, booksStartDate) : 0),
+    [readyPlan, source, booksStartDate],
+  )
+  const allBeforeStart = readyPlan !== null && beforeStart >= readyPlan.rows.length
+
+  // `#paso-1` en la URL abre siempre el «cómo se baja» (el link de las bandejas).
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === '#paso-1') setActive(1)
+    }
+    open()
+    window.addEventListener('hashchange', open)
+    return () => window.removeEventListener('hashchange', open)
+  }, [])
 
   // No perder una subida a medias por cerrar la pestaña sin querer.
   useEffect(() => {
@@ -176,8 +231,8 @@ export function ImportUploader({
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [running])
 
-  // Foco y aviso para lectores cuando aparece el resumen o un error.
-  const planOk = plan?.ok === true
+  // Foco y aviso para lectores cuando aparece el papel o un error.
+  const planOk = readyPlan !== null
   useEffect(() => {
     if (planOk) summaryRef.current?.focus()
   }, [planOk])
@@ -225,9 +280,9 @@ export function ImportUploader({
         table: opened.table,
         detected: opened.detected,
       })
-      setAnnounce('Listo: revisá lo que encontramos.')
+      setAnnounce('Listo: mirá lo que llegó.')
     } catch {
-      const message = 'No pudimos leer el archivo. Probá de nuevo o bajalo otra vez.'
+      const message = 'No pude leer el archivo. Probá de nuevo o bajalo otra vez.'
       setReadError({ message, goTo: null })
       setAnnounce(message)
     } finally {
@@ -266,25 +321,21 @@ export function ImportUploader({
     try {
       if (!batchId) {
         setJob({ kind: 'running', step: 'batch', done: 0, total })
-        setAnnounce('Creando la importación…')
-        const created = await createImportBatch(slug, {
-          source: p.source,
-          fileName: p.fileName,
-          fileSha256: file?.sha ?? '',
-          fileSize: p.fileSize,
-          detectedFormat: p.detectedFormat,
-          periodFrom: p.periodFrom,
-          periodTo: p.periodTo,
-          treasuryAccountId: ctx.source === 'bank_statement' ? ctx.treasuryAccountId : null,
-          meta: p.meta,
-        })
+        setAnnounce('Abriendo la carpeta de este archivo…')
+        const created = await createImportBatch(
+          slug,
+          batchInput(p, file?.sha ?? '', {
+            source: ctx.source,
+            treasuryAccountId: ctx.source === 'bank_statement' ? ctx.treasuryAccountId : null,
+          }),
+        )
         if (created.ok) {
           batchId = created.data.batchId
         } else if (errorKey(created.detail) === 'import_file_already') {
           const existing =
             typeof created.detail?.batch_id === 'string' ? created.detail.batch_id : null
           if (created.detail?.resumable === true && existing) {
-            toast.info('Este archivo había quedado a medio subir: seguimos desde ahí.')
+            toast.info('Este archivo había quedado a medio subir: sigo desde ahí.')
             batchId = existing
           } else {
             setJob({ kind: 'already', message: created.message, batchId: existing })
@@ -300,7 +351,7 @@ export function ImportUploader({
         const chunk = chunks[at] ?? []
         setJob({ kind: 'running', step: 'rows', done, total })
         // Para lectores, un aviso por tanda (no por cada número de la barra).
-        setAnnounce(progressText('Guardando filas:', done, total))
+        setAnnounce(progressText('Guardando renglones:', done, total))
         const added = await addImportItems(slug, { batchId, items: chunk })
         if (!added.ok) {
           fail(added.message, false)
@@ -324,7 +375,7 @@ export function ImportUploader({
     }
   }
 
-  // «Contanos qué es cada columna»: cómo se lee con lo elegido (sin subir nada).
+  // «Contame qué es cada columna»: cómo se lee con lo elegido (sin subir nada).
   const bankContext = ctx.source === 'bank_statement' ? ctx : null
   const previewMapping = useCallback(
     (layout: BankLayout): MapperPreview => {
@@ -337,7 +388,7 @@ export function ImportUploader({
         return {
           ok: false,
           message:
-            'Con esas columnas no encontramos movimientos. Revisá la fecha, la descripción y el importe.',
+            'Con esas columnas no encuentro movimientos. Revisá la fecha, la descripción y el importe.',
         }
       }
       return {
@@ -368,308 +419,326 @@ export function ImportUploader({
         treasuryAccountId: bankContext.treasuryAccountId,
       })
       if (saved.ok) toast.success(saved.message)
-      else toast.error(`No pudimos guardar el formato (igual podés importar): ${saved.message}`)
+      else toast.error(`No pude guardar el formato (igual podés subirlo): ${saved.message}`)
     } catch {
-      toast.error('No pudimos guardar el formato: igual podés importar este archivo.')
+      toast.error('No pude guardar el formato: igual podés subir este archivo.')
     }
   }
 
-  const step =
-    job.kind === 'done' ? 3 : job.kind === 'running' || job.kind === 'failed' ? 2 : file ? 1 : 0
-
   const busy = reading || running || job.kind === 'done'
+  const finished = job.kind === 'done'
+  const stepOne = finished || active === 2 ? 'done' : 'current'
+  const stepTwo = finished ? 'done' : active === 2 ? 'current' : 'todo'
+  const stepThree = finished ? 'current' : 'todo'
+  const askedRange =
+    wanted.from && wanted.to
+      ? `Pedí del ${formatDayMonth(wanted.from)} al ${formatDayMonth(wanted.to)}`
+      : 'Hoy no hay nada nuevo para pedir'
+  const rail: StepRailItem[] = [
+    { title: STEP_ONE_TITLE[source], state: stepOne, summary: askedRange },
+    { title: 'Subilo acá', state: stepTwo, summary: file?.name },
+    { title: 'Revisá y cargá', state: stepThree },
+  ]
+  const narrowNote = NARROW_NOTE[source]
+  const uploadLabel = readyPlan
+    ? readyPlan.rows.length === 1
+      ? 'Subir y revisar'
+      : `Subir y revisar los ${readyPlan.rows.length}`
+    : ''
+  const startUpload = () => {
+    if (readyPlan) void upload(readyPlan, { batchId: null, chunk: 0, buildOnly: false })
+  }
+  const uploadDisabled = busy || Boolean(blockedReason) || job.kind !== 'idle'
 
   return (
-    // `@container`: al lado de «¿Cómo lo bajo?» la columna mide ~590 px y los cuatro pasos con
-    // nombre no entran (se cortaban en «Elegí el…» y el 4 se salía). Ahí van solo los números
-    // y el paso actual abajo, como en el teléfono; con lugar, el paso a paso completo.
-    <div className="@container space-y-5">
-      <Stepper
-        steps={STEPS}
-        current={step}
-        className="@max-[52rem]:[&_li>div]:hidden @max-[52rem]:[&_li>div+span]:hidden"
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+      <StepRail
+        steps={rail}
+        label={`Pasos para ${copy.cta.charAt(0).toLowerCase()}${copy.cta.slice(1)}`}
+        className="lg:sticky lg:top-20"
       />
-      <p className="-mt-2 text-sm font-medium @min-[52rem]:hidden">
-        Paso {step + 1} de {STEPS.length}: {STEPS[step]?.label}
-      </p>
-      <p id={live} aria-live="polite" className="sr-only">
-        {announce}
-      </p>
+      <div className="min-w-0 space-y-3">
+        <p id={live} aria-live="polite" className="sr-only">
+          {announce}
+        </p>
 
-      {blockedReason ? (
-        <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-          <p className="text-warning-text">{blockedReason}</p>
-        </div>
-      ) : null}
-
-      {!file || readError ? (
-        <FileDropZone
-          accept={DROP_COPY[source].accept}
-          title={reading ? 'Leyendo el archivo…' : DROP_COPY[source].title}
-          hint={DROP_COPY[source].hint}
-          disabled={busy || Boolean(blockedReason)}
-          onFile={(f) => void onFile(f)}
-        />
-      ) : null}
-
-      {readError ? (
-        <div
-          ref={errorRef}
-          tabIndex={-1}
-          role="alert"
-          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive outline-none sm:flex-row sm:items-center"
+        <StepCard
+          n={1}
+          id="paso-1"
+          title={STEP_ONE_TITLE[source]}
+          state={stepOne}
+          summary={askedRange}
+          action={
+            // Mientras se lee o se sube no se ofrece: taparía el progreso del paso 2.
+            stepOne === 'done' && !busy ? (
+              <button type="button" className={QUIET_ANSWER} onClick={() => setActive(1)}>
+                Ver cómo se baja
+              </button>
+            ) : null
+          }
         >
-          <p className="flex-1 text-pretty">{readError.message}</p>
-          {readError.goTo ? (
-            <Button asChild variant="outline" className="h-11 shrink-0 gap-2 md:h-9">
-              <Link href={importSourceHref(slug, readError.goTo)}>
-                Ir a {IMPORT_SOURCE_COPY[readError.goTo].title}
-                <ArrowRight className="size-4" aria-hidden />
+          <div className="space-y-5">
+            <WantRange wanted={wanted} />
+            {narrowNote ? (
+              <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty lg:hidden">
+                {narrowNote}
+              </p>
+            ) : null}
+            {stepOneExtra}
+            <div className="border-t border-border/60 pt-5">{howTo}</div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+              <Button
+                type="button"
+                className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
+                onClick={() => setActive(2)}
+              >
+                Ya lo tengo: seguir
+                <ArrowRight aria-hidden className="size-4" />
+              </Button>
+              <Link href={importHref(slug)} className={QUIET_ANSWER}>
+                Lo hago después
               </Link>
-            </Button>
+            </div>
+          </div>
+        </StepCard>
+
+        <StepCard
+          n={2}
+          id="paso-2"
+          title="Subilo acá"
+          state={stepTwo}
+          summary={finished ? 'Listo: ya se subió' : undefined}
+          keepMounted={false}
+        >
+          <div className="space-y-4">
+            {account}
+            {notice}
+
+            {blockedReason ? (
+              <p className="rounded-xl bg-warning/10 px-3.5 py-2.5 text-sm text-warning-text text-pretty">
+                {blockedReason}
+              </p>
+            ) : null}
+
+            {!file || readError ? (
+              <FileDropZone
+                accept={DROP_COPY[source].accept}
+                title={reading ? 'Leyendo el archivo…' : DROP_COPY[source].title}
+                hint={DROP_COPY[source].hint}
+                art={<SourceMark source={source} className="size-8" />}
+                disabled={busy || Boolean(blockedReason)}
+                onFile={(f) => void onFile(f)}
+              />
+            ) : null}
+
+            {readError ? (
+              <QuestionCard
+                ref={errorRef}
+                tabIndex={-1}
+                role="alert"
+                tone="info"
+                inset
+                question={readError.message}
+              >
+                {readError.goTo ? (
+                  <QuestionAnswers>
+                    <Button asChild variant="outline" className={`${ANSWER_BUTTON} gap-2`}>
+                      <Link href={importSourceHref(slug, readError.goTo)}>
+                        Ir a {IMPORT_SOURCE_COPY[readError.goTo].short}
+                        <ArrowRight className="size-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  </QuestionAnswers>
+                ) : null}
+              </QuestionCard>
+            ) : null}
+
+            {file && plan && 'needsMapping' in plan && plan.needsMapping && job.kind === 'idle' ? (
+              <BankColumnMapper
+                rows={file.table.rows}
+                candidateHeaderRow={plan.candidateHeaderRow}
+                preview={previewMapping}
+                onConfirm={(layout) => void confirmMapping(layout)}
+                onCancel={reset}
+              />
+            ) : null}
+
+            {file && plan && !plan.ok && 'message' in plan && job.kind === 'idle' ? (
+              <QuestionCard role="alert" tone="info" inset question={plan.message}>
+                <QuestionAnswers>
+                  {'fix' in plan && plan.fix === 'sas_cuit' ? (
+                    <Button asChild variant="outline" className={ANSWER_BUTTON}>
+                      <Link href={`/${slug}/administracion/ajustes?tab=sas`}>
+                        Ir a los datos del bar
+                      </Link>
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="outline" className={ANSWER_BUTTON} onClick={reset}>
+                    Elegir otro archivo
+                  </Button>
+                </QuestionAnswers>
+              </QuestionCard>
+            ) : null}
+
+            {file && readyPlan ? (
+              <div className="space-y-4">
+                <div ref={summaryRef} tabIndex={-1} className="outline-none">
+                  <ArrivalTicket
+                    plan={readyPlan}
+                    beforeStart={beforeStart}
+                    booksStartDate={booksStartDate}
+                    className="mx-auto max-w-md"
+                  />
+                </div>
+                {readyPlan.notices.length > 0 || readyPlan.rowErrors.length > 0 ? (
+                  <div className="mx-auto max-w-md space-y-2 text-sm text-muted-foreground">
+                    {readyPlan.notices.map((n) => (
+                      <p key={n} className="text-pretty">
+                        {n}
+                      </p>
+                    ))}
+                    {readyPlan.rowErrors.length > 0 ? (
+                      <details>
+                        <summary className="cursor-pointer rounded-sm text-warning-text outline-none marker:text-warning focus-visible:ring-2 focus-visible:ring-ring">
+                          {count(
+                            readyPlan.rowErrors.length,
+                            'renglón no se pudo leer',
+                            'renglones no se pudieron leer',
+                          )}{' '}
+                          y no {readyPlan.rowErrors.length === 1 ? 'entra' : 'entran'}. Ver cuáles
+                        </summary>
+                        <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs">
+                          {readyPlan.rowErrors.slice(0, 50).map((e, i) => (
+                            <li key={`${i.toString()}-${e}`}>{e}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+                {job.kind === 'idle' ? (
+                  <div className="mx-auto flex max-w-md flex-col items-stretch gap-2">
+                    <p className="text-center text-sm text-muted-foreground">
+                      Todavía no se carga nada: primero lo revisás.
+                    </p>
+                    {allBeforeStart ? (
+                      <>
+                        <Button type="button" className="h-12 text-base" onClick={reset}>
+                          Elegir otro archivo
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-11"
+                          disabled={uploadDisabled}
+                          onClick={startUpload}
+                        >
+                          Subirlo igual
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          type="button"
+                          className="h-12 gap-2 text-base"
+                          disabled={uploadDisabled}
+                          onClick={startUpload}
+                        >
+                          {uploadLabel}
+                          <ArrowRight className="size-4" aria-hidden />
+                        </Button>
+                        <Button type="button" variant="outline" className="h-11" onClick={reset}>
+                          Elegir otro archivo
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {job.kind === 'running' ? (
+              <UploadProgress source={source} step={job.step} done={job.done} total={job.total} />
+            ) : null}
+
+            {job.kind === 'failed' && readyPlan ? (
+              <QuestionCard
+                ref={errorRef}
+                tabIndex={-1}
+                role="alert"
+                tone="info"
+                inset
+                question={job.message}
+              >
+                <QuestionAnswers>
+                  <Button
+                    type="button"
+                    className={`${ANSWER_BUTTON} gap-2`}
+                    onClick={() =>
+                      void upload(readyPlan, {
+                        batchId: job.batchId,
+                        chunk: Math.max(0, job.nextChunk),
+                        buildOnly: job.buildOnly,
+                      })
+                    }
+                  >
+                    <RotateCcw className="size-4" aria-hidden />
+                    Reintentar
+                  </Button>
+                  {job.batchId ? (
+                    <Button asChild variant="outline" className={ANSWER_BUTTON}>
+                      <Link href={importBatchHref(slug, job.batchId)}>
+                        Ir a revisar lo que llegó
+                      </Link>
+                    </Button>
+                  ) : null}
+                </QuestionAnswers>
+              </QuestionCard>
+            ) : null}
+
+            {job.kind === 'already' ? (
+              <QuestionCard
+                ref={errorRef}
+                tabIndex={-1}
+                role="alert"
+                tone="info"
+                inset
+                question={job.message}
+              >
+                <QuestionAnswers>
+                  {job.batchId ? (
+                    <Button asChild className={`${ANSWER_BUTTON} gap-2`}>
+                      <Link href={importBatchHref(slug, job.batchId)}>
+                        Abrir esa revisión
+                        <ArrowRight className="size-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="outline" className={ANSWER_BUTTON} onClick={reset}>
+                    Elegir otro archivo
+                  </Button>
+                </QuestionAnswers>
+              </QuestionCard>
+            ) : null}
+          </div>
+        </StepCard>
+
+        <StepCard n={3} id="paso-3" title="Revisá y cargá" state={stepThree}>
+          {job.kind === 'done' ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <p className="flex-1 text-sm">Listo: abriendo la revisión…</p>
+              <Button asChild variant="outline" className="h-11">
+                <Link href={importBatchHref(slug, job.batchId)}>Abrir la revisión</Link>
+              </Button>
+            </div>
           ) : null}
-        </div>
-      ) : null}
-
-      {file && plan && 'needsMapping' in plan && plan.needsMapping && job.kind === 'idle' ? (
-        <BankColumnMapper
-          rows={file.table.rows}
-          candidateHeaderRow={plan.candidateHeaderRow}
-          preview={previewMapping}
-          onConfirm={(layout) => void confirmMapping(layout)}
-          onCancel={reset}
-        />
-      ) : null}
-
-      {file && plan && !plan.ok && 'message' in plan && job.kind === 'idle' ? (
-        <div
-          role="alert"
-          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center"
-        >
-          <p className="flex-1 text-pretty">{plan.message}</p>
-          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-            {'fix' in plan && plan.fix === 'sas_cuit' ? (
-              <Button asChild variant="outline" className="h-11 md:h-9">
-                <Link href={`/${slug}/administracion/ajustes?tab=sas`}>Ir a Datos de la SAS</Link>
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" className="h-11 md:h-9" onClick={reset}>
-              Elegir otro archivo
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {file && plan?.ok ? (
-        <PlanSummary
-          plan={plan.plan}
-          headingRef={summaryRef}
-          disabled={busy || Boolean(blockedReason) || job.kind !== 'idle'}
-          onUpload={() => void upload(plan.plan, { batchId: null, chunk: 0, buildOnly: false })}
-          onReset={reset}
-          showActions={job.kind === 'idle'}
-          unitMany={copy.unit[1]}
-        />
-      ) : null}
-
-      {job.kind === 'running' ? (
-        <section
-          aria-label="Subiendo el archivo"
-          className="card-hairline space-y-3 rounded-xl border bg-card p-5"
-        >
-          <p className="font-medium">
-            {job.step === 'batch'
-              ? 'Creando la importación…'
-              : job.step === 'rows'
-                ? progressText('Guardando filas:', job.done, job.total)
-                : 'Armando los comprobantes con tus proveedores y cuentas…'}
+        </StepCard>
+        {stepThree === 'todo' ? (
+          <p className="px-1 text-sm text-muted-foreground text-pretty">
+            Te muestro cada comprobante antes de cargar nada. Lo que no sepa, te lo pregunto.
           </p>
-          <Progress
-            value={
-              job.step === 'batch'
-                ? 2
-                : job.step === 'build'
-                  ? 100
-                  : progressPercent(job.done, job.total)
-            }
-            aria-label="Progreso de la subida"
-          />
-          <p className="text-xs text-muted-foreground">
-            No cierres esta pestaña hasta que termine. Todavía no se carga nada en los libros.
-          </p>
-        </section>
-      ) : null}
-
-      {job.kind === 'failed' && file && plan?.ok ? (
-        <div
-          ref={errorRef}
-          tabIndex={-1}
-          role="alert"
-          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive outline-none sm:flex-row sm:items-center"
-        >
-          <p className="flex-1 text-pretty">{job.message}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 gap-2 md:h-9"
-              onClick={() =>
-                void upload(plan.plan, {
-                  batchId: job.batchId,
-                  chunk: Math.max(0, job.nextChunk),
-                  buildOnly: job.buildOnly,
-                })
-              }
-            >
-              <RotateCcw className="size-4" aria-hidden />
-              Reintentar
-            </Button>
-            {job.batchId ? (
-              <Button asChild variant="outline" className="h-11 md:h-9">
-                <Link href={importBatchHref(slug, job.batchId)}>Ir a la revisión</Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {job.kind === 'already' ? (
-        <div
-          ref={errorRef}
-          tabIndex={-1}
-          role="alert"
-          className="flex flex-col gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm outline-none sm:flex-row sm:items-center"
-        >
-          <p className="flex-1 text-pretty">{job.message}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {job.batchId ? (
-              <Button asChild className="h-11 gap-2 md:h-9">
-                <Link href={importBatchHref(slug, job.batchId)}>
-                  Ver esa importación
-                  <ArrowRight className="size-4" aria-hidden />
-                </Link>
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" className="h-11 md:h-9" onClick={reset}>
-              Elegir otro archivo
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {job.kind === 'done' ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-success/30 bg-success/10 p-4 text-sm sm:flex-row sm:items-center">
-          <p className="flex-1">Listo: estamos abriendo la revisión…</p>
-          <Button asChild variant="outline" className="h-11 md:h-9">
-            <Link href={importBatchHref(slug, job.batchId)}>Abrir la revisión</Link>
-          </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
-  )
-}
-
-/** «Esto encontramos»: lo que se va a subir, antes de mandar nada. */
-function PlanSummary({
-  plan,
-  headingRef,
-  disabled,
-  showActions,
-  onUpload,
-  onReset,
-  unitMany,
-}: {
-  plan: UploadPlan
-  headingRef: RefObject<HTMLHeadingElement | null>
-  disabled: boolean
-  showActions: boolean
-  onUpload: () => void
-  onReset: () => void
-  unitMany: string
-}) {
-  const titleId = useId()
-  return (
-    <section aria-labelledby={titleId} className="card-hairline rounded-xl border bg-card">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-success/30 bg-success/10 text-success">
-            <FileCheck2 className="size-5" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h2
-              id={titleId}
-              ref={headingRef}
-              tabIndex={-1}
-              className="font-serif text-lg font-semibold tracking-tight outline-none"
-            >
-              Encontramos {plan.title}
-            </h2>
-            <p className="truncate text-xs text-muted-foreground" title={plan.fileName}>
-              {plan.fileName}
-            </p>
-          </div>
-        </div>
-      </header>
-      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 sm:grid-cols-2">
-        {plan.facts.map((fact) => (
-          <div key={fact.label} className="min-w-0">
-            <dt className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              {fact.label}
-            </dt>
-            <dd
-              className={cn(
-                'text-sm text-pretty',
-                fact.tone === 'warning' ? 'text-warning-text' : 'text-foreground',
-              )}
-            >
-              {fact.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {plan.rowErrors.length > 0 || plan.notices.length > 0 ? (
-        <div className="space-y-2 border-t border-border/60 px-5 py-4 text-sm">
-          {plan.notices.map((n) => (
-            <p key={n} className="text-muted-foreground">
-              {n}
-            </p>
-          ))}
-          {plan.rowErrors.length > 0 ? (
-            <details className="group">
-              <summary className="cursor-pointer text-warning-text marker:text-warning">
-                {count(plan.rowErrors.length, 'fila no se pudo leer', 'filas no se pudieron leer')}{' '}
-                y {plan.rowErrors.length === 1 ? 'queda' : 'quedan'} afuera. Ver cuáles
-              </summary>
-              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {plan.rowErrors.slice(0, 50).map((e, i) => (
-                  <li key={`${i.toString()}-${e}`}>{e}</li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </div>
-      ) : null}
-      {showActions ? (
-        <footer className="flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground text-pretty">
-            Todavía no se carga nada en los libros: primero vas a revisar cada uno.
-          </p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" className="h-11 md:h-9" onClick={onReset}>
-              Elegir otro archivo
-            </Button>
-            <Button
-              type="button"
-              className="h-11 gap-2 md:h-9"
-              disabled={disabled}
-              onClick={onUpload}
-            >
-              Subir {plan.rows.length === 1 ? 'y revisar' : `los ${plan.rows.length} ${unitMany}`}
-              <ArrowRight className="size-4" aria-hidden />
-            </Button>
-          </div>
-        </footer>
-      ) : null}
-    </section>
   )
 }

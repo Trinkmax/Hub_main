@@ -1,4 +1,5 @@
-import { ChevronDown } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 import {
   ArcaGuideCard,
   DownloadGuides,
@@ -12,7 +13,7 @@ import {
 } from '@/components/administracion/guias/uso/cover'
 import { StationMap } from '@/components/administracion/guias/uso/station-map'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
+import { Panel } from '@/components/administracion/kit/panel'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { GUIDE_PATHS, guideRoutine, stationStates } from '@/lib/accounting/guides'
 import { settleQuery } from '@/lib/accounting/queries'
@@ -34,9 +35,15 @@ export const metadata = { title: 'Guía · Administración' }
  * 4. La puesta en marcha: «Cómo arrancar» y «Conectar ARCA», como ya estaban, con su avance.
  * 5. Cómo bajar los tres archivos que se suben, y el glosario.
  *
+ * Con el bar recién arrancado (sin saldos iniciales), arriba del mapa va un renglón que lleva a
+ * «Cómo arrancar»: para ese bar lo primero no es la rutina.
+ *
  * Nada se abre solo ni se marca a mano: la guía se lee porque la persona quiere, y el avance
  * sale de `acc_report_onboarding`. Si esa lectura falla, la guía se ve entera, sin marcas (cada
  * lectura va por su lado con `settleQuery`). La contadora la ve igual, sin botones de carga.
+ *
+ * Acá no va el «＋ Cargar» flotante del celular: cada parada y cada receta ya trae el botón que
+ * abre su pantalla, y el flotante tapaba justo el de la parada que te toca.
  */
 export default async function GuiasPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
@@ -56,6 +63,26 @@ export default async function GuiasPage({ params }: { params: Promise<{ tenantSl
         badge={<ReadOnlyBadge />}
         description="Qué cargar, dónde y qué mueve cada cosa. Empezá por el mapa: después, cada situación tiene su paso a paso."
       />
+
+      {canWrite && overview && !overview.data.openingDone ? (
+        // El bar recién arrancado (todavía sin saldos iniciales): el mapa es el día a día, y lo
+        // primero es lo que se carga una sola vez, que en esta portada queda tres pantallas abajo.
+        <div className="flex flex-wrap items-center justify-between gap-x-4 rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm max-sm:pb-1 sm:px-5">
+          <p className="min-w-0 flex-1 basis-64 text-pretty">
+            <span className="font-medium">¿Recién arrancás?</span>{' '}
+            <span className="text-muted-foreground">
+              Antes del día a día va la puesta en marcha: lo que se carga una sola vez.
+            </span>
+          </p>
+          <Link
+            href={`${base}${GUIDE_PATHS.start}`}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-sm font-medium whitespace-nowrap text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+          >
+            Ver «Cómo arrancar»
+            <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
+        </div>
+      ) : null}
 
       <StationMap base={base} states={stationStates(overview)} />
 
@@ -123,32 +150,19 @@ export default async function GuiasPage({ params }: { params: Promise<{ tenantSl
             retry={<RetryButton />}
           />
         </div>
-        {/* Las mini guías de los tres archivos siguen acá (y en cada importador), plegadas: en
-            las recetas de Mercado Pago y de ARCA van además al lado de cada paso. */}
-        <details className="group card-hairline rounded-2xl border bg-card shadow-xs">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-2xl px-4 py-3 outline-none hover:bg-cream-tint/60 focus-visible:ring-2 focus-visible:ring-ring sm:px-5 [&::-webkit-details-marker]:hidden">
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-pretty">
-                ¿Cómo bajo los archivos de ARCA, Mercado Pago y el banco?
-              </span>
-              <span className="block text-sm text-muted-foreground text-pretty">
-                Con esos tres archivos la plataforma arma sola casi todas las compras y los cobros.
-              </span>
-            </span>
-            <ChevronDown
-              aria-hidden
-              className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
-            />
-          </summary>
-          <div className="border-t border-border/60 px-4 py-5 sm:px-5">
-            <DownloadGuides base={base} canWrite={canWrite} />
-          </div>
-        </details>
+        {/* Los tres archivos, a la vista, cada uno con su «¿Cómo lo bajo?» (un solo toque para
+            ver los pasos). En las recetas de Mercado Pago y de ARCA van además al lado de cada
+            paso, y en cada importador. */}
+        <Panel
+          id="archivos"
+          title="¿Cómo bajo los archivos de ARCA, Mercado Pago y el banco?"
+          description="Con esos tres archivos la plataforma arma sola casi todas las compras y los cobros. Vos los bajás y los subís."
+        >
+          <DownloadGuides base={base} canWrite={canWrite} />
+        </Panel>
       </section>
 
       <GuideGlossary />
-
-      <QuickActionsBar />
     </AdmPage>
   )
 }

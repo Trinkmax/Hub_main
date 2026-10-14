@@ -1,4 +1,4 @@
-import { Check, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Spotlight } from '@/components/administracion/guias/arca-mock/spotlight'
 import { cn } from '@/lib/utils'
@@ -135,6 +135,16 @@ export function MockInput({
       )}
     >
       <span className="truncate">{children}</span>
+    </span>
+  )
+}
+
+/** Un desplegable con lo elegido (la flechita lo distingue de un campo de texto). */
+export function MockSelect({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex h-10 w-full items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-2xs">
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
     </span>
   )
 }

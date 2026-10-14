@@ -8,6 +8,16 @@
  * chips de comprobante (`none`, `ticket`, `a`, `bc`): cambió cómo se pregunta.
  * Todo queda en el mismo libro; «sin factura» solo dice que no entra al Libro
  * IVA. Lo prueba `administracion-gasto-papel.test.ts`.
+ *
+ * Los cuatro papeles y el «antes → después» de una caja los usan también la
+ * compra, «Pagar», «Registrar un cobro» y la ficha de un gasto fijo: por eso
+ * `paperConsequence` acepta que todavía no haya papel marcado y `treasuryAfter`
+ * sabe de plata que entra. Con los valores por defecto, «Nuevo gasto» hace
+ * exactamente lo de siempre.
+ *
+ * Cuándo NO: el sello de un papel YA guardado no sale de acá (`paperStamp`
+ * conoce solo los cuatro valores de la hoja): es `voucherStamp()` de
+ * `components/administracion/voucher-stamp.ts`, que da el mismo texto.
  */
 
 import {
@@ -18,7 +28,7 @@ import type { SheetTreasury } from '@/app/(manager)/[tenantSlug]/administracion/
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import type { IvaCondition, SasIvaCondition } from '@/lib/accounting/types'
 import { isVatComputable } from '@/lib/accounting/voucher-types'
-import { formatCentsShort } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { balanceText } from '../format'
 
 // ─── Las cuatro tarjetas ─────────────────────────────────────────────────────
@@ -63,11 +73,15 @@ export function recoversVat(input: {
  * y el importe cargado dice cuánto IVA se recupera; si ese IVA no se puede
  * recuperar (el proveedor o el bar no son responsables inscriptos), lo dice.
  * Nunca promete algo que el asiento no va a hacer.
+ *
+ * `selected: null` = todavía no hay ningún papel marcado (un gasto fijo que
+ * «no sé o cambia», una compra con «otro papel»): cada tarjeta dice su línea
+ * de siempre.
  */
 export function paperConsequence(
   option: PaperOption,
   input: {
-    selected: QuickVoucher
+    selected: QuickVoucher | null
     recovers: boolean
     /** El IVA que se recupera con lo cargado hasta ahora; `null` si todavía no se sabe. */
     recoveredVatCents: number | null
@@ -156,21 +170,40 @@ export function paperOutcomeNote(input: {
   return 'Entra al Libro IVA; el IVA va al costo. Con el proveedor no queda deuda.'
 }
 
-/** Lo que todavía falta para poder mostrar el resumen, en palabras. `null`: no falta nada. */
+/**
+ * Lo que todavía falta para poder cargarlo, en palabras. `null`: no falta nada.
+ * Mientras falte algo el ticket se ve en borrador y dice esto en la letra
+ * chica, en vez de prometer «Entra al Libro IVA» con un dato obligatorio vacío.
+ *
+ * `invoiceNumber`: con Factura A, B o C el punto de venta y el número son
+ * obligatorios (lo exige el esquema; sin ellos no hay asiento que mostrar).
+ */
 export function missingForSummary(missing: {
   amount: boolean
   target: boolean
   treasury: boolean
+  invoiceNumber?: boolean
 }): string | null {
   const parts = [
     missing.amount ? 'cuánto gastaste' : null,
     missing.target ? 'en qué se gastó' : null,
     missing.treasury ? 'con qué pagaste' : null,
   ].filter((part): part is string => part !== null)
-  if (parts.length === 0) return null
+  const number = missing.invoiceNumber === true
+  if (parts.length === 0) return number ? 'Falta el número de la factura.' : null
   const last = parts[parts.length - 1]
   const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(', ')} y ${last}`
-  return `Falta decir ${list}.`
+  return `Falta decir ${list}.${number ? ' También falta el número de la factura.' : ''}`
+}
+
+/**
+ * El importe tal cual se va a guardar, para el botón que confirma: sin
+ * centavos si es redondo («$ 12.500») y con centavos si los tiene
+ * («$ 12.345.678,50»). Redondearlo ahí mostraría un número distinto del que
+ * dice el ticket.
+ */
+export function exactAmountText(cents: number): string {
+  return cents % 100 === 0 ? formatCentsShort(cents) : formatCents(cents)
 }
 
 // ─── La caja: antes → después ────────────────────────────────────────────────
@@ -180,27 +213,51 @@ type TreasuryFacts = Pick<SheetTreasury, 'kind' | 'balanceCents' | 'allowNegativ
 export type TreasuryAfter = {
   /** El saldo de hoy, en el sentido de la caja (en una tarjeta de la empresa, la deuda). */
   beforeCents: number
-  /** Cómo queda con este gasto. `null`: todavía no hay importe. */
+  /** Cómo queda con este movimiento. `null`: todavía no hay importe. */
   afterCents: number | null
   /**
    * - `idle`: sin importe.
    * - `ok`: alcanza.
    * - `short`: una caja que no admite quedar en negativo y quedaría en rojo. Es
    *   el mismo caso que el servidor avisa al guardar (`treasury_negative`).
-   * - `overdraft`: queda en descubierto, y esa cuenta lo admite.
-   * - `debt`: tarjeta de la empresa: sube lo que se debe.
+   *   Solo pasa con plata que SALE: una entrada nunca deja peor a una caja.
+   * - `overdraft`: queda en descubierto (esa cuenta lo admite, o ya estaba así
+   *   y lo que entra no alcanza a cubrirlo).
+   * - `debt`: tarjeta de la empresa: sube lo que se debe (o baja, si se le paga).
    */
   state: 'idle' | 'ok' | 'short' | 'overdraft' | 'debt'
 }
 
-/** Cómo queda la caja elegida después de este gasto (no guarda nada: es la cuenta a la vista). */
-export function treasuryAfter(treasury: TreasuryFacts, amountCents: number | null): TreasuryAfter {
+/**
+ * Para dónde va la plata respecto de la caja: `out` sale (un gasto, un pago)
+ * e `in` entra (un cobro, una acreditación). En una tarjeta de la empresa,
+ * `out` es comprar con ella (sube la deuda) e `in` es pagarla (baja).
+ */
+export type TreasuryDirection = 'out' | 'in'
+
+/**
+ * Cómo queda la caja elegida después de este movimiento (no guarda nada: es
+ * la cuenta a la vista). Por defecto la plata SALE, como en «Nuevo gasto»;
+ * con `direction: 'in'` entra («Registrar un cobro», una factura cobrada).
+ */
+export function treasuryAfter(
+  treasury: TreasuryFacts,
+  amountCents: number | null,
+  direction: TreasuryDirection = 'out',
+): TreasuryAfter {
   const beforeCents = treasury.balanceCents
   if (amountCents === null || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
     return { beforeCents, afterCents: null, state: 'idle' }
   }
   if (treasury.kind === 'credit_card') {
-    return { beforeCents, afterCents: beforeCents + amountCents, state: 'debt' }
+    const afterCents = direction === 'in' ? beforeCents - amountCents : beforeCents + amountCents
+    return { beforeCents, afterCents, state: 'debt' }
+  }
+  if (direction === 'in') {
+    const afterCents = beforeCents + amountCents
+    // Lo que entra nunca dispara el aviso del motor: si la cuenta sigue en
+    // rojo es porque ya lo estaba, y se dice con las palabras del descubierto.
+    return { beforeCents, afterCents, state: afterCents >= 0 ? 'ok' : 'overdraft' }
   }
   const afterCents = beforeCents - amountCents
   if (afterCents >= 0) return { beforeCents, afterCents, state: 'ok' }
@@ -268,15 +325,37 @@ export function treasuryAfterWords(
   }
 }
 
-/** «Caja: $ 394.757 → $ 382.257» (para lectores y para el pie del ticket). `null` sin importe. */
+/**
+ * El mismo «antes → después» para el pie del total del ticket, más corto: los
+ * rótulos que no agregan nada («hoy», «queda») no se escriben, y los que sí
+ * («faltan», «queda en descubierto», «debés») van con las MISMAS palabras que
+ * la línea de «¿Con qué pagaste?». Una caja a la que no le alcanza no «queda
+ * en descubierto»: le faltan. `null` sin importe.
+ */
+export function treasuryAfterShort(
+  kind: SheetTreasury['kind'],
+  after: TreasuryAfter,
+): { before: string; after: string } | null {
+  const words = treasuryAfterWords(kind, after)
+  if (words === null) return null
+  const join = (label: string, amount: string) => (label ? `${label} ${amount}` : amount)
+  return {
+    before: join(words.before.label.replace(/^hoy ?/, ''), words.before.amount),
+    after: join(words.after.label === 'queda' ? '' : words.after.label, words.after.amount),
+  }
+}
+
+/**
+ * «Caja: $ 394.757 → $ 382.257» · «Caja: $ 394.757 → faltan $ 605.242» (el pie
+ * del total del ticket, en texto plano). `null` sin importe.
+ */
 export function treasuryAfterText(
   treasury: TreasuryFacts & Pick<SheetTreasury, 'name'>,
   after: TreasuryAfter,
 ): string | null {
-  if (after.afterCents === null) return null
-  const before = treasuryMoneyText(treasury.kind, after.beforeCents)
-  const then = treasuryMoneyText(treasury.kind, after.afterCents)
-  return `${treasury.name}: ${before} → ${then}`
+  const short = treasuryAfterShort(treasury.kind, after)
+  if (short === null) return null
+  return `${treasury.name}: ${short.before} → ${short.after}`
 }
 
 const TOTAL_LABEL_NAME_MAX = 22
@@ -290,4 +369,12 @@ export function ticketTotalLabel(treasury: Pick<SheetTreasury, 'kind' | 'name'> 
       ? `${treasury.name.slice(0, TOTAL_LABEL_NAME_MAX - 1).trimEnd()}…`
       : treasury.name
   return treasury.kind === 'credit_card' ? `Con ${name}` : `Salen de ${name}`
+}
+
+/**
+ * De dónde sale la plata, para el renglón de resumen que va arriba del botón
+ * en el celular: «sale de Caja»; con la tarjeta de la empresa, «con Visa».
+ */
+export function paidFromWords(treasury: Pick<SheetTreasury, 'kind' | 'name'>): string {
+  return treasury.kind === 'credit_card' ? `con ${treasury.name}` : `sale de ${treasury.name}`
 }

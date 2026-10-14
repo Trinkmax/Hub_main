@@ -18,7 +18,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { BooksBlock } from './_resumen/books-block'
-import { firstStepsCookieName } from './_resumen/first-steps-cookie'
+import { firstStepsCookieName, SETUP_OPEN_VALUE } from './_resumen/first-steps-cookie'
 import { HeroBlock, type HeroTone } from './_resumen/hero-block'
 import { type HomeData, loadHome } from './_resumen/home-data'
 import { InOutBlock } from './_resumen/in-out-block'
@@ -97,9 +97,10 @@ export default async function AdministracionResumenPage({
 
   const [sp, cookieStore] = await Promise.all([searchParams, cookies()])
   const heroTone: HeroTone = firstParam(sp.hero) === 'crema' ? 'crema' : 'bosque'
-  // La cookie de «Ocultar» de Primeros pasos, que ahora pliega la franja de la puesta en marcha.
+  // La cookie de «Ocultar» de Primeros pasos, que ahora recuerda si la franja de la puesta
+  // en marcha quedó desplegada. Por defecto (y con el valor viejo) va en un renglón.
   const setupCookie = firstStepsCookieName(tenantSlug)
-  const setupCollapsed = cookieStore.get(setupCookie)?.value === '1'
+  const setupCollapsed = cookieStore.get(setupCookie)?.value !== SETUP_OPEN_VALUE
 
   return (
     <AdmPage>
@@ -131,22 +132,28 @@ export default async function AdministracionResumenPage({
         <TodayBlock data={data} setupCookie={setupCookie} setupCollapsed={setupCollapsed} />
       </Suspense>
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        <Suspense fallback={<MonthSkeleton className="min-w-0 lg:col-span-7" />}>
-          <MonthBlock data={data} className="min-w-0 lg:col-span-7" />
-        </Suspense>
-        <Suspense fallback={<PayablesSkeleton className="min-w-0 lg:col-span-5" />}>
-          <PayablesBlock data={data} className="min-w-0 lg:col-span-5" />
-        </Suspense>
-      </div>
+      {/* Las dos filas de paneles pasan a dos columnas según el ancho que de verdad tienen
+          (`@container`), no el de la ventana: con el menú abierto en una notebook de 1024 a
+          1279 px, «Lo que tenés que pagar» quedaba en 277 px. Cada panel mide lo suyo
+          (`items-start`): estirado al alto del vecino dejaba un hueco de casi una pantalla. */}
+      <div className="@container space-y-6">
+        <div className={PANEL_ROW}>
+          <Suspense fallback={<MonthSkeleton className={WIDE_PANEL} />}>
+            <MonthBlock data={data} className={WIDE_PANEL} />
+          </Suspense>
+          <Suspense fallback={<PayablesSkeleton className={NARROW_PANEL} />}>
+            <PayablesBlock data={data} className={NARROW_PANEL} />
+          </Suspense>
+        </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Suspense fallback={<InOutSkeleton className="min-w-0" />}>
-          <InOutBlock data={data} className="min-w-0" />
-        </Suspense>
-        <Suspense fallback={<SpendingSkeleton className="min-w-0" />}>
-          <SpendingBlock data={data} className="min-w-0" />
-        </Suspense>
+        <div className={PANEL_ROW}>
+          <Suspense fallback={<InOutSkeleton className={HALF_PANEL} />}>
+            <InOutBlock data={data} className={HALF_PANEL} />
+          </Suspense>
+          <Suspense fallback={<SpendingSkeleton className={HALF_PANEL} />}>
+            <SpendingBlock data={data} className={HALF_PANEL} />
+          </Suspense>
+        </div>
       </div>
 
       {/* Estos dos pueden no dibujar nada: sin esqueleto, para no reservar un lugar vacío. */}
@@ -161,6 +168,12 @@ export default async function AdministracionResumenPage({
     </AdmPage>
   )
 }
+
+/* Las clases de las filas de paneles, escritas enteras (Tailwind las busca como texto). */
+const PANEL_ROW = 'grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start'
+const WIDE_PANEL = 'min-w-0 @min-[58rem]:col-span-7'
+const NARROW_PANEL = 'min-w-0 @min-[58rem]:col-span-5'
+const HALF_PANEL = 'min-w-0 @min-[58rem]:col-span-6'
 
 /** La razón social, chica al lado de la fecha: llega con los ajustes, sin frenar el título. */
 async function LegalName({ data }: { data: HomeData }) {

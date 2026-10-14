@@ -1,6 +1,6 @@
 /**
- * «Cargar una lista» de proveedores o de gastos fijos (pedido de los socios,
- * 09/10/2026): lo puro. Lo prueba `administracion-cargar-lista.test.ts`.
+ * «Pegar una lista» de proveedores o de gastos fijos (pedido de los socios,
+ * 09/10/2026): lo puro. Lo prueba `administracion-proveedores-gastos-fijos.test.ts`.
  */
 
 import { partyNameKey } from '@/lib/accounting/party-profile'
@@ -23,6 +23,10 @@ export type ParsedNameList = {
  * Un nombre por renglón, como sale de copiar una columna de una planilla o un
  * mensaje: se recortan los espacios, se sacan viñetas y numeración al
  * principio («- », «• », «1. ») y se saltean los renglones vacíos.
+ *
+ * Si el renglón trae varias columnas (copiado de una planilla: van separadas
+ * por tabulaciones), el nombre es la primera que tenga algo; el monto, la fecha
+ * y lo demás se ignoran.
  */
 export function parseNameList(
   text: string,
@@ -33,7 +37,10 @@ export function parseNameList(
   const seen = new Set<string>()
   const out: ParsedNameList = { names: [], repeated: [], existing: [], invalid: [] }
   for (const raw of text.split(/\r?\n/)) {
-    const name = raw
+    const firstColumn = raw.includes('\t')
+      ? (raw.split('\t').find((cell) => cell.trim() !== '') ?? '')
+      : raw
+    const name = firstColumn
       .replace(/^\s*(?:[-•*·]|\d{1,3}[.)-])\s+/, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -55,6 +62,51 @@ export function parseNameList(
     out.names.push(name)
   }
   return out
+}
+
+/**
+ * Lo típico de un bar, para tildar en «Pegar una lista» sin escribir nada. Son
+ * nombres: cada uno se puede cambiar después, y la categoría se propone con
+ * `suggestAccount`.
+ */
+export const TYPICAL_RECURRING = [
+  'Alquiler',
+  'Luz',
+  'Gas',
+  'Agua',
+  'Internet',
+  'Alarma',
+  'Seguro del local',
+  'Contador',
+  'Sueldos',
+  'Aportes y contribuciones',
+  'Ingresos Brutos',
+  'Comercio e industria',
+  'Monotributo o autónomos',
+  'Sistema o suscripciones',
+  'Residuos',
+  'Desinfección',
+] as const
+
+/**
+ * Lo tildado y lo pegado, juntos y en ese orden, como un solo texto para
+ * `parseNameList` (que saca los repetidos y los que ya existen).
+ */
+export function joinNameSources(picked: readonly string[], pasted: string): string {
+  return [...picked, pasted].filter((part) => part.trim() !== '').join('\n')
+}
+
+/**
+ * Lo que «Pegar una lista» le manda a `createRecurringBulk`: un ítem por gasto
+ * fijo, todos con el MISMO día y el mismo próximo vencimiento. El monto, el
+ * papel y las cuotas se completan después, en cada uno.
+ */
+export function recurringBulkItems(
+  rows: ReadonlyArray<{ name: string; accountId: string | null }>,
+  dueDay: number,
+  nextDueDate: string,
+): Array<{ name: string; accountId: string | null; dueDay: number; nextDueDate: string }> {
+  return rows.map((row) => ({ name: row.name, accountId: row.accountId, dueDay, nextDueDate }))
 }
 
 export type AccountHint = { id: string; code: string; name: string }

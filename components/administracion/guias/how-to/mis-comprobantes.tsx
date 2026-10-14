@@ -13,9 +13,12 @@ import { HowToNote, HowToShell, HowToStep } from './how-to-shell'
  */
 export function HowToMisComprobantes({
   defaultOpen = false,
+  bare = false,
   className,
 }: {
   defaultOpen?: boolean
+  /** Sin el plegable: el contenido a la vista (el paso 1 de la subida en Importar). */
+  bare?: boolean
   className?: string
 }) {
   const accounting = useAccountingOptional()
@@ -26,6 +29,7 @@ export function HowToMisComprobantes({
     <HowToShell
       subtitle="Las facturas que te hicieron tus proveedores, desde ARCA. Unos 5 minutos por mes."
       defaultOpen={defaultOpen}
+      bare={bare}
       className={className}
     >
       <HowToNote icon={<CalendarClock className="size-4" />} title="Cuándo">

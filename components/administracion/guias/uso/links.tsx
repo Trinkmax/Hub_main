@@ -12,6 +12,7 @@ import {
   recipeAnchor,
 } from '@/lib/accounting/guides'
 import { cn } from '@/lib/utils'
+import { MobileFold } from './mobile-fold'
 
 /**
  * «Cómo se vincula cada cosa»: arriba, el dibujo de los nueve vínculos (qué se une con qué, si se
@@ -19,7 +20,11 @@ import { cn } from '@/lib/utils'
  * es, dónde se hace, qué pasa si no y cómo se deshace.
  *
  * Dice con honestidad lo que hoy NO se puede (vincular después un gasto fijo, elegir «es este» en
- * una línea importada): es peor prometerlo que avisarlo. Server-safe: todo son links y anclas.
+ * una línea importada): es peor prometerlo que avisarlo.
+ *
+ * Al tocar una unión del dibujo, su bloque queda resaltado (`:target`, sin script): son nueve
+ * bloques con la misma forma y sin la marca no se sabía en cuál se había caído. En el celular
+ * cada bloque muestra «Qué es» y el límite; lo demás se abre (`MobileFold`).
  */
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -117,6 +122,17 @@ const FACTS = [
   { key: 'undo', label: 'Cómo se deshace' },
 ] as const
 
+const [WHAT, ...MORE] = FACTS
+
+function Fact({ label, children }: { label: string; children: string }) {
+  return (
+    <div className="min-w-0">
+      <h4 className="text-[13px] font-semibold">{label}</h4>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground text-pretty">{children}</p>
+    </div>
+  )
+}
+
 function LinkDetail({ link, base }: { link: GuideLink; base: string }) {
   const titleId = `${linkAnchor(link.id)}-nombre`
   const recipe = link.recipe ? guideRecipe(link.recipe) : null
@@ -124,7 +140,8 @@ function LinkDetail({ link, base }: { link: GuideLink; base: string }) {
     <section
       id={linkAnchor(link.id)}
       aria-labelledby={titleId}
-      className="grid scroll-mt-28 gap-x-8 gap-y-4 border-t border-border/60 py-6 first:border-t-0 first:pt-0 last:pb-0 lg:grid-cols-[17rem_minmax(0,1fr)]"
+      // El margen negativo le da lugar al resaltado sin correr el texto de la columna.
+      className="-mx-3 grid scroll-mt-20 gap-x-8 gap-y-4 border-t border-border/60 px-3 py-5 first:border-t-0 target:rounded-xl target:border-transparent target:bg-cream-tint target:ring-1 target:ring-primary/30 lg:grid-cols-[17rem_minmax(0,1fr)]"
     >
       <div className="min-w-0">
         <h3
@@ -153,19 +170,12 @@ function LinkDetail({ link, base }: { link: GuideLink; base: string }) {
           </p>
         ) : null}
       </div>
-      <div className="min-w-0">
-        <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-          {FACTS.map((fact) => (
-            <div key={fact.key} className="min-w-0">
-              <dt className="text-[13px] font-semibold">{fact.label}</dt>
-              <dd className="mt-1 text-sm leading-relaxed text-muted-foreground text-pretty">
-                {link[fact.key]}
-              </dd>
-            </div>
-          ))}
-        </dl>
+      {/* En la compu, los cuatro datos en dos columnas y el límite debajo. En el celular: qué es,
+          el límite, y los otros tres datos plegados (mismo contenido, otro orden). */}
+      <div className="grid min-w-0 gap-x-8 gap-y-4 sm:grid-cols-2">
+        <Fact label={WHAT.label}>{link[WHAT.key]}</Fact>
         {link.limit ? (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-secondary/50 px-3.5 py-3 text-sm leading-relaxed">
+          <div className="flex items-start gap-2.5 rounded-xl bg-secondary/50 px-3.5 py-3 text-sm leading-relaxed sm:order-last sm:col-span-2">
             <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
             <p className="min-w-0 text-pretty">
               <span className="sr-only">Un límite: </span>
@@ -173,6 +183,16 @@ function LinkDetail({ link, base }: { link: GuideLink; base: string }) {
             </p>
           </div>
         ) : null}
+        <MobileFold
+          label="Dónde se hace, qué pasa si no y cómo se deshace"
+          contentClassName="max-sm:space-y-4 max-sm:pt-2"
+        >
+          {MORE.map((fact) => (
+            <Fact key={fact.key} label={fact.label}>
+              {link[fact.key]}
+            </Fact>
+          ))}
+        </MobileFold>
       </div>
     </section>
   )

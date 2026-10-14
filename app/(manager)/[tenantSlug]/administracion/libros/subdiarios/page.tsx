@@ -1,8 +1,10 @@
-import { Layers } from 'lucide-react'
+import { Layers, Table2 } from 'lucide-react'
 import Link from 'next/link'
+import { type ReactNode, useId } from 'react'
 import { Amount } from '@/components/administracion/amount'
-import { plural } from '@/components/administracion/format'
-import { SectionNav } from '@/components/administracion/section-nav'
+import { plural, signedMovement } from '@/components/administracion/format'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { ViewPills } from '@/components/administracion/kit/view-pills'
 import {
   DataTableBody,
   DataTableCell,
@@ -12,7 +14,6 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
 import {
   decodePageToken,
   exportHref,
@@ -45,6 +46,7 @@ import {
   subledgerTab,
 } from '../_lib/subledgers'
 import { TreasuryFilter } from './_components/treasury-filter'
+import { subledgerMobileRow } from './_lib/mobile-row'
 
 export const metadata = { title: 'Subdiarios' }
 
@@ -129,16 +131,20 @@ export default async function SubdiariosPage({
           label={`Exportar ${tab.label.toLowerCase()}`}
         />
       }
+      booksPath={`${base}/libros`}
+      book="subdiarios"
+      period={shown}
       toolbar={
-        <div className="space-y-4">
-          <SectionNav
+        <div className="space-y-3">
+          <ViewPills
             label="Subdiarios"
-            active={tab.value}
             items={SUBLEDGER_TABS.map((t) => ({
-              value: t.value,
+              key: t.value,
               label: t.label,
               shortLabel: t.shortLabel,
               href: bookHref(path, { ...period, tipo: t.value }),
+              active: t.value === tab.value,
+              scroll: false,
             }))}
           />
           <RangePicker
@@ -163,22 +169,28 @@ export default async function SubdiariosPage({
 
       {page ? (
         lines.length === 0 && page.rows.length === 0 ? (
-          <EmptyState
-            icon={Layers}
-            title={`No hay movimientos en ${shown.label.toLowerCase()}`}
-            description={tab.empty}
-          />
+          <EmptyTeach icon={Layers} title={`No hay movimientos en ${shown.label.toLowerCase()}`}>
+            Acá van: {tab.empty.charAt(0).toLowerCase()}
+            {tab.empty.slice(1)}
+          </EmptyTeach>
         ) : (
           <>
-            <WideBookHint />
-            <SubledgerTable
+            <SubledgerMobileList
               rows={page.rows}
               columns={columns}
               base={base}
               caption={`Subdiario de ${tab.label.toLowerCase()}, ${shown.label}`}
-              showTotals={Boolean(info?.isFirst) && !page.nextCursor}
-              emptyText="No hay movimientos en este período."
             />
+            <WideTable>
+              <SubledgerTable
+                rows={page.rows}
+                columns={columns}
+                base={base}
+                caption={`Subdiario de ${tab.label.toLowerCase()}, ${shown.label}`}
+                showTotals={Boolean(info?.isFirst) && !page.nextCursor}
+                emptyText="No hay movimientos en este período."
+              />
+            </WideTable>
             {info ? (
               <KeysetPagination
                 info={info}
@@ -193,6 +205,121 @@ export default async function SubdiariosPage({
         )
       ) : null}
     </BookPage>
+  )
+}
+
+/**
+ * La tabla ancha del subdiario. En la compu se ve siempre; en el celular queda
+ * detrás de «Ver la tabla completa» (arriba va la lista de un renglón por
+ * movimiento). Es UNA sola tabla en el HTML: el interruptor es una casilla, así
+ * anda sin JavaScript y con teclado.
+ */
+function WideTable({ children }: { children: ReactNode }) {
+  const id = useId()
+  return (
+    <div>
+      <input type="checkbox" id={id} className="peer sr-only" />
+      <label
+        htmlFor={id}
+        className="mb-3 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-sm font-medium peer-checked:border-foreground peer-checked:bg-foreground peer-checked:text-background peer-focus-visible:ring-2 peer-focus-visible:ring-ring sm:hidden"
+      >
+        <Table2 className="size-4" aria-hidden />
+        Ver la tabla completa
+      </label>
+      <div className="hidden space-y-3 peer-checked:block sm:block">
+        <WideBookHint />
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** Celular: un renglón por movimiento (fecha, «#125», de qué es y UN importe). Tocarlo abre el comprobante. */
+function SubledgerMobileList({
+  rows,
+  columns,
+  base,
+  caption,
+}: {
+  rows: readonly SubledgerRow[]
+  columns: readonly SubledgerColumn[]
+  base: string
+  caption: string
+}) {
+  const lines = rows.filter((r) => r.rowKind === 'line')
+  const opening = rows.find((r) => r.rowKind === 'opening') ?? null
+  const balanceColumn = columns.find((c) => isRunningBalanceColumn(c)) ?? null
+  const openingCents =
+    opening && balanceColumn ? subledgerCellCents(subledgerCell(opening, balanceColumn)) : null
+  return (
+    <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
+      <ul aria-label={caption} className="divide-y divide-border/60">
+        {openingCents !== null ? (
+          <li className="flex items-center justify-between gap-3 bg-secondary/20 px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Saldo anterior</span>
+            <Amount cents={openingCents} />
+          </li>
+        ) : null}
+        {lines.length === 0 ? (
+          <li className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No hay movimientos en este período.
+          </li>
+        ) : null}
+        {lines.map((row, index) => {
+          const item = subledgerMobileRow(row, columns)
+          const body = (
+            <>
+              <span className="min-w-0 space-y-0.5">
+                <span className="block text-xs tabular-nums text-muted-foreground">
+                  {[item.date, item.ref].filter(Boolean).join(' · ')}
+                </span>
+                <span className="block truncate text-sm font-medium">
+                  {item.title || 'Movimiento'}
+                </span>
+                {item.detail ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {item.detail}
+                  </span>
+                ) : null}
+              </span>
+              {item.amountCents !== null ? (
+                <span className="shrink-0 text-right">
+                  <span className="block text-sm font-medium whitespace-nowrap tabular-nums">
+                    {item.direction === 0 ? (
+                      <Amount cents={item.amountCents} />
+                    ) : (
+                      signedMovement(item.amountCents, item.direction > 0)
+                    )}
+                  </span>
+                  {item.amountLabel ? (
+                    <span className="block text-[11px] text-muted-foreground">
+                      {item.amountLabel}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </>
+          )
+          const key = `${row.documentId ?? row.entryId ?? 'fila'}-${index.toString()}`
+          return (
+            <li key={key}>
+              {row.documentId ? (
+                <Link
+                  href={`${base}/comprobantes/${row.documentId}`}
+                  className="flex min-h-11 items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div className="flex min-h-11 items-start justify-between gap-3 px-4 py-3">
+                  {body}
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 

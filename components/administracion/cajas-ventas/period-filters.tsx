@@ -3,6 +3,7 @@
 import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useId, useState, useTransition } from 'react'
+import { Pill } from '@/components/administracion/kit/pill'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,13 +13,43 @@ import { cn } from '@/lib/utils'
 import type { RangeValue } from './periods'
 
 /**
- * El período de una lista en la URL (`?mes=` o `?desde=&hasta=`), con las
- * flechas y los chips de Reservas y Libros: mismos tamaños (44 px en el
- * celular) y el mismo «pendiente» mientras carga. Cambiar de período conserva
- * los demás parámetros (pestaña, búsqueda) y vuelve a la primera página.
+ * El período de una lista en la URL (`?mes=` o `?desde=&hasta=`): un mes con
+ * flechas y, al lado, «Este mes» y «Rango». Cambiar de período conserva los
+ * demás parámetros (pestaña, búsqueda) y vuelve a la primera página; mientras
+ * carga, todo queda «pendiente» (`aria-busy`).
+ *
+ * Se ve como la navegación de día del cierre: una píldora de papel (`bg-card`,
+ * con su sombra) con una flecha en cada punta, y al lado las píldoras del kit,
+ * con la elegida RELLENA en tinta (el verde queda para la barra de la sección).
+ * Donde se toca con el dedo (celular, tablet) todo mide 44 px; en una compu
+ * con mouse, 36, la medida de las píldoras de vista que suelen ir al lado.
+ *
+ * Con un rango elegido, las fechas SON el control: una sola píldora rellena
+ * («01/08 – 13/10/2026») que abre el selector para cambiarlas. No hay una
+ * etiqueta quieta al lado de otro botón.
+ *
+ * Cuándo NO: para moverse por los meses de un ejercicio viendo su estado (eso
+ * es `MonthStrip`), para el día de un cierre (tiene su propia navegación), ni
+ * para elegir entre vistas (`ViewPills`).
  */
 
 const PERIOD_KEYS = ['mes', 'desde', 'hasta', 'despues', 'page'] as const
+
+/** La píldora de papel: la misma superficie que la navegación de día del cierre. */
+const PAPER_PILL = 'card-hairline rounded-full border bg-card shadow-xs'
+/**
+ * Las flechas: redondas, para calzar en las puntas de la píldora. Llevan el
+ * mismo anillo de foco que las píldoras de al lado (el del botón de fábrica,
+ * más ancho y al 50 %, casi no se veía sobre el papel).
+ */
+const STEP_BUTTON =
+  'size-11 rounded-full focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:size-[2.125rem]'
+/**
+ * «Este mes» y «Rango»: 44 px donde se toca con el dedo y, en una compu con mouse, la medida de
+ * las píldoras de vista (`ViewPills`). El corte es por tipo de puntero, no por ancho: en una
+ * tablet siguen midiendo 44.
+ */
+const CHIP_SIZE = 'md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
 
 function usePeriodNavigation() {
   const router = useRouter()
@@ -59,12 +90,13 @@ function Stepper({
   const canPrev = !minMonth || prev >= minMonth
   const canNext = next <= current
   return (
-    <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-card/60 md:p-1">
+    // Con mouse mide 36 px, lo mismo que las píldoras de al lado (no quedan escalonadas).
+    <div className={cn(PAPER_PILL, 'flex items-center gap-1 md:pointer-fine:h-9')}>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="size-11 md:size-9"
+        className={STEP_BUTTON}
         aria-label={`Mes anterior: ${formatMonthLabel(prev)}`}
         disabled={!canPrev || pending}
         onClick={() => go({ mes: prev })}
@@ -73,7 +105,7 @@ function Stepper({
       </Button>
       <div className="flex items-center gap-2 px-1.5">
         <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
-        <span className="min-w-[124px] text-center text-sm font-medium tabular-nums">
+        <span className="min-w-[124px] text-center text-sm font-semibold tabular-nums">
           {formatMonthLabel(month)}
         </span>
       </div>
@@ -81,7 +113,7 @@ function Stepper({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-11 md:size-9"
+        className={STEP_BUTTON}
         aria-label={`Mes siguiente: ${formatMonthLabel(next)}`}
         disabled={!canNext || pending}
         onClick={() => go({ mes: next })}
@@ -143,10 +175,16 @@ export function RangeFilter({
       {isMonth && range.month ? (
         <Stepper month={range.month} today={today} minMonth={minMonth} pending={pending} go={go} />
       ) : (
-        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-3">
-          <CalendarRange className="size-4 text-muted-foreground" aria-hidden />
-          <span className="text-sm font-medium tabular-nums">{range.label}</span>
-        </div>
+        // El rango elegido: las fechas son el botón que las cambia.
+        <RangePopover
+          active
+          label={range.label}
+          from={range.from}
+          to={range.to}
+          max={today}
+          disabled={pending}
+          onApply={(from, to) => go({ desde: from, hasta: to })}
+        />
       )}
       <Chip
         label="Este mes"
@@ -154,20 +192,23 @@ export function RangeFilter({
         disabled={pending}
         onClick={() => go({ mes: current })}
       />
-      <RangePopover
-        active={range.kind === 'range'}
-        from={range.from}
-        to={range.to}
-        max={today}
-        disabled={pending}
-        onApply={(from, to) => go({ desde: from, hasta: to })}
-      />
+      {isMonth ? (
+        <RangePopover
+          active={false}
+          from={range.from}
+          to={range.to}
+          max={today}
+          disabled={pending}
+          onApply={(from, to) => go({ desde: from, hasta: to })}
+        />
+      ) : null}
     </div>
   )
 }
 
 function RangePopover({
   active,
+  label,
   from,
   to,
   max,
@@ -175,6 +216,8 @@ function RangePopover({
   onApply,
 }: {
   active: boolean
+  /** Con un rango elegido: sus fechas, que van escritas en el botón. */
+  label?: string
   from: string
   to: string
   max: string
@@ -209,22 +252,22 @@ function RangePopover({
       }}
     >
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <Pill
+          size="touch"
+          icon={CalendarRange}
+          active={active}
           disabled={disabled}
-          aria-pressed={active}
-          className={cn(
-            'inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-            'disabled:opacity-60',
-            active
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-          )}
+          className={cn(CHIP_SIZE, label && 'tabular-nums')}
         >
-          <CalendarRange className="size-4" aria-hidden />
-          {active ? 'Rango elegido' : 'Rango'}
-        </button>
+          {label ? (
+            <>
+              <span className="sr-only">Rango elegido: </span>
+              {label}
+            </>
+          ) : (
+            'Rango'
+          )}
+        </Pill>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 space-y-3">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">Rango de fechas</p>
@@ -286,21 +329,8 @@ function Chip({
   onClick: () => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'disabled:opacity-60',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-      )}
-    >
+    <Pill size="touch" active={active} disabled={disabled} onClick={onClick} className={CHIP_SIZE}>
       {label}
-    </button>
+    </Pill>
   )
 }

@@ -15,7 +15,7 @@
  */
 
 import { formatAxisCents } from '@/lib/accounting/cash-daily'
-import { NBSP } from '@/lib/money'
+import { MINUS_SIGN, NBSP } from '@/lib/money'
 
 /** Un peso, en centavos: el eje nunca baja de pesos enteros. */
 const ONE_PESO = 100
@@ -148,6 +148,30 @@ export function percentShort(percent: number, hasValue = percent > 0): string {
  */
 export function compactCents(cents: number): string {
   return formatAxisCents(cents)
+}
+
+function trimmedDecimals(value: number, digits: number): string {
+  const text = value.toFixed(digits)
+  const trimmed = text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
+  return trimmed.replace('.', ',')
+}
+
+/**
+ * La misma plata corta con un escalón más de detalle: «$ 1,95 M», «$ 349,6 mil».
+ * Es para la etiqueta de UNA marca cuando la corta repetiría una marca del eje
+ * (la columna más alta decía «$ 2 M» pegada al «$ 2 M» del eje). En el eje va
+ * siempre `compactCents`.
+ */
+export function compactCentsFine(cents: number): string {
+  if (!Number.isFinite(cents)) return ''
+  const value = Math.abs(cents) / 100
+  let body: string
+  if (value >= 999_500) body = `${trimmedDecimals(value / 1_000_000, 2)}${NBSP}M`
+  else if (value >= 1_000) {
+    const thousands = value / 1_000
+    body = `${trimmedDecimals(thousands, thousands >= 100 ? 1 : 2)}${NBSP}mil`
+  } else body = String(Math.round(value))
+  return `${cents < 0 && body !== '0' ? MINUS_SIGN : ''}$${NBSP}${body}`
 }
 
 /**

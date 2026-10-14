@@ -1,30 +1,29 @@
-import { BlockError } from '@/components/administracion/cajas-ventas/block-error'
 import { HowToBanco } from '@/components/administracion/guias/how-to'
 import { BankImport } from '@/components/administracion/importar/bank-import'
 import {
   BankRulesCard,
   type BankRuleView,
 } from '@/components/administracion/importar/bank-rules-card'
-import { BackLink } from '@/components/administracion/importar/page-bits'
+import { AdmHeader, AdmPage, PanelError } from '@/components/administracion/kit'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingContextError,
   loadPostingCatalog,
   type PostingCatalog,
 } from '@/lib/accounting/context'
 import { settleQuery } from '@/lib/accounting/queries/shared'
+import { todayInCordoba } from '@/lib/dates'
 import {
   type ImportRuleRow,
   listImportBatches,
   listImportLayouts,
   listImportRules,
 } from '@/lib/imports/server/queries'
+import { wantedRange } from '@/lib/imports/ui/inbox'
 import { importHref, importSourceHref } from '@/lib/imports/ui/labels'
 import { requireImportAccess } from '../_lib/page-access'
 
-export const metadata = { title: 'Importar el banco · Administración' }
+export const metadata = { title: 'Subir los movimientos del banco · Administración' }
 
 async function catalogOf(
   tenantId: string,
@@ -62,9 +61,10 @@ function ruleView(r: ImportRuleRow): BankRuleView {
 }
 
 /**
- * Paso 1 del banco (diseño §4.3): de qué cuenta es el extracto, el archivo (con
- * «Contanos qué es cada columna» si el formato es nuevo) y las reglas del bar
- * para reconocer movimientos. La contadora ve un aviso con el link al historial.
+ * «Subir los movimientos del banco»: los tres pasos (bajalo del home banking →
+ * subilo acá, eligiendo de qué cuenta es y, si el banco es nuevo, contando qué
+ * es cada columna → revisá y cargá). Al pie, plegado, lo que el bar ya le
+ * enseñó a reconocer. La contadora ve un aviso con la vuelta a Importar.
  */
 export default async function ImportarBancoPage({
   params,
@@ -78,26 +78,23 @@ export default async function ImportarBancoPage({
   )
   const tenantId = access.tenant.id
   const header = (
-    <>
-      <BackLink href={importHref(tenantSlug)} label="Volver a Importar" />
-      <PageHeader
-        eyebrow="Administración"
-        title="Banco"
-        description="Subí los movimientos que exportás del home banking: reconocemos comisiones, impuestos, transferencias y pagos. Antes de cargar nada, revisás."
-      />
-    </>
+    <AdmHeader
+      back={{ href: importHref(tenantSlug), label: 'Importar' }}
+      title="Subir los movimientos del banco"
+      description="Comisiones, impuestos, transferencias y pagos, sin tipearlos. Y de paso ves si tu saldo coincide. Una vez por semana."
+    />
   )
 
   if (!canWrite) {
     return (
-      <PageShell width="comfortable">
+      <AdmPage width="comfortable">
         {header}
         <ReadOnlyNotice
-          description="Acá se sube el extracto del banco. Con Contabilidad ves lo que se importó en el historial de Importar."
+          description="Acá se suben los movimientos del banco. Con Contabilidad ves lo que se subió en Importar."
           href={importHref(tenantSlug)}
           linkLabel="Ir a Importar"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
@@ -105,20 +102,22 @@ export default async function ImportarBancoPage({
     catalogOf(tenantId),
     settleQuery(listImportLayouts(tenantId)),
     settleQuery(listImportRules(tenantId, 'bank_statement')),
-    settleQuery(listImportBatches(tenantId, { source: 'bank_statement', limit: 1 })),
+    settleQuery(listImportBatches(tenantId, { source: 'bank_statement', limit: 100 })),
   ])
   const ajustesHref = `/${tenantSlug}/administracion/ajustes?tab=cajas`
-  const firstTime = !previous.ok || previous.data.length === 0
+  const batches = previous.ok ? previous.data : []
+  const firstTime = batches.filter((b) => b.status !== 'cancelled').length === 0
 
   if (!catalog.ok) {
     return (
-      <PageShell width="comfortable">
+      <AdmPage width="comfortable">
         {header}
-        <BlockError message={catalog.message} />
-      </PageShell>
+        <PanelError title="Tus cuentas" message={catalog.message} />
+      </AdmPage>
     )
   }
 
+  const booksStartDate = catalog.data.settings.booksStartDate
   const banks = catalog.data.treasuries
     .filter((t) => t.active && t.kind === 'bank')
     .map((t) => ({
@@ -158,37 +157,29 @@ export default async function ImportarBancoPage({
   }
 
   return (
-    <PageShell width="comfortable">
+    <AdmPage width="comfortable">
       {header}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <div className="min-w-0 space-y-5">
-          {layouts.ok ? (
-            <BankImport
-              slug={tenantSlug}
-              banks={banks}
-              layouts={layouts.data.map((l) => ({
-                id: l.id,
-                signature: l.signature,
-                mapping: l.mapping,
-              }))}
-              ajustesHref={ajustesHref}
-            />
-          ) : (
-            <BlockError message={layouts.message} />
-          )}
-          {rules.ok ? (
-            <BankRulesCard slug={tenantSlug} rules={rules.data.map(ruleView)} options={options} />
-          ) : null}
-        </div>
-        <aside className="space-y-4 lg:sticky lg:top-20">
-          <HowToBanco defaultOpen={firstTime} />
-          <p className="rounded-xl border border-border/70 bg-card/60 p-4 text-sm text-muted-foreground text-pretty">
-            <span className="font-medium text-foreground">¿Cada cuánto?</span> Una vez por semana:
-            muchos bancos guardan solo los últimos 3 meses. Si se pisan las fechas no pasa nada: lo
-            que ya importaste no se repite.
-          </p>
-        </aside>
-      </div>
-    </PageShell>
+      {layouts.ok ? (
+        <BankImport
+          slug={tenantSlug}
+          banks={banks}
+          layouts={layouts.data.map((l) => ({
+            id: l.id,
+            signature: l.signature,
+            mapping: l.mapping,
+          }))}
+          ajustesHref={ajustesHref}
+          howTo={<HowToBanco bare />}
+          wanted={wantedRange('bank_statement', batches, todayInCordoba(), booksStartDate)}
+          firstTime={firstTime}
+          booksStartDate={booksStartDate}
+        />
+      ) : (
+        <PanelError title="Subir los movimientos" message={layouts.message} />
+      )}
+      {rules.ok ? (
+        <BankRulesCard slug={tenantSlug} rules={rules.data.map(ruleView)} options={options} />
+      ) : null}
+    </AdmPage>
   )
 }

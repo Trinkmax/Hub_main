@@ -33,35 +33,40 @@ function HeroBone({ className }: { className?: string }) {
 export function HeroSkeleton({ tone = 'bosque' }: { tone?: 'bosque' | 'crema' }) {
   if (tone === 'crema') {
     return (
-      <PanelBox className="grid gap-x-8 gap-y-5 p-5 sm:p-6 lg:grid-cols-12">
-        <div className="space-y-4 lg:col-span-7">
-          <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-12 w-64 max-w-full sm:h-14" />
-          <Skeleton className="h-4 w-80 max-w-full" />
-          <Skeleton className="h-3.5 w-full rounded-full" />
-          <div className="flex gap-2">
-            <Skeleton className="h-9 w-32 rounded-full" />
-            <Skeleton className="h-9 w-40 rounded-full" />
+      <div className="@container">
+        <PanelBox className="grid gap-x-8 gap-y-5 p-5 sm:p-6 @min-[52rem]:grid-cols-12">
+          <div className="space-y-4 @min-[52rem]:col-span-7">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-12 w-64 max-w-full sm:h-14" />
+            <Skeleton className="h-4 w-80 max-w-full" />
+            <Skeleton className="h-3.5 w-full rounded-full" />
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-32 rounded-full" />
+              <Skeleton className="h-9 w-40 rounded-full" />
+            </div>
           </div>
-        </div>
-        <Skeleton className="hidden h-44 rounded-2xl lg:col-span-5 lg:block" />
-      </PanelBox>
+          <Skeleton className="hidden h-44 rounded-2xl @min-[52rem]:col-span-5 @min-[52rem]:block" />
+        </PanelBox>
+      </div>
     )
   }
+  // El mismo corte que el héroe de verdad: dos columnas según su propio ancho.
   return (
-    <div className="adm-hero grid gap-x-8 gap-y-5 rounded-3xl p-5 sm:p-7 lg:grid-cols-12">
-      <span className="sr-only">Cargando el resumen…</span>
-      <div aria-hidden className="space-y-4 lg:col-span-7">
-        <HeroBone className="h-3 w-40" />
-        <HeroBone className="h-12 w-64 max-w-full sm:h-14" />
-        <HeroBone className="h-4 w-80 max-w-full" />
-        <HeroBone className="h-3.5 w-full rounded-full" />
-        <div className="flex gap-2">
-          <HeroBone className="h-9 w-32 rounded-full" />
-          <HeroBone className="h-9 w-40 rounded-full" />
+    <div className="@container">
+      <div className="adm-hero grid gap-x-8 gap-y-5 rounded-3xl p-5 sm:p-7 @min-[52rem]:grid-cols-12">
+        <span className="sr-only">Cargando el resumen…</span>
+        <div aria-hidden className="space-y-4 @min-[52rem]:col-span-7">
+          <HeroBone className="h-3 w-40" />
+          <HeroBone className="h-12 w-64 max-w-full sm:h-14" />
+          <HeroBone className="h-4 w-80 max-w-full" />
+          <HeroBone className="h-3.5 w-full rounded-full" />
+          <div className="flex gap-2">
+            <HeroBone className="h-9 w-32 rounded-full" />
+            <HeroBone className="h-9 w-40 rounded-full" />
+          </div>
         </div>
+        <HeroBone className="hidden h-44 rounded-2xl @min-[52rem]:col-span-5 @min-[52rem]:block" />
       </div>
-      <HeroBone className="hidden h-44 rounded-2xl lg:col-span-5 lg:block" />
     </div>
   )
 }
@@ -209,13 +214,15 @@ export function ResumenSkeleton() {
       </div>
       <HeroSkeleton />
       <TodaySkeleton />
-      <div className="grid gap-6 lg:grid-cols-12">
-        <MonthSkeleton className="lg:col-span-7" />
-        <PayablesSkeleton className="lg:col-span-5" />
-      </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <InOutSkeleton />
-        <SpendingSkeleton />
+      <div className="@container space-y-6">
+        <div className="grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start">
+          <MonthSkeleton className="@min-[58rem]:col-span-7" />
+          <PayablesSkeleton className="@min-[58rem]:col-span-5" />
+        </div>
+        <div className="grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start">
+          <InOutSkeleton className="@min-[58rem]:col-span-6" />
+          <SpendingSkeleton className="@min-[58rem]:col-span-6" />
+        </div>
       </div>
     </>
   )

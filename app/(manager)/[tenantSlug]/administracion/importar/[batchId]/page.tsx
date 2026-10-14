@@ -1,41 +1,50 @@
-import { CalendarRange, CheckCircle2, ClipboardList, Repeat2 } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Callout } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/form-bits'
 import { ListPagination } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/list-pagination'
-import { BlockError } from '@/components/administracion/cajas-ventas/block-error'
-import { BackLink } from '@/components/administracion/importar/page-bits'
-import {
-  CancelBatchButton,
-  RebuildButton,
-} from '@/components/administracion/importar/review/batch-actions'
+import { BalanceCheck } from '@/components/administracion/importar/review/balance-check'
+import { RebuildButton } from '@/components/administracion/importar/review/batch-actions'
+import { MoreOptions } from '@/components/administracion/importar/review/more-options'
+import { MpInsights } from '@/components/administracion/importar/review/mp-insights'
 import {
   type LookupView,
   NewSuppliers,
 } from '@/components/administracion/importar/review/new-suppliers'
 import { PostBar } from '@/components/administracion/importar/review/post-bar'
-import { ProposalList } from '@/components/administracion/importar/review/proposal-list'
+import {
+  ProposalList,
+  QuestionDeck,
+  TeachHost,
+} from '@/components/administracion/importar/review/proposal-list'
+import {
+  ANSWER_BUTTON,
+  QuestionAnswers,
+  QuestionCard,
+} from '@/components/administracion/importar/review/question-card'
 import {
   type ReviewOptions,
   ReviewProvider,
 } from '@/components/administracion/importar/review/review-context'
+import { ReviewHero, ReviewRoute } from '@/components/administracion/importar/review/review-hero'
 import type { ProposalView } from '@/components/administracion/importar/review/types'
-import { ActionButton } from '@/components/administracion/quick-actions'
+import {
+  AdmHeader,
+  AdmPage,
+  EmptyTeach,
+  PanelError,
+  PillLink,
+} from '@/components/administracion/kit'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { SectionNav } from '@/components/administracion/section-nav'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { StatCard } from '@/components/ui/stat-card'
+import { Button } from '@/components/ui/button'
 import {
   AccountingContextError,
   loadPostingCatalog,
   type PostingCatalog,
 } from '@/lib/accounting/context'
 import { isUuid, settleQuery } from '@/lib/accounting/queries/shared'
-import { listTreasuryBalances } from '@/lib/accounting/queries/treasury'
+import { getTreasuryAccount, listTreasuryBalances } from '@/lib/accounting/queries/treasury'
 import { getArcaLookupStatus } from '@/lib/arca/queries'
-import { formatDateTime, formatIsoDay, formatMonthYear, formatRange } from '@/lib/dates'
+import { formatDateTime } from '@/lib/dates'
 import {
   getImportReview,
   getMpImportSettings,
@@ -44,13 +53,12 @@ import {
 } from '@/lib/imports/server/queries'
 import {
   filterCounts,
-  NEED_SHORT_TEXT,
   needChips,
   pageFromQuery,
   REVIEW_FILTER_COPY,
-  REVIEW_FILTERS,
   resolveReviewFilter,
 } from '@/lib/imports/ui/filters'
+import { displayBatchStatus } from '@/lib/imports/ui/inbox'
 import {
   IMPORT_SOURCE_COPY,
   importBatchHref,
@@ -58,15 +66,27 @@ import {
   importSourceHref,
   isUiImportSource,
 } from '@/lib/imports/ui/labels'
+import { MP_INSIGHTS_LIMIT, mpCut, mpDays } from '@/lib/imports/ui/mp-insights'
 import { count, formatCount } from '@/lib/imports/ui/progress'
-import { formatCents, formatCentsShort } from '@/lib/money'
-import { cn } from '@/lib/utils'
+import {
+  needPillLabel,
+  otherQuestions,
+  type ReviewStage,
+  reviewHero,
+  reviewTally,
+  reviewTitle,
+  routeSteps,
+} from '@/lib/imports/ui/review-copy'
+import { formatCents } from '@/lib/money'
 import { firstParam, requireImportAccess } from '../_lib/page-access'
 
-export const metadata = { title: 'Revisar la importación · Administración' }
+export const metadata = { title: 'Revisar un archivo · Administración' }
 
-/** Propuestas por página. */
+/** Hojas por página. */
 const PAGE = 50
+/** La medida de las píldoras de filtro: 44 px con el dedo, 36 con mouse. */
+const FILTER_PILL =
+  'h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
 
 async function catalogOf(tenantId: string): Promise<PostingCatalog | null> {
   try {
@@ -109,6 +129,8 @@ function optionsOf(catalog: PostingCatalog): ReviewOptions {
         taxId: p.taxId,
         active: p.active,
         kind: p.kind,
+        // Para guardarle el CUIT a uno que ya estaba («Sí: es {proveedor}»).
+        updatedAt: p.updatedAt,
       })),
     accounts: catalog.accounts.map((a) => ({
       id: a.id,
@@ -119,6 +141,8 @@ function optionsOf(catalog: PostingCatalog): ReviewOptions {
       parentId: a.parentId,
       purchase: a.purchaseSelectable && a.postable && a.active,
       treasury: a.isTreasury,
+      type: a.type,
+      systemKey: a.systemKey,
     })),
     treasuries: catalog.treasuries
       .filter((t) => t.active)
@@ -134,7 +158,7 @@ function optionsOf(catalog: PostingCatalog): ReviewOptions {
   }
 }
 
-/** Avisos del archivo que vale la pena mostrar arriba (saldos que no cierran). */
+/** Avisos del archivo que vale la pena mostrar junto al saldo (un reporte que no cierra solo). */
 function fileWarnings(meta: Record<string, unknown>): string[] {
   const checks =
     typeof meta.checks === 'object' && meta.checks !== null
@@ -150,17 +174,22 @@ function fileWarnings(meta: Record<string, unknown>): string[] {
   if (checks.balance === 'mismatch') {
     const rows = typeof checks.mismatchRows === 'number' ? checks.mismatchRows : 0
     out.push(
-      `En el extracto, el saldo no cierra en ${count(rows, 'fila', 'filas')}: revisá esas fechas en el home banking.`,
+      `En el archivo del banco, el saldo no cierra en ${count(rows, 'renglón', 'renglones')}: revisá esas fechas en el home banking.`,
     )
   }
   return out
 }
 
 /**
- * Revisar y cargar una importación (diseño §4.0–§4.3, los tres orígenes): el
- * resumen arriba (listos, para revisar, ya cargados), los proveedores nuevos,
- * la lista con lo que falta y su arreglo en el lugar, y la barra «Cargar N
- * comprobantes» que carga de a 15. La contadora ve todo sin botones.
+ * Revisar un archivo (los tres orígenes): arriba, la pila dibujada con el
+ * número que cambia con la tarea y las vistas; la ruta de lo que falta; el
+ * saldo contra el banco o Mercado Pago; «¿Los tenés de antes?»; la pregunta en
+ * la mano con su papel al lado (o la lista de la vista elegida); y abajo, la
+ * barra para cargar y «Más opciones».
+ *
+ * Las URLs son las de siempre (`?ver=`, `?falta=`, `?pagina=`,
+ * `#proveedores-nuevos`) y cada respuesta manda lo mismo que antes. La
+ * contadora ve todo sin ningún botón.
  */
 export default async function ImportBatchPage({
   params,
@@ -177,16 +206,15 @@ export default async function ImportBatchPage({
   )
   if (!isUuid(batchId)) notFound()
   const tenantId = access.tenant.id
-  const back = <BackLink href={importHref(tenantSlug)} label="Volver a Importar" />
+  const back = { href: importHref(tenantSlug), label: 'Importar' }
 
   const review = await settleQuery(getImportReview(tenantId, batchId))
   if (!review.ok) {
     return (
-      <PageShell>
-        {back}
-        <PageHeader eyebrow="Administración" title="Revisar la importación" />
-        <BlockError message={review.message} />
-      </PageShell>
+      <AdmPage>
+        <AdmHeader back={back} title="Revisar un archivo" />
+        <PanelError title="Este archivo" message={review.message} />
+      </AdmPage>
     )
   }
   if (review.data === null) notFound()
@@ -195,15 +223,12 @@ export default async function ImportBatchPage({
   const source = isUiImportSource(batch.source) ? batch.source : null
   if (!source) {
     return (
-      <PageShell>
-        {back}
-        <PageHeader eyebrow="Administración" title="Revisar la importación" />
-        <EmptyState
-          icon={ClipboardList}
-          title="Este tipo de archivo todavía no se revisa acá"
-          description="Por ahora se importan las compras de ARCA (Recibidos), Mercado Pago y el banco."
-        />
-      </PageShell>
+      <AdmPage>
+        <AdmHeader back={back} title="Revisar un archivo" />
+        <EmptyTeach icon={ClipboardList} title="Este tipo de archivo todavía no se revisa acá">
+          Por ahora se suben las compras de ARCA (Recibidos), Mercado Pago y el banco.
+        </EmptyTeach>
+      </AdmPage>
     )
   }
   const copy = IMPORT_SOURCE_COPY[source]
@@ -217,20 +242,19 @@ export default async function ImportBatchPage({
   const expected = resolved.need ? (r.needs[resolved.need] ?? 0) : counts[resolved.filter]
   const page = pageFromQuery(firstParam(sp.pagina), expected, PAGE)
 
-  // Control de saldo al terminar (diseño §4.2.2): la cuenta en los libros al final del período
-  // contra el saldo final del archivo (Mercado Pago y banco), cuando ya no queda nada por cargar.
-  const proposalsCount = counts.todos
+  // El saldo del archivo contra el del sistema: se compara recién cuando no queda nada por
+  // contestar ni cargar (la misma condición de siempre).
+  const proposals = counts.todos
   const reportFinal =
     typeof batch.meta.finalBalanceCents === 'number' ? batch.meta.finalBalanceCents : null
+  const hasReportBalance =
+    source !== 'arca_recibidos' && reportFinal !== null && batch.periodTo !== null && proposals > 0
   const settled =
-    proposalsCount > 0 &&
-    counts.listas === 0 &&
-    counts.revisar === 0 &&
-    (r.byStatus.posted ?? 0) > 0
-  const wantsBalance =
-    source !== 'arca_recibidos' && reportFinal !== null && batch.periodTo !== null && settled
+    proposals > 0 && counts.listas === 0 && counts.revisar === 0 && (r.byStatus.posted ?? 0) > 0
+  const wantsBalance = hasReportBalance && settled
+  const wantsInsights = source === 'mp_release' && proposals > 0 && proposals <= MP_INSIGHTS_LIMIT
 
-  const [list, catalog, lookup, balances, mpSettings] = await Promise.all([
+  const [list, catalog, lookup, balances, mpSettings, mpAll, bankAccount] = await Promise.all([
     settleQuery(
       listImportProposals(tenantId, batchId, {
         statuses: resolved.statuses,
@@ -249,6 +273,13 @@ export default async function ImportBatchPage({
     wantsBalance && source === 'mp_release'
       ? settleQuery(getMpImportSettings(tenantId))
       : Promise.resolve(null),
+    wantsInsights
+      ? settleQuery(listImportProposals(tenantId, batchId, { limit: MP_INSIGHTS_LIMIT }))
+      : Promise.resolve(null),
+    // El nombre de la cuenta para el título, cuando no se carga el catálogo entero.
+    source === 'bank_statement' && batch.treasuryAccountId && !editable
+      ? settleQuery(getTreasuryAccount(tenantId, batch.treasuryAccountId))
+      : Promise.resolve(null),
   ])
   const options = catalog ? optionsOf(catalog) : null
   const lookupView: LookupView = lookup?.ok
@@ -266,17 +297,45 @@ export default async function ImportBatchPage({
     balances?.ok && controlTreasuryId && reportFinal !== null
       ? (balances.data.find((t) => t.treasuryId === controlTreasuryId) ?? null)
       : null
-  const treasuryName = batch.treasuryAccountId
-    ? (catalog?.treasuries.find((t) => t.id === batch.treasuryAccountId)?.name ??
-      (source === 'bank_statement' ? (control?.name ?? null) : null))
-    : null
+  const treasuryName =
+    source === 'bank_statement' && batch.treasuryAccountId
+      ? (catalog?.treasuries.find((t) => t.id === batch.treasuryAccountId)?.name ??
+        (bankAccount?.ok ? (bankAccount.data?.name ?? null) : null) ??
+        control?.name ??
+        null)
+      : null
 
-  const readyCount = (r.byStatus.ready ?? 0) + (r.byStatus.posting ?? 0)
-  const proposals = proposalsCount
+  const shown = displayBatchStatus(batch)
+  const stage: ReviewStage =
+    shown.key === 'cancelled'
+      ? 'cancelled'
+      : shown.key === 'staging'
+        ? 'staging'
+        : shown.key === 'loaded'
+          ? 'loaded'
+          : shown.key === 'nothing'
+            ? 'nothing'
+            : 'pending'
+  const title = reviewTitle({
+    source,
+    stage,
+    periodFrom: batch.periodFrom,
+    periodTo: batch.periodTo,
+    treasuryName,
+  })
+  const tally = reviewTally(r.byStatus, r.alreadyLoaded)
+  const duplicates = batch.counts?.duplicate ?? 0
+  const hero = reviewHero({
+    source,
+    tally,
+    readyCents: r.readyCents,
+    duplicates,
+    cancelled: batch.status === 'cancelled',
+  })
+  const readyCount = tally.ready
   const unit = copy.unit
   const description = [
     batch.fileName,
-    batch.periodFrom && batch.periodTo ? formatRange(batch.periodFrom, batch.periodTo) : null,
     `subido${batch.createdByName ? ` por ${batch.createdByName}` : ''} el ${formatDateTime(batch.createdAt)}`,
   ]
     .filter(Boolean)
@@ -287,7 +346,20 @@ export default async function ImportBatchPage({
   const listTotal = list.ok ? list.data.total : 0
   const totalPages = Math.max(1, Math.ceil(listTotal / PAGE))
   const warnings = fileWarnings(batch.meta)
-  const duplicates = batch.counts?.duplicate ?? 0
+  const who = source === 'mp_release' ? 'Mercado Pago' : 'el banco'
+  const newSuppliers = source === 'arca_recibidos' ? r.newSuppliers.length : 0
+  const route = editable
+    ? routeSteps({
+        newSuppliers,
+        questions: otherQuestions(counts.revisar, r.needs),
+        ready: readyCount,
+        hrefFor,
+      })
+    : []
+  const rows = list.ok ? list.data.rows.map(viewOf) : []
+  const viewLabel = resolved.need
+    ? `${REVIEW_FILTER_COPY.revisar.label}: ${needPillLabel(resolved.need)}`
+    : REVIEW_FILTER_COPY[resolved.filter].label
 
   return (
     <ReviewProvider
@@ -297,201 +369,131 @@ export default async function ImportBatchPage({
       editable={editable}
       canWrite={canWrite}
       options={options}
+      booksStartDate={catalog?.settings.booksStartDate ?? null}
     >
-      <PageShell>
-        {back}
-        <PageHeader
-          eyebrow="Administración"
-          title={
-            <>
-              {/* «Banco · Banco Nación» repetía: si la cuenta ya lo dice, va sola. */}
-              {treasuryName
-                ? treasuryName.toLowerCase().startsWith(copy.title.toLowerCase())
-                  ? treasuryName
-                  : `${copy.title} · ${treasuryName}`
-                : copy.title}{' '}
-              <ReadOnlyBadge />
-            </>
-          }
-          description={description}
-          actions={
-            editable && proposals > 0 ? (
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                <RebuildButton slug={tenantSlug} batchId={batchId} />
-                <CancelBatchButton
-                  slug={tenantSlug}
-                  batchId={batchId}
-                  posted={r.byStatus.posted ?? 0}
-                />
-              </div>
-            ) : null
-          }
-        />
+      <AdmPage>
+        <AdmHeader back={back} title={title} description={description} badge={<ReadOnlyBadge />} />
 
         {batch.status === 'cancelled' ? (
-          <Callout tone="info" title="Esta importación se canceló">
-            {batch.cancelledAt ? `El ${formatDateTime(batch.cancelledAt)}. ` : ''}
-            {batch.cancelReason ? `Motivo: ${batch.cancelReason}. ` : ''}Lo que no se había cargado
-            quedó afuera; lo cargado sigue en los libros.
-          </Callout>
-        ) : null}
-        {batch.status === 'done' ? (
-          <div className="flex items-start gap-3 rounded-xl border border-success/30 bg-success/10 p-4 text-sm">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-            <p>Listo: se cargó todo lo que había para cargar de este archivo.</p>
-          </div>
+          <QuestionCard
+            tone="info"
+            headingLevel="h2"
+            question={`Este archivo se descartó${batch.cancelledAt ? ` el ${formatDateTime(batch.cancelledAt)}` : ''}.`}
+            context={`${batch.cancelReason ? `Motivo: ${batch.cancelReason}. ` : ''}Lo que ya se había cargado sigue registrado.`}
+          />
         ) : null}
         {batch.status === 'staging' && proposals === 0 ? (
           (batch.counts?.items ?? 0) > 0 ? (
-            <Callout
-              tone="warning"
-              title="Esta importación no se terminó de armar"
-              action={
-                editable ? (
+            <QuestionCard
+              tone="info"
+              headingLevel="h2"
+              question="Este archivo no se terminó de armar."
+              context={
+                editable
+                  ? 'Los renglones ya están guardados: falta armar los comprobantes.'
+                  : 'Falta que alguien con acceso de carga lo arme.'
+              }
+            >
+              {editable ? (
+                <QuestionAnswers>
                   <RebuildButton
                     slug={tenantSlug}
                     batchId={batchId}
                     label="Armar ahora"
                     variant="default"
                   />
-                ) : null
-              }
-            >
-              {editable
-                ? 'Las filas ya están guardadas: falta armar los comprobantes.'
-                : 'Las filas ya están guardadas: falta que alguien con acceso de carga arme los comprobantes.'}
-            </Callout>
+                </QuestionAnswers>
+              ) : null}
+            </QuestionCard>
           ) : (
-            <Callout
-              tone="warning"
-              title="Esta importación no se terminó de subir"
-              action={
-                editable ? (
-                  <Link
-                    href={importSourceHref(tenantSlug, source)}
-                    className="inline-flex min-h-11 items-center font-medium underline underline-offset-2"
-                  >
-                    Subir el archivo de nuevo
-                  </Link>
-                ) : null
-              }
+            <QuestionCard
+              tone="info"
+              headingLevel="h2"
+              question="Este archivo no se terminó de subir."
+              context="Volvé a subir el mismo: sigo donde quedó, sin repetir nada."
             >
-              Volvé a subir el mismo archivo: seguimos desde donde quedó, sin repetir nada.
-            </Callout>
+              {editable ? (
+                <QuestionAnswers>
+                  <Button asChild className={ANSWER_BUTTON}>
+                    <Link href={importSourceHref(tenantSlug, source)}>Subirlo de nuevo</Link>
+                  </Button>
+                </QuestionAnswers>
+              ) : null}
+            </QuestionCard>
           )
         ) : null}
 
         {proposals === 0 && batch.status !== 'staging' ? (
-          <EmptyState
-            icon={ClipboardList}
-            title="No hay nada para cargar de este archivo"
-            description={
-              (batch.counts?.duplicate ?? 0) > 0
-                ? 'Todas sus filas ya estaban en otra importación: no se repiten.'
-                : 'El archivo no trajo movimientos para cargar.'
-            }
-          />
+          <EmptyTeach icon={ClipboardList} title="No hay nada para cargar de este archivo">
+            {duplicates > 0
+              ? 'Todos sus renglones ya habían entrado con otro archivo: no se repiten.'
+              : 'El archivo no trajo movimientos.'}
+          </EmptyTeach>
         ) : null}
 
         {proposals > 0 ? (
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              icon={CheckCircle2}
-              iconClassName="text-success"
-              label="Listos para cargar"
-              value={formatCount(readyCount)}
-              hint={formatCentsShort(r.readyCents)}
-            />
-            <StatCard
-              icon={ClipboardList}
-              iconClassName="text-warning"
-              label="Para revisar"
-              value={formatCount(counts.revisar)}
-              hint={counts.revisar > 0 ? formatCentsShort(r.pendingCents) : 'Nada pendiente'}
-            />
-            <StatCard
-              icon={Repeat2}
-              label="Ya estaban cargados"
-              value={formatCount(r.alreadyLoaded)}
-              hint="No se cargan dos veces"
-            />
-            <StatCard
-              icon={CalendarRange}
-              iconClassName="text-primary"
-              label="Cargados"
-              value={formatCount(r.byStatus.posted ?? 0)}
-              hint={`de ${count(proposals, unit[0], unit[1])}`}
-            />
-          </section>
+          <ReviewHero
+            hero={hero}
+            tally={tally}
+            unit={unit[1]}
+            active={resolved.filter}
+            counts={counts}
+            hrefFor={hrefFor}
+          />
         ) : null}
+
+        <ReviewRoute steps={route} />
 
         {editable && !options ? (
-          <Callout tone="error" title="No pudimos cargar tus proveedores y cuentas.">
-            Sin eso no se puede completar lo que falta. Recargá la página en un rato; si sigue,
-            avisanos.
-          </Callout>
-        ) : null}
-        {control && reportFinal !== null && batch.periodTo ? (
-          control.balanceCents === reportFinal ? (
-            <div className="flex items-start gap-3 rounded-xl border border-success/30 bg-success/10 p-4 text-sm">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-              <p className="text-pretty">
-                {control.name} cierra con {source === 'mp_release' ? 'el reporte' : 'el extracto'}:{' '}
-                {formatCents(control.balanceCents)} al {formatIsoDay(batch.periodTo)}.
-              </p>
-            </div>
-          ) : (
-            <Callout
-              tone="warning"
-              title={`${control.name} no cierra con ${source === 'mp_release' ? 'el reporte' : 'el extracto'}`}
-              action={
-                <ActionButton
-                  action="ajustar"
-                  params={{ caja: control.treasuryId }}
-                  variant="outline"
-                  className="h-11 w-full sm:w-auto md:h-9"
-                >
-                  Ajustar saldo
-                </ActionButton>
-              }
-            >
-              Al {formatIsoDay(batch.periodTo)}, en los libros queda en{' '}
-              {formatCents(control.balanceCents)} y{' '}
-              {source === 'mp_release' ? 'Mercado Pago' : 'el banco'} dice{' '}
-              {formatCents(reportFinal)}. La diferencia (
-              {formatCents(Math.abs(control.balanceCents - reportFinal))}) suele ser algo cargado
-              dos veces o un movimiento que falta.
-            </Callout>
-          )
-        ) : null}
-        {warnings.map((w) => (
-          <Callout key={w} tone="warning">
-            {w}
-          </Callout>
-        ))}
-        {duplicates > 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {count(duplicates, 'fila ya estaba', 'filas ya estaban')} en otra importación: no se
-            repiten.
-          </p>
-        ) : null}
-        {r.months.length > 0 ? (
-          <p className="text-sm text-muted-foreground text-pretty">
-            Lo listo va a los libros de{' '}
-            {r.months
-              .map(
-                (m) =>
-                  `${formatMonthYear(m.month)} (${m.count} · ${formatCentsShort(m.totalCents)})`,
-              )
-              .join(', ')}
-            .
-            {r.movedToOpenMonth > 0
-              ? ` ${count(r.movedToOpenMonth, 'es', 'son')} de un mes ya cerrado: se cargan el primer día abierto.`
-              : ''}
-          </p>
+          <PanelError
+            title="Tus proveedores y categorías"
+            message="No pude leer tus proveedores y categorías. Sin eso no se puede contestar. Recargá en un rato."
+          />
         ) : null}
 
-        {source === 'arca_recibidos' && r.newSuppliers.length > 0 ? (
+        {hasReportBalance && reportFinal !== null && batch.periodTo ? (
+          settled && !control ? null : (
+            <BalanceCheck
+              who={who}
+              periodTo={batch.periodTo}
+              reportCents={reportFinal}
+              book={
+                control
+                  ? {
+                      treasuryId: control.treasuryId,
+                      name: control.name,
+                      balanceCents: control.balanceCents,
+                    }
+                  : null
+              }
+              movementsHref={
+                control ? `/${tenantSlug}/administracion/cajas/${control.treasuryId}` : null
+              }
+              warnings={warnings}
+            />
+          )
+        ) : warnings.length > 0 ? (
+          <div className="space-y-1 rounded-xl bg-warning/10 px-4 py-3">
+            {warnings.map((w) => (
+              <p key={w} className="text-sm text-warning-text text-pretty">
+                {w}
+              </p>
+            ))}
+          </div>
+        ) : null}
+
+        {mpAll?.ok ? (
+          <MpInsights
+            days={mpDays(mpAll.data.rows)}
+            cut={mpCut(mpAll.data.rows)}
+            slug={tenantSlug}
+            periodFrom={batch.periodFrom}
+            periodTo={batch.periodTo}
+            open={counts.revisar === 0}
+          />
+        ) : null}
+
+        {newSuppliers > 0 ? (
           <NewSuppliers
             rows={r.newSuppliers}
             lookup={lookupView}
@@ -500,88 +502,76 @@ export default async function ImportBatchPage({
         ) : null}
 
         {proposals > 0 ? (
-          <div className="space-y-4">
-            <SectionNav
-              label="Filtrar los comprobantes"
-              active={resolved.filter}
-              items={REVIEW_FILTERS.map((f) => ({
-                value: f,
-                label: REVIEW_FILTER_COPY[f].label,
-                shortLabel: REVIEW_FILTER_COPY[f].shortLabel,
-                href: hrefFor({ ver: f }),
-                count: counts[f],
-              }))}
-            />
+          <section aria-label={viewLabel} className="space-y-4">
             {chips.length > 1 || resolved.need ? (
-              <nav aria-label="Qué falta" className="flex flex-wrap gap-2">
-                <Link
+              // En el celular la fila se desliza (con tres o cuatro preguntas ocupaba media pantalla).
+              <nav
+                aria-label="Qué te pregunto"
+                className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden"
+              >
+                <PillLink
                   href={hrefFor({ ver: 'revisar' })}
                   scroll={false}
-                  aria-current={resolved.need === null ? 'true' : undefined}
-                  className={cn(
-                    'inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium md:h-9',
-                    resolved.need === null
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:bg-secondary',
-                  )}
+                  active={resolved.need === null}
+                  count={counts.revisar}
+                  className={FILTER_PILL}
                 >
-                  Todo lo que falta
-                </Link>
+                  Todas las preguntas
+                </PillLink>
                 {chips.map((c) => (
-                  <Link
+                  <PillLink
                     key={c.key}
                     href={hrefFor({ ver: 'revisar', falta: c.key })}
                     scroll={false}
-                    aria-current={resolved.need === c.key ? 'true' : undefined}
-                    className={cn(
-                      'inline-flex h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium md:h-9',
-                      resolved.need === c.key
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:bg-secondary',
-                    )}
+                    active={resolved.need === c.key}
+                    count={c.count}
+                    className={FILTER_PILL}
                   >
-                    {c.label}
-                    <span className="tabular-nums opacity-80">{c.count}</span>
-                  </Link>
+                    {needPillLabel(c.key)}
+                  </PillLink>
                 ))}
               </nav>
             ) : null}
 
             {!list.ok ? (
-              <BlockError message={list.message} />
-            ) : list.data.rows.length === 0 ? (
-              <EmptyState
-                icon={ClipboardList}
+              <PanelError title={viewLabel} message={list.message} />
+            ) : rows.length === 0 ? (
+              <EmptyTeach
                 title={
                   resolved.filter === 'revisar'
-                    ? 'No queda nada para revisar'
+                    ? 'No queda ninguna pregunta'
                     : resolved.filter === 'listas'
                       ? 'No hay nada listo para cargar'
                       : 'No hay nada acá'
                 }
-                description={
-                  resolved.filter === 'revisar' && counts.listas > 0
-                    ? `Ya podés cargar ${count(counts.listas, unit[0], unit[1])} con el botón de abajo.`
-                    : resolved.filter === 'listas' && counts.revisar > 0
-                      ? 'Primero completá lo que falta en «Para revisar».'
-                      : undefined
-                }
-              />
+              >
+                {resolved.filter === 'revisar' && counts.listas > 0
+                  ? editable
+                    ? `Ya podés cargar ${counts.listas === 1 ? 'el que está listo' : `los ${counts.listas}`} con el botón de abajo.`
+                    : `${count(counts.listas, 'está listo', 'están listos')} para cargar.`
+                  : resolved.filter === 'listas' && counts.revisar > 0
+                    ? editable
+                      ? 'Primero contestá lo que te pregunto.'
+                      : 'Todavía quedan preguntas por contestar.'
+                    : null}
+              </EmptyTeach>
             ) : (
               <>
-                <ProposalList
-                  rows={list.data.rows.map(viewOf)}
-                  label={
-                    resolved.need
-                      ? `${REVIEW_FILTER_COPY.revisar.label}: ${NEED_SHORT_TEXT[resolved.need]}`
-                      : REVIEW_FILTER_COPY[resolved.filter].label
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Mostrando {formatCount((page - 1) * PAGE + 1)}–
-                  {formatCount((page - 1) * PAGE + list.data.rows.length)} de{' '}
-                  {formatCount(listTotal)}
-                </p>
+                {resolved.filter === 'revisar' && editable && options ? (
+                  <QuestionDeck rows={rows} offset={(page - 1) * PAGE} total={listTotal} />
+                ) : (
+                  <ProposalList
+                    rows={rows}
+                    label={viewLabel}
+                    grouped={resolved.filter === 'no-se-cargan'}
+                  />
+                )}
+                {listTotal > rows.length ? (
+                  <p className="text-xs text-muted-foreground">
+                    Mostrando {formatCount((page - 1) * PAGE + 1)}–
+                    {formatCount((page - 1) * PAGE + rows.length)} de {formatCount(listTotal)}
+                  </p>
+                ) : null}
                 <ListPagination
                   page={page}
                   totalPages={totalPages}
@@ -595,7 +585,7 @@ export default async function ImportBatchPage({
                 />
               </>
             )}
-          </div>
+          </section>
         ) : null}
 
         {editable ? (
@@ -606,9 +596,17 @@ export default async function ImportBatchPage({
             movedToOpenMonth={r.movedToOpenMonth}
             warnings={r.warnings}
             unit={unit}
+            showMoney={source === 'arca_recibidos'}
+            pendingAnswers={counts.revisar + newSuppliers}
           />
         ) : null}
-      </PageShell>
+
+        {editable && proposals > 0 ? (
+          <MoreOptions slug={tenantSlug} batchId={batchId} posted={r.byStatus.posted ?? 0} />
+        ) : null}
+
+        <TeachHost />
+      </AdmPage>
     </ReviewProvider>
   )
 }

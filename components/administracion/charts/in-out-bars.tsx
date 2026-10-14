@@ -21,21 +21,34 @@ import { compactCents, labelIndexes, niceStep, pct } from './scale'
  * mismo en los dos sentidos, así las dos barras se comparan a ojo).
  *
  * - El verde y el terracota no alcanzan solos (se confunden con daltonismo):
- *   el sentido de la barra y las flechas ↑ ↓ de la leyenda dicen cuál es cuál.
+ *   el sentido de la barra, las flechas ↑ ↓ del eje y las de la leyenda dicen
+ *   cuál es cuál.
  * - 2 px de hueco en el cero entre la barra de arriba y la de abajo.
- * - El eje muestra los montos sin signo de los dos lados: «salió $ 500 mil»,
- *   no «−$ 500 mil».
- * - Las etiquetas de los períodos conviene que sean cortas («Sem 41», «Oct»):
- *   las que no entran se saltean (en una tarjeta ancha entran más).
+ * - El eje muestra los montos sin signo de los dos lados, con su flecha:
+ *   «↓ $ 2 M», no «−$ 2 M».
+ * - **Abajo se reserva solo lo que hace falta**: si salió mucho menos de lo que
+ *   entró, el eje baja hasta el primer valor redondo que cubre lo que salió
+ *   (no un paso entero del de arriba, que dejaba un tercio del dibujo vacío).
+ *   La escala de pesos por píxel sigue siendo una sola.
+ * - Las etiquetas de los períodos conviene que sean cortas (`shortLabel`:
+ *   «14–20/9»); las que no entran se saltean.
  */
 
 export type InOutBucket = {
   key: string
-  /** Corta: «Sem 41», «Oct». */
+  /** Para el globito y la tabla: «14 al 20/09», «Octubre». */
   label: string
+  /** Para el eje, donde cada carácter cuenta: «14–20/9», «Oct». Por defecto, `label`. */
+  shortLabel?: string
   inCents: number
   /** En positivo: cuánto salió. */
   outCents: number
+  /**
+   * Qué decir en la tabla si en el período no entró ni salió nada («Sin
+   * movimientos todavía»). Sin esto la fila muestra `$ 0`, que para un período
+   * que todavía no se cargó es un cero que miente.
+   */
+  emptyText?: string
 }
 
 export type InOutBarsProps = {
@@ -57,6 +70,14 @@ function signed(cents: number): string {
   return formatCentsShort(cents, { sign: 'always' })
 }
 
+/** Cuánto lugar necesita una marca del eje para no pisarse con la de al lado (10 px de letra). */
+const MIN_TICK_GAP = 9
+
+/** Ancho aproximado, en px, de una etiqueta del eje de abajo (10 px de letra) con su aire. */
+function tickWidth(label: string): number {
+  return label.length * 5.6 + 6
+}
+
 export function InOutBars({
   buckets,
   inLabel = 'Entró',
@@ -69,6 +90,7 @@ export function InOutBars({
   const rows = buckets.map((b) => ({
     key: b.key,
     label: b.label,
+    axis: b.shortLabel ?? b.label,
     up: magnitude(b.inCents),
     down: magnitude(b.outCents),
   }))
@@ -88,16 +110,38 @@ export function InOutBars({
   const n = rows.length
   const peakUp = Math.max(...rows.map((r) => r.up))
   const peakDown = Math.max(...rows.map((r) => r.down))
-  // Un solo paso para los dos lados: es un solo eje que cruza el cero.
-  const step = niceStep(Math.max(peakUp, peakDown), 3)
+  // El paso lo marca el lado de arriba (o el de abajo, si no entró nada).
+  const step = niceStep(peakUp > 0 ? peakUp : peakDown, 3)
   const upTop = peakUp > 0 ? Math.ceil(peakUp / step) * step : 0
-  const downTop = peakDown > 0 ? Math.ceil(peakDown / step) * step : 0
+  // Abajo: el primer valor redondo (1, 2 o 5) que cubre lo que salió, nunca más
+  // que lo que daría el paso de arriba.
+  const stepDown = Math.ceil(peakDown / step) * step
+  const roundDown = niceStep(peakDown, 1)
+  const downTop =
+    peakDown <= 0
+      ? 0
+      : peakUp <= 0
+        ? stepDown
+        : Math.min(stepDown, Math.ceil(peakDown / roundDown) * roundDown)
   const span = upTop + downTop
   const zero = pct(upTop, span)
 
   const axis: PlotTick[] = []
-  for (let v = upTop; v >= -downTop; v -= step) {
-    axis.push({ pos: pct(upTop - v, span), label: compactCents(Math.abs(v)), strong: v === 0 })
+  for (let v = upTop; v > 0; v -= step) {
+    axis.push({ pos: pct(upTop - v, span), label: `↑ ${compactCents(v)}` })
+  }
+  axis.push({ pos: zero, label: compactCents(0), strong: true })
+  if (downTop > 0) {
+    // Las marcas intermedias de abajo siguen el paso de arriba; la última es el tope.
+    for (let v = step; v < downTop; v += step) {
+      if (pct(downTop - v, span) >= MIN_TICK_GAP) {
+        axis.push({ pos: pct(upTop + v, span), label: `↓ ${compactCents(v)}` })
+      }
+    }
+    // Si lo de abajo es tan poco que su marca se pisaría con el cero, queda la línea sin número.
+    if (upTop === 0 || pct(downTop, span) >= MIN_TICK_GAP) {
+      axis.push({ pos: 100, label: `↓ ${compactCents(downTop)}` })
+    }
   }
 
   const net = totalIn - totalOut
@@ -107,21 +151,32 @@ export function InOutBars({
       n === 1 ? 'un período' : `${n} períodos`
     }: diferencia ${signed(net)}.`
 
-  // Las etiquetas son texto libre («Sem 41»): cuántas entran sale de su largo.
-  // Dos tandas: las que entran en el celular (unos 190 px de dibujo) y las que
-  // se suman cuando la tarjeta es ancha (desde 34rem, unos 470 px).
-  const longest = Math.max(1, ...rows.map((r) => r.label.length))
-  const roomFor = (px: number) => Math.max(1, Math.floor(px / (longest * 6 + 10)))
+  // Las etiquetas son texto libre («14–20/9»): cuántas entran sale de su largo.
+  // Tres tandas: las que entran siempre (un celular de 320 px, unos 190 px de
+  // dibujo), las que se suman desde 20rem de tarjeta (un celular de 390, media
+  // columna en la compu: unos 262 px) y las de una tarjeta ancha (desde 34rem).
+  const widths = rows.map((r) => tickWidth(r.axis))
+  const needed = widths.reduce((sum, w) => sum + w, 0)
+  // Si no entran todas, cuántas: por el ancho promedio (van centradas en su casillero y
+  // una larga puede pisar el aire de sus vecinos, que quedan sin etiqueta).
+  const average = Math.max(1, needed / Math.max(1, n))
   const pick = (px: number) =>
-    new Set(n <= roomFor(px) ? rows.map((_, i) => i) : labelIndexes(n, roomFor(px), [n - 1]))
+    new Set(
+      needed <= px
+        ? rows.map((_, i) => i)
+        : labelIndexes(n, Math.max(1, Math.floor(px / average)), [n - 1]),
+    )
   const narrow = pick(190)
+  const mid = pick(262)
   const wide = pick(470)
   const xTicks: XTick[] = rows.map((r, i) =>
     narrow.has(i)
-      ? { key: r.key, bottom: r.label }
-      : wide.has(i)
-        ? { key: r.key, bottom: r.label, wideOnly: true }
-        : { key: r.key },
+      ? { key: r.key, bottom: r.axis }
+      : mid.has(i)
+        ? { key: r.key, bottom: r.axis, midOnly: true }
+        : wide.has(i)
+          ? { key: r.key, bottom: r.axis, wideOnly: true }
+          : { key: r.key },
   )
 
   const legend: LegendRow[] = [
@@ -143,7 +198,7 @@ export function InOutBars({
   ]
 
   return (
-    <div className={cn('min-w-0 space-y-3', className)}>
+    <div className={cn('@container min-w-0 space-y-3', className)}>
       <ChartTip>
         <Plot ticks={axis} xAxis={<XTicks items={xTicks} />}>
           <div role="img" aria-label={summary} className="absolute inset-0" />
@@ -158,8 +213,8 @@ export function InOutBars({
                   key={r.key}
                   label={`${r.label}: ${inLabel.toLowerCase()} ${formatCents(r.up)}, ${outLabel.toLowerCase()} ${formatCents(r.down)}, diferencia ${formatCents(diff, { sign: 'always' })}`}
                   tipTitle={r.label}
-                  tipValue={`↑ ${inLabel} ${formatCents(r.up)}`}
-                  tipSub={`↓ ${outLabel} ${formatCents(r.down)}\nDiferencia ${formatCents(diff, { sign: 'always' })}`}
+                  tipValue={`↑ ${inLabel} ${formatCentsShort(r.up)}`}
+                  tipSub={`↓ ${outLabel} ${formatCentsShort(r.down)}\nDiferencia ${signed(diff)}`}
                   className="h-full min-w-0 flex-1 rounded-[3px] data-[tip-active]:bg-foreground/[0.06]"
                 >
                   {r.up > 0 ? (
@@ -192,13 +247,25 @@ export function InOutBars({
       </ChartTip>
 
       {showLegend ? (
-        <ChartLegend caption={`${inLabel} y ${outLabel.toLowerCase()} del período`} rows={legend} />
+        <ChartLegend
+          caption={`${inLabel} y ${outLabel.toLowerCase()} del período`}
+          rows={legend}
+          // El tope de ancho es para tarjetas anchas: en media columna la leyenda
+          // termina donde termina el dibujo.
+          className="max-w-none @min-[48rem]:max-w-[34rem]"
+        />
       ) : null}
     </div>
   )
 }
 
-/** Los mismos períodos en filas, para «Ver como tabla». */
+/**
+ * Los mismos períodos en filas, para «Ver como tabla». Sin centavos: es un
+ * tablero. En una tarjeta ancha son cuatro columnas; en una angosta (el
+ * celular, media columna en la compu) cada período ocupa dos renglones (su
+ * nombre arriba y sus tres importes abajo, encolumnados), así la diferencia
+ * nunca queda cortada contra el borde.
+ */
 export function InOutBarsTable({
   buckets,
   inLabel = 'Entró',
@@ -210,36 +277,116 @@ export function InOutBarsTable({
   outLabel?: string
   caption?: string
 }) {
-  const totalIn = buckets.reduce((sum, b) => sum + magnitude(b.inCents), 0)
-  const totalOut = buckets.reduce((sum, b) => sum + magnitude(b.outCents), 0)
+  const rows = buckets.map((b) => {
+    const up = magnitude(b.inCents)
+    const down = magnitude(b.outCents)
+    return {
+      key: b.key,
+      label: b.label,
+      up,
+      down,
+      // Un período sin movimientos dice lo que es, si la pantalla lo sabe decir.
+      empty: up <= 0 && down <= 0 && b.emptyText ? b.emptyText : null,
+    }
+  })
+  const totalIn = rows.reduce((sum, r) => sum + r.up, 0)
+  const totalOut = rows.reduce((sum, r) => sum + r.down, 0)
+  const text = caption ?? `${inLabel} y ${outLabel.toLowerCase()} por período`
+  const head =
+    'px-1.5 py-2 text-right text-xs font-medium whitespace-nowrap text-muted-foreground first:pl-3 last:pr-3'
+  const cell = 'px-1.5 pb-2 text-right whitespace-nowrap tabular-nums first:pl-3 last:pr-3'
+
   return (
-    <ChartTable
-      caption={caption ?? `${inLabel} y ${outLabel.toLowerCase()} por período`}
-      columns={[
-        { key: 'periodo', label: 'Período' },
-        { key: 'entro', label: inLabel, align: 'right' },
-        { key: 'salio', label: outLabel, align: 'right' },
-        { key: 'diferencia', label: 'Diferencia', align: 'right' },
-      ]}
-      rows={buckets.map((b) => {
-        const up = magnitude(b.inCents)
-        const down = magnitude(b.outCents)
-        return {
-          key: b.key,
-          cells: [
-            b.label,
-            formatCents(up),
-            formatCents(down),
-            formatCents(up - down, { sign: 'always' }),
-          ],
-        }
-      })}
-      foot={[
-        'Total',
-        formatCents(totalIn),
-        formatCents(totalOut),
-        formatCents(totalIn - totalOut, { sign: 'always' }),
-      ]}
-    />
+    <div className="@container min-w-0">
+      {/* Angosta: el período es el encabezado de su grupo y abajo van sus importes. */}
+      <div className="overflow-hidden rounded-lg border border-border/60 @min-[36rem]:hidden">
+        <table className="w-full table-fixed text-[13px]">
+          <caption className="sr-only">{text}</caption>
+          <thead>
+            <tr className="border-b border-border/60 bg-secondary/40">
+              <th scope="col" className={head}>
+                <span aria-hidden>↑ </span>
+                {inLabel}
+              </th>
+              <th scope="col" className={head}>
+                <span aria-hidden>↓ </span>
+                {outLabel}
+              </th>
+              <th scope="col" className={head}>
+                Diferencia
+              </th>
+            </tr>
+          </thead>
+          {rows.map((r) => (
+            <tbody key={r.key} className="border-b border-border/60">
+              <tr>
+                <th
+                  scope="rowgroup"
+                  colSpan={3}
+                  className="px-3 pt-2 pb-0.5 text-left text-xs font-medium text-muted-foreground"
+                >
+                  {r.label}
+                </th>
+              </tr>
+              {r.empty ? (
+                <tr>
+                  <td colSpan={3} className="px-3 pb-2 text-left text-muted-foreground">
+                    {r.empty}
+                  </td>
+                </tr>
+              ) : (
+                <tr>
+                  <td className={cell}>{formatCentsShort(r.up)}</td>
+                  <td className={cell}>{formatCentsShort(r.down)}</td>
+                  <td className={cn(cell, 'font-medium')}>{signed(r.up - r.down)}</td>
+                </tr>
+              )}
+            </tbody>
+          ))}
+          <tfoot className="bg-secondary/30 font-semibold">
+            <tr>
+              <th scope="rowgroup" colSpan={3} className="px-3 pt-2 pb-0.5 text-left text-xs">
+                Total
+              </th>
+            </tr>
+            <tr>
+              <td className={cell}>{formatCentsShort(totalIn)}</td>
+              <td className={cell}>{formatCentsShort(totalOut)}</td>
+              <td className={cell}>{signed(totalIn - totalOut)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <ChartTable
+        className="hidden @min-[36rem]:block"
+        caption={text}
+        columns={[
+          { key: 'periodo', label: 'Período' },
+          { key: 'entro', label: inLabel, align: 'right' },
+          { key: 'salio', label: outLabel, align: 'right' },
+          { key: 'diferencia', label: 'Diferencia', align: 'right' },
+        ]}
+        rows={rows.map((r) => ({
+          key: r.key,
+          cells: r.empty
+            ? [
+                r.label,
+                <span key="vacio" className="text-muted-foreground">
+                  {r.empty}
+                </span>,
+                '',
+                '',
+              ]
+            : [r.label, formatCentsShort(r.up), formatCentsShort(r.down), signed(r.up - r.down)],
+        }))}
+        foot={[
+          'Total',
+          formatCentsShort(totalIn),
+          formatCentsShort(totalOut),
+          signed(totalIn - totalOut),
+        ]}
+      />
+    </div>
   )
 }

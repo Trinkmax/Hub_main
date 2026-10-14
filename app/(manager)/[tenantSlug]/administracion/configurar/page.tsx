@@ -1,12 +1,12 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { buildPostingContext, loadPostingCatalog } from '@/lib/accounting/context'
-import { getAccountingSettings } from '@/lib/accounting/queries'
-import { formatIsoDay, monthName, todayInCordoba } from '@/lib/dates'
+import { buildSetup } from '@/lib/accounting/home'
+import { ONBOARDING_HAVE_AT_HAND } from '@/lib/accounting/onboarding'
+import { getAccountingSettings, settleQuery } from '@/lib/accounting/queries'
+import { getOnboarding } from '@/lib/accounting/queries/onboarding'
+import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { listManagers } from '@/lib/salon/queries'
 import {
   ACCOUNTING_READ_ROLES,
@@ -19,7 +19,10 @@ import {
 } from '@/lib/tenant'
 import { OpeningStep } from './_components/opening-step'
 import { SetupDone } from './_components/setup-done'
+import { SetupRail } from './_components/setup-rail'
 import { SetupWizard } from './_components/setup-wizard'
+import { configSteps, doneNextSteps } from './_lib/setup-next'
+import { OPENING_RAIL_STEP, welcomeChecklist } from './_lib/wizard-steps'
 
 export const metadata = { title: 'Puesta en marcha · Administración' }
 
@@ -45,10 +48,12 @@ async function defaultDisplayName(access: TenantAccess): Promise<string> {
 }
 
 /**
- * La puesta en marcha (H.3). Antes de configurar: el asistente (pasos 0–2),
- * solo para el dueño que puede hacerla. Después: los saldos iniciales (paso 3)
- * mientras falten y, ya resuelto, «Listo» (paso 4). Ninguna página confía solo
- * en el layout: acá se vuelve a mirar el acceso.
+ * La puesta en marcha (H.3). Las tres ramas de siempre, con el mismo riel de
+ * seis pasos: antes de configurar, el asistente (pasos 1 a 5), solo para el
+ * dueño que puede hacerla; ya configurada y con los saldos iniciales
+ * pendientes, el paso 6; y ya resuelto, «Listo». No hay parámetros de URL:
+ * todo link a `/configurar` cae en lo que toca. Ninguna página confía solo en
+ * el layout: acá se vuelve a mirar el acceso.
  */
 export default async function ConfigurarPage({
   params,
@@ -78,63 +83,60 @@ export default async function ConfigurarPage({
   if (!acc.setUp) {
     if (access.role !== 'owner' || !acc.canSetUp) notFound()
     return (
-      <PageShell width="compact">
-        <PageHeader
-          eyebrow="Administración"
-          title="Administración de la SAS"
-          description="La configurás una vez, en unos minutos."
-        />
+      <AdmPage width="comfortable">
+        <AdmHeader title="Puesta en marcha" description="La armás una vez, en unos 15 minutos." />
         <SetupWizard
           tenantSlug={tenantSlug}
           today={today}
           tenantName={access.tenant.name}
           defaultDisplayName={await defaultDisplayName(access)}
+          haveAtHand={welcomeChecklist(ONBOARDING_HAVE_AT_HAND)}
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
   // ─── Configurada ───────────────────────────────────────────────────────────
   if (!acc.read) notFound()
-
-  const back = (
-    <Link
-      href={base}
-      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-3" aria-hidden />
-      Volver al Resumen
-    </Link>
-  )
+  const back = { href: base, label: 'Resumen' }
 
   if (!acc.write) {
     return (
-      <PageShell width="compact">
-        {back}
-        <PageHeader eyebrow="Administración" title="Puesta en marcha" />
+      <AdmPage width="compact">
+        <AdmHeader title="Puesta en marcha" back={back} />
         <ReadOnlyNotice
           description="La puesta en marcha y los saldos iniciales los cargan los dueños. Con Contabilidad ves todo en el Resumen y en los libros."
           href={base}
           linkLabel="Ir al Resumen"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
   const settings = await getAccountingSettings(access.tenant.id)
   if (!settings) notFound()
 
+  // ─── Listo ─────────────────────────────────────────────────────────────────
   if (settings.openingStatus !== 'pending') {
+    // Lo próximo sale de la guía «Cómo arrancar»; si no carga, ese bloque no va.
+    const onboarding = await settleQuery(getOnboarding(access.tenant.id))
+    const strip =
+      onboarding.ok && onboarding.data
+        ? buildSetup({ summary: null, settings, onboarding: onboarding.data, canWrite: true, base })
+        : null
     return (
-      <PageShell width="compact">
-        {back}
-        <PageHeader eyebrow="Administración" title="Puesta en marcha" />
-        <SetupDone tenantSlug={tenantSlug} />
-      </PageShell>
+      <AdmPage width="compact">
+        <AdmHeader title="Puesta en marcha" back={back} />
+        <SetupDone
+          tenantSlug={tenantSlug}
+          next={strip ? doneNextSteps(configSteps(strip)) : []}
+          guideHref={strip?.guideHref}
+        />
+      </AdmPage>
     )
   }
 
-  // ─── Paso 3: saldos iniciales ──────────────────────────────────────────────
+  // ─── Paso 6: saldos iniciales ──────────────────────────────────────────────
   const catalog = await loadPostingCatalog(access.tenant.id)
   const ctx = buildPostingContext(catalog)
   const treasuries = catalog.treasuries
@@ -161,25 +163,23 @@ export default async function ConfigurarPage({
         a.systemKey !== 'share_capital',
     )
     .map((a) => a.id)
-  const startMonth = monthName(Number(settings.booksStartDate.slice(5, 7)))
 
   return (
-    <PageShell width="compact">
-      {back}
-      <PageHeader
-        eyebrow="Administración"
-        title={`Saldos al ${formatIsoDay(settings.booksStartDate)}`}
-        description="Lo que había el primer día de los libros: así las cajas y las cuentas arrancan con los números reales."
+    <AdmPage width="comfortable">
+      <AdmHeader
+        title="Saldos iniciales"
+        description={`Lo que había en cada caja y lo que se debía al empezar el ${formatIsoDay(settings.booksStartDate)}. Se carga una sola vez.`}
+        back={back}
       />
+      <SetupRail current={OPENING_RAIL_STEP} orientation="horizontal" className="max-w-md" />
       <OpeningStep
         tenantSlug={tenantSlug}
         booksStartDate={settings.booksStartDate}
-        firstMonthName={startMonth}
         treasuries={treasuries}
         ctx={ctx}
         accounts={accounts}
         otherAccountIds={otherAccountIds}
       />
-    </PageShell>
+    </AdmPage>
   )
 }

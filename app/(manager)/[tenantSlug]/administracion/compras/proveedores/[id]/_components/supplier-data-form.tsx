@@ -1,8 +1,8 @@
 'use client'
 
-import { Pencil, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { type FormEvent, type ReactNode, useId, useState, useTransition } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
 import {
@@ -119,16 +119,34 @@ function Field({
   )
 }
 
+/** El título de cada grupo de campos: los mismos tres de «Sus datos». */
+function Group({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <fieldset className="grid min-w-0 gap-4 border-0 border-t border-border/60 p-0 pt-4 first:border-t-0 first:pt-0">
+      <legend className="sr-only">{title}</legend>
+      <div aria-hidden>
+        <p className="font-serif text-base font-semibold leading-snug tracking-tight">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground text-pretty">{hint}</p>
+      </div>
+      {children}
+    </fieldset>
+  )
+}
+
 /**
- * «Editar datos» de un proveedor (pestaña Datos, H.7): razón social, nombre
- * de fantasía, documento, condición frente al IVA, días de cuenta corriente,
- * cuenta y comprobante habituales, contactos, días de entrega, anticipación
- * del pedido y observaciones (la ficha que pidieron los socios el 09/10/2026). Guarda con `saveParty`
- * (concurrencia optimista: si alguien lo cambió recién, pide recargar).
+ * «Editar datos» de un proveedor: la ficha entera (la que pidieron los socios
+ * el 09/10/2026), con los campos agrupados bajo los tres títulos de «Sus
+ * datos», en el orden en que se consultan: para cargarle (en qué le comprás,
+ * qué papel te da, a cuántos días le pagás), para pedirle (contactos, días de
+ * entrega, anticipación, dirección) y los datos fiscales.
  *
- * Con CUIT o CUIL, «Completar con ARCA» trae la razón social, la condición y la
- * dirección; lo que ya estaba cargado y ARCA dice distinto se pregunta antes
- * (diseño §3.1).
+ * Guarda con `saveParty` lo mismo que guardaba (concurrencia optimista: si
+ * alguien lo cambió recién, pide recargar). Con CUIT o CUIL, «Completar con
+ * ARCA» trae la razón social, la condición y la dirección; lo que ya estaba
+ * cargado y ARCA dice distinto se pregunta antes.
+ *
+ * Se monta UNA vez en la página y se abre desde la tapa («＋ Cómo te factura»)
+ * y desde «Sus datos» ([Editar datos]): lo abre y lo cierra `SupplierEditProvider`.
  */
 export function SupplierDataForm({
   tenantSlug,
@@ -136,6 +154,8 @@ export function SupplierDataForm({
   accounts,
   voucherOptions,
   arcaLookup,
+  open,
+  onOpenChange,
 }: {
   tenantSlug: string
   values: SupplierFormValues
@@ -144,10 +164,12 @@ export function SupplierDataForm({
   voucherOptions: ReadonlyArray<{ value: string; label: string }>
   /** Si hay ARCA para «Completar con ARCA» (`null`: no se pudo saber; no se muestra). */
   arcaLookup: ArcaLookupStatus | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
   const uid = useId()
-  const [open, setOpen] = useState(false)
+  const setOpen = onOpenChange
   const [pending, start] = useTransition()
   const [form, setForm] = useState(values)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -194,12 +216,15 @@ export function SupplierDataForm({
     enabled: open && cuitLike,
   })
 
-  const reset = () => {
+  // Cada vez que se abre, arranca con lo que está guardado hoy.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: solo al abrirse
+  useEffect(() => {
+    if (!open) return
     setForm(values)
     setErrors({})
     setBanner(null)
     arca.reset()
-  }
+  }, [open])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -251,186 +276,29 @@ export function SupplierDataForm({
       .join(' ') || undefined
 
   return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-11 gap-2 md:h-8"
-        onClick={() => {
-          reset()
-          setOpen(true)
-        }}
-      >
-        <Pencil className="size-3.5" aria-hidden />
-        Editar datos
-      </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!pending) setOpen(next)
-        }}
-      >
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Datos de {values.name}</DialogTitle>
-            <DialogDescription>
-              Lo que cambies acá se usa en las próximas cargas. Lo que ya cargaste no cambia.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={submit} className="grid gap-5" noValidate>
-            <Field
-              id={id('name')}
-              label={
-                <>
-                  Razón social
-                  <RequiredMark />
-                </>
-              }
-              error={errors.name}
-            >
-              <Input
-                id={id('name')}
-                value={form.name}
-                maxLength={120}
-                required
-                autoComplete="off"
-                aria-invalid={errors.name ? true : undefined}
-                aria-describedby={described('name')}
-                onChange={(e) => set('name', e.target.value)}
-                className="h-11 text-base md:h-10 md:text-sm"
-              />
-            </Field>
-            <Field
-              id={id('tradeName')}
-              label={
-                <>
-                  Nombre de fantasía <Optional />
-                </>
-              }
-              error={errors.tradeName}
-            >
-              <Input
-                id={id('tradeName')}
-                value={form.tradeName ?? ''}
-                maxLength={120}
-                autoComplete="off"
-                aria-invalid={errors.tradeName ? true : undefined}
-                onChange={(e) => set('tradeName', e.target.value || null)}
-                className="h-11 text-base md:h-10 md:text-sm"
-              />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-              <Field id={id('taxIdType')} label="Documento" error={errors.taxIdType}>
-                <Select
-                  value={form.taxIdType}
-                  onValueChange={(v) => set('taxIdType', v as TaxIdType)}
-                >
-                  <SelectTrigger
-                    id={id('taxIdType')}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TAX_ID_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} className="min-h-11 md:min-h-8">
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field
-                id={id('taxId')}
-                label={form.taxIdType === 'dni' ? 'Número de DNI' : 'Número'}
-                error={errors.taxId}
-              >
-                <ArcaLookupTrigger lookup={arca}>
-                  <Input
-                    id={id('taxId')}
-                    value={form.taxIdType === 'none' ? '' : (form.taxId ?? '')}
-                    disabled={form.taxIdType === 'none'}
-                    inputMode="numeric"
-                    autoComplete="off"
-                    placeholder={form.taxIdType === 'dni' ? '30123456' : '30-71876543-5'}
-                    aria-invalid={errors.taxId ? true : undefined}
-                    aria-describedby={described('taxId')}
-                    onChange={(e) => set('taxId', e.target.value || null)}
-                    onBlur={(e) => {
-                      if (form.taxIdType === 'cuit' || form.taxIdType === 'cuil') {
-                        const digits = e.target.value.replace(/\D/g, '')
-                        if (digits.length === 11) set('taxId', formatCuit(digits))
-                      }
-                    }}
-                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
-                  />
-                </ArcaLookupTrigger>
-              </Field>
-            </div>
-            <ArcaLookupPanel lookup={arca} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field
-                id={id('ivaCondition')}
-                label="Condición frente al IVA"
-                error={errors.ivaCondition}
-              >
-                <Select
-                  value={form.ivaCondition}
-                  onValueChange={(v) => set('ivaCondition', v as IvaCondition)}
-                >
-                  <SelectTrigger
-                    id={id('ivaCondition')}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {IVA_CONDITION_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} className="min-h-11 md:min-h-8">
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field
-                id={id('paymentTermDays')}
-                label="Días de cuenta corriente"
-                hint="Para calcular el vencimiento de cada boleta. 0 = de contado."
-                error={errors.paymentTermDays}
-              >
-                <div className="relative">
-                  <Input
-                    id={id('paymentTermDays')}
-                    value={String(form.paymentTermDays)}
-                    inputMode="numeric"
-                    autoComplete="off"
-                    aria-invalid={errors.paymentTermDays ? true : undefined}
-                    aria-describedby={described('paymentTermDays', true)}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 3)
-                      set('paymentTermDays', digits === '' ? 0 : Math.min(365, Number(digits)))
-                    }}
-                    className="h-11 pr-12 text-base tabular-nums md:h-10 md:text-sm"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
-                  >
-                    días
-                  </span>
-                </div>
-              </Field>
-            </div>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) setOpen(next)
+      }}
+    >
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Datos de {values.name}</DialogTitle>
+          <DialogDescription>
+            Lo que cambies acá se usa en las próximas cargas. Lo que ya cargaste no cambia.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="grid gap-5" noValidate>
+          <Group title="Para cargarle" hint="Lo que hace que la próxima compra sea de un toque.">
             <Field
               id={id('defaultAccountId')}
               label={
                 <>
-                  ¿En qué se le compra? <Optional />
+                  ¿En qué le comprás? <Optional />
                 </>
               }
-              hint="La cuenta que se propone al cargarle una factura o un gasto."
+              hint="La categoría que sale sola cada vez que le cargás algo."
               error={errors.defaultAccountId}
             >
               <AccountCombobox
@@ -438,17 +306,17 @@ export function SupplierDataForm({
                 value={form.defaultAccountId}
                 onValueChange={(next) => set('defaultAccountId', next)}
                 accounts={accounts}
-                placeholder="Elegí una cuenta"
+                placeholder="Elegí una categoría"
                 invalid={Boolean(errors.defaultAccountId)}
                 aria-describedby={described('defaultAccountId', true)}
               />
               {form.defaultAccountId ? (
                 <button
                   type="button"
-                  className="justify-self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  className="inline-flex min-h-11 items-center justify-self-start rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
                   onClick={() => set('defaultAccountId', null)}
                 >
-                  Quitar la cuenta habitual
+                  Quitar la categoría
                 </button>
               ) : null}
             </Field>
@@ -456,14 +324,14 @@ export function SupplierDataForm({
               id={id('defaultVoucherType')}
               label={
                 <>
-                  Comprobante habitual <Optional />
+                  ¿Qué papel te da? <Optional />
                 </>
               }
               // Un proveedor que no factura: su opción es la de `sin_comprobante` (12/10/2026).
-              hint={`Lo que se propone al cargarle algo. Si no factura, elegí «${
+              hint={`El comprobante habitual: el papel que llega marcado al cargarle algo. Si no factura, elegí «${
                 voucherOptions.find((o) => o.value === 'sin_comprobante')?.label ??
                 'Remito u otro comprobante (sin factura)'
-              }»: «¿Se factura?» arranca en «No».`}
+              }».`}
               error={errors.defaultVoucherType}
             >
               <Select
@@ -489,6 +357,36 @@ export function SupplierDataForm({
                 </SelectContent>
               </Select>
             </Field>
+            <Field
+              id={id('paymentTermDays')}
+              label="¿A cuántos días le pagás?"
+              hint="Con eso sale solo el vencimiento de cada compra. 0 = no tiene plazo."
+              error={errors.paymentTermDays}
+            >
+              <div className="relative">
+                <Input
+                  id={id('paymentTermDays')}
+                  value={String(form.paymentTermDays)}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-invalid={errors.paymentTermDays ? true : undefined}
+                  aria-describedby={described('paymentTermDays', true)}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 3)
+                    set('paymentTermDays', digits === '' ? 0 : Math.min(365, Number(digits)))
+                  }}
+                  className="h-11 pr-12 text-base tabular-nums md:h-10 md:text-sm"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                >
+                  días
+                </span>
+              </div>
+            </Field>
+          </Group>
+          <Group title="Para pedirle" hint="A quién llamar, cuándo trae y con cuánto aviso.">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field
                 id={id('email')}
@@ -637,34 +535,146 @@ export function SupplierDataForm({
                 className="text-base md:text-sm"
               />
             </Field>
-
-            {banner ? (
-              <div
-                role="alert"
-                className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+          </Group>
+          <Group title="Datos fiscales" hint="Como figura en sus papeles y en ARCA.">
+            <Field
+              id={id('name')}
+              label={
+                <>
+                  Razón social
+                  <RequiredMark />
+                </>
+              }
+              error={errors.name}
+            >
+              <Input
+                id={id('name')}
+                value={form.name}
+                maxLength={120}
+                required
+                autoComplete="off"
+                aria-invalid={errors.name ? true : undefined}
+                aria-describedby={described('name')}
+                onChange={(e) => set('name', e.target.value)}
+                className="h-11 text-base md:h-10 md:text-sm"
+              />
+            </Field>
+            <Field
+              id={id('tradeName')}
+              label={
+                <>
+                  Nombre de fantasía <Optional />
+                </>
+              }
+              error={errors.tradeName}
+            >
+              <Input
+                id={id('tradeName')}
+                value={form.tradeName ?? ''}
+                maxLength={120}
+                autoComplete="off"
+                aria-invalid={errors.tradeName ? true : undefined}
+                onChange={(e) => set('tradeName', e.target.value || null)}
+                className="h-11 text-base md:h-10 md:text-sm"
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+              <Field id={id('taxIdType')} label="Documento" error={errors.taxIdType}>
+                <Select
+                  value={form.taxIdType}
+                  onValueChange={(v) => set('taxIdType', v as TaxIdType)}
+                >
+                  <SelectTrigger
+                    id={id('taxIdType')}
+                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TAX_ID_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} className="min-h-11 md:min-h-8">
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field
+                id={id('taxId')}
+                label={form.taxIdType === 'dni' ? 'Número de DNI' : 'Número'}
+                error={errors.taxId}
               >
-                <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-                <p className="text-pretty">{banner}</p>
-              </div>
-            ) : null}
-
-            <DialogFooter className="gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 md:h-9"
-                disabled={pending}
-                onClick={() => setOpen(false)}
+                <ArcaLookupTrigger lookup={arca}>
+                  <Input
+                    id={id('taxId')}
+                    value={form.taxIdType === 'none' ? '' : (form.taxId ?? '')}
+                    disabled={form.taxIdType === 'none'}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder={form.taxIdType === 'dni' ? '30123456' : '30-71876543-5'}
+                    aria-invalid={errors.taxId ? true : undefined}
+                    aria-describedby={described('taxId')}
+                    onChange={(e) => set('taxId', e.target.value || null)}
+                    onBlur={(e) => {
+                      if (form.taxIdType === 'cuit' || form.taxIdType === 'cuil') {
+                        const digits = e.target.value.replace(/\D/g, '')
+                        if (digits.length === 11) set('taxId', formatCuit(digits))
+                      }
+                    }}
+                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                  />
+                </ArcaLookupTrigger>
+              </Field>
+            </div>
+            <ArcaLookupPanel lookup={arca} />
+            <Field id={id('ivaCondition')} label="¿Cómo te factura?" error={errors.ivaCondition}>
+              <Select
+                value={form.ivaCondition}
+                onValueChange={(v) => set('ivaCondition', v as IvaCondition)}
               >
-                Cancelar
-              </Button>
-              <Button type="submit" className="h-11 min-w-[140px] md:h-9" disabled={pending}>
-                {pending ? 'Guardando…' : 'Guardar datos'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
+                <SelectTrigger
+                  id={id('ivaCondition')}
+                  className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {IVA_CONDITION_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value} className="min-h-11 md:min-h-8">
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </Group>
+
+          {banner ? (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+            >
+              <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <p className="text-pretty">{banner}</p>
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 md:h-9"
+              disabled={pending}
+              onClick={() => setOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" className="h-11 min-w-[140px] md:h-9" disabled={pending}>
+              {pending ? 'Guardando…' : 'Guardar datos'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

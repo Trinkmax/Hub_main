@@ -1,32 +1,23 @@
 'use client'
 
-import { BadgeCheck, Sparkles, UserPlus, Wand2 } from 'lucide-react'
-import Link from 'next/link'
-import { useId, useMemo, useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { AccountCombobox } from '@/components/administracion/account-combobox'
-import { Amount } from '@/components/administracion/amount'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import type { IvaCondition } from '@/lib/accounting/types'
+import { categoryOptions, featuredCategories } from '@/components/administracion/kit'
+import { saveParty } from '@/lib/accounting/actions/master'
+import { type IvaCondition, PARTY_KINDS, type PartyKind } from '@/lib/accounting/types'
 import { lookupCuits } from '@/lib/arca/actions'
-import { guideStep, isArcaGuideStepId } from '@/lib/arca/guide'
 import type { PadronLookupData } from '@/lib/arca/views'
-import { formatIsoDay } from '@/lib/dates'
-import { formatCuit } from '@/lib/fiscal'
-import { createImportSuppliers } from '@/lib/imports/actions'
-import { IVA_CONDITION_TEXT, SUPPLIER_IVA_CONDITIONS } from '@/lib/imports/ui/labels'
+import { buildImportProposals, createImportSuppliers } from '@/lib/imports/actions'
+import { SUPPLIER_IVA_CONDITIONS } from '@/lib/imports/ui/labels'
+import { supplierCuitInput, supplierRows } from '@/lib/imports/ui/payloads'
 import { count } from '@/lib/imports/ui/progress'
-import { cn } from '@/lib/utils'
+import {
+  isLinkable,
+  LINK_KNOWN_SUPPLIERS,
+  type SimilarMatch,
+  similarParties,
+} from '@/lib/imports/ui/similar'
+import { KnownBefore } from './known-before'
 import { OFFLINE_TEXT, useReview } from './review-context'
 
 export type NewSupplierView = {
@@ -44,8 +35,13 @@ export type LookupView = {
   testData: boolean
 } | null
 
-type RowState = {
-  include: boolean
+/** Qué contestó la persona sobre un proveedor del archivo. */
+export type SupplierAnswer = 'pending' | 'known' | 'new' | 'later'
+
+export type SupplierRowState = {
+  answer: SupplierAnswer
+  /** Con `known`: el proveedor del bar al que se le guarda el CUIT. */
+  knownId: string | null
   name: string
   nameEdited: boolean
   condition: IvaCondition
@@ -54,20 +50,23 @@ type RowState = {
   term: string
   /** Lo que dijo ARCA (o por qué no se pudo). */
   arca: { ok: true; data: PadronLookupData } | { ok: false; message: string } | null
-  /** Por qué no se pudo crear (después de «Crear»). */
+  /** Por qué no se pudo guardar (después de «Guardar las respuestas»). */
   failed: string | null
 }
 
-const SELECT_CLASS = 'w-full data-[size=default]:h-11 md:data-[size=default]:h-10'
 /** Hasta cuántos crea `createImportSuppliers` por vez (y consulta `lookupCuits`). */
 const PER_CALL = 200
 
-function initial(rows: readonly NewSupplierView[]): Record<string, RowState> {
+function initial(
+  rows: readonly NewSupplierView[],
+  answer: SupplierAnswer,
+): Record<string, SupplierRowState> {
   return Object.fromEntries(
     rows.map((r) => [
       r.cuit,
       {
-        include: true,
+        answer,
+        knownId: null,
         name: r.name,
         nameEdited: false,
         condition: SUPPLIER_IVA_CONDITIONS.includes(r.suggestedCondition)
@@ -78,42 +77,54 @@ function initial(rows: readonly NewSupplierView[]): Record<string, RowState> {
         term: '',
         arca: null,
         failed: null,
-      } satisfies RowState,
+      } satisfies SupplierRowState,
     ]),
   )
 }
 
+function isPartyKind(kind: string): kind is PartyKind {
+  return (PARTY_KINDS as readonly string[]).includes(kind)
+}
+
 /**
- * «Proveedores nuevos (N)» (diseño §4.1 paso 2): los CUIT de las facturas que
- * todavía no son proveedores. Con UN botón se completan todos con ARCA (razón
- * social y condición frente al IVA, del padrón); la persona elige en qué gasta
- * con cada uno (con la sugerencia a un toque, que nunca se aplica sola) y se
- * crean todos juntos. Lo escrito a mano no se pisa.
+ * El estado y el guardado de «¿Los tenés de antes?» (la vista es `KnownBefore`).
+ *
+ * Para cada CUIT de las facturas que el bar no tiene cargado, la persona dice:
+ * «ya lo tengo» (se le guarda el CUIT a ese proveedor, con `saveParty`, el
+ * mismo envío de su ficha), «es nuevo» (se crea con `createImportSuppliers`,
+ * igual que antes) o «después». Las sugerencias (categoría, datos de ARCA,
+ * parecidos por el nombre) nunca se aplican solas.
+ *
+ * «Guardar las respuestas» hace, en orden: guarda los CUIT de los que ya
+ * estaban; crea los nuevos (que vuelve a armar el archivo); y, si no hubo
+ * nuevos, lo vuelve a armar con `buildImportProposals`. Lo que falla queda en
+ * su fila con el motivo; lo demás se guarda.
  */
-export function NewSuppliers({
-  rows,
-  lookup,
-  connectHref,
-}: {
-  rows: NewSupplierView[]
-  lookup: LookupView
-  /** La guía «Conectar ARCA» (para completar solo). */
-  connectHref: string
-}) {
-  const { slug, batchId, options, editable } = useReview()
-  const titleId = useId()
-  const [state, setState] = useState<Record<string, RowState>>(() => initial(rows))
+export function useNewSuppliers(rows: readonly NewSupplierView[]) {
+  const { slug, batchId, options } = useReview()
+  const parties = options?.parties ?? []
+  // Los proveedores del bar a los que se les puede guardar un CUIT (activos y sin CUIT).
+  const linkable = useMemo(
+    () => (LINK_KNOWN_SUPPLIERS ? parties.filter(isLinkable) : []),
+    [parties],
+  )
+  const canLink = linkable.length > 0
+  // Sin nadie a quien parecerse no hay pregunta: todos arrancan como «nuevo», como antes.
+  const firstAnswer: SupplierAnswer = canLink ? 'pending' : 'new'
+  const [state, setState] = useState<Record<string, SupplierRowState>>(() =>
+    initial(rows, firstAnswer),
+  )
   const [arcaError, setArcaError] = useState<{ message: string; step: string | null } | null>(null)
   const [looking, startLooking] = useTransition()
-  const [creating, startCreating] = useTransition()
+  const [saving, setSaving] = useState<{ done: number; total: number } | null>(null)
 
-  // Filas nuevas (otra importación o un «Revisar de nuevo») entran con su estado inicial.
+  // Filas nuevas (otro archivo o un «Volver a armar») entran con su estado inicial.
   const rowsKey = rows.map((r) => r.cuit).join(',')
   const [seenKey, setSeenKey] = useState(rowsKey)
   if (seenKey !== rowsKey) {
     setSeenKey(rowsKey)
     setState((prev) => {
-      const fresh = initial(rows)
+      const fresh = initial(rows, firstAnswer)
       for (const cuit of Object.keys(fresh)) {
         const old = prev[cuit]
         if (old) fresh[cuit] = old
@@ -127,22 +138,41 @@ export function NewSuppliers({
     () => new Set(accounts.filter((a) => a.purchase).map((a) => a.id)),
     [accounts],
   )
-  const accountName = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? null
+  // Las categorías de compras y gastos, como las muestra el selector de Compras.
+  const categories = useMemo(
+    () => categoryOptions(accounts, (id) => purchase.has(id)),
+    [accounts, purchase],
+  )
+  const featured = useMemo(() => featuredCategories(accounts), [accounts])
+  const suggestions = useMemo(() => {
+    const out: Record<string, SimilarMatch[]> = {}
+    if (canLink) for (const r of rows) out[r.cuit] = similarParties(r.name, linkable)
+    return out
+  }, [rows, linkable, canLink])
 
-  const patch = (cuit: string, next: Partial<RowState>) =>
+  const patch = (cuit: string, next: Partial<SupplierRowState>) =>
     setState((prev) => {
       const row = prev[cuit]
       return row ? { ...prev, [cuit]: { ...row, ...next } } : prev
     })
 
-  const selected = rows.filter((r) => state[r.cuit]?.include)
-  const ready = selected.filter(
+  const known = rows.filter((r) => state[r.cuit]?.answer === 'known' && state[r.cuit]?.knownId)
+  const fresh = rows.filter((r) => state[r.cuit]?.answer === 'new')
+  const ready = fresh.filter(
     (r) => state[r.cuit]?.accountId && (state[r.cuit]?.name.trim().length ?? 0) >= 2,
   )
-  const missingAccount = selected.length - ready.length
-  const suggestible = rows.filter(
-    (r) => r.suggestedAccountId && !state[r.cuit]?.accountId && purchase.has(r.suggestedAccountId),
-  )
+  const later = rows.filter((r) => state[r.cuit]?.answer === 'later')
+  const pending = rows.filter((r) => state[r.cuit]?.answer === 'pending')
+  const suggestible = rows.filter((r) => {
+    const row = state[r.cuit]
+    return (
+      r.suggestedAccountId &&
+      row &&
+      (row.answer === 'new' || row.answer === 'pending') &&
+      !row.accountId &&
+      purchase.has(r.suggestedAccountId)
+    )
+  })
 
   const completeWithArca = () => {
     setArcaError(null)
@@ -182,8 +212,8 @@ export function NewSuppliers({
         }
         toast.success(
           found > 0
-            ? `Completamos ${count(found, 'proveedor', 'proveedores')} con los datos de ARCA.`
-            : 'ARCA no trajo datos de estas CUIT: mirá el motivo en cada una.',
+            ? `Completé ${count(found, 'proveedor', 'proveedores')} con los datos de ARCA.`
+            : 'ARCA no trajo datos de estos CUIT: mirá el motivo en cada uno.',
         )
       } catch {
         setArcaError({ message: OFFLINE_TEXT, step: null })
@@ -191,6 +221,7 @@ export function NewSuppliers({
     })
   }
 
+  /** «Usar las categorías sugeridas»: un toque de la persona; nunca se aplican solas. */
   const applySuggestions = () => {
     setState((prev) => {
       const next = { ...prev }
@@ -202,283 +233,134 @@ export function NewSuppliers({
     })
   }
 
-  const create = () => {
-    if (ready.length === 0) return
-    startCreating(async () => {
-      try {
-        let created = 0
-        for (let i = 0; i < ready.length; i += PER_CALL) {
-          const suppliers = ready.slice(i, i + PER_CALL).map((r) => {
-            const row = state[r.cuit] as RowState
-            const term = Number.parseInt(row.term, 10)
-            return {
-              cuit: r.cuit,
-              name: row.name.trim(),
-              ivaCondition: row.condition,
-              accountId: row.accountId as string,
-              paymentTermDays: Number.isFinite(term) && term >= 0 && term <= 365 ? term : 0,
-            }
-          })
-          const result = await createImportSuppliers(slug, { batchId, suppliers })
-          if (!result.ok) {
-            toast.error(result.message)
-            return
-          }
-          created += result.data.created.length
-          for (const f of result.data.failed) patch(f.cuit, { failed: f.message })
-        }
-        if (created > 0) {
-          toast.success(
-            `Listo: ${count(created, 'proveedor creado', 'proveedores creados')}. Ya armamos sus comprobantes.`,
-          )
-        }
-      } catch {
-        toast.error(OFFLINE_TEXT)
+  /** «Son todos nuevos»: marca así los que faltan contestar (estado de pantalla). */
+  const allNew = () => {
+    setState((prev) => {
+      const next = { ...prev }
+      for (const r of rows) {
+        const row = next[r.cuit]
+        if (row && row.answer === 'pending') next[r.cuit] = { ...row, answer: 'new' }
       }
+      return next
     })
   }
 
-  return (
-    <section
-      id="proveedores-nuevos"
-      aria-labelledby={titleId}
-      className="card-hairline scroll-mt-24 rounded-xl border bg-card"
-    >
-      <header className="flex flex-col gap-3 border-b border-border/60 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-            <UserPlus className="size-5" aria-hidden />
-          </span>
-          <div>
-            <h2 id={titleId} className="font-serif text-lg font-semibold tracking-tight">
-              Proveedores nuevos ({rows.length})
-            </h2>
-            <p className="text-sm text-muted-foreground text-pretty">
-              Están en tus facturas pero todavía no en tus proveedores. Elegí en qué gastás con cada
-              uno y los creamos todos juntos.
-            </p>
-          </div>
-        </div>
-        {editable ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {lookup?.environment ? (
-              <Button
-                type="button"
-                className="h-11 gap-2 md:h-9"
-                disabled={looking}
-                onClick={completeWithArca}
-              >
-                <Wand2 className="size-4" aria-hidden />
-                {looking ? 'Consultando ARCA…' : 'Completar todos con ARCA'}
-              </Button>
-            ) : (
-              <Button asChild variant="outline" className="h-11 md:h-9">
-                <Link href={connectHref}>Conectá ARCA para completarlos solos</Link>
-              </Button>
-            )}
-            {suggestible.length > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 gap-2 md:h-9"
-                onClick={applySuggestions}
-              >
-                <Sparkles className="size-4" aria-hidden />
-                Usar las cuentas sugeridas ({suggestible.length})
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </header>
-
-      {lookup?.testData && editable ? (
-        <p className="border-b border-border/60 bg-info/10 px-5 py-2 text-xs">
-          ARCA está conectado solo en pruebas (homologación): los datos que trae son de prueba.
-        </p>
-      ) : null}
-
-      {arcaError ? (
-        <div
-          role="alert"
-          className="flex flex-col gap-2 border-b border-border/60 bg-destructive/10 px-5 py-3 text-sm text-destructive sm:flex-row sm:items-center"
-        >
-          <p className="flex-1">{arcaError.message}</p>
-          {arcaError.step ? (
-            <Link
-              href={`${connectHref}#paso-${stepNumber(arcaError.step)}`}
-              className="font-medium underline underline-offset-2"
-            >
-              Ver cómo arreglarlo
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
-
-      <ul className="divide-y divide-border/60">
-        {rows.map((r) => {
-          const row = state[r.cuit]
-          if (!row) return null
-          const base = `${titleId}-${r.cuit}`
-          const suggestion =
-            r.suggestedAccountId && purchase.has(r.suggestedAccountId) ? r.suggestedAccountId : null
-          return (
-            <li key={r.cuit} className={cn('space-y-3 px-5 py-4', !row.include && 'opacity-70')}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  {editable ? (
-                    <Checkbox
-                      id={`${base}-inc`}
-                      checked={row.include}
-                      onCheckedChange={(v) => patch(r.cuit, { include: v === true })}
-                      className="mt-1"
-                      aria-label={`Crear a ${row.name}`}
-                    />
-                  ) : null}
-                  <div className="min-w-0">
-                    <p className="font-medium break-words">{row.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      CUIT {formatCuit(r.cuit)} · {count(r.vouchers, 'comprobante', 'comprobantes')}
-                    </p>
-                  </div>
-                </div>
-                <Amount cents={r.totalCents} className="text-sm" />
-              </div>
-
-              {row.arca?.ok ? (
-                <div className="space-y-1 text-xs">
-                  <p className="flex items-center gap-1.5 text-success">
-                    <BadgeCheck className="size-3.5" aria-hidden />
-                    Según ARCA ({formatIsoDay(row.arca.data.fetchedAt.slice(0, 10))}):{' '}
-                    {IVA_CONDITION_TEXT[row.arca.data.ivaCondition]}
-                    {row.arca.data.activity?.description
-                      ? ` · ${row.arca.data.activity.description}`
-                      : ''}
-                  </p>
-                  {row.arca.data.warnings.map((w) => (
-                    <p key={w.key} className="text-warning-text">
-                      {w.message}
-                    </p>
-                  ))}
-                </div>
-              ) : row.arca && !row.arca.ok ? (
-                <p className="text-xs text-warning-text">{row.arca.message}</p>
-              ) : null}
-
-              {editable && row.include ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_7rem]">
-                  <div className="grid content-start gap-1.5">
-                    <Label htmlFor={`${base}-name`}>Razón social</Label>
-                    <Input
-                      id={`${base}-name`}
-                      value={row.name}
-                      maxLength={120}
-                      className="h-11 text-base md:h-10 md:text-sm"
-                      onChange={(e) => patch(r.cuit, { name: e.target.value, nameEdited: true })}
-                    />
-                  </div>
-                  <div className="grid content-start gap-1.5">
-                    <Label htmlFor={`${base}-iva`}>Condición frente al IVA</Label>
-                    <Select
-                      value={row.condition}
-                      onValueChange={(v) =>
-                        patch(r.cuit, { condition: v as IvaCondition, conditionEdited: true })
-                      }
-                    >
-                      <SelectTrigger id={`${base}-iva`} className={SELECT_CLASS}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SUPPLIER_IVA_CONDITIONS.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {IVA_CONDITION_TEXT[c]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid content-start gap-1.5">
-                    <Label htmlFor={`${base}-acc`}>
-                      ¿En qué gastás con él?
-                      <span aria-hidden className="ml-0.5 text-destructive">
-                        *
-                      </span>
-                    </Label>
-                    <AccountCombobox
-                      id={`${base}-acc`}
-                      value={row.accountId}
-                      accounts={accounts}
-                      filter={(a) => purchase.has(a.id)}
-                      placeholder="Elegí la cuenta"
-                      invalid={row.failed !== null && !row.accountId}
-                      onValueChange={(next) => patch(r.cuit, { accountId: next })}
-                    />
-                    {suggestion && row.accountId !== suggestion ? (
-                      <button
-                        type="button"
-                        className="inline-flex min-h-11 items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground md:min-h-0"
-                        onClick={() => patch(r.cuit, { accountId: suggestion })}
-                      >
-                        <Sparkles className="size-3.5 shrink-0" aria-hidden />
-                        Sugerida: {accountName(suggestion)}. Tocá para usarla.
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="grid content-start gap-1.5">
-                    {/* Sin «(opcional)»: en la columna de 7rem partía el rótulo en tres pedazos.
-                        Lo obligatorio lleva «*»; esto no. */}
-                    <Label htmlFor={`${base}-term`}>Plazo (días)</Label>
-                    <Input
-                      id={`${base}-term`}
-                      value={row.term}
-                      inputMode="numeric"
-                      maxLength={3}
-                      placeholder="0"
-                      className="h-11 text-base md:h-10 md:text-sm"
-                      onChange={(e) => patch(r.cuit, { term: e.target.value.replace(/\D/g, '') })}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              {row.failed ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {row.failed}
-                </p>
-              ) : null}
-            </li>
+  const save = async () => {
+    const total = known.length + ready.length
+    if (total === 0 || saving) return
+    let done = 0
+    let linked = 0
+    let created = 0
+    setSaving({ done, total })
+    try {
+      // 1. A los que ya estaban, guardarles el CUIT (el envío de la ficha del proveedor).
+      // Un proveedor tiene un solo CUIT: si se eligió el mismo para dos, el segundo no se manda.
+      const taken = new Set<string>()
+      for (const r of known) {
+        const row = state[r.cuit] as SupplierRowState
+        const party = parties.find((x) => x.id === row.knownId)
+        if (!party?.updatedAt || !isPartyKind(party.kind)) {
+          patch(r.cuit, { failed: 'No pude leer ese proveedor. Abrí su ficha y cargale el CUIT.' })
+        } else if (taken.has(party.id)) {
+          patch(r.cuit, {
+            failed: `Ya elegiste a ${party.tradeName ?? party.name} para otro CUIT de este archivo. Elegí otro o decime que es nuevo.`,
+          })
+        } else {
+          taken.add(party.id)
+          const result = await saveParty(
+            slug,
+            supplierCuitInput(
+              { id: party.id, kind: party.kind, name: party.name, updatedAt: party.updatedAt },
+              r.cuit,
+            ),
           )
-        })}
-      </ul>
+          if (result.ok) linked++
+          else patch(r.cuit, { failed: result.message })
+        }
+        done++
+        setSaving({ done, total })
+      }
+      // 2. Crear los nuevos (vuelve a armar el archivo).
+      for (let i = 0; i < ready.length; i += PER_CALL) {
+        const slice = ready.slice(i, i + PER_CALL)
+        const result = await createImportSuppliers(slug, {
+          batchId,
+          suppliers: supplierRows(slice, state),
+        })
+        if (!result.ok) {
+          toast.error(result.message)
+          break
+        }
+        created += result.data.created.length
+        for (const f of result.data.failed) patch(f.cuit, { failed: f.message })
+        done += slice.length
+        setSaving({ done, total })
+      }
+      // 3. Sin nuevos, hay que volver a armar para que las facturas encuentren a su proveedor.
+      if (created === 0 && linked > 0) {
+        const rebuilt = await buildImportProposals(slug, { batchId })
+        if (!rebuilt.ok) toast.error(rebuilt.message)
+      }
+      if (linked + created > 0) {
+        const parts = [
+          linked > 0 ? count(linked, 'CUIT guardado', 'CUIT guardados') : null,
+          created > 0 ? count(created, 'proveedor creado', 'proveedores creados') : null,
+        ].filter(Boolean)
+        toast.success(`Listo: ${parts.join(' y ')}. Ya armé sus comprobantes.`)
+      }
+    } catch {
+      toast.error(OFFLINE_TEXT)
+    } finally {
+      setSaving(null)
+    }
+  }
 
-      {editable ? (
-        <footer className="flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground text-pretty" aria-live="polite">
-            {missingAccount > 0
-              ? `Falta elegir en qué gastás con ${count(missingAccount, 'proveedor', 'proveedores')}.`
-              : ready.length > 0
-                ? 'Todo listo para crearlos.'
-                : 'Elegí al menos uno.'}
-          </p>
-          <Button
-            type="button"
-            className="h-11 w-full gap-2 sm:w-auto md:h-9"
-            disabled={creating || ready.length === 0}
-            onClick={create}
-          >
-            <UserPlus className="size-4" aria-hidden />
-            {creating
-              ? 'Creando…'
-              : ready.length > 0
-                ? `Crear ${count(ready.length, 'proveedor', 'proveedores')}`
-                : 'Crear los proveedores'}
-          </Button>
-        </footer>
-      ) : null}
-    </section>
-  )
+  return {
+    rows,
+    state,
+    patch,
+    canLink,
+    linkable,
+    suggestions,
+    accounts,
+    purchase,
+    categories,
+    featured,
+    counts: {
+      known: known.length,
+      fresh: fresh.length,
+      ready: ready.length,
+      later: later.length,
+      pending: pending.length,
+      toSave: known.length + ready.length,
+    },
+    suggestible: suggestible.length,
+    arcaError,
+    looking,
+    saving,
+    completeWithArca,
+    applySuggestions,
+    allNew,
+    save,
+  }
 }
 
-/** `s8_padron` → 8 (el ancla `#paso-8` de la guía). */
-function stepNumber(step: string): number {
-  return isArcaGuideStepId(step) ? guideStep(step).n : 0
+export type NewSuppliersModel = ReturnType<typeof useNewSuppliers>
+
+/**
+ * «¿Los tenés de antes?» (antes «Proveedores nuevos»): el contenedor. Arma el
+ * estado y el guardado, y se los pasa a la vista.
+ */
+export function NewSuppliers({
+  rows,
+  lookup,
+  connectHref,
+}: {
+  rows: NewSupplierView[]
+  lookup: LookupView
+  /** La guía «Conectar ARCA» (para completar los nombres solos). */
+  connectHref: string
+}) {
+  const model = useNewSuppliers(rows)
+  return <KnownBefore model={model} lookup={lookup} connectHref={connectHref} />
 }

@@ -3,7 +3,7 @@ import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { ChartEmpty, ChartMark, LegendKey } from './chart-parts'
 import { ChartTip } from './chart-tip'
-import { pct, percentLabel } from './scale'
+import { pct, percentLabel, percentShort, sharePercents } from './scale'
 
 /**
  * Barras horizontales ordenadas de mayor a menor: «¿en qué se va la plata?»,
@@ -18,6 +18,8 @@ import { pct, percentLabel } from './scale'
  *   Si algún renglón la trae, abajo se aclara qué es.
  * - Base recta (a la izquierda), extremo redondeado 4 px, 10 px de alto.
  * - Todo el renglón es la marca: se toca, se enfoca y, con `href`, navega.
+ * - La parte del total va escrita en el renglón, en gris, al lado del monto
+ *   (los porcentajes suman 100): nada depende del globito.
  */
 
 export type RankBarsRow = {
@@ -82,6 +84,8 @@ export function RankBars({
     ...ordered.map((r) => Math.max(r.cents, r.previous ?? 0)),
   )
   const hasPrevious = ordered.some((r) => r.previous !== null)
+  // Enteros que suman 100 (resto mayor), como en la barra partida.
+  const shares = sharePercents(ordered.map((r) => r.cents))
   const first = ordered[0]
   const summary =
     ariaLabel ??
@@ -94,11 +98,11 @@ export function RankBars({
       <p className="sr-only">{summary}</p>
       <ChartTip scrub={false}>
         <ul className="-mx-2">
-          {ordered.map((r) => {
-            const share = percentLabel(Math.round(pct(r.cents, total)), r.cents > 0)
+          {ordered.map((r, i) => {
+            const share = percentLabel(shares[i] ?? 0, r.cents > 0)
             const width = pct(r.cents, top)
             const before =
-              r.previous !== null ? `\nEn ${previousLabel}: ${formatCents(r.previous)}` : ''
+              r.previous !== null ? `\nEn ${previousLabel}: ${formatCentsShort(r.previous)}` : ''
             return (
               <li key={r.key}>
                 <ChartMark
@@ -107,7 +111,7 @@ export function RankBars({
                     r.previous !== null ? `. En ${previousLabel}: ${formatCents(r.previous)}` : ''
                   }`}
                   tipTitle={r.label}
-                  tipValue={formatCents(r.cents)}
+                  tipValue={formatCentsShort(r.cents)}
                   tipSub={`${share} del total${before}`}
                   className={cn(
                     'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-lg px-2 py-2',
@@ -117,12 +121,20 @@ export function RankBars({
                   )}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm">{r.label}</span>
+                    {/* En angosto un nombre largo baja de renglón; en la fila ancha se corta. */}
+                    <span className="block text-sm text-pretty @min-[34rem]:truncate">
+                      {r.label}
+                    </span>
                     {r.sub ? (
                       <span className="block truncate text-xs text-muted-foreground">{r.sub}</span>
                     ) : null}
                   </span>
                   <span className="text-right text-sm font-medium whitespace-nowrap tabular-nums @min-[34rem]:order-3">
+                    {ordered.length > 1 ? (
+                      <span className="mr-2 text-xs font-normal text-muted-foreground">
+                        {percentShort(shares[i] ?? 0, r.cents > 0)}
+                      </span>
+                    ) : null}
                     {formatCentsShort(r.cents)}
                   </span>
                   {/* El riel: la barra y, si hay, la marca del período anterior. */}

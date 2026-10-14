@@ -1,5 +1,5 @@
 import { Panel } from '@/components/administracion/kit/panel'
-import { noticeAttention } from '@/lib/accounting/home'
+import { integrationForBooks, noticeAttention } from '@/lib/accounting/home'
 import { AttentionRows, type AttentionWords } from './attention-rows'
 import type { HomeData } from './home-data'
 import {
@@ -29,10 +29,11 @@ const NOTICE_WORDS: AttentionWords = {
  * (antes acá decía «Está todo al día» aunque faltaran los saldos iniciales).
  */
 export async function NoticesBlock({ data }: { data: HomeData }) {
-  const [summaryResult, agenda, integrationResult] = await Promise.all([
+  const [summaryResult, agenda, integrationResult, settingsResult] = await Promise.all([
     data.summary,
     data.agenda,
     data.integration,
+    data.settings,
   ])
   const { base, today } = data
   const covered = new Set(agenda.today.flatMap((item) => item.covers))
@@ -44,8 +45,13 @@ export async function NoticesBlock({ data }: { data: HomeData }) {
         (item) => !covered.has(item.kind) && !(cuitInSetup && item.kind === 'sas_cuit_missing'),
       )
     : []
+  // «Bajá Mis Comprobantes del mes pasado» no vale si ese mes es de antes de los libros: ahí
+  // «Hoy te toca» no lo ofrece, y acá tampoco tiene que aparecer por la otra puerta.
   const integration = integrationResult?.ok
-    ? integrationResult.data.filter((item) => !covered.has(item.kind))
+    ? integrationForBooks(integrationResult.data, {
+        today,
+        booksStartDate: settingsResult.ok ? (settingsResult.data?.booksStartDate ?? null) : null,
+      }).filter((item) => !covered.has(item.kind))
     : []
   const integrationFailed = integrationResult !== null && !integrationResult.ok
 

@@ -1,11 +1,12 @@
-import { CircleAlert, CircleCheck, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
+import { Panel } from '@/components/administracion/kit/panel'
+import { PanelError } from '@/components/administracion/kit/panel-states'
+import { RetryButton } from '@/components/administracion/kit/retry-button'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { Button } from '@/components/ui/button'
 import type { ClosedPeriodCheckRow, IntegrityCheckRow } from '@/lib/accounting/queries/periods'
 import type { QueryOutcome } from '@/lib/accounting/queries/shared'
-import { cn } from '@/lib/utils'
-import { RetryButton } from '../../_resumen/retry-button'
-import { Callout } from './form-bits'
 
 /** Las ocho revisiones de A.6, dichas en palabras. */
 const CHECK_LABELS: Readonly<Record<string, string>> = {
@@ -38,10 +39,29 @@ function issueCount(detail: Readonly<Record<string, unknown>> | null): number | 
   return found ? total : null
 }
 
+/** Un renglón de la revisión: qué se miró y, a la derecha, si cierra. */
+function CheckRow({ ok, text, count }: { ok: boolean; text: string; count?: number | null }) {
+  return (
+    <li className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+      <span className="min-w-0 text-sm text-pretty">
+        {text}
+        {count !== null && count !== undefined ? (
+          <span className="block text-xs text-muted-foreground">
+            {count} {count === 1 ? 'caso' : 'casos'} para revisar.
+          </span>
+        ) : null}
+      </span>
+      <StatusPill tone={ok ? 'ok' : 'late'}>{ok ? 'Bien' : 'No cierra'}</StatusPill>
+    </li>
+  )
+}
+
 /**
  * Ajustes › Integridad (H.17, F.14): [Verificar] corre las revisiones de la
  * base y la de los meses cerrados. «Todo en orden» o la lista de lo que no
- * cierra. Server-safe.
+ * cierra. Es zona de la contadora y de soporte: los textos son los de siempre.
+ * «Verificar» es una lectura, así que también lo ve quien solo lee.
+ * Server-safe.
  */
 export function IntegrityPanel({
   verifyHref,
@@ -57,35 +77,27 @@ export function IntegrityPanel({
 }) {
   if (!ran || !checks || !closed) {
     return (
-      <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary">
-            <ShieldCheck className="size-5" aria-hidden />
-          </span>
-          <div className="space-y-1">
-            <h3 className="font-serif text-lg font-semibold tracking-tight">
-              Revisar que todo cierre
-            </h3>
-            <p className="text-sm text-muted-foreground text-pretty">
-              Recorre los asientos, los comprobantes, los libros de IVA y los meses cerrados para
-              confirmar que todo coincide. Tarda unos segundos.
-            </p>
-          </div>
-        </div>
-        <Button asChild className="h-11 md:h-9">
+      <Panel
+        title="Revisar que todo cierre"
+        description="Recorre los asientos, los comprobantes, los libros de IVA y los meses cerrados para confirmar que todo coincide. Tarda unos segundos."
+      >
+        <Button asChild className="h-11 gap-2 px-5">
           <Link href={verifyHref} scroll={false}>
+            <ShieldCheck className="size-4" aria-hidden />
             Verificar
           </Link>
         </Button>
-      </section>
+      </Panel>
     )
   }
 
   if (!checks.ok || !closed.ok) {
     return (
-      <Callout tone="error" action={<RetryButton label="Verificar de nuevo" />}>
-        {!checks.ok ? checks.message : !closed.ok ? closed.message : null}
-      </Callout>
+      <PanelError
+        title="Revisar que todo cierre"
+        message={!checks.ok ? checks.message : !closed.ok ? closed.message : ''}
+        retryLabel="Verificar de nuevo"
+      />
     )
   }
 
@@ -94,66 +106,58 @@ export function IntegrityPanel({
   const allGood = failing.length === 0 && changed.length === 0
 
   return (
-    <div className="space-y-4">
-      <section className="card-hairline overflow-hidden rounded-xl border bg-card">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
-          <div className="flex min-w-0 items-center gap-2.5" role="status">
-            {allGood ? (
-              <CircleCheck className="size-5 shrink-0 text-success" aria-hidden />
-            ) : (
-              <CircleAlert className="size-5 shrink-0 text-destructive" aria-hidden />
-            )}
-            <h3 className="font-serif text-lg font-semibold tracking-tight">
-              {allGood ? 'Todo en orden.' : 'Hay cosas que no cierran.'}
-            </h3>
-          </div>
-          <RetryButton label="Verificar de nuevo" />
-        </header>
-        <ul className="divide-y divide-border/60">
-          {checks.data.map((c) => {
-            const count = c.ok ? null : issueCount(c.detail)
-            return (
-              <li key={c.checkKey} className="flex items-start gap-2.5 px-5 py-3 text-sm">
-                {c.ok ? (
-                  <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-                ) : (
-                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-                )}
-                <span className={cn('min-w-0 text-pretty', !c.ok && 'text-destructive')}>
-                  {checkLabel(c.checkKey)}
-                  <span className="sr-only">{c.ok ? ' Bien.' : ' No cierra.'}</span>
-                  {count !== null ? (
-                    <span className="block text-xs text-muted-foreground">
-                      {count} {count === 1 ? 'caso' : 'casos'} para revisar.
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            )
-          })}
-          {closed.data.length > 0 ? (
-            <li className="flex items-start gap-2.5 px-5 py-3 text-sm">
-              {changed.length === 0 ? (
-                <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-              ) : (
-                <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-              )}
-              <span className={cn('min-w-0 text-pretty', changed.length > 0 && 'text-destructive')}>
-                {changed.length > 0
-                  ? `Cambió después de cerrarse: ${changed.map((p) => p.label).join(', ')}.`
-                  : closed.data.length === 1
-                    ? 'El mes cerrado está igual que cuando se cerró.'
-                    : `Los ${closed.data.length} meses cerrados están igual que cuando se cerraron.`}
-              </span>
-            </li>
+    <Panel>
+      <div className="flex flex-wrap items-center justify-between gap-3" role="status">
+        <p className="flex min-w-0 items-center gap-3 font-serif text-3xl leading-tight font-semibold tracking-tight text-balance">
+          {allGood ? (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              className="size-8 shrink-0 text-success"
+            >
+              <circle cx="12" cy="12" r="10.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                className="adm-tick adm-tick-draw"
+                d="M7 12.5l3.5 3.5L17 8.5"
+                stroke="currentColor"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           ) : null}
-        </ul>
-      </section>
+          {allGood ? 'Todo en orden.' : 'Hay cosas que no cierran.'}
+        </p>
+        <RetryButton label="Verificar de nuevo" />
+      </div>
+      <ul className="mt-5 divide-y divide-border/60">
+        {checks.data.map((c) => (
+          <CheckRow
+            key={c.checkKey}
+            ok={c.ok}
+            text={checkLabel(c.checkKey)}
+            count={c.ok ? null : issueCount(c.detail)}
+          />
+        ))}
+        {closed.data.length > 0 ? (
+          <CheckRow
+            ok={changed.length === 0}
+            text={
+              changed.length > 0
+                ? `Cambió después de cerrarse: ${changed.map((p) => p.label).join(', ')}.`
+                : closed.data.length === 1
+                  ? 'El mes cerrado está igual que cuando se cerró.'
+                  : `Los ${closed.data.length} meses cerrados están igual que cuando se cerraron.`
+            }
+          />
+        ) : null}
+      </ul>
       {allGood ? null : (
-        <p className="text-xs text-muted-foreground text-pretty">
+        <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground text-pretty">
           Si algo no cierra, avisanos: no lo corrijas cargando comprobantes nuevos.
         </p>
       )}
-    </div>
+    </Panel>
   )
 }

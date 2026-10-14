@@ -73,8 +73,9 @@ export function AddAttachmentButton({
   className?: string
 }) {
   const off = disabled || busy
+  // `relative`: el input oculto (`sr-only`, absoluto) queda adentro y no le suma scroll a la página.
   return (
-    <label className={cn('inline-flex', off && 'pointer-events-none', className)}>
+    <label className={cn('relative inline-flex', off && 'pointer-events-none', className)}>
       <input
         type="file"
         accept={ATTACHMENT_ACCEPT}

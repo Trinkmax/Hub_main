@@ -1,6 +1,6 @@
 'use client'
 
-import { RefreshCcw, XCircle } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -19,33 +19,41 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { buildImportProposals, cancelImportBatch } from '@/lib/imports/actions'
 import { importHref } from '@/lib/imports/ui/labels'
+import { cn } from '@/lib/utils'
 import { OFFLINE_TEXT } from './review-context'
 
-/** «Revisar de nuevo»: vuelve a armar todo con los datos de hoy (proveedores, cuentas, reglas). */
+/**
+ * «Volver a armar con los datos de hoy»: rehace todo el archivo con los
+ * proveedores, las categorías y lo enseñado como están ahora. La misma acción
+ * de siempre (`buildImportProposals`); también es el «Armar ahora» de un
+ * archivo que quedó a medio armar.
+ */
 export function RebuildButton({
   slug,
   batchId,
-  label = 'Revisar de nuevo',
+  label = 'Volver a armar con los datos de hoy',
   variant = 'outline',
+  className,
 }: {
   slug: string
   batchId: string
   label?: string
   variant?: 'outline' | 'default'
+  className?: string
 }) {
   const [pending, start] = useTransition()
   return (
     <Button
       type="button"
       variant={variant}
-      className="h-11 w-full gap-2 sm:w-auto md:h-9"
+      className={cn('h-11 w-full gap-2 sm:w-auto', className)}
       disabled={pending}
       onClick={() =>
         start(async () => {
           try {
             const result = await buildImportProposals(slug, { batchId })
             if (!result.ok) toast.error(result.message)
-            else toast.success('Listo: lo volvimos a armar con los datos de hoy.')
+            else toast.success('Listo: lo volví a armar con los datos de hoy.')
           } catch {
             toast.error(OFFLINE_TEXT)
           }
@@ -59,9 +67,10 @@ export function RebuildButton({
 }
 
 /**
- * «Cancelar la importación» con confirmación (es irreversible): lo que no se
- * cargó queda afuera; lo que ya se cargó queda en los libros y se anula desde
- * cada comprobante, como siempre.
+ * «Descartar este archivo», con confirmación (no tiene vuelta atrás): lo que
+ * todavía no se cargó se descarta; lo que ya se cargó sigue registrado y se
+ * anula desde cada comprobante, como siempre. La misma acción y el mismo envío
+ * (`cancelImportBatch` con su motivo opcional).
  */
 export function CancelBatchButton({
   slug,
@@ -103,20 +112,19 @@ export function CancelBatchButton({
       <Button
         type="button"
         variant="outline"
-        className="h-11 w-full gap-2 text-destructive hover:text-destructive sm:w-auto md:h-9"
+        className="h-11 w-full text-destructive hover:text-destructive sm:w-auto"
         onClick={() => setOpen(true)}
       >
-        <XCircle className="size-4" aria-hidden />
-        Cancelar la importación
+        Descartar este archivo
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Cancelás esta importación?</AlertDialogTitle>
+          <AlertDialogTitle>¿Descartás este archivo?</AlertDialogTitle>
           <AlertDialogDescription>
             Lo que todavía no se cargó se descarta.{' '}
             {posted > 0
-              ? `Los ${posted} que ya se cargaron quedan en los libros: si hace falta, anulalos desde cada comprobante.`
-              : 'No se cargó nada todavía, así que los libros no cambian.'}{' '}
+              ? `${posted === 1 ? 'El que ya se cargó sigue registrado' : `Los ${posted} que ya se cargaron siguen registrados`}: si hace falta, anulalos desde cada comprobante.`
+              : 'Todavía no se había cargado nada.'}{' '}
             Después podés volver a subir el mismo archivo.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -144,7 +152,7 @@ export function CancelBatchButton({
               cancel()
             }}
           >
-            {pending ? 'Cancelando…' : 'Sí, cancelarla'}
+            {pending ? 'Descartando…' : 'Sí, descartarlo'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

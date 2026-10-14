@@ -8,6 +8,7 @@ import {
 } from '@/components/administracion/guias/guide-step'
 import { HowToFor } from '@/components/administracion/guias/onboarding/how-to-slot'
 import { StepScreens } from '@/components/administracion/guias/step-screens'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import {
   GUIDE_RECIPES,
   type GuideOverview,
@@ -18,6 +19,7 @@ import {
   recipeStatus,
 } from '@/lib/accounting/guides'
 import { minutesText } from '@/lib/accounting/onboarding'
+import { cn } from '@/lib/utils'
 import { GuideDo } from './guide-do'
 import { RECIPE_ICON } from './guide-icons'
 import { GuideMock } from './mock-scenes'
@@ -30,16 +32,25 @@ import { type RecipeIndexItem, RecipesShell } from './recipes-shell'
  * «Hacerlo ahora», que abre la pantalla o la hoja real.
  *
  * No se marcan a mano: las que son rutina dicen solas si estás al día, con lo que hay cargado.
+ * El estado se dice igual que en el mapa de la portada: «Te toca» en una píldora ámbar con su
+ * detalle al lado, «Al día» en una verde. Antes las dos iban en texto verde y no se distinguía
+ * lo pendiente de lo hecho.
+ *
  * Server component; lo interactivo son islas (el acordeón, el carrusel, la maqueta y el botón).
  */
 
-const STEP_STATUS = { done: 'done', todo: 'todo', idle: 'pending' } as const
-
 /** La línea de estado del encabezado: cómo venís, o el ejemplo si no hay nada que decir. */
-function statusLine(recipe: GuideRecipe, status: GuideStatus | null): string {
-  if (!status) return recipe.hint
-  if (status.state === 'done') return 'Al día'
-  return status.state === 'todo' ? `Te toca · ${status.text}` : status.text
+function StatusLine({ recipe, status }: { recipe: GuideRecipe; status: GuideStatus | null }) {
+  if (status?.state === 'done') return <StatusPill tone="ok">Al día</StatusPill>
+  if (status?.state === 'todo') {
+    return (
+      <>
+        <StatusPill tone="warn">Te toca</StatusPill>
+        <span className="text-muted-foreground">{status.text}</span>
+      </>
+    )
+  }
+  return <span className="text-muted-foreground">{status ? status.text : recipe.hint}</span>
 }
 
 function Recipe({
@@ -70,8 +81,12 @@ function Recipe({
           <Icon className="size-[18px]" />
         </span>
       }
-      status={status ? STEP_STATUS[status.state] : 'pending'}
-      statusText={statusLine(recipe, status)}
+      // El estado lo dice la píldora: el borde solo acompaña a la que te toca, en su mismo ámbar.
+      status="pending"
+      statusLine={<StatusLine recipe={recipe} status={status} />}
+      // En esta página la barra de la sección no queda pegada: con más margen, al llegar por un
+      // link asomaba la cola de la receta de arriba.
+      className={cn('scroll-mt-20', status?.state === 'todo' && 'border-warning/50')}
       chips={minutes ? <GuideChip icon={<Clock aria-hidden />}>{minutes}</GuideChip> : null}
       footerLabel="Qué queda:"
       footerHow={recipe.result}
@@ -136,6 +151,7 @@ export function Recipes({ base, overview }: { base: string; overview: GuideOverv
   // Abierta al entrar: la rutina que te toca o, si no hay ninguna, la de todos los días.
   const first = rows.find(({ status }) => status?.state === 'todo')?.recipe ?? GUIDE_RECIPES[0]
   return (
+    // Quien llega con `#receta-…` (desde el mapa, «¿Qué pasó?» o la rutina) ve solo esa abierta.
     <RecipesShell items={items} initialOpen={first ? [first.id] : []}>
       {rows.map(({ recipe, status }, index) => (
         <Recipe key={recipe.id} recipe={recipe} n={index + 1} base={base} status={status} />

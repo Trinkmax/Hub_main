@@ -168,16 +168,57 @@ export function TicketTotal({
 }
 
 /**
- * El sello: «CON FACTURA A», «SIN FACTURA». Inclinado y con borde doble, como
- * uno de goma. Los dos tonos son tintas de sello, NO estados: `factura` verde y
- * `sin` azul. Ninguno es una alarma, porque «sin factura» queda registrado
- * igual en los libros; por eso no hay un sello rojo.
+ * El rótulo de un bloque del papel («EFECTIVO», «DETALLE», «CUÁNDO ENTRA»),
+ * como los de un tique: chico, en mayúsculas y en la tinta gris del papel.
+ *
+ * Cuándo NO: como título del papel (eso es `TicketHeader`) ni fuera de un
+ * `Ticket` o de una `PaperSheet`.
+ */
+export function TicketLabel({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <p
+      className={cn(
+        'text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground',
+        className,
+      )}
+    >
+      {children}
+    </p>
+  )
+}
+
+// Las tintas de sello: el tono mezclado con la tinta del papel, para llegar a
+// AA también sobre el papel del modo oscuro, que es un escalón más gris.
+const STAMP_GREEN = 'text-[color:color-mix(in_oklch,var(--adm-s1)_80%,var(--adm-paper-ink))]'
+const STAMP_BLUE = 'text-[color:color-mix(in_oklch,var(--adm-s4)_80%,var(--adm-paper-ink))]'
+const STAMP_INK = {
+  factura: STAMP_GREEN,
+  sin: STAMP_BLUE,
+  // Un acto que hizo la persona: la misma tinta verde que «con factura».
+  ok: STAMP_GREEN,
+} as const
+
+/**
+ * El sello: «CON FACTURA A», «SIN FACTURA», «CARGADO». Inclinado y con borde
+ * doble, como uno de goma.
+ *
+ * La regla de los sellos: un sello dice QUÉ PAPEL ES («Con factura A», «Sin
+ * factura», «Con tique», «Con resumen del banco») o UN ACTO TERMINADO
+ * («Cargado», «Cerrado»). Nunca un estado de pago ni de vencimiento («Pagada»,
+ * «Cobrada», «A cobrar», «Vencida»: eso es `StatusPill`). «Anulado» tampoco es
+ * un sello: es la banda de la ficha del comprobante.
+ *
+ * Los tonos son tintas de sello, NO estados: `factura` verde, `sin` azul y
+ * `ok` (un acto terminado) la misma tinta verde. Ninguno es una alarma, porque
+ * «sin factura» queda registrado igual en los libros; por eso no hay un sello
+ * rojo.
  *
  * `animate` lo hace entrar como un sellazo: usalo cuando el sello aparece o
- * cambia por algo que hizo la persona, nunca en una pantalla que solo se mira.
+ * cambia por algo que la persona acaba de hacer, nunca en una pantalla que
+ * solo se mira.
  *
- * Cuándo NO: fuera de un `Ticket` (la tinta está pensada para ese papel), ni
- * para un estado de pago o de vencimiento (eso es `StatusPill`).
+ * Cuándo NO: fuera de un `Ticket` o de una `PaperSheet` (la tinta está pensada
+ * para ese papel).
  */
 export function TicketStamp({
   tone,
@@ -186,7 +227,7 @@ export function TicketStamp({
   animate = false,
   className,
 }: {
-  tone: 'factura' | 'sin'
+  tone: 'factura' | 'sin' | 'ok'
   children: ReactNode
   icon?: LucideIcon
   animate?: boolean
@@ -196,11 +237,7 @@ export function TicketStamp({
     <span
       className={cn(
         'inline-flex -rotate-6 items-center gap-1.5 rounded-md border-[3px] border-double border-current px-2.5 py-1 text-[11px] font-bold uppercase leading-tight tracking-[0.14em] mix-blend-multiply',
-        // La tinta es el tono mezclado con la del papel: da AA también sobre
-        // el papel del modo oscuro, que es un escalón más gris.
-        tone === 'factura'
-          ? 'text-[color:color-mix(in_oklch,var(--adm-s1)_80%,var(--adm-paper-ink))]'
-          : 'text-[color:color-mix(in_oklch,var(--adm-s4)_80%,var(--adm-paper-ink))]',
+        STAMP_INK[tone],
         animate && 'adm-stamp-in',
         className,
       )}

@@ -231,9 +231,17 @@ export function attentionView(
       const when = item.date ? `vence el ${formatDayMonth(item.date)}` : 'vence pronto'
       const actions: AttentionAction[] = []
       if (item.refId) {
+        // «Pagar»: «Nuevo gasto» con ese gasto fijo ya puesto, lo mismo que el botón de su
+        // renglón en la planilla. Si la factura llegó y se paga después, va la compra.
+        actions.push({
+          type: 'sheet',
+          label: 'Pagar',
+          action: 'gasto',
+          params: { 'gasto-fijo': item.refId },
+        })
         actions.push({
           type: 'link',
-          label: 'Cargar una compra que debo',
+          label: 'Lo pago después',
           href: `${base}/compras/nueva?gasto-fijo=${encodeURIComponent(item.refId)}`,
         })
         if (item.date) {
@@ -246,7 +254,7 @@ export function attentionView(
         }
       }
       return view(
-        `${subject} · ${when} · todavía sin cargar`,
+        `${subject} · ${when} · todavía sin pagar`,
         'warning',
         actions,
         item.amountCents,
@@ -272,7 +280,8 @@ export function attentionView(
         ? [
             {
               type: 'sheet',
-              label: 'Registrar cobro',
+              // El mismo botón de cada renglón de Ventas › Plata por cobrar.
+              label: 'Ya entró',
               action: 'cobrar',
               params: { cliente: item.partyId },
             },

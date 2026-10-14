@@ -1,23 +1,27 @@
-import { FileDown, FilePlus2, HandCoins, Plus } from 'lucide-react'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ActionButton, QuickActionsBar } from '@/components/administracion/quick-actions'
+import { Suspense } from 'react'
+import { AdmHeader, AdmPage, type ViewPillItem, ViewPills } from '@/components/administracion/kit'
+import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { SectionNav } from '@/components/administracion/section-nav'
-import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { todayInCordoba } from '@/lib/dates'
-import { importSourceHref } from '@/lib/imports/ui/labels'
+import { cn } from '@/lib/utils'
+import { ComprasDoor } from './_components/compras-door'
 import { DocumentsTab } from './_components/documents-tab'
-import { SuppliersTab } from './_components/suppliers-tab'
+import {
+  HeroSkeleton,
+  LibretaSkeleton,
+  loadLibreta,
+  SorterSkeleton,
+  SupplierSorterBlock,
+  SuppliersBody,
+  SuppliersHeroBlock,
+} from './_components/suppliers-tab'
 import {
   type ComprasTab,
   comprasHref,
   firstParam,
   isComprasTab,
   legacyComprasRedirect,
-  newPurchaseHref,
 } from './_lib/links'
 import { requireComprasAccess } from './_lib/page-access'
 
@@ -30,20 +34,25 @@ const TABS: ReadonlyArray<{ value: ComprasTab; label: string }> = [
 ]
 
 const DESCRIPTIONS: Readonly<Record<ComprasTab, string>> = {
-  proveedores: 'Lo que le debés a cada proveedor, qué está vencido y qué vence esta semana.',
-  comprobantes: 'Las facturas, notas y gastos que cargaste, con lo que falta pagar de cada uno.',
-  pagos: 'Lo que les pagaste a proveedores y organismos.',
+  proveedores: 'Tu libreta de proveedores: a quién le debés, cuánto y desde cuándo.',
+  comprobantes: 'Todo lo que compraste y gastaste, con su papel y lo que falta pagar de cada cosa.',
+  pagos: 'Lo que les pagaste a proveedores y organismos, y con qué.',
 }
 
-/** Para quien carga: dónde están la compra y el pago de cada proveedor (el menú de su fila). */
-const PROVEEDORES_HINT = ' Con el ⋯ de cada uno le cargás una compra o un pago.'
-
 /**
- * Compras y pagos (H.7; hasta el 12/10/2026, «Compras y proveedores»):
- * pestañas por URL (`?tab=`), las acciones de carga en el encabezado (en el
- * celular, en la barra de abajo) y nada de botones de carga para la contadora.
- * «Gastos fijos» ya no es una pestaña de acá: tiene la suya en Administración
- * (`/administracion/gastos-fijos`), y el link viejo redirige.
+ * Compras y pagos: la libreta de cuenta corriente con los proveedores.
+ *
+ * - **Proveedores** (por defecto): el índice de la libreta. Arriba, «Le debés a
+ *   proveedores» y la puerta de carga («¿Qué querés cargar?», tres situaciones);
+ *   abajo, un renglón por proveedor con el «desde cuándo» en el margen.
+ * - **Comprobantes** y **Pagos**: el diario de lo anotado.
+ * - `?filtro=sin-clasificar`, para quien carga: «Clasificar proveedores», un
+ *   mazo de fichas (un toque por proveedor). Con `&vista=lista`, la lista común.
+ *
+ * Las vistas van por URL (`?tab=`); las acciones de carga ya no están en el
+ * encabezado (en el celular ni se veían): están en la puerta y en cada renglón.
+ * La contadora no ve ninguna. «Gastos fijos» tiene su pantalla
+ * (`/administracion/gastos-fijos`); el link viejo redirige.
  */
 export default async function ComprasPage({
   params,
@@ -64,70 +73,72 @@ export default async function ComprasPage({
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
-  return (
-    <PageShell>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Compras y pagos
-            <ReadOnlyBadge />
-          </>
-        }
-        description={
-          tab === 'proveedores' && canWrite
-            ? `${DESCRIPTIONS.proveedores}${PROVEEDORES_HINT}`
-            : DESCRIPTIONS[tab]
-        }
-        actions={
-          canWrite ? (
-            <div className="hidden flex-wrap items-center gap-2 lg:flex">
-              <Button asChild variant="outline" className="gap-2">
-                <Link href={importSourceHref(tenantSlug, 'arca_recibidos')}>
-                  <FileDown className="size-4" aria-hidden />
-                  Importar de ARCA
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="gap-2">
-                <Link href={newPurchaseHref(tenantSlug)}>
-                  <FilePlus2 className="size-4" aria-hidden />
-                  Nueva factura
-                </Link>
-              </Button>
-              <ActionButton action="pagar" variant="outline" className="gap-2">
-                <HandCoins className="size-4" aria-hidden />
-                Pagar
-              </ActionButton>
-              <ActionButton action="gasto" className="gap-2">
-                <Plus className="size-4" aria-hidden />
-                Nuevo gasto
-              </ActionButton>
-            </div>
-          ) : null
-        }
-      />
+  // «Clasificar proveedores»: la pantalla entera es el mazo (sin héroe, puerta ni franja).
+  const sorting =
+    tab === 'proveedores' &&
+    canWrite &&
+    firstParam(sp.filtro) === 'sin-clasificar' &&
+    firstParam(sp.vista) !== 'lista'
 
-      <SectionNav
-        label="Secciones de Compras"
-        active={tab}
-        items={TABS.map((t) => ({
-          value: t.value,
-          label: t.label,
-          href: comprasHref(tenantSlug, t.value),
-        }))}
-      />
-
-      {tab === 'proveedores' ? (
-        <SuppliersTab
-          tenantId={tenantId}
-          tenantSlug={tenantSlug}
-          sp={sp}
-          today={today}
-          canWrite={canWrite}
+  if (sorting) {
+    const libreta = loadLibreta(tenantId, canWrite)
+    return (
+      <AdmPage>
+        <AdmHeader
+          title="Clasificar proveedores"
+          description="Decí una sola vez en qué le comprás a cada uno. Es un toque por proveedor."
+          back={{ href: comprasHref(tenantSlug), label: 'Compras y pagos' }}
         />
+        <Suspense fallback={<SorterSkeleton />}>
+          <SupplierSorterBlock data={libreta} tenantSlug={tenantSlug} sp={sp} />
+        </Suspense>
+      </AdmPage>
+    )
+  }
+
+  const views: ViewPillItem[] = TABS.map((t) => ({
+    key: t.value,
+    label: t.label,
+    href: comprasHref(tenantSlug, t.value),
+    active: t.value === tab,
+  }))
+  const libreta = tab === 'proveedores' ? loadLibreta(tenantId, canWrite) : null
+
+  return (
+    <AdmPage>
+      <AdmHeader
+        title="Compras y pagos"
+        description={DESCRIPTIONS[tab]}
+        badge={<ReadOnlyBadge />}
+      />
+      <ViewPills label="Vistas de Compras y pagos" items={views} />
+
+      {libreta ? (
+        <>
+          {/* El número y la puerta. La puerta no espera a nadie: pinta con el encabezado. */}
+          <div className="grid gap-5 lg:grid-cols-12 lg:items-start">
+            <Suspense fallback={<HeroSkeleton className={heroSpan(canWrite)} />}>
+              <SuppliersHeroBlock
+                data={libreta}
+                tenantSlug={tenantSlug}
+                className={heroSpan(canWrite)}
+              />
+            </Suspense>
+            <ComprasDoor tenantSlug={tenantSlug} className="lg:col-span-5" />
+          </div>
+          <Suspense fallback={<LibretaSkeleton />}>
+            <SuppliersBody
+              data={libreta}
+              tenantSlug={tenantSlug}
+              sp={sp}
+              today={today}
+              canWrite={canWrite}
+            />
+          </Suspense>
+        </>
       ) : (
         <DocumentsTab
-          mode={tab}
+          mode={tab === 'pagos' ? 'pagos' : 'comprobantes'}
           tenantId={tenantId}
           tenantSlug={tenantSlug}
           sp={sp}
@@ -137,6 +148,11 @@ export default async function ComprasPage({
       )}
 
       <QuickActionsBar />
-    </PageShell>
+    </AdmPage>
   )
+}
+
+/** Sin la puerta (la contadora), el número ocupa todo el ancho. */
+function heroSpan(canWrite: boolean): string {
+  return cn(canWrite ? 'lg:col-span-7' : 'lg:col-span-12')
 }

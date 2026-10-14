@@ -72,9 +72,9 @@ export function ChartWorkspace({
   }, [])
 
   const createAccount = useCallback(
-    (parentId?: string | null) => {
+    (parentId?: string | null, opts?: { simple?: boolean }) => {
       if (readOnly) return
-      setSheet({ mode: 'create', parentId, nonce: Date.now() })
+      setSheet({ mode: 'create', parentId, nonce: Date.now(), simple: opts?.simple ?? false })
       syncCuentaParam(null)
     },
     [readOnly],

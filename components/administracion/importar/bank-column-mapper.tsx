@@ -36,11 +36,22 @@ export type MapperPreview =
 const NONE = 'none'
 const SELECT_CLASS = 'w-full data-[size=default]:h-11 md:data-[size=default]:h-10'
 
+/** Las tres que hacen falta para leer un movimiento: van primero en la lista. */
+const REQUIRED_COLUMNS: readonly BankColumn[] = ['date', 'description', 'amount']
+/** El orden de la lista: lo que hace falta primero, después el resto como venía. */
+const COLUMN_CHOICES: readonly BankColumn[] = [
+  ...REQUIRED_COLUMNS,
+  ...BANK_COLUMNS.filter((c) => !REQUIRED_COLUMNS.includes(c)),
+]
+
 /**
- * «Contanos qué es cada columna» (diseño §4.3.2): el extracto vino con títulos
- * que no reconocemos. La persona elige qué es cada columna (con sus primeros
- * valores a la vista), ve cómo lo vamos a leer y lo confirma. El formato se
- * guarda y la próxima vez se reconoce solo.
+ * «Contame qué es cada columna»: el archivo del banco vino con títulos que no
+ * conozco. La persona elige qué es cada columna (con sus primeros valores a la
+ * vista), ve cómo lo voy a leer y lo confirma. El formato se guarda y la
+ * próxima vez se reconoce solo.
+ *
+ * Es la única pantalla del área que conserva sus desplegables: se usa una vez
+ * por banco y cada columna tiene trece respuestas posibles.
  */
 export function BankColumnMapper({
   rows,
@@ -85,7 +96,7 @@ export function BankColumnMapper({
   return (
     <section
       aria-labelledby={titleId}
-      className="card-hairline @container space-y-5 rounded-xl border bg-card p-5 sm:p-6"
+      className="@container space-y-5 rounded-xl bg-secondary/50 p-4 sm:p-5"
     >
       <header className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
@@ -93,11 +104,11 @@ export function BankColumnMapper({
         </span>
         <div className="space-y-1">
           <h2 id={titleId} className="font-serif text-lg font-semibold tracking-tight">
-            Contanos qué es cada columna
+            Contame qué es cada columna
           </h2>
           <p className="text-sm text-muted-foreground text-pretty">
-            No conocemos este formato de extracto. Decinos una sola vez qué trae cada columna: lo
-            guardamos y la próxima vez lo leemos solos.
+            No conozco el formato de este banco. Decime una sola vez qué trae cada columna: lo
+            guardo y la próxima vez lo leo solo.
           </p>
         </div>
       </header>
@@ -144,8 +155,8 @@ export function BankColumnMapper({
         </div>
       </div>
 
-      {/* Por el ancho de la tarjeta (al lado de «¿Cómo lo bajo?» mide ~590 px): con tres columnas
-          ahí, «Débito (plata que sale)» y «Número de comprobante» se cortaban. */}
+      {/* Por el ancho del bloque: con tres columnas en un paso angosto, «Débito (plata que sale)» y
+          «Número de comprobante» se cortaban. */}
       <ul className="grid gap-3 @sm:grid-cols-2 @3xl:grid-cols-3">
         {sample.columns.map((column) => {
           const selectId = `${titleId}-col-${column.index}`
@@ -154,7 +165,7 @@ export function BankColumnMapper({
           return (
             <li
               key={column.index}
-              className="grid min-w-0 grid-cols-1 gap-2 rounded-lg border border-border/70 p-3"
+              className="grid min-w-0 grid-cols-1 gap-2 rounded-lg border border-border/70 bg-card p-3"
             >
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
@@ -193,9 +204,10 @@ export function BankColumnMapper({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>No la uses</SelectItem>
-                  {BANK_COLUMNS.map((c) => (
+                  {COLUMN_CHOICES.map((c) => (
                     <SelectItem key={c} value={c}>
                       {BANK_COLUMN_TEXT[c]}
+                      {REQUIRED_COLUMNS.includes(c) ? ' · hace falta' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -217,9 +229,9 @@ export function BankColumnMapper({
             {read.message}
           </p>
         ) : read?.ok ? (
-          <div className="rounded-xl border border-border/70 p-4">
+          <div className="rounded-xl border border-border/70 bg-card p-4">
             <p className="text-sm font-medium">
-              Así lo vamos a leer ({read.count === 1 ? '1 movimiento' : `${read.count} movimientos`}
+              Así lo voy a leer ({read.count === 1 ? '1 movimiento' : `${read.count} movimientos`}
               ):
             </p>
             <ul className="mt-2 divide-y divide-border/60 text-sm">

@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertTriangle, ArrowRight } from 'lucide-react'
-import { type ReactNode, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import type { QuickVoucher } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import type { SheetTreasury } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
 import {
@@ -19,9 +19,10 @@ import {
   PAPER_OPTIONS,
   type PaperOption,
   type PaperStamp,
+  type TreasuryDirection,
   treasuryAfter,
+  treasuryAfterShort,
   treasuryAfterWords,
-  treasuryMoneyText,
 } from './gasto-papel'
 
 /**
@@ -29,6 +30,12 @@ import {
  * para elegir, cómo queda la caja y el ticket con sello. Nada de acá decide
  * qué se guarda: reciben el estado de la hoja y avisan lo que la persona tocó.
  * Los textos y las cuentas viven en `gasto-papel.ts` (puro, con tests).
+ *
+ * Dos de estas piezas son de toda la sección, para que el mismo concepto se
+ * vea igual donde aparezca: `PaperChoices` (los cuatro papeles: también en la
+ * compra y en la ficha de un gasto fijo) y `TreasuryAfterLine` (el «antes →
+ * después» de una caja: también en «Pagar» y, con `direction="in"`, en
+ * «Registrar un cobro»). El resto es de esta hoja.
  */
 
 // ─── Los dibujos ─────────────────────────────────────────────────────────────
@@ -229,23 +236,38 @@ export function PaperArt({ kind, className }: { kind: QuickVoucher; className?: 
 
 // ─── ¿Qué papel te dieron? ───────────────────────────────────────────────────
 
-/** Desde `sm` la hoja mide 560 px y entran dos papeles por fila. */
-const TWO_COLUMNS = '(min-width: 40rem)'
+/**
+ * Cuántos papeles entran por fila lo decide el ancho del GRUPO, no el de la
+ * ventana: con 30rem o más van de a dos, con el dibujo arriba y más grande; con
+ * menos, uno por renglón con el dibujo a la izquierda (así la línea de cada uno
+ * se lee entera). En la hoja de «Nuevo gasto» (560 px) son dos columnas, igual
+ * que siempre; en una página, depende de la columna donde caiga el grupo.
+ *
+ * Va por CSS (`@container`), sin `matchMedia`: lo que pinta el servidor ya es
+ * lo que queda, y en una página no hay salto al hidratar.
+ *
+ * `ChoiceCard` es una pieza del kit con `layout` fijo: acá se la monta en
+ * `row` y, desde 30rem del grupo, estas clases la llevan a la forma de `stack`
+ * (mismo cuerpo en columna, mismo aire, la marca arriba a la derecha).
+ */
+const PAPER_CARD_STACKED = [
+  '@[30rem]:[&>input+span]:flex-col',
+  '@[30rem]:[&>input+span]:items-stretch',
+  '@[30rem]:[&>input+span]:gap-3',
+  '@[30rem]:[&>input+span]:pr-11',
+  '@[30rem]:[&>.adm-choice-mark]:top-3.5',
+  '@[30rem]:[&>.adm-choice-mark]:translate-y-0',
+].join(' ')
 
-function subscribeTwoColumns(onChange: () => void): () => void {
-  const query = window.matchMedia(TWO_COLUMNS)
-  query.addEventListener('change', onChange)
-  return () => query.removeEventListener('change', onChange)
-}
-
-/** En el celular los papeles van uno por renglón (el dibujo a la izquierda): así la línea de cada uno se lee entera. */
-function useTwoColumns(): boolean {
-  return useSyncExternalStore(
-    subscribeTwoColumns,
-    () => window.matchMedia(TWO_COLUMNS).matches,
-    () => false,
-  )
-}
+/**
+ * En oscuro la tarjeta elegida casi no se distinguía de las otras: el relleno
+ * de la pieza (`bg-accent/50`) se mezcla con el fondo de la hoja y queda del
+ * color de una tarjeta sin elegir. Acá va teñida con el primario (dorado), como
+ * en claro va teñida de verde, y el círculo vacío de las otras gana borde.
+ * Se resuelve desde afuera porque `ChoiceCard` es una pieza del kit.
+ */
+const PAPER_CARD_DARK =
+  'dark:[&>input:checked+span]:bg-primary/15 dark:[&>input:not(:checked)~.adm-choice-mark]:border-foreground/35'
 
 /**
  * Los cuatro papeles. Reemplaza a «¿Se factura? Sí / No» + los chips de
@@ -253,6 +275,19 @@ function useTwoColumns(): boolean {
  * Radios de verdad (flechas, Tab). `onPick` también corre al tocar la que ya
  * estaba elegida: es la persona confirmando lo que el sistema propuso, y
  * desde ahí ya no se lo pisa lo que se recuerde del proveedor.
+ *
+ * `value: null` = ninguna tarjeta marcada: todavía no se sabe qué papel es
+ * («No sé o cambia» de un gasto fijo) o es uno que no está entre estos cuatro
+ * («Es otro papel» de la compra). Nunca marques una «por las dudas»: una
+ * tarjeta rellena es algo que la persona, o lo recordado del proveedor, dijo.
+ *
+ * Sirve igual en una hoja y en una página: se acomoda al ancho de donde la
+ * pongas (dos columnas desde 30rem del grupo). Es un bloque: dale el ancho de
+ * su columna.
+ *
+ * Cuándo NO: para un papel que ya se guardó (eso es el sello, `voucherStamp`),
+ * ni para elegir entre más tipos que estos cuatro (notas de crédito, recibos…:
+ * van por «Es otro papel», con el desplegable de quien la usa).
  */
 export function PaperChoices({
   name,
@@ -264,38 +299,39 @@ export function PaperChoices({
   /** El `name` del grupo de radios (único por hoja). */
   name: string
   labelledBy: string
-  value: QuickVoucher
+  /** El papel marcado; `null`: ninguno. */
+  value: QuickVoucher | null
   onPick: (voucher: QuickVoucher) => void
   consequenceFor: (option: PaperOption) => string
 }) {
-  const twoColumns = useTwoColumns()
   return (
-    <div role="radiogroup" aria-labelledby={labelledBy} className="grid gap-2.5 sm:grid-cols-2">
-      {PAPER_OPTIONS.map((option) => (
-        <ChoiceCard
-          key={option.value}
-          name={name}
-          value={option.value}
-          checked={value === option.value}
-          onChange={() => onPick(option.value)}
-          onClick={() => {
-            if (value === option.value) onPick(option.value)
-          }}
-          layout={twoColumns ? 'stack' : 'row'}
-          art={
-            twoColumns ? (
-              // Con el dibujo arriba, más grande y alineado con el texto (la pieza lo centra).
-              <span className="flex w-full">
-                <PaperArt kind={option.value} className="h-16 w-[3.375rem]" />
+    // El grupo es el contenedor que se mide; la grilla va adentro (una consulta
+    // de contenedor no alcanza al propio contenedor).
+    <div role="radiogroup" aria-labelledby={labelledBy} className="@container">
+      <div className="grid gap-2.5 @[30rem]:grid-cols-2">
+        {PAPER_OPTIONS.map((option) => (
+          <ChoiceCard
+            key={option.value}
+            name={name}
+            value={option.value}
+            checked={value === option.value}
+            onChange={() => onPick(option.value)}
+            onClick={() => {
+              if (value === option.value) onPick(option.value)
+            }}
+            className={cn(PAPER_CARD_DARK, PAPER_CARD_STACKED)}
+            art={
+              // En dos columnas el dibujo va arriba, más grande y alineado con
+              // el texto (la pieza lo centra: por eso el envoltorio a todo el ancho).
+              <span className="flex @[30rem]:w-full">
+                <PaperArt kind={option.value} className="@[30rem]:h-16 @[30rem]:w-[3.375rem]" />
               </span>
-            ) : (
-              <PaperArt kind={option.value} />
-            )
-          }
-          title={option.title}
-          consequence={consequenceFor(option)}
-        />
-      ))}
+            }
+            title={option.title}
+            consequence={consequenceFor(option)}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -303,19 +339,38 @@ export function PaperChoices({
 // ─── La caja: antes → después ────────────────────────────────────────────────
 
 /**
+ * Lo que hace falta saber de una caja para decir cómo queda. Las cajas de
+ * todas las hojas lo traen (la de «Nuevo gasto» y la de Cajas y Ventas, que
+ * suma datos propios), así cualquiera pasa la suya sin armar otra.
+ */
+type AfterTreasury = Pick<SheetTreasury, 'name' | 'kind' | 'balanceCents' | 'allowNegative'>
+
+/**
  * Debajo de «¿Con qué pagaste?»: cuánto hay hoy en la caja elegida y cuánto
  * queda con este gasto. Aparece recién con el importe (sin importe, el saldo
  * ya está en el chip). Si una caja que no admite negativo quedaría en rojo, lo
  * dice acá, antes del aviso que el servidor muestra al guardar; no bloquea.
+ *
+ * Es EL «antes → después» de una caja en toda la sección: una línea, cada
+ * número con su rótulo. `direction="in"` es para plata que ENTRA (debajo de
+ * «¿A dónde entró?»): «Banco Nación: hoy $ 41.863.428 → queda $ 43.651.428».
+ * Lo que entra nunca dispara el aviso de «no alcanza».
+ *
+ * Cuándo NO: para un pase entre dos cajas (son dos saldos que cambian: va una
+ * línea por caja o las dos tarjetas de «Mover»), ni fuera de una carga (el
+ * saldo de una caja que solo se mira es su `WalletCard`).
  */
 export function TreasuryAfterLine({
   treasury,
   amountCents,
+  direction = 'out',
 }: {
-  treasury: SheetTreasury
+  treasury: AfterTreasury
   amountCents: number | null
+  /** `out` (por defecto): la plata sale de la caja. `in`: entra. */
+  direction?: TreasuryDirection
 }) {
-  const after = treasuryAfter(treasury, amountCents)
+  const after = treasuryAfter(treasury, amountCents, direction)
   const words = treasuryAfterWords(treasury.kind, after)
   if (words === null) return null
   const short = after.state === 'short'
@@ -326,10 +381,14 @@ export function TreasuryAfterLine({
         <span className="text-muted-foreground">
           {words.before.label} <span className="tabular-nums">{words.before.amount}</span>
         </span>
-        <ArrowRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className={cn(short && 'text-warning-text')}>
-          {words.after.label}{' '}
-          <span className="font-semibold tabular-nums">{words.after.amount}</span>
+        {/* La flecha va pegada a su número: si no entra todo en un renglón, baja con él
+            («→ queda $ X») en vez de quedar colgada al final del de arriba. */}
+        <span className="inline-flex items-center gap-x-2 whitespace-nowrap">
+          <ArrowRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn(short && 'text-warning-text')}>
+            {words.after.label}{' '}
+            <span className="font-semibold tabular-nums">{words.after.amount}</span>
+          </span>
         </span>
       </p>
       {short ? (
@@ -393,27 +452,78 @@ export function GastoTicket({
       ))}
       {rows.length > 0 ? <TicketRule double /> : null}
       <TicketTotal label={totalLabel} value={total} hint={totalHint} />
-      <TicketNote>{note}</TicketNote>
+      {/* En borrador, la letra chica es lo que falta: va con la tinta del papel, no en gris. */}
+      <TicketNote className={cn(pending && 'font-medium text-foreground')}>{note}</TicketNote>
     </Ticket>
   )
 }
 
-/** «Caja: $ 394.757 → $ 382.257» para el pie del total, con la flecha dicha en palabras para lectores. */
+/**
+ * «Caja: $ 394.757 → $ 382.257» para el pie del total. Dice lo mismo que la
+ * línea de «¿Con qué pagaste?» y con las mismas palabras («faltan $ X», no
+ * «Descubierto $ X»). La flecha va pegada a su número y, para lectores, dicha
+ * en palabras. Con `direction="in"`, para el ticket de plata que entra.
+ */
 export function TreasuryAfterHint({
   treasury,
   amountCents,
+  direction = 'out',
 }: {
-  treasury: SheetTreasury
+  treasury: AfterTreasury
   amountCents: number | null
+  /** `out` (por defecto): la plata sale de la caja. `in`: entra. */
+  direction?: TreasuryDirection
 }) {
-  const after = treasuryAfter(treasury, amountCents)
-  if (after.afterCents === null) return null
+  const short = treasuryAfterShort(treasury.kind, treasuryAfter(treasury, amountCents, direction))
+  if (short === null) return null
   return (
     <>
-      {treasury.name}: {treasuryMoneyText(treasury.kind, after.beforeCents)}{' '}
-      <span aria-hidden="true">→</span>
-      <span className="sr-only">queda en</span> {treasuryMoneyText(treasury.kind, after.afterCents)}
+      {treasury.name}: {short.before}{' '}
+      <span className="whitespace-nowrap">
+        <span aria-hidden="true">→</span>
+        <span className="sr-only">después:</span> {short.after}
+      </span>
     </>
+  )
+}
+
+// ─── El resumen del pie (celular) ────────────────────────────────────────────
+
+/**
+ * En el celular el ticket queda fuera de la vista casi todo el recorrido, y el
+ * botón del pie está siempre a mano: sin esto se podía cargar un gasto «sin
+ * factura» (lo que viene elegido) sin haber visto nunca qué papel llevaba. Un
+ * renglón arriba del botón dice lo mismo que el ticket, en chico: a quién, con
+ * qué papel y de dónde sale. Si todavía falta algo, dice qué.
+ *
+ * Desde `sm` no va: ahí los papeles y el ticket se ven al lado de lo que se toca.
+ */
+export function FooterSummary({
+  who,
+  paper,
+  from,
+  missing,
+}: {
+  /** El proveedor o la categoría. */
+  who: string
+  /** «Con factura A», «Sin factura» (el texto del sello). */
+  paper: string
+  /** «sale de Caja», «con Visa». */
+  from: string
+  /** Lo que falta para poder cargarlo; `null` si no falta nada. */
+  missing: string | null
+}) {
+  if (missing !== null) {
+    return <p className="truncate text-xs text-muted-foreground sm:hidden">{missing}</p>
+  }
+  return (
+    <p className="flex min-w-0 items-baseline gap-1.5 text-xs text-muted-foreground sm:hidden">
+      <span className="min-w-0 truncate">{who}</span>
+      <span aria-hidden="true">·</span>
+      <span className="shrink-0 font-semibold text-foreground">{paper}</span>
+      <span aria-hidden="true">·</span>
+      <span className="max-w-[40%] shrink-0 truncate">{from}</span>
+    </p>
   )
 }
 

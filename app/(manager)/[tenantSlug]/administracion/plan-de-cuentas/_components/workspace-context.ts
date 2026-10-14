@@ -22,8 +22,12 @@ export type ChartWorkspaceValue = {
   focusId: string | null
   clearFocus: () => void
   openAccount: (id: string) => void
-  /** `undefined` = elegir dónde va; `null` = cuenta principal; un id = adentro de ese grupo. */
-  createAccount: (parentId?: string | null) => void
+  /**
+   * `undefined` = elegir dónde va; `null` = cuenta principal; un id = adentro de ese grupo.
+   * Con `simple`, la hoja pide solo el nombre y «para qué se usa» (el alta corta de «Tus
+   * categorías»); lo demás queda plegado con sus valores de siempre y se manda igual.
+   */
+  createAccount: (parentId?: string | null, opts?: { simple?: boolean }) => void
   moveAccount: (id: string) => void
   /** Desactivar pregunta antes (y explica si no se puede); reactivar guarda directo. */
   changeActive: (id: string, active: boolean) => void

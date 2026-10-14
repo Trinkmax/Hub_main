@@ -1,19 +1,17 @@
 import { TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import type { AccountOption } from '@/components/administracion/account-combobox'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import type { PartyOption } from '@/components/administracion/party-combobox'
-import { ReadOnlyNotice } from '@/components/administracion/read-only'
+import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
 import { loadPostingCatalog, tryLoadPostingContext } from '@/lib/accounting/context'
 import { getDocument, listFiscalYears, settleQuery } from '@/lib/accounting/queries'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { formatIsoDay, formatMonthLabel, monthOf, todayInCordoba } from '@/lib/dates'
-import { BookPage } from '../_components/book-page'
 import { QueryErrorBlock } from '../_components/report-error'
 import { requireBooksAccess } from '../_lib/page-access'
 import { firstParam } from '../_lib/periods'
 import { type InitialLine, ManualEntryForm, type ManualKind } from './_components/manual-entry-form'
-
-export const metadata = { title: 'Asiento manual' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -24,31 +22,50 @@ const KIND_PARAMS: Readonly<Record<string, ManualKind>> = {
   'ajuste-cierre': 'fy_adjustment',
 }
 
-const HELP =
-  'Usalo para ajustes y para el asiento de sueldos que te pasa la contadora. Lo del día a día se carga desde Compras, Ventas y Cajas; para pagar sueldos o impuestos usá «Pagar».'
+type SearchParams = Record<string, string | string[] | undefined>
 
+/** `?tipo=sueldos` es «Sueldos del mes»; lo demás, «Asiento manual». */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const sp = await searchParams
+  return { title: firstParam(sp.tipo) === 'sueldos' ? 'Sueldos del mes' : 'Asiento manual' }
+}
+
+/**
+ * Asiento manual y «Sueldos del mes» (`?tipo=sueldos`): una sola pantalla de
+ * carga con dos caras (las dibuja `ManualEntryForm`, que también pone el
+ * encabezado: el título cambia con el tipo sin recargar). La contadora no carga:
+ * ve a dónde ir a mirar los asientos.
+ */
 export default async function AsientoManualPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<Record<string, string | string[] | undefined>>
+  searchParams: Promise<SearchParams>
 }) {
   const { tenantSlug } = await params
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
-  const path = `${base}/libros/asiento-manual`
+  const books = `${base}/libros`
+  const path = `${books}/asiento-manual`
   const { access, canWrite } = await requireBooksAccess(tenantSlug, path)
+  const rawKind = firstParam(sp.tipo)
+  const title = rawKind === 'sueldos' ? 'Sueldos del mes' : 'Asiento manual'
 
   if (!canWrite) {
     return (
-      <BookPage backHref={`${base}/libros`} title="Asiento manual" width="comfortable">
+      <AdmPage width="comfortable">
+        <AdmHeader
+          back={{ href: books, label: 'Libros' }}
+          title={title}
+          badge={<ReadOnlyBadge className="ml-0" />}
+        />
         <ReadOnlyNotice
           description="Esta pantalla es para cargar asientos. Con Contabilidad podés verlos todos en el libro diario."
-          href={`${base}/libros/diario`}
+          href={`${books}/diario`}
           linkLabel="Ir al libro diario"
         />
-      </BookPage>
+      </AdmPage>
     )
   }
 
@@ -66,14 +83,10 @@ export default async function AsientoManualPage({
 
   if (!loaded.ok) {
     return (
-      <BookPage
-        backHref={`${base}/libros`}
-        title="Asiento manual"
-        description={HELP}
-        width="comfortable"
-      >
+      <AdmPage width="comfortable">
+        <AdmHeader back={{ href: books, label: 'Libros' }} title={title} />
         <QueryErrorBlock code={loaded.state.code} message={loaded.state.message} />
-      </BookPage>
+      </AdmPage>
     )
   }
   // Ya leído por `tryLoadPostingContext` (cacheado por pedido): no es otra llamada.
@@ -126,59 +139,54 @@ export default async function AsientoManualPage({
         }))
       : []
 
-  const rawKind = firstParam(sp.tipo)
   const kindParam = rawKind ? KIND_PARAMS[rawKind] : undefined
   const initialKind: ManualKind =
     kindParam === 'fy_adjustment' && !fyAdjustment ? 'adjustment' : (kindParam ?? 'adjustment')
 
   return (
-    <BookPage
-      backHref={`${base}/libros`}
-      title="Asiento manual"
-      description={HELP}
-      width="comfortable"
-    >
-      {corrigeId && !canCorrect ? (
-        <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-          <p className="text-pretty text-warning-text">
-            {doc
-              ? doc.status !== 'posted'
-                ? 'Ese comprobante está anulado: no hace falta ajustarlo.'
-                : 'Ese comprobante es de un mes abierto: anulalo o corregilo desde su detalle.'
-              : 'No encontramos ese comprobante.'}{' '}
-            {doc ? (
-              <Link
-                href={`${base}/comprobantes/${doc.id}`}
-                className="font-medium text-foreground underline underline-offset-4"
-              >
-                Ver el comprobante
-              </Link>
-            ) : null}
-          </p>
-        </div>
-      ) : null}
-      <ManualEntryForm
-        tenantSlug={tenantSlug}
-        ctx={loaded.ctx}
-        accounts={accounts}
-        parties={parties}
-        firstOpenDate={firstOpenDate}
-        today={today}
-        fyAdjustment={fyAdjustment}
-        initialKind={initialKind}
-        initialLines={initialLines}
-        corrects={
-          canCorrect && doc
-            ? {
-                id: doc.id,
-                label: `${doc.title} #${doc.seq}`,
-                month: doc.period ? formatMonthLabel(doc.period.month) : null,
-                description: `Ajuste de ${doc.title}`,
-              }
-            : null
-        }
-      />
-    </BookPage>
+    <ManualEntryForm
+      tenantSlug={tenantSlug}
+      ctx={loaded.ctx}
+      accounts={accounts}
+      parties={parties}
+      firstOpenDate={firstOpenDate}
+      today={today}
+      fyAdjustment={fyAdjustment}
+      initialKind={initialKind}
+      initialLines={initialLines}
+      backHref={books}
+      notice={
+        corrigeId && !canCorrect ? (
+          <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <p className="text-pretty text-warning-text">
+              {doc
+                ? doc.status !== 'posted'
+                  ? 'Ese comprobante está anulado: no hace falta ajustarlo.'
+                  : 'Ese comprobante es de un mes abierto: anulalo o corregilo desde su detalle.'
+                : 'No encontramos ese comprobante.'}{' '}
+              {doc ? (
+                <Link
+                  href={`${base}/comprobantes/${doc.id}`}
+                  className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Ver el comprobante
+                </Link>
+              ) : null}
+            </p>
+          </div>
+        ) : null
+      }
+      corrects={
+        canCorrect && doc
+          ? {
+              id: doc.id,
+              label: `${doc.title} #${doc.seq}`,
+              month: doc.period ? formatMonthLabel(doc.period.month) : null,
+              description: `Ajuste de ${doc.title}`,
+            }
+          : null
+      }
+    />
   )
 }

@@ -1,11 +1,13 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import type { ComponentProps, ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ACTION_TITLES, type AccountingAction, type ActionParams } from './acciones/types'
 import { useAccounting } from './accounting-provider'
-import { LauncherButton } from './nav/launcher'
+import { admFabFromFrame } from './nav/adm-nav-model'
+import { LauncherFab } from './nav/launcher-fab'
 
 /** Lo que dura el «Deshacer» de lo que se guarda sin preguntar (mismo tiempo que el operativo). */
 export const UNDO_MS = 6000
@@ -61,23 +63,20 @@ export function ActionButton({
 }
 
 /**
- * «＋ Cargar» flotante del celular: abre el lanzador «¿Qué querés cargar?». Reemplazó a la barra
- * fija de tres botones ([＋ Gasto] · [Cierre del día] · [Más]), que ocupaba todo el ancho y
- * obligaba a saber de antemano qué nombre tenía lo que querías cargar. Va en las pantallas de la
- * barra (Resumen, Compras y pagos, Gastos fijos, Ventas, Cajas); desde `lg` no se ve, porque
- * «Cargar» está en la barra de la sección. Conserva el nombre para no tocar a quienes ya lo usan.
+ * «＋ Cargar» flotante del celular (`LauncherFab`): abre el lanzador «¿Qué querés cargar?».
+ * Reemplazó a la barra fija de tres botones ([＋ Gasto] · [Cierre del día] · [Más]), que ocupaba
+ * todo el ancho y obligaba a saber de antemano qué nombre tenía lo que querías cargar.
  *
- * Abajo a la derecha, por encima del área segura del iPhone, y deja su propio espacio al final de
- * la página para que lo último siempre se pueda leer sin el botón encima. Las hojas (z-50, con su
- * fondo) lo tapan mientras están abiertas: no compite con sus botones de abajo.
+ * En las pantallas de primer nivel (Resumen, Ventas, Compras y pagos, Gastos fijos, Cajas,
+ * Importar, Libros, Plan de cuentas) el flotante ya lo pone el marco de la sección (`AdmFab`,
+ * en el layout): ahí esto no dibuja nada, para que no haya dos. Sirve en las sub-rutas que
+ * quieran el flotante (una ficha) y no tengan pie fijo propio. Conserva el nombre para no tocar
+ * a las páginas que ya lo usan.
  */
 export function QuickActionsBar() {
-  const { readOnly } = useAccounting()
+  const { tenantSlug, readOnly } = useAccounting()
+  const pathname = usePathname()
   if (readOnly) return null
-  return (
-    <>
-      <div aria-hidden="true" className="h-24 lg:hidden" />
-      <LauncherButton className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-30 h-14 gap-2 px-5 text-base shadow-lg lg:hidden" />
-    </>
-  )
+  if (admFabFromFrame(`/${tenantSlug}/administracion`, pathname)) return null
+  return <LauncherFab />
 }

@@ -244,6 +244,31 @@ export function invoiceSplit(
   return { kind: 'mixed', invoicedCents, uninvoicedCents, overCents: 0, invoicedPercent: percent }
 }
 
+// ─── El total del sistema de caja ────────────────────────────────────────────
+
+/**
+ * El total que dice el sistema de caja contra lo cargado. Es un control
+ * opcional: si está y no coincide, el cierre no se guarda (lo frena el motor),
+ * así que la pantalla lo tiene que decir apenas pasa y con el importe.
+ *
+ * - `none`: no lo cargaron. `match`: coincide.
+ * - `short`: el sistema dice más que lo cargado → falta cargar `cents`.
+ * - `over`: se cargó `cents` de más.
+ */
+export type ControlCheck =
+  | { kind: 'none' }
+  | { kind: 'match' }
+  | { kind: 'short'; cents: number }
+  | { kind: 'over'; cents: number }
+
+export function controlCheck(controlCents: number | null, soldCents: number): ControlCheck {
+  if (controlCents === null) return { kind: 'none' }
+  if (controlCents === soldCents) return { kind: 'match' }
+  return controlCents > soldCents
+    ? { kind: 'short', cents: controlCents - soldCents }
+    : { kind: 'over', cents: soldCents - controlCents }
+}
+
 // ─── El objetivo del día ─────────────────────────────────────────────────────
 
 export type TargetProgress = { targetCents: number; percent: number }

@@ -119,7 +119,7 @@ export function SplitBar({
                   href={s.href}
                   label={`${s.label}: ${formatCents(s.cents)}, ${share} del total`}
                   tipTitle={s.label}
-                  tipValue={formatCents(s.cents)}
+                  tipValue={formatCentsShort(s.cents)}
                   tipSub={`${share} del total`}
                   className={cn(
                     'h-full min-w-[6px] basis-0 first:rounded-l-full last:rounded-r-full focus-visible:ring-offset-2 focus-visible:ring-offset-card',

@@ -1,32 +1,13 @@
-import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import type { ReactNode } from 'react'
+import { type ReactNode, Suspense } from 'react'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { SectionNav, type SectionNavItem } from '@/components/administracion/section-nav'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
-import { loadPostingCatalog } from '@/lib/accounting/context'
-import {
-  type ClosedPeriodCheckRow,
-  getAccessOverview,
-  getAccountingSettings,
-  getIntegrity,
-  type IntegrityCheckRow,
-  listFiscalYears,
-  listSalesMethods,
-  listSalesPoints,
-  listTreasuryAccounts,
-  type QueryOutcome,
-  settleQuery,
-  verifyClosedPeriods,
-} from '@/lib/accounting/queries'
-import { getArcaOverview } from '@/lib/arca/queries'
 import { todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
@@ -34,71 +15,34 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { RetryButton } from '../_resumen/retry-button'
-import { AccessPanel } from './_components/access-panel'
-import { ArcaPanel } from './_components/arca-panel'
-import { Callout } from './_components/form-bits'
-import { IntegrityPanel } from './_components/integrity-panel'
-import { MethodsPanel } from './_components/methods-panel'
-import { SalesPointsPanel } from './_components/sales-points-panel'
-import { PeriodSettingsForm, SasSettingsForm } from './_components/settings-forms'
-import { FiscalYearsList, PeriodSettingsView, SasSettingsView } from './_components/settings-views'
-import { SystemPartiesPanel, type SystemPartyRow } from './_components/system-parties-panel'
-import { TreasuriesPanel } from './_components/treasuries-panel'
+import { RoomFrame } from './_components/room-frame'
+import { PortadaSkeleton, RoomSkeleton } from './_components/room-skeleton'
+import {
+  AccesosRoom,
+  ArcaRoom,
+  CajasRoom,
+  EjercicioRoom,
+  IntegridadRoom,
+  MediosRoom,
+  Portada,
+  PuntosRoom,
+  type RoomContext,
+  SasRoom,
+} from './_components/rooms'
+import { type RoomKey, readTab, roomOfTab } from './_lib/rooms'
 
 export const metadata = { title: 'Ajustes · Administración' }
 
-// Las nueve tienen que entrar enteras en la compu (1280 px con el menú abierto, ~940 px útiles):
-// con «Ejercicio y meses» y «Plataformas y organismos» la barra se pasaba y «Integridad» quedaba
-// escondida. Al sumar «ARCA» (va después de los datos de la SAS: es dato fiscal) «Medios de
-// cobro» pasó a «Medios» también en la compu (el plan B del diseño, §2.2): medido con Inter 14 px,
-// la barra queda en ~921 px.
-const TABS = [
-  { value: 'sas', label: 'Datos de la SAS', shortLabel: 'SAS' },
-  { value: 'arca', label: 'ARCA' },
-  { value: 'ejercicio', label: 'Ejercicio' },
-  { value: 'accesos', label: 'Accesos' },
-  { value: 'medios', label: 'Medios' },
-  { value: 'cajas', label: 'Cajas y cuentas', shortLabel: 'Cajas' },
-  { value: 'participes', label: 'Plataformas' },
-  { value: 'puntos-de-venta', label: 'Puntos de venta' },
-  { value: 'integridad', label: 'Integridad' },
-] as const
-type Tab = (typeof TABS)[number]['value']
-
-const NAV_LABEL = 'Secciones de Ajustes'
-
-function readTab(value: string | string[] | undefined): Tab {
-  const v = Array.isArray(value) ? value[0] : value
-  return TABS.find((t) => t.value === v)?.value ?? 'sas'
-}
-
-function TabError({ message }: { message: string }) {
-  return (
-    <Callout tone="error" title="No pudimos cargar esto." action={<RetryButton />}>
-      {message}
-    </Callout>
-  )
-}
-
-/** Partícipes del sistema que se muestran en «Plataformas y organismos» (+ los bancos). */
-const PARTY_ORDER: Readonly<Record<string, number>> = {
-  payment_wallet: 0,
-  card_processor: 1,
-  delivery_platform: 2,
-  bank: 3,
-  tax_agency: 4,
-  payroll: 5,
-  other: 6,
-  supplier: 7,
-  customer: 8,
-}
-
 /**
- * Ajustes de Administración (H.17): datos de la SAS, la conexión con ARCA,
- * ejercicio y meses, accesos, medios de cobro, cajas, plataformas y organismos,
- * puntos de venta e integridad. Cada pestaña carga solo lo suyo. La contadora ve todo en modo
- * lectura: sin campos ni botones.
+ * Ajustes de Administración: la trastienda del bar. Sin `?tab=` se ve la
+ * portada —lo próximo de la puesta en marcha, seis objetos que el dueño
+ * reconoce y, aparte, el cajón de la contadora—; con `?tab=`, la habitación
+ * que se pide (las nueve claves de siempre siguen valiendo: todos los links de
+ * la app que mandan a «Ajustes › …» caen en lo que nombran).
+ *
+ * La página solo revisa el acceso y pone el marco: cada habitación carga lo
+ * suyo y llega detrás de su esqueleto. La contadora ve todo en modo lectura:
+ * sin campos ni botones.
  */
 export default async function AjustesPage({
   params,
@@ -129,234 +73,70 @@ export default async function AjustesPage({
     throw error
   }
 
-  const tab = readTab(sp.tab)
-  const tenantId = access.tenant.id
   const canWrite = access.accounting.write
-  const readOnly = !canWrite
-  const isOwner = access.role === 'owner'
-  const today = todayInCordoba()
-  const tabHref = (value: Tab) => `${base}/ajustes?tab=${value}`
-  const items: SectionNavItem[] = TABS.map((t) => ({ ...t, href: tabHref(t.value) }))
+  const ctx: RoomContext = {
+    tenantSlug,
+    tenantId: access.tenant.id,
+    base,
+    userId: access.user.id,
+    canWrite,
+    isOwner: access.role === 'owner',
+    isAdmin: canWrite && access.accounting.admin,
+    today: todayInCordoba(),
+  }
 
-  let content: ReactNode = null
-  switch (tab) {
-    case 'sas': {
-      const result = await settleQuery(getAccountingSettings(tenantId))
-      if (!result.ok) content = <TabError message={result.message} />
-      else if (!result.data) notFound()
-      else
-        content = canWrite ? (
-          <SasSettingsForm
-            key={result.data.updatedAt}
-            tenantSlug={tenantSlug}
-            settings={result.data}
-            today={today}
-          />
-        ) : (
-          <SasSettingsView settings={result.data} />
-        )
-      break
-    }
-    case 'arca': {
-      // Mientras las migraciones de ARCA no estén aplicadas, la lectura falla y se ve «No pudimos
-      // cargar esto» con «Reintentar», como cualquier pestaña.
-      const result = await settleQuery(getArcaOverview(tenantId))
-      content = result.ok ? (
-        <ArcaPanel slug={tenantSlug} overview={result.data} canWrite={canWrite} />
-      ) : (
-        <TabError message={result.message} />
-      )
-      break
-    }
-    case 'ejercicio': {
-      const [settings, years] = await Promise.all([
-        settleQuery(getAccountingSettings(tenantId)),
-        settleQuery(listFiscalYears(tenantId)),
-      ])
-      content = (
-        <div className="space-y-6">
-          {years.ok ? (
-            <FiscalYearsList years={years.data} cierresHref={`${base}/libros/cierres`} />
-          ) : (
-            <TabError message={years.message} />
-          )}
-          {!settings.ok ? (
-            <TabError message={settings.message} />
-          ) : settings.data ? (
-            <section className="space-y-3">
-              <h3 className="font-serif text-lg font-semibold tracking-tight">
-                Cómo se liquida y se cierra cada mes
-              </h3>
-              {canWrite ? (
-                <PeriodSettingsForm
-                  key={settings.data.updatedAt}
-                  tenantSlug={tenantSlug}
-                  settings={settings.data}
-                />
-              ) : (
-                <PeriodSettingsView settings={settings.data} />
-              )}
-            </section>
-          ) : null}
-        </div>
-      )
-      break
-    }
-    case 'accesos': {
-      const result = await settleQuery(getAccessOverview(tenantId, { includeMembers: isOwner }))
-      content = result.ok ? (
-        <AccessPanel
-          tenantSlug={tenantSlug}
-          overview={result.data}
-          currentUserId={access.user.id}
-          isAdmin={canWrite && access.accounting.admin}
-          canWrite={canWrite}
-          showMembers={isOwner}
+  const room = roomOfTab(sp.tab)
+
+  if (room === null) {
+    return (
+      <AdmPage width="comfortable">
+        <AdmHeader
+          title="Ajustes"
+          badge={<ReadOnlyBadge />}
+          description="Lo que se arma una vez y después casi no se toca."
         />
-      ) : (
-        <TabError message={result.message} />
-      )
-      break
-    }
-    case 'medios': {
-      const [methods, catalog] = await Promise.all([
-        settleQuery(listSalesMethods(tenantId, { includeInactive: true })),
-        settleQuery(loadPostingCatalog(tenantId)),
-      ])
-      if (!methods.ok) content = <TabError message={methods.message} />
-      else if (!catalog.ok) content = <TabError message={catalog.message} />
-      else
-        content = (
-          <MethodsPanel
-            tenantSlug={tenantSlug}
-            methods={methods.data}
-            treasuries={catalog.data.treasuries.map((t) => ({
-              id: t.id,
-              name: t.name,
-              kind: t.kind,
-              active: t.active,
-            }))}
-            parties={catalog.data.parties
-              .filter(
-                (p) =>
-                  p.kind === 'card_processor' ||
-                  p.kind === 'payment_wallet' ||
-                  p.kind === 'delivery_platform' ||
-                  p.systemKey === 'senas',
-              )
-              .map((p) => ({
-                id: p.id,
-                name: p.name,
-                kind: p.kind,
-                systemKey: p.systemKey,
-                active: p.active,
-              }))}
-            readOnly={readOnly}
-          />
-        )
-      break
-    }
-    case 'cajas': {
-      const [rows, catalog] = await Promise.all([
-        settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })),
-        settleQuery(loadPostingCatalog(tenantId)),
-      ])
-      if (!rows.ok) content = <TabError message={rows.message} />
-      else {
-        const balances: Record<string, number> = {}
-        if (catalog.ok) for (const t of catalog.data.treasuries) balances[t.id] = t.balanceCents
-        content = (
-          <TreasuriesPanel
-            tenantSlug={tenantSlug}
-            rows={rows.data}
-            balances={balances}
-            readOnly={readOnly}
-          />
-        )
-      }
-      break
-    }
-    case 'participes': {
-      const catalog = await settleQuery(loadPostingCatalog(tenantId))
-      if (!catalog.ok) content = <TabError message={catalog.message} />
-      else {
-        const parties: SystemPartyRow[] = catalog.data.parties
-          .filter((p) => p.systemKey !== null || p.kind === 'bank')
-          .sort(
-            (a, b) =>
-              (PARTY_ORDER[a.kind] ?? 9) - (PARTY_ORDER[b.kind] ?? 9) ||
-              a.name.localeCompare(b.name, 'es'),
-          )
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            kind: p.kind,
-            systemKey: p.systemKey,
-            taxId: p.taxId,
-            active: p.active,
-            commissionVatMode: p.commissionVatMode,
-            rates: p.rates,
-            updatedAt: p.updatedAt,
-          }))
-        content = (
-          <SystemPartiesPanel tenantSlug={tenantSlug} parties={parties} readOnly={readOnly} />
-        )
-      }
-      break
-    }
-    case 'puntos-de-venta': {
-      const result = await settleQuery(listSalesPoints(tenantId, { includeInactive: true }))
-      content = result.ok ? (
-        <SalesPointsPanel tenantSlug={tenantSlug} points={result.data} readOnly={readOnly} />
-      ) : (
-        <TabError message={result.message} />
-      )
-      break
-    }
-    case 'integridad': {
-      const ran = sp.verificar === '1'
-      let checks: QueryOutcome<IntegrityCheckRow[]> | null = null
-      let closed: QueryOutcome<ClosedPeriodCheckRow[]> | null = null
-      if (ran) {
-        ;[checks, closed] = await Promise.all([
-          settleQuery(getIntegrity(tenantId)),
-          settleQuery(verifyClosedPeriods(tenantId)),
-        ])
-      }
-      content = (
-        <IntegrityPanel
-          verifyHref={`${base}/ajustes?tab=integridad&verificar=1`}
-          ran={ran}
-          checks={checks}
-          closed={closed}
-        />
-      )
-      break
-    }
+        <Suspense fallback={<PortadaSkeleton />}>
+          <Portada ctx={ctx} />
+        </Suspense>
+      </AdmPage>
+    )
+  }
+
+  const content: Record<RoomKey, () => ReactNode> = {
+    accesos: () => <AccesosRoom ctx={ctx} />,
+    cajas: () => <CajasRoom ctx={ctx} />,
+    // `participes` abre la misma habitación con la lista de CUIT desplegada.
+    medios: () => <MediosRoom ctx={ctx} cuitOpen={readTab(sp.tab) === 'participes'} />,
+    sas: () => <SasRoom ctx={ctx} />,
+    'puntos-de-venta': () => <PuntosRoom ctx={ctx} />,
+    arca: () => <ArcaRoom ctx={ctx} />,
+    ejercicio: () => <EjercicioRoom ctx={ctx} />,
+    integridad: () => <IntegridadRoom ctx={ctx} ran={sp.verificar === '1'} />,
   }
 
   return (
-    <PageShell width="comfortable">
-      <Link
-        href={base}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" aria-hidden />
-        Volver al Resumen
-      </Link>
-      <PageHeader
-        eyebrow="Administración"
-        title={
+    <RoomFrame
+      base={base}
+      room={room}
+      description={
+        room === 'cajas' ? (
           <>
-            Ajustes
-            <ReadOnlyBadge />
+            Las cajas, los bancos y las billeteras del bar. Acá se agregan y se les cargan los
+            datos; la plata y los movimientos se miran en{' '}
+            <Link
+              href={`${base}/cajas`}
+              className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Cajas
+            </Link>
+            .
           </>
-        }
-        description="Los datos de la SAS, la conexión con ARCA, quién entra y cómo se ordenan las cajas y los cobros."
-      />
-      {/* En el celular la barra centra sola la pestaña activa (SectionTabs). */}
-      <SectionNav items={items} active={tab} label={NAV_LABEL} />
-      <div className="max-w-4xl">{content}</div>
-    </PageShell>
+        ) : undefined
+      }
+    >
+      <Suspense key={`${room}-${sp.verificar ?? ''}`} fallback={<RoomSkeleton room={room} />}>
+        {content[room]()}
+      </Suspense>
+    </RoomFrame>
   )
 }

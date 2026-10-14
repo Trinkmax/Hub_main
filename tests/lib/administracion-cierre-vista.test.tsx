@@ -9,6 +9,7 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/cierre/_components/sales-close-form'
 import {
   closeArrivals,
+  controlCheck,
   describeCloseMethod,
   groupCloseMethods,
   invoiceSplit,
@@ -312,6 +313,22 @@ describe('cierre del día: con factura y sin factura', () => {
   })
 })
 
+describe('cierre del día: el total del sistema de caja', () => {
+  it('sin cargarlo no controla nada; igual a lo cargado, coincide', () => {
+    expect(controlCheck(null, 219_705_050)).toEqual({ kind: 'none' })
+    expect(controlCheck(219_705_050, 219_705_050)).toEqual({ kind: 'match' })
+    // Un total en cero contra nada cargado también coincide: no es «sin cargar».
+    expect(controlCheck(0, 0)).toEqual({ kind: 'match' })
+  })
+
+  it('si no coincide dice para qué lado y por cuánto, al centavo', () => {
+    // El sistema dice más que lo cargado: falta cargar la diferencia.
+    expect(controlCheck(225_000_000, 219_705_050)).toEqual({ kind: 'short', cents: 5_294_950 })
+    // Se cargó de más.
+    expect(controlCheck(219_705_000, 219_705_050)).toEqual({ kind: 'over', cents: 50 })
+  })
+})
+
 describe('cierre del día: el objetivo', () => {
   it('sin objetivo (o en cero) no se muestra', () => {
     expect(targetProgress(null, 1_000_00)).toBeNull()
@@ -339,6 +356,7 @@ describe('cierre del día: el ticket', () => {
         soldCents: 0,
         channelsText: null,
         split: emptySplit,
+        invoiceAsked: false,
         cash: { expectedCents: 0, countedCents: null, diffCents: 0 },
         arrivals: [],
         target: null,
@@ -350,7 +368,8 @@ describe('cierre del día: el ticket', () => {
     expect(html).toContain('Sin factura')
     expect(html).not.toContain('$ 0')
     // Sin ventas en efectivo y sin conteo, el arqueo todavía no figura.
-    expect(html).not.toContain('Debería haber')
+    expect(html).not.toContain('Efectivo contado')
+    expect(html).not.toContain('adm-stamp-in')
   })
 
   it('lleno: medios, total, reparto, arqueo en palabras, cuándo entra y objetivo', () => {
@@ -366,6 +385,7 @@ describe('cierre del día: el ticket', () => {
         soldCents: 170_000_000,
         channelsText: null,
         split,
+        invoiceAsked: true,
         cash: { expectedCents: 35_000_000, countedCents: 34_950_000, diffCents: 50_000 },
         arrivals: [
           { key: 'now:caja', label: 'Entra a Caja', cents: 34_950_000 },
@@ -380,7 +400,12 @@ describe('cierre del día: el ticket', () => {
     expect(html).toContain('$ 1.391.500')
     expect(html).toContain('$ 308.500')
     // Vendido − contado = 500: falta plata, dicho en palabras y sin signo.
+    expect(html).toContain('Efectivo contado')
+    expect(html).toContain('$ 349.500')
     expect(html).toContain('Faltan $ 500')
+    // Lo que debería haber ya es el renglón «Efectivo» de arriba: no se repite.
+    expect(html).not.toContain('Debería haber')
+    expect(html).toContain('Cuándo entra')
     expect(html).toContain('Llega el jue 08/10')
     expect(html).toContain('Objetivo del día')
     expect(html).toContain('85 %')
@@ -394,6 +419,7 @@ describe('cierre del día: el ticket', () => {
       lines: [{ id: 'efectivo', name: 'Efectivo', cents: 1_000_00 }],
       soldCents: 1_000_00,
       channelsText: null,
+      invoiceAsked: true,
       cash: null,
       arrivals: [],
       target: null,
@@ -414,6 +440,170 @@ describe('cierre del día: el ticket', () => {
     expect(over).toContain('Facturado de más')
     expect(over).toContain('$ 415')
     expect(over).not.toContain('adm-stamp-in')
+  })
+
+  it('antes de «¿Qué facturaste?» no sella nada ni afirma «con factura $ 0»', () => {
+    const html = renderText(
+      createElement(CloseTicket, {
+        dayTitle: 'miércoles 07/10',
+        shift: null,
+        lines: [{ id: 'efectivo', name: 'Efectivo', cents: 1_000_00 }],
+        soldCents: 1_000_00,
+        channelsText: null,
+        split: invoiceSplit(1_000_00, [{ invoicedTotalCents: 0 }]),
+        // El bar tiene puntos de venta y la persona todavía no anotó ninguna factura.
+        invoiceAsked: false,
+        cash: null,
+        arrivals: [],
+        target: null,
+      }),
+    )
+    expect(html).not.toContain('adm-stamp-in')
+    expect(html).not.toContain('$ 0')
+    expect(html).toContain('Con factura')
+    // Lo que quedaría sin factura si se guarda así sí se dice, con su importe.
+    expect(html).toContain('Sin factura')
+    expect(html).toContain('$ 1.000')
+  })
+
+  it('si un importe tiene centavos, todos los llevan: las comas quedan alineadas', () => {
+    const lines = [
+      { id: 'efectivo', name: 'Efectivo', cents: 48_630_000 },
+      { id: 'credito', name: 'Crédito', cents: 41_820_050 },
+    ]
+    const sold = 90_450_050
+    const withCents = renderText(
+      createElement(CloseTicket, {
+        dayTitle: 'miércoles 07/10',
+        shift: null,
+        lines,
+        soldCents: sold,
+        channelsText: null,
+        split: invoiceSplit(sold, [{ invoicedTotalCents: 0 }]),
+        invoiceAsked: true,
+        cash: null,
+        arrivals: [{ key: 'now:caja', label: 'Entra a Caja', cents: 48_630_000 }],
+        target: null,
+      }),
+    )
+    expect(withCents).toContain('$ 486.300,00')
+    expect(withCents).toContain('$ 418.200,50')
+    expect(withCents).not.toMatch(/\$ 486\.300(?!,)/)
+
+    const round = renderText(
+      createElement(CloseTicket, {
+        dayTitle: 'miércoles 07/10',
+        shift: null,
+        lines: [lines[0] ?? { id: 'x', name: 'x', cents: 0 }],
+        soldCents: 48_630_000,
+        channelsText: null,
+        split: invoiceSplit(48_630_000, [{ invoicedTotalCents: 0 }]),
+        invoiceAsked: true,
+        cash: null,
+        arrivals: [],
+        target: null,
+      }),
+    )
+    expect(round).toContain('$ 486.300')
+    expect(round).not.toContain(',00')
+  })
+
+  it('pegado en la compu trae «Cuándo entra» también plegado, para una pantalla baja', () => {
+    const props = {
+      dayTitle: 'miércoles 07/10',
+      shift: null,
+      lines: [{ id: 'efectivo', name: 'Efectivo', cents: 1_000_00 }],
+      soldCents: 1_000_00,
+      channelsText: null,
+      split: invoiceSplit(1_000_00, [{ invoicedTotalCents: 0 }]),
+      invoiceAsked: true,
+      cash: null,
+      arrivals: [{ key: 'now:caja', label: 'Entra a Caja', cents: 1_000_00 }],
+      target: null,
+    }
+    const sheet = renderText(createElement(CloseTicket, props))
+    expect(sheet).not.toContain('<details')
+    const sticky = renderText(createElement(CloseTicket, { ...props, compact: true }))
+    expect(sticky).toContain('<details')
+    // Las dos versiones dicen lo mismo: solo cambia cuál se ve según el alto.
+    expect(sticky.split('Entra a Caja').length - 1).toBe(2)
+  })
+
+  describe('de un cierre ya guardado (`still` y `footer`)', () => {
+    const saved = {
+      dayTitle: 'miércoles 07/10',
+      shift: 'noche',
+      lines: [
+        { id: 'efectivo', name: 'Efectivo', cents: 35_000_000 },
+        { id: 'debito', name: 'Débito', cents: 135_000_000 },
+      ],
+      soldCents: 170_000_000,
+      channelsText: null,
+      split: invoiceSplit(170_000_000, [{ invoicedTotalCents: 139_150_000 }]),
+      invoiceAsked: true,
+      cash: { expectedCents: 35_000_000, countedCents: 34_950_000, diffCents: 50_000 },
+      arrivals: [],
+      target: null,
+    }
+
+    it('va quieto: el mismo sello sin sellazo y el mismo total sin número que cuenta', () => {
+      const loading = renderText(createElement(CloseTicket, saved))
+      const still = renderText(createElement(CloseTicket, { ...saved, still: true }))
+      // Mientras se carga, como siempre: el sello entra y el total cuenta.
+      expect(loading).toContain('adm-stamp-in')
+      expect(loading).toContain('data-slot="money-ticker"')
+      // Guardado, el papel solo se mira.
+      expect(still).not.toContain('adm-stamp-in')
+      expect(still).not.toContain('data-slot="money-ticker"')
+      // Y dice exactamente lo mismo.
+      for (const text of [
+        'miércoles 07/10 · noche',
+        '82 % con factura',
+        'Total vendido',
+        '$ 1.700.000',
+        '$ 1.391.500',
+        '$ 308.500',
+        'Efectivo contado',
+        'Faltan $ 500',
+        'todo queda registrado en los libros',
+      ]) {
+        expect(loading).toContain(text)
+        expect(still).toContain(text)
+      }
+    })
+
+    it('el pie va dentro del papel, después de la letra chica', () => {
+      const footer = createElement('p', { 'data-pie': 'cargo' }, 'Cargó Sofi el 08/10 a las 02:14')
+      const html = renderText(createElement(CloseTicket, { ...saved, still: true, footer }))
+      const note = html.indexOf('todo queda registrado en los libros')
+      const foot = html.indexOf('Cargó Sofi el 08/10 a las 02:14')
+      expect(note).toBeGreaterThan(-1)
+      expect(foot).toBeGreaterThan(note)
+      // Adentro del `article` del ticket, no después.
+      expect(foot).toBeLessThan(html.indexOf('</article>'))
+      // Sin pie, nada de más: el papel termina en la letra chica.
+      const bare = renderText(createElement(CloseTicket, { ...saved, still: true }))
+      expect(bare).not.toContain('data-pie')
+      expect(bare.slice(bare.indexOf('todo queda registrado en los libros'))).toMatch(
+        /^todo queda registrado en los libros\.<\/p><\/article>/,
+      )
+    })
+
+    it('facturado de más y ya guardado: lo dice, sin prometer una pregunta «al guardar»', () => {
+      const over = {
+        ...saved,
+        cash: null,
+        lines: [{ id: 'efectivo', name: 'Efectivo', cents: 1_000_00 }],
+        soldCents: 1_000_00,
+        split: invoiceSplit(1_000_00, [{ invoicedTotalCents: 1_415_00 }]),
+      }
+      const loading = renderText(createElement(CloseTicket, over))
+      const still = renderText(createElement(CloseTicket, { ...over, still: true }))
+      expect(loading).toContain('Al guardar te preguntamos por qué.')
+      expect(still).toContain('Facturado de más')
+      expect(still).toContain('$ 415')
+      expect(still).not.toContain('Al guardar')
+    })
   })
 })
 
@@ -497,6 +687,16 @@ describe('cierre del día: la pantalla al entrar', () => {
     expect(html).toContain('Guardar cierre del miércoles 07/10')
     expect(html).toContain('Después sigue el del jueves 08/10.')
     expect(html).toContain('Ver cómo queda en los libros')
+    // Plegado no muestra jerga de contadora ni un «Sin importes».
+    expect(html).not.toContain('Cuadra')
+    expect(html).not.toContain('Sin importes')
+    // El control opcional habla del sistema de caja, no de «el cierre de caja».
+    expect(html).toContain('Total que dice tu sistema de caja')
+    expect(html).not.toContain('Total del cierre de caja')
+    // Sin importes, el botón de guardar no invita (sigue siendo el mismo submit).
+    expect(html).toMatch(/<button(?=[^>]*type="submit")[^>]*\bbg-secondary\b/)
+    // Y los atajos a «Revisar y guardar» recién aparecen cuando hay algo que guardar.
+    expect(html).not.toContain('Revisar y guardar')
   })
 
   it('sin puntos de venta explica que todo queda sin factura y a dónde ir a cargarlos', () => {
@@ -505,8 +705,51 @@ describe('cierre del día: la pantalla al entrar', () => {
     expect(html).toContain('/bar/administracion/ajustes?tab=puntos-de-venta')
     // «Con factura / sin factura» está siempre, también sin datos.
     expect(html).toContain('Con factura y sin factura')
+    // Dice que igual queda registrado, y el vacío del reparto no promete un «con factura»
+    // que sin puntos de venta no se puede anotar.
+    expect(html).toContain('Queda registrado igual.')
+    expect(html).toContain('mientras no tengas puntos de venta, todo del lado «sin factura»')
+    expect(html).not.toContain('cuánto fue con factura y cuánto sin factura')
+    // A esta altura ya están cargados los importes: el link no saca de la pantalla.
+    expect(html).toMatch(
+      /<a(?=[^>]*href="\/bar\/administracion\/ajustes\?tab=puntos-de-venta")(?=[^>]*target="_blank")[^>]*>/,
+    )
+    expect(html).toContain('Se abre en otra pestaña: no perdés lo que cargaste.')
     // Un solo libro: nada sugiere que algo queda afuera.
     expect(html).not.toMatch(/en negro|en blanco|afuera de los libros/i)
+  })
+
+  it('con puntos de venta, cada uno es un renglón: desde, hasta y total; lo fijo, plegado', () => {
+    const html = render({
+      salesPoints: [
+        { number: 3, label: 'Salón', defaultChannel: 'salon' },
+        { number: 4, label: 'Mostrador', defaultChannel: 'delivery' },
+      ],
+      rangeDefaults: [
+        { voucherType: 'factura_b', pointOfSale: 3, channel: 'salon', lastNumberTo: 19_022 },
+      ],
+    })
+    // El título dice todo lo fijo con palabras de dueño: el nombre del punto de venta y el IVA.
+    expect(html).toContain('Factura B')
+    expect(html).toContain('0003 · Salón · IVA 21 %')
+    expect(html).not.toContain('PV 0003')
+    expect(html).not.toContain('Alícuota')
+    // A la vista, lo de todos los días; el «desde» ya viene puesto.
+    for (const label of ['Desde', 'Hasta', 'Total (con IVA)']) expect(html).toContain(label)
+    expect(html).toContain('value="19023"')
+    // La fila que nadie tocó lo dice con palabras, no solo con el borde punteado.
+    expect(html).toContain('Sin usar · no se guarda')
+    // Comprobante, punto de venta, IVA y canal van detrás de «Cambiar»: plegados no se
+    // dibujan (su valor vive en el estado de la fila), así Enter no se traba en ellos.
+    expect(html).toContain('Cambiar')
+    expect(html).toMatch(/<div[^>]*id="[^"]*-fixed"[^>]*hidden=""/)
+    for (const label of ['>Comprobante<', '>Punto de venta<', '>Canal<']) {
+      expect(html).not.toContain(label)
+    }
+    // Con puntos de venta y sin facturas anotadas, el ticket todavía no sella «Sin factura».
+    expect(html).not.toContain('adm-stamp-in')
+    // Y el vacío del reparto es el de siempre.
+    expect(html).toContain('cuánto fue con factura y cuánto sin factura')
   })
 
   it('con el día ya cargado muestra el cierre y recién después deja cargar otro turno', () => {
@@ -515,8 +758,20 @@ describe('cierre del día: la pantalla al entrar', () => {
     expect(html).toContain('756.472,80')
     expect(html).toContain('Cargar otro turno')
     expect(html).toContain('/bar/administracion/comprobantes/doc-1')
+    // Lo que sigue es la acción principal: el próximo día que falta.
+    expect(html).toContain('Cargar el del jueves 08/10')
+    expect(html).toContain('href="/bar/administracion/ventas"')
     // El formulario no se abre solo.
     expect(html).not.toContain('¿Cuánto se vendió y cómo te pagaron?')
+  })
+
+  it('con el día ya cargado y ningún otro pendiente, lo que sigue es ver las ventas del mes', () => {
+    const html = render({
+      existing: [{ id: 'doc-1', title: 'Cierre', totalCents: 75_647_280 }],
+      afterSaveLabel: null,
+    })
+    expect(html).toContain('Ver las ventas del mes')
+    expect(html).not.toContain('Cargar el del')
   })
 
   it('sin medios de cobro enseña el paso que falta en vez del formulario', () => {

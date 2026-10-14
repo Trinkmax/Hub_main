@@ -64,7 +64,7 @@ export function isBalanced(lines: readonly BalanceLine[]): boolean {
 
 export type BalanceStatus = 'empty' | 'balanced' | 'unbalanced'
 
-/** Estado para el sello de `EntryPreview`: «Sin importes», «Cuadra» o «No cuadra». */
+/** Estado para el sello de `EntryPreview`: «Falta algo», «Cuadra» o «No cuadra». */
 export function balanceStatus(lines: readonly BalanceLine[]): BalanceStatus {
   const { debit, credit, diff } = sumSides(lines)
   if (debit === 0n && credit === 0n) return 'empty'

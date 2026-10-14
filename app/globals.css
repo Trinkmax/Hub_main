@@ -1199,3 +1199,53 @@
   .adm-tick-draw,
   .peer:checked ~ .adm-choice-mark .adm-tick { animation: none; }
 }
+
+/* ── Administración · Resumen: el color de una caja sale de su TIPO ─────────
+   (bloque del pulido del Resumen, oct 2026; solo agrega tokens)
+
+   Banco, efectivo y billetera tienen cada uno su tono; dos cuentas del mismo
+   tipo usan el mismo tono en otro escalón de luz (-1, -2, -3). Se usan con
+   `bg-(--adm-k-bank-1)` en la barra «dónde está la plata» y en su leyenda.
+
+   Claro (:root), sobre la tarjeta crema #fefaf0: banco = bosque, efectivo =
+   dorado, billetera = celeste. validate_palette.js (skill dataviz), todos los
+   pares: banda de luz, croma, CVD 19,5 y visión normal 20,6 pasan; el dorado
+   queda en 2,2:1 contra la tarjeta, por eso SIEMPRE va con su nombre al lado.
+
+   Oscuro (.dark): vale para la tarjeta oscura #0e1d17 y para el héroe verde,
+   que adentro es una isla `dark` también en modo claro. Ahí el banco es crema
+   (la tinta del héroe): es un neutro a propósito, fuera de la banda de luz y
+   del piso de croma del validador, igual que --adm-neutral. Dorado y celeste
+   pasan los cinco chequeos en las cinco superficies (los dos extremos del
+   degradé del héroe en claro y en oscuro, y la tarjeta oscura); con el crema,
+   CVD 21,0, visión normal 22,7 y contraste ≥ 4,7:1. Cada rampa pasa --ordinal;
+   el tercer escalón de dorado y de celeste queda en 2,2–2,9:1 contra el
+   héroe: como todos, va con su nombre al lado. */
+:root {
+  --adm-k-bank-1: oklch(0.48 0.105 160);
+  --adm-k-bank-2: oklch(0.6 0.11 158);
+  --adm-k-bank-3: oklch(0.72 0.1 156);
+  --adm-k-cash-1: oklch(0.75 0.15 80);
+  --adm-k-cash-2: oklch(0.66 0.135 76);
+  --adm-k-cash-3: oklch(0.57 0.12 72);
+  --adm-k-wallet-1: oklch(0.64 0.11 235);
+  --adm-k-wallet-2: oklch(0.54 0.12 238);
+  --adm-k-wallet-3: oklch(0.44 0.12 241);
+}
+
+.dark {
+  --adm-k-bank-1: oklch(0.92 0.04 92);
+  --adm-k-bank-2: oklch(0.84 0.045 92);
+  --adm-k-bank-3: oklch(0.76 0.05 92);
+  --adm-k-cash-1: oklch(0.66 0.13 80);
+  --adm-k-cash-2: oklch(0.57 0.115 74);
+  --adm-k-cash-3: oklch(0.48 0.1 68);
+  --adm-k-wallet-1: oklch(0.66 0.105 232);
+  --adm-k-wallet-2: oklch(0.57 0.11 236);
+  --adm-k-wallet-3: oklch(0.48 0.115 240);
+
+  /* El rayado de «falta cargar»: en oscuro el ámbar al 30 % parecía cinta de
+     obra y pesaba más que las columnas de lo vendido. */
+  --adm-hatch-missing: color-mix(in oklch, var(--warning) 15%, transparent);
+}
+/* ── fin del bloque del Resumen ─────────────────────────────────────────── */

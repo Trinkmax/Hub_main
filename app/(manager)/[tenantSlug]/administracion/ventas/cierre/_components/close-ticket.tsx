@@ -1,16 +1,18 @@
+import { ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { moneyLabel } from '@/components/administracion/cajas-ventas/money'
 import { MoneyTicker } from '@/components/administracion/kit/money-ticker'
 import {
   Ticket,
   TicketHeader,
+  TicketLabel,
   TicketNote,
   TicketRow,
   TicketRule,
   TicketStamp,
   TicketTotal,
 } from '@/components/administracion/kit/ticket'
-import { cashDiffText } from '@/lib/accounting/projection'
+import { formatCents } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import type { ArrivalLine, InvoiceSplit, TargetProgress } from '../_lib/close-view'
 
 export type CloseTicketCash = {
@@ -21,6 +23,12 @@ export type CloseTicketCash = {
   /** Vendido − contado, como lo calcula el formulario: positivo = falta. */
   diffCents: number
 }
+
+/**
+ * Un renglón de «Cuándo entra». En un cierre ya guardado lleva además, en
+ * chico, qué pasó con esa plata («ya llegó», «llega el vie 16/10»).
+ */
+export type CloseTicketArrival = ArrivalLine & { hint?: string }
 
 export type CloseTicketProps = {
   /** «miércoles 07/10/2026». */
@@ -34,21 +42,47 @@ export type CloseTicketProps = {
   channelsText: string | null
   /** `null`: hay un importe fuera de rango y todavía no se puede repartir. */
   split: InvoiceSplit | null
-  /** `null`: el bar no tiene un medio en efectivo. */
+  /**
+   * Ya se sabe qué se facturó: el bar no tiene puntos de venta (todo queda sin
+   * factura, siempre) o la persona anotó algo en «¿Qué facturaste?». Mientras
+   * no, el ticket no sella nada ni afirma «con factura $ 0».
+   */
+  invoiceAsked: boolean
+  /**
+   * `null`: el bar no tiene un medio en efectivo. En un cierre ya guardado,
+   * también cuando no quedó conteo (coincidió, o no se contó).
+   */
   cash: CloseTicketCash | null
-  arrivals: readonly ArrivalLine[]
+  arrivals: readonly CloseTicketArrival[]
   target: TargetProgress | null
+  /**
+   * Va pegado al costado en la compu: si la pantalla es baja (una notebook) se
+   * aprieta un poco y pliega «Cuándo entra», para entrar entero con su borde
+   * dentado. Con lugar de sobra se ve igual que siempre.
+   */
+  compact?: boolean
+  /**
+   * Un cierre YA guardado, que solo se mira (la noche elegida en Ventas, la
+   * ficha del comprobante): el papel va quieto. El sello no entra de un
+   * sellazo, el total no cuenta y no habla de «al guardar». Mientras se carga
+   * un cierre, no se pasa. `closeTicketProps()` ya lo trae puesto.
+   */
+  still?: boolean
+  /**
+   * Lo que sigue a la letra chica, dentro del mismo papel: el detalle y quién
+   * lo cargó, en la ficha del comprobante. Empezalo con un `TicketRule` y usá
+   * piezas `Ticket*`; no metas botones (las acciones van afuera del papel).
+   */
+  footer?: ReactNode
   className?: string
 }
 
-/** El rótulo de un bloque del ticket («EFECTIVO», «CUÁNDO ENTRA»), como los de un tique. */
-function TicketLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="pb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-      {children}
-    </p>
-  )
-}
+// Las tres reglas de «pantalla baja» del ticket pegado. Van escritas enteras:
+// Tailwind no ve clases armadas por partes.
+const SHORT_RULES = '[@media(max-height:960px)]:[&_hr]:my-2'
+const SHORT_ROWS = '[@media(max-height:960px)]:[&>div]:py-0.5'
+const SHORT_ONLY = 'hidden [@media(max-height:960px)]:block'
+const TALL_ONLY = '[@media(max-height:960px)]:hidden'
 
 function stampOf(split: InvoiceSplit | null): { tone: 'factura' | 'sin'; text: string } | null {
   if (!split) return null
@@ -75,6 +109,15 @@ function stampOf(split: InvoiceSplit | null): { tone: 'factura' | 'sin'; text: s
  *
  * Vacío también enseña: muestra los renglones que van a aparecer, con «—»
  * (nunca «$ 0»: cero no es «todavía no cargué»).
+ *
+ * Es también el papel de un cierre ya guardado: con las props que arma
+ * `closeTicketProps()` (`../_lib/close-ticket-props.ts`) desde el comprobante,
+ * lo que se cargó ayer se encuentra igual hoy. Ahí va `still` y, si hace
+ * falta, `footer`.
+ *
+ * Cuándo NO: para otro comprobante (una compra, un cobro: cada uno arma su
+ * ticket con las piezas `Ticket*` y su sello sale de `voucherStamp()`), ni
+ * para el resumen del mes (eso es la carátula de Libros).
  */
 export function CloseTicket({
   dayTitle,
@@ -83,22 +126,55 @@ export function CloseTicket({
   soldCents,
   channelsText,
   split,
+  invoiceAsked,
   cash,
   arrivals,
   target,
+  compact = false,
+  still = false,
+  footer,
   className,
 }: CloseTicketProps) {
-  const stamp = stampOf(split)
+  // El sello se pone cuando hay algo que sellar: antes de «¿Qué facturaste?»
+  // sería un veredicto que nadie dio.
+  const stamp = invoiceAsked ? stampOf(split) : null
   const hasSales = soldCents > 0
+  const hasSplit = split !== null && split.kind !== 'empty'
   const showCash = cash !== null && (cash.expectedCents > 0 || cash.countedCents !== null)
 
+  // Como un tique de verdad: si algún importe tiene centavos, los llevan todos
+  // (las comas quedan una abajo de la otra); si son todos redondos, ninguno.
+  const withCents = [
+    ...lines.map((line) => line.cents),
+    soldCents,
+    split?.invoicedCents ?? 0,
+    split?.uninvoicedCents ?? 0,
+    split?.overCents ?? 0,
+    cash?.countedCents ?? 0,
+    ...arrivals.map((line) => line.cents),
+    target?.targetCents ?? 0,
+  ].some((cents) => cents % 100 !== 0)
+  const decimals = withCents ? 2 : 0
+  const money = (cents: number) => formatCents(cents, { decimals })
+
+  const rows = (children: ReactNode) => (
+    <div className={compact ? SHORT_ROWS : undefined}>{children}</div>
+  )
+  const arrivalRows = arrivals.map((line) => (
+    <TicketRow key={line.key} label={line.label} hint={line.hint} value={money(line.cents)} />
+  ))
+
   return (
-    <Ticket className={className} aria-label={`Ticket del cierre del ${dayTitle}`}>
+    <Ticket
+      className={cn(compact && SHORT_RULES, className)}
+      aria-label={`Ticket del cierre del ${dayTitle}`}
+    >
       <TicketHeader title="Cierre del día" subtitle={shift ? `${dayTitle} · ${shift}` : dayTitle}>
         {stamp ? (
           // La clave es la CLASE de sello (sin, con, todo): se vuelve a sellar
-          // cuando cambia eso, no con cada tecla que mueve el porcentaje.
-          <TicketStamp key={split?.kind} tone={stamp.tone} animate>
+          // cuando cambia eso, no con cada tecla que mueve el porcentaje. En un
+          // cierre que solo se mira no hay sellazo: nadie acaba de sellar nada.
+          <TicketStamp key={split?.kind} tone={stamp.tone} animate={!still}>
             {stamp.text}
           </TicketStamp>
         ) : null}
@@ -107,76 +183,108 @@ export function CloseTicket({
       <TicketRule />
       {lines.length === 0 ? (
         <p className="py-2 text-center text-sm text-muted-foreground text-pretty">
-          Cargá los importes y el ticket se arma solo.
+          {still
+            ? 'Este cierre no tiene importes cargados.'
+            : 'Cargá los importes y el ticket se arma solo.'}
         </p>
       ) : (
-        lines.map((line) => (
-          <TicketRow key={line.id} label={line.name} value={moneyLabel(line.cents)} />
-        ))
+        rows(
+          lines.map((line) => (
+            <TicketRow key={line.id} label={line.name} value={money(line.cents)} />
+          )),
+        )
       )}
 
       <TicketRule double />
       <TicketTotal
         label="Total vendido"
         value={
-          hasSales ? (
-            <MoneyTicker
-              cents={soldCents}
-              decimals={soldCents % 100 === 0 ? 0 : 2}
-              durationMs={380}
-              align="end"
-            />
-          ) : (
+          !hasSales ? (
             '—'
+          ) : still ? (
+            money(soldCents)
+          ) : (
+            <MoneyTicker cents={soldCents} decimals={decimals} durationMs={380} align="end" />
           )
         }
         hint={channelsText}
       />
 
       <TicketRule />
-      <TicketRow
-        label="Con factura"
-        muted={!split || split.invoicedCents === 0}
-        value={split && split.kind !== 'empty' ? moneyLabel(split.invoicedCents) : '—'}
-      />
-      <TicketRow
-        label="Sin factura"
-        muted={!split || split.uninvoicedCents === 0}
-        value={split && split.kind !== 'empty' ? moneyLabel(split.uninvoicedCents) : '—'}
-      />
-      {split?.kind === 'over' ? (
-        <TicketRow
-          strong
-          label="Facturado de más"
-          hint="Al guardar te preguntamos por qué."
-          value={moneyLabel(split.overCents)}
-        />
-      ) : null}
+      {rows(
+        <>
+          <TicketRow
+            label="Con factura"
+            muted={!hasSplit || !invoiceAsked || split.invoicedCents === 0}
+            value={hasSplit && invoiceAsked ? money(split.invoicedCents) : '—'}
+          />
+          <TicketRow
+            label="Sin factura"
+            muted={!hasSplit || split.uninvoicedCents === 0}
+            value={hasSplit ? money(split.uninvoicedCents) : '—'}
+          />
+          {split?.kind === 'over' ? (
+            <TicketRow
+              strong
+              label="Facturado de más"
+              // Guardado, ya se preguntó: el motivo lo muestra la ficha del comprobante.
+              hint={still ? undefined : 'Al guardar te preguntamos por qué.'}
+              value={money(split.overCents)}
+            />
+          ) : null}
+        </>,
+      )}
 
       {showCash && cash ? (
         <>
           <TicketRule />
-          <TicketLabel>Efectivo</TicketLabel>
-          <TicketRow label="Debería haber" value={moneyLabel(cash.expectedCents)} />
-          <TicketRow
-            label="Contaste"
-            muted={cash.countedCents === null}
-            value={cash.countedCents === null ? 'sin contar' : moneyLabel(cash.countedCents)}
-          />
-          {cash.countedCents !== null ? (
-            // `cashDiffText` habla desde lo que entró: negativo es que falta.
-            <TicketRow strong label="Diferencia" value={cashDiffText(-cash.diffCents)} />
-          ) : null}
+          {/* Lo que debería haber es el renglón «Efectivo» de arriba: acá va solo lo contado. */}
+          {rows(
+            <>
+              <TicketRow
+                label="Efectivo contado"
+                muted={cash.countedCents === null}
+                value={cash.countedCents === null ? 'sin contar' : money(cash.countedCents)}
+              />
+              {cash.countedCents !== null ? (
+                <TicketRow
+                  strong
+                  label="Diferencia de caja"
+                  value={
+                    cash.diffCents === 0
+                      ? 'Coincide'
+                      : `${cash.diffCents > 0 ? 'Faltan' : 'Sobran'} ${money(Math.abs(cash.diffCents))}`
+                  }
+                />
+              ) : null}
+            </>,
+          )}
         </>
       ) : null}
 
       {arrivals.length > 0 ? (
         <>
           <TicketRule />
-          <TicketLabel>Cuándo entra</TicketLabel>
-          {arrivals.map((line) => (
-            <TicketRow key={line.key} label={line.label} value={moneyLabel(line.cents)} />
-          ))}
+          <div className={compact ? TALL_ONLY : undefined}>
+            <TicketLabel className="pb-1">Cuándo entra</TicketLabel>
+            {rows(arrivalRows)}
+          </div>
+          {compact ? (
+            <details className={cn('group/when', SHORT_ONLY)}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-sm py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                <TicketLabel>Cuándo entra</TicketLabel>
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="group-open/when:hidden">Ver</span>
+                  <span className="hidden group-open/when:inline">Ocultar</span>
+                  <ChevronDown
+                    aria-hidden
+                    className="size-3.5 transition-transform duration-(--duration-fast) group-open/when:rotate-180 motion-reduce:transition-none"
+                  />
+                </span>
+              </summary>
+              <div className={cn('pt-1', SHORT_ROWS)}>{arrivalRows}</div>
+            </details>
+          ) : null}
         </>
       ) : null}
 
@@ -190,12 +298,13 @@ export function CloseTicket({
                 ? `Con esto vas en el ${target.percent} %, antes de comisiones.`
                 : 'Cargá lo vendido para ver cómo te fue.'
             }
-            value={moneyLabel(target.targetCents)}
+            value={money(target.targetCents)}
           />
         </>
       ) : null}
 
       <TicketNote>Con factura o sin factura, todo queda registrado en los libros.</TicketNote>
+      {footer}
     </Ticket>
   )
 }

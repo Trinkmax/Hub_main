@@ -4,6 +4,7 @@ import { Loader2, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type MouseEvent, useState } from 'react'
 import { toast } from 'sonner'
+import { RetryButton } from '@/components/administracion/kit/retry-button'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -45,6 +46,11 @@ const URL_MARGIN_MS = 30_000
  *
  * La lista llega del servidor (`listDocumentAttachments`) con links de vida
  * corta; después de sumar o quitar se refresca la página y vienen links nuevos.
+ *
+ * `bare`: sin tarjeta ni encabezado, para ir como cuerpo de otra cosa (el nodo
+ * «Foto» de la ficha del comprobante, que ya pone el título). Ahí el botón va
+ * debajo de la lista y, sin archivos, `emptyText` dice qué foto conviene. Subir,
+ * abrir, quitar y el tope de archivos son los mismos en las dos formas.
  */
 export function DocumentAttachments({
   tenantSlug,
@@ -52,6 +58,8 @@ export function DocumentAttachments({
   attachments,
   canEdit,
   loadError = null,
+  bare = false,
+  emptyText,
   className,
 }: {
   tenantSlug: string
@@ -61,6 +69,10 @@ export function DocumentAttachments({
   canEdit: boolean
   /** Si la lista no se pudo leer, el texto para mostrar en su lugar. */
   loadError?: string | null
+  /** Sin tarjeta ni encabezado: el cuerpo solo. */
+  bare?: boolean
+  /** Con `bare` y sin archivos: qué foto conviene sumar a este papel. */
+  emptyText?: string
   className?: string
 }) {
   const router = useRouter()
@@ -150,6 +162,147 @@ export function DocumentAttachments({
     }
   }
 
+  const list = (
+    <ul className="divide-y divide-border/60">
+      {attachments.map((attachment) => (
+        <li
+          key={attachment.id}
+          className={cn('flex items-center gap-3', bare ? 'py-2.5 first:pt-0' : 'px-5 py-3')}
+        >
+          <a
+            href={attachment.url ?? '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => open(event, attachment)}
+            className="group flex min-w-0 flex-1 items-center gap-3 rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <AttachmentTile
+              key={attachment.url ?? attachment.id}
+              kind={attachment.kind}
+              src={attachment.url}
+            />
+            <span className="min-w-0 space-y-0.5">
+              <span className="block truncate text-sm font-medium underline-offset-4 group-hover:text-primary group-hover:underline">
+                {attachment.fileName}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {attachmentKindLabel(attachment.kind)} ·{' '}
+                {formatAttachmentSize(attachment.sizeBytes)} · Subido el{' '}
+                {formatDateTime(attachment.createdAt)}
+              </span>
+              <span className="sr-only">Se abre en una pestaña nueva.</span>
+            </span>
+          </a>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-11 shrink-0 text-muted-foreground hover:text-destructive md:size-9"
+              aria-label={`Quitar ${attachment.fileName}`}
+              disabled={uploading}
+              onClick={() => {
+                setRemoveError(null)
+                setRemoving(attachment)
+              }}
+            >
+              <Trash2 className="size-4" aria-hidden />
+            </Button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+
+  const removeDialog = (
+    <AlertDialog
+      open={removing !== null}
+      onOpenChange={(next) => {
+        if (removePending) return
+        if (!next) {
+          setRemoving(null)
+          setRemoveError(null)
+        }
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Quitás este archivo?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              {removing ? (
+                <p className="break-words font-medium text-foreground">{removing.fileName}</p>
+              ) : null}
+              <p className="text-pretty">
+                Se borra del comprobante y no se puede recuperar. El comprobante y su asiento no
+                cambian.
+              </p>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {removeError ? (
+          <p role="alert" className="text-sm text-destructive text-pretty">
+            {removeError}
+          </p>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={removePending}>Cancelar</AlertDialogCancel>
+          <Button
+            type="button"
+            disabled={removePending}
+            onClick={() => void remove()}
+            className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {removePending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+            {removePending ? 'Quitando…' : 'Quitar'}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
+  if (bare) {
+    return (
+      <div className={cn('min-w-0', className)}>
+        {loadError !== null ? (
+          <div className="flex flex-col items-start gap-2.5">
+            <p role="alert" className="text-muted-foreground text-pretty">
+              No pudimos leer las fotos de este comprobante. {loadError}
+            </p>
+            <RetryButton />
+          </div>
+        ) : attachments.length === 0 ? (
+          canEdit ? (
+            <>
+              <p className="font-medium">Sin foto todavía.</p>
+              {emptyText ? (
+                <p className="mt-0.5 text-muted-foreground text-pretty">{emptyText}</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-muted-foreground">No tiene ningún archivo adjunto.</p>
+          )
+        ) : (
+          list
+        )}
+        {canAdd ? (
+          <AddAttachmentButton
+            className="mt-3"
+            label={attachments.length > 0 ? 'Agregar otra' : 'Agregar foto o PDF'}
+            onFiles={(files) => void add(files)}
+            busy={uploading}
+          />
+        ) : null}
+        {canEdit && loadError === null && full ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {ATTACHMENT_MESSAGES.limit} Para sumar otro, quitá uno.
+          </p>
+        ) : null}
+        {removeDialog}
+      </div>
+    )
+  }
+
   return (
     <section className={cn('card-hairline rounded-xl border bg-card', className)}>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
@@ -175,52 +328,7 @@ export function DocumentAttachments({
             : 'No tiene ningún archivo adjunto.'}
         </p>
       ) : (
-        <ul className="divide-y divide-border/60">
-          {attachments.map((attachment) => (
-            <li key={attachment.id} className="flex items-center gap-3 px-5 py-3">
-              <a
-                href={attachment.url ?? '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(event) => open(event, attachment)}
-                className="group flex min-w-0 flex-1 items-center gap-3 rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <AttachmentTile
-                  key={attachment.url ?? attachment.id}
-                  kind={attachment.kind}
-                  src={attachment.url}
-                />
-                <span className="min-w-0 space-y-0.5">
-                  <span className="block truncate text-sm font-medium underline-offset-4 group-hover:text-primary group-hover:underline">
-                    {attachment.fileName}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {attachmentKindLabel(attachment.kind)} ·{' '}
-                    {formatAttachmentSize(attachment.sizeBytes)} · Subido el{' '}
-                    {formatDateTime(attachment.createdAt)}
-                  </span>
-                  <span className="sr-only">Se abre en una pestaña nueva.</span>
-                </span>
-              </a>
-              {canEdit ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 shrink-0 text-muted-foreground hover:text-destructive md:size-9"
-                  aria-label={`Quitar ${attachment.fileName}`}
-                  disabled={uploading}
-                  onClick={() => {
-                    setRemoveError(null)
-                    setRemoving(attachment)
-                  }}
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        list
       )}
 
       {canEdit && loadError === null && full ? (
@@ -229,50 +337,7 @@ export function DocumentAttachments({
         </p>
       ) : null}
 
-      <AlertDialog
-        open={removing !== null}
-        onOpenChange={(next) => {
-          if (removePending) return
-          if (!next) {
-            setRemoving(null)
-            setRemoveError(null)
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Quitás este archivo?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                {removing ? (
-                  <p className="break-words font-medium text-foreground">{removing.fileName}</p>
-                ) : null}
-                <p className="text-pretty">
-                  Se borra del comprobante y no se puede recuperar. El comprobante y su asiento no
-                  cambian.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {removeError ? (
-            <p role="alert" className="text-sm text-destructive text-pretty">
-              {removeError}
-            </p>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={removePending}>Cancelar</AlertDialogCancel>
-            <Button
-              type="button"
-              disabled={removePending}
-              onClick={() => void remove()}
-              className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {removePending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {removePending ? 'Quitando…' : 'Quitar'}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {removeDialog}
     </section>
   )
 }

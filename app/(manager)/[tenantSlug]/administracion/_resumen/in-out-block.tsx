@@ -9,8 +9,10 @@ import {
   homeCashRange,
   type InOutSummary,
   inOutSummary,
+  monthDays,
   weekBuckets,
 } from '@/lib/accounting/home'
+import { monthName, startOfWeek } from '@/lib/dates'
 import { PanelError, PanelLink } from './block-states'
 import type { HomeData } from './home-data'
 
@@ -28,17 +30,39 @@ function inOutTitle(summary: InOutSummary): string {
  * caja a otra no cuenta), con la misma lectura del héroe (`getCashDaily`).
  */
 export async function InOutBlock({ data, className }: { data: HomeData; className?: string }) {
-  const [cashResult, settingsResult] = await Promise.all([data.cash, data.settings])
+  const [cashResult, settingsResult, projectionResult] = await Promise.all([
+    data.cash,
+    data.settings,
+    data.projection,
+  ])
   if (!cashResult.ok) {
     return <PanelError title="Entró y salió" message={cashResult.message} className={className} />
   }
 
   const range = homeCashRange(data.today)
-  const buckets = weekBuckets(cashResult.data.total.days, {
-    ...range,
-    booksStartDate: settingsResult.ok ? (settingsResult.data?.booksStartDate ?? null) : null,
-  })
-  const summary = inOutSummary(buckets)
+  const booksStartDate = settingsResult.ok ? (settingsResult.data?.booksStartDate ?? null) : null
+  const weeks = weekBuckets(cashResult.data.total.days, { ...range, booksStartDate })
+  const summary = inOutSummary(weeks)
+  // La semana en curso se llama «esta semana» en el eje, y una semana sin movimientos lo
+  // dice con palabras: «$ 0» al lado de días que todavía no se cargaron es un cero que miente.
+  const thisWeek = startOfWeek(data.today)
+  const buckets = weeks.map((w) => ({
+    key: w.key,
+    label: w.label,
+    shortLabel: w.key === thisWeek ? 'esta semana' : w.shortLabel,
+    inCents: w.inCents,
+    outCents: w.outCents,
+    emptyText: w.key === thisWeek ? 'Sin movimientos todavía' : 'Sin movimientos',
+  }))
+  // Lo que entra sale de los cierres: si faltan, el título afirma con menos de lo que pasó.
+  const missing = projectionResult.ok
+    ? monthDays(projectionResult.data, { booksStartDate }).missing
+    : 0
+  const month = monthName(Number(data.today.slice(5, 7)))
+  const missingNote =
+    missing > 0
+      ? `${missing === 1 ? 'Falta 1 cierre' : `Faltan ${missing} cierres`}${month ? ` de ${month}` : ''}: lo que entró puede ser más.`
+      : null
   const cajasLink = (
     <PanelLink href={`${data.base}/cajas`}>
       Ver cajas
@@ -68,7 +92,9 @@ export async function InOutBlock({ data, className }: { data: HomeData; classNam
         <ChartFrame
           headingLevel="h2"
           title={inOutTitle(summary)}
-          sentence={`${summary.sentence} Son los últimos ${HOME_CASH_DAYS} días, semana por semana.`}
+          // Corta: al lado van «Ver como tabla» y «Ver cajas», y las semanas ya están en el eje.
+          sentence={`${summary.sentence.replace(/\.$/, '')} en los últimos ${HOME_CASH_DAYS} días.`}
+          action={cajasLink}
           chart={<InOutBars buckets={buckets} />}
           table={
             <InOutBarsTable
@@ -76,10 +102,16 @@ export async function InOutBlock({ data, className }: { data: HomeData; classNam
               caption={`Lo que entró y lo que salió de las cajas por semana, últimos ${HOME_CASH_DAYS} días`}
             />
           }
-          footer={summary.note ? <p>{summary.note}</p> : undefined}
+          footer={
+            missingNote || summary.note ? (
+              <>
+                {missingNote ? <p>{missingNote}</p> : null}
+                {summary.note ? <p>{summary.note}</p> : null}
+              </>
+            ) : undefined
+          }
         />
       </PanelSection>
-      <PanelSection className="flex justify-end">{cajasLink}</PanelSection>
     </Panel>
   )
 }

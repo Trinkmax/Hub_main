@@ -1,11 +1,12 @@
 'use client'
 
-import { ListChecks, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useId, useState, useTransition } from 'react'
+import { type ReactNode, useEffect, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
 import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
+import { StatusPill } from '@/components/administracion/kit'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
 import { type TreasuryOption, TreasurySelect } from '@/components/administracion/treasury-select'
 import {
@@ -18,7 +19,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,9 +47,10 @@ import {
   type BankRuleKind,
   RULE_DIRECTION_TEXT,
 } from '@/lib/imports/ui/labels'
-import { ToneBadge } from './status-badge'
+import { type RuleDraft, ruleInput } from '@/lib/imports/ui/payloads'
+import { cn } from '@/lib/utils'
 
-/** Una regla del bar para el banco, como la arma la página desde `listImportRules`. */
+/** Algo que el bar le enseñó al banco, como lo arma la página desde `listImportRules`. */
 export type BankRuleView = {
   id: string
   priority: number
@@ -67,7 +68,16 @@ export type BankRuleView = {
   updatedAt: string | null
 }
 
-type Options = {
+/** Algo que el bar le enseñó a ARCA («Hacer lo mismo con todas las de {proveedor}»). */
+export type ArcaRuleView = {
+  id: string
+  label: string
+  /** Lo que hace, ya en palabras: «son Ingresos Brutos de Córdoba». */
+  does: string
+  active: boolean
+}
+
+export type RuleOptions = {
   parties: PartyOption[]
   accounts: AccountOption[]
   treasuries: TreasuryOption[]
@@ -81,40 +91,206 @@ function isKind(value: string): value is BankRuleKind {
   return (KINDS as readonly string[]).includes(value)
 }
 
-/** Lo que hace la regla, con los nombres de verdad. */
-function actionText(rule: BankRuleView, options: Options): string {
-  if (!isKind(rule.kind)) return 'Acción que no conocemos'
-  const base = BANK_RULE_KIND_TEXT[rule.kind]
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
+}
+
+/** Lo que hace, con los nombres de verdad: «es un pago a **Administración**». */
+function actionWords(rule: BankRuleView, options: RuleOptions): ReactNode {
+  if (!isKind(rule.kind)) return 'hace algo que no conozco'
   switch (rule.kind) {
     case 'expense_component':
       return rule.component && rule.component in BANK_EXPENSE_COMPONENT_TEXT
-        ? BANK_EXPENSE_COMPONENT_TEXT[rule.component as BankExpenseComponent]
-        : base
+        ? `es ${lowerFirst(BANK_EXPENSE_COMPONENT_TEXT[rule.component as BankExpenseComponent])}`
+        : 'es un gasto o impuesto del banco'
     case 'transfer': {
       const t = options.treasuries.find((x) => x.id === rule.treasuryId)
-      return t ? `Pasa a ${t.name}` : base
+      return t ? (
+        <>
+          pasa a <strong className="font-semibold">{t.name}</strong>
+        </>
+      ) : (
+        'pasa a otra cuenta tuya'
+      )
     }
     case 'payment':
     case 'collection': {
       const p = options.parties.find((x) => x.id === rule.partyId)
-      return p
-        ? `${rule.kind === 'payment' ? 'Pago a' : 'Cobro de'} ${p.tradeName ?? p.name}`
-        : base
+      const lead = rule.kind === 'payment' ? 'es un pago a' : 'es un cobro de'
+      return p ? (
+        <>
+          {lead} <strong className="font-semibold">{p.tradeName ?? p.name}</strong>
+        </>
+      ) : (
+        `${lead} alguien que ya no está`
+      )
     }
     case 'movement': {
       const a = options.accounts.find((x) => x.id === rule.accountId)
-      return a ? `Va a ${a.name}` : base
+      return a ? (
+        <>
+          va a <strong className="font-semibold">{a.name}</strong>
+        </>
+      ) : (
+        'va a una categoría que elegiste'
+      )
     }
+    case 'ignore':
+      return 'no es nuestro: no se carga'
     default:
-      return base
+      return 'te lo pregunto cada vez'
   }
 }
 
+/** Cuándo se aplica: «Cuando dice **EXPENSAS** y sale plata». */
+function matchWords(rule: BankRuleView): ReactNode {
+  const side =
+    rule.direction === 'debit'
+      ? ' y sale plata'
+      : rule.direction === 'credit'
+        ? ' y entra plata'
+        : ''
+  if (rule.pattern) {
+    return (
+      <>
+        Cuando dice <strong className="font-semibold break-all">{rule.pattern}</strong>
+        {side}
+      </>
+    )
+  }
+  if (rule.counterpartyCuit)
+    return `Cuando el CUIT de la otra parte es ${rule.counterpartyCuit}${side}`
+  return `En cualquier movimiento${side}`
+}
+
+/** Un bloque plegado que se abre solo si la URL trae su ancla (`#aprendido`). */
+function LearnedFrame({
+  count,
+  children,
+}: {
+  /** Cuántas cosas enseñó el bar. */
+  count: number
+  children: ReactNode
+}) {
+  const titleId = useId()
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const sync = () => {
+      if (window.location.hash === '#aprendido') setOpen(true)
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+  return (
+    <section
+      id="aprendido"
+      aria-labelledby={titleId}
+      className="card-hairline scroll-mt-28 rounded-2xl border bg-card shadow-xs"
+    >
+      <h2 id={titleId}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5"
+        >
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="font-serif text-lg font-semibold leading-snug tracking-tight">
+              Lo que ya sé reconocer
+            </span>
+            {count > 0 ? (
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+                {count === 1 ? '1 cosa tuya' : `${count} cosas tuyas`}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              'size-5 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-out) motion-reduce:transition-none',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </h2>
+      {open ? <div className="border-t border-border/60 px-4 py-4 sm:px-5">{children}</div> : null}
+    </section>
+  )
+}
+
+function DeleteDialog({
+  label,
+  open,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  label: string | null
+  open: boolean
+  pending: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Borrás «{label}»?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Lo que ya se cargó no cambia. En las próximas subidas te lo vuelvo a preguntar (o lo
+            reconozco con lo que ya sé de fábrica).
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="h-11 md:h-9">Volver</AlertDialogCancel>
+          <AlertDialogAction
+            className="h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90 md:h-9"
+            disabled={pending}
+            onClick={(event) => {
+              event.preventDefault()
+              onConfirm()
+            }}
+          >
+            {pending ? 'Borrando…' : 'Sí, borrarlo'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+/** Borrar algo enseñado (`deleteImportRule`), con su aviso. */
+function useDeleteRule(slug: string, onDone: () => void) {
+  const router = useRouter()
+  const [pending, start] = useTransition()
+  const remove = (ruleId: string) => {
+    start(async () => {
+      try {
+        const result = await deleteImportRule(slug, { ruleId })
+        if (!result.ok) {
+          toast.error(result.message)
+          return
+        }
+        toast.success(result.message)
+        onDone()
+        router.refresh()
+      } catch {
+        toast.error('Sin conexión: no se borró. Probá de nuevo.')
+      }
+    })
+  }
+  return { pending, remove }
+}
+
 /**
- * «Tus reglas para el banco» (diseño §4.3.3): además de las de fábrica (Ley
- * 25.413, comisiones, transferencias…), el bar suma las suyas. Cada una dice
- * qué texto buscar en la descripción y qué hacer. Si un patrón no entra en lo
- * que el servidor puede evaluar sin riesgo, se avisa y no se aplica.
+ * «Lo que ya sé reconocer» del banco: además de lo de fábrica (comisiones,
+ * impuestos, transferencias entre tus cuentas, pagos de tarjeta y sueldos), lo
+ * que el bar enseñó. Cada cosa es una oración («Cuando dice EXPENSAS y sale
+ * plata → es un pago a Administración»), no una fila de tabla.
+ *
+ * Plegado al pie de la subida: se consulta, no se usa todas las semanas. Las
+ * acciones son las de siempre (`saveImportRule`, `deleteImportRule`).
  */
 export function BankRulesCard({
   slug,
@@ -123,91 +299,35 @@ export function BankRulesCard({
 }: {
   slug: string
   rules: BankRuleView[]
-  options: Options
+  options: RuleOptions
 }) {
   const router = useRouter()
-  const titleId = useId()
   const [editing, setEditing] = useState<BankRuleView | 'new' | null>(null)
   const [deleting, setDeleting] = useState<BankRuleView | null>(null)
-  const [pending, start] = useTransition()
-
-  const remove = (rule: BankRuleView) => {
-    start(async () => {
-      try {
-        const result = await deleteImportRule(slug, { ruleId: rule.id })
-        if (!result.ok) {
-          toast.error(result.message)
-          return
-        }
-        toast.success(result.message)
-        setDeleting(null)
-        router.refresh()
-      } catch {
-        toast.error('Sin conexión: no se borró. Probá de nuevo.')
-      }
-    })
-  }
+  const { pending, remove } = useDeleteRule(slug, () => setDeleting(null))
 
   return (
-    <section aria-labelledby={titleId} className="card-hairline rounded-xl border bg-card">
-      <header className="flex flex-col gap-3 border-b border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-            <ListChecks className="size-5" aria-hidden />
-          </span>
-          <div>
-            <h2 id={titleId} className="font-serif text-lg font-semibold tracking-tight">
-              Tus reglas para el banco
-            </h2>
-            <p className="text-sm text-muted-foreground text-pretty">
-              Ya reconocemos solos comisiones, impuestos y transferencias. Sumá una regla para lo
-              tuyo: «si la descripción dice EXPENSAS, es un pago a la administración».
-            </p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-11 w-full shrink-0 gap-2 sm:w-auto md:h-9"
-          onClick={() => setEditing('new')}
-        >
-          <Plus className="size-4" aria-hidden />
-          Nueva regla
-        </Button>
-      </header>
-
-      {rules.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-muted-foreground">
-          Todavía no tenés reglas propias. Cuando algo del extracto quede «para revisar» varias
-          veces, armá una regla y la próxima vez se resuelve solo.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border/60">
+    <LearnedFrame count={rules.length}>
+      <p className="text-sm text-muted-foreground text-pretty">
+        Comisiones, impuestos, transferencias entre tus cuentas, pagos de tarjeta y sueldos ya los
+        reconozco. Lo tuyo me lo enseñás una vez.
+      </p>
+      {rules.length > 0 ? (
+        <ul className="mt-3 divide-y divide-border/60">
           {rules.map((rule) => (
-            <li key={rule.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
+            <li key={rule.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="flex flex-wrap items-center gap-2 font-medium">
-                  {rule.label}
-                  {!rule.active ? <Badge variant="muted">Pausada</Badge> : null}
-                  {!rule.serverSafe ? <ToneBadge tone="warning">No se aplica</ToneBadge> : null}
+                <p className="text-pretty leading-snug">
+                  {matchWords(rule)} <span aria-hidden>→</span> {actionWords(rule, options)}
                 </p>
-                <p className="text-sm text-muted-foreground text-pretty">
-                  {rule.pattern ? (
-                    <>
-                      Si la descripción dice{' '}
-                      <code className="rounded bg-muted px-1 py-0.5 text-xs">{rule.pattern}</code>
-                    </>
-                  ) : rule.counterpartyCuit ? (
-                    <>Si la CUIT de la otra parte es {rule.counterpartyCuit}</>
-                  ) : (
-                    'Cualquier movimiento'
-                  )}
-                  {rule.direction ? ` · ${RULE_DIRECTION_TEXT[rule.direction].toLowerCase()}` : ''}{' '}
-                  → {actionText(rule, options)}
+                <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="[overflow-wrap:anywhere]">{rule.label}</span>
+                  {!rule.active ? <StatusPill tone="muted">En pausa</StatusPill> : null}
+                  {!rule.serverSafe ? <StatusPill tone="warn">No se aplica</StatusPill> : null}
                 </p>
                 {!rule.serverSafe ? (
                   <p className="text-xs text-warning-text">
-                    El texto a buscar usa signos que no podemos evaluar. {SAFE_PATTERN_HELP}
+                    El texto a buscar usa signos que no puedo leer. {SAFE_PATTERN_HELP}
                   </p>
                 ) : null}
               </div>
@@ -215,7 +335,7 @@ export function BankRulesCard({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11 flex-1 gap-2 sm:flex-none md:h-9"
+                  className="h-11 flex-1 gap-2 sm:flex-none md:pointer-fine:h-9"
                   onClick={() => setEditing(rule)}
                 >
                   <Pencil className="size-4" aria-hidden />
@@ -224,7 +344,7 @@ export function BankRulesCard({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11 flex-1 gap-2 text-destructive hover:text-destructive sm:flex-none md:h-9"
+                  className="h-11 flex-1 gap-2 text-destructive hover:text-destructive sm:flex-none md:pointer-fine:h-9"
                   onClick={() => setDeleting(rule)}
                 >
                   <Trash2 className="size-4" aria-hidden />
@@ -234,7 +354,16 @@ export function BankRulesCard({
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-3 h-11 w-full gap-2 sm:w-auto"
+        onClick={() => setEditing('new')}
+      >
+        <Plus className="size-4" aria-hidden />
+        Enseñarme algo nuevo
+      </Button>
 
       {editing ? (
         <RuleDialog
@@ -248,63 +377,110 @@ export function BankRulesCard({
           }}
         />
       ) : null}
-
-      <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrás la regla «{deleting?.label}»?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Lo que ya se cargó no cambia. En las próximas importaciones esos movimientos van a
-              quedar para revisar (o los va a reconocer una regla de fábrica).
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="h-11 md:h-9">Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90 md:h-9"
-              disabled={pending}
-              onClick={(event) => {
-                event.preventDefault()
-                if (deleting) remove(deleting)
-              }}
-            >
-              {pending ? 'Borrando…' : 'Borrar la regla'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </section>
+      <DeleteDialog
+        label={deleting?.label ?? null}
+        open={deleting !== null}
+        pending={pending}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove(deleting.id)}
+      />
+    </LearnedFrame>
   )
 }
 
-/** Alta o edición de una regla. */
-function RuleDialog({
+/**
+ * «Lo que ya sé reconocer» de ARCA: lo que se guarda con «Hacer lo mismo con
+ * todas las de {proveedor}» en la revisión. Antes no tenía pantalla: se podía
+ * crear y no se podía ver ni borrar. Solo se monta si hay alguna.
+ */
+export function ArcaRulesCard({ slug, rules }: { slug: string; rules: ArcaRuleView[] }) {
+  const [deleting, setDeleting] = useState<ArcaRuleView | null>(null)
+  const { pending, remove } = useDeleteRule(slug, () => setDeleting(null))
+  if (rules.length === 0) return null
+  return (
+    <LearnedFrame count={rules.length}>
+      <p className="text-sm text-muted-foreground text-pretty">
+        Lo que me enseñaste al contestar «¿Qué son estos otros impuestos?». Lo aplico solo a las
+        facturas de ese proveedor.
+      </p>
+      <ul className="mt-3 divide-y divide-border/60">
+        {rules.map((rule) => (
+          <li key={rule.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
+            <p className="min-w-0 flex-1 text-pretty leading-snug">
+              <span className="[overflow-wrap:anywhere]">{rule.label}</span>{' '}
+              <span aria-hidden>→</span> {rule.does}
+              {!rule.active ? (
+                <>
+                  {' '}
+                  <StatusPill tone="muted">En pausa</StatusPill>
+                </>
+              ) : null}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 text-destructive hover:text-destructive md:pointer-fine:h-9"
+              onClick={() => setDeleting(rule)}
+            >
+              <Trash2 className="size-4" aria-hidden />
+              Borrar
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <DeleteDialog
+        label={deleting?.label ?? null}
+        open={deleting !== null}
+        pending={pending}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove(deleting.id)}
+      />
+    </LearnedFrame>
+  )
+}
+
+/**
+ * «Enseñarme algo nuevo» (o cambiar algo ya enseñado). `initial` precarga el
+ * diálogo cuando se abre desde una pregunta de la revisión («¿Pasa todas las
+ * semanas? Enseñame a reconocerlo»): la descripción y el sentido ya vienen.
+ */
+export function RuleDialog({
   slug,
   rule,
+  initial,
   options,
   onClose,
   onSaved,
 }: {
   slug: string
   rule: BankRuleView | null
-  options: Options
+  initial?: Partial<RuleDraft>
+  options: RuleOptions
   onClose: () => void
   onSaved: () => void
 }) {
   const base = useId()
   const [pending, start] = useTransition()
-  const [label, setLabel] = useState(rule?.label ?? '')
-  const [pattern, setPattern] = useState(rule?.pattern ?? '')
-  const [cuit, setCuit] = useState(rule?.counterpartyCuit ?? '')
-  const [direction, setDirection] = useState<'any' | 'credit' | 'debit'>(rule?.direction ?? 'any')
-  const [kind, setKind] = useState<BankRuleKind>(
-    rule && isKind(rule.kind) ? rule.kind : 'expense_component',
+  const [label, setLabel] = useState(rule?.label ?? initial?.label ?? '')
+  const [pattern, setPattern] = useState(rule?.pattern ?? initial?.pattern ?? '')
+  const [cuit, setCuit] = useState(rule?.counterpartyCuit ?? initial?.cuit ?? '')
+  const [direction, setDirection] = useState<'any' | 'credit' | 'debit'>(
+    rule?.direction ?? initial?.direction ?? 'any',
   )
-  const [component, setComponent] = useState<string>(rule?.component ?? 'comisiones')
-  const [accountId, setAccountId] = useState<string | null>(rule?.accountId ?? null)
-  const [partyId, setPartyId] = useState<string | null>(rule?.partyId ?? null)
-  const [treasuryId, setTreasuryId] = useState<string | null>(rule?.treasuryId ?? null)
-  const [active, setActive] = useState(rule?.active ?? true)
+  const [kind, setKind] = useState<BankRuleKind>(
+    rule && isKind(rule.kind) ? rule.kind : (initial?.kind ?? 'expense_component'),
+  )
+  const [component, setComponent] = useState<string>(
+    rule?.component ?? initial?.component ?? 'comisiones',
+  )
+  const [accountId, setAccountId] = useState<string | null>(
+    rule?.accountId ?? initial?.accountId ?? null,
+  )
+  const [partyId, setPartyId] = useState<string | null>(rule?.partyId ?? initial?.partyId ?? null)
+  const [treasuryId, setTreasuryId] = useState<string | null>(
+    rule?.treasuryId ?? initial?.treasuryId ?? null,
+  )
+  const [active, setActive] = useState(rule?.active ?? initial?.active ?? true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
 
@@ -315,56 +491,44 @@ function RuleDialog({
 
   const submit = () => {
     const local: Record<string, string> = {}
-    if (label.trim().length < 2) local.label = 'Escribí para qué es la regla.'
+    if (label.trim().length < 2) local.label = 'Ponele un nombre para encontrarla después.'
     if (trimmedPattern === '' && cuitDigits === '') {
-      local['match.pattern'] = 'Escribí qué dice la descripción (o la CUIT de la otra parte).'
+      local['match.pattern'] = 'Escribí qué dice la descripción (o el CUIT de la otra parte).'
     }
     if (patternProblem) local['match.pattern'] = patternProblem
     if (cuitDigits !== '' && cuitDigits.length !== 11)
-      local['match.counterparty_cuit'] = 'Revisá la CUIT: son 11 números.'
+      local['match.counterparty_cuit'] = 'Revisá el CUIT: son 11 números.'
     if (kind === 'transfer' && !treasuryId)
       local['action.kind'] = 'Elegí a qué cuenta pasa la plata.'
     if ((kind === 'payment' || kind === 'collection') && !partyId)
       local['action.kind'] = 'Elegí a quién.'
-    if (kind === 'movement' && !accountId) local['action.kind'] = 'Elegí la cuenta.'
+    if (kind === 'movement' && !accountId) local['action.kind'] = 'Elegí dónde va.'
     setErrors(local)
     setMessage(null)
     if (Object.keys(local).length > 0) return
 
-    const match: { pattern?: string; counterparty_cuit?: string; direction?: 'credit' | 'debit' } =
-      {}
-    if (trimmedPattern !== '') match.pattern = trimmedPattern
-    if (cuitDigits !== '') match.counterparty_cuit = cuitDigits
-    if (direction !== 'any') match.direction = direction
-    const action: {
-      kind: string
-      component?: string
-      treasury_account_id?: string
-      party_id?: string
-      account_id?: string
-    } = { kind }
-    if (kind === 'expense_component') action.component = component
-    if (kind === 'transfer' && treasuryId) action.treasury_account_id = treasuryId
-    if ((kind === 'payment' || kind === 'collection') && partyId) action.party_id = partyId
-    if (kind === 'movement' && accountId) action.account_id = accountId
-
     start(async () => {
       try {
-        const result = await saveImportRule(slug, {
-          id: rule?.id ?? null,
-          expectedUpdatedAt: rule?.updatedAt ?? null,
-          source: 'bank_statement',
-          priority: rule?.priority ?? 100,
-          label: label.trim(),
-          match,
-          action,
-          active,
-        })
+        const result = await saveImportRule(
+          slug,
+          ruleInput(rule, {
+            label,
+            pattern,
+            cuit,
+            direction,
+            kind,
+            component,
+            accountId,
+            partyId,
+            treasuryId,
+            active,
+          }),
+        )
         if (!result.ok) {
           setErrors(result.fieldErrors ?? {})
           setMessage(
             result.code === 'stale'
-              ? 'Alguien cambió esta regla recién. Cerrá y abrila de nuevo.'
+              ? 'Alguien cambió esto recién. Cerrá y abrilo de nuevo.'
               : result.message,
           )
           return
@@ -383,15 +547,15 @@ function RuleDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{rule ? 'Editar la regla' : 'Nueva regla para el banco'}</DialogTitle>
+          <DialogTitle>{rule ? 'Cambiar lo que me enseñaste' : 'Enseñarme algo nuevo'}</DialogTitle>
           <DialogDescription>
-            Cuando un movimiento del extracto cumple esto, lo cargamos así sin preguntarte.
+            Cuando un movimiento del banco cumple esto, lo armo así sin preguntarte.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor={field('label')}>Para qué es</Label>
+            <Label htmlFor={field('label')}>¿Cómo la llamamos?</Label>
             <Input
               id={field('label')}
               value={label}
@@ -409,7 +573,7 @@ function RuleDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={field('pattern')}>Si la descripción dice</Label>
+            <Label htmlFor={field('pattern')}>Cuando la descripción dice</Label>
             <Input
               id={field('pattern')}
               value={pattern}
@@ -421,7 +585,8 @@ function RuleDialog({
               onChange={(e) => setPattern(e.target.value)}
             />
             <p id={`${field('pattern')}-hint`} className="text-xs text-muted-foreground">
-              No importan mayúsculas ni tildes. {SAFE_PATTERN_HELP}
+              Una o dos palabras que aparezcan siempre, por ejemplo EXPENSAS. No importan mayúsculas
+              ni tildes.
             </p>
             {errors['match.pattern'] || patternProblem ? (
               <p role="alert" className="text-xs text-destructive">
@@ -432,7 +597,7 @@ function RuleDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor={field('cuit')}>
-              CUIT de la otra parte{' '}
+              O cuando el CUIT de la otra parte es{' '}
               <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
             </Label>
             <Input
@@ -454,7 +619,7 @@ function RuleDialog({
 
           <div className="grid gap-1.5">
             <p id={field('direction')} className="text-sm font-medium">
-              ¿Cuándo?
+              ¿Cuando entra o cuando sale?
             </p>
             <ChoiceChips
               labelledBy={field('direction')}
@@ -468,24 +633,20 @@ function RuleDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={field('kind')}>Qué es</Label>
-            <Select value={kind} onValueChange={(v) => isKind(v) && setKind(v)}>
-              <SelectTrigger id={field('kind')} className={SELECT_CLASS}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {KINDS.map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {BANK_RULE_KIND_TEXT[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p id={field('kind')} className="text-sm font-medium">
+              Entonces es…
+            </p>
+            <ChoiceChips
+              labelledBy={field('kind')}
+              value={kind}
+              onChange={setKind}
+              options={KINDS.map((k) => ({ value: k, label: BANK_RULE_KIND_TEXT[k] }))}
+            />
           </div>
 
           {kind === 'expense_component' ? (
             <div className="grid gap-1.5">
-              <Label htmlFor={field('component')}>Qué gasto o impuesto</Label>
+              <Label htmlFor={field('component')}>¿Qué gasto o impuesto?</Label>
               <Select value={component} onValueChange={setComponent}>
                 <SelectTrigger id={field('component')} className={SELECT_CLASS}>
                   <SelectValue />
@@ -527,7 +688,7 @@ function RuleDialog({
           ) : null}
           {kind === 'movement' ? (
             <div className="grid gap-1.5">
-              <Label htmlFor={field('account')}>¿A qué cuenta va?</Label>
+              <Label htmlFor={field('account')}>¿Dónde va?</Label>
               <AccountCombobox
                 id={field('account')}
                 value={accountId}
@@ -542,18 +703,15 @@ function RuleDialog({
             </p>
           ) : null}
 
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-secondary/50 px-3 py-2">
             <Label htmlFor={field('active')} className="font-normal">
-              Usar esta regla en las próximas importaciones
+              Usarla en las próximas subidas
             </Label>
             <Switch id={field('active')} checked={active} onCheckedChange={setActive} />
           </div>
 
           {message ? (
-            <p
-              role="alert"
-              className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            >
+            <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
               {message}
             </p>
           ) : null}
@@ -561,10 +719,10 @@ function RuleDialog({
 
         <DialogFooter className="gap-2">
           <Button type="button" variant="outline" className="h-11 md:h-9" onClick={onClose}>
-            Cancelar
+            Volver
           </Button>
           <Button type="button" className="h-11 md:h-9" disabled={pending} onClick={submit}>
-            {pending ? 'Guardando…' : 'Guardar la regla'}
+            {pending ? 'Guardando…' : 'Guardar'}
           </Button>
         </DialogFooter>
       </DialogContent>

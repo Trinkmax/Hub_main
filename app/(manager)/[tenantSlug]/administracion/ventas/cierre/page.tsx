@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { closesByDay, missingDays } from '@/components/administracion/cajas-ventas/closes'
@@ -49,6 +49,12 @@ export const metadata = { title: 'Cierre del día' }
 /** Cuántos días que faltan se muestran arriba como atajo. */
 const MISSING_SHORTCUTS = 4
 
+/**
+ * En el celular la pantalla es una carga: menos aire entre el encabezado y el primer paso,
+ * para que en la primera pantalla entren los primeros medios. En compu, el marco de siempre.
+ */
+const PAGE_CLASS = 'max-sm:space-y-4 max-sm:py-4'
+
 function dayTitle(day: string): string {
   return `${weekdayName(day)} ${formatIsoDay(day)}`
 }
@@ -81,13 +87,20 @@ export default async function CierreDelDiaPage({
       back={{ href: `${base}/ventas`, label: 'Ventas' }}
       title="Cierre del día"
       badge={<ReadOnlyBadge className="ml-0" />}
-      description="Anotá lo que se vendió y cómo te pagaron: el ticket del día se arma solo. Si un medio no tuvo ventas, dejalo vacío."
+      // En el celular lo dice el primer paso, y cada renglón que se saca de arriba es un
+      // campo más a la vista: la descripción queda para pantallas con lugar.
+      description={
+        <span className="hidden sm:inline">
+          Anotá lo que se vendió y cómo te pagaron: el ticket del día se arma solo. Si un medio no
+          tuvo ventas, dejalo vacío.
+        </span>
+      }
     />
   )
 
   if (!canWrite) {
     return (
-      <AdmPage width="comfortable">
+      <AdmPage width="comfortable" className={PAGE_CLASS}>
         {header}
         <ReadOnlyNotice
           description="El cierre del día lo cargan los dueños. Con Contabilidad ves cada cierre en Ventas › Cierres del día."
@@ -150,10 +163,10 @@ export default async function CierreDelDiaPage({
   const moreMissing = pending.length - otherMissing.length
 
   const dayNav = (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
       <nav
         aria-label="Día del cierre"
-        className="card-hairline flex items-center gap-1 rounded-full border bg-card p-1 shadow-xs"
+        className="card-hairline flex items-center gap-1 self-start rounded-full border bg-card p-1 shadow-xs"
       >
         <DayStep
           href={canPrev ? hrefWith(`${base}/ventas/cierre`, { fecha: prev }) : null}
@@ -175,7 +188,9 @@ export default async function CierreDelDiaPage({
         </DayStep>
       </nav>
       {otherMissing.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        // En el celular, UNA fila que se desliza de costado (con desvanecido a la derecha para
+        // que se note que sigue): son atajos, no pueden ocupar más que el primer campo.
+        <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 text-sm whitespace-nowrap [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:whitespace-normal">
           <span className="text-muted-foreground">{missingLabel}</span>
           {otherMissing.map((d) => (
             // Rellenos (no en contorno) y en ámbar: «falta» es un estado, y lo dice la palabra de al lado.
@@ -188,8 +203,11 @@ export default async function CierreDelDiaPage({
             </PillLink>
           ))}
           {moreMissing > 0 ? (
-            <span className="text-muted-foreground">y {moreMissing} más</span>
-          ) : null}
+            // El aire de la derecha deja pasar el último texto por delante del desvanecido.
+            <span className="pr-8 text-muted-foreground sm:pr-0">y {moreMissing} más</span>
+          ) : (
+            <span aria-hidden className="w-4 shrink-0 sm:hidden" />
+          )}
         </div>
       ) : null}
     </div>
@@ -197,7 +215,7 @@ export default async function CierreDelDiaPage({
 
   // ─── Días que no se cargan acá ─────────────────────────────────────────────
   const notice = (message: string, link: { href: string; label: string } | null) => (
-    <AdmPage width="comfortable">
+    <AdmPage width="comfortable" className={PAGE_CLASS}>
       {header}
       {dayNav}
       <div
@@ -346,7 +364,7 @@ export default async function CierreDelDiaPage({
   const after = missing.find((d) => d !== date) ?? null
 
   return (
-    <AdmPage width="comfortable">
+    <AdmPage width="comfortable" className={PAGE_CLASS}>
       {header}
       {dayNav}
       {!recent.ok || !dayCloses.ok ? (
@@ -359,6 +377,26 @@ export default async function CierreDelDiaPage({
             No pudimos revisar qué días ya están cargados. Si este día ya tiene cierre, al guardar
             te avisamos.
           </p>
+        </div>
+      ) : null}
+      {salesPoints.length === 0 && methods.length > 0 && existing.length === 0 ? (
+        // Sin puntos de venta el día entero queda como venta sin factura. Se dice ANTES del
+        // primer importe: enterarse en el paso 3, con todo cargado, obligaba a salir y perderlo.
+        <div className="flex flex-wrap items-center justify-between gap-x-4 rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm max-sm:pb-1 sm:px-5">
+          <p className="min-w-0 flex-1 basis-64 text-pretty">
+            <span className="font-medium">Todavía no cargaste puntos de venta.</span>{' '}
+            <span className="text-muted-foreground">
+              Este cierre queda entero como venta sin factura (se registra igual). Si facturás,
+              cargalos antes de empezar.
+            </span>
+          </p>
+          <Link
+            href={`${base}/ajustes?tab=puntos-de-venta`}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-sm font-medium whitespace-nowrap text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+          >
+            Cargar mis puntos de venta
+            <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
         </div>
       ) : null}
       <SalesCloseForm

@@ -1,145 +1,121 @@
 'use client'
 
-import { X } from 'lucide-react'
+import { LoaderCircle, Search, X } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { type FormEvent, useTransition } from 'react'
-import { Button } from '@/components/ui/button'
-import { FilterBar, FilterSearch } from '@/components/ui/filter-bar'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
+import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
-/** Lo que se borra al cambiar un filtro: la página (vuelve a la primera). */
+/** Lo que se borra al cambiar la búsqueda: la página (vuelve a la primera). */
 const PAGE_PARAMS = ['pagina', 'despues']
 
-function useParamSetter() {
+/** Cuánto se espera después de la última tecla para buscar. */
+const SEARCH_DELAY_MS = 350
+
+/**
+ * El buscador de una lista de Compras: busca MIENTRAS se escribe (reemplaza
+ * `?q=` a los 350 ms de la última tecla, y al toque con Enter). Ya no hay
+ * botón «Buscar».
+ *
+ * Es un campo controlado propio: el de antes se volvía a montar con cada
+ * búsqueda (`key={q}`) y perdía el foco a mitad de palabra. El valor sigue
+ * viviendo en la URL (la lista se comparte y «atrás» funciona); si la URL
+ * cambia por otro lado («Sacar los filtros»), el campo la sigue.
+ */
+export function LiveSearch({
+  placeholder,
+  label,
+  className,
+}: {
+  placeholder: string
+  /** Para lectores: qué se busca («Buscar un proveedor»). Por defecto, el `placeholder`. */
+  label?: string
+  className?: string
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const id = useId()
+  const urlQuery = searchParams.get('q') ?? ''
+  const [value, setValue] = useState(urlQuery)
   const [pending, start] = useTransition()
+  /** Lo último que se mandó a la URL: para no buscar dos veces lo mismo. */
+  const sent = useRef(urlQuery)
 
-  const set = (updates: Readonly<Record<string, string | null>>) => {
-    const next = new URLSearchParams(searchParams.toString())
-    for (const [key, value] of Object.entries(updates)) {
-      if (value) next.set(key, value)
-      else next.delete(key)
-    }
-    for (const key of PAGE_PARAMS) next.delete(key)
-    const query = next.toString()
+  const apply = (raw: string) => {
+    const next = raw.trim()
+    if (next === sent.current) return
+    sent.current = next
+    const params = new URLSearchParams(searchParams.toString())
+    if (next) params.set('q', next)
+    else params.delete('q')
+    for (const key of PAGE_PARAMS) params.delete(key)
+    const query = params.toString()
     start(() => router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false }))
   }
-  return { set, pending, searchParams }
-}
 
-/**
- * El segmentado de una lista (Todos · Con deuda · Vencidos…): `SlidingTabs`
- * del panel, solo para filtros. El valor viaja en la URL (`?filtro=`): la
- * lista se comparte y «atrás» funciona.
- */
-export function SegmentFilter<T extends string>({
-  options,
-  value,
-  param,
-  defaultValue,
-  label,
-}: {
-  options: ReadonlyArray<{ value: T; label: string }>
-  value: T
-  param: string
-  /** El valor que no se escribe en la URL. */
-  defaultValue: T
-  label: string
-}) {
-  const { set, pending } = useParamSetter()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: busca solo cuando cambia lo escrito
+  useEffect(() => {
+    const timer = window.setTimeout(() => apply(value), SEARCH_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [value])
+
+  // La URL cambió por otro lado (un link, «atrás»): el campo muestra lo que se está viendo.
+  // Con una búsqueda en vuelo no se pisa lo que la persona sigue escribiendo.
+  useEffect(() => {
+    if (pending || urlQuery === sent.current) return
+    sent.current = urlQuery
+    setValue(urlQuery)
+  }, [urlQuery, pending])
+
   return (
-    <fieldset
-      aria-busy={pending}
-      className="-mx-4 my-0 min-w-0 overflow-x-auto border-0 px-4 py-0 [scrollbar-width:none] sm:mx-0 sm:px-0"
-    >
-      <legend className="sr-only">{label}</legend>
-      <SlidingTabs
-        tabs={options.map((o) => ({ value: o.value, label: o.label }))}
+    <div className={cn('relative min-w-0', className)}>
+      <label htmlFor={id} className="sr-only">
+        {label ?? placeholder}
+      </label>
+      {pending ? (
+        <LoaderCircle
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none"
+        />
+      ) : (
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+      )}
+      <Input
+        id={id}
+        type="search"
+        inputMode="search"
+        enterKeyHint="search"
+        autoComplete="off"
         value={value}
-        onChange={(next) => set({ [param]: next === defaultValue ? null : next })}
+        placeholder={placeholder}
+        aria-busy={pending}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            apply(value)
+          }
+        }}
+        className="h-11 rounded-full pr-11 pl-10 text-base md:h-10 md:pr-10 md:text-sm [&::-webkit-search-cancel-button]:hidden"
       />
-    </fieldset>
-  )
-}
-
-/**
- * Buscador + (opcional) un `Select` de estado, en la barra de filtros del
- * panel. Buscar reemplaza `?q=` sin perder los demás parámetros.
- */
-export function SearchFilter({
-  placeholder,
-  status,
-}: {
-  placeholder: string
-  status?: {
-    param: string
-    value: string
-    defaultValue: string
-    label: string
-    options: ReadonlyArray<{ value: string; label: string }>
-  }
-}) {
-  const { set, pending, searchParams } = useParamSetter()
-  const q = searchParams.get('q') ?? ''
-  const hasFilters = q !== '' || (status ? status.value !== status.defaultValue : false)
-
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const value = new FormData(event.currentTarget).get('q')
-    set({ q: typeof value === 'string' && value.trim() !== '' ? value.trim() : null })
-  }
-
-  return (
-    <form onSubmit={onSubmit} aria-busy={pending}>
-      <FilterBar>
-        <FilterSearch key={q} placeholder={placeholder} defaultValue={q} />
-        {status ? (
-          <Select
-            value={status.value}
-            onValueChange={(next) =>
-              set({ [status.param]: next === status.defaultValue ? null : next })
-            }
-          >
-            <SelectTrigger
-              aria-label={status.label}
-              className="sm:w-[190px] data-[size=default]:h-11 sm:data-[size=default]:h-9"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {status.options.map((o) => (
-                <SelectItem key={o.value} value={o.value} className="min-h-11 md:min-h-8">
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
-        {hasFilters ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-11 gap-1.5 text-muted-foreground sm:h-9"
-            onClick={() => set({ q: null, ...(status ? { [status.param]: null } : {}) })}
-          >
-            <X className="size-3.5" aria-hidden />
-            Limpiar
-          </Button>
-        ) : null}
-        <Button type="submit" size="sm" className="h-11 sm:h-9">
-          Buscar
-        </Button>
-      </FilterBar>
-    </form>
+      {value !== '' ? (
+        <button
+          type="button"
+          aria-label="Borrar la búsqueda"
+          onClick={() => {
+            setValue('')
+            apply('')
+            document.getElementById(id)?.focus()
+          }}
+          className="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:right-1 md:size-9"
+        >
+          <X aria-hidden className="size-4" />
+        </button>
+      ) : null}
+    </div>
   )
 }

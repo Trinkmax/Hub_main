@@ -33,10 +33,17 @@ export type LauncherItem = {
   hint: string
   icon: LucideIcon
   target: LauncherTarget
+  /** Lo de todos los días: va arriba y más grande. El resto son renglones compactos. */
+  featured?: boolean
+  /** Renglón de punta a punta en la compu: el título largo y el «cajón de sastre» del final. */
+  wide?: boolean
 }
 
 export const LAUNCHER_TITLE = '¿Qué querés cargar?'
 export const LAUNCHER_DESCRIPTION = 'Elegí lo que pasó y te llevamos a donde se anota.'
+
+/** Los dos rótulos del lanzador (los mismos tiempos que usa la guía en «Tu rutina»). */
+export const LAUNCHER_GROUPS = { daily: 'Todos los días', sometimes: 'Cada tanto' } as const
 
 export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
   {
@@ -45,6 +52,7 @@ export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
     hint: 'Lo que se vendió y cómo te pagaron',
     icon: ReceiptText,
     target: { kind: 'route', path: '/ventas/cierre' },
+    featured: true,
   },
   {
     key: 'gasto',
@@ -52,6 +60,7 @@ export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
     hint: 'El hielo, la verdulería, un flete',
     icon: ShoppingBasket,
     target: { kind: 'sheet', action: 'gasto' },
+    featured: true,
   },
   {
     key: 'compra',
@@ -59,6 +68,7 @@ export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
     hint: 'Queda como deuda con el proveedor',
     icon: FileClock,
     target: { kind: 'route', path: '/compras/nueva' },
+    wide: true,
   },
   {
     key: 'pagar',
@@ -94,8 +104,20 @@ export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
     hint: 'Un socio puso o sacó plata',
     icon: CircleEllipsis,
     target: { kind: 'sheet', action: 'movimiento' },
+    wide: true,
   },
 ]
+
+/** Las destacadas y las demás, cada grupo en el orden de `LAUNCHER_ITEMS`. */
+export function launcherGroups(items: readonly LauncherItem[] = LAUNCHER_ITEMS): {
+  daily: LauncherItem[]
+  sometimes: LauncherItem[]
+} {
+  return {
+    daily: items.filter((item) => item.featured),
+    sometimes: items.filter((item) => !item.featured),
+  }
+}
 
 /** A dónde lleva una tarjeta que abre pantalla (`null` si abre una hoja). */
 export function launcherHref(base: string, target: LauncherTarget): string | null {

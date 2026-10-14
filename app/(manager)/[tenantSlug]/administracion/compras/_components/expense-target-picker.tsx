@@ -1,9 +1,15 @@
 'use client'
 
 import { Repeat, Search, X } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
 import { type ComboOption, EntityCombobox } from '@/components/administracion/entity-combobox'
+import {
+  CategoryPicker,
+  categoryOptions,
+  featuredCategories,
+  topCategories,
+} from '@/components/administracion/kit'
 import {
   normalizeText,
   rankAccount,
@@ -70,6 +76,11 @@ export type TargetAccountPlan = {
  * Con un proveedor que tiene cuenta habitual en su ficha no se pregunta «¿En
  * qué gastaste?»: va «Va a «Compras: bebidas»» con [Cambiar] para ese gasto.
  * Si no la tiene, se pregunta y se ofrece «Usar siempre para …» (12/10/2026).
+ *
+ * Esa pregunta ya no es un combo con el plan de cuentas: es `CategoryPicker`
+ * (las categorías como botones, «Mercadería» arriba), el mismo selector de la
+ * compra y de la libreta. El combo de siempre queda detrás de «Ver el plan
+ * completo». Escribe lo mismo, por el mismo `onAccountChange`.
  */
 export function ExpenseTargetPicker({
   id,
@@ -139,6 +150,20 @@ export function ExpenseTargetPicker({
       })),
     [accounts, imputable],
   )
+  // La categoría como botones: las pensadas para compras; arriba, mercadería y lo más usado.
+  const categories = useMemo(() => {
+    const quick = new Set(quickAccounts.map((a) => a.id))
+    const featured = featuredCategories(accounts)
+    const usage = new Map<string, number>()
+    for (const s of suggestions) usage.set(s.accountId, (usage.get(s.accountId) ?? 0) + 1)
+    return {
+      options: categoryOptions(accounts, (accountId) => quick.has(accountId)),
+      featured,
+      pinned: topCategories(usage, 6, new Set(featured)),
+    }
+  }, [accounts, quickAccounts, suggestions])
+  /** «Ver el plan completo»: el combo con todo lo que acepta el motor. */
+  const [fullPlan, setFullPlan] = useState(false)
 
   // Un gasto fijo se busca por su nombre o por el de su proveedor.
   const rankRecurring = (r: SheetRecurring, query: string): number => {
@@ -237,7 +262,7 @@ export function ExpenseTargetPicker({
             onClick={onClear}
           >
             <X className="size-3.5" aria-hidden />
-            Cambiar
+            Elegir otro
           </Button>
         </div>
 
@@ -332,16 +357,37 @@ export function ExpenseTargetPicker({
             }}
           />
         ) : (
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${id}-account`}>¿En qué gastaste?</Label>
-            <AccountCombobox
+          <div className="grid gap-2">
+            <span id={`${id}-account-label`} className="text-sm font-medium leading-none">
+              Categoría
+            </span>
+            <CategoryPicker
               id={`${id}-account`}
+              aria-labelledby={`${id}-account-label`}
+              options={categories.options}
+              featured={categories.featured}
+              pinned={categories.pinned}
               value={value.accountId}
-              onValueChange={(next) => onAccountChange(next)}
-              accounts={accountOptions}
-              placeholder="Elegí en qué (bebidas, limpieza, alquiler…)"
+              // La elegida que no es un botón (del plan completo, o la de la ficha si no es de las rápidas).
+              outside={
+                value.accountId && account && !categories.options.some((o) => o.id === account.id)
+                  ? { id: account.id, name: account.name }
+                  : null
+              }
               invalid={Boolean(errors['target.accountId'])}
+              onChange={(next) => onAccountChange(next)}
+              onOpenFullPlan={() => setFullPlan(true)}
             />
+            {fullPlan ? (
+              <AccountCombobox
+                id={`${id}-account-plan`}
+                aria-label="Buscar en el plan completo"
+                value={value.accountId}
+                onValueChange={(next) => onAccountChange(next)}
+                accounts={accountOptions}
+                placeholder="Bebidas, limpieza, alquiler…"
+              />
+            ) : null}
             {errors['target.accountId'] ? (
               <p role="alert" className="text-xs text-destructive">
                 {errors['target.accountId']}

@@ -1,6 +1,6 @@
 import { Check, CircleAlert, Clock3, Info, type LucideIcon } from 'lucide-react'
 import type { CSSProperties } from 'react'
-import { heroState, type TodayItem } from '@/lib/accounting/home'
+import { heroState, setupNext, type TodayItem } from '@/lib/accounting/home'
 import { cn } from '@/lib/utils'
 import { HomeActionButton } from './home-action'
 import type { HomeData } from './home-data'
@@ -51,6 +51,13 @@ const ROW = {
 
 type RowClasses = (typeof ROW)[keyof typeof ROW]
 
+/**
+ * En oscuro el botón en contorno toma el fondo de la página, más oscuro que la
+ * tarjeta: cuatro seguidos se veían como bloques negros que competían con el
+ * botón dorado. Acá queda transparente, con el borde a la vista.
+ */
+const OUTLINE_ON_DARK = 'dark:border-foreground/25 dark:bg-transparent'
+
 /** El estado nunca va solo en color: un ícono al lado de la frase que lo dice. */
 const TONE_ICON: Partial<Record<TodayItem['tone'], { icon: LucideIcon; className: string }>> = {
   late: { icon: CircleAlert, className: 'text-destructive' },
@@ -67,7 +74,9 @@ const TONE_ICON: Partial<Record<TodayItem['tone'], { icon: LucideIcon; className
  * botón relleno de la pantalla. Las hechas quedan atenuadas y con tilde. La
  * contadora ve las mismas tarjetas como estado, sin ninguna acción.
  *
- * Mientras la puesta en marcha esté incompleta, arriba va su franja.
+ * Mientras la puesta en marcha esté incompleta, debajo va su franja, en un
+ * renglón: primero lo de hoy (el número y la primera acción entran en la
+ * primera pantalla), después lo que falta para dejar todo andando.
  */
 export async function TodayBlock({
   data,
@@ -88,13 +97,15 @@ export async function TodayBlock({
 
   // Si el héroe ya ofrece el paso que lo destraba («Cargar lo que hay»), ese es el botón
   // relleno de la pantalla: acá quedan todos en contorno.
-  const heroHasAction =
-    summaryResult.ok &&
-    heroState(summaryResult.data, settingsResult.ok ? settingsResult.data : null, {
-      canWrite,
-      base: data.base,
-    }).kind === 'unknown' &&
-    canWrite
+  const hero = summaryResult.ok
+    ? heroState(summaryResult.data, settingsResult.ok ? settingsResult.data : null, {
+        canWrite,
+        base: data.base,
+      })
+    : null
+  const heroHasAction = hero?.kind === 'unknown' && canWrite
+  // La franja no repite lo que ya ofrecen el héroe y las tarjetas.
+  const setupSteps = setupNext(setup, { hero, today: items })
   const current = canWrite ? (items.find((i) => !i.done && i.action !== null)?.id ?? null) : null
   const waiting = items.filter((i) => !i.done && (i.tone === 'late' || i.tone === 'warn')).length
   const row = items.length <= 3 ? ROW.few : items.length === 4 ? ROW.four : ROW.five
@@ -109,25 +120,16 @@ export async function TodayBlock({
           {canWrite ? 'Hoy te toca' : 'El día a día del bar'}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {waiting === 0
-            ? 'No hay nada atrasado.'
-            : waiting === 1
-              ? 'Hay 1 cosa esperando.'
-              : `Hay ${waiting} cosas esperando.`}
+          {/* Sin el resumen faltan tarjetas: no se afirma una cuenta que cambia sola. */}
+          {!summaryResult.ok
+            ? 'Puede faltar algo: no cargó el resumen.'
+            : waiting === 0
+              ? 'No hay nada atrasado.'
+              : waiting === 1
+                ? 'Hay 1 cosa esperando.'
+                : `Hay ${waiting} cosas esperando.`}
         </p>
       </div>
-
-      {setup.complete || setup.next.length === 0 ? null : (
-        <SetupStrip
-          title={setup.title}
-          done={setup.done}
-          total={setup.total}
-          next={setup.next}
-          guideHref={setup.guideHref}
-          cookieName={setupCookie}
-          initialCollapsed={setupCollapsed}
-        />
-      )}
 
       <div className="@container">
         <ol className={cn('flex flex-col gap-3', row.list)}>
@@ -144,6 +146,19 @@ export async function TodayBlock({
           ))}
         </ol>
       </div>
+
+      {setup.complete ? null : (
+        <SetupStrip
+          // Sin el resumen el avance sale a medias («7 de 14» donde eran «9 de 16»): no se dice.
+          title={summaryResult.ok ? setup.title : 'Puesta en marcha'}
+          done={summaryResult.ok ? setup.done : 0}
+          total={summaryResult.ok ? setup.total : 0}
+          next={setupSteps}
+          guideHref={setup.guideHref}
+          cookieName={setupCookie}
+          initialCollapsed={setupCollapsed}
+        />
+      )}
     </section>
   )
 }
@@ -194,8 +209,13 @@ function TodayCard({
 
       <div
         className={cn(
-          'flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border p-4',
-          '@min-[30rem]:flex-row @min-[30rem]:items-center @min-[30rem]:justify-between',
+          'flex min-w-0 flex-1 gap-3 rounded-2xl border p-4',
+          // La del momento lleva su botón grande debajo; las demás van en un renglón (el
+          // texto a la izquierda, el botón chico a la derecha) también en el celular:
+          // con el botón a todo el ancho, cinco tarjetas eran una pantalla entera.
+          filled
+            ? 'flex-col @min-[30rem]:flex-row @min-[30rem]:items-center @min-[30rem]:justify-between'
+            : 'flex-row items-center justify-between',
           row.card,
           item.done
             ? 'border-border/60 bg-card/50'
@@ -232,14 +252,20 @@ function TodayCard({
           </p>
         </div>
         {item.action ? (
-          <div className={cn('shrink-0', row.action)}>
+          <div
+            className={cn(
+              'shrink-0',
+              // En angosto el botón chico no pasa de 7rem: un texto largo baja a dos renglones.
+              !filled && 'max-w-[7rem] @min-[30rem]:max-w-none',
+              row.action,
+            )}
+          >
             <HomeActionButton
               action={item.action}
               variant={filled ? 'default' : 'outline'}
               className={cn(
-                'w-full @min-[30rem]:w-auto',
+                filled ? 'min-h-12 w-full font-semibold @min-[30rem]:w-auto' : OUTLINE_ON_DARK,
                 row.button,
-                filled && 'min-h-12 font-semibold',
               )}
             />
           </div>

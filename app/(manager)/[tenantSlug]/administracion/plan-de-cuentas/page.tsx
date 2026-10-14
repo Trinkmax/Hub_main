@@ -1,12 +1,10 @@
-import { Upload } from 'lucide-react'
+import { BookText, ListTree, Tags, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { plural } from '@/components/administracion/format'
+import { AdmHeader, AdmPage, PanelError, ViewPills } from '@/components/administracion/kit'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { SectionNav } from '@/components/administracion/section-nav'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
@@ -20,9 +18,9 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { RetryButton } from '../_resumen/retry-button'
 import { Callout } from '../ajustes/_components/form-bits'
 import { ExportButton } from '../libros/_components/export-button'
+import { CategoryList, NewCategoryButton } from './_components/category-list'
 import { ChartTree } from './_components/chart-tree'
 import { ChartWorkspace } from './_components/chart-workspace'
 import { NewAccountButton } from './_components/new-account-button'
@@ -33,10 +31,14 @@ export const metadata = { title: 'Plan de cuentas · Administración' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type Tab = 'plan' | 'sistema'
+type Tab = 'categorias' | 'plan' | 'sistema'
+
+const TABS: readonly Tab[] = ['categorias', 'plan', 'sistema']
 
 const DESCRIPTIONS: Readonly<Record<Tab, string>> = {
-  plan: 'Las cuentas de la SAS en árbol: agregá, renombrá, recodificá, mové o desactivá cualquiera.',
+  // La tarjeta de abajo ya dice dónde aparecen: acá no se repite.
+  categorias: 'Dónde se anota cada gasto y cada compra del bar.',
+  plan: 'Las cuentas del bar en árbol: agregá, renombrá, recodificá, mové o desactivá cualquiera.',
   // Corto a propósito: más largo empuja «Exportar» a un segundo renglón en la compu.
   sistema: 'Con qué cuenta arma el sistema cada asiento: IVA, proveedores, ventas…',
 }
@@ -46,9 +48,17 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Plan de cuentas (H.16 + #16, totalmente configurable): el árbol con el saldo de cada cuenta al
- * día, y «Cuentas del sistema» (`?tab=sistema`). El dueño con carga crea cuentas en cualquier lugar,
- * edita código, nombre, tipo y tildes, mueve grupos enteros y desactiva; quien además administra
+ * Plan de cuentas (H.16 + #16), con tres vistas en la URL (`?tab=`):
+ *
+ * - **Tus categorías** (`categorias`): lo que ve un socio. La lista de «¿En qué se gastó?», en
+ *   los mismos grupos que el selector de los gastos, con un buscador y el alta corta.
+ * - **Plan completo** (`plan`): el árbol con el saldo de cada cuenta al día. Es la vista de la
+ *   contadora; quien carga crea cuentas en cualquier lugar, edita código, nombre, tipo y tildes,
+ *   mueve grupos enteros y desactiva.
+ * - **Cuentas del sistema** (`sistema`): con qué cuenta arma el sistema cada asiento.
+ *
+ * Sin `?tab=`: el dueño cae en «Tus categorías» y la contadora en «Plan completo». Un link viejo
+ * con `?cuenta=` (y sin `?tab=`) sigue abriendo la hoja sobre el árbol. Quien además administra
  * los accesos importa un plan y cambia las cuentas del sistema. La contadora lo ve y lo exporta.
  */
 export default async function PlanDeCuentasPage({
@@ -61,7 +71,6 @@ export default async function PlanDeCuentasPage({
   const { tenantSlug } = await params
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
-  const tab: Tab = first(sp.tab) === 'sistema' ? 'sistema' : 'plan'
 
   let access: TenantAccess
   try {
@@ -88,6 +97,13 @@ export default async function PlanDeCuentasPage({
   )
   const cuentaParam = first(sp.cuenta)
   const initialAccountId = cuentaParam && UUID_RE.test(cuentaParam) ? cuentaParam : null
+  const rawTab = first(sp.tab)
+  const tab: Tab = TABS.includes(rawTab as Tab)
+    ? (rawTab as Tab)
+    : // Los links de siempre a una cuenta (`?cuenta=`) la abren sobre el árbol.
+      readOnly || initialAccountId
+      ? 'plan'
+      : 'categorias'
 
   const accounts: ChartAccount[] = result.ok
     ? result.data.rows.map((a) => ({
@@ -113,7 +129,14 @@ export default async function PlanDeCuentasPage({
     : []
   const postable = accounts.filter((a) => a.postable && a.active).length
   const groups = accounts.filter((a) => !a.postable && a.active).length
-  const tabHref = (t: Tab) => `${base}/plan-de-cuentas${t === 'plan' ? '' : `?tab=${t}`}`
+  const tabHref = (t: Tab) => `${base}/plan-de-cuentas?tab=${t}`
+  const exportButton = (
+    <ExportButton
+      href={exportHref(tenantSlug, 'plan-de-cuentas')}
+      fileName="plan-de-cuentas.csv"
+      className="h-11 md:pointer-fine:h-9"
+    />
+  )
 
   return (
     <ChartWorkspace
@@ -124,15 +147,10 @@ export default async function PlanDeCuentasPage({
       balancesAvailable={result.ok && result.data.balancesAvailable}
       initialAccountId={initialAccountId}
     >
-      <PageShell>
-        <PageHeader
-          eyebrow="Administración"
-          title={
-            <>
-              Plan de cuentas
-              <ReadOnlyBadge />
-            </>
-          }
+      <AdmPage>
+        <AdmHeader
+          title="Plan de cuentas"
+          badge={<ReadOnlyBadge className="ml-0" />}
           description={
             result.ok && tab === 'plan'
               ? `${plural(postable, 'cuenta para imputar', 'cuentas para imputar')} en ${plural(groups, 'grupo', 'grupos')}${
@@ -143,49 +161,63 @@ export default async function PlanDeCuentasPage({
               : DESCRIPTIONS[tab]
           }
           actions={
-            <>
-              {result.ok ? <NewAccountButton /> : null}
-              {result.ok && canAdmin ? (
-                <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
-                  <Link href={`${base}/plan-de-cuentas/importar`}>
-                    <Upload className="size-4" aria-hidden />
-                    Importar plan
-                  </Link>
-                </Button>
-              ) : null}
-              <ExportButton
-                href={exportHref(tenantSlug, 'plan-de-cuentas')}
-                fileName="plan-de-cuentas.csv"
-                className="h-11 md:h-9"
-              />
-            </>
+            !result.ok ? null : tab === 'categorias' ? (
+              <NewCategoryButton />
+            ) : tab === 'plan' ? (
+              <>
+                <NewAccountButton />
+                {canAdmin ? (
+                  <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
+                    <Link href={`${base}/plan-de-cuentas/importar`}>
+                      <Upload className="size-4" aria-hidden />
+                      Importar plan
+                    </Link>
+                  </Button>
+                ) : null}
+                {exportButton}
+              </>
+            ) : (
+              exportButton
+            )
           }
         />
 
-        <SectionNav
-          label="Secciones del plan de cuentas"
-          active={tab}
+        <ViewPills
+          label="Vistas del plan de cuentas"
           items={[
-            { value: 'plan', label: 'Cuentas', href: tabHref('plan') },
             {
-              value: 'sistema',
+              key: 'categorias',
+              label: 'Tus categorías',
+              shortLabel: 'Categorías',
+              href: tabHref('categorias'),
+              icon: Tags,
+              active: tab === 'categorias',
+            },
+            {
+              key: 'plan',
+              label: 'Plan completo',
+              shortLabel: 'Plan',
+              href: tabHref('plan'),
+              icon: ListTree,
+              active: tab === 'plan',
+            },
+            {
+              key: 'sistema',
               label: 'Cuentas del sistema',
               shortLabel: 'Del sistema',
               href: tabHref('sistema'),
+              icon: BookText,
+              active: tab === 'sistema',
             },
           ]}
         />
 
         {!result.ok ? (
-          <Callout
-            tone="error"
-            title="No pudimos cargar el plan de cuentas."
-            action={<RetryButton />}
-          >
-            {result.message}
-          </Callout>
+          <PanelError title="No pudimos cargar el plan de cuentas" message={result.message} />
         ) : tab === 'sistema' ? (
           <SystemAccounts />
+        ) : tab === 'categorias' ? (
+          <CategoryList suppliersHref={`${base}/compras?tab=proveedores&filtro=sin-clasificar`} />
         ) : (
           <>
             {result.data.balancesAvailable ? null : (
@@ -209,7 +241,7 @@ export default async function PlanDeCuentasPage({
             </div>
           </>
         )}
-      </PageShell>
+      </AdmPage>
     </ChartWorkspace>
   )
 }

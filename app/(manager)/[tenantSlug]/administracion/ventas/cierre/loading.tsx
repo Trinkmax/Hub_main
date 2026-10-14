@@ -4,19 +4,19 @@ import { Skeleton } from '@/components/ui/skeleton'
 /**
  * Cierre del día mientras carga, con la forma real de la pantalla: volver y
  * título, el día con sus flechas, los pasos numerados a la izquierda y el
- * ticket a la derecha (en el celular el ticket no se ve: está detrás de «Ver
- * ticket»).
+ * ticket a la derecha (sin lugar para las dos columnas el ticket no se ve:
+ * está detrás de «Ver ticket»).
  */
 export default function CierreDelDiaLoading() {
   return (
-    <AdmPage width="comfortable">
+    <AdmPage width="comfortable" className="max-sm:space-y-4 max-sm:py-4">
       <div className="space-y-3">
         <Skeleton className="h-4 w-20" />
         <Skeleton className="h-9 w-56" />
-        <Skeleton className="h-4 w-96 max-w-full" />
+        <Skeleton className="hidden h-4 w-96 max-w-full sm:block" />
       </div>
       <Skeleton className="h-11 w-72 max-w-full rounded-full" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <div className="space-y-4 sm:space-y-5">
           {/* Paso 1: los medios, agrupados. */}
           <div className="card-hairline rounded-2xl border bg-card p-4 shadow-xs sm:p-5">
@@ -66,7 +66,7 @@ export default function CierreDelDiaLoading() {
           ))}
         </div>
         {/* El ticket. */}
-        <div className="hidden space-y-3 rounded-t-[10px] bg-card p-5 shadow-xs lg:block">
+        <div className="hidden space-y-3 rounded-t-[10px] bg-card p-5 shadow-xs xl:block">
           <Skeleton className="mx-auto h-5 w-32" />
           <Skeleton className="mx-auto h-3 w-24" />
           <div className="space-y-3 pt-4">

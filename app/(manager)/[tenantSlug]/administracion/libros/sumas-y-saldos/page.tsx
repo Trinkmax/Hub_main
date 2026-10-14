@@ -1,6 +1,8 @@
-import { CircleAlert, CircleCheck, Scale } from 'lucide-react'
+import { Scale } from 'lucide-react'
 import Link from 'next/link'
 import { Amount } from '@/components/administracion/amount'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { PillLink } from '@/components/administracion/kit/pill'
 import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
@@ -11,7 +13,6 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
 import {
   exportHref,
   getTrialBalance,
@@ -23,7 +24,7 @@ import { todayInCordoba } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { BookPage, WideBookHint } from '../_components/book-page'
-import { ChipLink } from '../_components/chip-link'
+import { BalanceSeal, BookTotals } from '../_components/book-totals'
 import { ExportButton } from '../_components/export-button'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -42,6 +43,10 @@ import {
 } from '../_lib/trial'
 
 export const metadata = { title: 'Sumas y saldos' }
+
+/** Las píldoras de filtro: 44 px donde se toca con el dedo, 36 con mouse (como el período). */
+const FILTER_PILL =
+  'h-11 min-w-11 justify-center px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:min-w-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
 
 /** Sangría por nivel (1 a 5 en el plan estándar; un plan más hondo se queda en la última). */
 const INDENT = ['', 'pl-4', 'pl-8', 'pl-12', 'pl-16', 'pl-20'] as const
@@ -96,6 +101,13 @@ export default async function SumasYSaldosPage({
     antesRefundicion: beforeFyResult,
   })
 
+  const withMovement = trial?.ok
+    ? trial.data.rows.filter(
+        (r) =>
+          r.postable && !r.isVirtual && (r.periodDebitCents !== 0 || r.periodCreditCents !== 0),
+      ).length
+    : 0
+
   return (
     <BookPage
       backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
@@ -107,6 +119,9 @@ export default async function SumasYSaldosPage({
           fileName={`administracion-${tenantSlug}-sumas-y-saldos-${shown.from}_${shown.to}.csv`}
         />
       }
+      booksPath={`${base}/libros`}
+      book="sumas-y-saldos"
+      period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
@@ -119,36 +134,55 @@ export default async function SumasYSaldosPage({
             <fieldset className="flex flex-wrap items-center gap-2">
               <legend className="sr-only">Nivel de detalle</legend>
               <span aria-hidden className="text-xs font-medium text-muted-foreground">
-                Nivel
+                Nivel de detalle
               </span>
               {levelChips.map((l) => (
-                <ChipLink
+                <PillLink
                   key={l.label}
                   href={bookHref(path, { ...keep, nivel: l.param })}
                   active={isActiveTrialChip(l, level)}
                   aria-label={l.aria}
+                  scroll={false}
+                  className={FILTER_PILL}
                 >
                   {l.label}
-                </ChipLink>
+                </PillLink>
               ))}
             </fieldset>
             <span aria-hidden className="mx-1 hidden h-6 w-px bg-border sm:block" />
-            <ChipLink
+            <PillLink
               href={bookHref(path, { ...keep, todas: includeZero ? null : '1' })}
               active={includeZero}
+              scroll={false}
+              className={FILTER_PILL}
             >
               Mostrar cuentas en cero
-            </ChipLink>
+            </PillLink>
             {closedYearEnd ? (
-              <ChipLink
+              <PillLink
                 href={bookHref(path, { ...keep, antes_refundicion: beforeFyResult ? null : '1' })}
                 active={beforeFyResult}
+                scroll={false}
+                className={FILTER_PILL}
               >
                 Antes de la refundición
-              </ChipLink>
+              </PillLink>
             ) : null}
           </div>
         </div>
+      }
+      totals={
+        trial?.ok && withMovement > 0 ? (
+          <BookTotals
+            items={[{ key: 'cuentas', label: 'Cuentas con movimiento', value: withMovement }]}
+            seal={
+              <BalanceSeal
+                balanced={trial.data.balanced}
+                unbalancedText={`No cuadra por ${formatCents(trial.data.differenceCents)}: avisanos`}
+              />
+            }
+          />
+        ) : null
       }
     >
       {!range.ok ? <PeriodError message={range.message} /> : null}
@@ -207,42 +241,36 @@ function TrialView({
 
   if (rows.length === 0) {
     return (
-      <EmptyState
+      <EmptyTeach
         icon={Scale}
         title={
           nothingLoaded
             ? 'Todavía no hay nada cargado'
             : `Sin saldos ni movimientos en ${label.toLowerCase()}`
         }
-        description={
-          allZero
-            ? 'Cuando haya asientos, acá vas a ver el saldo de cada cuenta: lo que había al empezar, lo que se movió y cómo terminó.'
-            : 'Con este nivel no queda ninguna cuenta con saldo. Probá con más detalle.'
-        }
         action={
           allZero && !includeZero ? (
-            <Button asChild variant="outline" className="h-11 md:h-9">
+            <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
               <Link href={showAllHref} scroll={false}>
                 Ver el plan entero en cero
               </Link>
             </Button>
-          ) : null
+          ) : undefined
         }
-      />
+      >
+        {allZero
+          ? 'Cuando haya asientos, acá vas a ver el saldo de cada cuenta: lo que había al empezar, lo que se movió y cómo terminó.'
+          : 'Con este nivel no queda ninguna cuenta con saldo. Probá con más detalle.'}
+      </EmptyTeach>
     )
   }
 
   const t = trial.totals
-  const seal = trial.balanced ? (
-    <span className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
-      <CircleCheck className="size-3" aria-hidden />
-      Debe = Haber
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-      <CircleAlert className="size-3" aria-hidden />
-      No cuadra por {formatCents(trial.differenceCents)}: avisanos
-    </span>
+  const seal = (
+    <BalanceSeal
+      balanced={trial.balanced}
+      unbalancedText={`No cuadra por ${formatCents(trial.differenceCents)}: avisanos`}
+    />
   )
   return (
     <>
@@ -335,7 +363,7 @@ function TrialView({
                       ...periodLink,
                       cuenta: row.accountId,
                     })}
-                    className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint"
+                    className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     {body}
                   </Link>

@@ -15,10 +15,32 @@ import type { CashCountTreasury, DailyCashCounts } from '@/lib/accounting/querie
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { CashCountDialog } from './cash-count-dialog'
-import { longDay } from './projection-table'
+import { BareShell, longDay } from './projection-table'
 
 function Dash() {
   return <span className="text-xs text-muted-foreground/60">—</span>
+}
+
+/** Lo que falta para poder comparar, una oración por motivo. */
+export function cashPending(
+  cash: Pick<Projection['cash'], 'missingCountDays' | 'missingCloseDays'>,
+): string[] {
+  const out: string[] = []
+  if (cash.missingCountDays > 0) {
+    out.push(
+      cash.missingCountDays === 1
+        ? 'A 1 día con cierre le falta cargar lo que entró.'
+        : `A ${cash.missingCountDays} días con cierre les falta cargar lo que entró.`,
+    )
+  }
+  if (cash.missingCloseDays > 0) {
+    out.push(
+      cash.missingCloseDays === 1
+        ? 'A 1 día con lo que entró le falta el cierre.'
+        : `A ${cash.missingCloseDays} días con lo que entró les falta el cierre.`,
+    )
+  }
+  return out
 }
 
 /** La diferencia en palabras («Faltan $ X», «Sobran $ X», «Coincide») o qué punta falta. */
@@ -52,6 +74,9 @@ function Difference({ day }: { day: ProjectionDay }) {
  * cargado a mano, y la diferencia. El delivery no entra: se acredita en otro
  * momento. Es una comparación para encontrar diferencias: no registra nada en
  * los libros.
+ *
+ * Con `bare` va sin su encabezado y sin la tarjeta: es la tabla plegada dentro
+ * del bloque «Ventas contra caja» de «El mes», que ya trae el título.
  */
 export function CashTable({
   projection,
@@ -60,7 +85,10 @@ export function CashTable({
   monthLabel,
   base,
   canWrite,
+  bare = false,
 }: {
+  /** Sin encabezado y sin tarjeta propia. */
+  bare?: boolean
   projection: Projection
   counts: DailyCashCounts
   treasuries: readonly CashCountTreasury[]
@@ -78,7 +106,7 @@ export function CashTable({
     ) : canWrite ? (
       <Link
         href={`${base}/ventas/cierre?fecha=${d.day}`}
-        className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
+        className="text-xs font-medium text-foreground underline-offset-4 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring hover:underline"
       >
         Cargar cierre
       </Link>
@@ -107,31 +135,25 @@ export function CashTable({
     )
   }
 
-  const pending = [
-    cash.missingCountDays > 0
-      ? cash.missingCountDays === 1
-        ? 'A 1 día con cierre le falta cargar lo que entró.'
-        : `A ${cash.missingCountDays} días con cierre les falta cargar lo que entró.`
-      : null,
-    cash.missingCloseDays > 0
-      ? cash.missingCloseDays === 1
-        ? 'A 1 día con lo que entró le falta el cierre.'
-        : `A ${cash.missingCloseDays} días con lo que entró les falta el cierre.`
-      : null,
-  ].filter(Boolean)
+  // Dentro del bloque de «El mes», lo que falta ya lo dice el bloque, arriba de la tabla.
+  const pending = bare ? [] : cashPending(cash)
 
+  const Shell = bare ? BareShell : DataTableShell
   return (
-    <DataTableShell>
-      <header className="border-b border-border/60 px-5 py-4">
-        <div className="max-w-2xl">
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Ventas contra caja</h2>
-          <p className="text-xs text-muted-foreground text-pretty">
-            {monthLabel} · La venta real del salón (el cierre del día menos las comisiones estimadas
-            del posnet) contra lo que entró de verdad en las cajas. El delivery no entra: se
-            acredita después. No se registra nada en los libros: es para encontrar diferencias.
-          </p>
-        </div>
-      </header>
+    <Shell>
+      {bare ? null : (
+        <header className="border-b border-border/60 px-5 py-4">
+          <div className="max-w-2xl">
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Ventas contra caja</h2>
+            <p className="text-xs text-muted-foreground text-pretty">
+              {monthLabel} · La venta real del salón (el cierre del día menos las comisiones
+              estimadas del posnet) contra lo que entró de verdad en las cajas. El delivery no
+              entra: llega después. No se registra nada en los libros: es para encontrar
+              diferencias.
+            </p>
+          </div>
+        </header>
+      )}
 
       {days.length === 0 ? (
         <p className="px-5 py-10 text-center text-sm text-muted-foreground">
@@ -268,6 +290,6 @@ export function CashTable({
             .join(' ')}
         </p>
       ) : null}
-    </DataTableShell>
+    </Shell>
   )
 }

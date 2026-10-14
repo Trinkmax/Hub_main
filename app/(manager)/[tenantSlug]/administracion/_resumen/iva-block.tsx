@@ -1,10 +1,10 @@
 import { ArrowRight, Percent } from 'lucide-react'
 import { Explain, MathRow } from '@/components/administracion/kit/explain'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
-import { Term } from '@/components/administracion/kit/term'
 import { ivaStrip } from '@/lib/accounting/home'
 import { getIvaPosition, type IvaPosition, settleQuery } from '@/lib/accounting/queries'
-import { formatCentsShort } from '@/lib/money'
+import { monthName } from '@/lib/dates'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { PanelLink } from './block-states'
 import type { HomeData } from './home-data'
 
@@ -14,12 +14,45 @@ import type { HomeData } from './home-data'
  * de dos maneras; si por algo la suma simple no diera, no se dibuja una cuenta
  * que no cierra: queda el link a la posición completa.
  */
-function ivaMath(position: IvaPosition): { carried: number; withheld: number } | null {
+function ivaMath(
+  position: IvaPosition,
+): { carried: number; withheld: number; wholePesos: boolean } | null {
   const carried = position.technicalBalancePrevCents + position.freeBalancePrevCents
   const withheld = position.perceptionsCents + position.withholdingsCents
-  const result =
-    position.debitFiscal.totalCents - position.creditFiscal.totalCents - carried - withheld
-  return result === position.toPayCents - position.inFavorCents ? { carried, withheld } : null
+  const debit = position.debitFiscal.totalCents
+  const credit = position.creditFiscal.totalCents
+  const result = debit - credit - carried - withheld
+  if (result !== position.toPayCents - position.inFavorCents) return null
+  // La cuenta se muestra para poder rehacerla: si redondeando cada renglón a pesos la suma a
+  // la vista da un peso de diferencia con el resultado, los renglones van con centavos.
+  const pesos = (cents: number) => Math.round(cents / 100)
+  const wholePesos =
+    pesos(debit) - pesos(credit) - pesos(carried) - pesos(withheld) === pesos(result)
+  return { carried, withheld, wholePesos }
+}
+
+/**
+ * Todavía no hay nada con factura en el mes: ni ventas, ni compras, ni saldos que vengan de
+ * antes. Ahí «no hay nada que pagar» afirmaría una cuenta que nadie hizo (0 − 0).
+ */
+function nothingLoaded(position: IvaPosition): boolean {
+  return (
+    position.debitFiscal.totalCents === 0 &&
+    position.creditFiscal.totalCents === 0 &&
+    position.technicalBalancePrevCents === 0 &&
+    position.freeBalancePrevCents === 0 &&
+    position.perceptionsCents === 0 &&
+    position.withholdingsCents === 0
+  )
+}
+
+/** El nombre de contadora, escrito al lado en gris (sin subrayado: no hay nada más que abrir). */
+function Named({ idea, name }: { idea: string; name: string }) {
+  return (
+    <>
+      {idea} <span className="text-muted-foreground/80">({name})</span>
+    </>
+  )
 }
 
 /**
@@ -54,6 +87,25 @@ export async function IvaBlock({ data }: { data: HomeData }) {
   const positionResult = await settleQuery(getIvaPosition(data.tenantId, month))
   const position = positionResult.ok ? positionResult.data : null
   const math = position ? ivaMath(position) : null
+  const money = math?.wholePesos === false ? formatCents : formatCentsShort
+
+  // El bar recién arrancado: en vez de «no hay nada que pagar · Estimado», qué va a aparecer.
+  if (strip.kind === 'zero' && position && nothingLoaded(position)) {
+    const name = monthName(Number(month.slice(5, 7)))
+    return (
+      <section aria-label="IVA del mes" className={frame}>
+        <p className="flex items-start gap-2.5 text-sm text-muted-foreground text-pretty">
+          <Percent className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            <span className="font-semibold text-foreground">
+              {name ? `IVA de ${name}` : 'IVA del mes'}: todavía no hay nada cargado con factura.
+            </span>{' '}
+            Cuando cargues ventas o compras con factura, acá va el estimado del mes.
+          </span>
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section aria-label="IVA del mes" className={frame}>
@@ -74,7 +126,8 @@ export async function IvaBlock({ data }: { data: HomeData }) {
         </PanelLink>
       </div>
       <Explain
-        className="mt-1"
+        // Angosto a propósito: a todo el ancho el rótulo quedaba a 900 px de su número.
+        className="mt-1 max-w-xl"
         note={
           strip.provisional
             ? 'Mientras el mes está abierto es una estimación: cambia con cada factura que cargues.'
@@ -84,34 +137,26 @@ export async function IvaBlock({ data }: { data: HomeData }) {
         {position && math ? (
           <>
             <MathRow
-              label={
-                <Term name="IVA débito fiscal" inline>
-                  IVA de lo que vendiste con factura
-                </Term>
-              }
-              value={formatCentsShort(position.debitFiscal.totalCents)}
+              label={<Named idea="IVA de lo que vendiste con factura" name="IVA débito fiscal" />}
+              value={money(position.debitFiscal.totalCents)}
             />
             <MathRow
               op="−"
-              label={
-                <Term name="IVA crédito fiscal" inline>
-                  IVA de tus compras con Factura A
-                </Term>
-              }
-              value={formatCentsShort(position.creditFiscal.totalCents)}
+              label={<Named idea="IVA de tus compras con Factura A" name="IVA crédito fiscal" />}
+              value={money(position.creditFiscal.totalCents)}
             />
             {math.withheld !== 0 ? (
               <MathRow
                 op="−"
                 label="Percepciones y retenciones que ya te cobraron"
-                value={formatCentsShort(math.withheld)}
+                value={money(math.withheld)}
               />
             ) : null}
             {math.carried !== 0 ? (
               <MathRow
                 op="−"
                 label="Saldo a favor que venía de meses anteriores"
-                value={formatCentsShort(math.carried)}
+                value={money(math.carried)}
               />
             ) : null}
             <MathRow
@@ -123,7 +168,7 @@ export async function IvaBlock({ data }: { data: HomeData }) {
                     ? 'A pagar'
                     : 'Nada que pagar'
               }
-              value={formatCentsShort(strip.amountCents)}
+              value={money(strip.amountCents)}
             />
           </>
         ) : (

@@ -25,15 +25,21 @@ import { parseTargetsList, type TargetsImportResult } from '../_lib/targets-impo
  * 12/10/2026): se pega la columna «Objetivo» de la planilla, un monto por
  * renglón desde el día 1, y queda cargado el mes entero. Las notas de cada día
  * no se tocan.
+ *
+ * `variant` cambia solo el botón que lo abre: `primary` cuando es EL paso
+ * siguiente (el mes todavía no tiene objetivo) y `quiet` cuando acompaña a otra
+ * cosa. El diálogo y lo que se guarda son los mismos.
  */
 export function TargetsImportDialog({
   month,
   monthLabel,
+  variant = 'quiet',
 }: {
   /** `yyyy-MM`. */
   month: string
   /** «Octubre 2026». */
   monthLabel: string
+  variant?: 'quiet' | 'primary'
 }) {
   const uid = useId()
   const { tenantSlug } = useAccounting()
@@ -63,9 +69,8 @@ export function TargetsImportDialog({
     <>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
-        className="h-11 gap-2 md:h-8"
+        variant={variant === 'primary' ? 'default' : 'outline'}
+        className={variant === 'primary' ? 'h-11 gap-2 px-5' : 'h-11 gap-2 md:pointer-fine:h-9'}
         onClick={() => {
           setError(null)
           setOpen(true)

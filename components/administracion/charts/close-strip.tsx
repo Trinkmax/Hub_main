@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { isRealIsoDay, WEEKDAY_NAMES_MIN, weekdayOf } from '@/lib/dates'
+import { endOfWeek, isRealIsoDay, WEEKDAY_NAMES_MIN, weekdayOf } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { ChartEmpty, ChartLegend, ChartMark, dayTitle, type LegendRow } from './chart-parts'
@@ -19,6 +19,9 @@ import { ChartTip } from './chart-tip'
  *   número.
  * - A diferencia de los demás, este dibujo SIEMPRE se muestra aunque no haya
  *   ningún día cargado: un mes entero de «falta» es justo lo que hay que ver.
+ * - `foldFuture`: en una tarjeta angosta (el celular) las semanas que todavía
+ *   no empezaron no se dibujan: queda un renglón «y 13 días más por venir».
+ *   Eran tres filas de casilleros vacíos en la pantalla más larga del celular.
  */
 
 export type CloseStripDay = {
@@ -39,6 +42,8 @@ export type CloseStripDay = {
 export type CloseStripProps = {
   days: readonly CloseStripDay[]
   showLegend?: boolean
+  /** En angosto (menos de 30rem de tarjeta), plegar las semanas posteriores a la de hoy. */
+  foldFuture?: boolean
   emptyHint?: ReactNode
   ariaLabel?: string
   className?: string
@@ -74,6 +79,7 @@ const CELL =
 export function CloseStrip({
   days,
   showLegend = true,
+  foldFuture = false,
   emptyHint,
   ariaLabel,
   className,
@@ -96,6 +102,13 @@ export function CloseStrip({
     (sum, d) => sum + (typeof d.cents === 'number' && Number.isFinite(d.cents) ? d.cents : 0),
     0,
   )
+  // Hasta qué día se dibuja en angosto: el domingo de la semana de hoy.
+  const todayDay = days.find((d) => d.isToday || d.state === 'today')
+  const lastShown =
+    foldFuture && todayDay && isRealIsoDay(todayDay.date) ? endOfWeek(todayDay.date) : null
+  const folded = lastShown === null ? 0 : days.filter((d) => d.date > lastShown).length
+  const isFolded = (d: CloseStripDay) => lastShown !== null && d.date > lastShown
+
   const first = days[0]
   const startColumn =
     first && isRealIsoDay(first.date) ? COL_START[(weekdayOf(first.date) + 6) % 7] : undefined
@@ -173,6 +186,7 @@ export function CloseStrip({
                     CELL,
                     place,
                     '@min-[56rem]:col-start-auto',
+                    isFolded(d) && '@max-[30rem]:hidden',
                     d.state === 'future'
                       ? 'border border-border/50 text-muted-foreground'
                       : 'text-muted-foreground/50',
@@ -193,7 +207,7 @@ export function CloseStrip({
                   href={d.href}
                   label={`${title}${d.isToday ? ' (hoy)' : ''}: cargado${hasCents ? `, ${formatCents(d.cents)}` : ''}`}
                   tipTitle={`${title}${d.isToday ? ' (hoy)' : ''}`}
-                  tipValue={hasCents ? formatCents(d.cents) : 'Cargado'}
+                  tipValue={hasCents ? formatCentsShort(d.cents) : 'Cargado'}
                   tipSub={hasCents ? 'Cargado' : undefined}
                   className={cn(
                     CELL,
@@ -248,6 +262,11 @@ export function CloseStrip({
           })}
         </div>
       </ChartTip>
+      {folded > 0 ? (
+        <p className="text-xs text-muted-foreground @min-[30rem]:hidden">
+          {folded === 1 ? 'y 1 día más por venir' : `y ${folded} días más por venir`}
+        </p>
+      ) : null}
 
       {showLegend ? <ChartLegend caption="Días cargados y días que faltan" rows={rows} /> : null}
     </div>

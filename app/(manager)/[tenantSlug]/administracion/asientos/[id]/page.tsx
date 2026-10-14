@@ -1,21 +1,28 @@
-import { Ban, Info } from 'lucide-react'
+import { ArrowRight, Ban, Info } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Amount } from '@/components/administracion/amount'
 import { DueStatus } from '@/components/administracion/due-status'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
-import { Badge } from '@/components/ui/badge'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { Panel } from '@/components/administracion/kit/panel'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
+import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
-import { PageShell } from '@/components/ui/page-shell'
 import { entryKindLabel, getDocument, getEntry, settleQuery } from '@/lib/accounting/queries'
 import { formatDateTime, formatIsoDay, todayInCordoba } from '@/lib/dates'
-import { cn } from '@/lib/utils'
-import { BackLink } from '../../libros/_components/book-page'
 import { QueryErrorBlock } from '../../libros/_components/report-error'
 import { requireBooksAccess } from '../../libros/_lib/page-access'
 
 export const metadata = { title: 'Asiento' }
 
+/**
+ * La ficha de un asiento: cómo quedó anotado un comprobante en los libros. Es
+ * una pantalla de la contadora, pero un socio cae acá desde el diario o el
+ * mayor; por eso abre con una oración para quien no es contador («Así quedó
+ * anotado … en los libros») y el botón que lo lleva a lo que sí conoce: el
+ * comprobante. Acá no se carga ni se cambia nada.
+ */
 export default async function AsientoPage({
   params,
 }: {
@@ -31,13 +38,16 @@ export default async function AsientoPage({
   if (result.ok && !result.data) notFound()
   if (!result.ok || !result.data) {
     return (
-      <PageShell width="comfortable">
-        <BackLink href={`${base}/libros/diario`}>Volver al libro diario</BackLink>
+      <AdmPage width="comfortable">
+        <AdmHeader
+          back={{ href: `${base}/libros/diario`, label: 'Libro diario' }}
+          title="Asiento"
+        />
         <QueryErrorBlock
           code={result.ok ? 'error' : result.code}
           message={result.ok ? 'No pudimos cargar el asiento.' : result.message}
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
@@ -73,67 +83,55 @@ export default async function AsientoPage({
   }
   const partidas = entry.lines.filter((l) => l.partyId)
 
-  return (
-    <PageShell width="comfortable">
-      <BackLink href={`${base}/libros/diario?mes=${month}`}>Volver al libro diario</BackLink>
+  const documentName = doc ? `${doc.title} #${doc.seq}` : null
 
-      <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5 sm:p-6">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
-        />
-        {/* En el celular, el importe y los botones van debajo (al lado se pisaban con el título). */}
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1 space-y-2">
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Asiento · {entryKindLabel(entry.kind)}
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1
-                className={cn(
-                  'font-display text-2xl font-semibold tracking-tight',
-                  provisional !== null && 'italic',
-                )}
-              >
-                {title}
-              </h1>
-              {entry.status === 'voided' ? (
-                <Badge
-                  variant="outline"
-                  className="border-destructive/30 bg-destructive/10 text-destructive"
-                >
-                  Anulado
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
-                  Vigente
-                </Badge>
-              )}
-            </div>
-            <p className="text-sm font-medium">{entry.description || '—'}</p>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span className="tabular-nums">{formatIsoDay(entry.entryDate)}</span>
-              <span>Mes {entry.periodStatus === 'open' ? 'abierto' : 'cerrado'}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Lo cargó {entry.createdByName || 'alguien del equipo'} el{' '}
-              {formatDateTime(entry.createdAt)}
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2 sm:items-end">
-            <Amount
-              cents={entry.debitCents}
-              className="font-serif text-3xl font-semibold tracking-tight"
-            />
-            <p className="text-xs text-muted-foreground">Debe = Haber</p>
-            <Button asChild variant="outline" className="h-11 md:h-9">
-              <Link href={`${base}/comprobantes/${entry.documentId}`}>
-                {doc ? `Ver ${doc.title} #${doc.seq}` : 'Ver comprobante'}
-              </Link>
-            </Button>
-          </div>
+  return (
+    <AdmPage width="comfortable">
+      <AdmHeader
+        back={{ href: `${base}/libros/diario?mes=${month}`, label: 'Libro diario' }}
+        title={<span className={provisional !== null ? 'italic' : undefined}>{title}</span>}
+        badge={
+          <>
+            <ReadOnlyBadge className="ml-0" />
+            {entry.status === 'voided' ? (
+              <StatusPill tone="late">Anulado</StatusPill>
+            ) : (
+              <StatusPill tone="ok">Vigente</StatusPill>
+            )}
+          </>
+        }
+        description={
+          <>
+            <span className="font-medium text-foreground">{entry.description || '—'}</span>
+            <span className="tabular-nums"> · {formatIsoDay(entry.entryDate)}</span> · Mes{' '}
+            {entry.periodStatus === 'open' ? 'abierto' : 'cerrado'} · Lo cargó{' '}
+            {entry.createdByName || 'alguien del equipo'} el {formatDateTime(entry.createdAt)}
+          </>
+        }
+      />
+
+      {/* Para quien no es contador: qué es esto y a dónde ir a ver lo que sí conoce. */}
+      <section
+        aria-label="De qué comprobante es"
+        className="card-hairline flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:p-5"
+      >
+        <div className="min-w-0 space-y-1">
+          <p className="text-base leading-snug text-pretty">
+            Así quedó anotado{' '}
+            <span className="font-semibold">{documentName ?? 'este comprobante'}</span> en los
+            libros.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {entryKindLabel(entry.kind)} · por <Amount cents={entry.debitCents} /> · Debe = Haber
+          </p>
         </div>
-      </div>
+        <Button asChild className="h-11 shrink-0 gap-2 px-5">
+          <Link href={`${base}/comprobantes/${entry.documentId}`}>
+            Ver el comprobante
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </Button>
+      </section>
 
       {entry.status === 'voided' ? (
         <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -173,20 +171,15 @@ export default async function AsientoPage({
       <EntryPreview entries={[preview]} alwaysOpen />
 
       {partidas.length > 0 ? (
-        <section className="card-hairline rounded-xl border bg-card">
-          <header className="border-b border-border/60 px-5 py-4">
-            <h2 className="font-serif text-lg font-semibold tracking-tight">
-              Con proveedores y clientes
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Las líneas que dejan deuda o crédito, con lo que queda pendiente hoy.
-            </p>
-          </header>
+        <Panel
+          title="Con proveedores y clientes"
+          description="Las líneas que dejan deuda o crédito, con lo que queda pendiente hoy."
+        >
           <ul className="divide-y divide-border/60">
             {partidas.map((line) => (
               <li
                 key={line.id}
-                className="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
               >
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{line.partyName ?? '—'}</p>
@@ -220,8 +213,8 @@ export default async function AsientoPage({
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
       ) : null}
-    </PageShell>
+    </AdmPage>
   )
 }
