@@ -2,15 +2,21 @@
 
 import dynamic from 'next/dynamic'
 import type { ComponentType } from 'react'
-import { SheetTitle } from '@/components/ui/sheet'
+import { SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AccountingAction, ActionSheetProps } from './types'
 
-/** Mientras baja el código de la hoja (la primera vez): la forma real, sin spinner. */
+/**
+ * Mientras baja el código de la hoja (la primera vez): la forma real, sin spinner.
+ * Mismos márgenes que `ActionSheetHeader`/`ActionSheetBody`, así nada salta al llegar la hoja.
+ */
 function SheetLoading() {
   return (
-    <div className="space-y-5 px-4 py-6 sm:px-6" aria-busy="true">
+    <div className="space-y-5 px-4 py-6 sm:px-7" aria-busy="true">
       <SheetTitle className="sr-only">Cargando…</SheetTitle>
+      {/* El diálogo se monta con este esqueleto: sin descripción, el lector de pantalla no
+          tiene qué anunciar y Radix avisa en la consola. */}
+      <SheetDescription className="sr-only">Ya casi está la hoja.</SheetDescription>
       <Skeleton className="h-6 w-40" />
       <Skeleton className="h-4 w-64" />
       <Skeleton className="h-11 w-full" />

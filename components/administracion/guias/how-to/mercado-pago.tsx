@@ -17,15 +17,19 @@ const MP_PATH = [
  */
 export function HowToMercadoPago({
   defaultOpen = false,
+  bare = false,
   className,
 }: {
   defaultOpen?: boolean
+  /** Sin el plegable: el contenido a la vista (el paso 1 de la subida en Importar). */
+  bare?: boolean
   className?: string
 }) {
   return (
     <HowToShell
       subtitle="El reporte de Liquidaciones de Mercado Pago: cobros, comisiones, impuestos y retiros."
       defaultOpen={defaultOpen}
+      bare={bare}
       className={className}
     >
       <HowToNote icon={<Laptop className="size-4" />} title="Desde la compu">
@@ -74,10 +78,10 @@ export function HowToMercadoPago({
           <b>inglés</b> y la zona horaria <b>GMT-03</b>, y fijate que estén tildadas las columnas
           que usamos.
         </p>
-        <details className="group mt-2">
+        <details className="group/columns mt-2">
           <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-md text-xs font-medium text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8 [&::-webkit-details-marker]:hidden">
             <ChevronRight
-              className="size-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              className="size-3.5 transition-transform group-open/columns:rotate-90 motion-reduce:transition-none"
               aria-hidden
             />
             Ver las columnas

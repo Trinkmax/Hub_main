@@ -10,10 +10,13 @@ import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { allocateItems, unallocateItem } from '@/lib/accounting/actions/documents'
 
 /**
- * «Aplicar ahora» (H.7): usa los saldos a favor del proveedor contra sus
- * facturas pendientes (el más viejo primero, contra la que vence antes). No
- * pregunta: guarda y deja «Deshacer» 6 s (quita las imputaciones; el saldo
- * vuelve a quedar a favor).
+ * «Usarlo ahora»: usa lo que el proveedor tiene a tu favor contra lo que le
+ * debés (lo más viejo primero, contra lo que vence antes). No pregunta: guarda
+ * y deja «Deshacer» 6 s (quita las imputaciones; vuelve a quedar a favor).
+ *
+ * Misma acción y mismo envío de siempre (`allocateItems` con los pares y la
+ * fecha de hoy); cambió el nombre del botón, que era jerga.
+ * La contadora no lo ve.
  */
 export function ApplyCreditButton({
   pairs,
@@ -36,7 +39,7 @@ export function ApplyCreditButton({
         }
         router.refresh()
         const ids = result.data.allocationIds
-        toastUndo('Saldo a favor aplicado', {
+        toastUndo('Usaste lo que tenías a favor', {
           description: result.message,
           onUndo: async () => {
             try {
@@ -51,7 +54,7 @@ export function ApplyCreditButton({
                   return
                 }
               }
-              toast.success('Listo: el saldo volvió a quedar a favor.')
+              toast.success('Listo: volvió a quedar a tu favor.')
               router.refresh()
             } catch {
               toast.error(ACC_UNREACHABLE.offline)
@@ -67,12 +70,11 @@ export function ApplyCreditButton({
     <Button
       type="button"
       variant="outline"
-      size="sm"
-      className="h-11 shrink-0 md:h-8"
+      className="h-11 shrink-0 rounded-full px-5 md:h-9"
       disabled={pending}
       onClick={apply}
     >
-      {pending ? 'Aplicando…' : 'Aplicar ahora'}
+      {pending ? 'Usándolo…' : 'Usarlo ahora'}
     </Button>
   )
 }

@@ -1,24 +1,34 @@
 import { ArrowLeft, Monitor } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { cn } from '@/lib/utils'
+import type { BookKey, BookPeriod } from '../_lib/book-nav'
+import { BookSwitcher } from './book-switcher'
 
 /**
- * El marco de cada libro (H.12), igual que el resto del panel: «Volver» arriba
- * del encabezado (como `clientes/nuevo`), `PageHeader` con «Solo lectura» para
- * la contadora y las acciones (Exportar) a la derecha, el selector de período
- * debajo y después el libro. Server-safe.
+ * El marco de cada libro, igual para todos: el encabezado de la sección (el
+ * «‹ Libros» chico, el título, «Solo lectura» para la contadora y «Exportar» a
+ * la derecha), la fila para pasar a otro libro con el mismo período, la banda
+ * de período y filtros (queda pegada en la compu mientras se baja por la tabla)
+ * y, si el libro los tiene, sus totales en una banda. Después, la tabla.
+ *
+ * En los libros el diseño es sacar estorbos, no agregar forma: acá no hay
+ * héroes, gráficos ni tarjetas. Server-safe.
  */
 export function BookPage({
   backHref,
-  backLabel = 'Volver a Libros',
+  backLabel = 'Libros',
   title,
   description,
   actions,
+  badge,
+  booksPath,
+  book = null,
+  period,
   toolbar,
+  totals,
   width = 'default',
   children,
 }: {
@@ -28,27 +38,47 @@ export function BookPage({
   description?: ReactNode
   /** Botones del encabezado (Exportar). */
   actions?: ReactNode
-  /** El período y los filtros, debajo del encabezado. */
+  /** Un estado al lado del título («Mes abierto: puede cambiar»). */
+  badge?: ReactNode
+  /** `/<bar>/administracion/libros`: con `period`, dibuja la fila «entre libros». */
+  booksPath?: string
+  /** El libro abierto, para marcarlo en la fila. */
+  book?: BookKey | null
+  /** El período que se está mirando: viaja al cambiar de libro. */
+  period?: BookPeriod | null
+  /** El período y los filtros, en una sola banda. */
   toolbar?: ReactNode
+  /** Los totales del libro (`BookTotals`). */
+  totals?: ReactNode
   width?: 'default' | 'comfortable' | 'compact'
   children: ReactNode
 }) {
   return (
-    <PageShell width={width}>
-      <BackLink href={backHref}>{backLabel}</BackLink>
-      <PageHeader
-        eyebrow="Administración"
-        title={
+    <AdmPage width={width}>
+      <AdmHeader
+        back={{ href: backHref, label: backLabel }}
+        title={title}
+        badge={
           <>
-            {title} <ReadOnlyBadge />
+            <ReadOnlyBadge className="ml-0" />
+            {badge}
           </>
         }
         description={description}
         actions={actions}
       />
-      {toolbar}
+      {booksPath && period ? (
+        <BookSwitcher booksPath={booksPath} active={book} period={period} />
+      ) : null}
+      {toolbar ? (
+        // Pegada solo en la compu: en el celular una banda fija se come un cuarto de la pantalla.
+        <div className="z-10 -mx-2 rounded-2xl px-2 py-2 lg:sticky lg:top-14 lg:bg-background/85 lg:backdrop-blur">
+          {toolbar}
+        </div>
+      ) : null}
+      {totals}
       {children}
-    </PageShell>
+    </AdmPage>
   )
 }
 
@@ -66,7 +96,7 @@ export function BackLink({
     <Link
       href={href}
       className={cn(
-        'inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0',
+        'inline-flex min-h-11 items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0',
         className,
       )}
     >

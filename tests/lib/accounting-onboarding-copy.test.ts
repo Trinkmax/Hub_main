@@ -25,6 +25,8 @@ import {
   supplierRequestMessage,
   supplierRequestWhy,
 } from '@/lib/accounting/onboarding'
+import { IMPORT_SOURCE_COPY } from '@/lib/imports/ui/labels'
+import { QUESTION_COPY } from '@/lib/imports/ui/review-copy'
 
 /** Todo texto que ve la persona en la guía. */
 function allCopy(): string[] {
@@ -59,7 +61,9 @@ const KNOWN_ROUTES = [
   /^\/gastos-fijos$/,
   /^\/ventas\/cierre$/,
   /^\/cajas$/,
-  /^\/libros\/(cierres|asiento-manual)$/,
+  /^\/libros\/cierres$/,
+  // Los sueldos se cargan en «Sueldos del mes», que es el asiento manual con su tipo puesto.
+  /^\/libros\/asiento-manual\?tipo=sueldos$/,
 ]
 
 describe('los ítems de la guía', () => {
@@ -123,7 +127,9 @@ describe('los ítems de la guía', () => {
   it('la factura de comisiones de Mercado Pago se contesta al importar (no hay casilla a mano)', () => {
     const item = ONBOARDING_ITEMS.find((i) => i.id === 'mp_invoice')
     expect(item?.where.path).toBe('/importar/arca')
-    expect(item?.how.join(' ')).toContain('¿Es la factura mensual de comisiones de Mercado Pago?')
+    // Con las palabras de la pregunta de la revisión (`QUESTION_COPY.mp_invoice`).
+    const asked = QUESTION_COPY.mp_invoice.question.replace(/^¿Es /, '').replace(/\?$/, '')
+    expect(item?.how.join(' ')).toContain(asked)
   })
 
   it('se marcan a mano los que pasan afuera y los que aceptan «Ya cargué los que tengo»', () => {
@@ -140,6 +146,64 @@ describe('los ítems de la guía', () => {
     for (const item of ONBOARDING_ITEMS) {
       expect(canMarkManually(item), item.id).toBe(ONBOARDING_MANUAL_STEPS.includes(item.id))
       if (canMarkManually(item)) expect(item.manualLabel, item.id).toBeTruthy()
+    }
+  })
+})
+
+describe('con los nombres de las pantallas de hoy', () => {
+  const item = (id: (typeof ONBOARDING_ITEM_IDS)[number]) => {
+    const found = ONBOARDING_ITEMS.find((i) => i.id === id)
+    if (!found) throw new Error(`Falta el ítem ${id}`)
+    return found
+  }
+
+  it('el fin de mes, los medios de cobro y los sueldos se llaman como en su pantalla', () => {
+    expect(item('month_close').where).toEqual({
+      label: 'Libros › Fin de mes',
+      path: '/libros/cierres',
+    })
+    expect(item('month_close').actionLabel).toBe('Ir a Fin de mes')
+    // Las apps y las tarjetas viven en «Medios de cobro» (el link viejo sigue abriendo ahí).
+    expect(item('platforms').where).toEqual({
+      label: 'Ajustes › Medios de cobro',
+      path: '/ajustes?tab=participes',
+    })
+    expect(item('platforms').actionLabel).toBe('Revisar las comisiones')
+    const payroll = ONBOARDING_STAYS_MANUAL.find((task) => task.title.startsWith('Sueldos'))
+    expect(payroll?.where).toEqual({
+      label: 'Libros › Sueldos del mes',
+      path: '/libros/asiento-manual?tipo=sueldos',
+    })
+    const purchase = ONBOARDING_STAYS_MANUAL.find((task) => task.where.path === '/compras/nueva')
+    expect(purchase?.where.label).toBe('Compras y pagos › Cargar una compra que debo')
+  })
+
+  it('las tres subidas dicen «Subir…», como el botón de cada bandeja de Importar', () => {
+    expect(item('arca_first_import').actionLabel).toBe(IMPORT_SOURCE_COPY.arca_recibidos.cta)
+    expect(item('arca_monthly').actionLabel).toBe(IMPORT_SOURCE_COPY.arca_recibidos.cta)
+    expect(item('mp_invoice').actionLabel).toBe(IMPORT_SOURCE_COPY.arca_recibidos.cta)
+    expect(item('mp_weekly').actionLabel).toBe(IMPORT_SOURCE_COPY.mp_release.cta)
+    expect(item('bank_weekly').actionLabel).toBe(IMPORT_SOURCE_COPY.bank_statement.cta)
+  })
+
+  it('no quedan los nombres que cambiaron con el rediseño', () => {
+    const stale = [
+      /ajustar saldo/i,
+      /otro ingreso o egreso/i,
+      /por acreditar/i,
+      /\bacredit(a|an|aron|ar|ó)\b/i,
+      /Libros › Cierres/,
+      /Ajustes › (Plataformas|Partícipes)/,
+      /tasas de Plataformas/,
+      /Cajas y bancos/,
+      /Cargar factura/,
+      /Nueva compra/,
+      /Libros › Asiento manual/,
+      /gastos? bancarios?/i,
+      /Importar (de ARCA|Mercado Pago|del banco)/,
+    ]
+    for (const text of allCopy()) {
+      for (const re of stale) expect(re.test(text), `${re}: ${text}`).toBe(false)
     }
   })
 })

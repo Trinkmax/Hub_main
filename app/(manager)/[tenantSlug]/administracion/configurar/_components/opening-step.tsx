@@ -1,14 +1,18 @@
 'use client'
 
-import { ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, ListPlus, Plus, ReceiptText, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { ADD_LINK, TEXT_LINK } from '@/components/administracion/acciones/sheet-parts'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
 import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { newClientRef } from '@/components/administracion/cajas-ventas/client-ref'
+import { treasuryToneSwatch } from '@/components/administracion/charts/palette'
 import { DateField } from '@/components/administracion/date-input'
-import { EntryPreview } from '@/components/administracion/entry-preview'
+import { MoneyTicker } from '@/components/administracion/kit/money-ticker'
+import { StepCard, type StepState } from '@/components/administracion/kit/step'
+import { WALLET_ICONS } from '@/components/administracion/kit/wallet-card'
 import { MoneyField } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
 import {
@@ -23,10 +27,19 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetGrabber,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { ACC_UNREACHABLE, issuePath } from '@/lib/accounting/action-state'
 import type { SavedParty } from '@/lib/accounting/actions/master'
 import { postOpening, skipOpening } from '@/lib/accounting/actions/setup'
 import { engineErrorsState, type WarningCopy } from '@/lib/accounting/errors'
+import { treasuryTones } from '@/lib/accounting/home'
 import { buildOpening } from '@/lib/accounting/posting/opening'
 import { PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import { openingSchema } from '@/lib/accounting/schemas'
@@ -36,13 +49,15 @@ import type {
   PartyRef,
   PostingContext,
   Side,
+  TreasuryKind,
   WarningKey,
 } from '@/lib/accounting/types'
 import { formatIsoDay } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { Callout, describedBy, Field } from '../../ajustes/_components/form-bits'
 import { INPUT_CLASS } from '../../ajustes/_components/inputs'
+import { TreasuryDialog } from '../../ajustes/_components/treasury-dialog'
 import {
   emptyItemRow,
   emptyOtherRow,
@@ -63,8 +78,7 @@ import { OPENING_ITEMS_MAX } from '../_lib/opening-import'
 import { isImplicitSubmit } from '../_lib/wizard'
 import { NewPartyDialog, type NewPartyKind } from './new-party-dialog'
 import { type ImportedPayable, OpeningImportDialog } from './opening-import-dialog'
-import { SetupDone } from './setup-done'
-import { WizardProgress } from './wizard-progress'
+import { OpeningTicket } from './opening-ticket'
 
 const PAYABLE_KINDS: ReadonlySet<PartyKind> = new Set([
   'supplier',
@@ -84,12 +98,26 @@ const RECEIVABLE_KINDS: ReadonlySet<PartyKind> = new Set([
 /** El hash todavía no calculado: la acción no lo mira hasta armar su propio asiento. */
 const NO_HASH = '0'.repeat(64)
 
+/** «Otros saldos»: en palabras de dueño; los valores (`debit` / `credit`) son los de siempre. */
 const SIDE_OPTIONS = [
-  { value: 'debit' as const, label: 'Debe (lo tienen)' },
-  { value: 'credit' as const, label: 'Haber (lo deben)' },
+  { value: 'debit' as const, label: 'Lo tenían' },
+  { value: 'credit' as const, label: 'Lo debían' },
 ]
 
+/** La ayuda de cada caja: de dónde se saca el número. */
+const TREASURY_HINT: Readonly<Record<TreasuryKind, string>> = {
+  cash: 'Los billetes contados ese día.',
+  wallet: 'El saldo de la app al empezar el día.',
+  bank: 'El saldo del resumen de ese día.',
+  credit_card: 'Lo que faltaba pagar.',
+  other: 'Lo que había al empezar el día.',
+}
+
+/** El alta de una caja desde acá (una referencia estable: no reinicia el diálogo al redibujar). */
+const ADD_TREASURY = { row: null } as const
+
 type Banner = { tone: 'error' | 'info'; message: string }
+type ItemList = 'payables' | 'receivables'
 
 function draftKey(slug: string): string {
   return `hub:acc:draft:apertura:${slug}`
@@ -145,16 +173,25 @@ function mapErrors(
   return out
 }
 
+/** «12 deudas por $ 1.234.567». */
+function countLine(count: number, cents: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many} por ${formatCentsShort(cents)}`
+}
+
 /**
- * Paso 3 de la puesta en marcha (H.3): los saldos al primer día de los libros
- * → asiento de apertura (`postOpening`), o «Arrancar en cero»
- * (`skipOpening`). La vista previa la arma el mismo motor que la acción, con
- * el contexto que trajo la página.
+ * Los saldos iniciales (el paso 6 de la puesta en marcha): lo que había en cada
+ * caja y lo que se debía el primer día → `postOpening`, o «Arrancar en cero»
+ * (`skipOpening`). Se carga UNA sola vez.
+ *
+ * Tiene la forma del cierre del día: secciones numeradas, todas a la vista,
+ * que se tildan solas, y un ticket que se arma solo al costado (en el celular,
+ * detrás de «Ver resumen»). El estado, el envío, la vista previa armada por el
+ * mismo motor, el `clientRef`, los avisos confirmables y el borrador son los de
+ * siempre: cambió cómo se recorre, no lo que se guarda.
  */
 export function OpeningStep({
   tenantSlug,
   booksStartDate,
-  firstMonthName,
   treasuries,
   ctx,
   accounts,
@@ -162,8 +199,6 @@ export function OpeningStep({
 }: {
   tenantSlug: string
   booksStartDate: string
-  /** «octubre»: el mes que tiene que seguir abierto para cargar la apertura después. */
-  firstMonthName: string
   treasuries: OpeningTreasury[]
   ctx: PostingContext
   /** El plan entero (para las rutas del combo de «Otros saldos»). */
@@ -181,16 +216,19 @@ export function OpeningStep({
   const [warnings, setWarnings] = useState<WarningCopy[] | null>(null)
   const [acks, setAcks] = useState<WarningKey[]>([])
   const [confirmSkip, setConfirmSkip] = useState(false)
-  const [othersOpen, setOthersOpen] = useState(false)
   const [restored, setRestored] = useState(false)
   const [done, setDone] = useState(false)
   const [extraParties, setExtraParties] = useState<PartyRef[]>([])
   const [creating, setCreating] = useState<{
     kind: NewPartyKind
-    list: 'payables' | 'receivables'
+    list: ItemList
     rowId: string
     name: string
   } | null>(null)
+  /** Renglones con «vencimiento y comprobante» desplegados. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [addingTreasury, setAddingTreasury] = useState(false)
+  const [ticketOpen, setTicketOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [draftLoaded, setDraftLoaded] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -269,6 +307,7 @@ export function OpeningStep({
     [allParties],
   )
   const allowedOthers = useMemo(() => new Set(otherAccountIds), [otherAccountIds])
+  const tones = useMemo(() => treasuryTones(treasuries), [treasuries])
 
   // ─── Vista previa: lo completo, armado por el motor ────────────────────────
   const preview = useMemo(() => {
@@ -290,7 +329,7 @@ export function OpeningStep({
         entries = []
       }
     }
-    return { entries, totals }
+    return { entries, totals, values: payload.values }
   }, [form, treasuries, engineCtx, clientRef])
 
   // ─── Cambios ───────────────────────────────────────────────────────────────
@@ -309,11 +348,7 @@ export function OpeningStep({
     setForm((f) => ({ ...f, treasuries: { ...f.treasuries, [id]: cents } }))
     clearError(`treasuries.${id}`, 'form')
   }
-  const updateItem = (
-    list: 'payables' | 'receivables',
-    id: string,
-    patch: Partial<OpeningItemRow>,
-  ) => {
+  const updateItem = (list: ItemList, id: string, patch: Partial<OpeningItemRow>) => {
     setForm((f) => ({ ...f, [list]: f[list].map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
     clearError(...Object.keys(patch).map((k) => `${list}.${id}.${k}`), 'form')
   }
@@ -321,10 +356,10 @@ export function OpeningStep({
     setForm((f) => ({ ...f, others: f.others.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
     clearError(...Object.keys(patch).map((k) => `others.${id}.${k}`), 'form')
   }
-  const removeRow = (list: 'payables' | 'receivables' | 'others', id: string) =>
+  const removeRow = (list: ItemList | 'others', id: string) =>
     setForm((f) => ({ ...f, [list]: f[list].filter((r) => r.id !== id) }))
 
-  /** «Cargar una lista»: las deudas pegadas quedan como renglones, para revisarlas. */
+  /** «Pegar la lista de mi planilla»: las deudas pegadas quedan como renglones, para revisarlas. */
   const importPayables = (lines: ImportedPayable[], created: SavedParty[]) => {
     if (created.length > 0) {
       const ids = new Set(created.map((p) => p.id))
@@ -351,12 +386,13 @@ export function OpeningStep({
   const finish = (message: string) => {
     clearDraft()
     toast.success(message)
+    // El ticket queda con su tilde y la página pasa sola a «Listo».
     setDone(true)
     router.refresh()
   }
 
   const submit = (accepted: WarningKey[]) => {
-    if (pending) return
+    if (pending || done) return
     setBanner(null)
     const payload = openingPayload(form, treasuries)
     const parsed = openingSchema.safeParse({
@@ -450,28 +486,73 @@ export function OpeningStep({
     router.refresh()
   }
 
-  if (done) return <SetupDone tenantSlug={tenantSlug} />
-
+  // ─── Lo que se ve ──────────────────────────────────────────────────────────
   const err = (key: string) => errors[key] ?? null
   const startDate = formatIsoDay(booksStartDate)
-  const { totals } = preview
+  const { totals, values } = preview
+  const busy = pending || done
 
-  const itemRows = (list: 'payables' | 'receivables') => {
+  // El ticket: las cajas con plata, y aparte lo que se debía de la tarjeta de la empresa.
+  const kinds = new Map(treasuries.map((t) => [t.id, t]))
+  const boxes = values.treasuries
+    .map((t) => ({
+      id: t.treasuryAccountId,
+      treasury: kinds.get(t.treasuryAccountId),
+      cents: t.balanceCents,
+    }))
+    .filter((t) => t.treasury && t.treasury.kind !== 'credit_card')
+    .map((t) => ({ id: t.id, name: t.treasury?.name ?? '', cents: t.cents }))
+  const boxesCents = boxes.reduce((sum, b) => sum + b.cents, 0)
+  const cards = values.treasuries.filter(
+    (t) => kinds.get(t.treasuryAccountId)?.kind === 'credit_card',
+  )
+  const payablesCents = values.payables.reduce((sum, r) => sum + (r.amountCents ?? 0), 0)
+  const receivablesCents = values.receivables.reduce((sum, r) => sum + (r.amountCents ?? 0), 0)
+  const youOwed = {
+    count: values.payables.length + cards.length,
+    cents: payablesCents + cards.reduce((sum, c) => sum + c.balanceCents, 0),
+  }
+  const owedToYou = { count: values.receivables.length, cents: receivablesCents }
+  const forAccountant = (values.shareCapitalCents ?? 0) > 0 || values.others.length > 0
+  const anything = values.treasuries.length > 0 || youOwed.count > 0 || owedToYou.count > 0
+
+  const state = (isDone: boolean, otherwise: StepState): StepState => (isDone ? 'done' : otherwise)
+
+  const ticket = (showBooks: boolean) => (
+    <OpeningTicket
+      startDate={startDate}
+      boxes={boxes}
+      boxesCents={boxesCents}
+      owedToYou={owedToYou}
+      youOwed={youOwed}
+      totals={totals}
+      entries={preview.entries}
+      saved={done}
+      showBooks={showBooks}
+    />
+  )
+
+  const itemRows = (list: ItemList) => {
     const rows = form[list]
     const isPayable = list === 'payables'
     return (
-      <ul className="space-y-3">
+      <ul className="grid gap-2.5">
         {rows.map((row) => {
           const id = `op-${row.id}`
           const partyError = err(`${list}.${row.id}.partyId`)
           const amountError = err(`${list}.${row.id}.amountCents`)
           const dueError = err(`${list}.${row.id}.dueDate`)
+          const refError = err(`${list}.${row.id}.reference`)
+          // Lo que ya tiene dato (o un error) no se esconde.
+          const open =
+            expanded.has(row.id) ||
+            row.dueDate !== null ||
+            row.reference.trim() !== '' ||
+            Boolean(dueError) ||
+            Boolean(refError)
           return (
-            <li
-              key={row.id}
-              className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3"
-            >
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
+            <li key={row.id} className="rounded-xl bg-secondary/50 p-3">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-start">
                 <Field
                   id={`${id}-party`}
                   label={isPayable ? 'Proveedor' : 'Quién te debía'}
@@ -502,47 +583,51 @@ export function OpeningStep({
                   error={amountError}
                   onValueChange={(cents) => updateItem(list, row.id, { amountCents: cents })}
                 />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DateField
-                  id={`${id}-due`}
-                  label={isPayable ? 'Vence' : 'Se cobra el'}
-                  optional
-                  shortcuts={false}
-                  value={row.dueDate}
-                  error={dueError}
-                  onValueChange={(iso) => updateItem(list, row.id, { dueDate: iso })}
-                />
-                {isPayable ? (
-                  <Field
-                    id={`${id}-ref`}
-                    label="Comprobante"
-                    optional
-                    error={err(`${list}.${row.id}.reference`)}
-                  >
-                    <Input
-                      id={`${id}-ref`}
-                      value={row.reference}
-                      maxLength={60}
-                      placeholder="Factura A 0003-00001234"
-                      onChange={(e) => updateItem(list, row.id, { reference: e.target.value })}
-                      className={INPUT_CLASS}
-                    />
-                  </Field>
-                ) : null}
-              </div>
-              <div className="flex justify-end">
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  className="h-11 gap-1.5 text-muted-foreground hover:text-destructive md:h-8"
+                  size="icon"
+                  className="size-11 justify-self-end text-muted-foreground hover:text-destructive sm:mt-[1.375rem] md:size-10"
+                  aria-label={isPayable ? 'Quitar esta deuda' : 'Quitar este renglón'}
                   onClick={() => removeRow(list, row.id)}
                 >
-                  <Trash2 className="size-3.5" aria-hidden />
-                  Quitar
+                  <Trash2 className="size-4" />
                 </Button>
               </div>
+              {open ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <DateField
+                    id={`${id}-due`}
+                    label={isPayable ? 'Vence' : 'Se cobra el'}
+                    optional
+                    shortcuts={false}
+                    value={row.dueDate}
+                    error={dueError}
+                    onValueChange={(iso) => updateItem(list, row.id, { dueDate: iso })}
+                  />
+                  {isPayable ? (
+                    <Field id={`${id}-ref`} label="Comprobante" optional error={refError}>
+                      <Input
+                        id={`${id}-ref`}
+                        value={row.reference}
+                        maxLength={60}
+                        placeholder="Factura A 0003-00001234"
+                        onChange={(e) => updateItem(list, row.id, { reference: e.target.value })}
+                        className={INPUT_CLASS}
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={cn(ADD_LINK, 'mt-1')}
+                  onClick={() => setExpanded((prev) => new Set(prev).add(row.id))}
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  {isPayable ? 'vencimiento y comprobante' : 'cuándo se cobra'}
+                </button>
+              )}
             </li>
           )
         })}
@@ -552,7 +637,6 @@ export function OpeningStep({
 
   return (
     <div className="space-y-6">
-      <WizardProgress current={2} />
       {restored ? (
         <Callout
           tone="info"
@@ -588,272 +672,386 @@ export function OpeningStep({
           }
         }}
         noValidate
-        className="space-y-6"
       >
-        <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-          <header className="space-y-1">
-            <h2 className="font-serif text-lg font-semibold tracking-tight">
-              Plata en cada caja y cuenta
-            </h2>
-            <p className="text-xs text-muted-foreground text-pretty">
-              Lo que había al empezar el día {startDate}. Mirá la app o el resumen del banco. Si una
-              está vacía, dejala así.
-            </p>
-          </header>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {treasuries.map((t) => (
-              <MoneyField
-                key={t.id}
-                id={`op-t-${t.id}`}
-                label={t.kind === 'credit_card' ? `Deuda de ${t.name}` : t.name}
-                optional
-                value={form.treasuries[t.id] ?? null}
-                error={err(`treasuries.${t.id}`)}
-                onValueChange={(cents) => setTreasury(t.id, cents)}
-              />
-            ))}
-          </div>
-        </section>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+          <div className="min-w-0 space-y-4">
+            {/* 1 · Las cajas */}
+            <StepCard
+              open
+              n={1}
+              title="¿Cuánta plata había en cada caja?"
+              state={state(boxes.length > 0 || cards.length > 0, 'current')}
+              summary={
+                boxes.length > 0
+                  ? boxes.map((b) => `${b.name} ${formatCentsShort(b.cents)}`).join(' · ')
+                  : `Lo que había al empezar el día ${startDate}. Si una estaba vacía, dejala así.`
+              }
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                {treasuries.map((t) => {
+                  const Icon = WALLET_ICONS[t.kind]
+                  return (
+                    <div
+                      key={t.id}
+                      className="flex items-start gap-3 rounded-xl bg-secondary/50 p-3"
+                    >
+                      <span
+                        aria-hidden
+                        className="relative mt-6 flex size-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-card text-foreground shadow-2xs"
+                      >
+                        <Icon className="size-4" />
+                        <span
+                          className={cn(
+                            'absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card',
+                            treasuryToneSwatch(tones[t.id]),
+                          )}
+                        />
+                      </span>
+                      <MoneyField
+                        id={`op-t-${t.id}`}
+                        fieldClassName="min-w-0 flex-1"
+                        label={t.kind === 'credit_card' ? `Lo que debías de ${t.name}` : t.name}
+                        hint={TREASURY_HINT[t.kind]}
+                        value={form.treasuries[t.id] ?? null}
+                        error={err(`treasuries.${t.id}`)}
+                        onValueChange={(cents) => setTreasury(t.id, cents)}
+                      />
+                    </div>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => setAddingTreasury(true)}
+                  className="flex min-h-[5.5rem] items-center justify-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm font-medium outline-none transition-colors hover:border-primary/40 hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Plus className="size-4" aria-hidden />
+                  Falta una caja o cuenta
+                </button>
+              </div>
+            </StepCard>
 
-        <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-          <header className="space-y-1">
-            <h2 className="font-serif text-lg font-semibold tracking-tight">
-              Deudas con proveedores
-            </h2>
-            <p className="text-xs text-muted-foreground text-pretty">
-              Facturas que quedaron sin pagar al {startDate}. ¿No está en la lista? Escribí el
-              nombre y elegí «Crear». Si las tenés en una planilla, usá «Cargar una lista».
-            </p>
-          </header>
-          {itemRows('payables')}
-          <div className="flex flex-wrap gap-2">
+            {/* 2 · Lo que debías */}
+            <StepCard
+              open
+              n={2}
+              title="¿A quién le debías?"
+              state={state(values.payables.length > 0, 'todo')}
+              summary={
+                values.payables.length > 0
+                  ? countLine(values.payables.length, payablesCents, 'deuda', 'deudas')
+                  : `Las facturas que quedaron sin pagar al ${startDate}. Si no le debías a nadie, dejalo así.`
+              }
+            >
+              <div className="grid gap-3">
+                {/* El camino de la planilla va primero: es como tienen las deudas hoy. */}
+                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex items-start gap-2.5 text-sm text-pretty">
+                    <ListPlus
+                      className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <span>
+                      <span className="font-medium">¿Las tenés en una planilla?</span>{' '}
+                      <span className="text-muted-foreground">
+                        Pegá la lista entera: un proveedor y su monto por renglón.
+                      </span>
+                    </span>
+                  </p>
+                  <div className="shrink-0 [&>button]:h-11 [&>button]:w-full [&>button]:rounded-full [&>button]:px-4 sm:[&>button]:w-auto">
+                    <OpeningImportDialog
+                      tenantSlug={tenantSlug}
+                      parties={payableParties}
+                      room={OPENING_ITEMS_MAX - form.payables.filter((r) => !isBlankItem(r)).length}
+                      onImport={importPayables}
+                    />
+                  </div>
+                </div>
+                {itemRows('payables')}
+                <button
+                  type="button"
+                  className={ADD_LINK}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      payables: [...f.payables, emptyItemRow(nextId('pay'))],
+                    }))
+                  }
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  Agregar de a una
+                </button>
+                <p className="text-xs text-muted-foreground text-pretty">
+                  ¿No está en la lista? Escribí el nombre y elegí «Crear».
+                </p>
+              </div>
+            </StepCard>
+
+            {/* 3 · Lo que te debían */}
+            <StepCard
+              open
+              n={3}
+              title="¿Quién te debía?"
+              state={state(values.receivables.length > 0, 'todo')}
+              summary={
+                values.receivables.length > 0
+                  ? countLine(
+                      values.receivables.length,
+                      receivablesCents,
+                      'cobro pendiente',
+                      'cobros pendientes',
+                    )
+                  : 'Lo que vendiste con tarjeta o por una app antes de ese día y todavía no te habían depositado, y los clientes con cuenta.'
+              }
+            >
+              <div className="grid gap-3">
+                {itemRows('receivables')}
+                <button
+                  type="button"
+                  className={ADD_LINK}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      receivables: [...f.receivables, emptyItemRow(nextId('rec'))],
+                    }))
+                  }
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  Agregar otro
+                </button>
+              </div>
+            </StepCard>
+
+            {/* 4 · Para la contadora */}
+            <StepCard
+              open
+              n={4}
+              title="Para la contadora (opcional)"
+              state={state(forAccountant, 'todo')}
+              summary="El capital social y otros saldos. Si no los sabés, dejalo así: los ajusta ella."
+            >
+              <details
+                className="group/acc rounded-xl bg-secondary/50"
+                open={
+                  forAccountant ||
+                  form.others.length > 0 ||
+                  Boolean(err('shareCapitalCents')) ||
+                  undefined
+                }
+              >
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <ChevronRight
+                    aria-hidden
+                    className="size-4 text-muted-foreground transition-transform group-open/acc:rotate-90 motion-reduce:transition-none"
+                  />
+                  Capital social y otros saldos
+                </summary>
+                <div className="grid gap-4 px-3 pb-3">
+                  <MoneyField
+                    id="op-capital"
+                    label="Capital social"
+                    optional
+                    value={form.shareCapitalCents}
+                    error={err('shareCapitalCents')}
+                    hint="Lo dice el estatuto. Si no lo sabés, dejalo vacío: la contadora lo ajusta."
+                    onValueChange={(cents) => {
+                      setForm((f) => ({ ...f, shareCapitalCents: cents }))
+                      clearError('shareCapitalCents', 'form')
+                    }}
+                    fieldClassName="sm:max-w-xs"
+                  />
+                  <div className="grid gap-3 border-t border-border/60 pt-3">
+                    <div>
+                      <p className="text-sm font-medium">Otros saldos</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground text-pretty">
+                        Cualquier otra cuenta con saldo al {startDate}: bienes de uso, préstamos,
+                        anticipos.
+                      </p>
+                    </div>
+                    {form.others.length > 0 ? (
+                      <ul className="grid gap-2.5">
+                        {form.others.map((row) => {
+                          const id = `op-${row.id}`
+                          const accountError = err(`others.${row.id}.accountId`)
+                          return (
+                            <li key={row.id} className="grid gap-3 rounded-xl bg-card p-3">
+                              <Field id={`${id}-account`} label="Cuenta" error={accountError}>
+                                <AccountCombobox
+                                  id={`${id}-account`}
+                                  value={row.accountId}
+                                  accounts={accounts}
+                                  filter={(a) => allowedOthers.has(a.id)}
+                                  invalid={Boolean(accountError)}
+                                  aria-describedby={describedBy(
+                                    `${id}-account`,
+                                    null,
+                                    accountError,
+                                  )}
+                                  onValueChange={(accountId) => updateOther(row.id, { accountId })}
+                                />
+                              </Field>
+                              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-end">
+                                <div className="grid gap-1.5">
+                                  <span id={`${id}-side-label`} className="text-sm font-medium">
+                                    ¿Lo tenían o lo debían?
+                                  </span>
+                                  <ChoiceChips<Side>
+                                    options={SIDE_OPTIONS}
+                                    value={row.side}
+                                    labelledBy={`${id}-side-label`}
+                                    onChange={(side) => updateOther(row.id, { side })}
+                                  />
+                                </div>
+                                <MoneyField
+                                  id={`${id}-amount`}
+                                  label="Importe"
+                                  value={row.amountCents}
+                                  error={err(`others.${row.id}.amountCents`)}
+                                  onValueChange={(cents) =>
+                                    updateOther(row.id, { amountCents: cents })
+                                  }
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-11 justify-self-end text-muted-foreground hover:text-destructive md:size-10"
+                                  aria-label="Quitar este saldo"
+                                  onClick={() => removeRow('others', row.id)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={ADD_LINK}
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          others: [...f.others, emptyOtherRow(nextId('oth'))],
+                        }))
+                      }
+                    >
+                      <Plus className="size-3.5" aria-hidden />
+                      Agregar un saldo
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </StepCard>
+
+            {/* 5 · Guardar */}
+            <StepCard
+              open
+              n={5}
+              id="op-guardar"
+              title="Revisá y guardá"
+              state={done ? 'done' : anything ? 'current' : 'todo'}
+              summary="Se guarda una sola vez: mirá el resumen antes. Después, una caja se corrige con «Contar la caja»."
+            >
+              <div className="grid gap-4">
+                {banner ? <Callout tone={banner.tone}>{banner.message}</Callout> : null}
+                {err('form') ? <Callout tone="error">{err('form')}</Callout> : null}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    type="submit"
+                    className="h-12 min-w-[220px] px-6 text-base"
+                    disabled={busy}
+                  >
+                    {done ? 'Guardado' : pending ? 'Guardando…' : 'Guardar los saldos iniciales'}
+                  </Button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={cn(
+                      TEXT_LINK,
+                      'text-sm disabled:pointer-events-none disabled:opacity-50',
+                    )}
+                    onClick={() => setConfirmSkip(true)}
+                  >
+                    No tengo los números: arrancar todo en cero
+                  </button>
+                </div>
+              </div>
+            </StepCard>
+          </div>
+
+          {/* En la compu, el ticket acompaña mientras se carga. */}
+          <aside className="hidden lg:sticky lg:top-20 lg:block">{ticket(true)}</aside>
+        </div>
+
+        {/* Sin lugar para el ticket al costado: el total a la vista y el ticket a un toque. */}
+        <div className="sticky bottom-0 z-30 -mx-4 mt-6 -mb-4 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md sm:-mx-6 sm:-mb-8 sm:px-6 lg:hidden">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                En las cajas
+              </p>
+              <p
+                className={cn(
+                  'mt-0.5 font-serif leading-none font-semibold tracking-tight whitespace-nowrap',
+                  boxesCents >= 100_000_000_00 ? 'text-xl' : 'text-2xl',
+                )}
+              >
+                {boxes.length > 0 ? (
+                  <MoneyTicker
+                    cents={boxesCents}
+                    decimals={boxesCents % 100 === 0 ? 0 : 2}
+                    durationMs={380}
+                  />
+                ) : (
+                  <span className="text-muted-foreground">
+                    <span aria-hidden>—</span>
+                    <span className="sr-only">Todavía sin importes</span>
+                  </span>
+                )}
+              </p>
+            </div>
             <Button
               type="button"
               variant="outline"
-              className="h-11 gap-2 md:h-9"
-              onClick={() =>
-                setForm((f) => ({ ...f, payables: [...f.payables, emptyItemRow(nextId('pay'))] }))
-              }
+              className="h-11 shrink-0 gap-2 rounded-full px-4"
+              onClick={() => setTicketOpen(true)}
             >
-              <Plus className="size-4" aria-hidden />
-              Agregar otra deuda
+              <ReceiptText className="size-4" aria-hidden />
+              Ver resumen
             </Button>
-            <OpeningImportDialog
-              tenantSlug={tenantSlug}
-              parties={payableParties}
-              room={OPENING_ITEMS_MAX - form.payables.filter((r) => !isBlankItem(r)).length}
-              onImport={importPayables}
-            />
           </div>
-        </section>
-
-        <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-          <header className="space-y-1">
-            <h2 className="font-serif text-lg font-semibold tracking-tight">Lo que te debían</h2>
-            <p className="text-xs text-muted-foreground text-pretty">
-              Ventas con tarjeta o por plataformas que todavía no se acreditaron, y clientes que
-              debían.
-            </p>
-          </header>
-          {itemRows('receivables')}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 gap-2 md:h-9"
-            onClick={() =>
-              setForm((f) => ({
-                ...f,
-                receivables: [...f.receivables, emptyItemRow(nextId('rec'))],
-              }))
-            }
-          >
-            <Plus className="size-4" aria-hidden />
-            Agregar otro
-          </Button>
-        </section>
-
-        <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-          <MoneyField
-            id="op-capital"
-            label="Capital social"
-            optional
-            value={form.shareCapitalCents}
-            error={err('shareCapitalCents')}
-            hint="Lo dice el estatuto. Si no lo sabés, dejalo vacío: la contadora lo ajusta."
-            onValueChange={(cents) => {
-              setForm((f) => ({ ...f, shareCapitalCents: cents }))
-              clearError('shareCapitalCents', 'form')
-            }}
-            fieldClassName="sm:max-w-xs"
-          />
-
-          <div className="rounded-lg border border-border/60">
-            <button
-              type="button"
-              aria-expanded={othersOpen}
-              aria-controls="op-others"
-              onClick={() => setOthersOpen((v) => !v)}
-              className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm font-medium outline-none transition-colors hover:bg-secondary/40 focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span>
-                Otros saldos{' '}
-                <span className="font-normal text-muted-foreground">(para la contadora)</span>
-              </span>
-              <ChevronDown
-                aria-hidden="true"
-                className={cn(
-                  'size-4 text-muted-foreground transition-transform',
-                  othersOpen && 'rotate-180',
-                )}
-              />
-            </button>
-            <div
-              id="op-others"
-              hidden={!othersOpen}
-              className="space-y-3 border-t border-border/60 p-4"
-            >
-              <p className="text-xs text-muted-foreground">
-                Cualquier otra cuenta con saldo al {startDate}: bienes de uso, préstamos, anticipos.
-              </p>
-              {form.others.length > 0 ? (
-                <ul className="space-y-3">
-                  {form.others.map((row) => {
-                    const id = `op-${row.id}`
-                    const accountError = err(`others.${row.id}.accountId`)
-                    return (
-                      <li
-                        key={row.id}
-                        className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3"
-                      >
-                        <Field id={`${id}-account`} label="Cuenta" error={accountError}>
-                          <AccountCombobox
-                            id={`${id}-account`}
-                            value={row.accountId}
-                            accounts={accounts}
-                            filter={(a) => allowedOthers.has(a.id)}
-                            invalid={Boolean(accountError)}
-                            aria-describedby={describedBy(`${id}-account`, null, accountError)}
-                            onValueChange={(accountId) => updateOther(row.id, { accountId })}
-                          />
-                        </Field>
-                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-end">
-                          <div className="grid gap-1.5">
-                            <span id={`${id}-side-label`} className="text-sm font-medium">
-                              Lado
-                            </span>
-                            <ChoiceChips<Side>
-                              options={SIDE_OPTIONS}
-                              value={row.side}
-                              labelledBy={`${id}-side-label`}
-                              onChange={(side) => updateOther(row.id, { side })}
-                            />
-                          </div>
-                          <MoneyField
-                            id={`${id}-amount`}
-                            label="Importe"
-                            value={row.amountCents}
-                            error={err(`others.${row.id}.amountCents`)}
-                            onValueChange={(cents) => updateOther(row.id, { amountCents: cents })}
-                          />
-                        </div>
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-11 gap-1.5 text-muted-foreground hover:text-destructive md:h-8"
-                            onClick={() => removeRow('others', row.id)}
-                          >
-                            <Trash2 className="size-3.5" aria-hidden />
-                            Quitar
-                          </Button>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 gap-2 md:h-9"
-                onClick={() =>
-                  setForm((f) => ({ ...f, others: [...f.others, emptyOtherRow(nextId('oth'))] }))
-                }
-              >
-                <Plus className="size-4" aria-hidden />
-                Agregar saldo
-              </Button>
-            </div>
-          </div>
-        </section>
-
-        <section
-          className="card-hairline space-y-3 rounded-xl border bg-card p-6"
-          aria-live="polite"
-        >
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Patrimonio inicial</h2>
-          <dl className="grid gap-2 text-sm">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-muted-foreground">Lo que tienen</dt>
-              <dd className="tabular-nums">{formatCents(totals.assetsCents)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-muted-foreground">Lo que deben</dt>
-              <dd className="tabular-nums">{formatCents(totals.liabilitiesCents)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 border-t border-border/60 pt-2 font-medium">
-              <dt>
-                {totals.equityCents < 0 ? 'Patrimonio inicial negativo' : 'Patrimonio inicial'}
-              </dt>
-              <dd className="tabular-nums">{formatCents(Math.abs(totals.equityCents))}</dd>
-            </div>
-            {totals.capitalCents > 0 ? (
-              <div className="flex items-baseline justify-between gap-4">
-                <dt className="text-muted-foreground">Capital social</dt>
-                <dd className="tabular-nums">{formatCents(totals.capitalCents)}</dd>
-              </div>
-            ) : null}
-          </dl>
-          {totals.unassignedCents !== 0 ? (
-            <p className="text-xs text-muted-foreground text-pretty">
-              {formatCents(Math.abs(totals.unassignedCents))} quedan en «Saldo de apertura a
-              asignar»: la contadora los pasa a capital o a resultados.
-            </p>
-          ) : null}
-        </section>
-
-        <EntryPreview
-          entries={preview.entries}
-          emptyText="Cargá algún saldo para ver el asiento de apertura."
-        />
-
-        {banner ? <Callout tone={banner.tone}>{banner.message}</Callout> : null}
-        {err('form') ? <Callout tone="error">{err('form')}</Callout> : null}
-
-        <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-background/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:static sm:mx-0 sm:flex-row sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 md:h-9"
-            disabled={pending}
-            onClick={() => setConfirmSkip(true)}
-          >
-            Arrancar en cero
-          </Button>
-          <Button type="submit" className="h-11 min-w-[180px] md:h-9" disabled={pending}>
-            {pending ? 'Guardando…' : 'Guardar saldos iniciales'}
-          </Button>
         </div>
       </form>
+
+      <Sheet open={ticketOpen} onOpenChange={setTicketOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[90dvh] gap-0 overflow-y-auto px-4 pt-10 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] outline-none"
+          // El foco va a la hoja (no a la X): es para leer.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus()
+          }}
+        >
+          <SheetGrabber />
+          <SheetHeader className="sr-only">
+            <SheetTitle>Lo que había al {startDate}</SheetTitle>
+            <SheetDescription>
+              Lo que cargaste hasta ahora. Se guarda con el botón del último paso.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mx-auto w-full max-w-sm">{ticket(true)}</div>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={confirmSkip} onOpenChange={setConfirmSkip}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Arrancás en cero?</AlertDialogTitle>
+            <AlertDialogTitle>¿Arrancás todo en cero?</AlertDialogTitle>
             <AlertDialogDescription>
-              No vas a cargar saldos iniciales. Podés hacerlo después mientras {firstMonthName} siga
-              abierto.
+              Las cajas y las deudas arrancan en $ 0 y los saldos iniciales ya no se pueden cargar
+              después. Si más adelante una caja no coincide, se corrige con «Contar la caja».
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -903,6 +1101,15 @@ export function OpeningStep({
           if (!open) setCreating(null)
         }}
         onCreated={onPartyCreated}
+      />
+
+      {/* Falta una caja: se agrega acá mismo y aparece su renglón (lo cargado no se pierde). */}
+      <TreasuryDialog
+        tenantSlug={tenantSlug}
+        target={addingTreasury ? ADD_TREASURY : null}
+        onClose={() => setAddingTreasury(false)}
+        afterCreate="none"
+        onSaved={() => router.refresh()}
       />
     </div>
   )

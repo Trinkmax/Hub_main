@@ -1325,3 +1325,80 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
     «Cuenta»).
   - Los esqueletos de carga de Gastos fijos y de Cajas no tienen las tarjetas ni el gráfico nuevos.
   - `MonthStepper` no avanza al futuro: la proyección agregó un chip «Mes que viene» (solo un mes).
+- **Administración, hojas de carga: quedó del pulido del 13/10/2026** (todo fuera de los archivos de las hojas):
+  - `components/ui/checkbox.tsx`: en oscuro, `dark:bg-input/30` le gana al relleno de
+    `data-[state=checked]:bg-primary` y un tilde marcado queda como un cuadradito con borde y un tilde que
+    casi no se ve. Las seis hojas lo corrigen por fuera (`accounting-provider.tsx`); en el resto del panel
+    sigue pasando.
+  - `compras/_components/expense-target-picker.tsx` (solo lo usa «Nuevo gasto»): el `m-0` de su
+    `fieldset`, el `truncate` del nombre y los 44 px de «Elegir otro» hoy se corrigen por fuera desde
+    `gasto-sheet.tsx` (`TARGET_BLOCK`): conviene pasarlos adentro. (Los textos ya quedaron en el cierre
+    del pulido: «Elegir otro», «Cambiar categoría» y «Categoría»; también el `relative` del `<label>` de
+    `AddAttachmentButton`.)
+  - `kit/choice-card.tsx`: en oscuro la tarjeta elegida casi no se distingue (su `bg-accent/50` se mezcla
+    con el fondo). «Nuevo gasto» la tiñe por fuera (`PAPER_CARD_DARK`); la pieza debería traerlo.
+  - `treasury-select.tsx` muestra los saldos con centavos («$ 41.863.427,70») y los chips de «Nuevo gasto»
+    sin centavos («$ 41.863.428»): unificar.
+- **Administración, el bar recién arrancado: quedó del pulido del 13/10/2026** (fuera de los archivos del
+  Resumen, el Cierre y la Guía; se vio dibujando las pantallas con el estado real de HUB):
+  - Dos cuentas distintas para «lo mismo»: el Resumen dice «Puesta en marcha · 3 de 16» (`buildSetup`) y
+    «Ver todo» lleva a «Cómo arrancar», que en la portada de la Guía dice «3 de 19 listos»
+    (`onboardingState`, que además cuenta las rutinas y da por hecho «Cerrar el mes» si los libros
+    arrancaron este mes). Unificar la cuenta o cambiar uno de los dos rótulos.
+  - `lib/accounting/onboarding.ts`, ítem `treasuries`: sin NINGÚN banco cargado dice «Falta el CBU del
+    banco.» (HUB tiene solo caja y Mercado Pago). Debería pedir el banco, o no pedirlo.
+  - El formulario del cierre del día no avisa al salir con importes cargados (ni guarda un borrador):
+    cualquier link de la pantalla los borra. El de «Cargar mis puntos de venta» ahora abre en otra
+    pestaña; falta el aviso general.
+  - Con los saldos iniciales pendientes, el Resumen ahora aclara que «Le debés a proveedores» es solo lo
+    cargado desde el arranque. Falta mirar si Compras y pagos y Cajas necesitan la misma aclaración.
+- **Administración, cierre del pulido del 13/10/2026: lo que quedó a medio renombrar o fuera de alcance**:
+  - «Ajustar saldo» ya es «Contar la caja» en toda la sección. Siguen con la palabra vieja el mensaje de
+    zod «Hay diferencia: registrala con «Ajustar saldo».» (`lib/accounting/schemas.ts`, fijado por su
+    test; el zod no se toca) y las descripciones del plan de cuentas en `lib/accounting/chart.ts`
+    («Mercado Pago a acreditar», «Débito / Crédito a acreditar», «(«Ajustar saldo» de Mercado Pago)»),
+    que tiene que validar la contadora.
+  - `components/shell` (fuera de la sección): a 768 px la barra de arriba deja 1 px de ancho de más (el
+    botón de la derecha termina en 768,9).
+- **Administración, rediseño completo de la experiencia: lo que quedó (14/10/2026)**
+  (`docs/features/administracion-experiencia.md`):
+  - **Necesita migración o lógica nueva** (se construyó la versión sin migración): vincular un gasto fijo
+    a un comprobante DESPUÉS de guardado, y que anular o deshacer el pago devuelva el vencimiento; el
+    historial por mes de cada gasto fijo y la marca de monto «estimado»; cambiar el vencimiento de una
+    compra ya cargada (arreglaría las dos de HUB); abrir «Pagar» con UN papel ya tildado; que el cierre
+    guarde el conteo de efectivo aunque coincida (y el tipo de medio, para no deducir la cuenta corriente
+    de la leyenda del motor); lo facturado por noche; todas las partidas por cobrar en una lectura;
+    cerrar de verdad un archivo importado sin pendientes; «es este comprobante» (unir a mano al
+    importar); «ya se lo mandé a la contadora» y el paquete del mes en .zip; correr la fecha de arranque
+    hacia atrás desde Ajustes mientras no haya meses cerrados ni saldos iniciales asentados; reabrir los
+    saldos iniciales después de «Arrancar en cero»; comisión distinta para QR y transferencia.
+  - **Espera al dueño**: los rótulos de ⌘K «Otro ingreso o egreso», «Clientes y plataformas» y «Cierres
+    de mes» (`components/command-palette/command-config.ts`); «Pago en blanco / Pago en negro» del detalle
+    de sueldos (`lib/accounting/party-profile.ts`, propuesta «Con recibo de sueldo / Sin recibo»); los dos
+    valores por defecto de la compra (sin plazo vence el mismo día; sin saber cómo factura se propone
+    «Tique»): la alternativa está apagada en `ASK_WHEN_UNKNOWN` (`compras/_lib/purchase-paper.ts`).
+  - **Textos viejos en archivos sin dueño**: `lib/accounting/aging.ts` («Se acredita hoy» / «Se acredita
+    en N días» → «Llega…»); `components/administracion/guias/onboarding/guides-index.tsx` («Importar de
+    ARCA / Mercado Pago / del banco» → «Subir…»); `lib/imports/ui/upload.ts` y `lib/imports/server/types.ts`
+    (vocabulario viejo de errores de subida); `importar/review/use-row-actions.ts` («Lo sacamos de la
+    importación.»).
+  - `libros/_components/chip-link.tsx` quedó sin uso: borrarlo.
+  - En la ficha de un comprobante y de un asiento la barra de la sección no marca ninguna píldora (ya
+    pasaba en producción).
+  - A validar con la contadora: «Gastos pagados por adelantado» y «Gastos de organización» caen en el
+    grupo «Equipos y muebles» (por ser cuentas de activo).
+  - Sin ver en pantalla antes de producción: la vista de la contadora con su usuario, Safari de
+    escritorio e iOS, y lo que pasa después de apretar un botón que guarda.
+  - Git: el commit `16c9ad5` («Add tests for administration navigation and summary rendering») entró con
+    un mensaje fuera de convención y con `preguntas-pos.m4a` (28 bytes, roto); el archivo se sacó del repo
+    en el commit siguiente.
+- **Deuda ajena vista durante el rediseño de Administración (14/10/2026)**:
+  - `/favicon.ico` cae en la ruta `[tenantSlug]`: cada pedido tira `TenantNotFoundError: Bar no encontrado`
+    (`lib/tenant/access.ts`) y gasta 600–700 ms. Falta un `app/icon` o un `public/favicon.ico`.
+  - Si falla el acceso al tenant (por ejemplo un corte de red con Supabase), se ve la pantalla genérica de
+    Next en inglés («This page couldn't load»), sin estilo.
+  - Diálogos de Radix sin `Description`: aviso «Missing Description» en la consola.
+  - `acc_report_summary` es lenta y dio un timeout real (el Resumen lo aguanta con su bloque de error).
+  - `components/ui/checkbox.tsx` en oscuro: el tilde marcado casi no se ve (Administración lo corrige por
+    fuera en sus hojas).
+

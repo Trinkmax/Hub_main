@@ -121,9 +121,9 @@ function warningLineRaw(item: ChecklistItemLike, base: string): ChecklistLine {
       return {
         key: item.key,
         text,
-        detail: names.length > 0 ? `Sin ajustar: ${listText(names)}.` : null,
+        detail: names.length > 0 ? `Sin contar: ${listText(names)}.` : null,
         href: `${base}/cajas`,
-        linkLabel: 'Ajustar saldos',
+        linkLabel: 'Contar las cajas',
       }
     }
     case 'vat_pending_documentation':

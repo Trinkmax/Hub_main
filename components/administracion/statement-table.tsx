@@ -24,6 +24,13 @@ export type StatementRow = {
   voucher: string
   /** Link al detalle del comprobante (`/administracion/comprobantes/[id]`). */
   href?: string | null
+  /**
+   * Un segundo link, chico y gris, debajo del comprobante: «Asiento 12» en el
+   * mayor, que lleva a cómo quedó en los libros. Va solo si vienen los dos
+   * (`secondaryHref` y `secondaryLabel`); quien no los pasa no cambia.
+   */
+  secondaryHref?: string | null
+  secondaryLabel?: string
   /** Leyenda o detalle; opcional. */
   detail?: string | null
   /** Vencimiento de la partida (con `showDue`). */
@@ -168,6 +175,7 @@ export function StatementTable({
                     </DataTableCell>
                     <DataTableCell className="font-medium">
                       <Voucher row={row} />
+                      <SecondaryLink row={row} />
                     </DataTableCell>
                     <DataTableCell className="max-w-[280px] text-muted-foreground">
                       <span className="line-clamp-2">{row.detail || '—'}</span>
@@ -257,6 +265,7 @@ export function StatementTable({
                       <p className="text-sm font-medium text-pretty">
                         <Voucher row={row} />
                       </p>
+                      <SecondaryLink row={row} />
                       {row.detail ? (
                         <p className="line-clamp-2 text-xs text-muted-foreground">{row.detail}</p>
                       ) : null}
@@ -323,6 +332,19 @@ function Voucher({ row }: { row: StatementRow }) {
       className="rounded-sm underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
     >
       {label}
+    </Link>
+  )
+}
+
+/** El link chico de abajo del comprobante («Asiento 12»). En el celular deja lugar para el dedo. */
+function SecondaryLink({ row }: { row: StatementRow }) {
+  if (!row.secondaryHref || !row.secondaryLabel) return null
+  return (
+    <Link
+      href={row.secondaryHref}
+      className="-my-1 flex min-h-9 w-fit items-center rounded-sm text-xs font-normal text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:my-0 sm:min-h-0"
+    >
+      {row.secondaryLabel}
     </Link>
   )
 }

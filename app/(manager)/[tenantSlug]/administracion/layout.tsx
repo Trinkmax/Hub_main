@@ -1,8 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { AccountingProvider } from '@/components/administracion/accounting-provider'
+import { AdmNav } from '@/components/administracion/nav/adm-nav'
+import { AdmFab } from '@/components/administracion/nav/launcher-fab'
 import { ReadOnlyBanner } from '@/components/administracion/read-only'
-import { SectionTabsBar } from '@/components/shell/section-tabs-bar'
 import { resolveSection } from '@/components/shell/section-tabs-config'
 import { loadSectionViewer } from '@/components/shell/section-tabs-server'
 import { type AccountingState, getAccountingState } from '@/lib/accounting/access'
@@ -41,8 +42,15 @@ export const maxDuration = 60
  * | Configurada, sin acceso                | dueño          | «Administración es privada»|
  * | Configurada, con acceso                | dueño/contadora| la sección (+ hojas rápidas)|
  *
- * Las pestañas de la sección (Resumen, Compras, Ventas, Cajas, Libros, Plan de cuentas) van
+ * La navegación de la sección (`AdmNav`: Resumen, Ventas, Compras y pagos, Gastos fijos y Cajas
+ * como píldoras; Importar, Libros y Plan de cuentas más callados; Guía, Ajustes y «Cargar») va
  * arriba de todo SOLO en la última fila: nunca en las pantallas de la puerta ni en el asistente.
+ * Qué pestañas ve cada uno lo sigue resolviendo `resolveSection` (la misma regla del menú);
+ * `AdmNav` solo las ordena y las dibuja.
+ *
+ * `AdmFab` es el «＋ Cargar» flotante del celular: lo pone este marco en las pantallas de primer
+ * nivel (menos Ajustes y la Guía: ver `admFabFromFrame`), para que esté siempre en el mismo
+ * lugar. No se dibuja para la contadora ni en las pantallas de tarea, que tienen su propio pie.
  */
 export default async function AdministracionLayout({
   children,
@@ -99,13 +107,18 @@ export default async function AdministracionLayout({
       today={todayInCordoba()}
       access={{ read: state.read, write: state.write, admin: state.admin }}
     >
-      <SectionTabsBar {...section} />
+      <AdmNav
+        label={section.label}
+        tabs={section.tabs}
+        audience={state.isAccountant ? 'accountant' : 'owner'}
+      />
       {state.isAccountant ? (
         <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
           <ReadOnlyBanner />
         </div>
       ) : null}
       {children}
+      <AdmFab />
     </AccountingProvider>
   )
 }

@@ -1,22 +1,51 @@
 import Link from 'next/link'
+import { IIBB_JURISDICTIONS } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/jurisdictions'
 import { HowToMisComprobantes } from '@/components/administracion/guias/how-to'
+import {
+  ArcaRulesCard,
+  type ArcaRuleView,
+} from '@/components/administracion/importar/bank-rules-card'
 import { ImportUploader } from '@/components/administracion/importar/import-uploader'
-import { BackLink } from '@/components/administracion/importar/page-bits'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
-import { listImportBatches } from '@/lib/imports/server/queries'
+import { todayInCordoba } from '@/lib/dates'
+import {
+  type ImportRuleRow,
+  listImportBatches,
+  listImportRules,
+} from '@/lib/imports/server/queries'
+import { wantedRange } from '@/lib/imports/ui/inbox'
 import { importHref, importSourceHref } from '@/lib/imports/ui/labels'
 import { requireImportAccess } from '../_lib/page-access'
 
-export const metadata = { title: 'Importar compras de ARCA · Administración' }
+export const metadata = { title: 'Subir las compras de ARCA · Administración' }
+
+/** Lo que hace algo enseñado sobre «otros impuestos», en palabras. */
+function ruleDoes(action: ImportRuleRow['action']): string {
+  switch (action.other_taxes_as) {
+    case 'perc_iibb': {
+      const province = IIBB_JURISDICTIONS.find((j) => j.code === action.jurisdiction_code)?.name
+      return province ? `son Ingresos Brutos de ${province}` : 'son Ingresos Brutos'
+    }
+    case 'perc_iva':
+      return 'son IVA'
+    case 'internal':
+      return 'son impuestos internos'
+    case 'account':
+      return 'van a una categoría que elegiste'
+    default:
+      return 'se arman como me enseñaste'
+  }
+}
 
 /**
- * Paso 1 de «Mis Comprobantes» (diseño §4.1): soltar el archivo de Recibidos,
- * ver qué trae y subirlo. Se lee en el navegador; nada se carga en los libros
- * hasta la revisión. La contadora ve un aviso con el link al historial.
+ * «Subir las compras de ARCA»: los tres pasos (bajalo de ARCA, con las fechas
+ * que hay que pedir y el paso a paso del portal → subilo acá → revisá y cargá).
+ * El archivo se lee en el navegador; nada se carga hasta la revisión. Al pie,
+ * lo que el bar ya le enseñó sobre «otros impuestos». La contadora ve un aviso
+ * con la vuelta a Importar.
  */
 export default async function ImportarArcaPage({
   params,
@@ -30,64 +59,69 @@ export default async function ImportarArcaPage({
   )
   const tenantId = access.tenant.id
   const header = (
-    <>
-      <BackLink href={importHref(tenantSlug)} label="Volver a Importar" />
-      <PageHeader
-        eyebrow="Administración"
-        title="Compras desde ARCA"
-        description="Soltá el archivo de «Mis Comprobantes › Recibidos» que bajaste de ARCA (la ex AFIP). Armamos las compras y los proveedores nuevos; antes de cargar nada, revisás."
-      />
-    </>
+    <AdmHeader
+      back={{ href: importHref(tenantSlug), label: 'Importar' }}
+      title="Subir las compras de ARCA"
+      description="Las facturas que te hicieron tus proveedores, sin tipear ninguna. Unos 5 minutos, una vez por mes."
+    />
   )
 
   if (!canWrite) {
     return (
-      <PageShell width="comfortable">
+      <AdmPage width="comfortable">
         {header}
         <ReadOnlyNotice
-          description="Acá se suben los archivos de ARCA. Con Contabilidad ves lo que se importó en el historial de Importar."
+          description="Acá se suben los archivos de ARCA. Con Contabilidad ves lo que se subió en Importar."
           href={importHref(tenantSlug)}
           linkLabel="Ir a Importar"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
-  const [settings, previous] = await Promise.all([
+  const [settings, previous, rules] = await Promise.all([
     settleQuery(getAccountingSettings(tenantId)),
-    settleQuery(listImportBatches(tenantId, { source: 'arca_recibidos', limit: 1 })),
+    settleQuery(listImportBatches(tenantId, { source: 'arca_recibidos', limit: 100 })),
+    settleQuery(listImportRules(tenantId, 'arca_recibidos')),
   ])
   const sasCuit = settings.ok ? (settings.data?.cuit ?? null) : null
-  const firstTime = !previous.ok || previous.data.length === 0
+  const booksStartDate = settings.ok ? (settings.data?.booksStartDate ?? null) : null
+  const batches = previous.ok ? previous.data : []
+  const firstTime = batches.filter((b) => b.status !== 'cancelled').length === 0
+  const learned: ArcaRuleView[] = rules.ok
+    ? rules.data.map((r) => ({
+        id: r.id,
+        label: r.label,
+        does: ruleDoes(r.action),
+        active: r.active,
+      }))
+    : []
 
   return (
-    <PageShell width="comfortable">
+    <AdmPage width="comfortable">
       {header}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <div className="min-w-0 space-y-5">
-          {settings.ok && !sasCuit ? (
-            <p className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning-text text-pretty">
-              Cargá la CUIT de la SAS en{' '}
+      <ImportUploader
+        slug={tenantSlug}
+        context={{ source: 'arca_recibidos', sasCuit }}
+        howTo={<HowToMisComprobantes bare />}
+        wanted={wantedRange('arca_recibidos', batches, todayInCordoba(), booksStartDate)}
+        firstTime={firstTime}
+        booksStartDate={booksStartDate}
+        notice={
+          settings.ok && !sasCuit ? (
+            <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty">
+              Sin el CUIT del bar no puedo chequear que el archivo sea tuyo.{' '}
               <Link
                 href={`/${tenantSlug}/administracion/ajustes?tab=sas`}
-                className="font-medium underline underline-offset-2"
+                className="rounded-sm font-medium underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                Ajustes › Datos de la SAS
+                Cargar el CUIT
               </Link>
-              : así chequeamos que el archivo sea de tu SAS y no de otra CUIT.
             </p>
-          ) : null}
-          <ImportUploader slug={tenantSlug} context={{ source: 'arca_recibidos', sasCuit }} />
-        </div>
-        <aside className="space-y-4 lg:sticky lg:top-20">
-          <HowToMisComprobantes defaultOpen={firstTime} />
-          <p className="rounded-xl border border-border/70 bg-card/60 p-4 text-sm text-muted-foreground text-pretty">
-            <span className="font-medium text-foreground">¿Cada cuánto?</span> Una vez por mes, del
-            día 11 en adelante: bajá del 1 del mes anterior a hoy. Si se pisan las fechas no pasa
-            nada: lo que ya importaste no se repite.
-          </p>
-        </aside>
-      </div>
-    </PageShell>
+          ) : null
+        }
+      />
+      <ArcaRulesCard slug={tenantSlug} rules={learned} />
+    </AdmPage>
   )
 }

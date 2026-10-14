@@ -102,12 +102,18 @@ describe('menú: Administración queda resaltada en toda la sección', () => {
     '/hub/administracion/compras?tab=proveedores',
     '/hub/administracion/compras/proveedores/abc',
     '/hub/administracion/gastos-fijos',
+    // «Completar la planilla» (tanda 2): una sub-pantalla de Gastos fijos.
+    '/hub/administracion/gastos-fijos/completar',
     '/hub/administracion/compras/gastos-fijos/nuevo',
     '/hub/administracion/ventas/cierre',
     '/hub/administracion/cajas/abc',
     '/hub/administracion/libros',
     '/hub/administracion/libros/diario',
     '/hub/administracion/libros/iva-compras',
+    // «Fin de mes»: tiene su renglón en la barra de la sección, pero en el menú sigue siendo
+    // la misma y única entrada.
+    '/hub/administracion/libros/cierres',
+    '/hub/administracion/libros/cierres?mes=2026-09',
     '/hub/administracion/plan-de-cuentas/importar',
     '/hub/administracion/comprobantes/abc',
     '/hub/administracion/asientos/abc',
@@ -129,5 +135,13 @@ describe('menú: Administración queda resaltada en toda la sección', () => {
 
   it('matchea por segmento: /administracion-vieja no es la sección', () => {
     expect(activeLabels('/hub/administracion-vieja', owner)).toEqual([])
+  })
+
+  it('«Fin de mes» no suma una entrada al menú: es de la barra de la sección, no del sidebar', () => {
+    for (const groups of [owner, accountant]) {
+      const labels = groups.flatMap((g) => g.items.map((i) => i.label))
+      expect(labels).not.toContain('Fin de mes')
+      expect(adminEntries(groups)).toHaveLength(1)
+    }
   })
 })

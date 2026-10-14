@@ -1,9 +1,11 @@
-import { BookText, CircleAlert, CircleCheck } from 'lucide-react'
+import { BookText } from 'lucide-react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { Amount } from '@/components/administracion/amount'
 import { plural } from '@/components/administracion/format'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { PanelLink } from '@/components/administracion/kit/panel-states'
 import { ActionButton } from '@/components/administracion/quick-actions'
-import { Button } from '@/components/ui/button'
 import {
   DataTableCell,
   DataTableHead,
@@ -12,19 +14,22 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
 import {
   entryKindLabel,
   exportHref,
   getJournal,
+  getJournalSummary,
   JOURNAL_PAGE_LIMIT,
   type JournalEntryRow,
+  type JournalSummary,
+  type QueryOutcome,
   settleQuery,
 } from '@/lib/accounting/queries'
 import { decodePageToken } from '@/lib/accounting/queries/shared'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { BookPage, WideBookHint } from '../_components/book-page'
+import { BalanceSeal, BookTotals, TotalPending } from '../_components/book-totals'
 import { ExportButton } from '../_components/export-button'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
@@ -72,6 +77,10 @@ export default async function DiarioPage({
         )
       : Promise.resolve(null),
   ])
+  // Los totales de TODO el período (no de la página) llegan después de pintar la tabla.
+  const summary = range.ok
+    ? settleQuery(getJournalSummary(tenantId, { from: range.from, to: range.to }))
+    : null
 
   const period = periodParams(shown)
   const exportLink = exportHref(tenantSlug, 'diario', { desde: shown.from, hasta: shown.to })
@@ -95,6 +104,9 @@ export default async function DiarioPage({
       title="Libro diario"
       description={description}
       actions={<ExportButton href={exportLink} fileName={fileName} />}
+      booksPath={`${base}/libros`}
+      book="diario"
+      period={shown}
       toolbar={
         <RangePicker
           range={shown}
@@ -102,6 +114,46 @@ export default async function DiarioPage({
           fiscalYear={ctx.fiscalYear}
           minMonth={ctx.minMonth}
         />
+      }
+      totals={
+        page && page.rows.length > 0 && summary ? (
+          <BookTotals
+            items={[
+              { key: 'asientos', label: 'Asientos', value: page.totalRows },
+              {
+                key: 'debe',
+                label: 'Debe',
+                value: (
+                  <Suspense fallback={<TotalPending />}>
+                    <SummaryAmount summary={summary} side="debit" />
+                  </Suspense>
+                ),
+              },
+              {
+                key: 'haber',
+                label: 'Haber',
+                value: (
+                  <Suspense fallback={<TotalPending />}>
+                    <SummaryAmount summary={summary} side="credit" />
+                  </Suspense>
+                ),
+              },
+            ]}
+            seal={
+              <Suspense fallback={null}>
+                <SummarySeal summary={summary} />
+              </Suspense>
+            }
+            note={
+              page.rows.some((e) => e.numberIsProvisional) ? (
+                <>
+                  Números en <span className="italic">cursiva</span>: provisorios hasta cerrar el
+                  mes.
+                </>
+              ) : null
+            }
+          />
+        ) : null
       }
     >
       {!range.ok ? <PeriodError message={range.message} /> : null}
@@ -119,12 +171,6 @@ export default async function DiarioPage({
           />
         ) : (
           <>
-            {page.rows.some((e) => e.numberIsProvisional) ? (
-              <p className="text-xs text-muted-foreground">
-                Los números en <span className="italic">cursiva</span> son provisorios: quedan fijos
-                al cerrar el mes.
-              </p>
-            ) : null}
             <WideBookHint>
               En el celular ves cada asiento con su total: tocalo para ver sus cuentas. El libro
               completo se lee mejor en la compu.
@@ -152,6 +198,29 @@ export default async function DiarioPage({
   )
 }
 
+/** El Debe o el Haber de todo el período; «—» si no se pudo sumar. */
+async function SummaryAmount({
+  summary,
+  side,
+}: {
+  summary: Promise<QueryOutcome<JournalSummary>>
+  side: 'debit' | 'credit'
+}) {
+  const result = await summary
+  if (!result.ok) return <span className="text-muted-foreground">—</span>
+  return (
+    <Amount
+      cents={side === 'debit' ? result.data.debitCents : result.data.creditCents}
+      currency={false}
+    />
+  )
+}
+
+async function SummarySeal({ summary }: { summary: Promise<QueryOutcome<JournalSummary>> }) {
+  const result = await summary
+  return result.ok ? <BalanceSeal balanced={result.data.balanced} /> : null
+}
+
 function EmptyJournal({
   base,
   label,
@@ -164,27 +233,20 @@ function EmptyJournal({
   nothingLoaded: boolean
 }) {
   return (
-    <EmptyState
+    <EmptyTeach
       icon={BookText}
       title={
         nothingLoaded ? 'Todavía no hay nada cargado' : `No hay asientos en ${label.toLowerCase()}`
       }
-      description={
-        canWrite
-          ? 'El diario se arma solo: cada gasto, pago o cierre del día que cargues suma su asiento acá.'
-          : 'Cuando los dueños carguen gastos, ventas y pagos, sus asientos aparecen acá.'
+      action={canWrite ? <ActionButton action="gasto" className="h-11 gap-2" /> : undefined}
+      secondary={
+        canWrite ? <PanelLink href={`${base}/ventas/cierre`}>Cierre del día</PanelLink> : undefined
       }
-      action={
-        canWrite ? (
-          <div className="flex flex-wrap justify-center gap-2">
-            <ActionButton action="gasto" className="h-11 gap-2 md:h-9" />
-            <Button asChild variant="outline" className="h-11 md:h-9">
-              <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
-            </Button>
-          </div>
-        ) : null
-      }
-    />
+    >
+      {canWrite
+        ? 'El diario se arma solo: cada gasto, pago o cierre del día que cargues suma su asiento acá.'
+        : 'Cuando los dueños carguen gastos, ventas y pagos, sus asientos aparecen acá.'}
+    </EmptyTeach>
   )
 }
 
@@ -264,7 +326,7 @@ function JournalTable({
                       {entry.documentLabel ? (
                         <Link
                           href={`${base}/comprobantes/${entry.documentId}`}
-                          className="text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+                          className="rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           {entry.documentLabel}
                           {entry.documentSeq ? ` · #${entry.documentSeq}` : ''}
@@ -346,7 +408,7 @@ function JournalTable({
             <li key={entry.entryId}>
               <Link
                 href={`${base}/asientos/${entry.entryId}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint"
+                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <span className="min-w-0 space-y-0.5">
                   <span className="block text-xs tabular-nums text-muted-foreground">
@@ -376,20 +438,5 @@ function JournalTable({
         </ul>
       </div>
     </>
-  )
-}
-
-/** «Debe = Haber» (o el aviso, que no debería verse nunca). */
-function BalanceSeal({ balanced }: { balanced: boolean }) {
-  return balanced ? (
-    <span className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
-      <CircleCheck className="size-3" aria-hidden />
-      Debe = Haber
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-      <CircleAlert className="size-3" aria-hidden />
-      No cuadra: avisanos
-    </span>
   )
 }

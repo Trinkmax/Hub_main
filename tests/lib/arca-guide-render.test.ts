@@ -582,6 +582,25 @@ describe('Ajustes › ARCA (la tarjeta en sus cuatro estados)', () => {
     expect(out).toContain('href="/bar/administracion/ajustes/arca"')
     expect(out).toContain('Conectar ARCA')
     expect(out).toContain('Pruebas (homologación)')
+    // Con la CUIT cargada no se pide de nuevo.
+    expect(out).not.toContain('Cargar la CUIT primero')
+  })
+
+  it('A · sin la CUIT de la SAS: lo primero es cargarla; la guía queda como link', () => {
+    const noCuit = (canWrite: boolean) =>
+      panel({ ...overview(null), sas: { legalName: 'Bar de Prueba SAS', cuit: null } }, canWrite)
+    const out = noCuit(true)
+    expect(out).toContain('La conexión con ARCA se hace a nombre de la SAS: necesitamos su CUIT.')
+    expect(out).toContain('Cargar la CUIT primero')
+    expect(out).toContain('href="/bar/administracion/ajustes?tab=sas"')
+    // UNA acción principal: «Conectar ARCA» no compite con cargar la CUIT.
+    expect(out).not.toContain('Conectar ARCA')
+    expect(out).toContain('Ver la guía')
+    // La contadora no carga la CUIT: ve la guía y nada más.
+    const reader = noCuit(false)
+    expect(reader).not.toContain('Cargar la CUIT primero')
+    expect(reader).not.toContain('Conectar ARCA')
+    expect(reader).toContain('Ver la guía')
   })
 
   it('B · en curso: «3 de 9», la lista de pasos y «Seguir con la guía» al que toca', () => {

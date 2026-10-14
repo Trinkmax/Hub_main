@@ -66,7 +66,7 @@ function ComplianceCell({
           {' · '}
           <Link
             href={`${base}/ventas/cierre?fecha=${day.day}`}
-            className="font-medium text-foreground underline-offset-4 hover:underline"
+            className="font-medium text-foreground underline-offset-4 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring hover:underline"
           >
             Cargar cierre
           </Link>
@@ -130,6 +130,10 @@ function totalCompliance(projection: Projection): ReactNode {
  * venta real y la neta, el cumplimiento en palabras y los acumulados. Quien
  * carga edita el objetivo y la nota en el lugar, o pega el mes entero con
  * «Cargar una lista». Un día que todavía no pasó muestra solo su objetivo.
+ *
+ * Con `bare` va sin su encabezado ni su botón y sin la tarjeta: es la planilla
+ * plegada dentro del bloque «Proyección» de «El mes», que ya trae el título y
+ * las acciones.
  */
 export function ProjectionTable({
   projection,
@@ -138,7 +142,10 @@ export function ProjectionTable({
   monthLabel,
   base,
   canWrite,
+  bare = false,
 }: {
+  /** Sin encabezado, sin «Cargar una lista» y sin tarjeta propia. */
+  bare?: boolean
   projection: Projection
   /** Eventos del calendario por día; `null` si quien mira no los puede leer. */
   events: DayEvents | null
@@ -151,18 +158,23 @@ export function ProjectionTable({
   const { days, totals } = projection
   const eventsOf = (day: string) => events?.[day] ?? []
 
+  const Shell = bare ? BareShell : DataTableShell
   return (
-    <DataTableShell>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
-        <div className="max-w-2xl">
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Proyección de ventas</h2>
-          <p className="text-xs text-muted-foreground text-pretty">
-            {monthLabel} · El objetivo de cada día contra lo vendido según los cierres del día.
-            {canWrite ? ' Tocá un objetivo para cambiarlo.' : ''}
-          </p>
-        </div>
-        {canWrite ? <TargetsImportDialog month={month} monthLabel={monthLabel} /> : null}
-      </header>
+    <Shell>
+      {bare ? null : (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
+          <div className="max-w-2xl">
+            <h2 className="font-serif text-lg font-semibold tracking-tight">
+              Proyección de ventas
+            </h2>
+            <p className="text-xs text-muted-foreground text-pretty">
+              {monthLabel} · El objetivo de cada día contra lo vendido según los cierres del día.
+              {canWrite ? ' Tocá un objetivo para cambiarlo.' : ''}
+            </p>
+          </div>
+          {canWrite ? <TargetsImportDialog month={month} monthLabel={monthLabel} /> : null}
+        </header>
+      )}
 
       {/* Compu y tablet: la planilla completa. */}
       <div className="hidden sm:block">
@@ -320,10 +332,18 @@ export function ProjectionTable({
                   {formatCentsShort(d.posnetCommissionCents + d.deliveryCommissionCents)}
                 </p>
               ) : null}
-              {d.targetAccumCents > 0 || d.netAccumCents !== 0 ? (
+              {d.targetAccumCents > 0 || (d.moment !== 'future' && d.netAccumCents !== 0) ? (
                 <p className="text-xs tabular-nums text-muted-foreground">
-                  Acumulado: objetivo {formatCentsShort(d.targetAccumCents)}
-                  {d.moment === 'future' ? '' : ` · venta ${formatCentsShort(d.netAccumCents)}`}
+                  {/* Un mes sin objetivo no tiene «objetivo $ 0»: se dice solo lo vendido. */}
+                  Acumulado:{' '}
+                  {[
+                    d.targetAccumCents > 0
+                      ? `objetivo ${formatCentsShort(d.targetAccumCents)}`
+                      : null,
+                    d.moment === 'future' ? null : `venta ${formatCentsShort(d.netAccumCents)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
               ) : null}
               {canWrite || names.length > 0 || d.note ? (
@@ -340,22 +360,33 @@ export function ProjectionTable({
             <Amount cents={totals.netCents} decimals={0} />
           </div>
           <p className="text-xs tabular-nums text-muted-foreground">
-            Objetivo {formatCentsShort(totals.targetCents)} · {totalCompliance(projection)}
+            {totals.targetCents > 0 ? `Objetivo ${formatCentsShort(totals.targetCents)} · ` : null}
+            {totalCompliance(projection)}
           </p>
         </li>
       </ul>
 
       <p className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground text-pretty">
         Comisiones estimadas con los porcentajes de{' '}
-        <Link
-          href={`${base}/ajustes?tab=participes`}
-          className="font-medium text-foreground underline-offset-4 hover:underline"
-        >
-          Ajustes
-        </Link>
-        : lo que descontaron de verdad está en «Neto por medio».
+        {/* Quien solo mira no cambia los porcentajes: para ella es texto, no una puerta a Ajustes. */}
+        {canWrite ? (
+          <Link
+            href={`${base}/ajustes?tab=participes`}
+            className="font-medium text-foreground underline-offset-4 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring hover:underline"
+          >
+            Ajustes
+          </Link>
+        ) : (
+          'Ajustes'
+        )}
+        : lo que descontaron de verdad está en «Lo que llegó».
         {totals.eventsCents > 0 ? ' La venta bar incluye lo vendido por el canal Eventos.' : ''}
       </p>
-    </DataTableShell>
+    </Shell>
   )
+}
+
+/** El marco de la planilla cuando va dentro de un panel: una raya suave, sin tarjeta. */
+export function BareShell({ children }: { children: ReactNode }) {
+  return <div className="overflow-hidden rounded-xl border border-border/60">{children}</div>
 }

@@ -1,10 +1,7 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
 import { firstLoadableDay, firstParam } from '@/components/administracion/cajas-ventas/periods'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { loadPostingCatalog, loadPostingContext } from '@/lib/accounting/context'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
@@ -17,7 +14,7 @@ import {
   SalesInvoiceForm,
 } from './_components/sales-invoice-form'
 
-export const metadata = { title: 'Factura de venta' }
+export const metadata = { title: 'Factura aparte' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -42,38 +39,28 @@ export default async function NuevaFacturaPage({
   const base = `/${tenantSlug}/administracion`
   const { access, canWrite } = await requireAdminPage(tenantSlug, `${base}/ventas/nueva-factura`)
 
-  const back = (
-    <Link
-      href={`${base}/ventas?tab=facturas`}
-      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-3" />
-      Volver a facturas
-    </Link>
-  )
+  const tipo = firstParam(sp.tipo)
   const header = (
-    <PageHeader
-      eyebrow="Administración"
+    <AdmHeader
+      back={{ href: `${base}/ventas?tab=facturas`, label: 'Facturas' }}
       title={
-        <>
-          Factura de venta <ReadOnlyBadge />
-        </>
+        tipo === 'nc' ? 'Nota de crédito' : tipo === 'nd' ? 'Nota de débito' : 'Factura aparte'
       }
-      description="Para las ventas que se facturan aparte del cierre del día: eventos, catering, sponsoreo."
+      badge={<ReadOnlyBadge />}
+      description="Para lo que se factura fuera del cierre del día: un evento, un catering, un sponsoreo."
     />
   )
 
   if (!canWrite) {
     return (
-      <PageShell width="comfortable">
-        {back}
+      <AdmPage width="comfortable">
         {header}
         <ReadOnlyNotice
-          description="Acá se cargan las facturas de venta sueltas. Con Contabilidad las ves en Ventas › Facturas."
+          description="Acá se cargan las facturas que se hacen aparte del cierre. Con Contabilidad las ves en Ventas › Facturas."
           href={`${base}/ventas?tab=facturas`}
           linkLabel="Ir a Facturas"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
@@ -142,7 +129,7 @@ export default async function NuevaFacturaPage({
   const cliente = firstParam(sp.cliente)
   const relacionada = firstParam(sp.relacionada)
   const prefill = {
-    docKind: docKindOf(firstParam(sp.tipo)),
+    docKind: docKindOf(tipo),
     partyId:
       cliente &&
       UUID_RE.test(cliente) &&
@@ -154,10 +141,11 @@ export default async function NuevaFacturaPage({
   }
 
   return (
-    <PageShell width="comfortable">
-      {back}
+    <AdmPage width="comfortable">
       {header}
       <SalesInvoiceForm
+        // Sin nada elegido en la URL, primero se pregunta si la venta ya está en un cierre.
+        askGate={tipo === null && cliente === null && relacionada === null}
         tenantSlug={tenantSlug}
         ctx={ctx}
         firstOpenDate={firstOpenDate}
@@ -172,6 +160,6 @@ export default async function NuevaFacturaPage({
         prefill={prefill}
         arca={arca}
       />
-    </PageShell>
+    </AdmPage>
   )
 }

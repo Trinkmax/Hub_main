@@ -1,108 +1,116 @@
-import type { ReactNode } from 'react'
-import { BlockError } from '@/components/administracion/cajas-ventas/block-error'
-import { DataTableShell } from '@/components/ui/data-table'
+import { Panel, PanelError } from '@/components/administracion/kit'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  buildCashDailyViews,
-  CASH_CHART_RANGE_OPTIONS,
-  type CashChartRange,
-  type CashDailyReport,
-} from '@/lib/accounting/cash-daily'
+import type { CashChartRange, CashDailyReport } from '@/lib/accounting/cash-daily'
+import type { TreasuryTone } from '@/lib/accounting/home'
 import type { QueryOutcome } from '@/lib/accounting/queries/shared'
 import { cn } from '@/lib/utils'
-import { CashDailyChart } from './cash-daily-chart'
+import { CashMovePanel } from './cash-move-panel'
+
+/** El ancla del bloque: los links «ver cómo se movió» de otras pantallas caen acá. */
+export const CASH_MOVE_ANCHOR = 'como-se-movio'
+
+const TITLE = 'Cómo se movió la plata'
 
 /**
- * «Cómo se movió la plata» (reunión del 12/10/2026): la tarjeta con su título
- * se dibuja con el resto de la pantalla; el gráfico llega después, en su
- * propio `Suspense`, para no frenar los saldos.
+ * «Cómo se movió la plata»: espera el reporte por día (ya pedido por la
+ * página, sin frenar a la billetera) y arma el bloque. Si esa lectura falla, el
+ * bloque conserva su lugar y ofrece reintentar; el resto de la pantalla sigue.
  */
-export function CashDailyCard({ children }: { children: ReactNode }) {
-  return (
-    <DataTableShell>
-      <header className="border-b border-border/60 px-5 py-4">
-        <h2 className="font-serif text-lg font-semibold tracking-tight">Cómo se movió la plata</h2>
-        <p className="text-xs text-muted-foreground">
-          El saldo al final de cada día, y lo que entró y salió.
-        </p>
-      </header>
-      {children}
-    </DataTableShell>
-  )
-}
-
-/** Espera el reporte (ya pedido por la página) y arma lo que dibuja el gráfico. */
-export async function CashDailyBody({
+export async function CashMoveBlock({
   report,
   range,
   today,
+  base,
+  booksStartDate,
+  tones,
+  className,
 }: {
   report: Promise<QueryOutcome<CashDailyReport>>
   range: CashChartRange
   today: string
+  base: string
+  booksStartDate: string | null
+  tones: Readonly<Record<string, TreasuryTone | null>>
+  className?: string
 }) {
   const outcome = await report
   if (!outcome.ok) {
-    return <BlockError message={outcome.message} className="m-5 border-0 bg-transparent py-8" />
+    return <PanelError title={TITLE} message={outcome.message} className={className} />
   }
   return (
-    <CashDailyChart
-      views={buildCashDailyViews(outcome.data, { today })}
-      ranges={CASH_CHART_RANGE_OPTIONS}
-      rangeKey={range.key}
-      rangeLabel={range.label}
-    />
+    <Panel id={CASH_MOVE_ANCHOR} className={className}>
+      <CashMovePanel
+        report={outcome.data}
+        range={range}
+        today={today}
+        base={base}
+        booksStartDate={booksStartDate}
+        tones={tones}
+      />
+    </Panel>
   )
 }
 
-const SKELETON_BARS = [
-  { key: 'a', height: 'h-10' },
-  { key: 'b', height: 'h-16' },
-  { key: 'c', height: 'h-8' },
-  { key: 'd', height: 'h-20' },
-  { key: 'e', height: 'h-12' },
-  { key: 'f', height: 'h-24' },
-  { key: 'g', height: 'h-14' },
-  { key: 'h', height: 'h-9' },
-  { key: 'i', height: 'h-16' },
-  { key: 'j', height: 'h-11' },
+const BARS = [
+  { key: 'a', up: 'h-6', down: 'h-2' },
+  { key: 'b', up: 'h-10', down: 'h-3' },
+  { key: 'c', up: 'h-4', down: 'h-5' },
+  { key: 'd', up: 'h-12', down: 'h-2' },
+  { key: 'e', up: 'h-7', down: 'h-4' },
+  { key: 'f', up: 'h-14', down: 'h-3' },
+  { key: 'g', up: 'h-9', down: 'h-6' },
+  { key: 'h', up: 'h-5', down: 'h-2' },
+  { key: 'i', up: 'h-11', down: 'h-4' },
+  { key: 'j', up: 'h-8', down: 'h-3' },
 ] as const
 
-/** Con la forma del gráfico: los filtros, el resumen, el eje y las barras. */
-export function CashDailySkeleton() {
+const STEPS = ['h-10', 'h-14', 'h-12', 'h-20', 'h-16', 'h-24', 'h-20', 'h-28', 'h-24', 'h-32']
+
+/** Con la forma real: las píldoras, el título, la escalera del saldo y las barras de entró y salió. */
+export function CashMoveSkeleton({ className }: { className?: string }) {
   return (
-    <div className="space-y-4 px-5 py-4" aria-hidden="true">
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <div className="w-full space-y-1.5 sm:w-64">
-          <Skeleton className="h-3.5 w-24" />
-          <Skeleton className="h-11 w-full md:h-9" />
+    <div
+      aria-hidden="true"
+      className={cn(
+        'card-hairline space-y-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5',
+        className,
+      )}
+    >
+      <Skeleton className="h-3 w-40" />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1.5">
+          <Skeleton className="h-11 w-32 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-20 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-28 rounded-full md:h-9 max-sm:hidden" />
         </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-11 w-36 rounded-full md:h-9" />
-          <Skeleton className="h-11 w-24 rounded-full md:h-9" />
-          <Skeleton className="h-11 w-28 rounded-full md:h-9" />
+        <div className="flex gap-1.5">
+          <Skeleton className="h-11 w-32 rounded-full md:h-9" />
+          <Skeleton className="h-11 w-24 rounded-full md:h-9 max-sm:hidden" />
         </div>
       </div>
       <div className="space-y-2">
-        <Skeleton className="h-3 w-48" />
+        <Skeleton className="h-6 w-80 max-w-full" />
         <Skeleton className="h-4 w-full max-w-xl" />
       </div>
-      <Skeleton className="h-3 w-72 max-w-full" />
-      <div className="flex h-64 gap-3 sm:h-72">
-        <div className="flex w-12 flex-col justify-between py-2">
-          <Skeleton className="h-3 w-10" />
-          <Skeleton className="h-3 w-8" />
-          <Skeleton className="h-3 w-10" />
-          <Skeleton className="h-3 w-6" />
-        </div>
-        <div className="flex flex-1 items-end gap-2 border-b border-border/60 pb-2">
-          {SKELETON_BARS.map((bar) => (
-            <Skeleton
-              key={bar.key}
-              className={cn(bar.height, 'flex-1 rounded-t-sm rounded-b-none')}
-            />
-          ))}
-        </div>
+      <Skeleton className="h-3 w-52" />
+      <div className="flex h-40 items-end gap-1.5 border-b border-border/60 sm:h-48">
+        {STEPS.map((height, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: escalones fijos de un esqueleto
+          <Skeleton key={index} className={cn(height, 'flex-1 rounded-none rounded-t-sm')} />
+        ))}
+      </div>
+      <Skeleton className="h-3 w-56" />
+      <div className="flex h-28 gap-1.5">
+        {BARS.map((bar) => (
+          <div key={bar.key} className="flex flex-1 flex-col">
+            <div className="flex flex-1 items-end">
+              <Skeleton className={cn(bar.up, 'w-full rounded-none rounded-t-sm')} />
+            </div>
+            <div className="flex h-8 items-start pt-0.5">
+              <Skeleton className={cn(bar.down, 'w-full rounded-none rounded-b-sm')} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

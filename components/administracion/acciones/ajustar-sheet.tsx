@@ -1,10 +1,9 @@
 'use client'
 
-import { CircleAlert, CircleCheck } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -20,38 +19,69 @@ import type {
   TreasuryAdjustmentValues,
   WalletCheckValues,
 } from '@/lib/accounting/server/document-types'
-import { formatDayMonth, formatIsoDay } from '@/lib/dates'
+import { formatDayMonth } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
+import {
+  ACTION_SHEET_QUESTION_FIELD,
+  ActionSheetBody,
+  ActionSheetFooter,
+  ActionSheetHeader,
+} from '../action-sheet'
 import { Amount } from '../amount'
-import { type ChoiceChip, ChoiceChips } from '../cajas-ventas/choice-chips'
 import { loadCajasVentasCatalog, loadTreasuryCheck } from '../cajas-ventas/data'
 import { FormBanner, SheetLoadError, WarningsDialog } from '../cajas-ventas/feedback'
-import { describedBy, Field, GroupLabel } from '../cajas-ventas/field'
-import { moneyLabel } from '../cajas-ventas/money'
 import { hrefWith } from '../cajas-ventas/periods'
 import {
   firstLoadableDay,
-  SheetCancel,
   SheetFailed,
   SheetLoading,
   useDocumentPreview,
   withOpenItems,
 } from '../cajas-ventas/sheet-frame'
-import type { CajasVentasCatalog, SheetTreasury } from '../cajas-ventas/types'
+import type { CajasVentasCatalog } from '../cajas-ventas/types'
 import { type SavedState, usePosting, useUndoToast } from '../cajas-ventas/use-posting'
 import { useSheetLoad } from '../cajas-ventas/use-sheet-load'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
+import { ChoiceCard, StatusPill, Term } from '../kit'
 import { MoneyField, MoneyInput } from '../money-input'
-import { TreasurySelect } from '../treasury-select'
-import { ACTION_TITLES, type ActionSheetProps } from './types'
+import { TreasuryPicker } from '../treasury-picker'
+import { BillCounter, Verdict } from './ajustar-piezas'
+import {
+  type CountMode,
+  type CountPlan,
+  type CountReason,
+  countModeOf,
+  countQuestion,
+  countSavedNote,
+  countSubmitLabel,
+  countVerdict,
+  exactMoney,
+  leftToCount,
+  reasonOptions as reasonOptionsFor,
+} from './ajustar-vista'
+import { SavedNote } from './gasto-piezas'
+import { BIG_MONEY_FIELD, SHEET_QUESTION_BLOCK, SheetQuestion, TEXT_LINK } from './sheet-parts'
+import type { ActionSheetProps } from './types'
 
-const TITLE = ACTION_TITLES.ajustar
+/**
+ * El encabezado de la hoja pregunta lo que la persona vino a contestar. La
+ * acción se llama «Contar la caja» (`ACTION_TITLES.ajustar`): así la nombran
+ * ⌘K, los botones de Cajas, el Resumen y «Cómo arrancar».
+ */
+const TITLE = '¿Coincide la caja?'
 const DESCRIPTION = 'Contá lo que hay de verdad y lo comparamos con el sistema.'
 
-/** Hoja «Ajustar saldo» (H.11, E.5.8, E.5.13): arqueo de caja, banco, billetera o tarjeta. */
+/**
+ * Hoja «¿Coincide la caja?» (H.11, E.5.8, E.5.13): contar una caja, un banco,
+ * una billetera o la tarjeta de la empresa. Es una cuenta de tres renglones:
+ * lo que dice el sistema, lo que contaste, y el resultado en grande
+ * («Coincide», «Faltan $ 1.257»).
+ *
+ * Las cuentas, el plan (qué se guarda) y los tres envíos son los de siempre;
+ * cambió el orden (primero el número, después el resto) y las palabras.
+ */
 export function AjustarSheet(props: ActionSheetProps) {
   const { tenantSlug } = props
   const load = useSheetLoad(() => loadCajasVentasCatalog(tenantSlug), tenantSlug)
@@ -61,30 +91,28 @@ export function AjustarSheet(props: ActionSheetProps) {
     }
     return <SheetLoading title={TITLE} description={DESCRIPTION} />
   }
-  return <AjustarForm {...props} catalog={load.data} />
+  return (
+    <AjustarForm
+      {...props}
+      catalog={load.data}
+      reloadCatalog={() => load.reload({ silent: true })}
+    />
+  )
 }
 
-/**
- * - `cash`: la diferencia va sola a faltante o sobrante de caja.
- * - `bank`: gastos del banco (abre «Gasto bancario»), intereses u otra diferencia.
- * - `wallet`: billetera con su partícipe (Mercado Pago): acredita lo que falta
- *   acreditar y explica los descuentos (E.5.8).
- * - `card`: la tarjeta de la empresa; se cuenta la DEUDA.
- * - `plain`: otra cuenta (o una billetera sin partícipe): intereses u otra diferencia.
- */
-type Mode = 'cash' | 'bank' | 'wallet' | 'card' | 'plain'
-type Reason = 'bank_fees' | 'interest' | 'other'
-type Plan = 'check' | 'adjust' | 'wallet' | 'bank_fees'
+type Mode = CountMode
+type Reason = CountReason
+type Plan = CountPlan
 type BreakdownKey = 'comision' | 'iva_comision' | 'sircupa' | 'otro'
 type Breakdown = Readonly<Record<BreakdownKey, number | null>>
 
 const EMPTY_BREAKDOWN: Breakdown = { comision: null, iva_comision: null, sircupa: null, otro: null }
 
-const BREAKDOWN_ROWS: ReadonlyArray<{ key: BreakdownKey; label: string }> = [
-  { key: 'comision', label: 'Comisión' },
-  { key: 'iva_comision', label: 'IVA de la comisión' },
-  { key: 'sircupa', label: 'SIRCUPA (Ingresos Brutos)' },
-  { key: 'otro', label: 'Otros cargos' },
+const BREAKDOWN_ROWS: ReadonlyArray<{ key: BreakdownKey; label: string; short: string }> = [
+  { key: 'comision', label: 'Comisión', short: 'Comisión' },
+  { key: 'iva_comision', label: 'IVA de la comisión', short: 'IVA' },
+  { key: 'sircupa', label: 'Ingresos Brutos', short: 'Ingresos Brutos' },
+  { key: 'otro', label: 'Otros cargos', short: 'Otros cargos' },
 ]
 
 const KNOWN_FIELDS = new Set([
@@ -97,21 +125,6 @@ const KNOWN_FIELDS = new Set([
   'breakdown',
 ])
 
-function modeOf(t: SheetTreasury): Mode {
-  switch (t.kind) {
-    case 'cash':
-      return 'cash'
-    case 'bank':
-      return 'bank'
-    case 'wallet':
-      return t.bankPartyId ? 'wallet' : 'plain'
-    case 'credit_card':
-      return 'card'
-    default:
-      return 'plain'
-  }
-}
-
 function sum(values: ReadonlyArray<number | null>): number {
   return values.reduce<number>((acc, v) => acc + (v ?? 0), 0)
 }
@@ -122,9 +135,11 @@ function AjustarForm({
   close,
   setDirty,
   catalog,
-}: ActionSheetProps & { catalog: CajasVentasCatalog }) {
+  reloadCatalog,
+}: ActionSheetProps & { catalog: CajasVentasCatalog; reloadCatalog: () => void }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
+  const countedRef = useRef<HTMLInputElement>(null)
   const id = useId()
   const { treasuries, today } = catalog
   const interestAccountId = catalog.ctx.sys.interest_income.id
@@ -147,9 +162,20 @@ function AjustarForm({
   const [sircupaCert, setSircupaCert] = useState('')
   const [attempted, setAttempted] = useState(false)
   const [checking, startChecking] = useTransition()
+  // Solo de la vista: lo plegado y «Contar otra después».
+  const [billsOpen, setBillsOpen] = useState(false)
+  const [breakdownOpen, setBreakdownOpen] = useState(false)
+  const [another, setAnother] = useState(false)
+  /** La caja con la que arrancó la hoja (o con la que quedó después de «Contar otra»). */
+  const [baseTreasury, setBaseTreasury] = useState<string | null>(initialTreasury)
+  /** Las que ya se contaron con esta hoja abierta. */
+  const [done, setDone] = useState<ReadonlySet<string>>(() => new Set())
+  const [lastSaved, setLastSaved] = useState<{ text: string; count: number } | null>(null)
+  /** Al elegir una caja, el foco pasa al campo del importe cuando llega su saldo. */
+  const focusCounted = useRef(false)
 
   const treasury = treasuries.find((t) => t.id === treasuryId)
-  const mode: Mode | null = treasury ? modeOf(treasury) : null
+  const mode: Mode | null = treasury ? countModeOf(treasury) : null
 
   const checkLoad = useSheetLoad(
     treasuryId && date ? () => loadTreasuryCheck(tenantSlug, treasuryId, date) : null,
@@ -170,9 +196,15 @@ function AjustarForm({
     })
   }, [check, mode, breakdownTouched])
 
+  useEffect(() => {
+    if (!check || !focusCounted.current) return
+    focusCounted.current = false
+    countedRef.current?.focus()
+  }, [check])
+
   const dirty =
     counted !== null ||
-    treasuryId !== initialTreasury ||
+    treasuryId !== baseTreasury ||
     reason !== null ||
     breakdownTouched ||
     unticked.size > 0
@@ -187,33 +219,13 @@ function AjustarForm({
   const pendingAll = sum(items.map((i) => i.openCents))
   const pendingTicked = sum(ticked.map((i) => i.openCents))
   const explained = sum(BREAKDOWN_ROWS.map((r) => breakdown[r.key]))
-  /** Billetera con partidas: descuentos = lo que había por acreditar − lo que entró. */
+  /** Billetera con partidas: descuentos = lo que había en camino − lo que entró. */
   const discounts = diff !== null && ticked.length > 0 ? pendingTicked - diff : null
   const unexplained = discounts !== null && discounts >= 0 ? discounts - explained : null
   const showBreakdown =
     mode === 'wallet' && check !== null && (ticked.length > 0 || (diff !== null && diff < 0))
 
-  const reasonOptions = useMemo((): ChoiceChip<Reason>[] => {
-    if (diff === null || diff === 0) return []
-    if (mode === 'bank') {
-      return diff < 0
-        ? [
-            { value: 'bank_fees', label: 'Es por gastos del banco' },
-            { value: 'other', label: 'Es otra diferencia' },
-          ]
-        : [
-            { value: 'interest', label: 'Son intereses o rendimientos' },
-            { value: 'other', label: 'Es otra diferencia' },
-          ]
-    }
-    if (mode === 'plain' && diff > 0) {
-      return [
-        { value: 'interest', label: 'Son intereses o rendimientos' },
-        { value: 'other', label: 'Es otra diferencia' },
-      ]
-    }
-    return []
-  }, [diff, mode])
+  const reasonOptions = useMemo(() => reasonOptionsFor(mode, diff), [diff, mode])
   const activeReason =
     reason && reasonOptions.some((o) => o.value === reason)
       ? reason
@@ -306,11 +318,57 @@ function AjustarForm({
     catalog.firstOpenDate,
   )
 
+  /**
+   * Después de guardar. Sin «Contar otra después» (o si ya no queda ninguna),
+   * la hoja se cierra como siempre. Con el tilde, se vacía y sigue abierta en
+   * la primera caja que falta: arriba queda dicho cómo salió la que se contó.
+   */
+  function afterSaved(outcome: 'matched' | 'adjusted' | 'arrived', cents: number | null) {
+    router.refresh()
+    const doneNow = new Set(done)
+    if (treasuryId) doneNow.add(treasuryId)
+    const left = leftToCount(treasuries, today, doneNow)
+    const next = left[0]
+    if (!another || !next) {
+      close()
+      return
+    }
+    setDone(doneNow)
+    setLastSaved((prev) => ({
+      text: countSavedNote({
+        name: treasury?.name ?? 'La caja',
+        outcome,
+        cents,
+        left: left.map((t) => t.name),
+      }),
+      count: (prev?.count ?? 0) + 1,
+    }))
+    setTreasuryId(next.id)
+    setBaseTreasury(next.id)
+    setCounted(null)
+    setReason(null)
+    setUnticked(new Set())
+    setBreakdown(EMPTY_BREAKDOWN)
+    setBreakdownTouched(false)
+    setSircupaCert('')
+    setAttempted(false)
+    setBillsOpen(false)
+    setBreakdownOpen(false)
+    // La hoja sigue abierta para otra caja: un aviso de un intento anterior ya no corresponde.
+    adjust.setBanner(null)
+    wallet.setBanner(null)
+    // Los saldos y los conteos cambiaron: el catálogo se vuelve a traer sin tapar la hoja.
+    reloadCatalog()
+    requestAnimationFrame(() => {
+      formRef.current?.querySelector('[data-slot="action-sheet-body"]')?.scrollTo({ top: 0 })
+    })
+  }
+
   const undoToast = useUndoToast(tenantSlug)
   const onSaved = (saved: SavedState) => {
-    close()
     undoToast(saved.message, saved)
-    router.refresh()
+    if (plan === 'wallet' && ticked.length > 0) afterSaved('arrived', diff)
+    else afterSaved('adjusted', counted)
   }
   // Si alguien cargó algo en el medio, el saldo de libro cambió: se vuelve a leer.
   const onFailure = (state: { code: string }) => {
@@ -342,19 +400,20 @@ function AjustarForm({
     errorOf('treasuryAccountId') ?? (attempted && !treasuryId ? 'Elegí la caja o cuenta.' : null)
   const reasonError =
     attempted && reasonOptions.length > 0 && activeReason === null
-      ? 'Elegí qué es la diferencia.'
+      ? 'Elegí por qué hay diferencia.'
       : null
+  const name = treasury?.name ?? 'la caja'
   const breakdownError =
     discounts !== null && discounts >= 0 && explained > discounts
-      ? `El desglose suma más que los descuentos (${formatCents(discounts)}).`
+      ? `Repartiste más de lo que se quedó ${name} (${formatCents(discounts)}).`
       : null
-  /** Billetera: con partidas tildadas, la plata no puede haber bajado (no hay qué acreditar). */
+  /** Billetera: con partidas tildadas, la plata no puede haber bajado (no hay nada que haya entrado). */
   const walletShrank = mode === 'wallet' && ticked.length > 0 && diff !== null && diff < 0
   const countedError =
     errorOf('countedCents') ??
     (attempted && counted === null ? 'Escribí cuánto hay.' : null) ??
     (attempted && walletShrank
-      ? 'Hay menos plata que antes de acreditar: revisá el número o destildá lo que no entró.'
+      ? 'Hay menos plata que antes: revisá el número o destildá lo que todavía no te entró.'
       : null)
   const pendingSince = items.reduce<string | null>(
     (min, i) => (min === null || i.entryDate < min ? i.entryDate : min),
@@ -373,8 +432,11 @@ function AjustarForm({
     setBreakdown(EMPTY_BREAKDOWN)
     setBreakdownTouched(false)
     setSircupaCert('')
+    setBillsOpen(false)
+    setBreakdownOpen(false)
     adjust.setBanner(null)
     wallet.setBanner(null)
+    focusCounted.current = true
   }
 
   function setRow(key: BreakdownKey, cents: number | null) {
@@ -404,9 +466,8 @@ function AjustarForm({
           adjust.setBanner({ tone: 'error', message: result.message })
           return
         }
-        close()
         toast.success(result.message)
-        router.refresh()
+        afterSaved('matched', null)
       } catch {
         adjust.setBanner({
           tone: 'error',
@@ -430,7 +491,7 @@ function AjustarForm({
       return
     }
     if (plan === 'bank_fees' && diff !== null) {
-      // El gasto bancario se carga en su pantalla, con la diferencia como total debitado.
+      // Los gastos del banco se cargan en su pantalla, con la diferencia como total debitado.
       router.push(
         hrefWith(`/${tenantSlug}/administracion/cajas/gasto-bancario`, {
           caja: treasuryId,
@@ -441,6 +502,8 @@ function AjustarForm({
       return
     }
     if (reasonError || breakdownError || walletShrank || !preview.state.ok) {
+      // El error de este bloque queda a la vista aunque estuviera plegado.
+      if (breakdownError) setBreakdownOpen(true)
       posting.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       focusFirstError()
       return
@@ -449,117 +512,166 @@ function AjustarForm({
   }
 
   const busy = posting.pending || checking
-  const submitLabel = (() => {
-    if (plan === 'check') return 'Confirmar que coincide'
-    if (plan === 'bank_fees') return 'Cargar el gasto bancario'
-    if (plan === 'adjust' && mode === 'cash' && diff !== null && diff !== 0) {
-      return `Registrar ajuste · ${diff < 0 ? 'faltan' : 'sobran'} ${moneyLabel(Math.abs(diff))}`
-    }
-    return 'Registrar ajuste'
-  })()
-
-  const name = treasury?.name ?? 'la caja'
-  const countedLabel =
-    mode === 'bank'
-      ? '¿Cuánto dice el banco?'
-      : mode === 'card'
-        ? `¿Cuánto debés en ${name}?`
-        : `¿Cuánto hay en ${name} ahora?`
-  const countedHint =
-    mode === 'cash'
-      ? 'Contá la plata de la caja y escribí el total.'
-      : mode === 'wallet'
-        ? 'Mirá la app y copiá el saldo disponible.'
-        : mode === 'bank'
-          ? 'El saldo del home banking o del resumen.'
-          : mode === 'card'
-            ? 'Lo que dice el resumen o la app de la tarjeta.'
-            : 'El saldo real de la cuenta.'
+  const submitLabel = countSubmitLabel(plan, ticked.length)
+  const question = countQuestion(mode, name)
+  const verdict = countVerdict({
+    mode: mode ?? 'plain',
+    name,
+    diff,
+    countedCents: counted,
+    ticked: ticked.length,
+    pendingTicked,
+    countedOn: date && date !== today ? date : null,
+  })
+  const lastCounted = [treasury?.lastCheckedOn ?? null, check?.lastAdjustmentDate ?? null]
+    .filter((d): d is string => d !== null)
+    .sort()
+    .at(-1)
+  const breakdownOpenNow =
+    breakdownOpen || breakdownTouched || Boolean(breakdownError) || Boolean(errorOf('breakdown'))
+  const breakdownSummary = BREAKDOWN_ROWS.flatMap((row) => {
+    const amount = breakdown[row.key]
+    return amount !== null && amount > 0 ? [`${row.short} ${exactMoney(amount)}`] : []
+  }).join(' · ')
 
   return (
     <>
       <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <form ref={formRef} noValidate onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <ActionSheetBody>
-          {/* La caja va sola en su fila (como en Mover plata): con el saldo al lado
-              no entra en media hoja y se montaba sobre la fecha. */}
-          <div className="grid gap-5">
-            <Field id={`${id}-caja`} label="Caja o cuenta" required error={treasuryError}>
-              <TreasurySelect
-                id={`${id}-caja`}
-                value={treasuryId}
-                onValueChange={(next) => selectTreasury(next)}
-                treasuries={treasuries}
-                invalid={Boolean(treasuryError)}
-                aria-describedby={describedBy(`${id}-caja`, { error: treasuryError })}
-              />
-            </Field>
-            <DateField
-              label="Fecha"
-              required
-              value={date}
-              onValueChange={(next) => {
-                setDate(next)
-                adjust.clearFieldError('date')
-                wallet.clearFieldError('date')
-              }}
-              min={firstLoadableDay(catalog)}
-              max={today}
-              today={today}
-              error={errorOf('date')}
+          {lastSaved ? (
+            // Con `key`, el tilde se vuelve a dibujar con cada caja que se cuenta.
+            <SavedNote key={lastSaved.count}>{lastSaved.text}</SavedNote>
+          ) : null}
+
+          <div className={SHEET_QUESTION_BLOCK}>
+            <SheetQuestion id={`${id}-caja-label`} required>
+              ¿Qué caja contaste?
+            </SheetQuestion>
+            <TreasuryPicker
+              id={`${id}-caja`}
+              aria-labelledby={`${id}-caja-label`}
+              value={treasuryId}
+              onValueChange={(next) => selectTreasury(next)}
+              treasuries={treasuries}
+              invalid={Boolean(treasuryError)}
+              aria-describedby={treasuryError ? `${id}-caja-error` : undefined}
             />
+            {treasuryError ? (
+              <p id={`${id}-caja-error`} role="alert" className="text-xs text-destructive">
+                {treasuryError}
+              </p>
+            ) : null}
           </div>
 
           {!treasury ? null : checkLoad.status === 'error' && !check ? (
             <SheetLoadError message={checkLoad.message} onRetry={() => checkLoad.reload()} />
           ) : !check ? (
-            <div className="space-y-3" aria-busy="true">
-              <span className="sr-only">Cargando el saldo…</span>
-              <Skeleton className="h-24 w-full rounded-xl" />
-              <Skeleton className="h-11 w-full" />
+            // El hueso de lo que viene: «el sistema dice», el campo grande y el resultado.
+            <div className="space-y-6" aria-busy="true">
+              <span className="sr-only">Cargando lo que dice el sistema…</span>
+              <Skeleton className="h-20 w-full rounded-xl" />
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-56" />
+                <Skeleton className="h-16 w-full rounded-2xl" />
+              </div>
+              <Skeleton className="h-[7.25rem] w-full rounded-2xl" />
             </div>
           ) : (
             <>
-              <div className="rounded-xl border border-border/70 bg-secondary/30 p-4">
-                <p className="text-xs text-muted-foreground">
-                  Según el sistema{date && date !== today ? ` al ${formatIsoDay(date)}` : ''}
-                </p>
-                <p className="mt-1 font-serif text-2xl font-semibold tracking-tight tabular-nums">
-                  {mode === 'card' ? (
-                    check.bookCents === 0 ? (
-                      <span className="text-base font-normal text-muted-foreground">Sin deuda</span>
+              {/* Renglón 1: lo que dice el sistema. */}
+              <div className="rounded-xl bg-secondary/50 px-4 py-3.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <p className="text-sm font-medium">
+                    El sistema dice{date && date !== today ? ` (al ${formatDayMonth(date)})` : ''}
+                  </p>
+                  <p className="ml-auto font-serif text-2xl leading-none font-semibold tracking-tight whitespace-nowrap tabular-nums">
+                    {mode === 'card' ? (
+                      check.bookCents === 0 ? (
+                        <span className="font-sans text-base font-normal text-muted-foreground">
+                          Sin deuda
+                        </span>
+                      ) : (
+                        <>
+                          <span className="font-sans text-sm font-normal text-muted-foreground">
+                            {check.bookCents < 0 ? 'Debés ' : 'A favor '}
+                          </span>
+                          {exactMoney(check.bookCents)}
+                        </>
+                      )
                     ) : (
                       <>
-                        <span className="text-base font-normal text-muted-foreground">
-                          {check.bookCents < 0 ? 'Debés ' : 'A favor '}
-                        </span>
-                        {formatCents(Math.abs(check.bookCents))}
+                        {check.bookCents < 0 ? (
+                          <span className="font-sans text-sm font-normal text-muted-foreground">
+                            Descubierto{' '}
+                          </span>
+                        ) : null}
+                        {exactMoney(check.bookCents)}
                       </>
-                    )
-                  ) : (
-                    <Amount cents={check.bookCents} balance="treasury" tone="auto" />
-                  )}
+                    )}
+                  </p>
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground text-pretty">
+                  Según lo cargado.{' '}
+                  {lastCounted
+                    ? `La contaste por última vez el ${formatDayMonth(lastCounted)}.`
+                    : 'Todavía no la contaste.'}
                 </p>
                 {mode === 'wallet' && pendingAll > 0 ? (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    + {formatCents(pendingAll)} por acreditar
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    + {exactMoney(pendingAll)} en camino
                     {pendingSince ? ` (desde el ${formatDayMonth(pendingSince)})` : ''}
                   </p>
                 ) : null}
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {check.lastAdjustmentDate
-                    ? `Último ajuste: ${formatIsoDay(check.lastAdjustmentDate)}`
-                    : 'Todavía no se ajustó.'}
-                </p>
+              </div>
+
+              {/* Renglón 2: lo que contaste. */}
+              <div className="grid gap-2">
+                <MoneyField
+                  inputRef={countedRef}
+                  label={question.label}
+                  fieldClassName={ACTION_SHEET_QUESTION_FIELD}
+                  className={BIG_MONEY_FIELD}
+                  required
+                  allowNegative={mode !== 'cash'}
+                  value={counted}
+                  onValueChange={(cents) => {
+                    setCounted(cents)
+                    adjust.clearFieldError('countedCents')
+                    wallet.clearFieldError('countedCents')
+                  }}
+                  hint={question.hint}
+                  error={countedError}
+                />
+                {mode === 'cash' ? (
+                  billsOpen ? (
+                    <BillCounter
+                      onUse={(cents) => {
+                        setCounted(cents)
+                        setBillsOpen(false)
+                        adjust.clearFieldError('countedCents')
+                        countedRef.current?.focus()
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className={cn(TEXT_LINK, 'justify-self-start text-sm underline')}
+                      onClick={() => setBillsOpen(true)}
+                    >
+                      Ayudame a contar los billetes
+                    </button>
+                  )
+                ) : null}
               </div>
 
               {items.length > 0 ? (
-                <fieldset className="grid gap-2">
-                  <legend className="mb-2 text-sm font-medium leading-none">
-                    ¿Qué se acreditó?
+                <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+                  <legend className="mb-1.5 p-0 font-serif text-lg leading-snug font-semibold tracking-tight">
+                    ¿Qué ventas ya entraron?
                   </legend>
                   <p className="text-xs text-muted-foreground">
-                    Lo que estaba por acreditar en {name}. Destildá lo que todavía no entró.
+                    Destildá lo que todavía no te entró.
                   </p>
                   <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
                     {items.map((item) => {
@@ -596,160 +708,189 @@ function AjustarForm({
                 </fieldset>
               ) : null}
 
-              <MoneyField
-                label={countedLabel}
-                required
-                allowNegative={mode !== 'cash'}
-                value={counted}
-                onValueChange={(cents) => {
-                  setCounted(cents)
-                  adjust.clearFieldError('countedCents')
-                  wallet.clearFieldError('countedCents')
-                }}
-                hint={countedHint}
-                error={countedError}
-              />
-
-              {diff !== null ? (
-                <DifferenceLine
-                  mode={mode ?? 'plain'}
-                  diff={diff}
-                  ticked={ticked.length}
-                  destination={destinationNote(mode ?? 'plain', diff, activeReason, ticked.length)}
+              {/* Renglón 3: el resultado. */}
+              <div className="grid gap-2">
+                <Verdict
+                  verdict={verdict}
+                  onUntickAll={() => {
+                    setUnticked(new Set(items.map((i) => i.lineId)))
+                    wallet.clearFieldError('items')
+                  }}
                 />
-              ) : null}
-
-              {walletShrank ? (
-                <p role="status" className="text-sm text-warning-text">
-                  Hay menos plata que antes de acreditar: revisá el número o destildá lo que no
-                  entró.
-                </p>
-              ) : null}
-
-              {mode === 'wallet' && ticked.length > 0 && diff !== null && diff >= 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Entró <span className="font-medium text-foreground">{formatCents(diff)}</span>
-                  {discounts !== null && discounts > 0 ? (
-                    <>
-                      {' '}
-                      · descuentos{' '}
-                      <span className="font-medium text-foreground">{formatCents(discounts)}</span>
-                    </>
-                  ) : null}
-                  {discounts !== null && discounts < 0
-                    ? ` · ${formatCents(-discounts)} más de lo que había por acreditar: va a Intereses y rendimientos.`
-                    : null}
-                </p>
-              ) : null}
+                {verdict.note ? (
+                  <p className="text-xs text-muted-foreground text-pretty">{verdict.note}</p>
+                ) : null}
+              </div>
 
               {reasonOptions.length > 0 ? (
-                <div className="grid gap-2">
-                  <GroupLabel id={`${id}-reason`}>¿Qué es la diferencia?</GroupLabel>
-                  <ChoiceChips<Reason>
-                    labelledBy={`${id}-reason`}
-                    value={activeReason}
-                    onChange={(next) => {
-                      setReason(next)
-                      adjust.setBanner(null)
-                    }}
-                    options={reasonOptions}
-                  />
+                <div className={SHEET_QUESTION_BLOCK}>
+                  <SheetQuestion id={`${id}-reason`}>¿Por qué hay diferencia?</SheetQuestion>
+                  <div
+                    role="radiogroup"
+                    aria-labelledby={`${id}-reason`}
+                    aria-invalid={reasonError ? true : undefined}
+                    // Con error, «ir al primer campo marcado» tiene que poder caer acá.
+                    tabIndex={-1}
+                    className="grid gap-2.5 outline-none"
+                  >
+                    {reasonOptions.map((option) => (
+                      <ChoiceCard
+                        key={option.value}
+                        name={`${id}-reason`}
+                        value={option.value}
+                        checked={activeReason === option.value}
+                        onChange={() => {
+                          setReason(option.value)
+                          adjust.setBanner(null)
+                        }}
+                        title={option.title}
+                        consequence={option.consequence}
+                      />
+                    ))}
+                  </div>
                   {reasonError ? (
                     <p role="alert" className="text-xs text-destructive">
                       {reasonError}
-                    </p>
-                  ) : null}
-                  {activeReason === 'bank_fees' ? (
-                    <p className="text-xs text-muted-foreground">
-                      Te llevamos a «Gasto bancario» con {formatCents(Math.abs(diff ?? 0))} como
-                      total debitado.
                     </p>
                   ) : null}
                 </div>
               ) : null}
 
               {showBreakdown ? (
-                <fieldset className="grid gap-3">
-                  <legend className="mb-1 flex items-center gap-2 text-sm font-medium leading-none">
-                    Descuentos
+                <fieldset className="m-0 grid min-w-0 gap-3 border-0 p-0">
+                  <legend className="mb-1 flex flex-wrap items-center gap-2 p-0 text-sm leading-snug font-medium">
+                    Lo que se quedó {name}
                     {!breakdownTouched && explained > 0 ? (
-                      <Badge variant="outline" className="font-normal">
-                        Estimado
-                      </Badge>
+                      <StatusPill tone="muted">Estimado</StatusPill>
                     ) : null}
                   </legend>
-                  <p className="text-xs text-muted-foreground">
-                    {breakdownTouched
-                      ? 'Lo que descontó la billetera, según su reporte.'
-                      : 'Precargado con las tasas: copiá los números del reporte de la billetera.'}
-                  </p>
-                  <div className="grid gap-2">
-                    {BREAKDOWN_ROWS.map((row) => {
-                      const inputId = `${id}-bd-${row.key}`
-                      return (
-                        <div
-                          key={row.key}
-                          className="grid grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-3"
-                        >
-                          <Label htmlFor={inputId} className="font-normal">
-                            {row.label}
-                          </Label>
-                          <MoneyInput
-                            id={inputId}
-                            value={breakdown[row.key]}
-                            onValueChange={(cents) => setRow(row.key, cents)}
-                            align="end"
-                            invalid={Boolean(breakdownError)}
-                          />
-                        </div>
-                      )
-                    })}
-                    {(breakdown.sircupa ?? 0) > 0 ? (
-                      <div className="grid grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-3">
-                        <Label htmlFor={`${id}-cert`} className="font-normal">
-                          Certificado de SIRCUPA{' '}
-                          <span className="text-xs text-muted-foreground">(opcional)</span>
-                        </Label>
-                        <Input
-                          id={`${id}-cert`}
-                          value={sircupaCert}
-                          maxLength={40}
-                          autoComplete="off"
-                          className="h-11 text-base md:h-10 md:text-sm"
-                          onChange={(e) => setSircupaCert(e.target.value)}
-                        />
+                  {breakdownOpenNow ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Copiá los importes del reporte de {name}.
+                      </p>
+                      <div className="grid gap-2">
+                        {BREAKDOWN_ROWS.map((row) => {
+                          const inputId = `${id}-bd-${row.key}`
+                          return (
+                            <div
+                              key={row.key}
+                              className="grid grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-3"
+                            >
+                              <Label htmlFor={inputId} className="font-normal">
+                                {row.key === 'sircupa' ? (
+                                  <Term name="SIRCUPA">{row.label}</Term>
+                                ) : (
+                                  row.label
+                                )}
+                              </Label>
+                              <MoneyInput
+                                id={inputId}
+                                value={breakdown[row.key]}
+                                onValueChange={(cents) => setRow(row.key, cents)}
+                                align="end"
+                                invalid={Boolean(breakdownError)}
+                              />
+                            </div>
+                          )
+                        })}
+                        {(breakdown.sircupa ?? 0) > 0 ? (
+                          <div className="grid grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-3">
+                            <Label htmlFor={`${id}-cert`} className="font-normal">
+                              N.º de certificado{' '}
+                              <span className="text-xs text-muted-foreground">(opcional)</span>
+                            </Label>
+                            <Input
+                              id={`${id}-cert`}
+                              value={sircupaCert}
+                              maxLength={40}
+                              autoComplete="off"
+                              className="h-11 text-base md:h-10 md:text-sm"
+                              onChange={(e) => setSircupaCert(e.target.value)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
+                    </>
+                  ) : (
+                    <div className="grid gap-1">
+                      <p className="text-sm tabular-nums text-pretty">
+                        {breakdownSummary || 'Todavía sin detalle.'}
+                      </p>
+                      <button
+                        type="button"
+                        className={cn(TEXT_LINK, 'justify-self-start text-sm underline')}
+                        aria-expanded={false}
+                        onClick={() => setBreakdownOpen(true)}
+                      >
+                        Tengo el reporte: corregir los importes
+                        <ChevronDown className="ml-1 size-3.5" aria-hidden />
+                      </button>
+                    </div>
+                  )}
                   {breakdownError || errorOf('breakdown') ? (
                     <p role="alert" className="text-xs text-destructive">
                       {breakdownError ?? errorOf('breakdown')}
                     </p>
                   ) : unexplained !== null && unexplained > 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Sin explicar{' '}
+                    <p className="text-sm text-muted-foreground text-pretty">
+                      Quedan{' '}
                       <span className="font-medium text-foreground">
                         {formatCents(unexplained)}
                       </span>{' '}
-                      → queda en «Diferencias a conciliar» para la contadora.
+                      sin explicar: van aparte para que los revise la contadora.
                     </p>
                   ) : null}
                 </fieldset>
               ) : null}
-
-              {plan === 'adjust' || plan === 'wallet' ? <EntryPreview entries={shown} /> : null}
             </>
           )}
 
+          {/* Lo demás: casi nunca hace falta tocarlo. Una raya lo separa de la cuenta. */}
+          <div className="space-y-5 border-t border-border/60 pt-6">
+            <DateField
+              label="Fecha del conteo"
+              required
+              value={date}
+              onValueChange={(next) => {
+                setDate(next)
+                adjust.clearFieldError('date')
+                wallet.clearFieldError('date')
+              }}
+              min={firstLoadableDay(catalog)}
+              max={today}
+              today={today}
+              error={errorOf('date')}
+            />
+          </div>
+
+          {plan === 'adjust' || plan === 'wallet' ? (
+            <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+          ) : null}
+
           <FormBanner banner={posting.banner} />
         </ActionSheetBody>
-        <ActionSheetFooter>
-          <SheetCancel />
-          <Button
-            type="submit"
-            className="h-11 sm:h-9"
-            disabled={busy || (Boolean(treasury) && !check)}
-          >
+        <ActionSheetFooter
+          className={
+            treasuries.length > 1
+              ? 'flex-col items-stretch gap-1 pt-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3'
+              : undefined
+          }
+        >
+          {treasuries.length > 1 ? (
+            <label
+              htmlFor={`${id}-otra`}
+              className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-muted-foreground"
+            >
+              <Checkbox
+                id={`${id}-otra`}
+                checked={another}
+                onCheckedChange={(checked) => setAnother(checked === true)}
+              />
+              Contar otra después
+            </label>
+          ) : null}
+          <Button type="submit" disabled={busy || (Boolean(treasury) && !check)}>
             {busy ? 'Guardando…' : submitLabel}
           </Button>
         </ActionSheetFooter>
@@ -761,76 +902,5 @@ function AjustarForm({
         onConfirm={() => posting.confirmWarnings()}
       />
     </>
-  )
-}
-
-/** A dónde va la diferencia, en palabras (la cuenta exacta está en «Ver asiento»). */
-function destinationNote(
-  mode: Mode,
-  diff: number,
-  reason: Reason | null,
-  ticked: number,
-): string | null {
-  if (diff === 0) return null
-  if (mode === 'cash') return diff < 0 ? 'Va a «Faltantes de caja».' : 'Va a «Sobrantes de caja».'
-  if (mode === 'wallet') {
-    if (ticked > 0) return null
-    return diff > 0
-      ? 'Va a «Intereses y rendimientos».'
-      : 'Lo que no expliques con los descuentos va a «Diferencias a conciliar» para la contadora.'
-  }
-  if (reason === 'interest') return 'Va a «Intereses y rendimientos».'
-  if (reason === 'other') return 'Va a «Diferencias a conciliar» para la contadora.'
-  return null
-}
-
-/** «Faltan $ 2.300» · «Sobran $ 400» · «Coincide»: en vivo, sin anunciar cada tecla. */
-function DifferenceLine({
-  mode,
-  diff,
-  ticked,
-  destination,
-}: {
-  mode: Mode
-  diff: number
-  ticked: number
-  destination: string | null
-}) {
-  if (diff === 0) {
-    if (mode === 'wallet' && ticked > 0) return null
-    return (
-      <p role="status" className="flex items-center gap-2 text-sm font-medium text-success">
-        <CircleCheck className="size-4" aria-hidden />
-        Coincide con el sistema.
-      </p>
-    )
-  }
-  if (mode === 'wallet' && ticked > 0) return null
-  const amount = formatCents(Math.abs(diff))
-  const text =
-    mode === 'cash'
-      ? diff < 0
-        ? `Faltan ${amount}`
-        : `Sobran ${amount}`
-      : mode === 'card'
-        ? diff < 0
-          ? `Debés ${amount} más de lo que dice el sistema`
-          : `Debés ${amount} menos de lo que dice el sistema`
-        : diff < 0
-          ? `Hay ${amount} menos que en el sistema`
-          : `Hay ${amount} más que en el sistema`
-  return (
-    <div role="status" className="space-y-0.5">
-      <p
-        className={cn(
-          'flex items-center gap-2 text-sm font-medium',
-          diff < 0 && mode !== 'card' ? 'text-destructive' : 'text-warning-text',
-        )}
-      >
-        <CircleAlert className="size-4" aria-hidden />
-        {text}
-      </p>
-      {destination ? <p className="text-xs text-muted-foreground">{destination}</p> : null}
-    </div>
   )
 }

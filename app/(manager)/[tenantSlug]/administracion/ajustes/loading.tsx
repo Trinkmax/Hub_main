@@ -1,32 +1,23 @@
-import { PageShell } from '@/components/ui/page-shell'
-import { Skeleton } from '@/components/ui/skeleton'
+'use client'
 
-/** Ajustes: volver, encabezado, las pestañas y una tarjeta de formulario. */
+import { useSearchParams } from 'next/navigation'
+import { AdmPage } from '@/components/administracion/kit/adm-page'
+import { HeaderSkeleton, PortadaSkeleton, RoomSkeleton } from './_components/room-skeleton'
+import { roomOfTab } from './_lib/rooms'
+
+/**
+ * Ajustes mientras carga, con la forma de lo que viene: la portada
+ * (encabezado, el bloque de la puesta en marcha, los seis objetos y el cajón)
+ * o, si la URL ya pide una habitación, el esqueleto de ESA habitación. Es un
+ * componente de cliente solo para leer `?tab=`: un `loading.tsx` no recibe
+ * los parámetros de búsqueda.
+ */
 export default function AjustesLoading() {
+  const room = roomOfTab(useSearchParams().get('tab'))
   return (
-    <PageShell width="comfortable">
-      <Skeleton className="h-3 w-28" />
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-28" />
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-4 w-96 max-w-full" />
-      </div>
-      <div className="flex gap-2 overflow-hidden border-b border-border/60 pb-2">
-        {['a', 'b', 'c', 'd', 'e', 'f'].map((k) => (
-          <Skeleton key={k} className="h-7 w-28 shrink-0" />
-        ))}
-      </div>
-      <div className="card-hairline max-w-4xl space-y-5 rounded-xl border bg-card p-6">
-        {['a', 'b', 'c', 'd'].map((k) => (
-          <div key={k} className="space-y-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ))}
-        <div className="flex justify-end">
-          <Skeleton className="h-9 w-40" />
-        </div>
-      </div>
-    </PageShell>
+    <AdmPage width="comfortable">
+      <HeaderSkeleton back={room !== null} />
+      {room ? <RoomSkeleton room={room} /> : <PortadaSkeleton />}
+    </AdmPage>
   )
 }

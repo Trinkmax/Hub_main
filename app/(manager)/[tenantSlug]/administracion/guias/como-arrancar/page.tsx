@@ -1,5 +1,3 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import {
   GlossaryCard,
@@ -11,9 +9,8 @@ import {
   type OnboardingGuideProblem,
 } from '@/components/administracion/guias/onboarding/onboarding-guide'
 import type { SupplierMessageData } from '@/components/administracion/guias/onboarding/supplier-message'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
@@ -104,23 +101,12 @@ export default async function ComoArrancarPage({
       : { status: 'missing' }
 
   return (
-    <PageShell width="comfortable">
-      <Link
-        href={`${base}/guias`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" aria-hidden="true" />
-        Volver a Guías
-      </Link>
-
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Cómo arrancar con Administración
-            <ReadOnlyBadge />
-          </>
-        }
+    <AdmPage width="comfortable">
+      {/* El mismo encabezado que el resto de la guía: «volver» chico arriba y sin eyebrow. */}
+      <AdmHeader
+        back={{ href: `${base}/guias`, label: 'Volver a la guía' }}
+        title="Cómo arrancar con Administración"
+        badge={<ReadOnlyBadge />}
         description="Qué se carga una sola vez, qué todos los días y qué hace la plataforma sola. Te vamos marcando lo que ya está."
       />
 
@@ -152,6 +138,6 @@ export default async function ComoArrancarPage({
       </div>
 
       <GlossaryCard />
-    </PageShell>
+    </AdmPage>
   )
 }

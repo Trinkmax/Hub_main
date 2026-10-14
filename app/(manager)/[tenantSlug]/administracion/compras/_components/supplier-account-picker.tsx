@@ -1,12 +1,12 @@
 'use client'
 
+import { Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useId,
   useMemo,
   useState,
@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
+import { CategoryPicker } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,14 +24,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveParty } from '@/lib/accounting/actions/master'
 import type { PartyKind } from '@/lib/accounting/types'
 import { cn } from '@/lib/utils'
-import { nextUnclassified, type SupplierAccountOption } from '../_lib/suppliers'
+import type { SupplierAccountOption, SupplierCategoryChoices } from '../_lib/suppliers'
 
-/** Lo que hace falta de cada proveedor de la lista para guardarle la cuenta. */
+/** Lo que hace falta de cada proveedor para guardarle la categoría. */
 export type SupplierAccountRow = {
   partyId: string
   /** Razón social: `saveParty` la pide en cada edición. */
@@ -47,7 +47,7 @@ type PickerContextValue = { pick: (partyId: string) => void }
 
 const PickerContext = createContext<PickerContextValue | null>(null)
 
-/** Abre «¿En qué se le compra a …?» para un proveedor de la lista. `null` fuera de la lista. */
+/** Abre «¿En qué le comprás a …?» para un proveedor. `null` fuera del provider. */
 export function useSupplierAccountPicker(): PickerContextValue | null {
   return useContext(PickerContext)
 }
@@ -57,33 +57,42 @@ type Draft = {
   partyId: string | null
   value: string | null
   error: string | null
+  /** «Ver el plan completo»: el combo con todas las cuentas que acepta el motor. */
+  fullPlan: boolean
 }
 
-const CLOSED: Draft = { open: false, partyId: null, value: null, error: null }
+const CLOSED: Draft = { open: false, partyId: null, value: null, error: null, fullPlan: false }
 
 /**
- * «Elegir cuenta» desde la lista de proveedores (pedido de los socios,
- * 12/10/2026): la cuenta habitual de la ficha, sin entrar a la ficha. Un solo
- * diálogo para toda la lista (no un selector por fila): cada fila solo tiene
- * su botón. «Guardar y seguir» pasa al próximo sin clasificar, para recorrer
- * de corrido una lista recién cargada.
+ * Elegir o cambiar la categoría de UN proveedor desde su renglón o su hoja: la
+ * «cuenta habitual» de su ficha, sin códigos ni plan de cuentas a la vista. Un
+ * solo diálogo para toda la lista (cada renglón solo tiene su botón).
+ *
+ * Adentro va `CategoryPicker` (las categorías como botones, «Mercadería»
+ * arriba) y, detrás de «Ver el plan completo», el combo de siempre para la
+ * cuenta rara. Guarda lo mismo que guardaba: `saveParty` con `defaultAccountId`
+ * (y `id`, `expectedUpdatedAt`, `kind`, `name`, que pide el esquema).
+ *
+ * Para clasificar muchos de corrido está el clasificador (`SupplierSorter`).
  */
 export function SupplierAccountProvider({
   tenantSlug,
   accounts,
+  categories,
   rows,
   children,
 }: {
   tenantSlug: string
-  /** Las cuentas que ofrece la ficha del proveedor (`supplierAccountOptions`). */
+  /** Las cuentas del plan completo (`supplierAccountOptions`). */
   accounts: readonly SupplierAccountOption[]
-  /** Los proveedores que se ven, en el orden de la lista. */
+  categories: SupplierCategoryChoices
+  /** Los proveedores a los que se les puede elegir, en el orden de la lista. */
   rows: readonly SupplierAccountRow[]
   children: ReactNode
 }) {
   const router = useRouter()
   const uid = useId()
-  const fieldId = `${uid}-cuenta`
+  const fieldId = `${uid}-categoria`
   const [draft, setDraft] = useState<Draft>(CLOSED)
   const [pending, start] = useTransition()
 
@@ -91,29 +100,24 @@ export function SupplierAccountProvider({
     (partyId: string) => {
       const target = rows.find((r) => r.partyId === partyId)
       if (!target) return
-      setDraft({ open: true, partyId, value: target.accountId, error: null })
+      setDraft({ open: true, partyId, value: target.accountId, error: null, fullPlan: false })
     },
     [rows],
   )
   const context = useMemo(() => ({ pick }), [pick])
 
   const row = draft.partyId ? (rows.find((r) => r.partyId === draft.partyId) ?? null) : null
-  const next = row ? nextUnclassified(rows, row.partyId) : null
-  // «Guardar y seguir» solo cuando se está clasificando: a uno que ya tenía cuenta se le cambia y listo.
-  const offerNext = row !== null && row.accountId === null && next !== null
   const chosen = draft.value ? (accounts.find((a) => a.id === draft.value) ?? null) : null
   const unchanged = row !== null && draft.value === row.accountId
+  // La elegida que no es un botón (del plan completo, o una cuenta que ya no se ofrece).
+  const outside =
+    draft.value && !categories.options.some((o) => o.id === draft.value)
+      ? { id: draft.value, name: chosen?.name ?? 'Otra cuenta' }
+      : null
 
-  // Al pasar al siguiente, el foco vuelve al selector: se tipea la cuenta sin tocar el mouse.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: solo al cambiar de proveedor
-  useEffect(() => {
-    if (draft.open && draft.partyId) document.getElementById(fieldId)?.focus()
-  }, [draft.partyId])
-
-  const save = (andNext: boolean) => {
+  const save = () => {
     if (!row || pending || unchanged) return
     const value = draft.value
-    const following = andNext ? next : null
     start(async () => {
       try {
         const result = await saveParty(tenantSlug, {
@@ -137,14 +141,10 @@ export function SupplierAccountProvider({
         toast.success(
           chosen
             ? `Listo: las compras a ${row.displayName} van a «${chosen.name}».`
-            : `${row.displayName} quedó sin clasificar.`,
+            : `${row.displayName} quedó sin categoría.`,
         )
         router.refresh()
-        setDraft((d) =>
-          following
-            ? { open: true, partyId: following.partyId, value: null, error: null }
-            : { ...d, open: false, error: null },
-        )
+        setDraft((d) => ({ ...d, open: false, error: null }))
       } catch {
         setDraft((d) => ({ ...d, error: ACC_UNREACHABLE.offline }))
       }
@@ -160,44 +160,59 @@ export function SupplierAccountProvider({
           if (!open && !pending) setDraft((d) => ({ ...d, open: false }))
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           {row ? (
             <>
               <DialogHeader>
+                {/* El `id` va en un span: si se pisa el del título, el diálogo se queda sin nombre. */}
                 <DialogTitle className="text-pretty leading-snug">
-                  ¿En qué se le compra a {row.displayName}?
+                  <span id={`${fieldId}-label`}>¿En qué le comprás a {row.displayName}?</span>
                 </DialogTitle>
-                <DialogDescription id={`${fieldId}-hint`}>
-                  La cuenta donde van sus compras. Queda en su ficha y se propone sola en cada
-                  carga.
+                <DialogDescription>
+                  Queda en su ficha y se propone sola cada vez que le cargás algo.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-1.5">
-                <Label htmlFor={fieldId}>Cuenta</Label>
-                <AccountCombobox
+              <div className="grid gap-3">
+                <CategoryPicker
                   id={fieldId}
+                  aria-labelledby={`${fieldId}-label`}
+                  options={categories.options}
+                  featured={categories.featured}
+                  pinned={categories.pinned}
                   value={draft.value}
-                  onValueChange={(value) => setDraft((d) => ({ ...d, value, error: null }))}
-                  accounts={accounts}
-                  placeholder="Elegí una cuenta"
-                  disabled={pending}
+                  outside={outside}
                   invalid={Boolean(draft.error)}
-                  aria-describedby={
-                    draft.error ? `${fieldId}-hint ${fieldId}-error` : `${fieldId}-hint`
-                  }
+                  onChange={(value) => setDraft((d) => ({ ...d, value, error: null }))}
+                  onOpenFullPlan={() => setDraft((d) => ({ ...d, fullPlan: true }))}
                 />
+                {draft.fullPlan ? (
+                  <div className="grid gap-1.5 rounded-xl bg-secondary/50 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      El plan completo, para una cuenta que no está entre los botones.
+                    </p>
+                    <AccountCombobox
+                      id={`${fieldId}-plan`}
+                      aria-label="Buscar en el plan completo"
+                      value={draft.value}
+                      onValueChange={(value) => setDraft((d) => ({ ...d, value, error: null }))}
+                      accounts={accounts}
+                      placeholder="Buscar una cuenta"
+                      disabled={pending}
+                    />
+                  </div>
+                ) : null}
                 {draft.value && row.accountId ? (
                   <button
                     type="button"
                     disabled={pending}
-                    className="inline-flex min-h-11 items-center justify-self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline md:min-h-0"
+                    className="inline-flex min-h-11 items-center justify-self-start rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
                     onClick={() => setDraft((d) => ({ ...d, value: null, error: null }))}
                   >
-                    Quitar la cuenta
+                    Quitar la categoría
                   </button>
                 ) : null}
                 {draft.error ? (
-                  <p id={`${fieldId}-error`} role="alert" className="text-sm text-destructive">
+                  <p role="alert" className="text-sm text-destructive">
                     {draft.error}
                   </p>
                 ) : null}
@@ -212,22 +227,11 @@ export function SupplierAccountProvider({
                 >
                   Cancelar
                 </Button>
-                {offerNext ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 md:h-9"
-                    disabled={pending || unchanged}
-                    onClick={() => save(true)}
-                  >
-                    Guardar y seguir
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   className="h-11 min-w-[110px] md:h-9"
                   disabled={pending || unchanged}
-                  onClick={() => save(false)}
+                  onClick={save}
                 >
                   {pending ? 'Guardando…' : 'Guardar'}
                 </Button>
@@ -241,19 +245,23 @@ export function SupplierAccountProvider({
 }
 
 /**
- * El botón de una fila: «Elegir cuenta» (o «Cambiar»). No dibuja nada fuera de
- * la lista ni para quien no puede escribir (la lista no monta el provider).
+ * El botón de un renglón o de una tapa: «＋ Elegir categoría» (falta: contorno
+ * punteado) o el texto que le pasen para cambiarla. No dibuja nada fuera del
+ * provider ni para quien no puede escribir (la pantalla no monta el provider).
  */
 export function SupplierAccountButton({
   partyId,
   supplierName,
   hasAccount,
   className,
+  children,
 }: {
   partyId: string
   supplierName: string
   hasAccount: boolean
   className?: string
+  /** Lo que se lee en el botón (por defecto «Elegir categoría» o «Cambiar»). */
+  children?: ReactNode
 }) {
   const picker = useSupplierAccountPicker()
   if (!picker) return null
@@ -262,14 +270,24 @@ export function SupplierAccountButton({
       type="button"
       onClick={() => picker.pick(partyId)}
       aria-label={
-        hasAccount ? `Cambiar la cuenta de ${supplierName}` : `Elegir la cuenta de ${supplierName}`
+        hasAccount
+          ? `Cambiar la categoría de ${supplierName}`
+          : `Elegir la categoría de ${supplierName}`
       }
       className={cn(
-        'inline-flex min-h-11 items-center rounded-sm text-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0',
+        'inline-flex min-h-11 items-center gap-1 rounded-full text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-7',
+        hasAccount
+          ? 'text-muted-foreground underline-offset-4 hover:text-foreground hover:underline'
+          : 'border border-dashed border-primary/40 px-2.5 text-primary hover:bg-accent',
         className,
       )}
     >
-      {hasAccount ? 'Cambiar' : 'Elegir cuenta'}
+      {children ?? (
+        <>
+          {hasAccount ? null : <Plus aria-hidden className="size-3" />}
+          {hasAccount ? 'Cambiar' : 'Elegir categoría'}
+        </>
+      )}
     </button>
   )
 }

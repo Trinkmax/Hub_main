@@ -174,7 +174,7 @@ export function AccountEditForm({
               andá a{' '}
               <Link
                 href={`${base}/plan-de-cuentas?tab=sistema`}
-                className="font-medium text-foreground underline underline-offset-2"
+                className="rounded-sm font-medium text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Cuentas del sistema
               </Link>
@@ -296,7 +296,7 @@ export function AccountEditForm({
             {showPurchase ? (
               <SwitchRow
                 id="ae-purchase"
-                label="Aparece en «¿En qué?»"
+                label="Aparece en «¿En qué se gastó?»"
                 description="Se puede elegir al cargar un gasto o una factura de compra."
                 checked={purchase}
                 disabled={pending}

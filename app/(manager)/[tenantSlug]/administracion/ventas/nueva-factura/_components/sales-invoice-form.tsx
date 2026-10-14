@@ -1,6 +1,6 @@
 'use client'
 
-import { BookPlus, Info, Plus, Printer, RefreshCw, X } from 'lucide-react'
+import { BookPlus, FileText, Plus, Printer, RefreshCw, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -15,6 +15,11 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { Callout } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/form-bits'
+import {
+  ADD_LINK,
+  BIG_MONEY_FIELD,
+  TEXT_LINK,
+} from '@/components/administracion/acciones/sheet-parts'
 import { ArcaProblem } from '@/components/administracion/arca/arca-problem'
 import {
   ArcaConceptoField,
@@ -44,13 +49,13 @@ import { useDocumentPreview } from '@/components/administracion/cajas-ventas/she
 import { usePosting, useUndoToast } from '@/components/administracion/cajas-ventas/use-posting'
 import { DateField } from '@/components/administracion/date-input'
 import { EntryPreview } from '@/components/administracion/entry-preview'
+import { ChoiceCard, StepCard, type StepState } from '@/components/administracion/kit'
 import { MoneyField, MoneyInput } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
-import { type TreasuryOption, TreasurySelect } from '@/components/administracion/treasury-select'
+import { TreasuryPicker } from '@/components/administracion/treasury-picker'
+import type { TreasuryOption } from '@/components/administracion/treasury-select'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -58,6 +63,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetGrabber,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE, issuePath } from '@/lib/accounting/action-state'
 import { postSalesInvoice } from '@/lib/accounting/actions/documents'
@@ -89,9 +102,11 @@ import {
   arcaVoucherTypeFor,
 } from '@/lib/arca/emit-form'
 import { condicionFromIvaCondition } from '@/lib/arca/vouchers'
-import { addDays, formatDayMonth, formatIsoDay } from '@/lib/dates'
+import { addDays, capitalizeFirst, formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { formatVoucherNumber, parseVoucherNumber } from '@/lib/fiscal'
 import { formatCents } from '@/lib/money'
+import { type GateAnswer, InvoiceGate } from './invoice-gate'
+import { InvoicePaper, type InvoicePaperStatus, paperAmounts } from './invoice-paper'
 
 export type InvoiceCustomer = {
   id: string
@@ -163,11 +178,6 @@ const KNOWN_FIELDS = new Set([
   'notes',
 ])
 
-const HOW_OPTIONS: ChoiceChip<HowMode>[] = [
-  { value: 'arca', label: 'La emito ahora con ARCA' },
-  { value: 'manual', label: 'Ya la emití en otro sistema' },
-]
-
 /** El valor de la fila «Consumidor final» mientras el cliente de sistema todavía no existe. */
 const FINAL_CONSUMER_PICK = 'consumidor-final'
 const FINAL_CONSUMER_LABEL = 'Consumidor final (sin identificar)'
@@ -199,13 +209,21 @@ function finalConsumerCustomer(id: string): InvoiceCustomer {
 }
 
 /**
- * Factura, nota de crédito o de débito de venta suelta (E.5.9): lo que no pasa
- * por el cierre del día (eventos facturados aparte, catering, sponsoreo). Con
- * «Ya la cobraste» se guarda junto con el cobro.
+ * «Factura aparte»: la factura, nota de crédito o de débito de venta que no
+ * pasa por el cierre del día (un evento facturado aparte, un catering, un
+ * sponsoreo) (E.5.9). Es una carga rara y con muchas decisiones: va paso a
+ * paso, con el papel de la factura llenándose solo al costado.
  *
- * Con la emisión con ARCA prendida (diseño §3.2.2) pregunta primero «¿Cómo la
- * facturás?»: «La emito ahora con ARCA» pide el CAE y la deja cargada; «Ya la
- * emití en otro sistema» es el formulario de siempre, con el número a mano.
+ * Antes de empezar pregunta si la venta ya está en un cierre (para no cargarla
+ * dos veces). Con «Sí, ya me pagó» se guarda junto con el cobro.
+ *
+ * Con la emisión con ARCA prendida (diseño §3.2.2) el primer paso pregunta
+ * además cómo se hace: «La emito ahora con ARCA» pide el CAE y la deja cargada;
+ * «Ya la hice en otro sistema» la carga con su número, a mano.
+ *
+ * Lo que se manda no cambió: el mismo estado, los mismos `values` y las mismas
+ * dos salidas (`postSalesInvoice` o la emisión con ARCA). Solo cambió cómo se
+ * pregunta cada cosa.
  */
 export function SalesInvoiceForm({
   tenantSlug,
@@ -218,7 +236,10 @@ export function SalesInvoiceForm({
   treasuries,
   prefill,
   arca,
+  askGate = false,
 }: {
+  /** Preguntar primero si la venta ya está en un cierre (se entró sin nada elegido). */
+  askGate?: boolean
   tenantSlug: string
   ctx: PostingContext
   firstOpenDate: string | null
@@ -278,6 +299,11 @@ export function SalesInvoiceForm({
   const [creating, setCreating] = useState<string | null>(null)
   const [attempted, setAttempted] = useState(false)
   const nextKey = useRef(1)
+  // Solo de pantalla (no viajan): el paso 0, lo que está desplegado y la hoja del papel.
+  const [gate, setGate] = useState<GateAnswer | null>(askGate ? null : 'apart')
+  const [otherRate, setOtherRate] = useState(false)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [paperOpen, setPaperOpen] = useState(false)
 
   // ── Lo de ARCA ──
   const [condicionId, setCondicionId] = useState<number | null>(() => {
@@ -811,6 +837,82 @@ export function SalesInvoiceForm({
   const lock = emission.lock
   const arcaBanner = emission.banner
 
+  // ── Solo presentación: qué paso toca, las palabras de cada opción y el papel del costado ──
+  const kindDone = true
+  const partyDone = Boolean(partyId)
+  const voucherDone =
+    Boolean(issueDate) &&
+    (arcaMode ? next.status === 'ready' : pointOfSale !== null && number.trim() !== '')
+  const amountDone = computedTotal > 0
+  const stepStates = [kindDone, partyDone, voucherDone, amountDone]
+  const firstPending = stepStates.indexOf(false)
+  const stepState = (index: number): StepState =>
+    stepStates[index] ? 'done' : index === firstPending ? 'current' : 'todo'
+  const paidState: StepState = firstPending === -1 ? 'current' : 'todo'
+
+  const kindWords: Readonly<Record<DocKind, { title: string; consequence: string }>> = {
+    sales_invoice: { title: 'Una factura', consequence: 'Le cobrás algo a un cliente.' },
+    sales_credit_note: {
+      title: 'Una nota de crédito',
+      consequence: 'Anula o baja una factura que ya hiciste.',
+    },
+    sales_debit_note: {
+      title: 'Una nota de débito',
+      consequence: 'Le suma algo a una factura.',
+    },
+  }
+  const paperLetter: 'A' | 'B' | null = arcaMode ? arcaLetter : isLetterA ? 'A' : 'B'
+  const paperNumber = arcaMode
+    ? arca.setup.pointOfSale !== null && arcaNumber !== null
+      ? formatVoucherNumber(arca.setup.pointOfSale, arcaNumber)
+      : null
+    : pointOfSale !== null && number.trim() !== ''
+      ? formatVoucherNumber(pointOfSale, Number(number))
+      : null
+  const dueShown = dueDate ?? engineDue
+  const relatedLabel = arcaMode
+    ? (relatedVoucher?.label ?? null)
+    : (related.find((r) => r.documentId === relatedId)?.label ?? null)
+  const paperStatus: InvoicePaperStatus | null = isCredit
+    ? relatedLabel
+      ? { tone: 'muted', text: `Corrige la ${relatedLabel}` }
+      : null
+    : collectNow
+      ? { tone: 'ok', text: 'Cobrada' }
+      : {
+          tone: 'warn',
+          text: dueShown ? `A cobrar · vence ${formatDayMonth(dueShown)}` : 'A cobrar',
+        }
+  const amounts = paperAmounts({
+    aliquots,
+    nonTaxedCents: mode === 'detail' ? (nonTaxed ?? 0) : 0,
+    exemptCents: mode === 'detail' ? (exempt ?? 0) : 0,
+    totalCents: computedTotal,
+  })
+  const paper = (
+    <InvoicePaper
+      title={capitalizeFirst(noun)}
+      letter={paperLetter}
+      numberText={paperNumber}
+      numberHint={arcaMode ? 'el número lo da ARCA' : null}
+      issueDate={issueDate}
+      customerName={party ? displayName(party) : null}
+      customerTaxId={party?.taxId ?? null}
+      detail={arcaMode ? detail : notes}
+      channelLabel={CHANNEL_LABELS[channel] ?? channel}
+      netCents={amounts.netCents}
+      vatCents={amounts.vatCents}
+      otherCents={amounts.otherCents}
+      totalCents={computedTotal}
+      status={paperStatus}
+    />
+  )
+  const quickRates: readonly VatRateBp[] = [2100, 1050]
+  const rateChip = otherRate || !quickRates.includes(rate) ? 'otra' : String(rate)
+  const showNote = noteOpen || notes !== '' || Boolean(errorOf('notes'))
+  const typeError = errorOf('voucherType')
+  const posError = errorOf('pointOfSale')
+
   return (
     <>
       <form
@@ -820,15 +922,7 @@ export function SalesInvoiceForm({
         onKeyDown={handleFormKeyDown}
         className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start"
       >
-        <div className="space-y-6">
-          <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-            <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-            <p className="text-pretty">
-              Si esta venta ya está en el cierre del día, no la cargues de nuevo: acá van las que se
-              facturan aparte (eventos, catering, sponsoreo).
-            </p>
-          </div>
-
+        <div className="@container min-w-0 space-y-4">
           {arca.setup.attention.length > 0 ? (
             <ArcaVoucherAttention
               slug={tenantSlug}
@@ -858,635 +952,859 @@ export function SalesInvoiceForm({
             </Callout>
           ) : null}
 
-          <div className="card-hairline grid gap-5 rounded-xl border bg-card p-6">
-            {arcaOn ? (
-              <div className="grid gap-2">
-                <GroupLabel id={`${id}-how`}>¿Cómo la facturás?</GroupLabel>
-                <ChoiceChips<HowMode>
-                  labelledBy={`${id}-how`}
-                  value={how}
-                  onChange={chooseHow}
-                  options={HOW_OPTIONS.map((o) => ({
-                    ...o,
-                    disabled: lock !== null || emission.pending,
-                  }))}
-                />
-                <p className="text-xs text-muted-foreground text-pretty">
-                  {how === 'arca'
-                    ? 'La plataforma le pide a ARCA la autorización (el CAE), te deja la factura lista para imprimir y la carga en los libros.'
-                    : 'Para una factura que ya hiciste en el sistema que usás hoy: la cargás con su número.'}
-                </p>
-              </div>
-            ) : null}
+          {askGate ? (
+            <InvoiceGate value={gate} onChange={setGate} closeHref={`${base}/ventas/cierre`} />
+          ) : null}
 
-            <div className="grid gap-2">
-              <GroupLabel id={`${id}-kind`}>¿Qué vas a cargar?</GroupLabel>
-              <ChoiceChips<DocKind>
-                labelledBy={`${id}-kind`}
-                value={docKind}
-                onChange={chooseKind}
-                options={kindOptions}
-              />
-            </div>
-
-            <Field
-              id={`${id}-party`}
-              label="Cliente"
-              required
-              error={errorOf('partyId')}
-              hint={
-                arcaMode && !party
-                  ? 'Si no te pide factura con sus datos, elegí «Consumidor final (sin identificar)».'
-                  : undefined
-              }
-            >
-              <PartyCombobox
-                id={`${id}-party`}
-                value={partyId}
-                onValueChange={(nextId) => chooseParty(nextId)}
-                parties={customerOptions}
-                placeholder="Elegí el cliente"
-                onCreate={(name) => setCreating(name)}
-                disabled={preparingFinal}
-                invalid={Boolean(errorOf('partyId'))}
-                aria-describedby={describedBy(`${id}-party`, {
-                  hint: arcaMode && !party,
-                  error: errorOf('partyId'),
-                })}
-              />
-            </Field>
-            {preparingFinal ? (
-              <p role="status" className="-mt-3 text-xs text-muted-foreground">
-                Preparando «Consumidor final»…
-              </p>
-            ) : null}
-            {arcaMode && receiverIssue && !errorOf('partyId') ? (
-              <p role="status" className="-mt-3 text-xs text-warning-text text-pretty">
-                {receiverIssue.message}
-              </p>
-            ) : null}
-            {!arcaMode && party && isLetterA && !party.taxId ? (
-              <p role="status" className="-mt-3 text-xs text-warning-text">
-                {displayName(party)} no tiene CUIT cargado: una {noun} A lo necesita. Completalo en
-                Ajustes › Partícipes o elegí la letra B.
-              </p>
-            ) : null}
-
-            {arcaMode ? (
-              <>
-                <ArcaConditionField
-                  slug={tenantSlug}
-                  value={effectiveCondicion}
-                  onChange={(nextCond) => {
-                    setCondicionId(nextCond)
-                    setRelatedVoucherId(null)
-                    clearError('arca.condicionIvaReceptorId')
-                  }}
-                  letterChoice={letterChoice}
-                  locked={isFinalConsumer}
-                  error={errorOf('arca.condicionIvaReceptorId')}
-                />
-                <ArcaNumberRow
-                  voucherLabel={arcaVoucherText}
-                  pointOfSale={arca.setup.pointOfSale}
-                  pointOfSaleLabel={arca.pointOfSaleLabel}
-                  next={next}
-                  onRetry={nextNumber.retry}
-                  error={next.status === 'error' ? null : errorOf('number')}
-                />
-              </>
-            ) : (
-              <div className="grid gap-5 sm:grid-cols-3">
-                <Field
-                  id={`${id}-type`}
-                  label="Comprobante"
-                  required
-                  error={errorOf('voucherType')}
-                >
-                  <Select
-                    value={voucherType}
-                    onValueChange={(v) => setVoucherType(v as VoucherType)}
-                  >
-                    <SelectTrigger
-                      id={`${id}-type`}
-                      className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {VOUCHERS[docKind].map((v) => (
-                        <SelectItem key={v.value} value={v.value} className="min-h-11 md:min-h-8">
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field
-                  id={`${id}-pos`}
-                  label="Punto de venta"
-                  required
-                  error={errorOf('pointOfSale')}
-                  hint={
-                    salesPoints.length === 0 ? 'Cargá los puntos de venta en Ajustes.' : undefined
-                  }
-                >
-                  <Select
-                    value={pointOfSale === null ? '' : String(pointOfSale)}
-                    onValueChange={(v) => {
-                      setPointOfSale(Number(v))
-                      posting.clearFieldError('pointOfSale')
-                    }}
-                  >
-                    <SelectTrigger
-                      id={`${id}-pos`}
-                      className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                      aria-invalid={errorOf('pointOfSale') ? true : undefined}
-                    >
-                      <SelectValue placeholder="Elegí" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {salesPoints.map((p) => (
-                        <SelectItem
-                          key={p.number}
-                          value={String(p.number)}
-                          className="min-h-11 md:min-h-8"
-                        >
-                          {String(p.number).padStart(4, '0')} · {p.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field id={`${id}-number`} label="Número" required error={errorOf('number')}>
-                  <Input
-                    id={`${id}-number`}
-                    value={number}
-                    inputMode="numeric"
-                    autoComplete="off"
-                    maxLength={13}
-                    placeholder="00000088"
-                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
-                    aria-invalid={errorOf('number') ? true : undefined}
-                    aria-describedby={describedBy(`${id}-number`, { error: errorOf('number') })}
-                    onPaste={onNumberPaste}
-                    onChange={(e) => {
-                      setNumber(e.target.value.replace(/\D/g, '').slice(0, 8))
-                      posting.clearFieldError('number')
-                    }}
-                  />
-                </Field>
-              </div>
-            )}
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <DateField
-                label="Fecha"
-                required
-                value={issueDate}
-                onValueChange={(nextDate) => {
-                  setIssueDate(nextDate)
-                  clearError('issueDate')
-                }}
-                min={arcaMode ? dateWindow.min : minDate}
-                max={today}
-                today={today}
-                hint={arcaMode ? arcaDateHint(dateWindow) : undefined}
-                error={errorOf('issueDate')}
-              />
-              {isCredit ? null : (
-                <DateField
-                  label={arcaMode && concepto !== 1 ? 'Vence el pago' : 'Vence'}
-                  optional={!(arcaMode && concepto !== 1)}
-                  required={arcaMode && concepto !== 1}
-                  value={dueDate}
-                  onValueChange={(nextDate) => {
-                    setDueDate(nextDate)
-                    clearError('dueDate')
-                  }}
-                  min={issueDate ?? undefined}
-                  shortcuts={false}
-                  hint={
-                    dueDate === null && engineDue
-                      ? `Si lo dejás vacío: ${formatIsoDay(engineDue)} (plazo del cliente).`
-                      : undefined
-                  }
-                  error={errorOf('dueDate')}
-                />
-              )}
-              <Field id={`${id}-channel`} label="Canal" error={errorOf('channel')}>
-                <Select value={channel} onValueChange={(v) => setChannel(v as Channel)}>
-                  <SelectTrigger
-                    id={`${id}-channel`}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CHANNELS.map((c) => (
-                      <SelectItem key={c} value={c} className="min-h-11 md:min-h-8">
-                        {CHANNEL_LABELS[c]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-
-            {arcaMode ? (
-              <ArcaConceptoField
-                value={concepto}
-                onChange={chooseConcepto}
-                serviceFrom={serviceFrom}
-                serviceTo={serviceTo}
-                onServiceFrom={(v) => {
-                  setServiceFrom(v)
-                  clearError('arca.serviceFrom')
-                }}
-                onServiceTo={(v) => {
-                  setServiceTo(v)
-                  clearError('arca.serviceTo')
-                }}
-                today={today}
-                fromError={errorOf('arca.serviceFrom')}
-                toError={errorOf('arca.serviceTo')}
+          {gate === 'apart' ? (
+            <>
+              {/* ① ¿Qué vas a hacer? */}
+              <StepCard
+                open
+                n={1}
+                state={stepState(0)}
+                title={<span id={`${id}-kind`}>¿Qué vas a hacer?</span>}
+                summary="Una factura nueva, o una nota que corrige una que ya hiciste."
               >
-                {isCredit ? (
-                  <DateField
-                    label="Vence el pago"
-                    required
-                    value={notePaymentDue}
-                    onValueChange={(v) => {
-                      setNotePaymentDue(v)
-                      clearError('dueDate')
-                    }}
-                    min={issueDate ?? undefined}
-                    today={today}
-                    shortcuts={false}
-                    error={errorOf('dueDate')}
-                  />
-                ) : null}
-              </ArcaConceptoField>
-            ) : null}
-
-            {arcaMode && isNote ? (
-              <ArcaRelatedField
-                isCredit={isCredit}
-                options={relatedOptions}
-                value={relatedVoucherId}
-                onChange={(v) => {
-                  setRelatedVoucherId(v)
-                  clearError('arca.relatedVoucherId')
-                }}
-                error={errorOf('arca.relatedVoucherId')}
-              />
-            ) : null}
-
-            {!arcaMode && (isCredit || docKind === 'sales_debit_note') && related.length > 0 ? (
-              <Field
-                id={`${id}-related`}
-                label={isCredit ? '¿Qué factura corrige?' : '¿Sobre qué factura?'}
-                optional
-                hint={isCredit ? 'Se descuenta sola de lo que te debe por esa factura.' : undefined}
-                error={errorOf('relatedDocumentId')}
-              >
-                <Select
-                  value={relatedId ?? 'ninguna'}
-                  onValueChange={(v) => setRelatedId(v === 'ninguna' ? null : v)}
+                <div
+                  role="radiogroup"
+                  aria-labelledby={`${id}-kind`}
+                  className="grid gap-2 @[40rem]:grid-cols-3"
                 >
-                  <SelectTrigger
-                    id={`${id}-related`}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ninguna" className="min-h-11 md:min-h-8">
-                      Ninguna en particular
-                    </SelectItem>
-                    {related.map((r) => (
-                      <SelectItem
-                        key={r.documentId}
-                        value={r.documentId}
-                        className="min-h-11 md:min-h-8"
-                      >
-                        {r.label} · {formatDayMonth(r.entryDate)} · pendiente{' '}
-                        {formatCents(r.openCents)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            ) : null}
-          </div>
-
-          <div className="card-hairline grid gap-5 rounded-xl border bg-card p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-serif text-lg font-semibold tracking-tight">Importes</h2>
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto px-0 text-xs"
-                onClick={() => setMode(mode === 'total' ? 'detail' : 'total')}
-              >
-                {mode === 'total'
-                  ? 'Cargar por alícuota, no gravado o exento'
-                  : 'Cargar solo el total'}
-              </Button>
-            </div>
-
-            {arcaMode ? (
-              <ArcaDetailField
-                value={detail}
-                onChange={(v) => {
-                  setDetail(v)
-                  clearError('arca.detail')
-                }}
-                error={errorOf('arca.detail')}
-              />
-            ) : null}
-
-            {mode === 'total' ? (
-              <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_10rem]">
-                <MoneyField
-                  label="Total (con IVA)"
-                  required
-                  value={total}
-                  onValueChange={(cents) => {
-                    setTotal(cents)
-                    clearError('aliquots')
-                  }}
-                  error={amountsError}
-                  hint={
-                    aliquots[0] && total !== null && rate !== 0
-                      ? `Neto ${formatCents(aliquots[0].netCents)} · IVA ${vatRateLabel(rate)} ${formatCents(total - (aliquots[0].netCents ?? 0))}`
-                      : undefined
-                  }
-                />
-                <Field id={`${id}-rate`} label="Alícuota">
-                  <Select
-                    value={String(rate)}
-                    onValueChange={(v) => setRate(Number(v) as VatRateBp)}
-                  >
-                    <SelectTrigger
-                      id={`${id}-rate`}
-                      className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RATES.map((r) => (
-                        <SelectItem key={r} value={String(r)} className="min-h-11 md:min-h-8">
-                          {vatRateLabel(r)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {rows.map((row, index) => {
-                  const vat = row.net !== null && row.rate !== 0 ? vatFromNet(row.net, row.rate) : 0
-                  return (
+                  {kindOptions.map((option) => (
+                    <ChoiceCard
+                      key={option.value}
+                      name={`${id}-kind-choice`}
+                      value={option.value}
+                      checked={docKind === option.value}
+                      onChange={() => chooseKind(option.value)}
+                      title={kindWords[option.value].title}
+                      consequence={kindWords[option.value].consequence}
+                    />
+                  ))}
+                </div>
+                {arcaOn ? (
+                  <div className="mt-5 grid gap-2">
+                    <GroupLabel id={`${id}-how`}>¿Cómo la hacés?</GroupLabel>
                     <div
-                      key={row.key}
-                      className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto] sm:items-start"
+                      role="radiogroup"
+                      aria-labelledby={`${id}-how`}
+                      className="grid gap-2 @[40rem]:grid-cols-2"
+                    >
+                      <ChoiceCard
+                        name={`${id}-how-choice`}
+                        value="arca"
+                        checked={how === 'arca'}
+                        disabled={lock !== null || emission.pending}
+                        onChange={() => chooseHow('arca')}
+                        title="La emito ahora con ARCA"
+                        consequence="Queda lista para imprimir y cargada en los libros."
+                      />
+                      <ChoiceCard
+                        name={`${id}-how-choice`}
+                        value="manual"
+                        checked={how === 'manual'}
+                        disabled={lock !== null || emission.pending}
+                        onChange={() => chooseHow('manual')}
+                        title="Ya la hice en otro sistema"
+                        consequence="La cargo con su número."
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </StepCard>
+
+              {/* ② ¿A quién? */}
+              <StepCard
+                open
+                n={2}
+                state={stepState(1)}
+                title="¿A quién?"
+                summary={
+                  party
+                    ? `${displayName(party)}${party.taxId ? '' : ' · sin CUIT cargado'}`
+                    : 'El cliente al que le facturás.'
+                }
+              >
+                <div className="grid gap-4">
+                  <Field
+                    id={`${id}-party`}
+                    label="Cliente"
+                    required
+                    error={errorOf('partyId')}
+                    hint={
+                      arcaMode && !party
+                        ? 'Si no te pide factura con sus datos, elegí «Consumidor final (sin identificar)».'
+                        : undefined
+                    }
+                  >
+                    <PartyCombobox
+                      id={`${id}-party`}
+                      value={partyId}
+                      onValueChange={(nextId) => chooseParty(nextId)}
+                      parties={customerOptions}
+                      placeholder="Elegí el cliente"
+                      onCreate={(name) => setCreating(name)}
+                      disabled={preparingFinal}
+                      invalid={Boolean(errorOf('partyId'))}
+                      aria-describedby={describedBy(`${id}-party`, {
+                        hint: arcaMode && !party,
+                        error: errorOf('partyId'),
+                      })}
+                    />
+                  </Field>
+                  {preparingFinal ? (
+                    <p role="status" className="-mt-2 text-xs text-muted-foreground">
+                      Preparando «Consumidor final»…
+                    </p>
+                  ) : null}
+                  {arcaMode && receiverIssue && !errorOf('partyId') ? (
+                    <p role="status" className="-mt-2 text-xs text-warning-text text-pretty">
+                      {receiverIssue.message}
+                    </p>
+                  ) : null}
+                  {!arcaMode && party && isLetterA && !party.taxId ? (
+                    <p role="status" className="-mt-2 text-xs text-warning-text">
+                      {displayName(party)} no tiene CUIT cargado: una {noun} A lo necesita.
+                      Completalo en Ajustes › Medios de cobro o elegí la letra B.
+                    </p>
+                  ) : null}
+                  {!arcaMode && party ? (
+                    <p className="-mt-1 text-sm text-pretty">
+                      Le corresponde{' '}
+                      <span className="font-medium">
+                        {capitalizeFirst(noun)} {letterFor(party.ivaCondition).toUpperCase()}
+                      </span>
+                      .
+                    </p>
+                  ) : null}
+
+                  {arcaMode ? (
+                    <ArcaConditionField
+                      slug={tenantSlug}
+                      value={effectiveCondicion}
+                      onChange={(nextCond) => {
+                        setCondicionId(nextCond)
+                        setRelatedVoucherId(null)
+                        clearError('arca.condicionIvaReceptorId')
+                      }}
+                      letterChoice={letterChoice}
+                      locked={isFinalConsumer}
+                      error={errorOf('arca.condicionIvaReceptorId')}
+                    />
+                  ) : null}
+
+                  {arcaMode && isNote ? (
+                    <ArcaRelatedField
+                      isCredit={isCredit}
+                      options={relatedOptions}
+                      value={relatedVoucherId}
+                      onChange={(v) => {
+                        setRelatedVoucherId(v)
+                        clearError('arca.relatedVoucherId')
+                      }}
+                      error={errorOf('arca.relatedVoucherId')}
+                    />
+                  ) : null}
+
+                  {!arcaMode &&
+                  (isCredit || docKind === 'sales_debit_note') &&
+                  related.length > 0 ? (
+                    <Field
+                      id={`${id}-related`}
+                      label={isCredit ? '¿Qué factura corrige?' : '¿Sobre qué factura?'}
+                      optional
+                      hint={
+                        isCredit
+                          ? 'Se descuenta sola de lo que te debe por esa factura.'
+                          : undefined
+                      }
+                      error={errorOf('relatedDocumentId')}
                     >
                       <Select
-                        value={String(row.rate)}
-                        onValueChange={(v) =>
-                          setRows((prev) =>
-                            prev.map((r) =>
-                              r.key === row.key ? { ...r, rate: Number(v) as VatRateBp } : r,
-                            ),
-                          )
-                        }
+                        value={relatedId ?? 'ninguna'}
+                        onValueChange={(v) => setRelatedId(v === 'ninguna' ? null : v)}
                       >
                         <SelectTrigger
+                          id={`${id}-related`}
                           className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                          aria-label={`Alícuota de la fila ${index + 1}`}
                         >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {RATES.map((r) => (
-                            <SelectItem key={r} value={String(r)} className="min-h-11 md:min-h-8">
-                              {vatRateLabel(r)}
+                          <SelectItem value="ninguna" className="min-h-11 md:min-h-8">
+                            Ninguna en particular
+                          </SelectItem>
+                          {related.map((r) => (
+                            <SelectItem
+                              key={r.documentId}
+                              value={r.documentId}
+                              className="min-h-11 md:min-h-8"
+                            >
+                              {r.label} · {formatDayMonth(r.entryDate)} · pendiente{' '}
+                              {formatCents(r.openCents)}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <div className="grid gap-1">
-                        <MoneyInput
-                          value={row.net}
-                          onValueChange={(cents) => {
-                            setRows((prev) =>
-                              prev.map((r) => (r.key === row.key ? { ...r, net: cents } : r)),
-                            )
-                            clearError('aliquots')
-                          }}
-                          align="end"
-                          aria-label={`Neto gravado de la fila ${index + 1}`}
-                          placeholder="Neto"
-                        />
-                        {row.net !== null && row.rate !== 0 ? (
-                          <p className="text-right text-xs text-muted-foreground">
-                            IVA {vatRateLabel(row.rate)}: {formatCents(vat)}
+                    </Field>
+                  ) : null}
+                </div>
+              </StepCard>
+
+              {/* ③ El comprobante */}
+              <StepCard
+                open
+                n={3}
+                state={stepState(2)}
+                title="El comprobante"
+                summary={
+                  arcaMode
+                    ? 'El número lo pone ARCA: revisá la fecha y qué facturás.'
+                    : `Como figura en la ${isNote ? 'nota' : 'factura'} que ya hiciste: tipo, punto de venta, número y fecha.`
+                }
+              >
+                <div className="grid gap-5">
+                  {arcaMode ? (
+                    <ArcaNumberRow
+                      voucherLabel={arcaVoucherText}
+                      pointOfSale={arca.setup.pointOfSale}
+                      pointOfSaleLabel={arca.pointOfSaleLabel}
+                      next={next}
+                      onRetry={nextNumber.retry}
+                      error={next.status === 'error' ? null : errorOf('number')}
+                    />
+                  ) : (
+                    <>
+                      <div className="grid gap-2">
+                        <GroupLabel id={`${id}-type`}>Tipo</GroupLabel>
+                        <div tabIndex={-1} aria-invalid={typeError ? true : undefined}>
+                          <ChoiceChips<VoucherType>
+                            labelledBy={`${id}-type`}
+                            value={voucherType}
+                            onChange={(v) => setVoucherType(v)}
+                            options={VOUCHERS[docKind]}
+                          />
+                        </div>
+                        {typeError ? (
+                          <p role="alert" className="text-xs text-destructive">
+                            {typeError}
                           </p>
                         ) : null}
                       </div>
+                      <div className="grid gap-5 @[32rem]:grid-cols-[minmax(0,1fr)_14rem]">
+                        {salesPoints.length > 0 && salesPoints.length <= 4 ? (
+                          <div className="grid content-start gap-2">
+                            <GroupLabel id={`${id}-pos`}>Punto de venta</GroupLabel>
+                            <div tabIndex={-1} aria-invalid={posError ? true : undefined}>
+                              <ChoiceChips<string>
+                                labelledBy={`${id}-pos`}
+                                value={pointOfSale === null ? null : String(pointOfSale)}
+                                onChange={(v) => {
+                                  setPointOfSale(Number(v))
+                                  posting.clearFieldError('pointOfSale')
+                                }}
+                                options={salesPoints.map((p) => ({
+                                  value: String(p.number),
+                                  label: `${String(p.number).padStart(4, '0')} · ${p.label}`,
+                                }))}
+                              />
+                            </div>
+                            {posError ? (
+                              <p role="alert" className="text-xs text-destructive">
+                                {posError}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <Field
+                            id={`${id}-pos`}
+                            label="Punto de venta"
+                            required
+                            error={posError}
+                            hint={
+                              salesPoints.length === 0
+                                ? 'Cargá tus puntos de venta en Ajustes para elegir uno.'
+                                : undefined
+                            }
+                          >
+                            <Select
+                              value={pointOfSale === null ? '' : String(pointOfSale)}
+                              onValueChange={(v) => {
+                                setPointOfSale(Number(v))
+                                posting.clearFieldError('pointOfSale')
+                              }}
+                            >
+                              <SelectTrigger
+                                id={`${id}-pos`}
+                                className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                                aria-invalid={posError ? true : undefined}
+                              >
+                                <SelectValue placeholder="Elegí" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {salesPoints.map((p) => (
+                                  <SelectItem
+                                    key={p.number}
+                                    value={String(p.number)}
+                                    className="min-h-11 md:min-h-8"
+                                  >
+                                    {String(p.number).padStart(4, '0')} · {p.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                        )}
+                        <Field
+                          id={`${id}-number`}
+                          label="Número"
+                          required
+                          error={errorOf('number')}
+                          hint="Podés pegarlo entero: 0003-00000088."
+                        >
+                          <Input
+                            id={`${id}-number`}
+                            value={number}
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={13}
+                            placeholder="00000088"
+                            className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                            aria-invalid={errorOf('number') ? true : undefined}
+                            aria-describedby={describedBy(`${id}-number`, {
+                              hint: true,
+                              error: errorOf('number'),
+                            })}
+                            onPaste={onNumberPaste}
+                            onChange={(e) => {
+                              setNumber(e.target.value.replace(/\D/g, '').slice(0, 8))
+                              posting.clearFieldError('number')
+                            }}
+                          />
+                        </Field>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="grid gap-5 @[32rem]:grid-cols-2">
+                    <DateField
+                      label="Fecha"
+                      required
+                      value={issueDate}
+                      onValueChange={(nextDate) => {
+                        setIssueDate(nextDate)
+                        clearError('issueDate')
+                      }}
+                      min={arcaMode ? dateWindow.min : minDate}
+                      max={today}
+                      today={today}
+                      hint={arcaMode ? arcaDateHint(dateWindow) : undefined}
+                      error={errorOf('issueDate')}
+                    />
+                    {isCredit ? null : (
+                      <DateField
+                        label={arcaMode && concepto !== 1 ? 'Vence el pago' : 'Vence'}
+                        optional={!(arcaMode && concepto !== 1)}
+                        required={arcaMode && concepto !== 1}
+                        value={dueDate}
+                        onValueChange={(nextDate) => {
+                          setDueDate(nextDate)
+                          clearError('dueDate')
+                        }}
+                        min={issueDate ?? undefined}
+                        shortcuts={false}
+                        hint={
+                          dueDate === null && engineDue
+                            ? `Si lo dejás vacío: ${formatIsoDay(engineDue)} (plazo del cliente).`
+                            : undefined
+                        }
+                        error={errorOf('dueDate')}
+                      />
+                    )}
+                  </div>
+
+                  {arcaMode ? (
+                    <ArcaConceptoField
+                      value={concepto}
+                      onChange={chooseConcepto}
+                      serviceFrom={serviceFrom}
+                      serviceTo={serviceTo}
+                      onServiceFrom={(v) => {
+                        setServiceFrom(v)
+                        clearError('arca.serviceFrom')
+                      }}
+                      onServiceTo={(v) => {
+                        setServiceTo(v)
+                        clearError('arca.serviceTo')
+                      }}
+                      today={today}
+                      fromError={errorOf('arca.serviceFrom')}
+                      toError={errorOf('arca.serviceTo')}
+                    >
+                      {isCredit ? (
+                        <DateField
+                          label="Vence el pago"
+                          required
+                          value={notePaymentDue}
+                          onValueChange={(v) => {
+                            setNotePaymentDue(v)
+                            clearError('dueDate')
+                          }}
+                          min={issueDate ?? undefined}
+                          today={today}
+                          shortcuts={false}
+                          error={errorOf('dueDate')}
+                        />
+                      ) : null}
+                    </ArcaConceptoField>
+                  ) : null}
+
+                  {arcaMode ? (
+                    <ArcaDetailField
+                      value={detail}
+                      onChange={(v) => {
+                        setDetail(v)
+                        clearError('arca.detail')
+                      }}
+                      error={errorOf('arca.detail')}
+                    />
+                  ) : null}
+
+                  <div className="grid gap-2">
+                    <GroupLabel id={`${id}-channel`}>¿Por dónde se vendió?</GroupLabel>
+                    <ChoiceChips<Channel>
+                      labelledBy={`${id}-channel`}
+                      value={channel}
+                      onChange={(v) => setChannel(v)}
+                      options={CHANNELS.map((c) => ({ value: c, label: CHANNEL_LABELS[c] ?? c }))}
+                    />
+                    {errorOf('channel') ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        {errorOf('channel')}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </StepCard>
+
+              {/* ④ ¿Cuánto? */}
+              <StepCard
+                open
+                n={4}
+                state={stepState(3)}
+                title="¿Cuánto?"
+                summary={
+                  mode === 'total'
+                    ? `El total de la ${isNote ? 'nota' : 'factura'}, con el IVA adentro. Si tiene más de una alícuota, o algo no gravado o exento, cargala por alícuota.`
+                    : 'Cada alícuota por separado, y lo que no lleva IVA.'
+                }
+                action={
+                  // Corto a propósito: comparte renglón con el título y en el celular no entra más.
+                  <button
+                    type="button"
+                    className={`${TEXT_LINK} -my-2.5 whitespace-nowrap text-xs`}
+                    onClick={() => setMode(mode === 'total' ? 'detail' : 'total')}
+                  >
+                    {mode === 'total' ? 'Por alícuota' : 'Solo el total'}
+                  </button>
+                }
+              >
+                {mode === 'total' ? (
+                  <div className="grid gap-4">
+                    <MoneyField
+                      label="Total (con IVA)"
+                      required
+                      className={BIG_MONEY_FIELD}
+                      value={total}
+                      onValueChange={(cents) => {
+                        setTotal(cents)
+                        clearError('aliquots')
+                      }}
+                      error={amountsError}
+                      hint={
+                        aliquots[0] && total !== null && rate !== 0
+                          ? `Neto ${formatCents(aliquots[0].netCents)} · IVA ${vatRateLabel(rate)} ${formatCents(total - (aliquots[0].netCents ?? 0))}`
+                          : undefined
+                      }
+                    />
+                    <div className="grid gap-2">
+                      <GroupLabel id={`${id}-rate`}>¿Con qué IVA?</GroupLabel>
+                      <ChoiceChips<string>
+                        labelledBy={`${id}-rate`}
+                        value={rateChip}
+                        onChange={(v) => {
+                          if (v === 'otra') {
+                            setOtherRate(true)
+                            return
+                          }
+                          setOtherRate(false)
+                          setRate(Number(v) as VatRateBp)
+                        }}
+                        options={[
+                          ...quickRates.map((r) => ({ value: String(r), label: vatRateLabel(r) })),
+                          { value: 'otra', label: 'Otra' },
+                        ]}
+                      />
+                      {rateChip === 'otra' ? (
+                        <Select
+                          value={String(rate)}
+                          onValueChange={(v) => setRate(Number(v) as VatRateBp)}
+                        >
+                          <SelectTrigger
+                            aria-label="Alícuota de IVA"
+                            className="w-full data-[size=default]:h-11 sm:w-48 md:data-[size=default]:h-10"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {RATES.map((r) => (
+                              <SelectItem key={r} value={String(r)} className="min-h-11 md:min-h-8">
+                                {vatRateLabel(r)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {rows.map((row, index) => {
+                      const vat =
+                        row.net !== null && row.rate !== 0 ? vatFromNet(row.net, row.rate) : 0
+                      return (
+                        <div
+                          key={row.key}
+                          className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto] sm:items-start"
+                        >
+                          <Select
+                            value={String(row.rate)}
+                            onValueChange={(v) =>
+                              setRows((prev) =>
+                                prev.map((r) =>
+                                  r.key === row.key ? { ...r, rate: Number(v) as VatRateBp } : r,
+                                ),
+                              )
+                            }
+                          >
+                            <SelectTrigger
+                              className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                              aria-label={`Alícuota de la fila ${index + 1}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {RATES.map((r) => (
+                                <SelectItem
+                                  key={r}
+                                  value={String(r)}
+                                  className="min-h-11 md:min-h-8"
+                                >
+                                  {vatRateLabel(r)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="grid gap-1">
+                            <MoneyInput
+                              value={row.net}
+                              onValueChange={(cents) => {
+                                setRows((prev) =>
+                                  prev.map((r) => (r.key === row.key ? { ...r, net: cents } : r)),
+                                )
+                                clearError('aliquots')
+                              }}
+                              align="end"
+                              aria-label={`Neto gravado de la fila ${index + 1}`}
+                              placeholder="Neto"
+                            />
+                            {row.net !== null && row.rate !== 0 ? (
+                              <p className="text-right text-xs text-muted-foreground">
+                                IVA {vatRateLabel(row.rate)}: {formatCents(vat)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 justify-self-end text-muted-foreground md:size-9"
+                            aria-label={`Quitar la fila ${index + 1}`}
+                            disabled={rows.length === 1}
+                            onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      )
+                    })}
+                    {rows.length < 6 ? (
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-11 justify-self-end text-muted-foreground md:size-9"
-                        aria-label={`Quitar la fila ${index + 1}`}
-                        disabled={rows.length === 1}
-                        onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+                        variant="outline"
+                        size="sm"
+                        className="h-11 w-fit gap-1.5 md:h-8"
+                        onClick={() => {
+                          const used = new Set(rows.map((r) => r.rate))
+                          const free = RATES.find((r) => !used.has(r)) ?? 2100
+                          const key = nextKey.current
+                          nextKey.current += 1
+                          setRows((prev) => [...prev, { key, rate: free, net: null }])
+                        }}
                       >
-                        <X className="size-4" />
+                        <Plus className="size-4" aria-hidden />
+                        Otra alícuota
                       </Button>
+                    ) : null}
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <MoneyField
+                        label="No gravado"
+                        optional
+                        value={nonTaxed}
+                        onValueChange={setNonTaxed}
+                        error={errorOf('nonTaxedCents')}
+                      />
+                      <MoneyField
+                        label="Exento"
+                        optional
+                        value={exempt}
+                        onValueChange={setExempt}
+                        error={errorOf('exemptCents')}
+                      />
                     </div>
-                  )
-                })}
-                {rows.length < 6 ? (
+                    {amountsError ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        {amountsError}
+                      </p>
+                    ) : null}
+                    <div className="flex items-baseline justify-between gap-3 border-t border-border/60 pt-4">
+                      <span className="text-sm text-muted-foreground">Total del comprobante</span>
+                      <span className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
+                        {formatCents(computedTotal)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </StepCard>
+
+              {/* ⑤ ¿Ya te la pagaron? */}
+              {isCredit ? null : (
+                <StepCard
+                  open
+                  n={5}
+                  state={paidState}
+                  title={<span id={`${id}-collect`}>¿Ya te la pagaron?</span>}
+                  summary="Si todavía no, queda como plata por cobrar hasta que te paguen."
+                >
+                  <div
+                    role="radiogroup"
+                    aria-labelledby={`${id}-collect`}
+                    className="grid gap-2 @[40rem]:grid-cols-2"
+                  >
+                    <ChoiceCard
+                      name={`${id}-collect-choice`}
+                      value="no"
+                      checked={!collectNow}
+                      onChange={() => setCollectNow(false)}
+                      title="Todavía no"
+                      consequence={
+                        dueShown
+                          ? `Queda como plata por cobrar; vence el ${formatDayMonth(dueShown)}.`
+                          : 'Queda como plata por cobrar.'
+                      }
+                    />
+                    <ChoiceCard
+                      name={`${id}-collect-choice`}
+                      value="si"
+                      checked={collectNow}
+                      onChange={() => setCollectNow(true)}
+                      title="Sí, ya me pagó"
+                      consequence="Se guarda junto con el cobro y queda saldada."
+                    />
+                  </div>
+                  {collectNow ? (
+                    <div className="mt-4 grid gap-5">
+                      <div className="grid gap-2">
+                        <GroupLabel id={`${id}-ctreasury`}>¿A dónde entró?</GroupLabel>
+                        <TreasuryPicker
+                          id={`${id}-ctreasury-pick`}
+                          value={collectTreasury}
+                          onValueChange={(nextTreasury) => setCollectTreasury(nextTreasury)}
+                          treasuries={treasuries}
+                          excludeCards
+                          invalid={Boolean(errorOf('collectNow.treasuryAccountId'))}
+                          aria-labelledby={`${id}-ctreasury`}
+                        />
+                        {errorOf('collectNow.treasuryAccountId') ? (
+                          <p role="alert" className="text-xs text-destructive">
+                            {errorOf('collectNow.treasuryAccountId')}
+                          </p>
+                        ) : null}
+                      </div>
+                      <MoneyField
+                        label="¿Cuánto?"
+                        optional
+                        fieldClassName="sm:max-w-xs"
+                        value={collectAmount}
+                        onValueChange={setCollectAmount}
+                        hint={
+                          collectAmount === null && computedTotal > 0
+                            ? `Vacío: el total (${formatCents(computedTotal)}).`
+                            : undefined
+                        }
+                        error={errorOf('collectNow.amountCents')}
+                      />
+                    </div>
+                  ) : null}
+                </StepCard>
+              )}
+
+              {showNote ? (
+                <div className="card-hairline rounded-2xl border bg-card p-4 shadow-xs sm:p-5">
+                  <Field id={`${id}-notes`} label="Nota" optional error={errorOf('notes')}>
+                    <Textarea
+                      id={`${id}-notes`}
+                      value={notes}
+                      rows={2}
+                      maxLength={1000}
+                      placeholder="Por ejemplo: evento de fin de año de Empresa X."
+                      className="text-base md:text-sm"
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <div>
+                  <button type="button" className={ADD_LINK} onClick={() => setNoteOpen(true)}>
+                    <Plus className="size-3.5" aria-hidden />
+                    Agregar una nota
+                  </button>
+                </div>
+              )}
+
+              {arcaMode && lock ? (
+                <ArcaLockNotice
+                  slug={tenantSlug}
+                  base={base}
+                  lock={lock}
+                  verifying={verifying}
+                  onVerify={verifyLocked}
+                  onPost={() => setPostingOpen(true)}
+                />
+              ) : (
+                <>
+                  {arcaMode ? (
+                    arcaBanner ? (
+                      arcaBanner.tone === 'error' &&
+                      arcaBanner.state.code !== 'invalid' &&
+                      arcaBanner.state.detail?.key !== 'offline' ? (
+                        <ArcaProblem slug={tenantSlug} state={arcaBanner.state} />
+                      ) : (
+                        <FormBanner
+                          banner={{
+                            tone: arcaBanner.tone,
+                            message: arcaBanner.state.message,
+                            action:
+                              arcaBanner.state.detail?.key === 'offline'
+                                ? { label: ACC_UNREACHABLE.retryLabel, run: emission.retry }
+                                : undefined,
+                          }}
+                        />
+                      )
+                    ) : null
+                  ) : (
+                    <FormBanner banner={posting.banner} />
+                  )}
+                  {/* Un solo botón: se vuelve con «‹ Facturas», arriba. */}
+                  <div className="flex pt-1 sm:justify-end">
+                    {arcaMode ? (
+                      <Button
+                        type="submit"
+                        className="h-12 w-full text-base font-semibold sm:w-auto sm:min-w-[260px]"
+                        disabled={emission.pending || preparingFinal}
+                      >
+                        {arcaSubmitLabel}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="submit"
+                        className="h-12 w-full text-base font-semibold sm:w-auto sm:min-w-[260px]"
+                        disabled={posting.pending}
+                      >
+                        {submitLabel}
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Sin lugar para el papel al costado (celular, tablet): el total siempre a la
+                  vista y la factura a un toque. Va pegada abajo DENTRO de la página. */}
+              <div className="sticky bottom-0 z-30 -mx-4 -mb-4 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md sm:-mx-6 sm:-mb-8 sm:px-6 lg:hidden">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Total
+                    </p>
+                    <p className="mt-0.5 font-serif text-2xl font-semibold leading-none tracking-tight whitespace-nowrap tabular-nums">
+                      {computedTotal > 0 ? (
+                        formatCents(computedTotal)
+                      ) : (
+                        <span className="text-muted-foreground">
+                          <span aria-hidden>—</span>
+                          <span className="sr-only">Todavía sin importe</span>
+                        </span>
+                      )}
+                    </p>
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="h-11 w-fit gap-1.5 md:h-8"
-                    onClick={() => {
-                      const used = new Set(rows.map((r) => r.rate))
-                      const free = RATES.find((r) => !used.has(r)) ?? 2100
-                      const key = nextKey.current
-                      nextKey.current += 1
-                      setRows((prev) => [...prev, { key, rate: free, net: null }])
-                    }}
+                    className="h-11 shrink-0 gap-2 rounded-full px-4"
+                    onClick={() => setPaperOpen(true)}
                   >
-                    <Plus className="size-4" aria-hidden />
-                    Otra alícuota
+                    <FileText className="size-4" aria-hidden />
+                    Ver la factura
                   </Button>
-                ) : null}
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <MoneyField
-                    label="No gravado"
-                    optional
-                    value={nonTaxed}
-                    onValueChange={setNonTaxed}
-                    error={errorOf('nonTaxedCents')}
-                  />
-                  <MoneyField
-                    label="Exento"
-                    optional
-                    value={exempt}
-                    onValueChange={setExempt}
-                    error={errorOf('exemptCents')}
-                  />
                 </div>
-                {amountsError ? (
-                  <p role="alert" className="text-xs text-destructive">
-                    {amountsError}
-                  </p>
-                ) : null}
-              </div>
-            )}
-
-            <div className="flex items-baseline justify-between gap-3 border-t border-border/60 pt-4">
-              <span className="text-sm text-muted-foreground">Total del comprobante</span>
-              <span className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
-                {formatCents(computedTotal)}
-              </span>
-            </div>
-          </div>
-
-          {isCredit ? null : (
-            <div className="card-hairline grid gap-5 rounded-xl border bg-card p-6">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id={`${id}-collect`}
-                  checked={collectNow}
-                  onCheckedChange={(value) => setCollectNow(value === true)}
-                  className="mt-0.5"
-                />
-                <div className="grid gap-1">
-                  <Label htmlFor={`${id}-collect`}>Ya la cobraste</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Se guarda junto con el cobro y queda saldada.
-                  </p>
-                </div>
-              </div>
-              {collectNow ? (
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field
-                    id={`${id}-ctreasury`}
-                    label="Entró a"
-                    required
-                    error={errorOf('collectNow.treasuryAccountId')}
-                  >
-                    <TreasurySelect
-                      id={`${id}-ctreasury`}
-                      value={collectTreasury}
-                      onValueChange={(nextTreasury) => setCollectTreasury(nextTreasury)}
-                      treasuries={treasuries}
-                      excludeCards
-                      invalid={Boolean(errorOf('collectNow.treasuryAccountId'))}
-                    />
-                  </Field>
-                  <MoneyField
-                    label="¿Cuánto?"
-                    optional
-                    value={collectAmount}
-                    onValueChange={setCollectAmount}
-                    hint={
-                      collectAmount === null && computedTotal > 0
-                        ? `Vacío: el total (${formatCents(computedTotal)}).`
-                        : undefined
-                    }
-                    error={errorOf('collectNow.amountCents')}
-                  />
-                </div>
-              ) : null}
-            </div>
-          )}
-
-          <div className="card-hairline rounded-xl border bg-card p-6">
-            <Field id={`${id}-notes`} label="Nota" optional error={errorOf('notes')}>
-              <Textarea
-                id={`${id}-notes`}
-                value={notes}
-                rows={2}
-                maxLength={1000}
-                placeholder="Por ejemplo: evento de fin de año de Empresa X."
-                className="text-base md:text-sm"
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          {arcaMode && lock ? (
-            <ArcaLockNotice
-              slug={tenantSlug}
-              base={base}
-              lock={lock}
-              verifying={verifying}
-              onVerify={verifyLocked}
-              onPost={() => setPostingOpen(true)}
-            />
-          ) : (
-            <>
-              {arcaMode ? (
-                arcaBanner ? (
-                  arcaBanner.tone === 'error' &&
-                  arcaBanner.state.code !== 'invalid' &&
-                  arcaBanner.state.detail?.key !== 'offline' ? (
-                    <ArcaProblem slug={tenantSlug} state={arcaBanner.state} />
-                  ) : (
-                    <FormBanner
-                      banner={{
-                        tone: arcaBanner.tone,
-                        message: arcaBanner.state.message,
-                        action:
-                          arcaBanner.state.detail?.key === 'offline'
-                            ? { label: ACC_UNREACHABLE.retryLabel, run: emission.retry }
-                            : undefined,
-                      }}
-                    />
-                  )
-                ) : null
-              ) : (
-                <FormBanner banner={posting.banner} />
-              )}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button asChild variant="outline" className="h-11 md:h-9">
-                  <Link href={`${base}/ventas?tab=facturas`}>Cancelar</Link>
-                </Button>
-                {arcaMode ? (
-                  <Button
-                    type="submit"
-                    className="h-11 min-w-[200px] md:h-9"
-                    disabled={emission.pending || preparingFinal}
-                  >
-                    {arcaSubmitLabel}
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    className="h-11 min-w-[200px] md:h-9"
-                    disabled={posting.pending}
-                  >
-                    {submitLabel}
-                  </Button>
-                )}
               </div>
             </>
-          )}
+          ) : null}
         </div>
 
-        <aside className="lg:sticky lg:top-20">
-          <EntryPreview entries={shown} />
+        <aside className="hidden space-y-4 lg:sticky lg:top-20 lg:block">
+          {paper}
+          <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
         </aside>
       </form>
+
+      <Sheet open={paperOpen} onOpenChange={setPaperOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[90dvh] gap-0 overflow-y-auto px-4 pt-10 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] outline-none"
+          // El foco va a la hoja (no a la X): es para leer.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus()
+          }}
+        >
+          <SheetGrabber />
+          <SheetHeader className="sr-only">
+            <SheetTitle>Así va quedando la {noun}</SheetTitle>
+            <SheetDescription>
+              Lo que cargaste hasta ahora. Se guarda con el botón del final.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mx-auto w-full max-w-sm space-y-4">
+            {paper}
+            <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+            <p className="text-center text-xs text-muted-foreground">
+              Esto todavía no está guardado: se guarda con el botón del final.
+            </p>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <WarningsDialog
         warnings={arcaMode ? emission.warnings : posting.warnings}

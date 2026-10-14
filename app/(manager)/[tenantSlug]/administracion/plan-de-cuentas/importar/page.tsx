@@ -1,9 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { AdmHeader, AdmPage, PanelError } from '@/components/administracion/kit'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
@@ -16,8 +13,6 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { RetryButton } from '../../_resumen/retry-button'
-import { Callout } from '../../ajustes/_components/form-bits'
 import { ImportForm } from './_components/import-form'
 
 export const metadata = { title: 'Importar plan de cuentas · Administración' }
@@ -56,45 +51,31 @@ export default async function ImportarPlanPage({
     throw error
   }
 
-  const back = (
-    <Link
-      href={`${base}/plan-de-cuentas`}
-      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-3" />
-      Volver al plan de cuentas
-    </Link>
-  )
   const header = (
-    <PageHeader
-      eyebrow="Administración"
-      title={
-        <>
-          Importar plan de cuentas <ReadOnlyBadge />
-        </>
-      }
+    <AdmHeader
+      back={{ href: `${base}/plan-de-cuentas?tab=plan`, label: 'Plan de cuentas' }}
+      title="Importar plan de cuentas"
+      badge={<ReadOnlyBadge className="ml-0" />}
       description="Pegá el plan que te pasó la contadora o el de tu sistema anterior. Antes de importar ves qué cuentas se crean y cuáles cambian. Nunca se borra nada."
     />
   )
 
   if (!access.accounting.write) {
     return (
-      <PageShell>
-        {back}
+      <AdmPage width="comfortable">
         {header}
         <ReadOnlyNotice
           description="Acá se importa un plan de cuentas. Con Contabilidad lo ves y lo exportás desde Plan de cuentas."
           href={`${base}/plan-de-cuentas`}
           linkLabel="Ir al plan de cuentas"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
   if (!access.accounting.admin) {
     return (
-      <PageShell>
-        {back}
+      <AdmPage width="comfortable">
         {header}
         <ReadOnlyNotice
           title="Esto lo hace quien administra los accesos"
@@ -102,15 +83,14 @@ export default async function ImportarPlanPage({
           href={`${base}/plan-de-cuentas`}
           linkLabel="Ir al plan de cuentas"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
   const plan = await settleQuery(listAccounts(access.tenant.id, { includeInactive: true }))
 
   return (
-    <PageShell>
-      {back}
+    <AdmPage width="comfortable">
       {header}
       {plan.ok ? (
         <ImportForm
@@ -118,14 +98,8 @@ export default async function ImportarPlanPage({
           plan={plan.data.map((a) => ({ code: a.code, name: a.name }))}
         />
       ) : (
-        <Callout
-          tone="error"
-          title="No pudimos cargar el plan de cuentas."
-          action={<RetryButton />}
-        >
-          {plan.message}
-        </Callout>
+        <PanelError title="No pudimos cargar el plan de cuentas" message={plan.message} />
       )}
-    </PageShell>
+    </AdmPage>
   )
 }

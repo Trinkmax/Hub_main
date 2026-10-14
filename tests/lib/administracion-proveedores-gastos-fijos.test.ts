@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  joinNameSources,
   nameKey,
   parseNameList,
   suggestAccount,
+  TYPICAL_RECURRING,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/bulk'
 import {
   duesUntil,
@@ -61,6 +63,39 @@ describe('cargar una lista: parseNameList', () => {
 
   it('nameKey compara sin tildes, mayúsculas ni espacios de más', () => {
     expect(nameKey('  Inversión   utensillos ')).toBe(nameKey('inversion utensillos'))
+  })
+
+  it('pegado de una planilla con varias columnas: el nombre es la primera', () => {
+    // Concepto, monto y vencimiento separados por tabulaciones, como sale de copiar celdas.
+    const parsed = parseNameList(
+      'Alarma\t45.000\t10/11/2026\nSeguro Integral de Comercio\t$ 120.000\n\tSueldos personal\t1.240.000\n- Gimnasio\t\n\t\t',
+    )
+    expect(parsed.names).toEqual([
+      'Alarma',
+      'Seguro Integral de Comercio',
+      'Sueldos personal',
+      'Gimnasio',
+    ])
+    expect(parsed.invalid).toEqual([])
+    // Sin tabulaciones el renglón entero sigue siendo el nombre, como siempre.
+    expect(parseNameList('Seguro 2026 Mayo').names).toEqual(['Seguro 2026 Mayo'])
+  })
+
+  it('lo tildado y lo pegado se cargan juntos, sin repetir', () => {
+    const text = joinNameSources(['Alquiler', 'Luz'], 'luz\nInternet\tde fibra\n')
+    const parsed = parseNameList(text, { existing: ['ALQUILER'] })
+    expect(parsed.names).toEqual(['Luz', 'Internet'])
+    expect(parsed.repeated).toEqual(['luz'])
+    expect(parsed.existing).toEqual(['Alquiler'])
+    expect(joinNameSources([], '   ')).toBe('')
+    expect(joinNameSources(['Gas'], '')).toBe('Gas')
+  })
+
+  it('lo típico de un bar: nombres válidos, sin repetir', () => {
+    const parsed = parseNameList(TYPICAL_RECURRING.join('\n'), { maxLength: 80 })
+    expect(parsed.names).toEqual([...TYPICAL_RECURRING])
+    expect(parsed.repeated).toEqual([])
+    expect(parsed.invalid).toEqual([])
   })
 })
 

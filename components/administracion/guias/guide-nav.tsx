@@ -45,11 +45,17 @@ function prefersReducedMotion(): boolean {
 export function GuideNavProvider({
   items,
   initialOpen,
+  hashOpensAlone = false,
   children,
 }: {
   items: readonly GuideNavItem[]
   /** Los pasos abiertos al entrar (el «Te toca»). */
   initialOpen: readonly string[]
+  /**
+   * Al entrar con un `#` en la URL, se abre SOLO ese (y no además los de `initialOpen`): quien
+   * llega desde un link pidió una cosa, y con otra abierta arriba caía en la cola de esa otra.
+   */
+  hashOpensAlone?: boolean
   children: ReactNode
 }) {
   const [open, setOpenIds] = useState<ReadonlySet<string>>(() => new Set(initialOpen))
@@ -102,15 +108,17 @@ export function GuideNavProvider({
   )
 
   useEffect(() => {
-    const openFromHash = (scroll: boolean) => {
+    const openFromHash = (entering: boolean) => {
       const id = byAnchor.get(window.location.hash.replace(/^#/, ''))
       if (!id) return
-      setOpen(id, true)
-      if (scroll) {
+      if (entering && hashOpensAlone) setOpenIds(new Set([id]))
+      else setOpen(id, true)
+      if (entering) {
         const anchor = byId.get(id)
-        requestAnimationFrame(() =>
-          document.getElementById(anchor ?? '')?.scrollIntoView({ block: 'start' }),
-        )
+        const jump = () => document.getElementById(anchor ?? '')?.scrollIntoView({ block: 'start' })
+        // Si además se cerró otro, la altura cambia recién en el cuadro siguiente: se espera
+        // uno más para saltar con la página ya acomodada.
+        requestAnimationFrame(() => (hashOpensAlone ? requestAnimationFrame(jump) : jump()))
       }
     }
     // Al entrar con `#paso-6`: el navegador ya saltó, pero el paso estaba cerrado.
@@ -118,7 +126,7 @@ export function GuideNavProvider({
     const onHash = () => openFromHash(false)
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [byAnchor, byId, setOpen])
+  }, [byAnchor, byId, setOpen, hashOpensAlone])
 
   const value = useMemo<GuideNavValue>(
     () => ({

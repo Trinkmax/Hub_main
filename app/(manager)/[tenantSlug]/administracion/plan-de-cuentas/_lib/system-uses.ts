@@ -96,7 +96,7 @@ export const SYSTEM_USES: Readonly<Record<SystemAccountKey, SystemUse>> = {
   },
   receivable_wallets: {
     label: 'Mercado Pago a acreditar',
-    use: 'Lo vendido con QR o transferencia hasta que lo registrás como acreditado («Ajustar saldo» de la billetera).',
+    use: 'Lo vendido con QR o transferencia hasta que registrás que entró («Contar la caja» de la billetera).',
     group: 'ventas',
   },
   receivable_platforms: {
@@ -374,12 +374,12 @@ export const SYSTEM_USES: Readonly<Record<SystemAccountKey, SystemUse>> = {
   // ─── Cajas, bancos y diferencias ──────────────────────────────────────────
   cash_over: {
     label: 'Sobrantes de caja',
-    use: 'Cuando al contar la caja hay más de lo que dice el sistema («Ajustar saldo»).',
+    use: 'Cuando al contar la caja hay más de lo que dice el sistema («Contar la caja»).',
     group: 'cajas',
   },
   cash_short: {
     label: 'Faltantes de caja',
-    use: 'Cuando al contar la caja hay menos de lo que dice el sistema («Ajustar saldo»).',
+    use: 'Cuando al contar la caja hay menos de lo que dice el sistema («Contar la caja»).',
     group: 'cajas',
   },
   reconciliation_differences: {

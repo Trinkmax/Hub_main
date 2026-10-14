@@ -8,24 +8,37 @@ import { cn } from '@/lib/utils'
  * El plegable «¿Cómo lo bajo?» de las mini guías (diseño §5.1.4): un `<details>` con el estilo de
  * las tarjetas del panel (`components/ui` no tiene `Collapsible`). Se abre con el teclado (Enter
  * o espacio sobre el título) y el lector de pantalla anuncia si está abierto o cerrado.
+ *
+ * El grupo lleva nombre (`group/howto`): un `group` a secas hacía que la flecha girara también
+ * cuando el que estaba abierto era OTRO plegable de afuera o de adentro (se veía abierta estando
+ * cerrado).
+ *
+ * Con `bare` no hay plegable: dibuja el contenido tal cual.
  */
 export function HowToShell({
   title = '¿Cómo lo bajo?',
   subtitle,
   defaultOpen = false,
+  bare = false,
   className,
   children,
 }: {
   title?: string
   subtitle: string
   defaultOpen?: boolean
+  /**
+   * Solo el contenido, sin el plegable ni su tarjeta: para cuando el «cómo» YA es un paso de la
+   * pantalla (el paso 1 de cada subida en Importar) y no una ayuda al costado.
+   */
+  bare?: boolean
   className?: string
   children: ReactNode
 }) {
+  if (bare) return <div className={cn('space-y-4 text-sm', className)}>{children}</div>
   return (
     <details
       open={defaultOpen}
-      className={cn('card-hairline group rounded-xl border bg-card', className)}
+      className={cn('card-hairline group/howto rounded-xl border bg-card', className)}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-xl px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary">
@@ -36,7 +49,7 @@ export function HowToShell({
           <span className="block text-xs text-muted-foreground text-pretty">{subtitle}</span>
         </span>
         <ChevronDown
-          className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+          className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open/howto:rotate-180 motion-reduce:transition-none"
           aria-hidden
         />
       </summary>

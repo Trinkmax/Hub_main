@@ -164,6 +164,38 @@ describe('hojas de acción rápida en la URL', () => {
     expect(clearActionHref('/hub/administracion', '?accion=gasto')).toBe('/hub/administracion')
   })
 
+  it('«Nuevo gasto» se abre con un gasto fijo ya elegido (`gasto-fijo`)', () => {
+    // Lo arma la pantalla de Gastos fijos: conserva el mes que se está mirando.
+    const href = actionHref('/hub/administracion/gastos-fijos', '?mes=2026-10', 'gasto', {
+      'gasto-fijo': UUID,
+    })
+    expect(href).toBe(
+      `/hub/administracion/gastos-fijos?mes=2026-10&accion=gasto&gasto-fijo=${UUID}`,
+    )
+    expect(readAction(new URLSearchParams(href.split('?')[1]))).toEqual({
+      action: 'gasto',
+      params: { 'gasto-fijo': UUID },
+    })
+    // Como los demás ids: lo que no es un UUID se descarta y la hoja abre vacía.
+    expect(readAction(new URLSearchParams('accion=gasto&gasto-fijo=alquiler'))).toEqual({
+      action: 'gasto',
+      params: {},
+    })
+    // Al cerrar se va con la acción, y pasar a otra hoja no lo arrastra.
+    expect(clearActionHref('/hub/administracion/gastos-fijos', href.split('?')[1] ?? '')).toBe(
+      '/hub/administracion/gastos-fijos?mes=2026-10',
+    )
+    expect(actionHref('/hub/administracion/gastos-fijos', href.split('?')[1] ?? '', 'pagar')).toBe(
+      '/hub/administracion/gastos-fijos?mes=2026-10&accion=pagar',
+    )
+  })
+
+  it('los links que ya existían no cambian: `gasto-fijo` va al final', () => {
+    expect(
+      actionHref('/hub/administracion', '', 'gasto', { 'gasto-fijo': UUID, proveedor: UUID }),
+    ).toBe(`/hub/administracion?accion=gasto&proveedor=${UUID}&gasto-fijo=${UUID}`)
+  })
+
   it('⌘K: adentro de Administración, sobre la pantalla; afuera, sobre el Resumen', () => {
     expect(actionHrefFrom('hub', '/hub/administracion/cajas', '?tab=flujo', 'mover')).toBe(
       '/hub/administracion/cajas?tab=flujo&accion=mover',

@@ -1,7 +1,11 @@
 import { Skeleton } from '@/components/ui/skeleton'
-import { ListSkeleton } from '@/components/ui/skeleton-list'
+import { HeroSkeleton, LibretaSkeleton } from './_components/suppliers-tab'
 
-/** Compras mientras carga: encabezado, pestañas, números, filtros y la lista. */
+/**
+ * Compras y pagos mientras carga, con la forma real de la portada: el
+ * encabezado, las tres vistas, el número «Le debés a proveedores» al lado de la
+ * puerta de carga y la hoja de la libreta con su margen.
+ */
 export default function ComprasLoading() {
   return (
     <div
@@ -9,33 +13,25 @@ export default function ComprasLoading() {
       aria-busy="true"
     >
       <span className="sr-only">Cargando Compras y pagos…</span>
-      <div className="flex items-end justify-between gap-3">
-        <div className="space-y-2">
-          <Skeleton className="h-3 w-28" />
-          <Skeleton className="h-8 w-72 max-w-full" />
-          <Skeleton className="h-4 w-80 max-w-full" />
-        </div>
-        <div className="hidden gap-2 lg:flex">
-          <Skeleton className="h-9 w-32" />
-          <Skeleton className="h-9 w-24" />
-          <Skeleton className="h-9 w-32" />
-        </div>
+      <div className="space-y-2">
+        <Skeleton className="h-9 w-64 max-w-full" />
+        <Skeleton className="h-4 w-96 max-w-full" />
       </div>
-      <div className="flex gap-4 border-b border-border/60 pb-3">
-        {['a', 'b', 'c'].map((k) => (
-          <Skeleton key={k} className="h-5 w-24" />
+      <div className="flex gap-1.5">
+        {['w-28', 'w-32', 'w-20'].map((w) => (
+          <Skeleton key={w} className={`h-11 rounded-full md:h-9 ${w}`} />
         ))}
       </div>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {['a', 'b', 'c', 'd'].map((k) => (
-          <Skeleton key={k} className="h-28 rounded-xl" />
-        ))}
-      </section>
-      <div className="space-y-3">
-        <Skeleton className="h-10 w-full max-w-xl rounded-full" />
-        <Skeleton className="h-12 w-full rounded-xl" />
+      <div className="grid gap-5 lg:grid-cols-12 lg:items-start">
+        <HeroSkeleton className="lg:col-span-7" />
+        <div className="card-hairline space-y-3 rounded-2xl border bg-card p-4 shadow-xs sm:p-5 lg:col-span-5">
+          <Skeleton className="h-6 w-48" />
+          {['a', 'b', 'c'].map((k) => (
+            <Skeleton key={k} className="h-14 w-full rounded-xl sm:h-[4.25rem]" />
+          ))}
+        </div>
       </div>
-      <ListSkeleton rows={6} />
+      <LibretaSkeleton />
     </div>
   )
 }

@@ -57,7 +57,7 @@ export const IMPORT_SOURCE_COPY: Readonly<Record<UiImportSource, ImportSourceCop
     description:
       'Bajás de ARCA (la ex AFIP) el archivo de «Mis Comprobantes › Recibidos» y lo soltás acá: armamos las compras y te avisamos qué proveedores son nuevos.',
     segment: 'arca',
-    cta: 'Importar de ARCA',
+    cta: 'Subir las compras de ARCA',
     unit: ['comprobante', 'comprobantes'],
   },
   mp_release: {
@@ -67,7 +67,7 @@ export const IMPORT_SOURCE_COPY: Readonly<Record<UiImportSource, ImportSourceCop
     description:
       'Subís el reporte de «Liquidaciones» de Mercado Pago: separamos lo que cobraste, la comisión, su IVA y los impuestos de cada día.',
     segment: 'mercado-pago',
-    cta: 'Importar Mercado Pago',
+    cta: 'Subir el reporte de Mercado Pago',
     unit: ['movimiento', 'movimientos'],
   },
   bank_statement: {
@@ -77,7 +77,7 @@ export const IMPORT_SOURCE_COPY: Readonly<Record<UiImportSource, ImportSourceCop
     description:
       'Exportás los movimientos de tu cuenta desde el home banking y los subís: reconocemos comisiones, impuestos y transferencias.',
     segment: 'banco',
-    cta: 'Importar del banco',
+    cta: 'Subir los movimientos del banco',
     unit: ['movimiento', 'movimientos'],
   },
 }
@@ -124,9 +124,9 @@ export const BATCH_STATUS_COPY: Readonly<
   Record<ImportBatchStatus, { label: string; tone: UiTone; hint: string }>
 > = {
   staging: {
-    label: 'Sin terminar',
+    label: 'A medio subir',
     tone: 'warning',
-    hint: 'El archivo no se terminó de subir. Volvé a subirlo y seguimos donde quedó.',
+    hint: 'No se terminó de subir. Volvé a subir el mismo archivo: sigo donde quedó.',
   },
   review: {
     label: 'Para revisar',
@@ -139,11 +139,11 @@ export const BATCH_STATUS_COPY: Readonly<
     tone: 'info',
     hint: 'Ya se cargó una parte: entrá para revisar y cargar lo que falta.',
   },
-  done: { label: 'Terminada', tone: 'success', hint: 'Se cargó todo lo que había para cargar.' },
+  done: { label: 'Cargado', tone: 'success', hint: 'Se cargó todo lo que había para cargar.' },
   cancelled: {
-    label: 'Cancelada',
+    label: 'Descartado',
     tone: 'muted',
-    hint: 'Se canceló: lo que no se cargó quedó afuera.',
+    hint: 'Se descartó: lo que ya se había cargado sigue registrado.',
   },
 }
 
@@ -294,13 +294,13 @@ export const BANK_EXPENSE_COMPONENT_TEXT: Readonly<Record<BankExpenseComponent, 
 
 /** Qué hace una regla del banco (`acc_import_rules.action.kind`). */
 export const BANK_RULE_KIND_TEXT = {
-  expense_component: 'Es un gasto o impuesto del banco',
-  transfer: 'Es plata que pasa a otra cuenta tuya',
-  payment: 'Es un pago a un proveedor u organismo',
-  collection: 'Es un cobro de un cliente o tarjeta',
-  movement: 'Va a una cuenta que elijo',
-  ignore: 'No lo cargues (no es nuestro)',
-  review: 'Dejalo para revisar',
+  expense_component: 'Un gasto o impuesto del banco',
+  transfer: 'Plata que pasa a otra cuenta tuya',
+  payment: 'Un pago a un proveedor u organismo',
+  collection: 'Un cobro de un cliente o una tarjeta',
+  movement: 'Otra cosa: elijo dónde va',
+  ignore: 'No es nuestro: no lo cargues',
+  review: 'Preguntame cada vez',
 } as const
 export type BankRuleKind = keyof typeof BANK_RULE_KIND_TEXT
 
@@ -310,16 +310,16 @@ export const RULE_DIRECTION_TEXT = {
   debit: 'Solo si sale plata',
 } as const
 
-/** «Contanos qué es cada columna» (extracto bancario). */
+/** «Contame qué es cada columna» (los movimientos del banco). */
 export const BANK_COLUMN_TEXT: Readonly<Record<BankColumn, string>> = {
   date: 'Fecha',
-  valueDate: 'Fecha valor',
+  valueDate: 'Fecha en que impactó',
   description: 'Descripción o concepto',
   voucher: 'Número de comprobante',
   debit: 'Débito (plata que sale)',
   credit: 'Crédito (plata que entra)',
   amount: 'Importe (con signo menos si sale)',
-  dc: 'Indica débito o crédito (D/C)',
+  dc: 'Dice si entra o sale (D/C)',
   balance: 'Saldo',
   status: 'Estado del movimiento',
   counterpartyCuit: 'CUIT de la otra parte',

@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { closesByDay, missingDays } from '@/components/administracion/cajas-ventas/closes'
@@ -8,13 +8,14 @@ import {
   hrefWith,
   type PageSearchParams,
 } from '@/components/administracion/cajas-ventas/periods'
+import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { PillLink } from '@/components/administracion/kit/pill'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { loadPostingCatalog, loadPostingContext } from '@/lib/accounting/context'
 import { listDocuments } from '@/lib/accounting/queries/documents'
 import { getSalesRangeDefaults } from '@/lib/accounting/queries/forms'
+import { getSalesProjection } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { CHANNELS, type Channel } from '@/lib/accounting/types'
@@ -41,21 +42,33 @@ import {
   type ExistingClose,
   SalesCloseForm,
 } from './_components/sales-close-form'
+import { describeCloseMethod } from './_lib/close-view'
 
 export const metadata = { title: 'Cierre del día' }
 
 /** Cuántos días que faltan se muestran arriba como atajo. */
 const MISSING_SHORTCUTS = 4
 
+/**
+ * En el celular la pantalla es una carga: menos aire entre el encabezado y el primer paso,
+ * para que en la primera pantalla entren los primeros medios. En compu, el marco de siempre.
+ */
+const PAGE_CLASS = 'max-sm:space-y-4 max-sm:py-4'
+
 function dayTitle(day: string): string {
   return `${weekdayName(day)} ${formatIsoDay(day)}`
 }
 
 /**
- * Cierre del día (H.9, `/ventas/cierre?fecha=`): el espejo del cierre de caja
- * de Thinkeon. Sin `?fecha=` abre el primer día que falta (hasta 30 días
- * atrás) o, si no falta ninguno, el día de servicio (antes de las 5:00 es
- * ayer). Un día ya cargado muestra sus cierres y deja cargar otro turno.
+ * Cierre del día (H.9, `/ventas/cierre?fecha=`): la tarea de todos los días.
+ * Sin `?fecha=` abre el primer día que falta (hasta 30 días atrás) o, si no
+ * falta ninguno, el día de servicio (antes de las 5:00 es ayer). Un día ya
+ * cargado muestra sus cierres y deja cargar otro turno.
+ *
+ * La página arma el marco (título, el día con sus flechas y los días que
+ * faltan) y le pasa al formulario los medios ya «vestidos»: a qué grupo va
+ * cada uno, a dónde entra la plata y cuándo. Lo que se guarda lo decide el
+ * formulario, igual que siempre.
  */
 export default async function CierreDelDiaPage({
   params,
@@ -69,38 +82,32 @@ export default async function CierreDelDiaPage({
   const base = `/${tenantSlug}/administracion`
   const { access, canWrite } = await requireAdminPage(tenantSlug, `${base}/ventas/cierre`)
 
-  const back = (
-    <Link
-      href={`${base}/ventas`}
-      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-3" aria-hidden />
-      Volver a ventas
-    </Link>
-  )
   const header = (
-    <PageHeader
-      eyebrow="Administración"
-      title={
-        <>
-          Cierre del día <ReadOnlyBadge />
-        </>
+    <AdmHeader
+      back={{ href: `${base}/ventas`, label: 'Ventas' }}
+      title="Cierre del día"
+      badge={<ReadOnlyBadge className="ml-0" />}
+      // En el celular lo dice el primer paso, y cada renglón que se saca de arriba es un
+      // campo más a la vista: la descripción queda para pantallas con lugar.
+      description={
+        <span className="hidden sm:inline">
+          Anotá lo que se vendió y cómo te pagaron: el ticket del día se arma solo. Si un medio no
+          tuvo ventas, dejalo vacío.
+        </span>
       }
-      description="Copiá los números del cierre de caja de tu sistema de ventas. Si un medio no tuvo ventas, dejalo vacío."
     />
   )
 
   if (!canWrite) {
     return (
-      <PageShell width="comfortable">
-        {back}
+      <AdmPage width="comfortable" className={PAGE_CLASS}>
         {header}
         <ReadOnlyNotice
           description="El cierre del día lo cargan los dueños. Con Contabilidad ves cada cierre en Ventas › Cierres del día."
           href={`${base}/ventas`}
           linkLabel="Ir a Cierres del día"
         />
-      </PageShell>
+      </AdmPage>
     )
   }
 
@@ -152,12 +159,14 @@ export default async function CierreDelDiaPage({
         ? 'También falta:'
         : 'Falta:'
       : `${alsoMissing ? 'También faltan' : 'Faltan'} ${pending.length}:`
+  // Los que no entran como atajo se dicen igual: «y 3 más».
+  const moreMissing = pending.length - otherMissing.length
 
   const dayNav = (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
       <nav
         aria-label="Día del cierre"
-        className="flex items-center gap-1 rounded-xl border border-border/70 bg-card/60 md:p-1"
+        className="card-hairline flex items-center gap-1 self-start rounded-full border bg-card p-1 shadow-xs"
       >
         <DayStep
           href={canPrev ? hrefWith(`${base}/ventas/cierre`, { fecha: prev }) : null}
@@ -167,7 +176,7 @@ export default async function CierreDelDiaPage({
         </DayStep>
         <div className="flex items-center gap-2 px-1.5">
           <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
-          <span className="min-w-[152px] text-center text-sm font-medium tabular-nums">
+          <span className="min-w-[152px] text-center text-sm font-semibold tabular-nums">
             {dayTitle(date)}
           </span>
         </div>
@@ -179,15 +188,26 @@ export default async function CierreDelDiaPage({
         </DayStep>
       </nav>
       {otherMissing.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        // En el celular, UNA fila que se desliza de costado (con desvanecido a la derecha para
+        // que se note que sigue): son atajos, no pueden ocupar más que el primer campo.
+        <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 text-sm whitespace-nowrap [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:whitespace-normal">
           <span className="text-muted-foreground">{missingLabel}</span>
           {otherMissing.map((d) => (
-            <Button key={d} asChild variant="outline" size="sm" className="h-11 md:h-8">
-              <Link href={hrefWith(`${base}/ventas/cierre`, { fecha: d })}>
-                {formatWeekdayDayMonth(d)}
-              </Link>
-            </Button>
+            // Rellenos (no en contorno) y en ámbar: «falta» es un estado, y lo dice la palabra de al lado.
+            <PillLink
+              key={d}
+              href={hrefWith(`${base}/ventas/cierre`, { fecha: d })}
+              className="h-11 border-warning/30 bg-warning/15 text-warning-text hover:bg-warning/25 md:h-9"
+            >
+              {formatWeekdayDayMonth(d)}
+            </PillLink>
           ))}
+          {moreMissing > 0 ? (
+            // El aire de la derecha deja pasar el último texto por delante del desvanecido.
+            <span className="pr-8 text-muted-foreground sm:pr-0">y {moreMissing} más</span>
+          ) : (
+            <span aria-hidden className="w-4 shrink-0 sm:hidden" />
+          )}
         </div>
       ) : null}
     </div>
@@ -195,25 +215,24 @@ export default async function CierreDelDiaPage({
 
   // ─── Días que no se cargan acá ─────────────────────────────────────────────
   const notice = (message: string, link: { href: string; label: string } | null) => (
-    <PageShell width="comfortable">
-      {back}
+    <AdmPage width="comfortable" className={PAGE_CLASS}>
       {header}
       {dayNav}
       <div
         role="status"
-        className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm"
+        className="flex items-start gap-3 rounded-2xl border border-info/30 bg-info/10 p-4 text-sm sm:p-5"
       >
         <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
         <div className="space-y-3">
           <p className="text-pretty">{message}</p>
           {link ? (
-            <Button asChild variant="outline" size="sm" className="h-11 md:h-8">
+            <Button asChild variant="outline" className="h-11 md:h-9">
               <Link href={link.href}>{link.label}</Link>
             </Button>
           ) : null}
         </div>
       </div>
-    </PageShell>
+    </AdmPage>
   )
 
   if (date < booksStart) {
@@ -235,16 +254,23 @@ export default async function CierreDelDiaPage({
     )
   }
 
-  // Los cierres ya cargados de ese día (un día puede tener varios turnos).
-  const dayCloses = await settleQuery(
-    listDocuments(tenantId, {
-      from: date,
-      to: date,
-      kinds: ['sales_close'],
-      status: 'posted',
-      limit: 20,
-    }),
-  )
+  // Ya se sabe qué día es: lo de ese día se pide junto (antes iba una lectura atrás de la otra).
+  const [dayCloses, ranges, dayTarget] = await Promise.all([
+    // Los cierres ya cargados de ese día (un día puede tener varios turnos).
+    settleQuery(
+      listDocuments(tenantId, {
+        from: date,
+        to: date,
+        kinds: ['sales_close'],
+        status: 'posted',
+        limit: 20,
+      }),
+    ),
+    // El último «hasta» de cada tipo y punto de venta (la base lo trae desde la #13).
+    settleQuery(getSalesRangeDefaults(tenantId)),
+    // El objetivo de ventas del día (Ventas › Proyección), para el ticket. Si falla, no se muestra.
+    settleQuery(getSalesProjection(tenantId, { from: date, to: date })),
+  ])
   const existing: ExistingClose[] = dayCloses.ok
     ? dayCloses.data.rows.map((d) => ({
         id: d.id,
@@ -264,27 +290,51 @@ export default async function CierreDelDiaPage({
   }
 
   // ─── El formulario ─────────────────────────────────────────────────────────
+  const mercadoPago = mp.ok ? closeMercadoPago(mp.data, catalog, tenantSlug) : null
+  const mpScope = mercadoPagoScope(mp.ok ? mp.data : null, catalog)
+
   const methods: CloseMethod[] = catalog.methods
     .filter((m) => m.active)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'es'))
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      kind: m.kind,
-      channel: m.channel,
-      destination: destinationOf(m, date, catalog),
-      isCash:
+    .map((m) => {
+      const isCash =
         m.kind === 'treasury' &&
-        catalog.treasuries.some((t) => t.id === m.treasuryAccountId && t.kind === 'cash'),
-    }))
+        catalog.treasuries.some((t) => t.id === m.treasuryAccountId && t.kind === 'cash')
+      const treasury = catalog.treasuries.find((t) => t.id === m.treasuryAccountId) ?? null
+      const party = catalog.parties.find((p) => p.id === m.partyId) ?? null
+      // Es de Mercado Pago el medio que completa su reporte (QR y transferencias) y lo que
+      // entra a su billetera. Una app de delivery que paga Mercado Pago sigue siendo delivery.
+      const isMercadoPago =
+        m.id === mercadoPago?.qrMethodId ||
+        m.id === mercadoPago?.transferMethodId ||
+        (m.channel !== 'delivery' &&
+          ((party !== null && party.id === mpScope.partyId) ||
+            (treasury !== null && mpScope.treasuryIds.includes(treasury.id))))
+      const view = describeCloseMethod(m, date, {
+        treasury: treasury ? { id: treasury.id, name: treasury.name, kind: treasury.kind } : null,
+        party: party ? { id: party.id, name: party.tradeName ?? party.name } : null,
+        isCash,
+        mercadoPago: isMercadoPago,
+      })
+      return {
+        id: m.id,
+        name: m.name,
+        kind: m.kind,
+        channel: m.channel,
+        destination: view.destination,
+        isCash,
+        group: view.group,
+        payer: view.payer,
+        mercadoPago: isMercadoPago,
+        arrival: view.arrival,
+      }
+    })
 
   const salesPoints: CloseSalesPoint[] = catalog.salesPoints
     .filter((p) => p.active)
     .sort((a, b) => a.number - b.number)
     .map((p) => ({ number: p.number, label: p.label, defaultChannel: p.defaultChannel }))
 
-  // El último «hasta» de cada tipo y punto de venta (la base lo trae desde la #13).
-  const ranges = await settleQuery(getSalesRangeDefaults(tenantId))
   const rangeDefaults: CloseRangeDefault[] = ranges.ok
     ? ranges.data
         .filter((r) => r.pointOfSale > 0 && r.lastNumberTo >= 0)
@@ -307,26 +357,46 @@ export default async function CierreDelDiaPage({
       active: p.active,
     }))
 
-  const mercadoPago = mp.ok ? closeMercadoPago(mp.data, catalog, tenantSlug) : null
+  // El objetivo del día, si lo cargaron (en cero cuenta como «sin objetivo»: lo resuelve el ticket).
+  const targetCents = dayTarget.ok ? (dayTarget.data[0]?.targetCents ?? null) : null
 
   // Después de guardar: el próximo día que falta (o la lista de cierres si no falta ninguno).
   const after = missing.find((d) => d !== date) ?? null
 
   return (
-    <PageShell width="comfortable">
-      {back}
+    <AdmPage width="comfortable" className={PAGE_CLASS}>
       {header}
       {dayNav}
       {!recent.ok || !dayCloses.ok ? (
         <div
           role="status"
-          className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+          className="flex items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4 text-sm"
         >
           <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p className="text-pretty text-warning-text">
             No pudimos revisar qué días ya están cargados. Si este día ya tiene cierre, al guardar
             te avisamos.
           </p>
+        </div>
+      ) : null}
+      {salesPoints.length === 0 && methods.length > 0 && existing.length === 0 ? (
+        // Sin puntos de venta el día entero queda como venta sin factura. Se dice ANTES del
+        // primer importe: enterarse en el paso 3, con todo cargado, obligaba a salir y perderlo.
+        <div className="flex flex-wrap items-center justify-between gap-x-4 rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm max-sm:pb-1 sm:px-5">
+          <p className="min-w-0 flex-1 basis-64 text-pretty">
+            <span className="font-medium">Todavía no cargaste puntos de venta.</span>{' '}
+            <span className="text-muted-foreground">
+              Este cierre queda entero como venta sin factura (se registra igual). Si facturás,
+              cargalos antes de empezar.
+            </span>
+          </p>
+          <Link
+            href={`${base}/ajustes?tab=puntos-de-venta`}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-sm font-medium whitespace-nowrap text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+          >
+            Cargar mis puntos de venta
+            <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
         </div>
       ) : null}
       <SalesCloseForm
@@ -348,8 +418,9 @@ export default async function CierreDelDiaPage({
         }
         afterSaveLabel={after ? `${weekdayName(after)} ${formatDayMonth(after)}` : null}
         mercadoPago={mercadoPago}
+        targetCents={targetCents}
       />
-    </PageShell>
+    </AdmPage>
   )
 }
 
@@ -368,15 +439,7 @@ function closeMercadoPago(
   tenantSlug: string,
 ): CloseMercadoPago {
   const conn = settings.connection
-  const mpPartyId =
-    conn?.partyId ?? catalog.parties.find((p) => p.systemKey === 'mercado_pago')?.id ?? null
-  const mpTreasuryIds = catalog.treasuries
-    .filter(
-      (t) =>
-        t.id === conn?.treasuryAccountId ||
-        (t.kind === 'wallet' && mpPartyId !== null && t.bankPartyId === mpPartyId),
-    )
-    .map((t) => t.id)
+  const { partyId: mpPartyId, treasuryIds: mpTreasuryIds } = mercadoPagoScope(settings, catalog)
   const targets = mpCloseTargets({
     methods: catalog.methods
       .filter((m) => m.active)
@@ -400,38 +463,30 @@ function closeMercadoPago(
   }
 }
 
-function isChannel(value: string | null): value is Channel {
-  return value !== null && (CHANNELS as readonly string[]).includes(value)
+/**
+ * Quién es Mercado Pago en este bar: el partícipe y sus billeteras (lo conectado
+ * en Importar › Mercado Pago o, si no hay conexión, el de fábrica). Lo usan
+ * «Completar con el reporte» y el agrupado de los medios, para que coincidan.
+ */
+function mercadoPagoScope(
+  settings: Awaited<ReturnType<typeof getMpImportSettings>> | null,
+  catalog: Awaited<ReturnType<typeof loadPostingCatalog>>,
+): { partyId: string | null; treasuryIds: string[] } {
+  const conn = settings?.connection
+  const partyId =
+    conn?.partyId ?? catalog.parties.find((p) => p.systemKey === 'mercado_pago')?.id ?? null
+  const treasuryIds = catalog.treasuries
+    .filter(
+      (t) =>
+        t.id === conn?.treasuryAccountId ||
+        (t.kind === 'wallet' && partyId !== null && t.bankPartyId === partyId),
+    )
+    .map((t) => t.id)
+  return { partyId, treasuryIds }
 }
 
-/** Adónde va lo cobrado con cada medio, en palabras («Caja», «Posnet · se acredita el 06/10»). */
-function destinationOf(
-  method: {
-    kind: CloseMethod['kind']
-    treasuryAccountId: string | null
-    partyId: string | null
-    settlementDays: number
-  },
-  date: string,
-  catalog: Awaited<ReturnType<typeof loadPostingCatalog>>,
-): string {
-  const treasury = catalog.treasuries.find((t) => t.id === method.treasuryAccountId)
-  const party = catalog.parties.find((p) => p.id === method.partyId)
-  const partyName = party ? (party.tradeName ?? party.name) : null
-  switch (method.kind) {
-    case 'treasury':
-      return treasury ? treasury.name : 'Caja'
-    case 'settled_now':
-      return `${partyName ?? treasury?.name ?? 'Mercado Pago'} (a acreditar)`
-    case 'receivable': {
-      const when = addDays(date, Math.max(0, method.settlementDays))
-      return `${partyName ?? 'A cobrar'} · se acredita el ${formatDayMonth(when)}`
-    }
-    case 'customer_account':
-      return 'Cuenta corriente de cada cliente'
-    case 'advance':
-      return 'Se descuenta de las señas'
-  }
+function isChannel(value: string | null): value is Channel {
+  return value !== null && (CHANNELS as readonly string[]).includes(value)
 }
 
 function DayStep({

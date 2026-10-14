@@ -1,19 +1,21 @@
 'use client'
 
 import { FileUp } from 'lucide-react'
-import { type DragEvent, useId, useState } from 'react'
+import { type DragEvent, type ReactNode, useId, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * La zona para soltar el archivo (diseño §4.1 paso 1): se arrastra encima o se
- * toca para elegirlo. Es un `<label>` que envuelve el `<input type="file">`, así
- * que con el teclado se llega con Tab y se abre con Enter o Espacio, y en el
- * celular abre el selector de archivos. 44 px o más de alto en todo.
+ * La ranura para soltar el archivo: se arrastra encima o se toca para elegirlo.
+ * Es un `<label>` que envuelve el `<input type="file">`, así que con el teclado
+ * se llega con Tab y se abre con Enter o Espacio, y en el celular abre el
+ * selector de archivos. Arriba lleva el dibujo del origen (de dónde viene ese
+ * papel); el botón dice «Elegir archivo», que es el texto que enseña la Guía.
  */
 export function FileDropZone({
   accept,
   title,
   hint,
+  art,
   disabled = false,
   onFile,
   className,
@@ -22,6 +24,8 @@ export function FileDropZone({
   accept: string
   title: string
   hint: string
+  /** El dibujo del origen (`SourceMark`). Sin él, una hoja genérica. */
+  art?: ReactNode
   disabled?: boolean
   onFile: (file: File) => void
   className?: string
@@ -55,25 +59,25 @@ export function FileDropZone({
         take(event.dataTransfer.files)
       }}
       className={cn(
-        'flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
-        'focus-within:outline-none focus-within:ring-[3px] focus-within:ring-ring/50',
+        'flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-5 py-8 text-center transition-colors duration-(--duration-fast) motion-reduce:transition-none',
+        'focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
         dragging
           ? 'border-primary bg-primary/5'
-          : 'border-border/80 bg-card/50 hover:border-primary/50 hover:bg-cream-tint',
+          : 'border-border bg-secondary/30 hover:border-primary/50 hover:bg-cream-tint',
         disabled && 'pointer-events-none opacity-60',
         className,
       )}
     >
-      <span className="flex size-14 items-center justify-center rounded-full border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-        <FileUp className="size-6" aria-hidden />
+      <span className="flex size-14 items-center justify-center rounded-2xl border border-border/70 bg-card text-primary shadow-xs">
+        {art ?? <FileUp className="size-6" aria-hidden />}
       </span>
-      <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
+      <span className="font-serif text-lg font-semibold leading-snug tracking-tight text-balance text-foreground">
         {dragging ? 'Soltalo acá' : title}
       </span>
       <span className="max-w-md text-sm text-muted-foreground text-pretty">{hint}</span>
       <span
         aria-hidden
-        className="inline-flex h-11 items-center rounded-md border border-border bg-background px-4 text-sm font-medium shadow-xs md:h-9"
+        className="inline-flex h-11 items-center rounded-md border border-border bg-card px-5 text-sm font-medium shadow-xs"
       >
         Elegir archivo
       </span>

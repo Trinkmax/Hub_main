@@ -990,3 +990,262 @@
 .wa .uppercase.tracking-\[0\.18em\] {
   display: none;
 }
+
+/* ============================================================
+   Administración — rediseño de experiencia (oct 2026)
+   Todo lo de acá lleva prefijo adm- y lo usan SOLO las piezas de
+   components/administracion/kit y los gráficos de la sección.
+   No toca ningún token ni utilidad del resto del panel.
+
+   Los tokens van en :root / .dark (y no en una clase con alcance
+   como .wa) a propósito: las hojas y los diálogos de Radix se
+   portalizan a <body>, fuera de cualquier clase de sección.
+   ============================================================ */
+@theme inline {
+  --color-adm-s1: var(--adm-s1);
+  --color-adm-s2: var(--adm-s2);
+  --color-adm-s3: var(--adm-s3);
+  --color-adm-s4: var(--adm-s4);
+  --color-adm-s5: var(--adm-s5);
+  --color-adm-s6: var(--adm-s6);
+  --color-adm-in: var(--adm-in);
+  --color-adm-out: var(--adm-out);
+  --color-adm-neutral: var(--adm-neutral);
+  --color-adm-track: var(--adm-track);
+  --color-adm-hero: var(--adm-hero);
+  --color-adm-hero-2: var(--adm-hero-2);
+  --color-adm-hero-fg: var(--adm-hero-fg);
+  --color-adm-hero-muted: var(--adm-hero-muted);
+  --color-adm-gold: var(--adm-gold);
+  --color-adm-paper: var(--adm-paper);
+  --color-adm-paper-ink: var(--adm-paper-ink);
+  --color-adm-paper-rule: var(--adm-paper-rule);
+}
+
+:root {
+  /* Paleta de datos. Validada con validate_palette.js de la skill dataviz
+     contra --card (#fefaf0): banda de luz, croma, CVD ≥ 8 entre vecinos y
+     visión normal ≥ 15. EL ORDEN ES FIJO Y NUNCA SE CICLA: un séptimo va a
+     «Otros» (--adm-neutral). El color sigue a la cosa, no a su posición. */
+  --adm-s1: oklch(0.48 0.105 160);  /* bosque */
+  --adm-s2: oklch(0.75 0.15 80);    /* dorado: 2,2:1 contra la tarjeta → siempre con etiqueta al lado */
+  --adm-s3: oklch(0.53 0.165 345);  /* ciruela */
+  --adm-s4: oklch(0.53 0.165 255);  /* azul noche */
+  --adm-s5: oklch(0.63 0.105 38);   /* terracota */
+  --adm-s6: oklch(0.63 0.105 200);  /* petróleo */
+
+  /* Entró / salió. Verde contra terracota NO alcanza solo por color (CVD 7,8):
+     siempre con dirección (arriba/abajo), signo o etiqueta. */
+  --adm-in: var(--adm-s1);
+  --adm-out: var(--adm-s5);
+  --adm-neutral: oklch(0.72 0.012 88);
+  --adm-track: oklch(0.92 0.018 88);
+
+  /* Héroe: el panel verde bosque, como una pizarra. --adm-hero-muted da AA
+     sobre los dos extremos del degradé (8,5:1 y 10,1:1). */
+  --adm-hero: oklch(0.27 0.045 165);
+  --adm-hero-2: oklch(0.21 0.04 165);
+  --adm-hero-fg: oklch(0.965 0.022 88);
+  --adm-hero-muted: oklch(0.82 0.03 120);
+  --adm-gold: oklch(0.82 0.11 85);
+
+  /* Papel de ticket: es papel, así que es claro también en oscuro. */
+  --adm-paper: oklch(0.995 0.006 88);
+  --adm-paper-ink: oklch(0.25 0.02 165);
+  --adm-paper-rule: oklch(0.78 0.015 88);
+}
+
+.dark {
+  /* Los mismos tonos con su escalón para la tarjeta oscura (#0e1d17). */
+  --adm-s1: oklch(0.5 0.105 160);
+  --adm-s2: oklch(0.64 0.12 80);
+  --adm-s3: oklch(0.56 0.165 345);
+  --adm-s4: oklch(0.54 0.165 255);
+  --adm-s5: oklch(0.54 0.165 38);
+  --adm-s6: oklch(0.66 0.105 200);
+
+  --adm-in: var(--adm-s1);
+  --adm-out: var(--adm-s5);
+  --adm-neutral: oklch(0.45 0.012 165);
+  --adm-track: oklch(0.27 0.022 165);
+
+  --adm-hero: oklch(0.25 0.045 165);
+  --adm-hero-2: oklch(0.185 0.035 165);
+  --adm-hero-fg: oklch(0.965 0.022 88);
+  --adm-hero-muted: oklch(0.82 0.03 120);
+  --adm-gold: oklch(0.82 0.11 85);
+
+  /* Un escalón menos de luz para que el papel no encandile sobre el carbón. */
+  --adm-paper: oklch(0.94 0.012 88);
+  --adm-paper-ink: oklch(0.25 0.02 165);
+  --adm-paper-rule: oklch(0.78 0.015 88);
+}
+
+/* Las piezas van en `components` (y no sueltas) para que una clase de Tailwind
+   puesta por quien las usa les gane: un estilo fuera de capa le gana a todas
+   las utilidades. */
+@layer components {
+  /* HeroPanel «bosque»: degradé de --adm-hero a --adm-hero-2 con un brillo
+     cálido y tenue arriba a la izquierda. El filete claro lo despega del
+     fondo carbón en oscuro, donde el verde casi no contrasta. */
+  .adm-hero {
+    position: relative;
+    isolation: isolate;
+    color: var(--adm-hero-fg);
+    background-color: var(--adm-hero);
+    background-image:
+      radial-gradient(
+        85% 130% at 0% 0%,
+        color-mix(in oklch, var(--adm-gold) 12%, transparent),
+        transparent 62%
+      ),
+      linear-gradient(155deg, var(--adm-hero), var(--adm-hero-2));
+    border: 1px solid color-mix(in oklch, var(--adm-hero-fg) 10%, transparent);
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, var(--adm-hero-fg) 8%, transparent),
+      0 16px 30px -18px color-mix(in oklch, var(--adm-hero-2) 70%, transparent);
+  }
+
+  /* Ticket: la sombra va en el envoltorio con `filter`, porque la máscara del
+     dentado recorta cualquier `box-shadow` del papel. */
+  .adm-ticket-wrap {
+    filter:
+      drop-shadow(0 1px 1px color-mix(in oklch, var(--adm-paper-ink) 12%, transparent))
+      drop-shadow(0 10px 16px color-mix(in oklch, var(--adm-paper-ink) 10%, transparent));
+  }
+  /* El papel. El borde de abajo es dentado: una cuña de 90° por diente, que
+     deja ver todo lo que está por encima de la V. */
+  .adm-ticket {
+    --adm-tooth: 6px;
+    position: relative;
+    color: var(--adm-paper-ink);
+    background-color: var(--adm-paper);
+    border-radius: 10px 10px 0 0;
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
+      50% / calc(2 * var(--adm-tooth)) 100%;
+            mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
+      50% / calc(2 * var(--adm-tooth)) 100%;
+  }
+
+  /* Sello del ticket: entra pasado de rosca y se asienta, como un sello de
+     verdad. Solo cuando algo cambia o se completa, nunca en reposo. Anima
+     `scale`, que no pisa el `rotate` de la inclinación. */
+  .adm-stamp-in {
+    animation: adm-stamp-in 420ms cubic-bezier(0.34, 1.4, 0.5, 1) both;
+  }
+
+  /* Tilde que se dibuja solo. 24 cubre el largo del trazo con margen.
+     `.adm-tick-draw` lo dibuja al montar (algo se guardó); dentro de una
+     ChoiceCard se dibuja al elegirla. Sin animación el tilde queda entero. */
+  .adm-tick {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 0;
+  }
+  .adm-tick-draw,
+  .peer:checked ~ .adm-choice-mark .adm-tick {
+    animation: adm-tick-draw 240ms var(--ease-out) 60ms both;
+  }
+
+  /* StatusPill: fondo teñido suave + punto + palabra. El texto es el tono
+     mezclado con la tinta para llegar a AA sobre el teñido (el tono pelado
+     queda en 3,9–4,7:1). El ámbar usa --warning-text, que ya está pensado
+     para ser texto. */
+  .adm-status {
+    --adm-tone: var(--muted-foreground);
+    color: var(--adm-tone-text, color-mix(in oklch, var(--adm-tone) 75%, var(--foreground)));
+    background-color: color-mix(in oklch, var(--adm-tone) 10%, transparent);
+    border-color: color-mix(in oklch, var(--adm-tone) 30%, transparent);
+  }
+  .adm-status[data-tone='ok'] { --adm-tone: var(--success); }
+  .adm-status[data-tone='warn'] { --adm-tone: var(--warning); --adm-tone-text: var(--warning-text); }
+  .adm-status[data-tone='late'] { --adm-tone: var(--destructive); }
+  .adm-status[data-tone='info'] { --adm-tone: var(--info); }
+}
+
+/* Re-declaraciones de tokens con alcance (mismo recurso que .force-light).
+   Van FUERA de capa y al final del archivo: tienen que ganarle a .dark y a
+   .force-light, que también están fuera de capa.
+
+   Adentro del héroe verde vive una isla oscura (el contenido lleva la clase
+   `dark`), así cualquier pieza que use los tokens de siempre se lee sobre el
+   verde también en modo claro. Solo se corrigen los dos de texto para que
+   coincidan con los del héroe: el gris del modo oscuro quedaba en 4,8:1. */
+.adm-hero-ink {
+  --foreground: var(--adm-hero-fg);
+  --muted-foreground: var(--adm-hero-muted);
+}
+
+/* Sobre el papel la tinta es siempre la del papel, también en oscuro (el
+   ticket lleva además `force-light` para el resto de los tokens). */
+.adm-ticket {
+  --foreground: var(--adm-paper-ink);
+  --card-foreground: var(--adm-paper-ink);
+  --muted-foreground: color-mix(in oklch, var(--adm-paper-ink) 68%, var(--adm-paper));
+  --border: var(--adm-paper-rule);
+}
+
+@keyframes adm-stamp-in {
+  0%   { opacity: 0; scale: 1.5; }
+  60%  { opacity: 1; scale: 0.96; }
+  100% { opacity: 1; scale: 1; }
+}
+@keyframes adm-tick-draw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-stamp-in { animation: none; }
+  .adm-tick-draw,
+  .peer:checked ~ .adm-choice-mark .adm-tick { animation: none; }
+}
+
+/* ── Administración · Resumen: el color de una caja sale de su TIPO ─────────
+   (bloque del pulido del Resumen, oct 2026; solo agrega tokens)
+
+   Banco, efectivo y billetera tienen cada uno su tono; dos cuentas del mismo
+   tipo usan el mismo tono en otro escalón de luz (-1, -2, -3). Se usan con
+   `bg-(--adm-k-bank-1)` en la barra «dónde está la plata» y en su leyenda.
+
+   Claro (:root), sobre la tarjeta crema #fefaf0: banco = bosque, efectivo =
+   dorado, billetera = celeste. validate_palette.js (skill dataviz), todos los
+   pares: banda de luz, croma, CVD 19,5 y visión normal 20,6 pasan; el dorado
+   queda en 2,2:1 contra la tarjeta, por eso SIEMPRE va con su nombre al lado.
+
+   Oscuro (.dark): vale para la tarjeta oscura #0e1d17 y para el héroe verde,
+   que adentro es una isla `dark` también en modo claro. Ahí el banco es crema
+   (la tinta del héroe): es un neutro a propósito, fuera de la banda de luz y
+   del piso de croma del validador, igual que --adm-neutral. Dorado y celeste
+   pasan los cinco chequeos en las cinco superficies (los dos extremos del
+   degradé del héroe en claro y en oscuro, y la tarjeta oscura); con el crema,
+   CVD 21,0, visión normal 22,7 y contraste ≥ 4,7:1. Cada rampa pasa --ordinal;
+   el tercer escalón de dorado y de celeste queda en 2,2–2,9:1 contra el
+   héroe: como todos, va con su nombre al lado. */
+:root {
+  --adm-k-bank-1: oklch(0.48 0.105 160);
+  --adm-k-bank-2: oklch(0.6 0.11 158);
+  --adm-k-bank-3: oklch(0.72 0.1 156);
+  --adm-k-cash-1: oklch(0.75 0.15 80);
+  --adm-k-cash-2: oklch(0.66 0.135 76);
+  --adm-k-cash-3: oklch(0.57 0.12 72);
+  --adm-k-wallet-1: oklch(0.64 0.11 235);
+  --adm-k-wallet-2: oklch(0.54 0.12 238);
+  --adm-k-wallet-3: oklch(0.44 0.12 241);
+}
+
+.dark {
+  --adm-k-bank-1: oklch(0.92 0.04 92);
+  --adm-k-bank-2: oklch(0.84 0.045 92);
+  --adm-k-bank-3: oklch(0.76 0.05 92);
+  --adm-k-cash-1: oklch(0.66 0.13 80);
+  --adm-k-cash-2: oklch(0.57 0.115 74);
+  --adm-k-cash-3: oklch(0.48 0.1 68);
+  --adm-k-wallet-1: oklch(0.66 0.105 232);
+  --adm-k-wallet-2: oklch(0.57 0.11 236);
+  --adm-k-wallet-3: oklch(0.48 0.115 240);
+
+  /* El rayado de «falta cargar»: en oscuro el ámbar al 30 % parecía cinta de
+     obra y pesaba más que las columnas de lo vendido. */
+  --adm-hatch-missing: color-mix(in oklch, var(--warning) 15%, transparent);
+}
+/* ── fin del bloque del Resumen ─────────────────────────────────────────── */

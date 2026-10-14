@@ -14,8 +14,13 @@ export const ACCOUNTING_ACTIONS = [
 ] as const
 export type AccountingAction = (typeof ACCOUNTING_ACTIONS)[number]
 
-/** Lo que puede acompañar a `?accion=`: ids que la hoja usa para precargar. */
-export const ACTION_PARAM_KEYS = ['proveedor', 'cliente', 'caja', 'partida'] as const
+/**
+ * Lo que puede acompañar a `?accion=`: ids que la hoja usa para precargar.
+ * `gasto-fijo` abre «Nuevo gasto» con ese gasto fijo ya elegido (su proveedor o
+ * su categoría, el monto y la caja habituales): lo usa la pantalla de Gastos
+ * fijos. Va al final para que los links que ya existen no cambien de orden.
+ */
+export const ACTION_PARAM_KEYS = ['proveedor', 'cliente', 'caja', 'partida', 'gasto-fijo'] as const
 export type ActionParamKey = (typeof ACTION_PARAM_KEYS)[number]
 export type ActionParams = Partial<Record<ActionParamKey, string>>
 
@@ -27,8 +32,8 @@ export const ACTION_TITLES: Readonly<Record<AccountingAction, string>> = {
   pagar: 'Pagar',
   cobrar: 'Registrar un cobro',
   mover: 'Mover plata',
-  ajustar: 'Ajustar saldo',
-  movimiento: 'Otro ingreso o egreso',
+  ajustar: 'Contar la caja',
+  movimiento: 'Otra entrada o salida',
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -40,7 +45,8 @@ export function isAccountingAction(value: unknown): value is AccountingAction {
 type SearchLike = Pick<URLSearchParams, 'get'>
 
 /**
- * `?accion=pagar&proveedor=<uuid>` → `{ action: 'pagar', params: { proveedor } }`.
+ * `?accion=pagar&proveedor=<uuid>` → `{ action: 'pagar', params: { proveedor } }`;
+ * `?accion=gasto&gasto-fijo=<uuid>` → `{ action: 'gasto', params: { 'gasto-fijo': … } }`.
  * Un parámetro que no es un UUID se descarta (la hoja igual valida con zod).
  */
 export function readAction(

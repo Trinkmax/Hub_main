@@ -31,18 +31,31 @@ export type EntryPreviewData = {
 export type EntryPreviewProps = {
   /** Uno o más asientos (un bundle puede generar varios: compra + pago). */
   entries: readonly EntryPreviewData[]
-  /** Texto del botón cuando está plegado. Default «Ver asiento». */
+  /**
+   * Texto del botón cuando está plegado. Default «Ver asiento» (la palabra de la
+   * contadora); en lo que carga el dueño va «Ver cómo queda en los libros».
+   * Abierto, el botón dice «Ocultar».
+   */
   label?: string
   /** Desplegado de entrada (compu, asiento manual). Default `false`: plata primero. */
   defaultOpen?: boolean
   /** Sin botón: siempre desplegado (detalle de un comprobante ya guardado). */
   alwaysOpen?: boolean
-  /** Lo que se ve si todavía no hay importes. */
+  /** Lo que se ve si todavía no se puede armar. Default: sale de `label`. */
   emptyText?: string
   className?: string
 }
 
 const NUMBER = { currency: false } as const
+const DEFAULT_LABEL = 'Ver asiento'
+
+/** «Ver cómo queda en los libros» → «Completá lo que falta para ver cómo queda en los libros.» */
+function defaultEmptyText(label: string): string {
+  if (label === DEFAULT_LABEL || !label.startsWith('Ver ')) {
+    return 'Completá los importes para ver el asiento.'
+  }
+  return `Completá lo que falta para ver ${label.slice(4)}.`
+}
 
 /**
  * «Ver asiento»: Cuenta · Debe · Haber, con el sello «Cuadra» o «No cuadra ·
@@ -50,13 +63,17 @@ const NUMBER = { currency: false } as const
  * estable que solo cambia de texto al pasar de cuadra a no cuadra (no habla en
  * cada tecla); la diferencia va aparte, sin anunciar. Las sumas son en BigInt
  * (`sumSides`): lo que se ve es lo que la base va a aceptar.
+ *
+ * Mientras no hay asiento que mostrar, el sello dice «Falta algo» (y no «Sin
+ * importes»: muchas veces el importe ya está y lo que falta es otra cosa, como
+ * el número de la factura). Qué falta lo dice `emptyText`.
  */
 export function EntryPreview({
   entries,
-  label = 'Ver asiento',
+  label = DEFAULT_LABEL,
   defaultOpen = false,
   alwaysOpen = false,
-  emptyText = 'Completá los importes para ver el asiento.',
+  emptyText = defaultEmptyText(label),
   className,
 }: EntryPreviewProps) {
   const [open, setOpen] = useState(defaultOpen)
@@ -80,7 +97,15 @@ export function EntryPreview({
       aria-label="Asiento contable"
       className={cn('card-hairline rounded-xl border border-border/70 bg-card', className)}
     >
-      <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2">
+      {/* En un renglón: el rótulo se corta antes de que el sello caiga solo a un segundo renglón
+          (a 390 px «Ver cómo queda en los libros» y el sello entran justo). El único sello largo
+          es «No cuadra · diferencia $ X»: ese sí puede bajar. */}
+      <div
+        className={cn(
+          'flex min-h-11 items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2',
+          status === 'unbalanced' && 'flex-wrap',
+        )}
+      >
         {alwaysOpen ? (
           <h3 className="font-display text-sm font-semibold tracking-tight">Asiento</h3>
         ) : (
@@ -89,21 +114,22 @@ export function EntryPreview({
             aria-expanded={open}
             aria-controls={panelId}
             onClick={() => setOpen((v) => !v)}
-            className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
+            className="-ml-2 inline-flex min-h-11 min-w-0 items-center gap-1.5 rounded-md px-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronDown
               aria-hidden="true"
               className={cn(
-                'size-4 text-muted-foreground transition-transform duration-[var(--duration-fast)]',
+                'size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-fast)]',
                 !open && '-rotate-90',
               )}
             />
-            {open ? 'Ocultar asiento' : label}
+            {/* Abierto dice solo «Ocultar»: lo que se oculta está a la vista justo debajo. */}
+            <span className="truncate">{open ? 'Ocultar' : label}</span>
           </button>
         )}
         <span
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium',
+            'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium',
             status === 'balanced' && 'border-success/30 bg-success/10 text-success',
             status === 'unbalanced' && 'border-destructive/30 bg-destructive/10 text-destructive',
             status === 'empty' && 'border-border bg-secondary/50 text-muted-foreground',
@@ -120,7 +146,7 @@ export function EntryPreview({
               ? 'Cuadra'
               : status === 'unbalanced'
                 ? 'No cuadra'
-                : 'Sin importes'}
+                : 'Falta algo'}
           </span>
           {status === 'unbalanced' ? (
             <span className="tabular-nums">· diferencia {formatCents(unbalanced)}</span>

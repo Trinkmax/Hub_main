@@ -1,75 +1,68 @@
-import { Landmark, Plus } from 'lucide-react'
 import { cookies } from 'next/headers'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { ActionButton, QuickActionsBar } from '@/components/administracion/quick-actions'
+import { Suspense } from 'react'
+import { firstParam } from '@/components/administracion/cajas-ventas/periods'
+import { AdmPage } from '@/components/administracion/kit/adm-page'
+import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
-import { buildProjection, projectionFigures } from '@/lib/accounting/projection'
-import {
-  getAccountingSettings,
-  getSummary,
-  listRecurringExpenses,
-  settleQuery,
-} from '@/lib/accounting/queries'
-import { getIntegrationAttention } from '@/lib/accounting/queries/integrations'
-import { getSalesProjection } from '@/lib/accounting/queries/projection'
-import { formatIsoDay, monthRange, serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
+import { serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
   type TenantAccess,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { AttentionList } from './_resumen/attention-list'
-import { FirstSteps } from './_resumen/first-steps'
-import { firstStepsCookieName } from './_resumen/first-steps-cookie'
-import { RetryButton } from './_resumen/retry-button'
-import { SummaryActions } from './_resumen/summary-actions'
+import { BooksBlock } from './_resumen/books-block'
+import { firstStepsCookieName, SETUP_OPEN_VALUE } from './_resumen/first-steps-cookie'
+import { HeroBlock, type HeroTone } from './_resumen/hero-block'
+import { type HomeData, loadHome } from './_resumen/home-data'
+import { InOutBlock } from './_resumen/in-out-block'
+import { IvaBlock } from './_resumen/iva-block'
+import { MonthBlock } from './_resumen/month-block'
+import { NoticesBlock } from './_resumen/notices-block'
+import { PayablesBlock } from './_resumen/payables-block'
 import {
-  BooksStatusCard,
-  SummaryCard,
-  SummaryKpis,
-  ThisMonthCard,
-  TreasuriesCard,
-} from './_resumen/summary-blocks'
-import {
-  headerDateLine,
-  lastClosedLine,
-  openMonthLine,
-  pendingFixedExpenses,
-} from './_resumen/summary-copy'
-import { Callout } from './ajustes/_components/form-bits'
+  BooksSkeleton,
+  HeroSkeleton,
+  InOutSkeleton,
+  MonthSkeleton,
+  PayablesSkeleton,
+  SpendingSkeleton,
+  TodaySkeleton,
+} from './_resumen/skeletons'
+import { SpendingBlock } from './_resumen/spending-block'
+import { headerDateLine } from './_resumen/summary-copy'
+import { TodayBlock } from './_resumen/today-block'
 
 /**
- * Resumen de Administración (H.4): «¿cómo estamos de plata?» y qué hacer hoy,
- * con una sola lectura (`acc_report_summary`). El dueño ve las acciones y
- * «Necesita atención»; la contadora, los mismos números sin acciones y el
- * estado de los libros.
+ * Resumen de Administración: «la plata hoy». Contesta, en este orden: ¿cuánta
+ * plata hay? → ¿qué me toca hoy? → ¿cómo viene el mes? → ¿qué tengo que pagar?
+ * → ¿por dónde entra y por dónde se va?
  *
- * Lo que pidieron los socios el 12/10/2026 suma dos lecturas chicas, cada una
- * en su bloque (si una falla, el resto del Resumen sale igual): los gastos
- * fijos por pagar («Te falta de gasto fijo», en lugar de «Te deben») y la
- * proyección del mes («Vas vendiendo» y «Te falta vender», las mismas cifras
- * que Ventas › Proyección).
+ * La página pide todas las lecturas juntas y no espera ninguna (`loadHome`):
+ * cada bloque va en su `Suspense`, con un esqueleto de su forma, y espera solo
+ * lo que usa. Así la fecha sale al instante, los gráficos que no dependen de
+ * `acc_report_summary` (la lenta) no la esperan, y un bloque que falla muestra
+ * su error con «Reintentar» sin tirar el resto.
  *
- * «Necesita atención» suma una segunda fuente para el dueño (diseño §5.2.4):
- * los avisos de ARCA, Mercado Pago, el banco y Mis Comprobantes
- * (`getIntegrationAttention`), sin tocar `acc_report_summary`. Mientras esas
- * tablas no estén, no trae nada; si falla, la lista lo dice con «Reintentar».
+ * El dueño ve las acciones; la contadora, los mismos números sin ningún botón
+ * de carga y, arriba de todo, el estado de los libros. La base vuelve a decidir
+ * qué ve cada uno en cada lectura (RLS de lectores).
+ *
+ * `?hero=crema` muestra la variante clara del héroe: es un parámetro temporal,
+ * para que los socios elijan entre las dos mirándolas con sus datos.
  */
 export default async function AdministracionResumenPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
   const base = `/${tenantSlug}/administracion`
@@ -92,187 +85,100 @@ export default async function AdministracionResumenPage({
     throw error
   }
 
-  const tenantId = access.tenant.id
   const canWrite = access.accounting.write
   const today = todayInCordoba()
+  const data = loadHome({
+    tenantId: access.tenant.id,
+    tenantSlug,
+    today,
+    serviceDay: serviceDayInCordoba(),
+    canWrite,
+  })
 
-  const [summaryResult, settingsResult, cookieStore, integrationResult, fixedResult, salesResult] =
-    await Promise.all([
-      settleQuery(getSummary(tenantId, { asOf: today })),
-      settleQuery(getAccountingSettings(tenantId)),
-      cookies(),
-      canWrite ? settleQuery(getIntegrationAttention(tenantId)) : Promise.resolve(null),
-      settleQuery(listRecurringExpenses(tenantId, { today })),
-      settleQuery(getSalesProjection(tenantId, monthRange(today))),
-    ])
-  const settings = settingsResult.ok ? settingsResult.data : null
-  const summary = summaryResult.ok ? summaryResult.data : null
-  const integration = integrationResult?.ok ? integrationResult.data : []
-  const integrationFailed = integrationResult !== null && !integrationResult.ok
-  const stepsHidden = cookieStore.get(firstStepsCookieName(tenantSlug))?.value === '1'
-  const fixed = fixedResult.ok ? pendingFixedExpenses(fixedResult.data) : null
-  const projection = salesResult.ok
-    ? buildProjection(salesResult.data, { serviceDay: serviceDayInCordoba() })
-    : null
-  const figures = projection ? projectionFigures(projection.summary) : null
-  // «Te falta vender» solo si el mes tiene objetivos cargados.
-  const sales =
-    projection && figures
-      ? { sold: figures.sold, remaining: projection.summary.hasTargets ? figures.remaining : null }
-      : null
-
-  const openingPending = settings?.openingStatus === 'pending'
-  const cuitMissing = settings !== null && !settings.cuit
-  // Recién configurada: ningún comprobante todavía (ni la apertura).
-  const isNew = settings !== null && !settings.hasDocuments
-  const dateLine = headerDateLine(today)
+  const [sp, cookieStore] = await Promise.all([searchParams, cookies()])
+  const heroTone: HeroTone = firstParam(sp.hero) === 'crema' ? 'crema' : 'bosque'
+  // La cookie de «Ocultar» de Primeros pasos, que ahora recuerda si la franja de la puesta
+  // en marcha quedó desplegada. Por defecto (y con el valor viejo) va en un renglón.
+  const setupCookie = firstStepsCookieName(tenantSlug)
+  const setupCollapsed = cookieStore.get(setupCookie)?.value !== SETUP_OPEN_VALUE
 
   return (
-    <PageShell>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Resumen
-            <ReadOnlyBadge />
-          </>
-        }
-        description={[dateLine, settings?.legalName].filter(Boolean).join(' · ') || undefined}
-        actions={<SummaryActions base={base} />}
-      />
+    <AdmPage>
+      {/* El título de la pantalla es la fecha: «Resumen» ya lo dice la barra de la sección.
+          En el celular va más pegado al héroe: cada renglón cuenta para que la primera acción
+          entre en la primera pantalla. */}
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 sm:mb-6">
+        <h1 className="font-serif text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
+          <span className="sr-only">Resumen: </span>
+          {headerDateLine(today) || 'Hoy'}
+          <ReadOnlyBadge />
+        </h1>
+        <Suspense fallback={null}>
+          <LegalName data={data} />
+        </Suspense>
+      </header>
 
-      {openingPending ? (
-        canWrite ? (
-          <Callout
-            tone="warning"
-            title="Te faltan los saldos iniciales"
-            action={
-              <Button asChild className="h-11 md:h-9">
-                <Link href={`${base}/configurar`}>Cargar saldos iniciales</Link>
-              </Button>
-            }
-          >
-            Cargá lo que había en cada caja y lo que se debía al{' '}
-            {formatIsoDay(settings?.booksStartDate)}, o elegí «Arrancar en cero».
-          </Callout>
-        ) : (
-          <Callout tone="info" title="Faltan los saldos iniciales">
-            Los dueños todavía no cargaron lo que había al empezar los libros.
-          </Callout>
-        )
-      ) : null}
-
-      {cuitMissing ? (
-        <Callout
-          tone="warning"
-          title="Falta el CUIT de la SAS: los libros de IVA lo necesitan."
-          action={
-            canWrite ? (
-              <Button asChild variant="outline" className="h-11 md:h-9">
-                <Link href={`${base}/ajustes?tab=sas`}>Completar</Link>
-              </Button>
-            ) : undefined
-          }
-        >
-          {canWrite ? null : 'Pedíselo a los dueños: se carga en Ajustes › Datos de la SAS.'}
-        </Callout>
-      ) : null}
-
-      {!summary ? (
-        <EmptyState
-          icon={Landmark}
-          title="No pudimos cargar el resumen."
-          description={summaryResult.ok ? undefined : summaryResult.message}
-          action={<RetryButton />}
-        />
-      ) : (
-        <>
-          {isNew ? null : (
-            <SummaryKpis
-              summary={summary}
-              today={today}
-              vatRegistered={settings ? settings.ivaCondition === 'responsable_inscripto' : true}
-              base={base}
-              fixed={fixed}
-            />
-          )}
-
-          {/* Recién configurada: al dueño le dicen qué hacer los primeros pasos (si no los ocultó). */}
-          {isNew && !(canWrite && !stepsHidden) ? (
-            <EmptyState
-              icon={Landmark}
-              title="Todavía no hay movimientos"
-              description={
-                canWrite
-                  ? 'Empezá por el cierre de ayer o por un gasto: cada cosa que cargues se suma acá.'
-                  : 'Cuando los dueños carguen gastos y cierres del día, vas a ver acá cómo está la plata de la SAS.'
-              }
-              action={
-                canWrite ? (
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button asChild variant="outline" className="h-11 md:h-9">
-                      <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
-                    </Button>
-                    <ActionButton action="gasto" className="h-11 gap-2 md:h-9">
-                      <Plus className="size-4" aria-hidden />
-                      Nuevo gasto
-                    </ActionButton>
-                  </div>
-                ) : undefined
-              }
-            />
-          ) : null}
-
-          {canWrite && !stepsHidden ? <FirstSteps base={base} steps={summary.firstSteps} /> : null}
-
-          {/* Recién configurada no hay «Necesita atención»: salvo que ARCA o un importador avisen algo. */}
-          {isNew && canWrite && (integration.length > 0 || integrationFailed) ? (
-            <SummaryCard title="Necesita atención" description="Lo más urgente primero.">
-              <AttentionList
-                items={[]}
-                today={today}
-                base={base}
-                integration={integration}
-                integrationFailed={integrationFailed}
-              />
-            </SummaryCard>
-          ) : null}
-
-          {isNew ? null : (
-            <div className={canWrite ? 'grid gap-6 lg:grid-cols-3' : 'grid gap-6 lg:grid-cols-2'}>
-              {canWrite ? (
-                <SummaryCard
-                  title="Necesita atención"
-                  description="Lo más urgente primero."
-                  className="lg:col-span-2"
-                >
-                  <AttentionList
-                    items={summary.attention.filter(
-                      (item) => !(cuitMissing && item.kind === 'sas_cuit_missing'),
-                    )}
-                    today={today}
-                    base={base}
-                    integration={integration}
-                    integrationFailed={integrationFailed}
-                  />
-                </SummaryCard>
-              ) : (
-                <BooksStatusCard
-                  books={summary.books}
-                  base={base}
-                  lastClosedText={lastClosedLine(summary.books)}
-                  openMonthText={openMonthLine(summary.books)}
-                />
-              )}
-              <ThisMonthCard summary={summary} today={today} base={base} sales={sales} />
-            </div>
-          )}
-
-          <TreasuriesCard treasuries={summary.treasuries} base={base} />
-        </>
+      {canWrite ? null : (
+        <Suspense fallback={<BooksSkeleton />}>
+          <BooksBlock data={data} />
+        </Suspense>
       )}
 
+      <Suspense fallback={<HeroSkeleton tone={heroTone} />}>
+        <HeroBlock data={data} tone={heroTone} />
+      </Suspense>
+
+      <Suspense fallback={<TodaySkeleton />}>
+        <TodayBlock data={data} setupCookie={setupCookie} setupCollapsed={setupCollapsed} />
+      </Suspense>
+
+      {/* Las dos filas de paneles pasan a dos columnas según el ancho que de verdad tienen
+          (`@container`), no el de la ventana: con el menú abierto en una notebook de 1024 a
+          1279 px, «Lo que tenés que pagar» quedaba en 277 px. Cada panel mide lo suyo
+          (`items-start`): estirado al alto del vecino dejaba un hueco de casi una pantalla. */}
+      <div className="@container space-y-6">
+        <div className={PANEL_ROW}>
+          <Suspense fallback={<MonthSkeleton className={WIDE_PANEL} />}>
+            <MonthBlock data={data} className={WIDE_PANEL} />
+          </Suspense>
+          <Suspense fallback={<PayablesSkeleton className={NARROW_PANEL} />}>
+            <PayablesBlock data={data} className={NARROW_PANEL} />
+          </Suspense>
+        </div>
+
+        <div className={PANEL_ROW}>
+          <Suspense fallback={<InOutSkeleton className={HALF_PANEL} />}>
+            <InOutBlock data={data} className={HALF_PANEL} />
+          </Suspense>
+          <Suspense fallback={<SpendingSkeleton className={HALF_PANEL} />}>
+            <SpendingBlock data={data} className={HALF_PANEL} />
+          </Suspense>
+        </div>
+      </div>
+
+      {/* Estos dos pueden no dibujar nada: sin esqueleto, para no reservar un lugar vacío. */}
+      <Suspense fallback={null}>
+        <NoticesBlock data={data} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <IvaBlock data={data} />
+      </Suspense>
+
       <QuickActionsBar />
-    </PageShell>
+    </AdmPage>
   )
+}
+
+/* Las clases de las filas de paneles, escritas enteras (Tailwind las busca como texto). */
+const PANEL_ROW = 'grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start'
+const WIDE_PANEL = 'min-w-0 @min-[58rem]:col-span-7'
+const NARROW_PANEL = 'min-w-0 @min-[58rem]:col-span-5'
+const HALF_PANEL = 'min-w-0 @min-[58rem]:col-span-6'
+
+/** La razón social, chica al lado de la fecha: llega con los ajustes, sin frenar el título. */
+async function LegalName({ data }: { data: HomeData }) {
+  const settings = await data.settings
+  const legalName = settings.ok ? settings.data?.legalName : null
+  if (!legalName) return null
+  return <p className="text-sm text-muted-foreground">{legalName}</p>
 }

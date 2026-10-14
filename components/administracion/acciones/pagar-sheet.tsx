@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   type FormEvent,
@@ -26,8 +26,20 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-document-posting'
 import { useSheetData } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-sheet-data'
 import {
+  dueRail,
+  ledgerRail,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/libreta'
+import { gastosFijosHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
+import {
+  activeQuick,
+  payHeadline,
+  paymentOutcome,
+  payTicketRows,
+  pendingRecurring,
+  quickSelections,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-summary'
+import {
   PAY_TARGETS,
-  type PayTarget,
   payAsksTarget,
   payTargetSheet,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-target'
@@ -54,13 +66,6 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
@@ -69,25 +74,48 @@ import { pickTreasury } from '@/lib/accounting/defaults'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { PaymentValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
-import { formatIsoDay } from '@/lib/dates'
+import { formatDayLabel, formatIsoDay } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { useAccounting } from '../accounting-provider'
-import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
+import {
+  ACTION_SHEET_QUESTION_FIELD,
+  ActionSheetBody,
+  ActionSheetFooter,
+  ActionSheetHeader,
+} from '../action-sheet'
 import { Amount } from '../amount'
 import { DateField } from '../date-input'
-import { DueStatus } from '../due-status'
 import { EntryPreview } from '../entry-preview'
 import { balanceText } from '../format'
+import { LedgerList, LedgerRail, LedgerRow, Pill } from '../kit'
 import { MoneyField, MoneyInput } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
+import { TreasuryPicker } from '../treasury-picker'
 import { TreasurySelect } from '../treasury-select'
 import { VoucherText } from '../voucher-text'
+import { ticketTotalLabel } from './gasto-papel'
+import { TreasuryAfterHint, TreasuryAfterLine } from './gasto-piezas'
+import {
+  OtherThanSupplier,
+  PayCover,
+  PayTicket,
+  type PayTicketRow,
+  TickMark,
+  type UrgentSupplier,
+  UrgentSuppliers,
+} from './pagar-piezas'
+import {
+  ADD_LINK,
+  BIG_MONEY_FIELD,
+  SHEET_QUESTION_BLOCK,
+  SheetQuestion,
+  TEXT_LINK,
+} from './sheet-parts'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.pagar
-const DESCRIPTION = 'Elegí a quién, qué facturas y con qué pagás.'
-const ASK_DESCRIPTION = 'Un proveedor, un gasto fijo u otro gasto.'
+const DESCRIPTION = 'A quién, qué le pagás y con qué.'
 const LAST_TREASURY_KEY = 'hub_acc_pago_caja:'
 
 /** Los que se pagan desde esta hoja: proveedores, organismos, sueldos, socios, bancos y otros. */
@@ -102,6 +130,10 @@ const KNOWN_FIELDS = new Set([
   'writeOffCents',
   'notes',
 ])
+
+/** Las otras dos cosas que se pagan, con los textos de siempre (`PAY_TARGETS`). */
+const FIXED_TARGET = PAY_TARGETS[1]
+const OTHER_TARGET = PAY_TARGETS[2]
 
 type PaymentFormValues = Omit<PaymentValues, 'clientRef' | 'previewHash' | 'warningsAck'>
 
@@ -130,6 +162,11 @@ function withItems(ctx: PostingContext, items: readonly OpenItemRef[]): PostingC
   return { ...ctx, openItems: new Map(items.map((i) => [i.lineId, i])) }
 }
 
+/** Con centavos solo si los tiene. */
+function exactDecimals(cents: number): 0 | 2 {
+  return cents % 100 === 0 ? 0 : 2
+}
+
 let rowSeq = 0
 function newRow(treasuryId: string | null, amountCents: number | null = null): MethodRow {
   rowSeq += 1
@@ -137,30 +174,31 @@ function newRow(treasuryId: string | null, amountCents: number | null = null): M
 }
 
 /**
- * Hoja «Pagar» (H.8). Arranca por «¿Qué pagás?» (pedido de los socios,
- * 12/10/2026): a un proveedor sigue acá (proveedor → facturas o un pago a
- * cuenta → con qué → listo); un gasto fijo u otro gasto siguen en «Nuevo
- * gasto». Si se abrió desde un proveedor o una factura, no pregunta.
+ * Hoja «Pagar»: tachar renglones de la libreta.
+ *
+ *   ¿A quién le pagás?  →  ¿Qué le pagás?  ·  ¿Cuánto?  ·  ¿Con qué?  →  «Le quedás debiendo $ X»
+ *
+ * La primera pantalla junta lo que antes eran dos (qué se paga y después el
+ * proveedor): lo más frecuente, pagarle a uno de los que más apuran, queda a un
+ * toque, y las otras dos respuestas que pidieron los socios (un gasto fijo, otro
+ * gasto) siguen ahí, abajo. Si se abrió desde un proveedor o una compra, no
+ * pregunta.
+ *
+ * Mismas lecturas, misma cuenta (`planPayment`) y mismo envío (`postPayment`).
  */
 export function PagarSheet(props: ActionSheetProps) {
   const { tenantSlug, params } = props
-  const { openAction } = useAccounting()
-  // Los saldos se piden de entrada: si la respuesta es «A un proveedor», ya están.
-  const load = useSheetData(() => loadSheetData(tenantSlug, { balances: true }), tenantSlug)
-  const [asking, setAsking] = useState(() => payAsksTarget(params))
+  // Los saldos y los gastos fijos se piden de entrada: la primera pantalla los muestra.
+  const load = useSheetData(
+    () => loadSheetData(tenantSlug, { balances: true, recurring: true }),
+    tenantSlug,
+  )
 
-  if (asking) {
-    return (
-      <PayTargetQuestion
-        onPick={(target) => {
-          const sheet = payTargetSheet(target)
-          if (sheet === 'pagar') setAsking(false)
-          else openAction(sheet)
-        }}
-      />
-    )
-  }
   if (!load.data) {
+    // Mientras llega, la pregunta ya se ve y sus dos salidas de abajo ya se pueden tocar.
+    if (payAsksTarget(params) && load.status !== 'error') {
+      return <WhoScreen tenantSlug={tenantSlug} data={null} onPick={() => {}} />
+    }
     return (
       <>
         <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
@@ -174,39 +212,149 @@ export function PagarSheet(props: ActionSheetProps) {
       </>
     )
   }
-  return <PagarForm {...props} data={load.data} onChangeTarget={() => setAsking(true)} />
+  return <PagarForm {...props} data={load.data} />
 }
 
-/** «¿Qué pagás?»: tres renglones para tocar, con la misma forma que «Lo más urgente». */
-function PayTargetQuestion({ onPick }: { onPick: (target: PayTarget) => void }) {
+/**
+ * Pantalla 1 — «¿A quién le pagás?»: lo más urgente arriba, el buscador, y las
+ * otras dos cosas que se pagan. `data: null` = todavía cargando.
+ */
+function WhoScreen({
+  tenantSlug,
+  data,
+  onPick,
+  notice,
+}: {
+  tenantSlug: string
+  data: SheetData | null
+  onPick: (partyId: string) => void
+  /** El aviso de una compra que ya no está pendiente (`?partida=`). */
+  notice?: string | null
+}) {
+  const { openAction } = useAccounting()
   const uid = useId()
+  const [fixedOpen, setFixedOpen] = useState(false)
+
+  const partyById = useMemo(
+    () => new Map((data?.parties ?? []).map((p) => [p.id, p])),
+    [data?.parties],
+  )
+  const balanceById = useMemo(
+    () => new Map((data?.balances ?? []).map((b) => [b.partyId, b])),
+    [data?.balances],
+  )
+  const urgent: UrgentSupplier[] | null = useMemo(() => {
+    if (!data) return null
+    return (data.balances ?? [])
+      .filter((b) => b.debtCents > 0 && partyById.has(b.partyId))
+      .sort(
+        (a, b) =>
+          b.overdueCents - a.overdueCents ||
+          (a.nextDueDate ?? '9999-12-31').localeCompare(b.nextDueDate ?? '9999-12-31') ||
+          b.debtCents - a.debtCents,
+      )
+      .slice(0, 6)
+      .flatMap((b) => {
+        const p = partyById.get(b.partyId)
+        return p
+          ? [
+              {
+                partyId: b.partyId,
+                name: partyName(p),
+                rail: ledgerRail(b, data.today),
+                debtCents: b.debtCents,
+              },
+            ]
+          : []
+      })
+  }, [data, partyById])
+  const options: PartyOption[] = useMemo(
+    () =>
+      (data?.parties ?? [])
+        .filter((p) => PAYABLE_KINDS.has(p.kind) && p.active)
+        .map((p) => {
+          const balance = balanceById.get(p.id)
+          return {
+            id: p.id,
+            name: p.name,
+            tradeName: p.tradeName,
+            taxId: p.taxId,
+            active: p.active,
+            meta:
+              balance && balance.netCents !== 0
+                ? balanceText(balance.netCents, 'payable', { decimals: 0 })
+                : null,
+          }
+        }),
+    [data?.parties, balanceById],
+  )
+  const fixed = useMemo(
+    () =>
+      data
+        ? pendingRecurring(data.recurring).map((r) => ({
+            id: r.id,
+            name: r.name,
+            nextDueDate: r.nextDueDate,
+            amountCents: r.amountCents,
+          }))
+        : null,
+    [data],
+  )
+  const nobodyOwed = data?.balances?.every((b) => b.debtCents === 0) ?? false
+
   return (
     <>
-      <ActionSheetHeader title={TITLE} description={ASK_DESCRIPTION} />
+      <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <ActionSheetBody>
-        <section aria-labelledby={`${uid}-que`} className="space-y-2">
-          <h3 id={`${uid}-que`} className="text-sm font-medium">
-            ¿Qué pagás?
-          </h3>
-          <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-            {PAY_TARGETS.map((target) => (
-              <li key={target.value}>
-                <button
-                  type="button"
-                  onClick={() => onPick(target.value)}
-                  className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-cream-tint focus-visible:bg-cream-tint"
-                >
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{target.label}</span>
-                    <span className="block text-xs text-muted-foreground text-pretty">
-                      {target.hint}
-                    </span>
-                  </span>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
+        {notice ? <InlineNotice tone="info">{notice}</InlineNotice> : null}
+
+        <section aria-labelledby={`${uid}-quien`} className={SHEET_QUESTION_BLOCK}>
+          <SheetQuestion id={`${uid}-quien`}>¿A quién le pagás?</SheetQuestion>
+          {urgent === null || urgent.length > 0 ? (
+            <div className="grid gap-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Lo más urgente</p>
+              <UrgentSuppliers rows={urgent} onPick={onPick} />
+            </div>
+          ) : nobodyOwed ? (
+            <p className="rounded-xl bg-secondary/50 px-3.5 py-3 text-sm text-muted-foreground text-pretty">
+              No le debés nada a ningún proveedor. Igual podés elegir uno y dejarle plata a cuenta.
+            </p>
+          ) : null}
+          <div className="grid gap-1.5">
+            <Label
+              htmlFor={`${uid}-proveedor`}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {urgent !== null && urgent.length > 0
+                ? 'Buscar otro proveedor'
+                : 'Buscar un proveedor'}
+            </Label>
+            <PartyCombobox
+              id={`${uid}-proveedor`}
+              value={null}
+              onValueChange={(id) => (id ? onPick(id) : undefined)}
+              parties={options}
+              placeholder="Elegí un proveedor"
+              disabled={data === null}
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby={`${uid}-otra`} className={SHEET_QUESTION_BLOCK}>
+          <SheetQuestion id={`${uid}-otra`}>¿No es a un proveedor?</SheetQuestion>
+          <OtherThanSupplier
+            fixedLabel={FIXED_TARGET.label}
+            fixedHint={FIXED_TARGET.hint}
+            otherLabel={OTHER_TARGET.label}
+            otherHint={OTHER_TARGET.hint}
+            open={fixedOpen}
+            onToggle={() => setFixedOpen((v) => !v)}
+            fixed={fixed}
+            // «Nuevo gasto» con ese gasto fijo ya elegido (`?gasto-fijo=`).
+            onPickFixed={(id) => openAction('gasto', { 'gasto-fijo': id })}
+            onOther={() => openAction(payTargetSheet(OTHER_TARGET.value))}
+            sheetHref={gastosFijosHref(tenantSlug)}
+          />
         </section>
       </ActionSheetBody>
     </>
@@ -219,13 +367,7 @@ function PagarForm({
   close,
   setDirty,
   data,
-  onChangeTarget,
-}: ActionSheetProps & {
-  data: SheetData
-  /** Vuelve a «¿Qué pagás?» (no era a un proveedor). */
-  onChangeTarget: () => void
-}) {
-  const uid = useId()
+}: ActionSheetProps & { data: SheetData }) {
   const partyById = useMemo(() => new Map(data.parties.map((p) => [p.id, p])), [data.parties])
   const [partyId, setPartyId] = useState<string | null>(() => {
     const initial = params.proveedor ? partyById.get(params.proveedor) : undefined
@@ -235,46 +377,6 @@ function PagarForm({
   const lineFromUrl = params.partida ?? null
   const [lineToResolve, setLineToResolve] = useState<string | null>(() =>
     partyId ? null : lineFromUrl,
-  )
-
-  const payables = useMemo(
-    () => data.parties.filter((p) => PAYABLE_KINDS.has(p.kind) && (p.active || p.id === partyId)),
-    [data.parties, partyId],
-  )
-  const balanceById = useMemo(
-    () => new Map((data.balances ?? []).map((b) => [b.partyId, b])),
-    [data.balances],
-  )
-  const withDebt = useMemo(
-    () =>
-      (data.balances ?? [])
-        .filter((b) => b.debtCents > 0 && partyById.has(b.partyId))
-        .sort(
-          (a, b) =>
-            b.overdueCents - a.overdueCents ||
-            (a.nextDueDate ?? '9999-12-31').localeCompare(b.nextDueDate ?? '9999-12-31') ||
-            b.debtCents - a.debtCents,
-        )
-        .slice(0, 6),
-    [data.balances, partyById],
-  )
-  const options: PartyOption[] = useMemo(
-    () =>
-      payables.map((p) => {
-        const balance = balanceById.get(p.id)
-        return {
-          id: p.id,
-          name: p.name,
-          tradeName: p.tradeName,
-          taxId: p.taxId,
-          active: p.active,
-          meta:
-            balance && balance.netCents !== 0
-              ? balanceText(balance.netCents, 'payable', { decimals: 0 })
-              : null,
-        }
-      }),
-    [payables, balanceById],
   )
 
   const items = useSheetData(
@@ -316,83 +418,12 @@ function PagarForm({
       )
     }
     return (
-      <>
-        <ActionSheetHeader title={TITLE} description={DESCRIPTION}>
-          <button
-            type="button"
-            onClick={onChangeTarget}
-            className="inline-flex min-h-11 items-center gap-1 self-start text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0"
-          >
-            <ChevronLeft className="size-3" aria-hidden />
-            Pagar otra cosa
-          </button>
-        </ActionSheetHeader>
-        <ActionSheetBody>
-          {lineFromUrl && items.status === 'error' && items.message ? (
-            <InlineNotice tone="info">{items.message}</InlineNotice>
-          ) : null}
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${uid}-proveedor`}>¿A quién le pagás?</Label>
-            <PartyCombobox
-              id={`${uid}-proveedor`}
-              value={null}
-              onValueChange={(id) => setPartyId(id)}
-              parties={options}
-              placeholder="Elegí un proveedor"
-            />
-          </div>
-          {withDebt.length > 0 ? (
-            <section aria-labelledby={`${uid}-con-deuda`} className="space-y-2">
-              <h3
-                id={`${uid}-con-deuda`}
-                className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground"
-              >
-                Lo más urgente
-              </h3>
-              <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-                {withDebt.map((b) => {
-                  const p = partyById.get(b.partyId)
-                  if (!p) return null
-                  return (
-                    <li key={b.partyId}>
-                      <button
-                        type="button"
-                        onClick={() => setPartyId(b.partyId)}
-                        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-cream-tint focus-visible:bg-cream-tint"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{partyName(p)}</span>
-                          <span
-                            className={cn(
-                              'block text-xs',
-                              b.trafficLight === 'red'
-                                ? 'text-destructive'
-                                : b.trafficLight === 'yellow'
-                                  ? 'text-warning-text'
-                                  : 'text-muted-foreground',
-                            )}
-                          >
-                            {b.trafficText}
-                          </span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2 text-sm">
-                          <Amount cents={b.debtCents} decimals={0} className="font-medium" />
-                          <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          ) : data.balances?.every((b) => b.debtCents === 0) ? (
-            <p className="text-sm text-muted-foreground">
-              No le debés nada a ningún proveedor. Igual podés elegir uno y dejarle un pago a
-              cuenta.
-            </p>
-          ) : null}
-        </ActionSheetBody>
-      </>
+      <WhoScreen
+        tenantSlug={tenantSlug}
+        data={data}
+        onPick={(id) => setPartyId(id)}
+        notice={lineFromUrl && items.status === 'error' ? items.message : null}
+      />
     )
   }
 
@@ -409,7 +440,7 @@ function PagarForm({
               {['a', 'b', 'c'].map((k) => (
                 <Skeleton key={k} className="h-14 w-full rounded-xl" />
               ))}
-              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-16 w-full rounded-2xl" />
             </div>
           )}
         </ActionSheetBody>
@@ -520,6 +551,8 @@ function PaymentForm({
   const [date, setDate] = useState<string | null>(data.today)
   const [notes, setNotes] = useState('')
   const [showNotes, setShowNotes] = useState(false)
+  /** «＋ Agregar n.º de transferencia», con un solo medio. */
+  const [showReference, setShowReference] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [applying, startApplying] = useTransition()
 
@@ -627,8 +660,8 @@ function PaymentForm({
     if (date === null) localErrors.date = 'Elegí la fecha.'
     if (plan.amountCents <= 0 && plan.writeOffCents <= 0) {
       localErrors.amount = coveredByCredit
-        ? 'El saldo a favor ya cubre lo elegido: usalo con el botón de arriba.'
-        : 'Escribí cuánto pagás o tildá qué facturas.'
+        ? 'Lo que tenés a favor ya cubre lo tildado: usalo con el botón de arriba.'
+        : 'Escribí cuánto pagás o tildá qué le pagás.'
     }
     if (resolved.missingTreasury) localErrors.methods = 'Elegí con qué pagás.'
     else if (resolved.unassignedCents > 0) {
@@ -680,7 +713,7 @@ function PaymentForm({
     }
   }
 
-  // «Usar el saldo a favor» sin pagar nada (lo elegido ya está cubierto).
+  // «Usar lo que tenés a favor» sin pagar nada (lo tildado ya está cubierto).
   const applyCredit = () =>
     startApplying(async () => {
       const pairs = creditPairs(planDebts, planCredits)
@@ -691,7 +724,7 @@ function PaymentForm({
           toast.error(result.message)
           return
         }
-        toast.success(`Listo: usaste el saldo a favor con ${name}.`)
+        toast.success(`Listo: usaste lo que tenías a favor con ${name}.`)
         router.refresh()
         close()
       } catch {
@@ -739,12 +772,6 @@ function PaymentForm({
     })
   }
 
-  const partialsText = plan.partials
-    .filter((p) => plan.applications.some((a) => a.lineId === p.lineId))
-    .map((p) => `${p.label} queda con ${formatCents(p.pendingCents)} pendientes`)
-  const untouchedDebts = plan.partials.filter(
-    (p) => !plan.applications.some((a) => a.lineId === p.lineId),
-  )
   const closedMonth = date && data.firstOpenDate && date < data.firstOpenDate
   const entries = posting.overrideFor(key) ?? (preview?.ok ? preview.preview : [])
   const debtTotal = debts.reduce((sum, d) => sum + d.openCents, 0)
@@ -752,20 +779,42 @@ function PaymentForm({
   const multiRow = rows.length > 1
   const submitLabel = plan.amountCents > 0 ? `Pagar ${formatCentsShort(plan.amountCents)}` : 'Pagar'
 
+  // ── Lo que se lee: los atajos, cómo queda la deuda y el ticket ──
+  const quick = quickSelections(debts, today)
+  const quickActive = activeQuick(selected, quick)
+  const pickQuick = (ids: readonly string[]) => {
+    setSelected(new Set(ids))
+    posting.clearFieldErrors()
+  }
+  const outcome = paymentOutcome({ plan, debtTotalCents: debtTotal })
+  const single = rows.length === 1 ? (rows[0] ?? null) : null
+  const singleTreasury = single?.treasuryId
+    ? (data.treasuries.find((t) => t.id === single.treasuryId) ?? null)
+    : null
+  const hasTreasuries = data.treasuries.some((t) => t.active)
+  const labelOf = new Map(debts.map((d) => [d.lineId, d.label]))
+  const ticketLines = payTicketRows(plan.applications, (lineId) => labelOf.get(lineId))
+  const ticketRows: PayTicketRow[] = ticketLines.rows.map((row) => ({
+    key: row.key,
+    label: <VoucherText text={row.label} />,
+    cents: row.cents,
+  }))
+  const nothingYet = outcome.kind === 'nothing'
+
   return (
     <>
       <ActionSheetHeader
         title={`Pagar a ${name}`}
-        description={
-          debtTotal > 0 || creditTotal > 0
-            ? balanceText(debtTotal - creditTotal, 'payable')
-            : `No le debés nada a ${name}. Podés dejar un pago a cuenta.`
-        }
+        description={payHeadline({
+          debtCents: debtTotal,
+          creditCents: creditTotal,
+          count: debts.length,
+        })}
       >
         <button
           type="button"
           onClick={onChangeParty}
-          className="inline-flex min-h-11 items-center gap-1 self-start text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+          className="inline-flex min-h-11 items-center gap-1 self-start rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
         >
           <X className="size-3" aria-hidden />
           Elegir otro proveedor
@@ -779,204 +828,226 @@ function PaymentForm({
         className="flex min-h-0 flex-1 flex-col"
       >
         <ActionSheetBody>
-          {accounts.length > 1 ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${uid}-cuenta`}>¿Qué le pagás?</Label>
-              <Select
-                value={accountId ?? undefined}
-                onValueChange={(next) => {
-                  setAccountId(next)
-                  setSelected(new Set())
-                  setTargets(new Map())
-                  setCreditOn(
-                    new Set(
-                      partyItems.items
-                        .filter((i) => i.side === 'debit' && i.accountId === next)
-                        .map((i) => i.lineId),
-                    ),
-                  )
-                }}
-              >
-                <SelectTrigger
-                  id={`${uid}-cuenta`}
-                  className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id} className="min-h-11 md:min-h-8">
-                      {a.name}
-                      {a.debt > 0 ? ` · ${formatCentsShort(a.debt)}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Un pago cancela comprobantes de una sola cuenta.
-              </p>
-            </div>
-          ) : null}
+          {/* ¿Qué le pagás?: los atajos y las compras sin pagar, cada una con su tilde */}
+          {debts.length > 0 || accounts.length > 1 ? (
+            <section aria-labelledby={`${uid}-que`} className={SHEET_QUESTION_BLOCK}>
+              <SheetQuestion id={`${uid}-que`}>¿Qué le pagás?</SheetQuestion>
 
-          {/* Facturas pendientes */}
-          {debts.length > 0 ? (
-            <section aria-labelledby={`${uid}-facturas`} className="space-y-2">
-              <div className="flex items-end justify-between gap-3">
-                <h3 id={`${uid}-facturas`} className="text-sm font-medium">
-                  ¿Qué facturas pagás?
-                </h3>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  onClick={() => {
-                    const all = selected.size < debts.length
-                    setSelected(all ? new Set(debts.map((d) => d.lineId)) : new Set())
-                    posting.clearFieldErrors()
-                  }}
-                >
-                  {selected.size < debts.length ? 'Tildar todas' : 'Destildar todas'}
-                </button>
-              </div>
-              <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-                {debts.map((d) => {
-                  const on = selected.has(d.lineId)
-                  const partial = partialOpen.has(d.lineId)
-                  const target = targets.get(d.lineId) ?? null
-                  const checkboxId = `${uid}-f-${d.lineId}`
-                  return (
-                    <li key={d.lineId} className="px-3 py-2.5">
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          id={checkboxId}
-                          checked={on}
-                          onCheckedChange={(checked) => toggleDebt(d.lineId, checked === true)}
-                          className="mt-1"
-                        />
-                        <label
-                          htmlFor={checkboxId}
-                          className="flex min-h-9 min-w-0 flex-1 cursor-pointer items-start justify-between gap-3"
-                        >
-                          <span className="min-w-0 space-y-0.5">
-                            <span className="block text-sm font-medium text-pretty">
-                              <VoucherText text={d.label} />
-                            </span>
-                            <DueStatus dueDate={d.dueDate} today={today} showDate />
+              {accounts.length > 1 ? (
+                <div className="grid gap-1.5">
+                  <p id={`${uid}-cuenta`} className="text-xs font-medium text-muted-foreground">
+                    ¿De cuál?
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {accounts.map((a) => (
+                      <Pill
+                        key={a.id}
+                        size="touch"
+                        active={a.id === accountId}
+                        className="max-w-full md:pointer-fine:h-9"
+                        onClick={() => {
+                          if (a.id === accountId) return
+                          setAccountId(a.id)
+                          setSelected(new Set())
+                          setTargets(new Map())
+                          setCreditOn(
+                            new Set(
+                              partyItems.items
+                                .filter((i) => i.side === 'debit' && i.accountId === a.id)
+                                .map((i) => i.lineId),
+                            ),
+                          )
+                        }}
+                      >
+                        <span className="truncate">{a.name}</span>
+                        {a.debt > 0 ? (
+                          <span className="ml-1.5 tabular-nums opacity-80">
+                            {formatCentsShort(a.debt)}
                           </span>
-                          <Amount cents={d.openCents} className="shrink-0 text-sm font-medium" />
-                        </label>
-                      </div>
-                      {on ? (
-                        partial ? (
-                          <div className="mt-2 flex items-center gap-2 pl-7">
-                            <Label
-                              htmlFor={`${checkboxId}-parcial`}
-                              className="shrink-0 text-xs text-muted-foreground"
-                            >
-                              Pagar de esta
-                            </Label>
-                            <MoneyInput
-                              id={`${checkboxId}-parcial`}
-                              size="sm"
-                              align="end"
-                              value={target}
-                              maxCents={d.openCents}
-                              onValueChange={(cents) => {
-                                setTargets((prev) => {
-                                  const next = new Map(prev)
-                                  if (cents === null || cents >= d.openCents) next.delete(d.lineId)
-                                  else next.set(d.lineId, cents)
-                                  return next
-                                })
-                                posting.clearFieldErrors()
-                              }}
-                              className="w-40"
-                            />
-                            <button
-                              type="button"
-                              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                              onClick={() => {
-                                setPartialOpen((prev) => {
-                                  const next = new Set(prev)
-                                  next.delete(d.lineId)
-                                  return next
-                                })
-                                setTargets((prev) => {
-                                  const next = new Map(prev)
-                                  next.delete(d.lineId)
-                                  return next
-                                })
-                              }}
-                            >
-                              Toda
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="mt-1 ml-7 inline-flex min-h-9 items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline md:min-h-0"
-                            onClick={() => setPartialOpen((prev) => new Set(prev).add(d.lineId))}
-                          >
-                            Pagar solo una parte
-                          </button>
-                        )
-                      ) : null}
-                    </li>
-                  )
-                })}
-              </ul>
+                        ) : null}
+                      </Pill>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Se paga de a una por vez.</p>
+                </div>
+              ) : null}
+
+              {debts.length > 0 ? (
+                <>
+                  <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
+                    <legend className="sr-only">Atajos para tildar</legend>
+                    {quick.overdue.ids.length > 0 &&
+                    quick.overdue.ids.length < quick.all.ids.length ? (
+                      <Pill
+                        size="touch"
+                        active={quickActive === 'overdue'}
+                        className="md:pointer-fine:h-9"
+                        onClick={() => pickQuick(quick.overdue.ids)}
+                      >
+                        Lo vencido
+                        <span className="ml-1.5 tabular-nums opacity-80">
+                          {formatCentsShort(quick.overdue.cents)}
+                        </span>
+                      </Pill>
+                    ) : null}
+                    <Pill
+                      size="touch"
+                      active={quickActive === 'all'}
+                      className="md:pointer-fine:h-9"
+                      onClick={() => pickQuick(quick.all.ids)}
+                    >
+                      Todo
+                      <span className="ml-1.5 tabular-nums opacity-80">
+                        {formatCentsShort(quick.all.cents)}
+                      </span>
+                    </Pill>
+                    <Pill
+                      size="touch"
+                      active={quickActive === 'none'}
+                      className="md:pointer-fine:h-9"
+                      onClick={() => pickQuick([])}
+                    >
+                      Nada: le dejo plata a cuenta
+                    </Pill>
+                  </fieldset>
+
+                  <LedgerList aria-label="Compras sin pagar">
+                    {debts.map((d) => {
+                      const on = selected.has(d.lineId)
+                      const partial = partialOpen.has(d.lineId)
+                      const target = targets.get(d.lineId) ?? null
+                      const fieldId = `${uid}-f-${d.lineId}`
+                      return (
+                        <LedgerRow
+                          key={d.lineId}
+                          rail={<LedgerRail {...dueRail(d.dueDate, today)} />}
+                          title={
+                            <span className="inline-flex items-start gap-2.5 text-left">
+                              <span className="mt-0.5">
+                                <TickMark on={on} />
+                              </span>
+                              <span>
+                                <VoucherText text={d.label} />
+                              </span>
+                            </span>
+                          }
+                          onClick={() => toggleDebt(d.lineId, !on)}
+                          pressed={on}
+                          tint={on ? 'ok' : undefined}
+                          amount={
+                            <Amount cents={d.openCents} decimals={exactDecimals(d.openCents)} />
+                          }
+                        >
+                          {on ? (
+                            partial ? (
+                              <div className="flex flex-wrap items-center gap-2 pb-1">
+                                <Label
+                                  htmlFor={`${fieldId}-parcial`}
+                                  className="shrink-0 text-xs text-muted-foreground"
+                                >
+                                  Pagar de esta
+                                </Label>
+                                <MoneyInput
+                                  id={`${fieldId}-parcial`}
+                                  size="sm"
+                                  align="end"
+                                  value={target}
+                                  maxCents={d.openCents}
+                                  onValueChange={(cents) => {
+                                    setTargets((prev) => {
+                                      const next = new Map(prev)
+                                      if (cents === null || cents >= d.openCents) {
+                                        next.delete(d.lineId)
+                                      } else next.set(d.lineId, cents)
+                                      return next
+                                    })
+                                    posting.clearFieldErrors()
+                                  }}
+                                  className="w-40"
+                                />
+                                <button
+                                  type="button"
+                                  className={cn(TEXT_LINK, 'text-xs')}
+                                  onClick={() => {
+                                    setPartialOpen((prev) => {
+                                      const next = new Set(prev)
+                                      next.delete(d.lineId)
+                                      return next
+                                    })
+                                    setTargets((prev) => {
+                                      const next = new Map(prev)
+                                      next.delete(d.lineId)
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  Toda
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className={cn(TEXT_LINK, 'text-xs')}
+                                onClick={() =>
+                                  setPartialOpen((prev) => new Set(prev).add(d.lineId))
+                                }
+                              >
+                                Pagar solo una parte
+                              </button>
+                            )
+                          ) : null}
+                        </LedgerRow>
+                      )
+                    })}
+                  </LedgerList>
+                </>
+              ) : null}
             </section>
           ) : null}
 
-          {/* Saldos a favor */}
+          {/* A tu favor: se descuenta primero */}
           {credits.length > 0 ? (
-            <section aria-labelledby={`${uid}-a-favor`} className="space-y-2">
-              <h3 id={`${uid}-a-favor`} className="text-sm font-medium">
-                Saldos a favor
-              </h3>
-              <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
+            <section aria-labelledby={`${uid}-a-favor`} className="grid gap-2">
+              <div>
+                <h3 id={`${uid}-a-favor`} className="text-sm font-semibold">
+                  A tu favor
+                </h3>
+                <p className="text-xs text-muted-foreground">Se descuenta primero.</p>
+              </div>
+              <LedgerList aria-label="A tu favor">
                 {credits.map((c) => {
-                  const checkboxId = `${uid}-c-${c.lineId}`
+                  const on = creditOn.has(c.lineId)
                   return (
-                    <li key={c.lineId} className="flex items-start gap-3 px-3 py-2.5">
-                      <Checkbox
-                        id={checkboxId}
-                        checked={creditOn.has(c.lineId)}
-                        onCheckedChange={(checked) => {
-                          setCreditOn((prev) => {
-                            const next = new Set(prev)
-                            if (checked === true) next.add(c.lineId)
-                            else next.delete(c.lineId)
-                            return next
-                          })
-                          posting.clearFieldErrors()
-                        }}
-                        className="mt-1"
-                      />
-                      <label
-                        htmlFor={checkboxId}
-                        className="flex min-h-9 min-w-0 flex-1 cursor-pointer items-start justify-between gap-3"
-                      >
-                        <span className="min-w-0">
-                          {/* El número entero: truncado, «Nota de crédito A 0003-000…» no se distingue de otra. */}
-                          <span className="block text-sm font-medium text-pretty">
+                    <LedgerRow
+                      key={c.lineId}
+                      rail={<LedgerRail label="a tu" value="favor" tone="ok" />}
+                      title={
+                        <span className="inline-flex items-start gap-2.5 text-left">
+                          <span className="mt-0.5">
+                            <TickMark on={on} />
+                          </span>
+                          <span>
+                            {/* El número entero: truncado, «Nota de crédito A 0003-000…» no se distingue de otra. */}
                             <VoucherText text={c.label} />
                           </span>
-                          <span className="block text-xs tabular-nums text-muted-foreground">
-                            {formatIsoDay(c.entryDate)}
-                          </span>
                         </span>
-                        <span className="shrink-0 text-right text-sm">
-                          <span className="block text-[11px] text-muted-foreground">A favor</span>
-                          <Amount cents={c.openCents} className="font-medium text-success" />
-                        </span>
-                      </label>
-                    </li>
+                      }
+                      meta={<span className="tabular-nums">del {formatIsoDay(c.entryDate)}</span>}
+                      onClick={() => {
+                        setCreditOn((prev) => {
+                          const next = new Set(prev)
+                          if (on) next.delete(c.lineId)
+                          else next.add(c.lineId)
+                          return next
+                        })
+                        posting.clearFieldErrors()
+                      }}
+                      pressed={on}
+                      amount={<Amount cents={c.openCents} decimals={exactDecimals(c.openCents)} />}
+                    />
                   )
                 })}
-              </ul>
-              <p className="text-xs text-muted-foreground">
-                Los saldos a favor tildados se descuentan primero.
-              </p>
+              </LedgerList>
             </section>
           ) : null}
 
@@ -987,172 +1058,235 @@ function PaymentForm({
                 <Button
                   type="button"
                   size="sm"
-                  className="h-9 md:h-7"
+                  className="h-11 md:h-8"
                   disabled={applying}
                   onClick={applyCredit}
                 >
-                  {applying ? 'Aplicando…' : `Usar ${formatCentsShort(plan.debtCents)} a favor`}
+                  {applying ? 'Usándolo…' : `Usar ${formatCentsShort(plan.debtCents)} a favor`}
                 </Button>
               }
             >
-              El saldo a favor alcanza para lo que tildaste: no hace falta pagar nada.
+              Lo que tenés a favor alcanza para lo que tildaste: no hace falta pagar nada.
             </InlineNotice>
           ) : null}
 
-          {/* Monto */}
-          <MoneyField
-            id={`${uid}-monto`}
-            label="Monto a pagar"
-            required
-            value={shownAmount}
-            onValueChange={(cents) => {
-              setAmountTouched(true)
-              setAmount(cents)
-              posting.clearFieldErrors()
-            }}
-            error={errors.amount ?? null}
-            hint={
-              plan.creditUsedCents > 0
-                ? `Facturas ${formatCents(plan.appliedCents)} − a favor ${formatCents(plan.creditUsedCents)}.`
-                : debts.length === 0
-                  ? 'Queda como pago a cuenta: se descuenta de la próxima factura.'
+          {/* ¿Cuánto le pagás?: el importe y, debajo, lo que cubre */}
+          <div className={SHEET_QUESTION_BLOCK}>
+            <MoneyField
+              id={`${uid}-monto`}
+              label="¿Cuánto le pagás?"
+              required
+              value={shownAmount}
+              onValueChange={(cents) => {
+                setAmountTouched(true)
+                setAmount(cents)
+                posting.clearFieldErrors()
+              }}
+              error={errors.amount ?? null}
+              hint={
+                plan.creditUsedCents > 0
+                  ? `Lo tildado ${formatCents(plan.appliedCents)} menos lo que tenés a favor ${formatCents(plan.creditUsedCents)}.`
                   : undefined
-            }
-          >
-            {amountTouched && plan.suggestedCents > 0 && amount !== plan.suggestedCents ? (
-              <button
-                type="button"
-                className="justify-self-start text-xs font-medium text-primary underline-offset-4 hover:underline"
-                onClick={() => {
-                  setAmountTouched(false)
-                  setAmount(null)
-                }}
-              >
-                Pagar lo tildado: {formatCents(plan.suggestedCents)}
-              </button>
-            ) : null}
-          </MoneyField>
-
-          {partialsText.length > 0 ? (
-            <InlineNotice tone="info">{partialsText.join(' · ')}.</InlineNotice>
-          ) : null}
-          {untouchedDebts.length > 0 && plan.appliedCents > 0 ? (
-            <InlineNotice tone="info">
-              Con este monto no alcanza para {untouchedDebts.map((p) => p.label).join(', ')}: queda
-              pendiente.
-            </InlineNotice>
-          ) : null}
-          {plan.onAccountCents > 0 ? (
-            <InlineNotice tone="info">
-              Quedan {formatCents(plan.onAccountCents)} a cuenta (pago adelantado): se descuentan de
-              la próxima factura.
-            </InlineNotice>
-          ) : null}
-          {plan.canWriteOff ? (
-            <label
-              htmlFor={`${uid}-dif`}
-              className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3 text-sm"
+              }
+              className={BIG_MONEY_FIELD}
+              fieldClassName={ACTION_SHEET_QUESTION_FIELD}
             >
-              <Checkbox
-                id={`${uid}-dif`}
-                checked={writeOff}
-                onCheckedChange={(checked) => setWriteOff(checked === true)}
-                className="mt-0.5"
-              />
-              <span className="space-y-0.5">
-                <span className="block font-medium">
-                  Dar por cancelado el resto ({formatCents(plan.restCents)})
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  Para diferencias chicas de redondeo (hasta $ 1.000). Queda como descuento
-                  obtenido.
-                </span>
-              </span>
-            </label>
-          ) : null}
-
-          {/* Con qué */}
-          {/* Sin m-0: pisaba el space-y-5 del cuerpo y «Fecha del pago» quedaba pegada a «Otro medio» (el preflight ya saca el margen del fieldset). */}
-          <fieldset className="grid min-w-0 gap-2 border-0 p-0">
-            <legend className="mb-1.5 text-sm font-medium">
-              ¿Con qué pagás?
-              {/* ml-2.5: el mismo aire que el «*» de un <Label> (gap-2 + ml-0.5). */}
-              <span aria-hidden="true" className="ml-2.5 text-destructive">
-                *
-              </span>
-            </legend>
-            {rows.map((row, index) => (
-              <div
-                key={row.key}
-                className="grid gap-2 rounded-xl border border-border/70 bg-card/50 p-3"
+              {amountTouched && plan.suggestedCents > 0 && amount !== plan.suggestedCents ? (
+                <button
+                  type="button"
+                  className={cn(TEXT_LINK, 'justify-self-start text-xs')}
+                  onClick={() => {
+                    setAmountTouched(false)
+                    setAmount(null)
+                  }}
+                >
+                  Volver a lo tildado: {formatCents(plan.suggestedCents)}
+                </button>
+              ) : null}
+            </MoneyField>
+            <PayCover outcome={outcome} />
+            {plan.canWriteOff ? (
+              <label
+                htmlFor={`${uid}-dif`}
+                className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-secondary/50 p-3 text-sm"
               >
-                <div className="flex items-center gap-2">
-                  <TreasurySelect
-                    aria-label={multiRow ? `Medio ${index + 1}` : 'Con qué pagás'}
-                    value={row.treasuryId}
-                    onValueChange={(next) => setRow(row.key, { treasuryId: next })}
+                <Checkbox
+                  id={`${uid}-dif`}
+                  checked={writeOff}
+                  onCheckedChange={(checked) => setWriteOff(checked === true)}
+                  className="mt-0.5"
+                />
+                <span className="space-y-0.5">
+                  <span className="block font-medium">
+                    Dar por pagados los {formatCents(plan.restCents)} que faltan
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Para diferencias chicas de redondeo (hasta $ 1.000).
+                  </span>
+                </span>
+              </label>
+            ) : null}
+          </div>
+
+          {/* ¿Con qué pagás? */}
+          {hasTreasuries ? (
+            <div className={SHEET_QUESTION_BLOCK}>
+              <SheetQuestion id={`${uid}-con-que`} required>
+                ¿Con qué pagás?
+              </SheetQuestion>
+              {single ? (
+                <>
+                  <TreasuryPicker
+                    id={`${uid}-caja`}
+                    aria-labelledby={`${uid}-con-que`}
+                    value={single.treasuryId}
+                    onValueChange={(next) => setRow(single.key, { treasuryId: next })}
                     treasuries={data.treasuries}
-                    invalid={Boolean(methodsError) && !row.treasuryId}
-                    className="min-w-0 flex-1"
+                    invalid={Boolean(methodsError) && !single.treasuryId}
                   />
-                  {multiRow ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 shrink-0 text-muted-foreground md:size-9"
-                      aria-label={`Quitar el medio ${index + 1}`}
-                      onClick={() => removeRow(row.key)}
-                    >
-                      <Trash2 className="size-4" aria-hidden />
-                    </Button>
-                  ) : null}
-                </div>
-                <div className={cn('grid gap-2', multiRow ? 'grid-cols-2' : 'grid-cols-1')}>
-                  {multiRow ? (
-                    <MoneyInput
-                      aria-label={`Importe del medio ${index + 1}`}
-                      value={row.amountCents}
-                      align="end"
-                      onValueChange={(cents) => setRow(row.key, { amountCents: cents })}
-                      invalid={Boolean(methodsError) && (row.amountCents ?? 0) <= 0}
+                  {singleTreasury ? (
+                    <TreasuryAfterLine
+                      treasury={singleTreasury}
+                      amountCents={plan.amountCents > 0 ? plan.amountCents : null}
                     />
                   ) : null}
-                  <Input
-                    aria-label={multiRow ? `Referencia del medio ${index + 1}` : 'Referencia'}
-                    value={row.reference}
-                    maxLength={60}
-                    autoComplete="off"
-                    placeholder="Referencia (opcional): n° de transferencia"
-                    onChange={(e) => setRow(row.key, { reference: e.target.value })}
-                    className="h-11 text-base md:h-10 md:text-sm"
-                  />
-                </div>
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-11 justify-self-start gap-1.5 text-muted-foreground md:h-8"
-              onClick={addRow}
-            >
-              <Plus className="size-3.5" aria-hidden />
-              Otro medio
-            </Button>
-            {multiRow && resolved.unassignedCents !== 0 && !methodsError ? (
-              <p className="text-xs text-warning-text">
-                {resolved.unassignedCents > 0
-                  ? `Falta asignar ${formatCents(resolved.unassignedCents)} a un medio.`
-                  : `Los medios suman ${formatCents(-resolved.unassignedCents)} más que el monto.`}
-              </p>
-            ) : null}
-            {methodsError ? (
-              <p role="alert" className="text-xs text-destructive">
-                {methodsError}
-              </p>
-            ) : null}
-          </fieldset>
+                  {showReference || single.reference ? (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor={`${uid}-ref`}>
+                        N.º de transferencia{' '}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          (opcional)
+                        </span>
+                      </Label>
+                      <Input
+                        id={`${uid}-ref`}
+                        value={single.reference}
+                        maxLength={60}
+                        autoComplete="off"
+                        onChange={(e) => setRow(single.key, { reference: e.target.value })}
+                        className="h-11 text-base md:h-10 md:text-sm"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-x-5">
+                    {showReference || single.reference ? null : (
+                      <button
+                        type="button"
+                        className={ADD_LINK}
+                        onClick={() => {
+                          setShowReference(true)
+                          requestAnimationFrame(() =>
+                            document.getElementById(`${uid}-ref`)?.focus(),
+                          )
+                        }}
+                      >
+                        <Plus className="size-3.5" aria-hidden />
+                        Agregar n.º de transferencia
+                      </button>
+                    )}
+                    <button type="button" className={ADD_LINK} onClick={addRow}>
+                      <Plus className="size-3.5" aria-hidden />
+                      Pagar con dos medios
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <fieldset
+                  aria-labelledby={`${uid}-con-que`}
+                  className="grid min-w-0 gap-2 border-0 p-0"
+                >
+                  {rows.map((row, index) => (
+                    <div key={row.key} className="grid gap-2 rounded-xl bg-secondary/50 p-3">
+                      <div className="flex items-center gap-2">
+                        <TreasurySelect
+                          aria-label={`Medio ${index + 1}`}
+                          value={row.treasuryId}
+                          onValueChange={(next) => setRow(row.key, { treasuryId: next })}
+                          treasuries={data.treasuries}
+                          invalid={Boolean(methodsError) && !row.treasuryId}
+                          className="min-w-0 flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-11 shrink-0 text-muted-foreground md:size-9"
+                          aria-label={`Quitar el medio ${index + 1}`}
+                          onClick={() => removeRow(row.key)}
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <MoneyInput
+                          aria-label={`Importe del medio ${index + 1}`}
+                          value={row.amountCents}
+                          align="end"
+                          onValueChange={(cents) => setRow(row.key, { amountCents: cents })}
+                          invalid={Boolean(methodsError) && (row.amountCents ?? 0) <= 0}
+                        />
+                        <Input
+                          aria-label={`N.º de transferencia del medio ${index + 1}`}
+                          value={row.reference}
+                          maxLength={60}
+                          autoComplete="off"
+                          placeholder="N.º de transferencia"
+                          onChange={(e) => setRow(row.key, { reference: e.target.value })}
+                          className="h-11 text-base placeholder:text-muted-foreground/50 md:h-10 md:text-sm"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button" className={ADD_LINK} onClick={addRow}>
+                    <Plus className="size-3.5" aria-hidden />
+                    Otro medio
+                  </button>
+                  {resolved.unassignedCents !== 0 && !methodsError ? (
+                    <p className="text-xs text-warning-text">
+                      {resolved.unassignedCents > 0
+                        ? `Falta asignar ${formatCents(resolved.unassignedCents)} a un medio.`
+                        : `Los medios suman ${formatCents(-resolved.unassignedCents)} más que el monto.`}
+                    </p>
+                  ) : null}
+                </fieldset>
+              )}
+              {methodsError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {methodsError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <InlineNotice>
+              No hay cajas ni cuentas activas para pagar. Activá una en Ajustes › Cajas y cuentas.
+            </InlineNotice>
+          )}
+
+          {/* El ticket: lo que va a pasar, en palabras */}
+          <PayTicket
+            name={name}
+            subtitle={date ? formatDayLabel(date) : 'Sin fecha'}
+            rows={ticketRows}
+            more={ticketLines.more}
+            moreCents={ticketLines.moreCents}
+            creditUsedCents={plan.creditUsedCents}
+            writeOffCents={plan.writeOffCents}
+            totalLabel={
+              multiRow
+                ? `Salen de ${rows.length} medios`
+                : singleTreasury
+                  ? ticketTotalLabel(singleTreasury)
+                  : 'Pagás'
+            }
+            totalCents={plan.amountCents > 0 ? plan.amountCents : null}
+            totalHint={
+              singleTreasury && plan.amountCents > 0 ? (
+                <TreasuryAfterHint treasury={singleTreasury} amountCents={plan.amountCents} />
+              ) : undefined
+            }
+            note={[outcome.sentence, ...outcome.details].join(' ')}
+            pending={nothingYet}
+          />
 
           <DateField
             id={`${uid}-fecha`}
@@ -1191,8 +1325,11 @@ function PaymentForm({
           ) : (
             <button
               type="button"
-              onClick={() => setShowNotes(true)}
-              className="inline-flex min-h-11 items-center gap-1.5 justify-self-start text-sm font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+              onClick={() => {
+                setShowNotes(true)
+                requestAnimationFrame(() => document.getElementById(`${uid}-nota`)?.focus())
+              }}
+              className={ADD_LINK}
             >
               <Plus className="size-3.5" aria-hidden />
               Agregar una nota
@@ -1201,7 +1338,8 @@ function PaymentForm({
 
           <EntryPreview
             entries={entries}
-            emptyText="Elegí qué pagás y con qué para ver el asiento."
+            label="Ver cómo queda en los libros"
+            emptyText="Elegí qué pagás y con qué para ver cómo queda en los libros."
           />
 
           {unknownPreviewError ? (
@@ -1211,7 +1349,7 @@ function PaymentForm({
         </ActionSheetBody>
 
         <ActionSheetFooter>
-          <Button type="submit" className="h-11 w-full sm:w-auto md:h-9" disabled={posting.pending}>
+          <Button type="submit" className="h-12 w-full sm:w-auto" disabled={posting.pending}>
             {posting.pending ? 'Guardando…' : submitLabel}
           </Button>
         </ActionSheetFooter>

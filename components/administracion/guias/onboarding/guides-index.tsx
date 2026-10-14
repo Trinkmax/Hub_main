@@ -286,7 +286,6 @@ const DOWNLOADS: ReadonlyArray<{
   icon: LucideIcon
   title: string
   subtitle: string
-  what: string
   when: string
   importLabel: string
   importPath: string
@@ -296,7 +295,6 @@ const DOWNLOADS: ReadonlyArray<{
     icon: Receipt,
     title: 'Compras de ARCA',
     subtitle: '«Mis Comprobantes» › Recibidos',
-    what: 'Todas las facturas que te hicieron a la CUIT de la SAS. Con ellas se arman las compras y los proveedores.',
     when: 'Una vez por mes, del día 11 en adelante.',
     importLabel: 'Importar de ARCA',
     importPath: '/importar/arca',
@@ -306,7 +304,6 @@ const DOWNLOADS: ReadonlyArray<{
     icon: Wallet,
     title: 'Mercado Pago',
     subtitle: 'Reporte de «Liquidaciones»',
-    what: 'Cada cobro con su comisión, sus impuestos y lo que te acreditaron.',
     when: 'Una vez por semana, desde la compu.',
     importLabel: 'Importar Mercado Pago',
     importPath: '/importar/mercado-pago',
@@ -316,62 +313,67 @@ const DOWNLOADS: ReadonlyArray<{
     icon: Landmark,
     title: 'Banco',
     subtitle: 'Movimientos de la cuenta',
-    what: 'Los gastos bancarios, las transferencias y los pagos.',
     when: 'Una vez por semana: muchos bancos guardan solo los últimos 3 meses.',
     importLabel: 'Importar del banco',
     importPath: '/importar/banco',
   },
 ]
 
-/** «Bajá los archivos»: qué es cada uno, cuándo, el «¿Cómo lo bajo?» y adónde se sube. */
+/**
+ * Los tres archivos que se suben: cuál es cada uno, cuándo se baja, adónde se sube y el «¿Cómo lo
+ * bajo?» con los pasos. Va adentro del bloque que hace la pregunta (la portada de la guía), por
+ * eso no trae título propio ni se pliega entero: el único plegable es el de los pasos, y queda a
+ * todo el ancho (al costado dejaba media tarjeta vacía). Qué trae cada archivo lo dice el
+ * plegable; acá no se repite.
+ */
 export function DownloadGuides({ base, canWrite }: { base: string; canWrite: boolean }) {
   return (
-    <section aria-labelledby="guias-archivos" className="space-y-4">
-      <header className="space-y-1">
-        <h2 id="guias-archivos" className="font-serif text-xl font-semibold tracking-tight">
-          Bajá los archivos
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground text-pretty">
-          Con tres archivos la plataforma arma sola las compras, los cobros y los gastos del banco.
-          Vos los bajás y los subís; ella hace el resto.
-        </p>
-      </header>
-      <ul className="space-y-6">
-        {DOWNLOADS.map((d) => (
-          <li
-            key={d.source}
-            className="grid gap-4 border-t border-border/60 pt-6 first:border-t-0 first:pt-0 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-6"
-          >
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <IconBox icon={d.icon} />
-                <div className="min-w-0">
-                  <h3 className="font-serif text-lg font-semibold leading-tight tracking-tight">
-                    {d.title}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">{d.subtitle}</p>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground text-pretty">{d.what}</p>
-              <p className="text-sm text-pretty">
-                <span className="font-medium">Cuándo: </span>
-                <span className="text-muted-foreground">{d.when}</span>
-              </p>
-              {canWrite ? (
-                <Button asChild variant="outline" className={BUTTON}>
-                  <Link href={`${base}${d.importPath}`}>
+    <ul className="space-y-5">
+      {DOWNLOADS.map((d) => (
+        <li
+          key={d.source}
+          className="space-y-3 border-t border-border/60 pt-5 first:border-t-0 first:pt-0"
+        >
+          {/* Compu: el ícono, el nombre con su bajada y el botón, en un renglón. Celular: el
+              ícono, el nombre y el botón arriba, y la bajada debajo a todo el ancho (al lado del
+              botón quedaba en una columna de cuatro renglones). */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:gap-y-0.5">
+            <span className="sm:row-span-2">
+              <IconBox icon={d.icon} />
+            </span>
+            <h3 className="font-serif text-lg font-semibold leading-tight tracking-tight sm:self-end">
+              {d.title}
+            </h3>
+            {canWrite ? (
+              // En el celular dice solo «Importar» (el archivo ya está nombrado al lado): entero
+              // no entraba en el renglón y se llevaba una fila para él solo.
+              <Button
+                asChild
+                variant="outline"
+                className="h-11 shrink-0 gap-2 sm:row-span-2 md:h-9"
+              >
+                <Link href={`${base}${d.importPath}`} aria-label={d.importLabel}>
+                  <span aria-hidden="true" className="sm:hidden">
+                    Importar
+                  </span>
+                  <span aria-hidden="true" className="max-sm:hidden">
                     {d.importLabel}
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-            <div className="min-w-0">
-              <HowToFor source={d.source} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+                  </span>
+                  <ArrowRight className="size-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : (
+              // Sin botón (modo lectura), la tercera columna queda vacía y la grilla no se corre.
+              <span aria-hidden="true" className="sm:row-span-2" />
+            )}
+            <p className="col-span-3 text-xs text-muted-foreground text-pretty sm:col-span-1 sm:col-start-2 sm:self-start">
+              {d.subtitle} · {d.when}
+            </p>
+          </div>
+          {/* Sobre la tarjeta va como un bloque teñido, no como otra tarjeta adentro. */}
+          <HowToFor source={d.source} className="border-transparent bg-secondary/50" />
+        </li>
+      ))}
+    </ul>
   )
 }

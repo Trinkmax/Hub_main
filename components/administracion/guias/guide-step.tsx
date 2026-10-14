@@ -20,6 +20,11 @@ import { GUIDE_STATUS_TEXT_CLASS, GuideStatusDot } from './guide-status'
  *
  * Accesibilidad: `section` con `aria-labelledby`, el encabezado es un `button` con
  * `aria-expanded`, el estado se dice con texto y todo anda con el teclado.
+ *
+ * Lo usan también las recetas del día a día, que no son pasos numerados ni se marcan: por eso
+ * `kicker` (en lugar de «Paso N»), `lead` (un ícono en lugar del número), `statusLine` (el estado
+ * ya armado, con su píldora) y un pie con otro rótulo (`footerLabel`) o sin texto. Sin esas props
+ * se ve igual que siempre.
  */
 export function GuideStep({
   id,
@@ -32,8 +37,13 @@ export function GuideStep({
   chips,
   problem,
   footerHow,
+  footerLabel = 'Cómo se marca:',
   footerAction,
   next,
+  kicker,
+  lead,
+  statusLine,
+  className,
   defaultOpen = false,
   children,
 }: {
@@ -43,18 +53,29 @@ export function GuideStep({
   n: number
   title: string
   status: GuideStepStatus
-  statusText: string
+  /** El estado en palabras, con el color de `status`. Hace falta si no hay `statusLine`. */
+  statusText?: string
   /** «Hecho el 08/10 por Ana», «Lo confirmamos al probar»… */
   note?: string | null
   /** Las etiquetas de la derecha: dónde se hace y cuánto lleva. */
   chips?: ReactNode
   /** El aviso de «Revisar» o «No anduvo», arriba del cuerpo. */
   problem?: ReactNode
-  /** «Se marca solo cuando…». */
-  footerHow: string
+  /** «Se marca solo cuando…». Sin texto, el pie lleva solo los botones (si hay). */
+  footerHow?: ReactNode
+  /** El rótulo en negrita del pie. */
+  footerLabel?: string
   /** «Ya lo hice», si el paso se marca a mano. */
   footerAction?: ReactNode
   next?: { readonly id: string; readonly anchor: string; readonly label: string } | null
+  /** La línea chica de arriba del título. Por defecto, «Paso N». */
+  kicker?: ReactNode
+  /** Lo que va a la izquierda en lugar del número con su estado (un ícono, por ejemplo). */
+  lead?: ReactNode
+  /** El estado ya armado (una píldora y su detalle), en lugar de `statusText` con su color. */
+  statusLine?: ReactNode
+  /** Para la sección: otro margen de salto, otro borde. */
+  className?: string
   /** Sin `GuideNavProvider`: si arranca abierto. */
   defaultOpen?: boolean
   children: ReactNode
@@ -75,6 +96,7 @@ export function GuideStep({
         status === 'todo' && 'border-primary/40',
         status === 'failed' && 'border-destructive/40',
         status === 'check' && 'border-warning/50',
+        className,
       )}
     >
       <h2 className="m-0">
@@ -86,11 +108,11 @@ export function GuideStep({
           onClick={toggle}
           className="flex w-full items-start gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-cream-tint/60 focus-visible:ring-2 focus-visible:ring-ring sm:px-5"
         >
-          <GuideStatusDot status={status} n={n} />
+          {lead ?? <GuideStatusDot status={status} n={n} />}
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-baseline gap-x-2">
               <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                Paso {n}
+                {kicker ?? `Paso ${n}`}
               </span>
             </span>
             <span
@@ -99,10 +121,12 @@ export function GuideStep({
             >
               {title}
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-              <span className={cn('font-medium', GUIDE_STATUS_TEXT_CLASS[status])}>
-                {statusText}
-              </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+              {statusLine ?? (
+                <span className={cn('font-medium', GUIDE_STATUS_TEXT_CLASS[status])}>
+                  {statusText}
+                </span>
+              )}
               {note ? <span className="text-muted-foreground">· {note}</span> : null}
             </span>
             {chips ? (
@@ -128,29 +152,35 @@ export function GuideStep({
           {problem}
           {children}
         </div>
-        <footer className="flex flex-col gap-3 border-t border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p className="text-xs text-muted-foreground text-pretty">
-            <span className="font-medium text-foreground">Cómo se marca:</span> {footerHow}
-          </p>
-          <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
-            {footerAction}
-            {next ? (
-              <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
-                <a
-                  href={`#${next.anchor}`}
-                  onClick={(event) => {
-                    if (!nav) return
-                    event.preventDefault()
-                    nav.reveal(next.id)
-                  }}
-                >
-                  {next.label}
-                  <ArrowRight className="size-4" aria-hidden />
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        </footer>
+        {footerHow || footerAction || next ? (
+          <footer className="flex flex-col gap-3 border-t border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            {footerHow ? (
+              <p className="text-xs text-muted-foreground text-pretty">
+                <span className="font-medium text-foreground">{footerLabel}</span> {footerHow}
+              </p>
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
+              {footerAction}
+              {next ? (
+                <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
+                  <a
+                    href={`#${next.anchor}`}
+                    onClick={(event) => {
+                      if (!nav) return
+                      event.preventDefault()
+                      nav.reveal(next.id)
+                    }}
+                  >
+                    {next.label}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+          </footer>
+        ) : null}
       </div>
     </section>
   )
@@ -206,12 +236,12 @@ export function GuideTroubles({
       <ul className="divide-y divide-border/60 rounded-lg border border-border/80">
         {items.map((item) => (
           <li key={item.problem}>
-            <details className="group">
+            <details className="group/trouble">
               <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium outline-none hover:bg-cream-tint/60 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                 <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                 <span className="min-w-0 flex-1 text-pretty">{item.problem}</span>
                 <ChevronDown
-                  className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                  className="size-4 shrink-0 text-muted-foreground transition-transform group-open/trouble:rotate-180 motion-reduce:transition-none"
                   aria-hidden
                 />
               </summary>

@@ -4,12 +4,20 @@
  * del pie. Lo prueba `administracion-compras.test.ts`.
  */
 
+import {
+  type CategoryOption,
+  categoryOptions,
+  featuredCategories,
+  topCategories,
+} from '@/components/administracion/kit/category'
 import type { PartyListFilter } from '@/lib/accounting/queries/parties'
-import { isPurchaseImputation } from './accounts'
+import { isPurchaseImputation, isQuickExpenseAccount } from './accounts'
 
 /**
- * El segmentado de la lista, en el orden en que se ve. «Sin clasificar» no es
- * un filtro de saldos: trae a todos y la pestaña deja los que no tienen cuenta.
+ * Los filtros de la libreta, en el orden en que se ven. «Sin categoría» no es
+ * un filtro de saldos: trae a todos y la pestaña deja los que no tienen
+ * categoría. El valor de la URL (`sin-clasificar`) no cambió: los links de
+ * antes siguen andando.
  */
 export const SUPPLIER_FILTERS = [
   { value: 'todos', label: 'Todos', filter: 'all', unclassifiedOnly: false },
@@ -22,7 +30,7 @@ export const SUPPLIER_FILTERS = [
     filter: 'taxes_payroll',
     unclassifiedOnly: false,
   },
-  { value: 'sin-clasificar', label: 'Sin clasificar', filter: 'all', unclassifiedOnly: true },
+  { value: 'sin-clasificar', label: 'Sin categoría', filter: 'all', unclassifiedOnly: true },
 ] as const satisfies ReadonlyArray<{
   value: string
   label: string
@@ -35,7 +43,7 @@ export type SupplierFilterValue = (typeof SUPPLIER_FILTERS)[number]['value']
 export function supplierFilterOf(raw: string): {
   value: SupplierFilterValue
   filter: PartyListFilter
-  /** «Sin clasificar»: solo los que no tienen cuenta habitual. */
+  /** «Sin categoría»: solo los que no tienen cuenta habitual. */
   unclassifiedOnly: boolean
 } {
   const found = SUPPLIER_FILTERS.find((f) => f.value === raw) ?? SUPPLIER_FILTERS[0]
@@ -65,7 +73,7 @@ export function isVisibleSupplier(row: SupplierRowLike, filter: PartyListFilter)
 /**
  * Lo que dice la columna «Cuenta»:
  * - `classified`: tiene cuenta habitual (se muestra su nombre).
- * - `unclassified`: le falta («Sin clasificar») y hay que elegirla.
+ * - `unclassified`: le falta («Sin categoría») y hay que elegirla.
  * - `not_applicable`: no se le compra (ARCA, Rentas, sueldos, un socio, el
  *   banco) o es del sistema: sin cuenta no es un pendiente.
  */
@@ -87,7 +95,7 @@ export function supplierClassification(party: ClassifiableLike): SupplierClassif
 }
 
 /**
- * Cuántos faltan clasificar (el número del filtro «Sin clasificar»): los
+ * Cuántos faltan clasificar (el número del filtro «Sin categoría»): los
  * activos, que son los que lista la pantalla. Uno desactivado con saldo
  * también se ve en la lista, pero no se cuenta acá: es un caso de borde.
  */
@@ -97,6 +105,23 @@ export function countUnclassified(
   let count = 0
   for (const party of parties) {
     if (party.active && supplierClassification(party) === 'unclassified') count += 1
+  }
+  return count
+}
+
+/**
+ * A cuántos se les puede elegir una categoría (el «79» de «76 de 79 no tienen
+ * categoría»): los activos que no son un organismo, sueldos, un socio ni un
+ * banco. Mismo criterio que `countUnclassified`, sin mirar si ya la tienen.
+ */
+export function countClassifiable(
+  parties: Iterable<ClassifiableLike & { active: boolean }>,
+): number {
+  let count = 0
+  for (const party of parties) {
+    if (!party.active) continue
+    // Con categoría cuenta siempre; sin ella, solo si es de los que se clasifican.
+    if (supplierClassification(party) !== 'not_applicable') count += 1
   }
   return count
 }
@@ -168,6 +193,37 @@ export function supplierAccountOptions(
       description: a.description,
       parentId: a.parentId,
     }))
+}
+
+/** Las categorías como botones: las opciones, «Mercadería» y «Las que más usás». */
+export type SupplierCategoryChoices = {
+  options: CategoryOption[]
+  /** «Mercadería»: las de clave `purchases_*` del plan. */
+  featured: string[]
+  /** «Las que más usás»: las que ya tienen más proveedores. */
+  pinned: string[]
+}
+
+/**
+ * Las categorías que se ofrecen como BOTONES al elegir en qué se le compra a
+ * un proveedor: solo las pensadas para compras (`isQuickExpenseAccount`). El
+ * resto de lo que acepta el motor (unas 30 cuentas del estilo «Amortización
+ * acumulada…») queda detrás de «Ver el plan completo».
+ *
+ * `usage` = cuántos proveedores tienen ya cada cuenta: de ahí salen «Las que
+ * más usás», sin repetir las de «Mercadería».
+ */
+export function supplierCategoryChoices(
+  accounts: readonly PlanAccountLike[],
+  usage: ReadonlyMap<string, number> = new Map(),
+): SupplierCategoryChoices {
+  const quick = new Set(accounts.filter(isQuickExpenseAccount).map((a) => a.id))
+  const featured = featuredCategories(accounts)
+  return {
+    options: categoryOptions(accounts, (id) => quick.has(id)),
+    featured,
+    pinned: topCategories(usage, 6, new Set(featured)),
+  }
 }
 
 /** Qué se puede hacer con un proveedor desde su fila. */

@@ -1,13 +1,12 @@
-import { ChevronDown, FlaskConical } from 'lucide-react'
+import { ChevronRight, FlaskConical } from 'lucide-react'
 import { ArcaTestVoucherButton } from '@/components/administracion/arca/test-voucher-button'
 import {
   homologacionStepAnchor,
   suggestArcaAlias,
 } from '@/components/administracion/guias/arca-guide-model'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import type { ArcaConnectionView } from '@/lib/arca/views'
 import { formatCuit, padPv } from '@/lib/fiscal'
-import { cn } from '@/lib/utils'
 import { ArcaCertUpload, ArcaCsrAction } from './arca-certificate-actions'
 import { ArcaDisconnectButton } from './arca-connection-controls'
 import { HashDetails } from './arca-shared'
@@ -42,10 +41,11 @@ function TestStep({ n, title, children }: { n: number; title: string; children: 
 }
 
 /**
- * «Pruebas (homologación) · para desarrolladores» (diseño §2.2 y §3.2.8): el mismo camino de
+ * «Pruebas (homologación) · para quien programa» (diseño §2.2 y §3.2.8): el mismo camino de
  * producción en el ARCA de pruebas, con el certificado de WSASS a nombre de quien programa.
  * Cuando queda conectado, «Emitir una factura de prueba» (contrato C3), que nunca toca los
- * libros. Plegado: los dueños no tienen que hacer nada acá. Se abre solo con `#homologacion`.
+ * libros. Va último, plegado y sin tarjeta —una línea gris—: los dueños no tienen que hacer nada
+ * acá. Se abre solo con `#homologacion` (el link del cajón de la contadora y el de la guía).
  */
 export function ArcaHomologacion({
   slug,
@@ -59,48 +59,23 @@ export function ArcaHomologacion({
   const guideHref = `/${slug}/administracion/ajustes/arca`
   const active = connection && connection.status !== 'disconnected' ? connection : null
   const hasKey = Boolean(active?.hasCsr || active?.certificate)
-  const statusBadge = (className: string) => (
-    <Badge
-      variant="outline"
-      className={cn(
-        active?.status === 'connected'
-          ? 'border-success/30 bg-success/10 text-success'
-          : active?.status === 'error'
-            ? 'border-destructive/30 bg-destructive/10 text-destructive'
-            : 'text-muted-foreground',
-        className,
-      )}
-    >
-      {active ? active.statusLabel : 'Sin empezar'}
-    </Badge>
-  )
+  const statusTone =
+    active?.status === 'connected' ? 'ok' : active?.status === 'error' ? 'late' : 'muted'
 
   return (
-    <HashDetails
-      id="homologacion"
-      className="card-hairline group scroll-mt-20 rounded-xl border bg-card"
-    >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-xl px-5 py-4 outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary">
-          <FlaskConical className="size-4" aria-hidden />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">
-            Pruebas (homologación) · para desarrolladores
-          </span>
-          <span className="block text-xs text-muted-foreground text-pretty">
-            Para quien programa la plataforma. Los dueños no tienen que hacer nada acá.
-          </span>
-          {/* En el celular el estado va abajo del texto: al costado lo dejaba en un hilo. */}
-          {statusBadge('mt-1.5 sm:hidden')}
-        </span>
-        {statusBadge('hidden shrink-0 sm:inline-flex')}
-        <ChevronDown
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+    <HashDetails id="homologacion" className="group scroll-mt-28">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg py-1.5 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          className="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
           aria-hidden
         />
+        <FlaskConical className="size-4 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 basis-40 text-pretty sm:flex-none sm:basis-auto">
+          Pruebas (homologación) · para quien programa
+        </span>
+        <StatusPill tone={statusTone}>{active ? active.statusLabel : 'Sin empezar'}</StatusPill>
       </summary>
-      <div className="space-y-6 border-t border-border/60 px-5 py-5 text-sm">
+      <div className="mt-3 space-y-6 rounded-2xl bg-secondary/50 p-4 text-sm sm:p-5">
         <p className="text-muted-foreground text-pretty">
           Homologación es el ARCA de pruebas: lo que se emite ahí no vale. Sirve para probar la
           conexión y las facturas antes de producción, con un certificado de WSASS (el autoservicio

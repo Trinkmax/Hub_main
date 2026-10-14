@@ -43,6 +43,23 @@ export function gastosFijosHref(
   return `/${slug}/administracion/gastos-fijos${query ? `?${query}` : ''}`
 }
 
+/**
+ * «Completar la planilla»: los montos y los días de todos los gastos fijos de
+ * corrido. `ver` = `sin-monto` · `todos` · `varios`; `foco` = el gasto fijo que
+ * abre con el cursor puesto.
+ */
+export function gastosFijosFillHref(
+  slug: string,
+  extra: Readonly<Record<string, string | null | undefined>> = {},
+): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) params.set(key, value)
+  }
+  const query = params.toString()
+  return `/${slug}/administracion/gastos-fijos/completar${query ? `?${query}` : ''}`
+}
+
 /** Una pestaña de Compras. Con `'gastos-fijos'` devuelve la lista nueva (no es más una pestaña de acá). */
 export function comprasHref(
   slug: string,

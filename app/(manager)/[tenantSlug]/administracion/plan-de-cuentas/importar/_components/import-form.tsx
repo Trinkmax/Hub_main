@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { plural } from '@/components/administracion/format'
+import { StepCard } from '@/components/administracion/kit/step'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -296,19 +297,21 @@ export function ImportForm({
 
   return (
     <div className="space-y-6">
-      <section className="card-hairline rounded-xl border bg-card" aria-labelledby="imp-paste">
-        <header className="border-b border-border/60 px-5 py-4">
-          <h2 id="imp-paste" className="font-serif text-lg font-semibold tracking-tight">
-            Pegá el plan
-          </h2>
-          <p className="text-sm text-muted-foreground text-pretty">
+      <StepCard
+        open
+        n={1}
+        state={preview && !stale ? 'done' : 'current'}
+        title="Pegá el plan"
+        summary={
+          <>
             El grupo de cada cuenta sale del código:{' '}
             <span className="font-mono">1.1.01.01.001</span> va adentro de{' '}
             <span className="font-mono">1.1.01.01.000</span>. Los códigos que ya existen se
             actualizan; los nuevos se crean.
-          </p>
-        </header>
-        <div className="grid gap-4 p-5">
+          </>
+        }
+      >
+        <div className="grid gap-4">
           <Field
             id="imp-text"
             label="Las cuentas, una por renglón"
@@ -376,152 +379,151 @@ export function ImportForm({
             </Button>
           </div>
         </div>
-      </section>
+      </StepCard>
 
       {preview ? (
-        <section className="space-y-4" aria-labelledby="imp-preview">
-          <div className="space-y-1">
-            <h2 id="imp-preview" className="font-serif text-lg font-semibold tracking-tight">
-              Lo que va a pasar
-            </h2>
-            <p className="text-sm text-muted-foreground text-pretty">
-              Todavía no se guardó nada. Nunca se borra ni se desactiva una cuenta.
-            </p>
-          </div>
+        <StepCard
+          open
+          n={2}
+          state={stale ? 'todo' : 'current'}
+          title="Revisá lo que va a pasar"
+          summary="Todavía no se guardó nada. Nunca se borra ni se desactiva una cuenta."
+        >
+          <div className="space-y-4">
+            {stale ? (
+              <Callout tone="warning" title="Cambiaste el texto.">
+                Tocá «Revisar de nuevo» antes de importar.
+              </Callout>
+            ) : null}
 
-          {stale ? (
-            <Callout tone="warning" title="Cambiaste el texto.">
-              Tocá «Revisar de nuevo» antes de importar.
-            </Callout>
-          ) : null}
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+              <StatCard icon={Plus} label="Nuevas" value={String(preview.counts.creates)} />
+              <StatCard icon={PencilLine} label="Cambian" value={String(preview.counts.updates)} />
+              <StatCard icon={Check} label="Sin cambios" value={String(preview.counts.unchanged)} />
+              <StatCard
+                icon={TriangleAlert}
+                iconClassName={preview.counts.errors > 0 ? 'text-destructive' : undefined}
+                label="Con errores"
+                value={String(preview.counts.errors)}
+              />
+            </div>
 
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <StatCard icon={Plus} label="Nuevas" value={String(preview.counts.creates)} />
-            <StatCard icon={PencilLine} label="Cambian" value={String(preview.counts.updates)} />
-            <StatCard icon={Check} label="Sin cambios" value={String(preview.counts.unchanged)} />
-            <StatCard
-              icon={TriangleAlert}
-              iconClassName={preview.counts.errors > 0 ? 'text-destructive' : undefined}
-              label="Con errores"
-              value={String(preview.counts.errors)}
-            />
-          </div>
+            {preview.missingTypes > 0 ? (
+              <Callout tone="warning" title="Falta el tipo de las cuentas principales nuevas.">
+                {preview.missingTypes === 1
+                  ? 'Hay una cuenta principal nueva: elegí su tipo (activo, pasivo, patrimonio neto, ingreso o egreso) en la columna «Grupo».'
+                  : `Hay ${preview.missingTypes} cuentas principales nuevas: elegí el tipo de cada una en la columna «Grupo».`}{' '}
+                Las que van adentro toman ese tipo.
+              </Callout>
+            ) : null}
 
-          {preview.missingTypes > 0 ? (
-            <Callout tone="warning" title="Falta el tipo de las cuentas principales nuevas.">
-              {preview.missingTypes === 1
-                ? 'Hay una cuenta principal nueva: elegí su tipo (activo, pasivo, patrimonio neto, ingreso o egreso) en la columna «Grupo».'
-                : `Hay ${preview.missingTypes} cuentas principales nuevas: elegí el tipo de cada una en la columna «Grupo».`}{' '}
-              Las que van adentro toman ese tipo.
-            </Callout>
-          ) : null}
+            <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+              <SlidingTabs tabs={filterTabs} value={filter} onChange={setFilter} size="sm" />
+            </div>
 
-          <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-            <SlidingTabs tabs={filterTabs} value={filter} onChange={setFilter} size="sm" />
-          </div>
-
-          {visible.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
-              {filter === 'error'
-                ? 'No hay líneas con errores.'
-                : filter === 'new'
-                  ? 'No hay cuentas nuevas.'
-                  : filter === 'changed'
-                    ? 'Ninguna cuenta cambia.'
-                    : 'No hay líneas.'}
-            </p>
-          ) : (
-            <DataTableShell>
-              <div className="hidden md:block">
-                <DataTableScroll>
-                  <DataTableRoot>
-                    <DataTableHead>
-                      <tr>
-                        <DataTableHeader className="w-16">Línea</DataTableHeader>
-                        <DataTableHeader>Código</DataTableHeader>
-                        <DataTableHeader>Cuenta</DataTableHeader>
-                        <DataTableHeader>Qué pasa</DataTableHeader>
-                        <DataTableHeader>Grupo</DataTableHeader>
-                        <DataTableHeader>Tipo</DataTableHeader>
-                      </tr>
-                    </DataTableHead>
-                    <DataTableBody>
-                      {visible.map((row) => (
-                        <tr
-                          key={row.row}
-                          className={cn(
-                            'align-top transition-colors hover:bg-cream-tint',
-                            row.kind === 'error' && 'bg-destructive/5',
-                          )}
-                        >
-                          <DataTableCell className="py-2.5 align-top text-xs text-muted-foreground tabular-nums">
-                            {row.row}
-                          </DataTableCell>
-                          <DataTableCell className="whitespace-nowrap py-2.5 align-top font-mono text-xs tabular-nums">
-                            {row.code}
-                          </DataTableCell>
-                          <DataTableCell className="py-2.5 align-top">
-                            {nameBlock(row)}
-                          </DataTableCell>
-                          <DataTableCell className="py-2.5 align-top">
-                            <StatusBadge row={row} />
-                          </DataTableCell>
-                          <DataTableCell className="min-w-48 py-2.5 align-top text-sm">
-                            {row.rootNeedsType ? typeSelect(row, 'max-w-48') : groupText(row)}
-                          </DataTableCell>
-                          <DataTableCell className="whitespace-nowrap py-2.5 align-top text-sm">
-                            {typeText(row)}
-                          </DataTableCell>
+            {visible.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
+                {filter === 'error'
+                  ? 'No hay líneas con errores.'
+                  : filter === 'new'
+                    ? 'No hay cuentas nuevas.'
+                    : filter === 'changed'
+                      ? 'Ninguna cuenta cambia.'
+                      : 'No hay líneas.'}
+              </p>
+            ) : (
+              <DataTableShell>
+                <div className="hidden md:block">
+                  <DataTableScroll>
+                    <DataTableRoot>
+                      <DataTableHead>
+                        <tr>
+                          <DataTableHeader className="w-16">Línea</DataTableHeader>
+                          <DataTableHeader>Código</DataTableHeader>
+                          <DataTableHeader>Cuenta</DataTableHeader>
+                          <DataTableHeader>Qué pasa</DataTableHeader>
+                          <DataTableHeader>Grupo</DataTableHeader>
+                          <DataTableHeader>Tipo</DataTableHeader>
                         </tr>
-                      ))}
-                    </DataTableBody>
-                  </DataTableRoot>
-                </DataTableScroll>
-              </div>
-              <ul className="divide-y divide-border/60 md:hidden">
-                {visible.map((row) => (
-                  <li
-                    key={row.row}
-                    className={cn(
-                      'space-y-2 px-4 py-3',
-                      row.kind === 'error' && 'bg-destructive/5',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-xs tabular-nums">
-                        <span className="text-muted-foreground">#{row.row} · </span>
-                        {row.code}
-                      </span>
-                      <StatusBadge row={row} />
-                    </div>
-                    {nameBlock(row)}
-                    <div className="grid gap-1 text-xs">
-                      {row.rootNeedsType ? (
-                        typeSelect(row)
-                      ) : (
-                        <p>
-                          <span className="text-muted-foreground">Grupo: </span>
-                          {groupText(row)}
-                        </p>
+                      </DataTableHead>
+                      <DataTableBody>
+                        {visible.map((row) => (
+                          <tr
+                            key={row.row}
+                            className={cn(
+                              'align-top transition-colors hover:bg-cream-tint',
+                              row.kind === 'error' && 'bg-destructive/5',
+                            )}
+                          >
+                            <DataTableCell className="py-2.5 align-top text-xs text-muted-foreground tabular-nums">
+                              {row.row}
+                            </DataTableCell>
+                            <DataTableCell className="whitespace-nowrap py-2.5 align-top font-mono text-xs tabular-nums">
+                              {row.code}
+                            </DataTableCell>
+                            <DataTableCell className="py-2.5 align-top">
+                              {nameBlock(row)}
+                            </DataTableCell>
+                            <DataTableCell className="py-2.5 align-top">
+                              <StatusBadge row={row} />
+                            </DataTableCell>
+                            <DataTableCell className="min-w-48 py-2.5 align-top text-sm">
+                              {row.rootNeedsType ? typeSelect(row, 'max-w-48') : groupText(row)}
+                            </DataTableCell>
+                            <DataTableCell className="whitespace-nowrap py-2.5 align-top text-sm">
+                              {typeText(row)}
+                            </DataTableCell>
+                          </tr>
+                        ))}
+                      </DataTableBody>
+                    </DataTableRoot>
+                  </DataTableScroll>
+                </div>
+                <ul className="divide-y divide-border/60 md:hidden">
+                  {visible.map((row) => (
+                    <li
+                      key={row.row}
+                      className={cn(
+                        'space-y-2 px-4 py-3',
+                        row.kind === 'error' && 'bg-destructive/5',
                       )}
-                      {row.type ? (
-                        <p>
-                          <span className="text-muted-foreground">Tipo: </span>
-                          {typeText(row)}
-                        </p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {shown.length > visible.length ? (
-                <DataTableFooter>
-                  Mostrando {visible.length} de {shown.length}: usá los filtros para ver el resto.
-                </DataTableFooter>
-              ) : null}
-            </DataTableShell>
-          )}
-        </section>
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-mono text-xs tabular-nums">
+                          <span className="text-muted-foreground">#{row.row} · </span>
+                          {row.code}
+                        </span>
+                        <StatusBadge row={row} />
+                      </div>
+                      {nameBlock(row)}
+                      <div className="grid gap-1 text-xs">
+                        {row.rootNeedsType ? (
+                          typeSelect(row)
+                        ) : (
+                          <p>
+                            <span className="text-muted-foreground">Grupo: </span>
+                            {groupText(row)}
+                          </p>
+                        )}
+                        {row.type ? (
+                          <p>
+                            <span className="text-muted-foreground">Tipo: </span>
+                            {typeText(row)}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {shown.length > visible.length ? (
+                  <DataTableFooter>
+                    Mostrando {visible.length} de {shown.length}: usá los filtros para ver el resto.
+                  </DataTableFooter>
+                ) : null}
+              </DataTableShell>
+            )}
+          </div>
+        </StepCard>
       ) : null}
 
       {preview ? (

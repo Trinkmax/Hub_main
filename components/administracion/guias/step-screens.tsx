@@ -35,11 +35,14 @@ export function StepScreens({
   instructions,
   seeLabel = 'Qué vas a ver',
   doLabel = 'Qué tocás',
+  shownLabel = 'Es la pantalla de arriba',
 }: {
   screens: readonly StepScreen[]
   instructions: readonly StepInstruction[]
   seeLabel?: string
   doLabel?: string
+  /** Lo que dice el renglón de la pantalla que se ve (si la pantalla no queda arriba del texto). */
+  shownLabel?: string
 }) {
   const [index, setIndex] = useState(0)
   // Solo se anuncia al cambiar de pantalla: el contador ya se lee en el orden normal.
@@ -157,9 +160,7 @@ export function StepScreens({
                     </button>
                   ) : null}
                   {shown ? (
-                    <span className="block text-xs font-medium text-primary">
-                      Es la pantalla de arriba
-                    </span>
+                    <span className="block text-xs font-medium text-primary">{shownLabel}</span>
                   ) : null}
                 </div>
               </li>

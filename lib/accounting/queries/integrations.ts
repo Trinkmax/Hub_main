@@ -74,6 +74,11 @@ export type IntegrationsStatus = {
   /** `false` mientras las tablas de ARCA e importadores no existen en la base. */
   available: boolean
   today: string
+  /**
+   * La fecha de arranque del bar (`acc_settings.books_start_date`): nada anterior se carga.
+   * Sin el dato, los avisos salen como siempre.
+   */
+  booksStartDate?: string | null
   arca: {
     produccion: ArcaEnvironmentStatus | null
     homologacion: ArcaEnvironmentStatus | null
@@ -125,7 +130,7 @@ function unavailable(today: string): IntegrationsStatus {
 export async function getIntegrationsStatus(tenantId: string): Promise<IntegrationsStatus> {
   const today = todayInCordoba()
   const supabase = await readerClient()
-  const [conns, vouchers, mp, batches] = await Promise.all([
+  const [conns, vouchers, mp, batches, settings] = await Promise.all([
     supabase
       .from('acc_arca_connections')
       .select(
@@ -152,10 +157,17 @@ export async function getIntegrationsStatus(tenantId: string): Promise<Integrati
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false })
       .limit(200),
+    // Solo la fecha de arranque: para no pedir las compras de un mes que no se puede cargar.
+    supabase
+      .from('acc_settings')
+      .select('books_start_date')
+      .eq('tenant_id', tenantId)
+      .maybeSingle(),
   ])
   for (const r of [conns, vouchers, mp, batches]) {
     if (r.error && missingRelation(r.error)) return unavailable(today)
   }
+  if (settings.error) throw queryError('acc_settings', settings.error)
   if (conns.error) throw queryError('acc_arca_connections', conns.error)
   if (vouchers.error) throw queryError('acc_arca_vouchers', vouchers.error)
   if (mp.error) throw queryError('acc_mp_connections', mp.error)
@@ -227,6 +239,7 @@ export async function getIntegrationsStatus(tenantId: string): Promise<Integrati
   return {
     available: true,
     today,
+    booksStartDate: settings.data ? dayOrNull(asRecord(settings.data).books_start_date) : null,
     arca,
     mercadoPago: {
       ...sources.mp_release,
@@ -246,6 +259,12 @@ const TONE_ORDER: Readonly<Record<IntegrationTone, number>> = { danger: 0, warni
  * ARCA en error, el certificado que vence (o venció), facturas de ARCA para
  * verificar, lotes esperando revisión, «Reconectá Mercado Pago» y, desde el
  * día 11, «Bajá Mis Comprobantes de <mes anterior>» si ningún lote lo cubre.
+ *
+ * Ese último no se pide por un mes ENTERO anterior a la fecha de arranque: sus
+ * compras no se pueden cargar (lo que se debía de antes entra con los saldos
+ * iniciales). Un bar que arranca el 12/10 no ve «de septiembre»; en noviembre
+ * sí ve «de octubre», porque parte de ese mes ya es suyo. Es la misma regla de
+ * la bandeja de Importar y de `previousMonthBeforeBooks` (Resumen).
  */
 export function integrationAttention(status: IntegrationsStatus): IntegrationAttentionItem[] {
   if (!status.available) return []
@@ -345,16 +364,20 @@ export function integrationAttention(status: IntegrationsStatus): IntegrationAtt
   const usesArca = status.arcaImports.used || prod?.status === 'connected'
   if (usesArca && day >= 11 && !status.arcaImports.prevMonthCovered && isRealIsoDay(status.today)) {
     const prevMonth = startOfMonth(addDays(startOfMonth(status.today), -1))
-    const name = MONTH_NAMES[Number(prevMonth.slice(5, 7)) - 1] ?? ''
-    out.push({
-      kind: 'mc_prev_month',
-      tone: 'info',
-      label: `Bajá Mis Comprobantes de ${name} y subilo: ya están casi todas las facturas.`,
-      href: '/importar/arca',
-      actionLabel: 'Importar de ARCA',
-      count: null,
-      date: null,
-    })
+    const start = status.booksStartDate ?? null
+    const beforeBooks = start !== null && isRealIsoDay(start) && start > endOfMonth(prevMonth)
+    if (!beforeBooks) {
+      const name = MONTH_NAMES[Number(prevMonth.slice(5, 7)) - 1] ?? ''
+      out.push({
+        kind: 'mc_prev_month',
+        tone: 'info',
+        label: `Bajá Mis Comprobantes de ${name} y subilo: ya están casi todas las facturas.`,
+        href: '/importar/arca',
+        actionLabel: 'Subir las compras de ARCA',
+        count: null,
+        date: null,
+      })
+    }
   }
   return out.sort((a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone])
 }

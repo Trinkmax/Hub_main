@@ -1,24 +1,30 @@
 'use client'
 
+import { Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { postCashMovement } from '@/lib/accounting/actions/documents'
-import type { CASH_MOVEMENT_SHORTCUTS } from '@/lib/accounting/schemas'
 import type { CashMovementValues } from '@/lib/accounting/server/document-types'
 import { VAT_ACCOUNT_KEYS } from '@/lib/accounting/system-keys'
+import { formatWeekdayDayMonth } from '@/lib/dates'
+import { formatCents } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { AccountCombobox } from '../account-combobox'
-import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
-import { type ChoiceChip, ChoiceChips } from '../cajas-ventas/choice-chips'
+import {
+  ACTION_SHEET_QUESTION_FIELD,
+  ActionSheetBody,
+  ActionSheetFooter,
+  ActionSheetHeader,
+} from '../action-sheet'
 import { loadCajasVentasCatalog } from '../cajas-ventas/data'
 import { FormBanner, WarningsDialog } from '../cajas-ventas/feedback'
-import { describedBy, Field, GroupLabel } from '../cajas-ventas/field'
 import { moneyLabel } from '../cajas-ventas/money'
 import { QuickPartyDialog } from '../cajas-ventas/quick-party-dialog'
 import {
   firstLoadableDay,
-  SheetCancel,
   SheetFailed,
   SheetLoading,
   useDocumentPreview,
@@ -28,16 +34,44 @@ import { usePosting, useUndoToast } from '../cajas-ventas/use-posting'
 import { useSheetLoad } from '../cajas-ventas/use-sheet-load'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
-import { balanceText } from '../format'
+import { Ticket, TicketHeader, TicketNote, TicketRow, TicketRule, TicketTotal } from '../kit'
 import { MoneyField } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
-import { TreasurySelect } from '../treasury-select'
+import { TreasuryPicker } from '../treasury-picker'
+import { TreasuryAfterHint, TreasuryAfterLine } from './gasto-piezas'
+import {
+  accountQuestion,
+  applySituation,
+  MOTIVE_ACCOUNT,
+  type MoveDirection,
+  type MoveMotive,
+  motiveStillValid,
+  movementSubmitLabel,
+  otherWarning,
+  type Situation,
+  situationGroups,
+  treasuryForSituation,
+  treasuryQuestion,
+  voucherNote,
+  voucherTotalLabel,
+} from './movimiento-vista'
+import {
+  ADD_LINK,
+  BIG_MONEY_FIELD,
+  SHEET_QUESTION_BLOCK,
+  SheetQuestion,
+  TEXT_LINK,
+} from './sheet-parts'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.movimiento
-const DESCRIPTION = 'Plata que entra o sale de una caja y no es una venta ni un gasto.'
+const DESCRIPTION = 'Plata que entra o sale de una caja y no es una venta, un gasto ni un pago.'
 
-/** Hoja «Otro ingreso o egreso» (H.11, E.5.12): la caja contra una contrapartida. */
+/**
+ * Hoja «Otra entrada o salida» (H.11, E.5.12): el vale de caja. La caja contra
+ * una contrapartida, para lo que no es una venta, un gasto ni un pago: un socio
+ * que saca o pone plata, una seña, un préstamo.
+ */
 export function MovimientoSheet(props: ActionSheetProps) {
   const { tenantSlug } = props
   const load = useSheetLoad(() => loadCajasVentasCatalog(tenantSlug), tenantSlug)
@@ -56,8 +90,8 @@ export function MovimientoSheet(props: ActionSheetProps) {
   )
 }
 
-type Direction = 'in' | 'out'
-type Motive = (typeof CASH_MOVEMENT_SHORTCUTS)[number]
+type Direction = MoveDirection
+type Motive = MoveMotive
 
 const KNOWN_FIELDS = new Set([
   'treasuryAccountId',
@@ -70,19 +104,16 @@ const KNOWN_FIELDS = new Set([
   'detail',
 ])
 
-/** La cuenta que sugiere cada motivo (E.5.12); «Otro» la elige la persona. */
-const MOTIVE_ACCOUNT: Readonly<Partial<Record<Motive, string>>> = {
-  partner_withdrawal: 'partners_current',
-  partner_contribution: 'partners_current',
-  mp_yield: 'interest_income',
-  loan_received: 'bank_loans',
-  deposit_received: 'customer_deposits',
-}
-
 /** Cuentas de socios: el partícipe es un socio (se puede crear acá). */
 const PARTNER_ACCOUNT_KEYS = new Set(['partners_current', 'partner_loans'])
 
 const VAT_KEYS: ReadonlySet<string> = new Set(VAT_ACCOUNT_KEYS)
+
+const EMPTY = '—'
+
+/** Una píldora de situación: la elegida va rellena, como todas las de las hojas. */
+const SITUATION =
+  'inline-flex min-h-11 max-w-full items-center rounded-full border px-4 py-1.5 text-left text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9'
 
 function MovimientoForm({
   tenantSlug,
@@ -127,6 +158,11 @@ function MovimientoForm({
     [catalog.accounts],
   )
   const senas = catalog.parties.find((p) => p.systemKey === 'senas' && p.active) ?? null
+  const groups = useMemo(
+    () => situationGroups({ treasuries, hasDeposits: senas !== null }),
+    [treasuries, senas],
+  )
+  const available = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
   const initialTreasury =
     params.caja && treasuries.some((t) => t.id === params.caja) ? params.caja : null
@@ -140,6 +176,9 @@ function MovimientoForm({
   const [detail, setDetail] = useState('')
   const [attempted, setAttempted] = useState(false)
   const [creating, setCreating] = useState<string | null>(null)
+  // Solo de la vista: lo que está plegado.
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [accountChanging, setAccountChanging] = useState(false)
 
   const undoToast = useUndoToast(tenantSlug)
   const posting = usePosting<CashMovementValues>({
@@ -159,6 +198,7 @@ function MovimientoForm({
   const isPartnerAccount = account?.systemKey ? PARTNER_ACCOUNT_KEYS.has(account.systemKey) : false
   const fixedSenas = motive === 'deposit_received' && senas !== null
   const needsParty = Boolean(account?.requiresParty) && !fixedSenas
+  const picked = available.find((s) => s.direction === direction && s.motive === motive) ?? null
 
   const dirty =
     treasuryId !== initialTreasury ||
@@ -168,66 +208,38 @@ function MovimientoForm({
     accountId !== null
   useEffect(() => setDirty(dirty), [dirty, setDirty])
 
-  const motives = useMemo((): ChoiceChip<Motive>[] => {
-    if (direction === 'out') {
-      return [
-        { value: 'partner_withdrawal', label: 'Retiro de un socio' },
-        { value: 'other', label: 'Otro egreso' },
-      ]
-    }
-    if (direction === 'in') {
-      return [
-        { value: 'partner_contribution', label: 'Aporte de un socio' },
-        ...(treasury?.kind === 'wallet'
-          ? [{ value: 'mp_yield' as const, label: `Rendimiento de ${treasury.name}` }]
-          : []),
-        { value: 'loan_received', label: 'Préstamo' },
-        ...(senas ? [{ value: 'deposit_received' as const, label: 'Seña de un cliente' }] : []),
-        { value: 'other', label: 'Otro ingreso' },
-      ]
-    }
-    return []
-  }, [direction, treasury, senas])
-
-  function chooseMotive(next: Motive) {
-    setMotive(next)
-    posting.clearFieldError('shortcut')
-    const key = MOTIVE_ACCOUNT[next]
-    const suggested = key ? (accountsBySystemKey.get(key)?.id ?? null) : null
-    if (suggested || next === 'other') {
-      setAccountId(suggested)
-      posting.clearFieldError('counterpartAccountId')
-    }
-    if (next === 'deposit_received') setPartyId(senas?.id ?? null)
-    else if (next === 'partner_withdrawal' || next === 'partner_contribution') {
-      const current = partyId ? catalog.parties.find((p) => p.id === partyId) : undefined
-      if (current?.kind !== 'partner') setPartyId(null)
-    } else setPartyId(null)
-  }
-
-  function chooseDirection(next: Direction) {
-    setDirection(next)
+  /**
+   * Una situación escribe el sentido y el motivo de una vez (los dos pasos de
+   * antes, con sus mismas reglas: `applySituation`). «Rindió…» además lleva la
+   * caja a la billetera.
+   */
+  function chooseSituation(next: Situation) {
+    const key = MOTIVE_ACCOUNT[next.motive]
+    const current = partyId ? catalog.parties.find((p) => p.id === partyId) : undefined
+    const choice = applySituation({ direction, motive, accountId, partyId }, next, {
+      suggestedAccountId: key ? (accountsBySystemKey.get(key)?.id ?? null) : null,
+      depositsPartyId: senas?.id ?? null,
+      partyIsPartner: current?.kind === 'partner',
+    })
+    setDirection(choice.direction)
+    setMotive(choice.motive)
+    setAccountId(choice.accountId)
+    setPartyId(choice.partyId)
+    setAccountChanging(false)
+    setTreasuryId(treasuryForSituation(next, treasury, treasuries))
     posting.clearFieldError('direction')
-    // Un motivo que no existe en el otro sentido se olvida.
-    const keeps =
-      motive === 'other' ||
-      (next === 'in' && motive !== 'partner_withdrawal') ||
-      (next === 'out' && motive === 'partner_withdrawal')
-    if (!keeps || motive === null) {
-      setMotive(null)
-      setAccountId(null)
-      setPartyId(null)
-    }
+    posting.clearFieldError('shortcut')
+    posting.clearFieldError('counterpartAccountId')
   }
 
   // Si el motivo deja de valer (otra caja sin rendimiento), se olvida.
   useEffect(() => {
-    if (motive && !motives.some((m) => m.value === motive)) {
-      setMotive(null)
-      setAccountId(null)
-      setPartyId(null)
-    }
-  }, [motive, motives])
+    if (motiveStillValid(direction, motive, treasury?.kind ?? null, available)) return
+    setDirection(null)
+    setMotive(null)
+    setAccountId(null)
+    setPartyId(null)
+  }, [direction, motive, treasury, available])
 
   const partyOptions = useMemo((): PartyOption[] => {
     const list = catalog.parties.filter((p) =>
@@ -260,12 +272,13 @@ function MovimientoForm({
   const localErrors = attempted && !preview.state.ok ? (preview.state.fieldErrors ?? {}) : {}
   const errorOf = (key: string): string | null =>
     posting.fieldErrors[key] ?? localErrors[key] ?? null
-  // Sin motivo elegido todavía, el error de la cuenta es «elegí el motivo».
-  const motiveError = attempted && direction !== null && motive === null ? 'Elegí el motivo.' : null
+  // Sin situación elegida, el error del sentido y el del motivo son uno solo.
+  const situationError =
+    errorOf('shortcut') ??
+    (attempted && (direction === null || motive === null) ? 'Elegí qué pasó.' : null)
+  const accountError = motive === null ? null : errorOf('counterpartAccountId')
 
   const shown = posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : [])
-  const leftover =
-    treasury && direction === 'out' && amount !== null ? treasury.balanceCents - amount : null
 
   function onSubmit(event: FormEvent) {
     event.preventDefault()
@@ -280,93 +293,112 @@ function MovimientoForm({
     posting.submit(values, preview.state, preview.key)
   }
 
-  const verb = direction === 'out' ? 'egreso' : 'ingreso'
-  const submitLabel =
-    direction && amount !== null && amount > 0
-      ? `Registrar ${verb} · ${moneyLabel(amount)}`
-      : `Registrar ${direction ? verb : 'movimiento'}`
-
-  const partyLabel = isPartnerAccount ? 'Socio' : '¿Con quién?'
+  const submitLabel = movementSubmitLabel(
+    direction,
+    amount !== null && amount > 0 ? moneyLabel(amount) : null,
+  )
+  // «Rindió…» es de una billetera: ahí se elige solo entre billeteras.
+  const pickable =
+    motive === 'mp_yield' ? treasuries.filter((t) => t.kind === 'wallet') : treasuries
+  // La categoría se pregunta solo cuando hace falta: con «otra», o si el motivo no encontró la suya.
+  const accountAsked = motive === 'other' || (motive !== null && accountId === null)
+  const accountShown = accountAsked || accountChanging || Boolean(accountError)
+  const warning = otherWarning(direction, motive)
+  const party = partyId ? catalog.parties.find((p) => p.id === partyId) : undefined
+  const partyName = party ? (party.tradeName ?? party.name) : null
+  const treasuryError = errorOf('treasuryAccountId')
 
   return (
     <>
       <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <form ref={formRef} noValidate onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <ActionSheetBody>
-          <Field
-            id={`${id}-caja`}
-            label="Caja o cuenta"
-            required
-            error={errorOf('treasuryAccountId')}
-          >
-            <TreasurySelect
+          {/* ¿Qué pasó?: una sola elección, en dos grupos. */}
+          <div className={SHEET_QUESTION_BLOCK}>
+            <SheetQuestion id={`${id}-que`} required>
+              ¿Qué pasó?
+            </SheetQuestion>
+            <div
+              role="radiogroup"
+              aria-labelledby={`${id}-que`}
+              aria-invalid={situationError ? true : undefined}
+              tabIndex={-1}
+              className="grid gap-3 outline-none"
+            >
+              {groups.map((group) => (
+                <div key={group.direction} className="grid gap-1.5">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    {group.label}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.items.map((item) => {
+                      const active = picked?.key === item.key
+                      return (
+                        // biome-ignore lint/a11y/useSemanticElements: radiogroup de WAI-ARIA con botones (píldoras), como las demás elecciones de las hojas
+                        <button
+                          key={item.key}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => chooseSituation(item)}
+                          className={cn(
+                            SITUATION,
+                            active
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border hover:bg-secondary',
+                          )}
+                        >
+                          {item.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {situationError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {situationError}
+              </p>
+            ) : null}
+            {warning ? (
+              <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty">
+                {warning}
+              </p>
+            ) : null}
+          </div>
+
+          <div className={SHEET_QUESTION_BLOCK}>
+            <SheetQuestion id={`${id}-caja-label`} required>
+              {treasuryQuestion(direction)}
+            </SheetQuestion>
+            <TreasuryPicker
               id={`${id}-caja`}
+              aria-labelledby={`${id}-caja-label`}
               value={treasuryId}
               onValueChange={(next) => {
                 setTreasuryId(next)
                 posting.clearFieldError('treasuryAccountId')
               }}
-              treasuries={treasuries}
-              invalid={Boolean(errorOf('treasuryAccountId'))}
-              aria-describedby={describedBy(`${id}-caja`, { error: errorOf('treasuryAccountId') })}
+              treasuries={pickable}
+              invalid={Boolean(treasuryError)}
+              aria-describedby={treasuryError ? `${id}-caja-error` : undefined}
             />
-          </Field>
-
-          <div className="grid gap-2">
-            <GroupLabel id={`${id}-dir`}>
-              ¿Entró o salió plata?
-              {/* El mismo espacio que el asterisco de un <Label> (gap-2 + ml-0.5). */}
-              <span aria-hidden="true" className="ml-2.5 text-destructive">
-                *
-              </span>
-            </GroupLabel>
-            <ChoiceChips<Direction>
-              labelledBy={`${id}-dir`}
-              value={direction}
-              onChange={chooseDirection}
-              options={[
-                { value: 'in', label: 'Entró plata' },
-                { value: 'out', label: 'Salió plata' },
-              ]}
-            />
-            {errorOf('direction') ? (
-              <p role="alert" className="text-xs text-destructive">
-                {errorOf('direction')}
+            {treasuryError ? (
+              <p id={`${id}-caja-error`} role="alert" className="text-xs text-destructive">
+                {treasuryError}
               </p>
             ) : null}
           </div>
 
-          {direction ? (
-            <div className="grid gap-2">
-              <GroupLabel id={`${id}-motivo`}>¿Por qué?</GroupLabel>
-              <ChoiceChips<Motive>
-                labelledBy={`${id}-motivo`}
-                value={motive}
-                onChange={chooseMotive}
-                options={motives}
-              />
-              {motiveError ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {motiveError}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
           {needsParty ? (
-            <Field
-              id={`${id}-party`}
-              label={partyLabel}
-              required
-              hint={
-                isPartnerAccount && partyOptions.length === 0
-                  ? 'Todavía no hay socios cargados: escribí el nombre para crearlo.'
-                  : undefined
-              }
-              error={errorOf('partyId')}
-            >
+            <div className={SHEET_QUESTION_BLOCK}>
+              <SheetQuestion id={`${id}-party-label`} required>
+                {isPartnerAccount ? '¿Qué socio?' : '¿Con quién?'}
+              </SheetQuestion>
               <PartyCombobox
                 id={`${id}-party`}
+                aria-labelledby={`${id}-party-label`}
                 value={partyId}
                 onValueChange={(next) => {
                   setPartyId(next)
@@ -377,96 +409,214 @@ function MovimientoForm({
                 searchPlaceholder="Nombre o CUIT"
                 onCreate={isPartnerAccount ? (name) => setCreating(name) : undefined}
                 invalid={Boolean(errorOf('partyId'))}
-                aria-describedby={describedBy(`${id}-party`, {
-                  hint: isPartnerAccount && partyOptions.length === 0,
-                  error: errorOf('partyId'),
-                })}
+                aria-describedby={
+                  [
+                    isPartnerAccount && partyOptions.length === 0 ? `${id}-party-hint` : null,
+                    errorOf('partyId') ? `${id}-party-error` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
               />
-            </Field>
+              {isPartnerAccount && partyOptions.length === 0 ? (
+                <p id={`${id}-party-hint`} className="text-xs text-muted-foreground">
+                  Todavía no hay socios cargados: escribí el nombre para crearlo.
+                </p>
+              ) : null}
+              {errorOf('partyId') ? (
+                <p id={`${id}-party-error`} role="alert" className="text-xs text-destructive">
+                  {errorOf('partyId')}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
-          <MoneyField
-            label="Importe"
-            required
-            value={amount}
-            onValueChange={(cents) => {
-              setAmount(cents)
-              posting.clearFieldError('amountCents')
-            }}
-            error={errorOf('amountCents')}
-            hint={
-              leftover !== null && leftover < 0 && treasury
-                ? `${treasury.name} quedaría en descubierto: ${balanceText(leftover, 'treasury')}.`
-                : undefined
-            }
-          />
-
-          <DateField
-            label="Fecha"
-            required
-            value={date}
-            onValueChange={(next) => {
-              setDate(next)
-              posting.clearFieldError('date')
-            }}
-            min={firstLoadableDay(catalog)}
-            max={today}
-            today={today}
-            error={errorOf('date')}
-          />
-
-          {motive ? (
-            <Field
-              id={`${id}-cuenta`}
-              label="Cuenta"
+          <div className="grid gap-2">
+            <MoneyField
+              label="¿Cuánto?"
+              fieldClassName={ACTION_SHEET_QUESTION_FIELD}
+              className={BIG_MONEY_FIELD}
               required
-              hint={
-                motive === 'other'
-                  ? 'Dónde se registra en los libros.'
-                  : 'La sugerimos por el motivo. Cambiala si hace falta.'
-              }
-              error={errorOf('counterpartAccountId')}
-            >
+              value={amount}
+              onValueChange={(cents) => {
+                setAmount(cents)
+                posting.clearFieldError('amountCents')
+              }}
+              error={errorOf('amountCents')}
+            />
+            {treasury && direction ? (
+              <TreasuryAfterLine treasury={treasury} amountCents={amount} direction={direction} />
+            ) : null}
+          </div>
+
+          {/* La categoría: solo cuando hay que elegirla. */}
+          {accountAsked ? (
+            <div className={SHEET_QUESTION_BLOCK}>
+              <SheetQuestion id={`${id}-cuenta-label`} required>
+                {accountQuestion(direction)}
+              </SheetQuestion>
               <AccountCombobox
                 id={`${id}-cuenta`}
+                aria-labelledby={`${id}-cuenta-label`}
                 value={accountId}
                 onValueChange={(next) => {
                   setAccountId(next)
                   posting.clearFieldError('counterpartAccountId')
-                  const picked = next ? accountsById.get(next) : undefined
-                  if (!picked?.requiresParty) setPartyId(null)
+                  const chosen = next ? accountsById.get(next) : undefined
+                  if (!chosen?.requiresParty) setPartyId(null)
                 }}
                 accounts={catalog.accounts}
                 filter={(a) => counterpartIds.has(a.id)}
-                invalid={Boolean(errorOf('counterpartAccountId'))}
-                aria-describedby={describedBy(`${id}-cuenta`, {
-                  hint: true,
-                  error: errorOf('counterpartAccountId'),
-                })}
+                invalid={Boolean(accountError)}
+                aria-describedby={`${id}-cuenta-hint${accountError ? ` ${id}-cuenta-error` : ''}`}
               />
-            </Field>
+              <p id={`${id}-cuenta-hint`} className="text-xs text-muted-foreground text-pretty">
+                Es el nombre que va a ver la contadora. Si dudás, elegí el que más se parezca:
+                después se puede corregir.
+              </p>
+              {accountError ? (
+                <p id={`${id}-cuenta-error`} role="alert" className="text-xs text-destructive">
+                  {accountError}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
-          <Field id={`${id}-nota`} label="Nota" optional error={errorOf('detail')}>
-            <Textarea
-              id={`${id}-nota`}
-              value={detail}
-              rows={2}
-              maxLength={280}
-              placeholder="Por ejemplo: retiro para el sueldo de Máximo."
-              className="text-base md:text-sm"
-              aria-invalid={errorOf('detail') ? true : undefined}
-              aria-describedby={describedBy(`${id}-nota`, { error: errorOf('detail') })}
-              onChange={(e) => setDetail(e.target.value)}
+          {/* El vale: lo que queda anotado, en palabras. */}
+          <Ticket aria-label="El vale de caja" className="mx-auto w-full max-w-[22rem]">
+            <TicketHeader
+              title="Vale de caja"
+              subtitle={date ? formatWeekdayDayMonth(date) : undefined}
+              className={cn(picked === null && 'opacity-70')}
             />
-          </Field>
+            <TicketRule />
+            <TicketRow label="Qué" value={picked?.what ?? EMPTY} muted={picked === null} />
+            {needsParty || fixedSenas ? (
+              <TicketRow label="Quién" value={partyName ?? EMPTY} muted={partyName === null} />
+            ) : null}
+            {motive === 'other' ? (
+              <TicketRow
+                label={direction === 'in' ? 'De qué' : 'En qué'}
+                value={account?.name ?? EMPTY}
+                muted={!account}
+              />
+            ) : null}
+            <TicketRule double />
+            <TicketTotal
+              label={voucherTotalLabel(direction, treasury?.name)}
+              value={amount !== null && amount > 0 ? formatCents(amount) : EMPTY}
+              hint={
+                treasury && direction && amount !== null && amount > 0 ? (
+                  <TreasuryAfterHint
+                    treasury={treasury}
+                    amountCents={amount}
+                    direction={direction}
+                  />
+                ) : undefined
+              }
+            />
+            <TicketNote>{voucherNote(motive)}</TicketNote>
+          </Ticket>
 
-          <EntryPreview entries={shown} />
+          {/* Lo demás: la fecha y una nota. Una raya lo separa de las preguntas y su vale. */}
+          <div className="space-y-5 border-t border-border/60 pt-6">
+            <DateField
+              label="Fecha"
+              required
+              value={date}
+              onValueChange={(next) => {
+                setDate(next)
+                posting.clearFieldError('date')
+              }}
+              min={firstLoadableDay(catalog)}
+              max={today}
+              today={today}
+              error={errorOf('date')}
+            />
+            {detailOpen || detail !== '' || errorOf('detail') ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${id}-nota`}>
+                  Nota <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </Label>
+                <Textarea
+                  id={`${id}-nota`}
+                  value={detail}
+                  rows={2}
+                  maxLength={280}
+                  placeholder="Por ejemplo: retiro de la semana."
+                  className="text-base md:text-sm"
+                  aria-invalid={errorOf('detail') ? true : undefined}
+                  aria-describedby={errorOf('detail') ? `${id}-nota-error` : undefined}
+                  onChange={(e) => setDetail(e.target.value)}
+                />
+                {errorOf('detail') ? (
+                  <p id={`${id}-nota-error`} role="alert" className="text-xs text-destructive">
+                    {errorOf('detail')}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={ADD_LINK}
+                onClick={() => {
+                  setDetailOpen(true)
+                  // El botón desaparece: el foco sigue en el campo que lo reemplaza.
+                  requestAnimationFrame(() => document.getElementById(`${id}-nota`)?.focus())
+                }}
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Agregar una nota
+              </button>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+            {/* Con un motivo conocido la cuenta ya viene puesta: queda acá, para quien la quiera cambiar. */}
+            {motive !== null && !accountAsked ? (
+              accountShown ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor={`${id}-cuenta`}>Cuenta en los libros</Label>
+                  <AccountCombobox
+                    id={`${id}-cuenta`}
+                    value={accountId}
+                    onValueChange={(next) => {
+                      setAccountId(next)
+                      posting.clearFieldError('counterpartAccountId')
+                      const chosen = next ? accountsById.get(next) : undefined
+                      if (!chosen?.requiresParty) setPartyId(null)
+                    }}
+                    accounts={catalog.accounts}
+                    filter={(a) => counterpartIds.has(a.id)}
+                    invalid={Boolean(accountError)}
+                    aria-describedby={accountError ? `${id}-cuenta-error` : undefined}
+                  />
+                  {accountError ? (
+                    <p id={`${id}-cuenta-error`} role="alert" className="text-xs text-destructive">
+                      {accountError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-pretty">
+                  En los libros va a «{account?.name ?? ''}».{' '}
+                  <button
+                    type="button"
+                    className={cn(TEXT_LINK, 'text-xs underline')}
+                    onClick={() => setAccountChanging(true)}
+                  >
+                    Cambiar la cuenta
+                  </button>
+                </p>
+              )
+            ) : null}
+          </div>
+
           <FormBanner banner={posting.banner} />
         </ActionSheetBody>
         <ActionSheetFooter>
-          <SheetCancel />
-          <Button type="submit" className="h-11 sm:h-9" disabled={posting.pending}>
+          <Button type="submit" disabled={posting.pending}>
             {posting.pending ? 'Guardando…' : submitLabel}
           </Button>
         </ActionSheetFooter>
@@ -485,8 +635,8 @@ function MovimientoForm({
         }}
         kind="partner"
         initialName={creating ?? ''}
-        onCreated={(party) => {
-          setPartyId(party.id)
+        onCreated={(created) => {
+          setPartyId(created.id)
           posting.clearFieldError('partyId')
           // El contexto de la vista previa tiene que conocer al socio nuevo.
           reloadCatalog()

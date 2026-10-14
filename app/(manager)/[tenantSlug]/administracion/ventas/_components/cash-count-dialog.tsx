@@ -25,6 +25,11 @@ import { useMasterAction } from '../../ajustes/_components/use-master-action'
  * en cada caja o banco, cargado a mano, para compararlo con lo vendido en el
  * salón. No registra nada en los libros. Un campo vacío es «sin cargar», que no
  * es lo mismo que cero.
+ *
+ * El disparador tiene dos formas y nada más cambia: `cell` es la celda de la
+ * tabla (el importe con su lápiz) y `button`, el botón de la noche elegida
+ * («Anotar lo que entró» / «Cambiar lo que entró»). El diálogo y lo que se
+ * guarda son los mismos.
  */
 export function CashCountDialog({
   day,
@@ -33,7 +38,10 @@ export function CashCountDialog({
   initial,
   salesCents,
   countedCents,
+  trigger = 'cell',
 }: {
+  /** Cómo se ve lo que abre el diálogo. */
+  trigger?: 'cell' | 'button'
   day: string
   /** «lunes 05/10». */
   dayLabel: string
@@ -55,6 +63,12 @@ export function CashCountDialog({
   const loaded = treasuries.filter((t) => typeof values[t.id] === 'number')
   const total = loaded.reduce((sum, t) => sum + (values[t.id] ?? 0), 0)
 
+  const openDialog = () => {
+    setValues({ ...initial })
+    setError(null)
+    setOpen(true)
+  }
+
   const submit = () => {
     setError(null)
     run(
@@ -75,27 +89,36 @@ export function CashCountDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          setValues({ ...initial })
-          setError(null)
-          setOpen(true)
-        }}
-        aria-label={
-          countedCents === null
-            ? `Cargar lo que entró el ${dayLabel}`
-            : `Entró el ${dayLabel}: ${formatCentsShort(countedCents)}. Cambiar`
-        }
-        className="-mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm tabular-nums outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
-      >
-        {countedCents === null ? (
-          <span className="text-xs font-medium text-muted-foreground">Cargar</span>
-        ) : (
-          <span className="whitespace-nowrap">{formatCentsShort(countedCents)}</span>
-        )}
-        <Pencil className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
-      </button>
+      {trigger === 'button' ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 gap-2 md:pointer-fine:h-9"
+          onClick={openDialog}
+        >
+          <Pencil className="size-3.5" aria-hidden />
+          {countedCents === null ? 'Anotar lo que entró' : 'Cambiar lo que entró'}
+        </Button>
+      ) : (
+        <button
+          type="button"
+          onClick={openDialog}
+          aria-label={
+            countedCents === null
+              ? `Cargar lo que entró el ${dayLabel}`
+              : `Entró el ${dayLabel}: ${formatCentsShort(countedCents)}. Cambiar`
+          }
+          className="-mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm tabular-nums outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
+        >
+          {countedCents === null ? (
+            <span className="text-xs font-medium text-muted-foreground">Cargar</span>
+          ) : (
+            <span className="whitespace-nowrap">{formatCentsShort(countedCents)}</span>
+          )}
+          <Pencil className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
+        </button>
+      )}
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>

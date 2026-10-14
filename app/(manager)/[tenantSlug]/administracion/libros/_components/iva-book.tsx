@@ -1,9 +1,11 @@
-import { Banknote, CalendarRange, Percent, Receipt, ReceiptText, TriangleAlert } from 'lucide-react'
+import { CalendarRange, Receipt, ReceiptText } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment } from 'react'
 import { Amount } from '@/components/administracion/amount'
 import { plural } from '@/components/administracion/format'
-import { Badge } from '@/components/ui/badge'
+import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
+import { PanelLink } from '@/components/administracion/kit/panel-states'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
@@ -14,8 +16,6 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
-import { StatCard } from '@/components/ui/stat-card'
 import {
   CHANNEL_LABELS,
   exportHref,
@@ -31,11 +31,11 @@ import { decodePageToken } from '@/lib/accounting/queries/shared'
 import type { FiscalAmountKey, FiscalBook } from '@/lib/accounting/types'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { formatCuit, formatVoucherNumber, formatVoucherRange } from '@/lib/fiscal'
-import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { loadBookContext } from '../_lib/book-context'
 import { type IvaColumn, ivaSummary, visibleIvaColumns } from '../_lib/iva'
 import { keysetPageInfo } from '../_lib/keyset'
+import { monthNoun } from '../_lib/months'
 import { requireBooksAccess } from '../_lib/page-access'
 import {
   type BookSearchParams,
@@ -46,6 +46,7 @@ import {
   resolveBookMonth,
 } from '../_lib/periods'
 import { BookPage, WideBookHint } from './book-page'
+import { BookTotals } from './book-totals'
 import { ExportButton } from './export-button'
 import { KeysetPagination } from './keyset-pagination'
 import { MonthPicker } from './period-picker'
@@ -73,10 +74,15 @@ const COPY = {
 } as const
 
 /**
- * Libro IVA compras o ventas del mes (H.12, F.4/F.5): la franja de totales,
- * la tabla ancha (solo las columnas con algo en el mes; las notas de crédito y
- * las anulaciones en negativo) y los exportes del libro y de las alícuotas.
- * Lo llaman las dos páginas; valida el acceso igual que cualquier página.
+ * Libro IVA compras o ventas del mes (H.12, F.4/F.5): los totales en una banda
+ * (no en tarjetas: es un renglón de control), la tabla ancha (solo las columnas
+ * con algo en el mes; las notas de crédito y las anulaciones en negativo) y los
+ * exportes del libro y de las alícuotas. Lo llaman las dos páginas; valida el
+ * acceso igual que cualquier página.
+ *
+ * A estos libros entra solo lo que tiene factura. Lo que va sin factura queda
+ * registrado igual, en el Libro diario y en los subdiarios: el vacío y el
+ * renglón «Sin factura» lo dicen y llevan ahí.
  */
 export async function IvaBookScreen({
   tenantSlug,
@@ -130,26 +136,18 @@ export async function IvaBookScreen({
       ? sales.data.reduce((sum, r) => sum + r.uninvoicedCents, 0)
       : null
 
+  const showBook = Boolean(
+    totals?.ok && page?.ok && !(rows.length === 0 && page.data.totalRows === 0),
+  )
+
   return (
     <BookPage
       backHref={bookHref(`${base}/libros`, { mes: month.month })}
       title={copy.title}
-      description={
-        <span className="inline-flex flex-wrap items-center gap-2">
-          <span>
-            {month.label}
-            {page?.ok ? ` · ${plural(totalRows, 'comprobante', 'comprobantes')}` : ''}
-          </span>
-          {isOpen ? (
-            <Badge
-              variant="outline"
-              className="border-warning/40 bg-warning/10 font-normal text-warning-text"
-            >
-              Mes abierto: puede cambiar
-            </Badge>
-          ) : null}
-        </span>
-      }
+      description={`${month.label}${
+        page?.ok ? ` · ${plural(totalRows, 'comprobante', 'comprobantes')}` : ''
+      }`}
+      badge={isOpen ? <StatusPill tone="info">Mes abierto: puede cambiar</StatusPill> : null}
       actions={
         hasCuit ? (
           <>
@@ -166,17 +164,24 @@ export async function IvaBookScreen({
           </>
         ) : null
       }
+      booksPath={`${base}/libros`}
+      book={copy.slug}
+      period={{ kind: 'month', month: month.month, from: month.from, to: month.to }}
       toolbar={<MonthPicker month={month.month} today={today} minMonth={ctx.minMonth} />}
+      totals={
+        showBook && totals?.ok ? <IvaTotals book={book} amounts={totals.data.amounts} /> : null
+      }
     >
       {!resolved.ok ? <PeriodError message={resolved.message} /> : null}
       {ctx.settings && !hasCuit ? <CuitMissing base={base} canWrite={canWrite} /> : null}
 
       {availability !== 'ok' ? (
-        <EmptyState
+        <EmptyTeach
           icon={CalendarRange}
           title={monthAvailabilityMessage(availability, month.month, ctx.settings?.booksStartDate)}
-          description="Elegí otro mes con las flechas de arriba."
-        />
+        >
+          Elegí otro mes con las flechas de arriba.
+        </EmptyTeach>
       ) : null}
 
       {totals && !totals.ok ? (
@@ -187,11 +192,10 @@ export async function IvaBookScreen({
       ) : null}
 
       {totals?.ok && page?.ok ? (
-        rows.length === 0 && page.data.totalRows === 0 ? (
-          <EmptyIvaBook book={book} base={base} label={month.label} canWrite={canWrite} />
+        !showBook ? (
+          <EmptyIvaBook book={book} base={base} month={month.month} canWrite={canWrite} />
         ) : (
           <>
-            <IvaSummaryCards book={book} amounts={totals.data.amounts} />
             <WideBookHint>
               En el celular ves cada comprobante con su total: tocalo para ver el detalle. El libro
               completo se lee mejor en la compu.
@@ -224,16 +228,21 @@ export async function IvaBookScreen({
       ) : null}
 
       {book === 'sales' && uninvoiced !== null && uninvoiced !== 0 ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Receipt className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <div className="space-y-1 text-pretty">
-            <p className="font-medium">
-              Ventas del mes sin facturar: <Amount cents={uninvoiced} />
-            </p>
-            <p className="text-muted-foreground">
-              No generan IVA débito y no entran a este libro. Cómo se tratan lo define la contadora.
-            </p>
-          </div>
+        <div className="card-hairline flex flex-col gap-2 rounded-2xl border bg-card p-4 text-sm shadow-xs sm:p-5">
+          <p className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 text-pretty">
+            <StatusPill tone="muted">Sin factura</StatusPill>
+            <span className="min-w-0 flex-1 basis-64">
+              Ventas de {monthNoun(month.month)} sin factura:{' '}
+              <Amount cents={uninvoiced} decimals={0} className="font-semibold" />. Están en el
+              Libro diario y en el subdiario de ventas; a este libro entra solo lo facturado. Cómo
+              se tratan lo define la contadora.
+            </span>
+          </p>
+          <PanelLink
+            href={bookHref(`${base}/libros/subdiarios`, { tipo: 'ventas', mes: month.month })}
+          >
+            Ver todas las ventas del mes
+          </PanelLink>
         </div>
       ) : null}
     </BookPage>
@@ -242,77 +251,80 @@ export async function IvaBookScreen({
 
 function CuitMissing({ base, canWrite }: { base: string; canWrite: boolean }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-      <div className="space-y-1 text-pretty">
-        <p className="font-medium text-warning-text">
-          Falta el CUIT de la SAS para exportar los libros de IVA.
-        </p>
-        <p className="text-muted-foreground">
-          {canWrite ? (
-            <>
-              Completalo en{' '}
-              <Link
-                href={`${base}/ajustes?tab=sas`}
-                className="font-medium text-foreground underline underline-offset-4"
-              >
-                Ajustes › Datos de la SAS
-              </Link>{' '}
-              y vas a poder bajarlos.
-            </>
-          ) : (
-            'Pediles a los dueños que lo completen en Ajustes › Datos de la SAS.'
-          )}
-        </p>
-      </div>
-    </div>
+    <p className="card-hairline flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-2xl border bg-card px-4 py-3 text-sm text-pretty shadow-xs">
+      <StatusPill tone="warn">Falta la CUIT</StatusPill>
+      <span className="font-medium">Falta la CUIT del bar para exportar los libros de IVA.</span>
+      {canWrite ? (
+        <PanelLink href={`${base}/ajustes?tab=sas`}>Cargarla</PanelLink>
+      ) : (
+        <span className="text-muted-foreground">Pedísela a los dueños.</span>
+      )}
+    </p>
   )
 }
 
 function EmptyIvaBook({
   book,
   base,
-  label,
+  month,
   canWrite,
 }: {
   book: FiscalBook
   base: string
-  label: string
+  /** `yyyy-MM`. */
+  month: string
   canWrite: boolean
 }) {
+  const noun = monthNoun(month)
   if (book === 'purchases') {
     return (
-      <EmptyState
+      <EmptyTeach
         icon={Receipt}
-        title={`No hay comprobantes con IVA en ${label.toLowerCase()}`}
-        description="Acá entran las facturas, notas de crédito y débito y los tiques de proveedores con CUIT. Los gastos sin factura no van al Libro IVA."
+        title={`No hay compras con factura en ${noun}`}
         action={
           canWrite ? (
-            <Button asChild className="h-11 md:h-9">
-              <Link href={`${base}/compras/nueva`}>Cargar una factura</Link>
+            <Button asChild className="h-11">
+              <Link href={`${base}/compras/nueva`}>Cargar una compra que debo</Link>
             </Button>
-          ) : null
+          ) : undefined
         }
-      />
+        secondary={
+          <PanelLink href={bookHref(`${base}/libros/subdiarios`, { tipo: 'compras', mes: month })}>
+            Ver el subdiario de compras
+          </PanelLink>
+        }
+      >
+        Acá entran las facturas, las notas de crédito y débito y los tiques con CUIT. Lo que
+        compraste sin factura queda registrado igual: está en el Libro diario y en el subdiario de
+        compras.
+      </EmptyTeach>
     )
   }
   return (
-    <EmptyState
+    <EmptyTeach
       icon={ReceiptText}
-      title={`No hay ventas facturadas en ${label.toLowerCase()}`}
-      description="Acá entran las facturas de cada cierre del día y las facturas sueltas."
+      title={`No hay ventas con factura en ${noun}`}
       action={
         canWrite ? (
-          <Button asChild className="h-11 md:h-9">
-            <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
+          <Button asChild className="h-11">
+            <Link href={`${base}/ventas/cierre`}>Cargar el cierre del día</Link>
           </Button>
-        ) : null
+        ) : undefined
       }
-    />
+      secondary={
+        <PanelLink href={bookHref(`${base}/libros/subdiarios`, { tipo: 'ventas', mes: month })}>
+          Ver el subdiario de ventas
+        </PanelLink>
+      }
+    >
+      Acá entra lo que marcás como facturado en cada cierre del día. Lo demás queda como venta sin
+      factura, en el mismo libro diario.
+    </EmptyTeach>
   )
 }
 
-function IvaSummaryCards({
+/** Los totales del mes en una banda: neto, IVA, percepciones y total, con su aclaración. */
+function IvaTotals({
   book,
   amounts,
 }: {
@@ -321,34 +333,39 @@ function IvaSummaryCards({
 }) {
   const s = ivaSummary(amounts)
   return (
-    <section aria-label="Totales del mes" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard icon={Banknote} label="Neto gravado" value={formatCentsShort(s.netCents)} />
-      <StatCard
-        icon={Percent}
-        label={COPY[book].vat}
-        value={formatCentsShort(s.vatCents)}
-        hint={
-          book === 'purchases' && s.computableCents !== s.vatCents
-            ? `Computable: ${formatCents(s.computableCents)}`
-            : undefined
-        }
-      />
-      <StatCard
-        icon={ReceiptText}
-        label="Percepciones"
-        value={formatCentsShort(s.perceptionsCents)}
-      />
-      <StatCard
-        icon={Receipt}
-        label="Total"
-        value={formatCentsShort(s.totalCents)}
-        hint={
-          s.otherCents !== 0
-            ? `No gravado, exento y otros: ${formatCents(s.otherCents)}`
-            : undefined
-        }
-      />
-    </section>
+    <BookTotals
+      label="Totales del mes"
+      items={[
+        { key: 'neto', label: 'Neto gravado', value: <Amount cents={s.netCents} /> },
+        {
+          key: 'iva',
+          label: COPY[book].vat,
+          value: <Amount cents={s.vatCents} />,
+          hint:
+            book === 'purchases' && s.computableCents !== s.vatCents ? (
+              <>
+                computable <Amount cents={s.computableCents} />
+              </>
+            ) : undefined,
+        },
+        {
+          key: 'percepciones',
+          label: 'Percepciones',
+          value: <Amount cents={s.perceptionsCents} />,
+        },
+        {
+          key: 'total',
+          label: 'Total',
+          value: <Amount cents={s.totalCents} />,
+          hint:
+            s.otherCents !== 0 ? (
+              <>
+                no gravado, exento y otros <Amount cents={s.otherCents} />
+              </>
+            ) : undefined,
+        },
+      ]}
+    />
   )
 }
 
@@ -496,7 +513,7 @@ function IvaTable({
             <li key={row.voucherId}>
               <Link
                 href={`${base}/comprobantes/${row.documentId}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint"
+                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <span className="min-w-0 space-y-0.5">
                   <span className="block text-xs tabular-nums text-muted-foreground">

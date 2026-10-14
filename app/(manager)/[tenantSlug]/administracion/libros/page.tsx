@@ -1,116 +1,73 @@
-import {
-  BookText,
-  CalendarCheck,
-  FilePenLine,
-  History,
-  Info,
-  Layers,
-  ListTree,
-  type LucideIcon,
-  Percent,
-  Receipt,
-  ReceiptText,
-  Scale,
-  TriangleAlert,
-} from 'lucide-react'
+import { ArrowRight, BookText, FilePenLine, Lock, Users } from 'lucide-react'
 import Link from 'next/link'
-import { plural } from '@/components/administracion/format'
-import { ActionButton } from '@/components/administracion/quick-actions'
+import { MonthStrip } from '@/components/administracion/charts/month-strip'
+import {
+  ActionTile,
+  AdmHeader,
+  AdmPage,
+  EmptyTeach,
+  MoneyHero,
+  Panel,
+  PanelLink,
+  PillLink,
+  RetryButton,
+  StatusPill,
+} from '@/components/administracion/kit'
+import { LauncherButton } from '@/components/administracion/nav/launcher'
+import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
-  EXPORT_BOOK_INFO,
-  type ExportBook,
-  exportHref,
+  type FiscalYearRow,
   getAccountingSettings,
+  getIvaPosition,
   getMonthPackage,
-  type MonthPackageFile,
+  listFiscalYears,
   settleQuery,
 } from '@/lib/accounting/queries'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
-import {
-  addDays,
-  formatDate,
-  formatIsoDay,
-  formatMonthLabel,
-  minIsoDay,
-  monthOf,
-  todayInCordoba,
-} from '@/lib/dates'
-import { ExportAllButton, ExportButton } from './_components/export-button'
+import { addDays, monthOf, todayInCordoba } from '@/lib/dates'
+import { type BookCounts, BookIndex } from './_components/book-index'
+import { ExportAllButton } from './_components/export-button'
 import { MonthPicker } from './_components/period-picker'
-import { PeriodError, ReportError } from './_components/report-error'
+import { PeriodError } from './_components/report-error'
+import { ivaHero } from './_lib/iva-story'
+import {
+  earlierOpenMonth,
+  focusMonth,
+  monthHeadline,
+  monthNoun,
+  monthPeriods,
+  monthStripModel,
+} from './_lib/months'
+import {
+  countText,
+  downloadablePackage,
+  packageCountText,
+  packageFiles,
+  packageStatusLine,
+} from './_lib/package'
 import { requireBooksAccess } from './_lib/page-access'
-import { bookHref, resolveBookMonth } from './_lib/periods'
+import {
+  bookHref,
+  monthAvailability,
+  monthAvailabilityMessage,
+  resolveBookMonth,
+} from './_lib/periods'
 
 export const metadata = { title: 'Libros' }
 
-type BookCard = {
-  key: string
-  icon: LucideIcon
-  title: string
-  description: string
-  href: string
-  exportBook?: ExportBook
-  exportLabel?: string
-}
-
-const UNIT_SINGULAR: Readonly<Record<NonNullable<MonthPackageFile['unit']>, string>> = {
-  asientos: 'asiento',
-  cuentas: 'cuenta',
-  comprobantes: 'comprobante',
-  filas: 'fila',
-  proveedores: 'proveedor',
-  clientes: 'cliente',
-}
-
-function countText(file: MonthPackageFile): string | null {
-  if (file.unit === null) return null
-  if (file.rows === null) return 'Sin contar todavía'
-  if (file.rows === 0) return 'Sin movimientos'
-  return plural(file.rows, UNIT_SINGULAR[file.unit], file.unit)
-}
-
-/** «Septiembre 2026 · cerrado el 05/10/2026 por Franco» · «Octubre 2026 · mes abierto…». */
-function packageStatusLine(
-  month: string,
-  pkg: {
-    status: 'open' | 'closed' | 'missing'
-    closedAt: string | null
-    closedByName: string | null
-  },
-): string {
-  const label = formatMonthLabel(month)
-  if (pkg.status === 'open') {
-    return `${label} · mes abierto: los números pueden cambiar hasta que se cierre`
-  }
-  if (pkg.status !== 'closed') return label
-  const when = pkg.closedAt ? ` el ${formatDate(pkg.closedAt)}` : ''
-  const who = pkg.closedByName ? ` por ${pkg.closedByName}` : ''
-  return `${label} · cerrado${when}${who}`
-}
-
-/** Los parámetros de período que pide cada libro del paquete (F.15). */
-function exportParamsFor(
-  libro: ExportBook,
-  month: { month: string; from: string; to: string },
-  today: string,
-) {
-  switch (EXPORT_BOOK_INFO[libro].period) {
-    case 'mes':
-      return { mes: month.month }
-    case 'rango':
-      return { desde: month.from, hasta: month.to }
-    case 'fecha':
-      return { hasta: minIsoDay(month.to, today) }
-    default:
-      return {}
-  }
-}
-
+/**
+ * Libros: las pestañas del año y el mes abierto. Arriba, una fila con los meses
+ * del ejercicio (candado = cerrado, punteado = falta cerrar, anillo = en curso);
+ * el elegido se abre abajo con un título que AFIRMA qué pasa con ese mes y EL
+ * botón del paso siguiente. Después, el índice de sus libros, que es la
+ * herramienta de la contadora: un solo listado con «Ver» y exportar.
+ *
+ * Los avisos del mes NO se piden acá: viven en «Fin de mes» (un solo lugar para
+ * lo mismo). El título sale del período y de la fecha, sin lecturas de más, y
+ * los conteos del índice llegan después de pintar (`Suspense`).
+ */
 export default async function LibrosPage({
   params,
   searchParams,
@@ -121,305 +78,338 @@ export default async function LibrosPage({
   const { tenantSlug } = await params
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
-  const { access, canWrite } = await requireBooksAccess(tenantSlug, `${base}/libros`)
+  const books = `${base}/libros`
+  const { access, canWrite } = await requireBooksAccess(tenantSlug, books)
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
-  const [settingsResult, firstOpenDate] = await Promise.all([
+  const [settingsResult, firstOpenDate, yearsResult] = await Promise.all([
     settleQuery(getAccountingSettings(tenantId)),
     loadFirstOpenDate(tenantId),
+    settleQuery(listFiscalYears(tenantId)),
   ])
   const settings = settingsResult.ok ? settingsResult.data : null
-  // Sin mes en la URL: el último mes cerrado (lo que la contadora viene a buscar); si no hay, el de hoy.
+  const years: FiscalYearRow[] = yearsResult.ok ? yearsResult.data : []
+  const allPeriods = years.flatMap((y) => y.periods)
+
+  // Sin mes en la URL: quien cierra ve el mes que le toca; la contadora, el último cerrado
+  // (lo que viene a buscar) y, si no hay, el de hoy.
   const lastClosedMonth = firstOpenDate ? monthOf(addDays(firstOpenDate, -1)) : null
-  const resolved = resolveBookMonth(sp, today, lastClosedMonth)
+  const fallback =
+    canWrite && yearsResult.ok && allPeriods.length > 0
+      ? focusMonth(allPeriods, today)
+      : lastClosedMonth
+  const resolved = resolveBookMonth(sp, today, fallback)
   const month = resolved.ok ? resolved : resolveBookMonth({}, today)
   if (!month.ok) throw new Error('período por defecto inválido')
   const minMonth = settings ? monthOf(settings.booksStartDate) : null
 
-  const pkg = resolved.ok ? await settleQuery(getMonthPackage(tenantId, month.month)) : null
-  const monthParams = { mes: month.month }
-  const books = `${base}/libros`
+  const period = monthPeriods(allPeriods).find((p) => monthOf(p.month) === month.month) ?? null
+  const availability = monthAvailability(month.month, today, settings?.booksStartDate)
+  const hasBooks = resolved.ok && availability === 'ok' && period !== null
+  // El ejercicio del mes elegido; si el mes no tiene libros, el de hoy (o el último).
+  const year =
+    years.find((y) => y.id === period?.fiscalYearId) ??
+    years.find((y) => y.startDate <= today && today <= y.endDate) ??
+    years.at(-1) ??
+    null
 
-  const cards: BookCard[] = [
-    {
-      key: 'diario',
-      icon: BookText,
-      title: 'Libro diario',
-      description: 'Todos los asientos, en orden.',
-      href: bookHref(`${books}/diario`, monthParams),
-      exportBook: 'diario',
-    },
-    {
-      key: 'mayor',
-      icon: ListTree,
-      title: 'Mayor',
-      description: 'Los movimientos de una cuenta, con su saldo.',
-      href: bookHref(`${books}/mayor`, monthParams),
-      exportBook: 'mayor-general',
-      exportLabel: 'Exportar mayor general',
-    },
-    {
-      key: 'sumas-y-saldos',
-      icon: Scale,
-      title: 'Sumas y saldos',
-      description: 'El balance de comprobación del período.',
-      href: bookHref(`${books}/sumas-y-saldos`, monthParams),
-      exportBook: 'sumas-y-saldos',
-    },
-    {
-      key: 'iva-compras',
-      icon: Receipt,
-      title: 'Libro IVA compras',
-      description: 'Los comprobantes de compra con IVA del mes.',
-      href: bookHref(`${books}/iva-compras`, monthParams),
-      exportBook: 'iva-compras',
-    },
-    {
-      key: 'iva-ventas',
-      icon: ReceiptText,
-      title: 'Libro IVA ventas',
-      description: 'Lo facturado en el mes.',
-      href: bookHref(`${books}/iva-ventas`, monthParams),
-      exportBook: 'iva-ventas',
-    },
-    {
-      key: 'posicion-iva',
-      icon: Percent,
-      title: 'Posición de IVA',
-      description: 'Cuánto IVA da el mes (estimado).',
-      href: bookHref(`${books}/posicion-iva`, monthParams),
-      exportBook: 'posicion-iva',
-    },
-    {
-      key: 'subdiarios',
-      icon: Layers,
-      title: 'Subdiarios',
-      description: 'Compras, pagos, ventas, cobranzas y cada caja.',
-      href: bookHref(`${books}/subdiarios`, monthParams),
-    },
-    {
-      key: 'historia',
-      icon: History,
-      title: 'Historia',
-      description: 'Quién cargó, anuló o cerró qué.',
-      href: bookHref(`${books}/historia`, monthParams),
-      exportBook: 'historia',
-    },
-    {
-      key: 'cierres',
-      icon: CalendarCheck,
-      title: 'Cierres de mes',
-      description: canWrite
-        ? 'Cerrar el mes, reabrirlo y el cierre del ejercicio.'
-        : 'Qué meses están cerrados, quién los cerró y cuándo.',
-      href: `${books}/cierres`,
-    },
-    ...(canWrite
-      ? [
-          {
-            key: 'asiento-manual',
-            icon: FilePenLine,
-            title: 'Asiento manual',
-            description: 'Ajustes y el asiento de sueldos que te pasa la contadora.',
-            href: `${books}/asiento-manual`,
-          } satisfies BookCard,
-        ]
-      : []),
-  ]
+  const registered = settings?.ivaCondition === 'responsable_inscripto'
+  const ivaResult =
+    hasBooks && registered ? await settleQuery(getIvaPosition(tenantId, month.month)) : null
 
-  const fileName = (libro: ExportBook) => `administracion-${tenantSlug}-${libro}-${month.month}.csv`
-  const files =
-    pkg?.ok && pkg.data.status !== 'missing'
-      ? pkg.data.files.map((file) => ({
-          ...file,
-          href: exportHref(tenantSlug, file.libro, exportParamsFor(file.libro, month, today)),
-          fileName: fileName(file.libro),
-        }))
-      : []
-  const needsCuit = settings !== null && !settings.cuit
-  // Sin el CUIT de la SAS los libros de IVA no se pueden bajar (409): no se ofrecen.
-  const blocked = (libro: ExportBook) => needsCuit && Boolean(EXPORT_BOOK_INFO[libro].needsSasCuit)
-  const downloadable = files.filter((f) => !blocked(f.libro))
+  // Los conteos NO se esperan: cada renglón del índice los recibe cuando llegan.
+  const counts: Promise<BookCounts> = hasBooks
+    ? settleQuery(getMonthPackage(tenantId, month.month)).then((pkg) =>
+        pkg.ok ? new Map(pkg.data.files.map((f) => [f.libro, countText(f)])) : null,
+      )
+    : Promise.resolve(null)
+
+  const hasCuit = !settings || Boolean(settings.cuit)
+  const files = packageFiles(tenantSlug, month, today)
+  const downloadable = downloadablePackage(files, hasCuit)
+  const noun = monthNoun(month.month)
+
+  const headline = resolved.ok
+    ? monthHeadline({
+        month: month.month,
+        period: availability === 'ok' ? period : null,
+        earlierOpen: earlierOpenMonth(allPeriods, month.month),
+        today,
+        canWrite,
+        booksPath: books,
+        unavailable:
+          availability === 'ok'
+            ? null
+            : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate),
+      })
+    : null
+
+  const downloadAll = (className?: string) =>
+    downloadable.length > 0 ? (
+      <ExportAllButton
+        className={className}
+        label="Descargar el paquete del mes"
+        count={packageCountText(files.length, downloadable.length)}
+        // Para la contadora es EL botón de la pantalla; para el dueño, el suyo es el del mes.
+        variant={canWrite ? 'outline' : 'default'}
+        files={downloadable.map((f) => ({ href: f.href, fileName: f.fileName, title: f.title }))}
+      />
+    ) : null
 
   return (
-    <PageShell>
-      <PageHeader
-        eyebrow="Administración"
-        title={
-          <>
-            Libros <ReadOnlyBadge />
-          </>
+    <AdmPage>
+      <AdmHeader
+        title="Libros"
+        badge={<ReadOnlyBadge className="ml-0" />}
+        description={
+          canWrite
+            ? 'Se arman solos con lo que cargás. A fin de mes los revisás, cerrás el mes y se los mandás a tu contadora.'
+            : 'Los libros de cada mes, para mirarlos acá o descargarlos.'
         }
-        description="Los libros de la SAS de cada mes, para mirarlos acá o bajarlos para la contadora."
       />
 
-      <MonthPicker month={month.month} today={today} minMonth={minMonth} />
       {!resolved.ok ? <PeriodError message={resolved.message} /> : null}
 
-      {settings && !settings.hasDocuments ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <div className="flex-1 space-y-2 text-pretty">
-            <p className="font-medium">Todavía no hay nada cargado.</p>
-            <p className="text-muted-foreground">
-              {canWrite
-                ? 'Los libros se arman solos: cada gasto, cierre del día o pago que cargues suma su asiento acá. No hace falta escribir nada en los libros.'
-                : 'Cuando los dueños carguen gastos, ventas y pagos, vas a ver acá los libros de cada mes, listos para bajar.'}
-            </p>
-            {canWrite ? (
-              <div className="flex flex-wrap gap-2 pt-1">
-                <ActionButton action="gasto" size="sm" className="h-11 gap-2 md:h-8" />
-                <Button asChild size="sm" variant="outline" className="h-11 md:h-8">
-                  <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      <section aria-label="Libros" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map((card) => {
-          const Icon = card.icon
-          return (
-            <Card
-              key={card.key}
-              className="card-hairline relative h-full gap-3 border-border/70 bg-card/85 p-6"
-            >
-              <div className="flex size-10 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-                <Icon className="size-5" aria-hidden />
-              </div>
-              <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                {card.title}
-              </h2>
-              <p className="text-sm text-muted-foreground">{card.description}</p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                <Button asChild size="sm" className="h-11 md:h-8">
-                  <Link href={card.href} aria-label={`Ver ${card.title}`}>
-                    Ver
-                  </Link>
-                </Button>
-                {card.exportBook && !blocked(card.exportBook) ? (
-                  <ExportButton
-                    size="sm"
-                    className="h-11 md:h-8"
-                    href={exportHref(
-                      tenantSlug,
-                      card.exportBook,
-                      exportParamsFor(card.exportBook, month, today),
-                    )}
-                    fileName={fileName(card.exportBook)}
-                    label={card.exportLabel ?? 'Exportar'}
-                  />
-                ) : null}
-              </div>
-            </Card>
-          )
-        })}
-      </section>
-
-      <section
-        aria-labelledby="paquete-del-mes"
-        className="card-hairline rounded-xl border bg-card"
-      >
-        <header className="flex flex-col gap-3 border-b border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-0.5">
-            <h2 id="paquete-del-mes" className="font-serif text-lg font-semibold tracking-tight">
-              Paquete del mes para la contadora
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {pkg?.ok ? packageStatusLine(month.month, pkg.data) : formatMonthLabel(month.month)}
-            </p>
-          </div>
-          {downloadable.length > 0 ? (
-            <ExportAllButton
-              className="h-11 md:h-9"
-              files={downloadable.map((f) => ({
-                href: f.href,
-                fileName: f.fileName,
-                title: f.title,
-              }))}
-            />
-          ) : null}
-        </header>
-
-        {needsCuit ? (
-          <div className="mx-5 mt-4 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-            <div className="space-y-1 text-pretty">
-              <p className="font-medium text-warning-text">
-                Falta el CUIT de la SAS para bajar los libros de IVA.
-              </p>
-              <p className="text-muted-foreground">
-                {canWrite ? (
-                  <>
-                    Completalo en{' '}
-                    <Link
-                      href={`${base}/ajustes?tab=sas`}
-                      className="font-medium text-foreground underline underline-offset-4"
-                    >
-                      Ajustes › Datos de la SAS
-                    </Link>
-                    .
-                  </>
-                ) : (
-                  'Pediles a los dueños que lo completen en Ajustes › Datos de la SAS.'
-                )}
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        {pkg === null ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-            Elegí un mes para ver su paquete.
-          </p>
-        ) : !pkg.ok ? (
-          <div className="p-5">
-            <ReportError message={pkg.message} />
-          </div>
-        ) : pkg.data.status === 'missing' ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground text-pretty">
-            {settings
-              ? `${formatMonthLabel(month.month)} no tiene libros: Administración arranca el ${formatIsoDay(settings.booksStartDate)}.`
-              : `${formatMonthLabel(month.month)} no tiene libros.`}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {files.map((file) => {
-              const count = countText(file)
+      <div className="space-y-2">
+        {years.length > 1 ? (
+          <nav aria-label="Ejercicios" className="flex flex-wrap gap-1.5">
+            {years.map((y) => {
+              const months = monthPeriods(y.periods).filter((p) => p.startsOn <= today)
+              const target = months.at(-1)
               return (
-                <li
-                  key={file.libro}
-                  className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+                <PillLink
+                  key={y.id}
+                  href={target ? bookHref(books, { mes: monthOf(target.month) }) : books}
+                  active={y.id === year?.id}
+                  scroll={false}
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{file.title}</p>
-                    <p className="text-xs text-muted-foreground">{file.description}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                    {count ? (
-                      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-                    ) : null}
-                    {blocked(file.libro) ? (
-                      <span className="text-xs text-muted-foreground">Falta el CUIT</span>
-                    ) : (
-                      <ExportButton
-                        size="sm"
-                        className="h-11 md:h-8"
-                        href={file.href}
-                        fileName={file.fileName}
-                        label="Descargar"
-                      />
-                    )}
-                  </div>
-                </li>
+                  {y.endDate.slice(0, 4)}
+                </PillLink>
               )
             })}
-          </ul>
+          </nav>
+        ) : null}
+
+        {year ? (
+          <nav aria-label="Meses del ejercicio">
+            <MonthStrip
+              months={monthStripModel(year.periods, {
+                today,
+                selected: resolved.ok ? month.month : null,
+                hrefFor: (m) => bookHref(books, { mes: m }),
+              })}
+            />
+          </nav>
+        ) : (
+          // Sin los ejercicios (no se pudieron leer, o el bar todavía no tiene): el mes con flechas.
+          <MonthPicker month={month.month} today={today} minMonth={minMonth} />
         )}
-      </section>
-    </PageShell>
+
+        {headline ? (
+          <section
+            aria-label={`El mes de ${noun}`}
+            className="card-hairline grid gap-6 rounded-2xl border bg-card p-5 shadow-xs sm:p-6 lg:grid-cols-12"
+          >
+            <div
+              className={
+                ivaResult ? 'flex flex-col items-start gap-4 lg:col-span-7' : 'lg:col-span-12'
+              }
+            >
+              <div className="space-y-2">
+                {headline.kind === 'closed' ? (
+                  <StatusPill tone="ok" icon={Lock}>
+                    Cerrado
+                  </StatusPill>
+                ) : null}
+                <h2 className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance sm:text-3xl">
+                  {headline.title}
+                </h2>
+                {headline.sentence ? (
+                  <p className="max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+                    {headline.sentence}
+                  </p>
+                ) : null}
+              </div>
+              {headline.action ? (
+                <Button
+                  asChild
+                  variant={headline.action.emphasis === 'primary' ? 'default' : 'outline'}
+                  className="mt-4 h-12 w-full gap-2 px-5 text-base sm:w-auto lg:mt-0"
+                >
+                  <Link href={headline.action.href}>
+                    {headline.action.label}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
+              ) : null}
+              {headline.link ? (
+                <PanelLink href={headline.link.href} className="mt-3 lg:mt-0">
+                  {headline.link.label}
+                  <ArrowRight className="size-3.5" aria-hidden />
+                </PanelLink>
+              ) : null}
+            </div>
+
+            {ivaResult ? (
+              <div className="border-t border-border/60 pt-5 lg:col-span-5 lg:border-l lg:border-t-0 lg:pt-0 lg:pl-6">
+                {ivaResult.ok ? (
+                  <MonthIva
+                    month={month.month}
+                    position={ivaResult.data}
+                    href={bookHref(`${books}/posicion-iva`, { mes: month.month })}
+                  />
+                ) : (
+                  <div className="flex flex-col items-start gap-3">
+                    <p role="alert" className="text-sm text-muted-foreground">
+                      No pudimos calcular el IVA.
+                    </p>
+                    <RetryButton />
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+
+      {canWrite ? (
+        <section aria-labelledby="se-carga-a-mano" className="space-y-2">
+          <h2
+            id="se-carga-a-mano"
+            className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
+            Se carga a mano
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ActionTile
+              icon={Users}
+              title="Sueldos del mes"
+              hint="Los números que te pasa tu contadora"
+              href={`${books}/asiento-manual?tipo=sueldos`}
+            />
+            <ActionTile
+              icon={FilePenLine}
+              title="Asiento manual"
+              hint="Un ajuste que te dicta la contadora"
+              href={`${books}/asiento-manual`}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {settings && !settings.hasDocuments ? (
+        <EmptyTeach
+          icon={BookText}
+          title="Los libros se arman solos"
+          action={canWrite ? <LauncherButton /> : undefined}
+        >
+          {canWrite
+            ? 'Cada gasto, cierre del día o pago que cargues queda anotado acá. Vos no escribís nada en los libros.'
+            : 'Cuando los dueños carguen gastos, ventas y pagos, vas a ver acá los libros de cada mes, listos para descargar.'}
+        </EmptyTeach>
+      ) : null}
+
+      <Panel
+        id="paquete-del-mes"
+        title={`Los libros de ${noun}`}
+        description={
+          <>
+            {packageStatusLine(month.month, {
+              status: hasBooks && period ? period.status : 'missing',
+              closedAt: period?.closedAt ?? null,
+              closedByName: period?.closedByName ?? null,
+            })}
+            .{canWrite ? ' Son los libros que usa tu contadora: acá no se escribe nada.' : null}
+          </>
+        }
+        action={hasBooks ? <div className="hidden sm:block">{downloadAll('h-10')}</div> : null}
+      >
+        {!resolved.ok ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Elegí un mes para ver sus libros.
+          </p>
+        ) : !hasBooks ? (
+          <p className="py-6 text-center text-sm text-muted-foreground text-pretty">
+            {availability === 'ok'
+              ? `${month.label} no tiene libros todavía.`
+              : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate)}
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {/* En el celular el botón va acá: al lado del título no entra. */}
+            <div className="sm:hidden">{downloadAll('h-11 w-full')}</div>
+            {hasCuit ? null : (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5 text-sm text-pretty">
+                <StatusPill tone="warn">Falta la CUIT</StatusPill>
+                <span>
+                  Sin la CUIT del bar no se pueden descargar los{' '}
+                  {files.length - downloadable.length} archivos de IVA.
+                </span>
+                {canWrite ? (
+                  <PanelLink href={`${base}/ajustes?tab=sas`}>Cargarla</PanelLink>
+                ) : (
+                  <span className="text-muted-foreground">Pedísela a los dueños.</span>
+                )}
+              </p>
+            )}
+            <BookIndex
+              tenantSlug={tenantSlug}
+              booksPath={books}
+              month={month}
+              today={today}
+              hasCuit={hasCuit}
+              counts={counts}
+              openAll={!canWrite}
+            />
+          </div>
+        )}
+      </Panel>
+
+      <QuickActionsBar />
+    </AdmPage>
+  )
+}
+
+/** El IVA del mes en el panel: el número (o por qué no hay), su estado y el link a la cuenta. */
+function MonthIva({
+  month,
+  position,
+  href,
+}: {
+  month: string
+  position: Parameters<typeof ivaHero>[0]
+  href: string
+}) {
+  const hero = ivaHero(position, month)
+  const link = (
+    <PanelLink href={href}>
+      Ver la cuenta
+      <ArrowRight className="size-3.5" aria-hidden />
+    </PanelLink>
+  )
+  if (hero.cents === null) {
+    return (
+      <div className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          IVA de {monthNoun(month)}
+        </p>
+        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+          {hero.brief}
+        </p>
+        {hero.kind === 'zero' ? link : null}
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <MoneyHero size="md" cents={hero.cents} label={hero.label} sentence={hero.brief} />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <StatusPill tone={position.status === 'open' ? 'info' : 'muted'}>
+          {position.status === 'open' ? 'Estimado' : 'Mes cerrado'}
+        </StatusPill>
+        {link}
+      </div>
+    </div>
   )
 }
