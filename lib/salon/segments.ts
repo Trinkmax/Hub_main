@@ -160,6 +160,20 @@ export function mealTypeForSegment(
   return segment
 }
 
+/**
+ * El `meal_type` que se guarda al confirmar el form: con evento, el del evento
+ * (R2), que es lo que el form muestra ("El servicio lo define el evento");
+ * sin evento, el elegido. Las reservas del desayuno libre del 18/10/2026 se
+ * cargaron antes de que existiera el desayuno y quedaron como 'lunch': el
+ * form decía "Desayuno", guardaba 'lunch' y la lista las ponía en el almuerzo.
+ */
+export function mealTypeToSave(
+  meal: MealType,
+  event: Pick<SegmentEventInput, 'starts_at_local'> | null,
+): MealType {
+  return event ? mealTypeForSegment(segmentOfEventStart(event.starts_at_local)) : meal
+}
+
 /** Servicio en curso según el reloj del bar: a las 02:00 todavía es la cena. */
 export function currentSegment(nowMinutes: number): SegmentKey {
   return segmentOfMinutes(nowMinutes)

@@ -74,6 +74,7 @@ import {
   type DaySegmentsSnapshot,
   eventLoadsById,
   mealTypeForSegment,
+  mealTypeToSave,
   projectReservation,
   resolveSegmentSettings,
   type SegmentEventLoad,
@@ -758,7 +759,13 @@ export function ReservationForm({
   }
 
   const onSubmit = form.handleSubmit(
-    (data) => {
+    (raw) => {
+      // Lo que se ve es lo que se guarda: con evento, el servicio del evento,
+      // aunque la reserva viniera guardada con otro.
+      const event = isEventReservation(raw)
+        ? (eventsForDate.find((e) => e.id === raw.scheduled_event_id) ?? null)
+        : null
+      const data = { ...raw, meal_type: mealTypeToSave(raw.meal_type, event) }
       if (eventDateMismatch) {
         form.setError('scheduled_event_id', {
           message: 'La fecha no coincide con el evento.',

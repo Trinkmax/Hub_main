@@ -16,6 +16,7 @@ import {
   isSegmentKey,
   isZoneFilter,
   mealTypeForSegment,
+  mealTypeToSave,
   NO_ZONE_CAPS,
   projectReservation,
   type ReservationCandidate,
@@ -1330,5 +1331,12 @@ describe('desayuno', () => {
     expect(d.segments.breakfast.people).toBe(3)
     expect(d.segments.lunch.people).toBe(0)
     expect(mealTypeForSegment('breakfast')).toBe('breakfast')
+  })
+
+  it('al guardar, una reserva del evento pasa al servicio del evento', () => {
+    expect(mealTypeToSave('lunch', { starts_at_local: '09:30:00' })).toBe('breakfast')
+    expect(mealTypeToSave('hub_event', { starts_at_local: '21:00:00' })).toBe('dinner')
+    expect(mealTypeToSave('breakfast', null)).toBe('breakfast')
+    expect(mealTypeToSave('tea_time', null)).toBe('tea_time')
   })
 })
