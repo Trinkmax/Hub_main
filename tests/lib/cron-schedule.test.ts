@@ -11,8 +11,20 @@ describe('gatedTasksDue', () => {
     expect(due).not.toContain('refresh_meta_tokens')
   })
 
-  it('minuto 15 corre solo evaluate_time_triggers', () => {
-    expect(gatedTasksDue(new Date('2026-06-24T10:15:00Z'))).toEqual(['evaluate_time_triggers'])
+  it('minuto 15 corre evaluate_time_triggers y la conciliación de entradas', () => {
+    expect(gatedTasksDue(new Date('2026-06-24T10:15:00Z'))).toEqual([
+      'evaluate_time_triggers',
+      'reconcile_ticket_orders',
+    ])
+  })
+
+  it('la conciliación de entradas va en los minutos que pg_cron garantiza (cada 15)', () => {
+    for (const minute of ['00', '15', '30', '45']) {
+      expect(gatedTasksDue(new Date(`2026-10-26T21:${minute}:00Z`))).toContain(
+        'reconcile_ticket_orders',
+      )
+    }
+    expect(gatedTasksDue(new Date('2026-10-26T21:16:00Z'))).not.toContain('reconcile_ticket_orders')
   })
 
   it('minuto 30 corre evaluate_time_triggers y sync_templates', () => {

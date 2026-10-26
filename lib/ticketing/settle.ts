@@ -31,7 +31,7 @@ import type { OrderAttention, OrderStatus } from './types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type SettleSource = 'webhook' | 'return' | 'poll'
+export type SettleSource = 'webhook' | 'return' | 'poll' | 'cron'
 
 export type SettleOutcome =
   | {
@@ -52,6 +52,10 @@ type SettleRpcResult = {
   status: OrderStatus
   reservation_id: string | null
   newly_approved: boolean
+  /** Solo en la transición a devuelto (Mercado Pago avisa varias veces). */
+  newly_refunded?: boolean
+  /** Llegó un SEGUNDO pago aprobado para un pedido ya pagado. */
+  duplicate_payment_id?: string
   attention: OrderAttention | null
 }
 
@@ -132,10 +136,22 @@ export async function applyPayment(
       },
     })
   }
-  if (
-    result.status === 'refunded' &&
-    (payment.status === 'refunded' || payment.status === 'charged_back')
-  ) {
+  if (result.duplicate_payment_id) {
+    await logAudit({
+      tenantId,
+      userId: null,
+      action: 'ticket_order.duplicate_payment',
+      entity: 'ticket_order',
+      entityId: result.order_id,
+      payload: {
+        duplicate_payment_id: result.duplicate_payment_id,
+        paid_cents: paidCents,
+        attention: result.attention,
+        source,
+      },
+    })
+  }
+  if (result.newly_refunded) {
     await logAudit({
       tenantId,
       userId: null,
@@ -145,7 +161,7 @@ export async function applyPayment(
       payload: { reservation_id: result.reservation_id, mp_status: payment.status, source },
     })
   }
-  if (result.newly_approved || result.status === 'refunded') {
+  if (result.newly_approved || result.newly_refunded) {
     await revalidateTenant(tenantId)
   }
 

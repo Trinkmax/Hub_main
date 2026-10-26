@@ -46,6 +46,9 @@ const POLL_FAST_MS = 2500
 const POLL_SLOW_MS = 10_000
 const FAST_WINDOW_MS = 120_000
 const GIVE_UP_MS = 15 * 60_000
+// Un pago que empezó antes del vencimiento puede aprobarse después (3DS lento,
+// la app de Mercado Pago): durante estos minutos se sigue preguntando.
+const EXPIRED_GRACE_MS = 5 * 60_000
 
 export function OrderView({
   order,
@@ -69,6 +72,11 @@ export function OrderView({
     statusDetail: order.mpStatusDetail,
   })
   const [celebrate, setCelebrate] = useState(false)
+  // Volvió de Mercado Pago con el número de pago: hasta confirmarlo se muestra
+  // «confirmando», aunque el lugar ya figure vencido (pudo pagar al límite).
+  const [confirming, setConfirming] = useState(
+    Boolean(paymentId) && order.status !== 'approved' && order.status !== 'refunded',
+  )
   const started = useRef(Date.now())
   const firstStatus = useRef(order.status)
 
@@ -80,12 +88,17 @@ export function OrderView({
     let timer: ReturnType<typeof setTimeout> | null = null
     let usePaymentId = paymentId
 
-    const settled = (s: Live) => s.status === 'approved' || s.status === 'refunded' || s.expired
+    const holdEnds = new Date(order.holdExpiresAt).getTime()
+    const settled = (s: Live) =>
+      s.status === 'approved' ||
+      s.status === 'refunded' ||
+      (s.expired && Date.now() > holdEnds + EXPIRED_GRACE_MS)
 
     const tick = async () => {
       const result = await refreshOrder({ tenantSlug, orderId: order.id, paymentId: usePaymentId })
       usePaymentId = null
       if (cancelled) return
+      setConfirming(false)
       if (result.ok) {
         const next: Live = {
           status: result.status,
@@ -103,6 +116,7 @@ export function OrderView({
     }
 
     if (!settled({ ...live })) void tick()
+    else setConfirming(false)
 
     // La URL de Mercado Pago trae varios parámetros: se limpia para que el
     // link que se guarde o comparta sea el de la entrada, nada más.
@@ -167,9 +181,10 @@ export function OrderView({
 
   const approved = live.status === 'approved'
   const refunded = live.status === 'refunded'
-  const expired = live.expired
-  const rejected = live.status === 'rejected' && !expired
-  const waiting = live.status === 'pending' && !expired
+  const expired = live.expired && !confirming && !approved
+  const rejected = live.status === 'rejected' && !live.expired && !confirming
+  const waiting =
+    !approved && !refunded && (confirming || (live.status === 'pending' && !live.expired))
   const retryUrl = order.retryUrl
 
   return (

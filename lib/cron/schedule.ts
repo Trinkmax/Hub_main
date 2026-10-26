@@ -2,10 +2,19 @@
 // minuto (pg_cron → /api/cron/dispatch); estas tareas se gatean por minuto/hora
 // UTC para no correr en cada tick. Las de ALTA FRECUENCIA (promover broadcasts,
 // drenar job_queue, tick de flow_executions) NO están acá: corren siempre.
-export type GatedTask = 'evaluate_time_triggers' | 'sync_templates' | 'refresh_meta_tokens'
+export type GatedTask =
+  | 'evaluate_time_triggers'
+  | 'sync_templates'
+  | 'refresh_meta_tokens'
+  | 'reconcile_ticket_orders'
 
 // Orden determinístico de evaluación y de salida.
-const GATED_TASKS: GatedTask[] = ['evaluate_time_triggers', 'sync_templates', 'refresh_meta_tokens']
+const GATED_TASKS: GatedTask[] = [
+  'evaluate_time_triggers',
+  'sync_templates',
+  'refresh_meta_tokens',
+  'reconcile_ticket_orders',
+]
 
 // Devuelve las tareas gated que corresponden correr en el tick de `date` (UTC).
 // Idempotente y tolerante a ticks perdidos: cada tarea subyacente filtra por
@@ -25,6 +34,11 @@ export function gatedTasksDue(date: Date): GatedTask[] {
         // Una vez al día, 04:20 UTC (01:20 ART). El minuto 20 evita solaparse
         // con los gates de 15/30 min, repartiendo la carga del tick diario.
         return hour === 4 && minute === 20
+      case 'reconcile_ticket_orders':
+        // Entradas online: pagos que el webhook no aplicó. Cada 15' porque el
+        // pg_cron de hub-dispatch garantiza pegarle al dispatcher en esos
+        // minutos (`minute % 15 = 0`) aunque no haya otro trabajo.
+        return minute % 15 === 0
       default:
         return false
     }

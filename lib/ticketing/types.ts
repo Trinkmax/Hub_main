@@ -143,6 +143,8 @@ export type PublicExperience = {
   maxPartySize: number
   terms: string | null
   functions: PublicFunction[]
+  /** Sin publicar: solo aparece en la vista previa del dueño. */
+  draft?: boolean
 }
 
 export type PublicVenue = {

@@ -123,8 +123,19 @@ export const experienceFormSchema = z
 export type ExperienceFormInput = z.input<typeof experienceFormSchema>
 export type ExperienceFormValues = z.output<typeof experienceFormSchema>
 
+/** Pesos opcionales al crear una película (vacío = como la última cargada). */
+const optionalPesosAmount = (label: string) =>
+  z
+    .number({ error: `${label}: escribí un monto en pesos` })
+    .finite(`${label}: escribí un monto en pesos`)
+    .min(0, `${label}: no puede ser negativo`)
+    .max(1_000_000, `${label}: revisá el monto`)
+    .nullish()
+
 export const createExperienceSchema = z.object({
-  template_id: z.string().uuid(),
+  template_id: z.string().uuid('Elegí un formato del calendario.'),
+  price: optionalPesosAmount('Precio'),
+  deposit: optionalPesosAmount('Seña'),
 })
 
 // ──────────────────────────────────────────────

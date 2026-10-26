@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { getAppUrl } from '@/lib/app-url'
-import { getCurrentUser, getMembershipsForUser } from '@/lib/tenant/current'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { getPublicExperience } from '@/lib/ticketing/queries'
+import { viewerOwnsTenant } from '@/lib/ticketing/viewer'
 import { ExperienceView } from './_components/experience-view'
 
 /**
@@ -17,19 +17,11 @@ export const dynamic = 'force-dynamic'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-/** El dueño ve su película sin publicar (vista previa); el resto, 404. */
-async function viewerOwnsTenant(tenantSlug: string): Promise<boolean> {
-  const user = await getCurrentUser()
-  if (!user) return false
-  if (user.tenants) return user.tenants.some((t) => t.slug === tenantSlug && t.role === 'owner')
-  const memberships = await getMembershipsForUser()
-  return memberships.some((m) => m.tenant.slug === tenantSlug && m.role === 'owner')
-}
-
 const resolvePage = cache(async (tenantSlug: string, slug: string) => {
   const page = await getPublicExperience(tenantSlug, slug)
   if (page) return page
-  // Solo si no está publicada (o no existe) se pregunta quién mira.
+  // Solo si no está publicada (o no existe) se pregunta quién mira: el dueño
+  // la ve igual (vista previa); el resto, 404.
   if (!(await viewerOwnsTenant(tenantSlug))) return null
   return getPublicExperience(tenantSlug, slug, { allowUnpublished: true })
 })

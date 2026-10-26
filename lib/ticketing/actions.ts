@@ -93,7 +93,14 @@ export async function createExperience(
   const access = await authorizeOwner(slug)
   if (!access) return NO_ACCESS
   const parsed = createExperienceSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, message: 'Elegí un formato del calendario.' }
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return {
+      ok: false,
+      message: first?.message ?? 'Elegí un formato del calendario.',
+      field: first?.path[0]?.toString(),
+    }
+  }
 
   const supabase = (await createClient()) as SBAny
   const tenantId = access.tenant.id
@@ -125,10 +132,12 @@ export async function createExperience(
   // cargada: en Cine y degustación cambian por edición, no por película.
   const last = rows[0]
   const priceCents =
-    input.price && input.price > 0 ? pesosToCents(input.price) : Number(last?.price_cents ?? 0)
+    parsed.data.price && parsed.data.price > 0
+      ? pesosToCents(parsed.data.price)
+      : Number(last?.price_cents ?? 0)
   const depositCents =
-    input.deposit !== undefined && input.deposit !== null && input.deposit >= 0
-      ? pesosToCents(input.deposit)
+    parsed.data.deposit !== undefined && parsed.data.deposit !== null
+      ? pesosToCents(parsed.data.deposit)
       : Number(last?.deposit_cents ?? 0)
   if (priceCents < 100) {
     return { ok: false, message: 'Poné el precio por persona.', field: 'price' }
@@ -343,19 +352,40 @@ export async function saveTicketingSettings(
     }
   }
   const supabase = (await createClient()) as SBAny
-  const { error } = await supabase.from('ticketing_settings').upsert(
-    {
-      tenant_id: access.tenant.id,
-      headline: parsed.data.headline,
-      intro: parsed.data.intro,
-      venue_address: parsed.data.venue_address,
-      contact_whatsapp: parsed.data.contact_whatsapp,
-      hold_minutes: parsed.data.hold_minutes,
-      online_manager_id: parsed.data.online_manager_id,
-      updated_by: access.user.id,
-    },
-    { onConflict: 'tenant_id' },
-  )
+  const tenantId = access.tenant.id
+  const values = {
+    headline: parsed.data.headline,
+    intro: parsed.data.intro,
+    venue_address: parsed.data.venue_address,
+    contact_whatsapp: parsed.data.contact_whatsapp,
+    hold_minutes: parsed.data.hold_minutes,
+    online_manager_id: parsed.data.online_manager_id,
+    updated_by: access.user.id,
+  }
+  // Update y, si todavía no hay fila, insert. NO upsert: PostgREST arma el
+  // ON CONFLICT … DO UPDATE con TODAS las columnas del cuerpo (tenant_id
+  // incluido) y el GRANT de UPDATE por columna no incluye tenant_id → 42501.
+  const { data: updated, error: updateError } = await supabase
+    .from('ticketing_settings')
+    .update(values)
+    .eq('tenant_id', tenantId)
+    .select('tenant_id')
+    .maybeSingle()
+  let error = updateError
+  if (!error && !updated) {
+    const { error: insertError } = await supabase
+      .from('ticketing_settings')
+      .insert({ tenant_id: tenantId, ...values })
+    error = insertError
+    // Carrera: la fila apareció en el medio (la primera venta crea «Venta online»).
+    if (insertError?.code === '23505') {
+      const { error: retryError } = await supabase
+        .from('ticketing_settings')
+        .update(values)
+        .eq('tenant_id', tenantId)
+      error = retryError
+    }
+  }
   if (error) {
     // 23503: el gestor elegido no es de este bar (FK compuesta).
     console.error('[ticketing.saveTicketingSettings]', {
@@ -478,6 +508,27 @@ export async function disconnectMercadoPago(slug: string): Promise<TicketingActi
   const access = await authorizeOwner(slug)
   if (!access) return NO_ACCESS
   const service = createServiceClient() as SBAny
+  // Con gente pagando en este momento, desconectar dejaría esos pagos sin
+  // aplicar (el aviso de Mercado Pago ya no tendría con qué preguntar).
+  const { count: live, error: liveError } = await service
+    .from('ticket_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', access.tenant.id)
+    .in('status', ['pending', 'rejected'])
+    .gt('hold_expires_at', new Date().toISOString())
+  if (liveError) {
+    console.error('[ticketing.disconnectMercadoPago] live', {
+      tenantId: access.tenant.id,
+      code: liveError.code,
+    })
+    return { ok: false, message: 'No pudimos desconectar la cuenta. Probá de nuevo.' }
+  }
+  if ((live ?? 0) > 0) {
+    return {
+      ok: false,
+      message: `Hay ${live} ${live === 1 ? 'compra' : 'compras'} en curso. Esperá unos minutos y desconectá.`,
+    }
+  }
   const { error } = await service
     .from('ticketing_settings')
     .update({

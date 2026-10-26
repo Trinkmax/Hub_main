@@ -106,6 +106,8 @@ declare
   v_held integer;
   v_left integer;
   v_unit bigint;
+  v_live_phone integer;
+  v_live_ip integer;
   v_order public.ticket_orders;
 begin
   select * into v_exp
@@ -143,6 +145,41 @@ begin
     v_unit := v_exp.deposit_cents;
   else
     raise exception 'ticketing_invalid_option' using errcode = 'P0001';
+  end if;
+
+  -- Un lugar guardado por persona y función: si el mismo WhatsApp vuelve a
+  -- empezar (cambió la cantidad, tocó «Empezar de nuevo»), su pedido anterior
+  -- suelta los lugares en vez de guardar el doble.
+  update public.ticket_orders
+     set hold_expires_at = now()
+   where tenant_id = p_tenant_id
+     and scheduled_event_id = p_event_id
+     and guest_phone = p_guest_phone
+     and status in ('pending', 'rejected')
+     and hold_expires_at > now();
+
+  -- Techo de lugares guardados a la vez, para que nadie vacíe la cartelera a
+  -- fuerza de pedidos sin pagar: 3 por WhatsApp y 4 por IP (holgado para una
+  -- IP compartida de celular) en todo el bar.
+  select count(*) into v_live_phone
+    from public.ticket_orders o
+   where o.tenant_id = p_tenant_id
+     and o.guest_phone = p_guest_phone
+     and o.status in ('pending', 'rejected')
+     and o.hold_expires_at > now();
+  if v_live_phone >= 3 then
+    raise exception 'ticketing_too_many_holds' using errcode = 'P0001';
+  end if;
+  if p_client_ip is not null and p_client_ip <> 'unknown' then
+    select count(*) into v_live_ip
+      from public.ticket_orders o
+     where o.tenant_id = p_tenant_id
+       and o.client_ip = left(p_client_ip, 64)
+       and o.status in ('pending', 'rejected')
+       and o.hold_expires_at > now();
+    if v_live_ip >= 4 then
+      raise exception 'ticketing_too_many_holds' using errcode = 'P0001';
+    end if;
   end if;
 
   select s.taken, s.held into v_taken, v_held
@@ -280,13 +317,17 @@ begin
       -- Ya estaba. Un pago aprobado DISTINTO para el mismo pedido es un cobro
       -- doble: no se duplica la reserva, se marca para que lo mire una persona.
       if v_order.status = 'approved' and v_order.mp_payment_id is distinct from p_payment_id then
+        -- Se queda la marca que ya hubiera (un «cargá la reserva a mano» de
+        -- event_missing pesa más); el cobro doble igual queda en audit_log.
         update public.ticket_orders
-           set attention = 'duplicate_payment'
+           set attention = coalesce(attention, 'duplicate_payment')
          where id = v_order.id;
         return jsonb_build_object(
           'order_id', v_order.id, 'status', v_order.status,
           'reservation_id', v_order.reservation_id,
-          'newly_approved', false, 'attention', 'duplicate_payment'
+          'newly_approved', false,
+          'attention', coalesce(v_order.attention, 'duplicate_payment'),
+          'duplicate_payment_id', p_payment_id
         );
       end if;
       return jsonb_build_object(
@@ -335,12 +376,14 @@ begin
          and acquisition_channel <> 'reservation';
     end if;
 
-    -- Opt-in solo si lo tildó, y sin pisar uno anterior (fecha e IP originales).
+    -- Opt-in solo si lo tildó. Si ya estaba suscripto no se toca; si se había
+    -- dado de baja y vuelve a aceptar, queda ESTE consentimiento (fecha e IP de
+    -- ahora), igual que el alta del club.
     if v_order.marketing_opt_in and v_customer is not null then
       update public.customers
          set opt_in_marketing = true,
-             opt_in_at = coalesce(opt_in_at, now()),
-             opt_in_ip = coalesce(opt_in_ip, v_order.client_ip)
+             opt_in_at = now(),
+             opt_in_ip = v_order.client_ip
        where id = v_customer
          and not opt_in_marketing;
     end if;
@@ -440,9 +483,10 @@ begin
       return jsonb_build_object(
         'order_id', v_order.id, 'status', 'refunded',
         'reservation_id', v_order.reservation_id,
-        'newly_approved', false, 'attention', v_order.attention
+        'newly_approved', false, 'newly_refunded', true, 'attention', v_order.attention
       );
     end if;
+    -- Ya devuelto (Mercado Pago avisa varias veces): nada nuevo que auditar.
     return jsonb_build_object(
       'order_id', v_order.id, 'status', v_order.status,
       'reservation_id', v_order.reservation_id,

@@ -192,6 +192,7 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
     maxPartySize: row.max_party_size,
     terms: row.terms,
     functions,
+    draft: !row.published,
   }
 }
 
@@ -199,10 +200,15 @@ export type PublicCatalog = {
   venue: PublicVenue
   experiences: PublicExperience[]
   today: string
+  /** La está viendo el dueño con las películas sin publicar incluidas. */
+  preview?: boolean
 }
 
 /** La cartelera: todas las películas publicadas del bar con sus funciones. */
-export async function getPublicCatalog(tenantSlug: string): Promise<PublicCatalog | null> {
+export async function getPublicCatalog(
+  tenantSlug: string,
+  opts: { includeUnpublished?: boolean } = {},
+): Promise<PublicCatalog | null> {
   const service = createServiceClient() as SBAny
   const tenant = await loadTenant(service, tenantSlug)
   if (!tenant) return null
@@ -210,13 +216,15 @@ export async function getPublicCatalog(tenantSlug: string): Promise<PublicCatalo
 
   const [venue, { data: rows, error }] = await Promise.all([
     loadVenue(service, tenant),
-    service
-      .from('event_experiences')
-      .select(EXPERIENCE_COLUMNS)
-      .eq('tenant_id', tenant.id)
-      .eq('published', true)
-      .order('sort_order', { ascending: true })
-      .order('title', { ascending: true }),
+    (() => {
+      let query = service
+        .from('event_experiences')
+        .select(EXPERIENCE_COLUMNS)
+        .eq('tenant_id', tenant.id)
+      // La vista previa del dueño trae también las apagadas (marcadas).
+      if (!opts.includeUnpublished) query = query.eq('published', true)
+      return query.order('sort_order', { ascending: true }).order('title', { ascending: true })
+    })(),
   ])
   if (error) {
     console.error('[ticketing.getPublicCatalog]', { tenantId: tenant.id, code: error.code })
@@ -233,6 +241,7 @@ export async function getPublicCatalog(tenantSlug: string): Promise<PublicCatalo
     venue,
     today: todayIn(tz),
     experiences: experiences.map((e) => toPublicExperience(e, functions.get(e.template_id) ?? [])),
+    preview: Boolean(opts.includeUnpublished) && experiences.some((e) => !e.published),
   }
 }
 

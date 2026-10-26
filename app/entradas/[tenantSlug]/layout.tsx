@@ -17,6 +17,9 @@ export const viewport: Viewport = {
 export default function EntradasLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="ent">
+      {/* El rebote del scroll en iPhone deja ver el fondo del <body> (crema en
+          el resto de la app): mientras se está en la sala, también es noche. */}
+      <style>{'html,body{background-color:#090d0b}'}</style>
       <div className="ent-grain" aria-hidden />
       {children}
     </div>

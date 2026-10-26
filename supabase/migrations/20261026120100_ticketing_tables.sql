@@ -316,4 +316,16 @@ create policy "ticket_orders_owner_select" on public.ticket_orders
 revoke all on public.ticket_orders from anon, authenticated;
 grant select on public.ticket_orders to authenticated;
 
+-- ──────────────────────────────────────────────
+-- service_role, EXPLÍCITO
+-- ──────────────────────────────────────────────
+-- Las páginas públicas, la compra y el webhook leen y escriben con
+-- service_role. Hoy lo cubren los default privileges del proyecto, pero
+-- Supabase los retira para los proyectos existentes desde el 30/10/2026
+-- (también para service_role: docs «Securing your API»). Sin estos GRANT,
+-- una tabla creada después de esa fecha daría 42501 en todo el flujo público.
+grant select, insert, update, delete on public.event_experiences to service_role;
+grant select, insert, update, delete on public.ticketing_settings to service_role;
+grant select, insert, update, delete on public.ticket_orders to service_role;
+
 notify pgrst, 'reload schema';

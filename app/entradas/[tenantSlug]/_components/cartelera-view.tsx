@@ -25,6 +25,14 @@ export function CarteleraView({ catalog }: { catalog: PublicCatalog }) {
   return (
     <>
       <TopBar venue={venue} />
+      {catalog.preview ? (
+        <div className="relative z-30 mx-auto -mt-2 mb-2 max-w-6xl px-5 sm:px-8">
+          <p className="rounded-xl border border-(--ent-gold)/40 bg-(--ent-gold)/10 px-4 py-2.5 text-sm text-(--ent-gold)">
+            Vista previa del dueño: ves también las películas sin publicar (marcadas). La gente ve
+            solo las publicadas.
+          </p>
+        </div>
+      ) : null}
       <main>
         <CarteleraHero
           venueName={venue.tenantName}

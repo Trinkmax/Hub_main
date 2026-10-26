@@ -56,6 +56,13 @@ function createOrderErrorMessage(message: string, details: string | null): Check
   if (message.includes('ticketing_invalid_option')) {
     return { ok: false, message: 'Elegí cómo querés pagar.', field: 'option' }
   }
+  if (message.includes('ticketing_too_many_holds')) {
+    return {
+      ok: false,
+      message:
+        'Ya tenés otras reservas esperando el pago. Terminá esas o esperá unos minutos y probá de nuevo.',
+    }
+  }
   return {
     ok: false,
     message: 'Esta función ya no está a la venta. Elegí otra fecha.',
@@ -169,12 +176,17 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
     // Mercado Pago solo vuelve solo a una URL https; en local se vuelve con el
     // botón «Volver al sitio».
     auto_return: secure ? 'approved' : undefined,
-    notification_url: secure ? `${appUrl}/api/webhooks/mercadopago?t=${tenant.id}` : undefined,
+    // source_news=webhooks: que lleguen solo avisos en formato Webhooks (los
+    // que vienen firmados), no los IPN viejos sin firma.
+    notification_url: secure
+      ? `${appUrl}/api/webhooks/mercadopago?source_news=webhooks&t=${tenant.id}`
+      : undefined,
     external_reference: order.id,
     // La preferencia vence junto con el lugar guardado: nadie puede pagar un
     // lugar que ya se liberó.
+    // Sin expiration_date_from: con el reloj del server un poco adelantado,
+    // la preferencia recién creada podía nacer «todavía no vigente».
     expires: true,
-    expiration_date_from: formatInTimeZone(new Date(), tz, MP_DATE),
     expiration_date_to: formatInTimeZone(new Date(order.hold_expires_at), tz, MP_DATE),
     // Aprobado o rechazado al instante: sin pagos «en revisión» que tengan el
     // lugar colgado. Y sin efectivo en Rapipago/Pago Fácil, que se acredita
@@ -186,20 +198,36 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
 
   try {
     const pref = await createPreference(creds.accessToken, preference, order.id)
-    await service
+    const { error: prefError } = await service
       .from('ticket_orders')
       .update({ mp_preference_id: pref.id })
       .eq('id', order.id)
       .eq('tenant_id', tenant.id)
+    if (prefError) {
+      // El pago igual anda (la preferencia existe); solo se pierde el
+      // «Volver a Mercado Pago» de la entrada.
+      console.error('[ticketing.checkout] no se guardó la preferencia', {
+        tenantId: tenant.id,
+        orderId: order.id,
+        code: prefError.code,
+      })
+    }
     const redirectUrl = creds.live ? pref.init_point : (pref.sandbox_init_point ?? pref.init_point)
     return { ok: true, redirectUrl, orderId: order.id }
   } catch (error) {
     // Sin preferencia no hay pago posible: se libera el lugar ya mismo.
-    await service
+    const { error: releaseError } = await service
       .from('ticket_orders')
       .update({ hold_expires_at: new Date().toISOString() })
       .eq('id', order.id)
       .eq('tenant_id', tenant.id)
+    if (releaseError) {
+      console.error('[ticketing.checkout] no se pudo liberar el lugar', {
+        tenantId: tenant.id,
+        orderId: order.id,
+        code: releaseError.code,
+      })
+    }
     console.error('[ticketing.checkout] no se pudo crear la preferencia', {
       tenantId: tenant.id,
       orderId: order.id,
@@ -223,9 +251,27 @@ export type OrderRefreshResult =
     }
   | { ok: false }
 
-/** Para no ir a Mercado Pago en cada vuelta del polling (por instancia). */
+/**
+ * Para no ir a Mercado Pago en cada vuelta del polling (por instancia). La
+ * clave incluye el payment_id que mande el navegador: un id inventado no
+ * saltea la espera, y el mapa se poda para que no crezca sin techo.
+ */
 const lastRemoteCheck = new Map<string, number>()
 const REMOTE_CHECK_EVERY_MS = 6_000
+const REMOTE_CHECK_MAX_KEYS = 5_000
+
+function remoteCheckAllowed(key: string, now: number): boolean {
+  const last = lastRemoteCheck.get(key) ?? 0
+  if (now - last <= REMOTE_CHECK_EVERY_MS) return false
+  if (lastRemoteCheck.size >= REMOTE_CHECK_MAX_KEYS) {
+    for (const [k, t] of lastRemoteCheck) {
+      if (now - t > REMOTE_CHECK_EVERY_MS) lastRemoteCheck.delete(k)
+    }
+    if (lastRemoteCheck.size >= REMOTE_CHECK_MAX_KEYS) lastRemoteCheck.clear()
+  }
+  lastRemoteCheck.set(key, now)
+  return true
+}
 
 /**
  * La entrada del cliente pregunta cómo va su pedido. Si vuelve de Mercado Pago
@@ -274,9 +320,8 @@ export async function refreshOrder(input: {
   if (!order) return { ok: false }
 
   if (order.status === 'pending' || order.status === 'rejected') {
-    const last = lastRemoteCheck.get(orderId.data) ?? 0
-    if (paymentId || Date.now() - last > REMOTE_CHECK_EVERY_MS) {
-      lastRemoteCheck.set(orderId.data, Date.now())
+    const key = paymentId ? `${orderId.data}:${paymentId}` : orderId.data
+    if (remoteCheckAllowed(key, Date.now())) {
       try {
         if (paymentId) {
           await reconcilePaymentById({

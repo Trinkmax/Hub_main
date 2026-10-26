@@ -21,13 +21,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * que devuelve la API con el token del bar (lib/ticketing/settle.ts): un aviso
  * falso no puede crear una reserva, como mucho hace que preguntemos.
  *
- * La firma (`x-signature`) se valida cuando el bar cargó la clave secreta de
- * los webhooks: si viene firmado y no coincide, 401. Sin clave cargada se
- * acepta igual (la API es la que manda).
+ * La firma (`x-signature`) es obligatoria cuando el bar cargó la clave
+ * secreta de los webhooks (sin firma o con una que no coincide, 401). Sin
+ * clave cargada se acepta igual: la API es la que manda.
  *
- * Respuestas: 200 a todo lo que no hay que reintentar (incluido lo que no es
- * un pago); 500 si falló algo nuestro o de Mercado Pago, así lo reintenta
- * (cada 15 minutos, según su documentación).
+ * Respuestas: 200 a lo que no hay que reintentar (incluido lo que no es un
+ * pago); 404/500/503 si el pago todavía no se pudo aplicar, así Mercado Pago
+ * lo reintenta (cada 15 minutos, según su documentación). La red de abajo es
+ * la conciliación cada 15 minutos (lib/cron/dispatch.ts).
  */
 export async function POST(request: Request) {
   const ip = await getRequestIp()
@@ -64,22 +65,21 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false }, { status: 500 })
   }
-  // Bar sin cuenta conectada (la desconectaron): nada que hacer, sin reintentos.
-  if (!creds) return NextResponse.json({ ok: true, ignored: true })
+  // Bar sin cuenta conectada: 503 para que Mercado Pago reintente. Si el dueño
+  // la vuelve a conectar, el pago se aplica; con un 200 se perdía para siempre.
+  if (!creds) return NextResponse.json({ ok: false, error: 'not_connected' }, { status: 503 })
 
+  // Con la clave secreta cargada, la firma es obligatoria (CLAUDE.md §8).
   if (creds.webhookSecret) {
-    const signature = request.headers.get('x-signature')
-    if (signature) {
-      const check = verifyWebhookSignature({
-        signatureHeader: signature,
-        requestId: request.headers.get('x-request-id'),
-        dataId: notification.dataId,
-        secret: creds.webhookSecret,
-      })
-      if (!check.ok) {
-        console.error('[webhook.mercadopago] firma inválida', { tenantId, reason: check.reason })
-        return new NextResponse('invalid signature', { status: 401 })
-      }
+    const check = verifyWebhookSignature({
+      signatureHeader: request.headers.get('x-signature'),
+      requestId: request.headers.get('x-request-id'),
+      dataId: notification.dataId,
+      secret: creds.webhookSecret,
+    })
+    if (!check.ok) {
+      console.error('[webhook.mercadopago] firma inválida', { tenantId, reason: check.reason })
+      return new NextResponse('invalid signature', { status: 401 })
     }
   }
 
@@ -91,9 +91,11 @@ export async function POST(request: Request) {
     })
     return NextResponse.json({ ok: true, outcome: outcome.kind })
   } catch (error) {
-    // 404 de Mercado Pago = ese pago no es de esta cuenta: no reintentar.
+    // Un 404 justo después de crearse el pago puede ser pasajero (o la cuenta
+    // cambió): se deja que Mercado Pago reintente en vez de darlo por perdido.
     if (error instanceof MercadoPagoError && error.status === 404) {
-      return NextResponse.json({ ok: true, ignored: true })
+      console.error('[webhook.mercadopago] pago no encontrado en la cuenta del bar', { tenantId })
+      return NextResponse.json({ ok: false, error: 'payment_not_found' }, { status: 404 })
     }
     console.error('[webhook.mercadopago] no pudimos aplicar el pago', {
       tenantId,

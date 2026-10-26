@@ -4,6 +4,7 @@ import { cache } from 'react'
 import { getAppUrl } from '@/lib/app-url'
 import { summarizeCatalog } from '@/lib/ticketing/catalog'
 import { getPublicCatalog } from '@/lib/ticketing/queries'
+import { viewerOwnsTenant } from '@/lib/ticketing/viewer'
 import { CarteleraView, DEFAULT_INTRO } from './_components/cartelera-view'
 
 /**
@@ -13,7 +14,10 @@ import { CarteleraView, DEFAULT_INTRO } from './_components/cartelera-view'
  */
 export const dynamic = 'force-dynamic'
 
-const resolveCatalog = cache(getPublicCatalog)
+// El dueño ve también las películas sin publicar (vista previa), marcadas.
+const resolveCatalog = cache(async (tenantSlug: string) =>
+  getPublicCatalog(tenantSlug, { includeUnpublished: await viewerOwnsTenant(tenantSlug) }),
+)
 
 export async function generateMetadata({
   params,

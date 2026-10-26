@@ -69,6 +69,11 @@ export function FilmCard({
           <div className="flex items-start justify-between gap-2">
             <p className="ent-mono pt-1 text-[0.62rem] text-(--ent-gold)">
               {experience.series ?? 'Experiencia'}
+              {experience.draft ? (
+                <span className="ml-2 rounded border border-(--ent-gold)/50 px-1.5 py-0.5 text-[0.55rem] text-(--ent-cream)">
+                  Sin publicar
+                </span>
+              ) : null}
             </p>
             <span aria-hidden className="ent-outline-num ent-num -mt-1 text-5xl sm:text-6xl">
               {String(index + 1).padStart(2, '0')}

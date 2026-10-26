@@ -36,6 +36,11 @@ alcanza para que aparezca en la cartelera.
 | `ticketing_settings` | la cuenta de Mercado Pago **cifrada**, el gestor de las reservas online, minutos que se guarda el lugar, textos de la cartelera, dirección, WhatsApp de consultas | el dueño (GRANT por columna) y el server para la cuenta de MP |
 | `ticket_orders` | cada intento de compra, con la foto de lo comprado (película, fecha, precio) | solo el server (service_role) |
 
+Las tres tablas tienen GRANT **explícito** a `service_role` (además de `authenticated`):
+desde el 30/10/2026 Supabase deja de darlos solos en los proyectos existentes. La
+configuración se guarda con update + insert (no upsert): el GRANT de UPDATE por columna
+no incluye `tenant_id` y PostgREST lo pondría en el `SET` del upsert (42501).
+
 Migraciones: `20261026120000_reservation_origin_web`, `20261026120100_ticketing_tables`,
 `20261026120200_ticketing_functions`.
 
@@ -69,6 +74,11 @@ que carga el bar a mano siguen sin bloqueo (como siempre: avisa, no bloquea).
 Un rechazo de tarjeta **mantiene** el lugar mientras dura el tiempo: la persona puede
 reintentar con otra tarjeta en el mismo Checkout.
 
+Para que nadie vacíe la cartelera con pedidos sin pagar: si el mismo WhatsApp vuelve a
+empezar en la misma función, su pedido anterior suelta los lugares; y hay un techo de
+lugares guardados a la vez por bar: 3 pedidos por WhatsApp y 4 por IP (holgado para las
+IP compartidas de celular). Además, rate limit de 8 intentos cada 10 minutos por IP.
+
 ---
 
 ## 2. El pago
@@ -83,8 +93,17 @@ reintentar con otra tarjeta en el mismo Checkout.
    - el **webhook** (`notification_url` de cada preferencia, con el bar en `?t=`);
    - la **vuelta del cliente** a su entrada (trae `?payment_id=`): no espera al webhook;
    - la entrada **pregunta sola** cada pocos segundos (busca los pagos del pedido en MP).
+   - y una **conciliación cada 15 minutos** (tarea `reconcile_ticket_orders` del
+     dispatcher, `lib/ticketing/reconcile.ts`) para los pedidos cuyo lugar venció hace
+     menos de 90 minutos: atrapa lo que el webhook no aplicó si la persona además no
+     volvió a su entrada.
 3. Nunca se usa lo que trae el aviso: siempre se le pide el pago a la API de Mercado
    Pago con el token del bar.
+4. La entrada no da por perdido un pedido «vencido» mientras pueda estar entrando un
+   pago: si vuelve con `?payment_id=` primero confirma, y sigue preguntando 5 minutos
+   después del vencimiento (3DS lento, la app de Mercado Pago).
+5. Desconectar Mercado Pago no se puede con compras en curso, y el webhook contesta
+   503 si el bar no tiene cuenta conectada (Mercado Pago reintenta).
 
 Casos que quedan marcados para que los mire una persona (`ticket_orders.attention`,
 se ven en el panel): `overbooked` (pagó cuando ya no quedaba lugar: la reserva se crea
@@ -96,8 +115,9 @@ queda: decide el bar).
 ### La firma del webhook
 
 Igual que el SDK oficial (`mercadopago@3.6.1`): `HMAC-SHA256(clave, "id:<data.id>;request-id:<x-request-id>;ts:<ts>;")`.
-Se valida si el bar cargó la clave secreta; sin clave se acepta igual, porque la API es
-la que manda.
+Con la clave secreta cargada la firma es **obligatoria** (sin header o distinta → 401).
+Sin clave se acepta igual, porque la API es la que manda. La `notification_url` lleva
+`source_news=webhooks` para que lleguen solo avisos en formato Webhooks (firmados).
 
 ---
 
