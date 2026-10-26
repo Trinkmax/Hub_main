@@ -64,7 +64,10 @@ export function AgendaList({
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-(--ent-cream)">{experience.title}</p>
+                    {/* Dos renglones antes que cortar: «El viaje de …» perdía el nombre. */}
+                    <p className="line-clamp-2 leading-snug font-semibold text-(--ent-cream)">
+                      {experience.title}
+                    </p>
                     <p className="mt-0.5 text-xs text-(--ent-muted)">
                       {rel ? (
                         <span className="font-semibold text-(--ent-gold)">{rel} · </span>

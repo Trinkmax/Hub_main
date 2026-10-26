@@ -30,11 +30,12 @@ export function TopBar({
   return (
     <div
       className="sticky top-0 z-30 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-6 sm:px-8"
-      // Opaca donde está el logo (lo que pasa por debajo no se mezcla con él)
-      // y se desvanece recién abajo.
+      // Opaca del todo hasta el borde de abajo del logo (con 0.96 lo que pasaba
+      // por debajo se seguía leyendo, y más con el notch, que la hace más alta)
+      // y se desvanece solo en el último 1.5rem.
       style={{
         background:
-          'linear-gradient(to bottom, rgb(9 13 11 / 0.96) 0%, rgb(9 13 11 / 0.9) 68%, rgb(9 13 11 / 0))',
+          'linear-gradient(to bottom, rgb(9 13 11) calc(100% - 1.5rem), rgb(9 13 11 / 0))',
       }}
     >
       <nav
