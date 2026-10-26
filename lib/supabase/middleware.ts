@@ -37,6 +37,7 @@ const PUBLIC_PREFIXES = [
   '/v/', // QR de canje del socio: lo abre sin sesión para mostrárselo al mozo
   '/l/', // link público del bar (bio de Instagram)
   '/p/', // páginas HTML que sube el bar (landings)
+  '/entradas/', // cartelera, página de cada película y la entrada del cliente
   '/api/wallet/', // pulso de la billetera del socio (capability por qr_token, sin sesión)
   '/api/webhooks/',
   '/api/cron/', // jobs de fondo: se auto-protegen con Bearer CRON_SECRET en cada route handler

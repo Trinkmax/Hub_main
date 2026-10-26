@@ -166,6 +166,9 @@ export const reservationOriginEnum = z.enum([
   'messenger',
   'in_person',
   'partner_referral',
+  // Las crea sola la compra online (ticketing_settle_order). El alta manual no
+  // la ofrece, pero editar una reserva web tiene que poder guardarla tal cual.
+  'web',
 ])
 export const salonZoneEnum = z.enum(['planta_alta', 'planta_baja', 'event_floating'])
 export const salonStatusEnum = z.enum([
