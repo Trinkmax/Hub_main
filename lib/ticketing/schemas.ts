@@ -100,7 +100,11 @@ export const experienceFormSchema = z
     gallery: z.array(galleryItemSchema).max(24, 'Máximo 24 fotos'),
     price: pesosField('Precio'),
     deposit: pesosField('Seña'),
-    max_party_size: z.coerce.number().int().min(1).max(30),
+    max_party_size: z.coerce
+      .number({ error: 'Poné cuántas personas como máximo por compra' })
+      .int('Tiene que ser un número entero')
+      .min(1, 'Al menos 1 persona por compra')
+      .max(30, 'Máximo 30 personas por compra'),
     terms: optionalText(800),
   })
   .superRefine((v, ctx) => {
@@ -144,7 +148,11 @@ export const ticketingSettingsSchema = z.object({
   intro: optionalText(500),
   venue_address: optionalText(160),
   contact_whatsapp: optionalPhoneField,
-  hold_minutes: z.coerce.number().int().min(5).max(60),
+  hold_minutes: z.coerce
+    .number({ error: 'Poné cuántos minutos se guarda el lugar' })
+    .int('Tiene que ser un número entero')
+    .min(5, 'Al menos 5 minutos')
+    .max(60, 'Como mucho 60 minutos'),
   online_manager_id: z
     .string()
     .uuid()

@@ -1,0 +1,1077 @@
+/* ============================================================
+   Entradas online — «una noche de cine»
+   ============================================================
+   Sistema visual de la cartelera pública (/entradas/*), scoped a `.ent`.
+   No toca los tokens del panel: estas páginas son siempre de noche (la sala
+   a oscuras de las fotos reales de HUB, con su luz roja) y la entrada es de
+   papel crema, como un ticket de verdad.
+
+   Los tokens van en `.ent` y se usan con la sintaxis de paréntesis de
+   Tailwind v4: bg-(--ent-paper), text-(--ent-muted)… (`bg-[--x]` es no-op).
+
+   Movimiento: solo transform/opacity (y filter en entradas cortas), curvas
+   propias, y todo lo que se mueve solo se apaga con prefers-reduced-motion.
+   ============================================================ */
+
+/* Todo va en la capa `components` de Tailwind: así las utilidades (que
+   viven en `utilities`, una capa más arriba) le ganan a estas clases cuando
+   se combinan en el mismo elemento. Sin capa, este CSS le ganaba a cualquier
+   utilidad (`leading-*`, `font-normal`…) por estar fuera de las capas. */
+@layer components {
+  .ent {
+    --ent-bg: #090d0b;
+    --ent-bg-2: #0e1511;
+    --ent-surface: #131c17;
+    --ent-surface-2: #19251e;
+    --ent-line: rgb(243 236 218 / 0.11);
+    --ent-line-strong: rgb(243 236 218 / 0.22);
+    --ent-cream: #f3ecda;
+    --ent-cream-2: rgb(243 236 218 / 0.78);
+    --ent-muted: rgb(243 236 218 / 0.6);
+    --ent-rust: #c4593f;
+    --ent-rust-deep: #a3442e;
+    --ent-red: #e5533d;
+    --ent-gold: #e7bd6c;
+    --ent-paper: #f6efdc;
+    --ent-paper-2: #ece2c8;
+    --ent-ink: #1a251f;
+    --ent-ink-2: #4b5850;
+    --ent-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ent-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ent-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --accent: var(--ent-rust);
+    /* Las fuentes de next/font viven en <html> como --font-inter/--font-fraunces;
+     las de @theme son inline y no existen como variables. */
+    --ent-serif: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
+    --ent-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ent-mono-font: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+    position: relative;
+    isolation: isolate;
+    min-height: 100dvh;
+    overflow-x: clip;
+    background: var(--ent-bg);
+    color: var(--ent-cream);
+    font-family: var(--ent-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ent ::selection {
+    background: var(--ent-gold);
+    color: var(--ent-ink);
+  }
+
+  .ent :focus-visible {
+    outline: 2px solid var(--ent-gold);
+    outline-offset: 3px;
+  }
+
+  .ent-display {
+    font-family: var(--ent-serif);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 0.92;
+    font-variant-numeric: lining-nums;
+  }
+
+  .ent-mono {
+    font-family: var(--ent-mono-font);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .ent-num {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* ── Grano de película ───────────────────────────────────────
+   Una capa fija con ruido SVG que salta cada pocos cuadros. Sin
+   mix-blend-mode (es caro en Android): solo opacidad. */
+  .ent-grain {
+    pointer-events: none;
+    position: fixed;
+    inset: -40%;
+    z-index: 40;
+    opacity: 0.055;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    animation: ent-grain 1s steps(5) infinite;
+  }
+
+  @keyframes ent-grain {
+    0% {
+      transform: translate3d(0, 0, 0);
+    }
+    20% {
+      transform: translate3d(-4%, 3%, 0);
+    }
+    40% {
+      transform: translate3d(3%, -4%, 0);
+    }
+    60% {
+      transform: translate3d(-3%, -2%, 0);
+    }
+    80% {
+      transform: translate3d(4%, 4%, 0);
+    }
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  /* ── Hero: el haz del proyector sobre la pantalla ─────────── */
+  .ent-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .ent-hero::after {
+    /* Viñeta: los bordes de la sala, en penumbra. */
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 80% at 50% 0%, transparent 40%, rgb(0 0 0 / 0.55) 100%),
+      linear-gradient(to bottom, transparent 70%, var(--ent-bg));
+  }
+
+  .ent-beam {
+    position: absolute;
+    top: -6%;
+    left: 50%;
+    z-index: -2;
+    width: 220vmax;
+    height: 130%;
+    pointer-events: none;
+    transform-origin: 50% 0;
+    transform: translateX(-50%) rotate(-2deg);
+    background: conic-gradient(
+      from 180deg at 50% 0%,
+      transparent 163deg,
+      rgb(255 232 196 / 0.05) 170deg,
+      rgb(255 232 196 / 0.13) 177deg,
+      rgb(255 236 206 / 0.17) 180deg,
+      rgb(255 232 196 / 0.13) 183deg,
+      rgb(255 232 196 / 0.05) 190deg,
+      transparent 197deg
+    );
+    animation: ent-beam 14s var(--ent-ease-in-out) infinite alternate;
+  }
+
+  @keyframes ent-beam {
+    from {
+      transform: translateX(-50%) rotate(-2.5deg);
+    }
+    to {
+      transform: translateX(-50%) rotate(2.5deg);
+    }
+  }
+
+  .ent-screen-glow {
+    position: absolute;
+    inset: auto 0 0;
+    z-index: -2;
+    height: 70%;
+    pointer-events: none;
+    background: radial-gradient(
+      60% 55% at 50% 60%,
+      color-mix(in oklab, var(--accent) 34%, transparent),
+      transparent 70%
+    );
+    opacity: 0.85;
+  }
+
+  /* Las luces de la sala se apagan cuando arranca la función (una vez). */
+  .ent-houselights {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(90% 70% at 50% 30%, rgb(255 226 178 / 0.22), transparent 70%);
+    opacity: 0;
+    animation: ent-lights-down 1.8s var(--ent-ease-in-out) both;
+  }
+
+  @keyframes ent-lights-down {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* Polvo en el haz. */
+  .ent-dust {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .ent-dust span {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgb(255 238 210 / 0.55);
+    opacity: 0;
+    animation: ent-dust 9s linear infinite;
+  }
+
+  @keyframes ent-dust {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) scale(0.8);
+    }
+    15% {
+      opacity: 0.9;
+    }
+    85% {
+      opacity: 0.6;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(14px, 90px, 0) scale(1.1);
+    }
+  }
+
+  /* Entrada del hero en cascada (CSS puro: no espera a hidratar). */
+  .ent-rise {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+    filter: blur(8px);
+    animation: ent-rise 900ms var(--ent-ease-out) both;
+    animation-delay: calc(var(--d, 0) * 1ms + 250ms);
+  }
+
+  @keyframes ent-rise {
+    to {
+      opacity: 1;
+      transform: none;
+      filter: blur(0);
+    }
+  }
+
+  /* ── Revelar al hacer scroll (lo maneja <Reveal />) ───────── */
+  [data-reveal="pending"] {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0);
+  }
+
+  [data-reveal="shown"] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 800ms var(--ent-ease-out),
+      transform 800ms var(--ent-ease-out);
+    transition-delay: calc(var(--i, 0) * 70ms);
+  }
+
+  /* ── Cinta (marquesina) ───────────────────────────────────── */
+  .ent-ribbon {
+    position: relative;
+    z-index: 2;
+    overflow: hidden;
+    border-block: 1px solid rgb(0 0 0 / 0.25);
+    background: var(--ent-rust);
+    color: #fff7ea;
+    transform: rotate(-1.6deg) scale(1.04);
+    box-shadow: 0 14px 40px rgb(0 0 0 / 0.35);
+  }
+
+  .ent-ribbon-track {
+    display: flex;
+    width: max-content;
+    gap: 2.25rem;
+    padding-block: 0.8rem;
+    animation: ent-marquee 38s linear infinite;
+  }
+
+  .ent-ribbon-track > span {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2.25rem;
+    font-family: var(--ent-mono-font);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .ent-ribbon-track > span::after {
+    content: "✦";
+    color: #ffe0a3;
+    letter-spacing: 0;
+  }
+
+  @keyframes ent-marquee {
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  /* ── El papel: entradas, talones y el ticket de compra ───── */
+  .ent-paper {
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.55), transparent 55%), var(--ent-paper);
+    color: var(--ent-ink);
+  }
+
+  /* Muescas a los costados (el troquel de una entrada). Usa --notch-y para
+   ubicar la muesca y --notch para su tamaño. */
+  .ent-notched {
+    --notch: 9px;
+    --notch-y: 50%;
+    -webkit-mask:
+      radial-gradient(circle var(--notch) at 0 var(--notch-y), transparent 98%, #000 100%) left /
+      51% 100% no-repeat,
+      radial-gradient(circle var(--notch) at 100% var(--notch-y), transparent 98%, #000 100%) right
+      / 51% 100% no-repeat;
+    mask:
+      radial-gradient(circle var(--notch) at 0 var(--notch-y), transparent 98%, #000 100%) left /
+      51% 100% no-repeat,
+      radial-gradient(circle var(--notch) at 100% var(--notch-y), transparent 98%, #000 100%) right
+      / 51% 100% no-repeat;
+  }
+
+  /* Línea de troquel punteada. */
+  .ent-perforation {
+    height: 0;
+    border: 0;
+    border-top: 2px dashed rgb(26 37 31 / 0.22);
+  }
+
+  /* El talón de una función (fecha). */
+  .ent-stub {
+    --notch: 6px;
+    position: relative;
+    display: flex;
+    min-width: 4.75rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.7rem 0.75rem 0.65rem;
+    border-radius: 12px;
+    text-decoration: none;
+    transition:
+      transform 180ms var(--ent-ease-out),
+      background-color 200ms ease,
+      color 200ms ease,
+      box-shadow 200ms ease;
+  }
+
+  .ent-stub[data-interactive="true"] {
+    cursor: pointer;
+  }
+
+  .ent-stub[data-interactive="true"]:active {
+    transform: scale(0.96);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-stub[data-interactive="true"]:hover {
+      transform: translate3d(0, -3px, 0) rotate(-1deg);
+      box-shadow: 0 12px 26px rgb(0 0 0 / 0.35);
+    }
+  }
+
+  .ent-stub[data-selected="true"] {
+    background: var(--accent);
+    color: #fffaf0;
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--accent) 60%, white),
+      0 14px 30px color-mix(in oklab, var(--accent) 35%, transparent);
+  }
+
+  .ent-stub[data-state="sold_out"] {
+    background: rgb(246 239 220 / 0.14);
+    color: rgb(243 236 218 / 0.42);
+  }
+
+  /* Agotada: el sello ocupa el lugar del mes y el día queda a la vista. */
+  .ent-stub[data-state="sold_out"] .ent-stub-month {
+    visibility: hidden;
+  }
+
+  .ent-stub[data-state="sold_out"] .ent-stub-day {
+    color: rgb(243 236 218 / 0.66);
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
+    text-decoration-color: rgb(229 83 61 / 0.7);
+  }
+
+  /* Talones adentro del ticket (sobre papel): con borde, y la agotada en
+   tinta tenue en vez de crema translúcida (que sobre papel no se ve). */
+  .ent-form .ent-stub {
+    background: #fffaf0;
+    box-shadow: inset 0 0 0 1.5px rgb(26 37 31 / 0.14);
+  }
+
+  .ent-form .ent-stub[data-selected="true"] {
+    background: var(--accent);
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--accent) 60%, white),
+      0 10px 22px -8px color-mix(in oklab, var(--accent) 55%, transparent);
+  }
+
+  .ent-form .ent-stub[data-state="sold_out"] {
+    background: rgb(26 37 31 / 0.05);
+    box-shadow: none;
+    color: rgb(26 37 31 / 0.4);
+  }
+
+  .ent-form .ent-stub[data-state="sold_out"] .ent-stub-day {
+    color: rgb(26 37 31 / 0.45);
+  }
+
+  /* El sello de goma «AGOTADO». Va sobre la parte de abajo del talón: el
+   número del día tiene que leerse (tachado) para saber QUÉ fecha se agotó. */
+  .ent-stamp {
+    position: absolute;
+    inset: 80% auto auto 50%;
+    padding: 0.12rem 0.4rem;
+    border: 2px solid var(--ent-red);
+    border-radius: 6px;
+    color: var(--ent-red);
+    font-family: var(--ent-mono-font);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transform: translate(-50%, -50%) rotate(-10deg);
+    background: rgb(9 13 11 / 0.85);
+    box-shadow: 0 0 0 1px rgb(229 83 61 / 0.25) inset;
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='24'><filter id='r'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 2.1'/></filter><rect width='100%25' height='100%25' filter='url(%23r)'/></svg>");
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='24'><filter id='r'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 2.1'/></filter><rect width='100%25' height='100%25' filter='url(%23r)'/></svg>");
+  }
+
+  .ent-form .ent-stamp {
+    background: #fffaf0;
+  }
+
+  .ent-last {
+    color: #8a4b05;
+  }
+
+  .ent-stub[data-selected="true"] .ent-last {
+    color: #ffe2b0;
+  }
+
+  /* Puntito que late en «Últimos N». */
+  .ent-pulse {
+    position: relative;
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .ent-pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    animation: ent-pulse 1.6s var(--ent-ease-out) infinite;
+  }
+
+  @keyframes ent-pulse {
+    from {
+      opacity: 0.7;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(3);
+    }
+  }
+
+  /* ── Afiches ──────────────────────────────────────────────── */
+  .ent-poster {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--ent-surface);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.08) inset,
+      0 30px 60px -20px rgb(0 0 0 / 0.75),
+      0 0 0 1px rgb(255 255 255 / 0.06);
+  }
+
+  .ent-poster::after {
+    /* Reflejo de la luz de sala sobre el papel brillante. */
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.16) 0%,
+      transparent 32%,
+      transparent 68%,
+      rgb(255 255 255 / 0.05) 100%
+    );
+  }
+
+  .ent-poster-glow {
+    position: absolute;
+    inset: 12% 8% -6%;
+    z-index: -1;
+    border-radius: 30%;
+    background: var(--accent);
+    filter: blur(42px);
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  /* Barrido de luz al pasar el mouse por una película. */
+  .ent-sweep {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      105deg,
+      transparent 35%,
+      rgb(255 255 255 / 0.22) 50%,
+      transparent 65%
+    );
+    transform: translate3d(-120%, 0, 0);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-film:hover .ent-sweep {
+      transform: translate3d(120%, 0, 0);
+      transition: transform 900ms var(--ent-ease-out);
+    }
+
+    .ent-film .ent-poster {
+      transition:
+        transform 500ms var(--ent-ease-out),
+        box-shadow 500ms var(--ent-ease-out);
+    }
+
+    .ent-film:hover .ent-poster {
+      transform: translate3d(0, -6px, 0) rotate(-0.6deg);
+    }
+  }
+
+  /* Número de película en contorno, de fondo. */
+  .ent-outline-num {
+    font-family: var(--ent-serif);
+    font-weight: 600;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(243 236 218 / 0.22);
+    line-height: 0.8;
+    letter-spacing: -0.05em;
+  }
+
+  /* ── La tira de película del menú ─────────────────────────── */
+  .ent-strip {
+    position: relative;
+    padding: 0.25rem 1.6rem;
+    border-radius: 10px;
+    background: #050806;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.05) inset;
+  }
+
+  .ent-strip::before,
+  .ent-strip::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.6rem;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='30'><rect x='8' y='8' width='10' height='14' rx='3' fill='%23f3ecda' fill-opacity='0.16'/></svg>");
+    background-repeat: repeat-y;
+    background-position: center top;
+    background-size: 26px 30px;
+  }
+
+  .ent-strip::before {
+    left: 0;
+  }
+
+  .ent-strip::after {
+    right: 0;
+  }
+
+  .ent-frame {
+    position: relative;
+    margin-block: 0.75rem;
+    padding: 1.15rem 1.15rem 1.25rem;
+    border-radius: 8px;
+    background: linear-gradient(160deg, #18231d, #0f1712 70%);
+    box-shadow: 0 0 0 1px rgb(243 236 218 / 0.08);
+    opacity: 0.55;
+    transition:
+      opacity 500ms var(--ent-ease-out),
+      box-shadow 500ms var(--ent-ease-out),
+      transform 500ms var(--ent-ease-out);
+  }
+
+  .ent-frame[data-active="true"],
+  .ent-frame[data-seen="true"] {
+    opacity: 1;
+  }
+
+  .ent-frame[data-active="true"] {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--accent) 70%, transparent),
+      0 0 40px -6px color-mix(in oklab, var(--accent) 55%, transparent);
+    transform: scale(1.015);
+  }
+
+  .ent-frame-num {
+    font-family: var(--ent-serif);
+    font-weight: 600;
+    font-size: 3.25rem;
+    line-height: 0.8;
+    letter-spacing: -0.05em;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(243 236 218 / 0.35);
+    transition:
+      color 500ms ease,
+      -webkit-text-stroke-color 500ms ease;
+  }
+
+  .ent-frame[data-active="true"] .ent-frame-num {
+    color: var(--accent);
+    -webkit-text-stroke-color: transparent;
+  }
+
+  /* La «pantalla» del menú en escritorio: el paso que está pasando. */
+  .ent-screen {
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px;
+    background: radial-gradient(
+      80% 70% at 50% 35%,
+      color-mix(in oklab, var(--accent) 30%, #1b2620),
+      #0c120f 75%
+    );
+    box-shadow:
+      0 0 0 1px rgb(243 236 218 / 0.1),
+      0 40px 90px -30px color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+
+  .ent-screen-slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 2rem;
+    text-align: center;
+    opacity: 0;
+    filter: blur(10px);
+    transform: scale(0.97);
+    transition:
+      opacity 450ms var(--ent-ease-out),
+      filter 450ms var(--ent-ease-out),
+      transform 450ms var(--ent-ease-out);
+  }
+
+  .ent-screen-slide[data-active="true"] {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+
+  /* ── Fotos reales: tira que corre sola ────────────────────── */
+  .ent-reel {
+    display: flex;
+    width: max-content;
+    gap: 0.75rem;
+    animation: ent-marquee 60s linear infinite;
+  }
+
+  .ent-reel[data-direction="reverse"] {
+    animation-direction: reverse;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-reel:hover {
+      animation-play-state: paused;
+    }
+  }
+
+  /* ── Botones ─────────────────────────────────────────────── */
+  .ent-press {
+    transition: transform 160ms var(--ent-ease-out);
+  }
+
+  .ent-press:active {
+    transform: scale(0.97);
+  }
+
+  .ent-btn-pay {
+    background: var(--ent-rust-deep);
+    color: #fffaf3;
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.25) inset,
+      0 10px 24px -8px rgb(163 68 46 / 0.75);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-btn-pay:hover {
+      background: #933b27;
+    }
+  }
+
+  /* Contenido del botón mientras cambia (espera → listo): blur para que el
+   cambio se lea como una sola transformación. */
+  .ent-morph {
+    transition:
+      filter 220ms ease,
+      opacity 220ms ease;
+  }
+
+  .ent-morph[data-busy="true"] {
+    filter: blur(1.5px);
+    opacity: 0.85;
+  }
+
+  /* ── Números que ruedan (personas, total) ─────────────────── */
+  .ent-roll {
+    display: inline-flex;
+    overflow: hidden;
+    height: 1em;
+    line-height: 1;
+  }
+
+  .ent-roll > span {
+    display: block;
+    transition: transform 420ms var(--ent-ease-out);
+  }
+
+  /* Un número nuevo entra rodando desde arriba (sube) o desde abajo (baja). */
+  .ent-roll-in {
+    display: inline-block;
+    animation: ent-roll-up 320ms var(--ent-ease-out) both;
+  }
+
+  .ent-roll-in[data-dir="down"] {
+    animation-name: ent-roll-down;
+  }
+
+  @keyframes ent-roll-up {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 55%, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes ent-roll-down {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -55%, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Pasos de la entrada: el que llega entra de costado, según la dirección. */
+  .ent-step {
+    animation: ent-step-fwd 340ms var(--ent-ease-out) both;
+  }
+
+  .ent-step[data-dir="back"] {
+    animation-name: ent-step-back;
+  }
+
+  @keyframes ent-step-fwd {
+    from {
+      opacity: 0;
+      transform: translate3d(18px, 0, 0);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: blur(0);
+    }
+  }
+
+  @keyframes ent-step-back {
+    from {
+      opacity: 0;
+      transform: translate3d(-18px, 0, 0);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: blur(0);
+    }
+  }
+
+  /* El ticket de compra: muescas en la línea de troquel. */
+  .ent-ticket-cut {
+    position: relative;
+  }
+
+  .ent-ticket-cut::before,
+  .ent-ticket-cut::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--ent-hole, var(--ent-bg));
+    transform: translateY(-50%);
+  }
+
+  .ent-ticket-cut::before {
+    left: -13px;
+  }
+
+  .ent-ticket-cut::after {
+    right: -13px;
+  }
+
+  /* Opciones de pago: la elegida, rellena. */
+  .ent-option {
+    position: relative;
+    display: block;
+    width: 100%;
+    border-radius: 16px;
+    border: 1.5px solid rgb(26 37 31 / 0.16);
+    background: #fffaf0;
+    padding: 0.95rem 1rem;
+    text-align: left;
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      transform 160ms var(--ent-ease-out),
+      box-shadow 180ms ease;
+  }
+
+  .ent-option:active {
+    transform: scale(0.98);
+  }
+
+  .ent-option[data-checked="true"] {
+    border-color: var(--ent-ink);
+    background: var(--ent-ink);
+    color: var(--ent-paper);
+    box-shadow: 0 12px 26px -12px rgb(26 37 31 / 0.6);
+  }
+
+  .ent-stepper-btn {
+    display: inline-flex;
+    width: 3rem;
+    height: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1.5px solid rgb(26 37 31 / 0.2);
+    background: #fffaf0;
+    color: var(--ent-ink);
+    transition:
+      transform 160ms var(--ent-ease-out),
+      background-color 150ms ease,
+      opacity 150ms ease;
+  }
+
+  .ent-stepper-btn:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+
+  .ent-stepper-btn:disabled {
+    opacity: 0.35;
+  }
+
+  /* ── La entrada del cliente ───────────────────────────────── */
+  .ent-check path {
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: ent-draw 700ms var(--ent-ease-out) 250ms forwards;
+  }
+
+  @keyframes ent-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .ent-confetti {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .ent-confetti span {
+    position: absolute;
+    top: 38%;
+    left: 50%;
+    color: var(--ent-gold);
+    font-size: var(--s, 14px);
+    opacity: 0;
+    animation: ent-burst 1.4s var(--ent-ease-out) forwards;
+    animation-delay: calc(var(--k, 0) * 18ms + 350ms);
+  }
+
+  @keyframes ent-burst {
+    0% {
+      opacity: 0;
+      transform: translate3d(-50%, -50%, 0) scale(0.6) rotate(0deg);
+    }
+    15% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(calc(-50% + var(--x, 0px)), calc(-50% + var(--y, 0px)), 0) scale(1)
+        rotate(var(--r, 90deg));
+    }
+  }
+
+  .ent-reel-spin {
+    animation: ent-spin 1.1s linear infinite;
+  }
+
+  @keyframes ent-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Inputs sobre papel (incluye el selector de país del teléfono, que usa
+   los tokens del panel: se redefinen acá). */
+  .ent-form {
+    /* El papel es claro aunque la sala sea oscura: sin esto los controles
+       nativos (la casilla, el selector de país) salían en modo oscuro. */
+    color-scheme: light;
+    --background: #fffaf0;
+    --foreground: var(--ent-ink);
+    --border: rgb(26 37 31 / 0.22);
+    --ring: var(--ent-rust);
+    --muted-foreground: rgb(26 37 31 / 0.5);
+    --destructive: #b42318;
+  }
+
+  .ent-input {
+    width: 100%;
+    height: 3rem;
+    padding: 0 0.95rem;
+    border-radius: 12px;
+    border: 1px solid rgb(26 37 31 / 0.22);
+    background: #fffaf0;
+    color: var(--ent-ink);
+    font-size: 1rem;
+    outline: none;
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .ent-input::placeholder {
+    color: rgb(26 37 31 / 0.42);
+  }
+
+  .ent-input:focus {
+    border-color: var(--ent-rust);
+    box-shadow: 0 0 0 3px rgb(196 89 63 / 0.22);
+  }
+
+  .ent-input[aria-invalid="true"] {
+    border-color: #b42318;
+  }
+
+  .ent-form .hub-phone-input .PhoneInputInput,
+  .ent-form .hub-phone-input .PhoneInputCountry {
+    height: 3rem;
+    border-radius: 12px;
+    font-size: 1rem;
+  }
+
+  /* ── Accesibilidad: reducir movimiento ────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .ent-grain,
+    .ent-beam,
+    .ent-dust span,
+    .ent-ribbon-track,
+    .ent-reel,
+    .ent-pulse::after,
+    .ent-reel-spin {
+      animation: none;
+    }
+
+    .ent-houselights {
+      display: none;
+    }
+
+    .ent-rise {
+      animation: ent-fade 300ms ease both;
+      transform: none;
+      filter: none;
+    }
+
+    [data-reveal="pending"] {
+      transform: none;
+    }
+
+    [data-reveal="shown"] {
+      transition: opacity 300ms ease;
+    }
+
+    .ent-confetti {
+      display: none;
+    }
+
+    .ent-frame,
+    .ent-screen-slide,
+    .ent-roll > span {
+      transition-duration: 1ms;
+    }
+
+    .ent-roll-in,
+    .ent-step {
+      animation: ent-fade 200ms ease both;
+      filter: none;
+    }
+  }
+
+  @keyframes ent-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* El sello suelto (no encima de un talón): en la entrada agotada. */
+  .ent-stamp.ent-stamp-inline {
+    position: static;
+    display: inline-block;
+    transform: rotate(-8deg);
+    background: transparent;
+  }
+
+  /* Foco de teclado en la opción de pago (el radio real está oculto). */
+  .ent-option:has(input:focus-visible) {
+    outline: 2px solid var(--ent-rust);
+    outline-offset: 3px;
+  }
+}

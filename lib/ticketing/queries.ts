@@ -2,6 +2,7 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { functionState, isOnSale, seatsLeft } from './availability'
+import { checkoutUrl } from './copy'
 import { DEFAULT_TZ, formatTime, nowLocalIn, todayIn } from './dates'
 import { parseGallery, parseSteps } from './schemas'
 import type {
@@ -314,7 +315,7 @@ export async function getPublicExperience(
 // ──────────────────────────────────────────────
 
 const ORDER_PUBLIC_COLUMNS =
-  'id, tenant_id, experience_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, guest_name, status, hold_expires_at, paid_cents, mp_status_detail'
+  'id, tenant_id, experience_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, guest_name, status, hold_expires_at, paid_cents, mp_status_detail, mp_preference_id'
 
 type OrderPublicRow = Pick<
   TicketOrderRow,
@@ -334,6 +335,7 @@ type OrderPublicRow = Pick<
   | 'hold_expires_at'
   | 'paid_cents'
   | 'mp_status_detail'
+  | 'mp_preference_id'
 >
 
 export function isOrderExpired(
@@ -375,7 +377,7 @@ export async function getPublicOrder(
   const order = data as OrderPublicRow | null
   if (!order) return null
 
-  const [venue, { data: exp }] = await Promise.all([
+  const [venue, { data: exp }, { data: mode }] = await Promise.all([
     loadVenue(service, tenant),
     order.experience_id
       ? service
@@ -385,6 +387,7 @@ export async function getPublicOrder(
           .eq('id', order.experience_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
   ])
   const experience = exp as {
     slug: string
@@ -392,13 +395,26 @@ export async function getPublicOrder(
     accent_hex: string | null
   } | null
 
+  const expired = isOrderExpired(order.status, order.hold_expires_at)
+  // Rechazado o a medio pagar con el lugar todavía guardado: se puede volver
+  // a la MISMA preferencia (mismo pedido, mismos lugares).
+  const retryUrl =
+    !expired &&
+    (order.status === 'pending' || order.status === 'rejected') &&
+    order.mp_preference_id
+      ? checkoutUrl(
+          order.mp_preference_id,
+          (mode as { mp_live: boolean | null } | null)?.mp_live ?? true,
+        )
+      : null
+
   return {
     venue,
     order: {
       id: order.id,
       shortCode: order.id.slice(0, 8).toUpperCase(),
       status: order.status,
-      expired: isOrderExpired(order.status, order.hold_expires_at),
+      expired,
       holdExpiresAt: order.hold_expires_at,
       title: order.title,
       date: order.event_date,
@@ -414,6 +430,7 @@ export async function getPublicOrder(
       posterUrl: experience?.poster_url ?? null,
       accent: experience?.accent_hex ?? DEFAULT_ACCENT,
       mpStatusDetail: order.mp_status_detail,
+      retryUrl,
     },
   }
 }

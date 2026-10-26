@@ -22,6 +22,7 @@ import {
   type ExperienceFormInput,
   experienceFormSchema,
   mercadoPagoCredentialsSchema,
+  RESERVED_EXPERIENCE_SLUGS,
   type TicketingSettingsInput,
   ticketingSettingsSchema,
 } from './schemas'
@@ -137,10 +138,8 @@ export async function createExperience(
   }
 
   const name = (template as { name: string }).name
-  const newSlug = uniqueSlugFrom(
-    name,
-    rows.map((r) => r.slug),
-  )
+  // «mi-entrada» es la ruta de la entrada del cliente: cuenta como tomado.
+  const newSlug = uniqueSlugFrom(name, [...rows.map((r) => r.slug), ...RESERVED_EXPERIENCE_SLUGS])
 
   const { data: created, error } = await supabase
     .from('event_experiences')

@@ -181,4 +181,6 @@ export type PublicOrder = {
   posterUrl: string | null
   accent: string
   mpStatusDetail: string | null
+  /** Volver a Mercado Pago con el mismo pedido (si el lugar sigue guardado). */
+  retryUrl: string | null
 }
