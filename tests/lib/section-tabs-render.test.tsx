@@ -180,6 +180,19 @@ describe('SectionTabsBar: la barra de cada sección según la URL', () => {
     expect(html).toBe('')
   })
 
+  it('Marketing en Entradas: Entradas marcada; en el editor de una película, sin barra', () => {
+    nav.pathname = '/hub/entradas'
+    const html = renderToString(createElement(SectionTabsBar, resolveSection('marketing', 'hub')))
+    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
+    expect(current).toHaveLength(1)
+    expect(current[0]).toContain('href="/hub/entradas"')
+
+    nav.pathname = '/hub/entradas/6f1c2a54-1b2c-4d5e-8f90-1a2b3c4d5e6f'
+    expect(renderToString(createElement(SectionTabsBar, resolveSection('marketing', 'hub')))).toBe(
+      '',
+    )
+  })
+
   it('Clientes en la ficha de un cliente: Personas marcada', () => {
     nav.pathname = '/hub/clientes/c1'
     const html = renderToString(createElement(SectionTabsBar, resolveSection('clientes', 'hub')))

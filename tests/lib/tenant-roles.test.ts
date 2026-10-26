@@ -44,6 +44,16 @@ describe('canAccessManagerPath', () => {
     expect(canAccessManagerPath('owner', ['lo-que-sea'])).toBe(true)
   })
 
+  it('las entradas online son solo del dueño (la vidriera pública y la plata)', () => {
+    const editor = ['entradas', '6f1c2a54-1b2c-4d5e-8f90-1a2b3c4d5e6f']
+    for (const role of ['host', 'editor', 'accountant'] as const) {
+      expect(canAccessManagerPath(role, ['entradas'])).toBe(false)
+      expect(canAccessManagerPath(role, editor)).toBe(false)
+    }
+    expect(canAccessManagerPath('owner', ['entradas'])).toBe(true)
+    expect(canAccessManagerPath('owner', editor)).toBe(true)
+  })
+
   it('el home de cada rol acotado es una ruta que ese rol puede abrir (sin loops del proxy)', () => {
     for (const role of ['host', 'editor'] as const) {
       const rest = homePathForRole(role, 'hub').split('/').filter(Boolean).slice(1)

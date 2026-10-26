@@ -156,13 +156,13 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Lo que el bar muestra puertas afuera y cómo se organiza el equipo
-        // para producirlo: Tareas, Link de Instagram y Páginas son pestañas.
-        // Owner-only: es la mesa de los socios.
+        // para producirlo: Tareas, Link de Instagram, Páginas y Entradas son
+        // pestañas. Owner-only: es la mesa de los socios.
         label: 'Marketing',
         href: (s) => `/${s}/tareas`,
         icon: 'ListChecks',
         roles: ['owner'],
-        activePaths: (s) => [`/${s}/enlaces`, `/${s}/paginas`],
+        activePaths: (s) => [`/${s}/enlaces`, `/${s}/paginas`, `/${s}/entradas`],
       },
       {
         // Resumen, Cómo nos fue, Señas, Comisiones y Reseñas (con su flag) son

@@ -1450,3 +1450,25 @@ Lo que no estaba anotado arriba. Contexto y decisiones en `docs/features/adminis
   - Compras: en el celular, «Quitar» baja solo a su renglón en «Editar datos».
   - Resumen en la compu: con tres gastos fijos por vencer, la columna de pagos termina ~160 px más abajo que
     el panel de ventas.
+
+## Entradas online (26/10/2026)
+
+Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.md`):
+
+- **Conectar Mercado Pago por OAuth** («Conectar con Mercado Pago») en vez de pegar el Access Token: necesita
+  una aplicación de la plataforma con redirect URI y refresh del token (vence a los 180 días). Hoy cada bar
+  pega su token de producción.
+- **Confirmación por WhatsApp** al cliente cuando paga (plantilla aprobada): hoy la confirmación es la página
+  de la entrada. El WhatsApp de reservas de HUB estaba bloqueado por Meta (11/10).
+- **Precio por fecha**: el precio y la seña son de la película; si una edición cambia de precio se cambia en
+  la película (los pedidos guardan su precio). Si hace falta precio distinto por función, sumar columnas
+  opcionales en `scheduled_events` o una tabla aparte.
+- **Lista de espera** propia para las fechas agotadas (hoy: «Avisame» por WhatsApp si el bar cargó el número).
+- **Limpieza de pedidos vencidos**: los `pending` vencidos quedan en la tabla (no cuentan para el cupo). Un cron
+  que los archive o borre después de N días.
+- **Zona horaria del bar en el panel**: `getAdminOverview` / `getAdminExperience` usan Córdoba fijo; las
+  públicas ya usan la del bar.
+- **Comisión de las reservas online**: el gestor por defecto es «Venta online» sin comisión. Si los socios
+  quieren otra cosa, se cambia en la configuración de Entradas (no hay que tocar código).
+- **Smoke con pago real**: falta probar de punta a punta con credenciales de prueba de Mercado Pago y con el
+  webhook en producción (necesita las credenciales del bar).
