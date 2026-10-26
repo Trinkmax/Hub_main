@@ -53,11 +53,11 @@ export function CarteleraHero({
       <div className="ent-houselights" aria-hidden />
       <Dust />
 
-      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.2fr_0.8fr]">
         {fan.length > 0 ? (
           <div
             aria-hidden
-            className="relative order-first mx-auto h-[15.5rem] w-full max-w-[22rem] sm:h-[19rem] lg:order-last lg:h-[34rem] lg:max-w-none"
+            className="relative order-first mx-auto h-[15.5rem] w-full max-w-[22rem] sm:h-[19rem] lg:order-last lg:h-[36rem] lg:max-w-none lg:translate-x-14"
           >
             {fan.map((e, i) => {
               const spread = fan.length === 1 ? [0] : fan.length === 2 ? [-1, 1] : [-1, 0, 1]
@@ -67,7 +67,7 @@ export function CarteleraHero({
               return (
                 <div
                   key={e.id}
-                  className="absolute top-1/2 left-1/2 w-[38%] lg:w-[50%]"
+                  className="absolute top-1/2 left-1/2 w-[38%] lg:w-[56%]"
                   style={
                     {
                       '--accent': e.accent,
@@ -105,7 +105,7 @@ export function CarteleraHero({
               <span className="text-(--ent-muted)"> · Edición {summary.monthsLabel}</span>
             ) : null}
           </p>
-          <h1 className="ent-display mt-5 text-[clamp(3.4rem,15vw,8.75rem)] text-balance">
+          <h1 className="ent-display mt-5 text-[clamp(3.4rem,15vw,8.75rem)] text-balance lg:text-[clamp(5.5rem,8vw,7.75rem)]">
             {line1 ? (
               <span className="ent-rise block" style={{ '--d': 120 } as React.CSSProperties}>
                 {line1}
