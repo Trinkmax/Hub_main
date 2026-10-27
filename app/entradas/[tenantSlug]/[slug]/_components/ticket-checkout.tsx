@@ -35,7 +35,10 @@ type ExperienceInfo = {
   title: string
   priceCents: number
   depositCents: number
+  minPartySize: number
   maxPartySize: number
+  /** Va junto al total: «Las bebidas se pagan aparte». */
+  priceNote: string | null
   terms: string | null
 }
 
@@ -82,14 +85,16 @@ export function TicketCheckout({
 }) {
   const { functions, selected, reportSeats } = useExperience()
   const depositAvailable = hasDepositOption(experience.depositCents, experience.priceCents)
+  // Cine y degustación no se vende para una sola persona: el mínimo es de la
+  // película (la base lo vuelve a controlar al guardar el lugar).
+  const minParty = Math.max(1, experience.minPartySize)
 
   const [step, setStep] = useState<Step>('build')
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd')
-  const [party, setParty] = useState(2)
+  const [party, setParty] = useState(() => Math.max(2, minParty))
   const [option, setOption] = useState<PaymentOption>(depositAvailable ? 'deposit' : 'full')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState<string | undefined>(undefined)
-  const [optIn, setOptIn] = useState(false)
   const [error, setError] = useState<{ message: string; field?: string } | null>(null)
   const [redirecting, setRedirecting] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -98,7 +103,7 @@ export function TicketCheckout({
   const ids = useId()
 
   const max = selected ? maxSelectable(selected, experience.maxPartySize) : 0
-  const people = Math.min(Math.max(1, party), Math.max(1, max))
+  const people = Math.min(Math.max(minParty, party), Math.max(minParty, max))
   const q = quote({
     priceCents: experience.priceCents,
     depositCents: experience.depositCents,
@@ -174,7 +179,6 @@ export function TicketCheckout({
         option,
         guest_name: name,
         guest_phone: phone,
-        marketing_opt_in: optIn,
         website: '',
       })
       if (result.ok) {
@@ -242,6 +246,9 @@ export function TicketCheckout({
   const generalError =
     error && !['guest_name', 'guest_phone'].includes(error.field ?? '') ? error.message : null
 
+  // Las dos formas de pago se eligen por CÓMO se paga el resto (pedido de los
+  // socios del 27/10): el saldo en el bar es solo en efectivo, así que quien
+  // quiere pagar con tarjeta o con Mercado Pago paga todo ahora.
   const paymentOptions = (compact: boolean) => (
     <div className={cn('grid gap-2.5', compact ? depositAvailable && 'grid-cols-2' : 'mt-3')}>
       {depositAvailable ? (
@@ -250,9 +257,10 @@ export function TicketCheckout({
           compact={compact}
           checked={option === 'deposit'}
           onSelect={() => setOption('deposit')}
-          title="Señá ahora"
+          title="¿Pagás en efectivo?"
+          kind="Seña"
           amount={formatPesos(experience.depositCents)}
-          note={`El resto, ${formatPesos(experience.priceCents - experience.depositCents)} por persona, en efectivo en el bar.`}
+          note={`Hoy pagás solo la seña y los ${formatPesos(experience.priceCents - experience.depositCents)} por persona que faltan, en efectivo en el bar.`}
         />
       ) : null}
       <OptionCard
@@ -260,9 +268,10 @@ export function TicketCheckout({
         compact={compact}
         checked={option === 'full'}
         onSelect={() => setOption('full')}
-        title="Pagá todo"
+        title={depositAvailable ? '¿Pagás con Mercado Pago?' : 'Pagás todo con Mercado Pago'}
+        kind="Todo"
         amount={formatPesos(experience.priceCents)}
-        note="Llegás y disfrutás: no pagás nada más."
+        note="Pagás todo junto ahora, con tarjeta, débito o dinero en cuenta."
       />
     </div>
   )
@@ -307,9 +316,12 @@ export function TicketCheckout({
                 </>
               ) : (
                 <>
-                  Total de {people} {people === 1 ? 'persona' : 'personas'}. No pagás nada más.
+                  Total de {people} {people === 1 ? 'persona' : 'personas'}.
                 </>
               )}
+              {/* Lo que el precio no incluye (en HUB, las bebidas): antes decía
+                  «no pagás nada más» y las bebidas se cobran aparte. */}
+              {experience.priceNote ? <> {experience.priceNote}</> : null}
             </p>
           </div>
         ) : null}
@@ -435,8 +447,8 @@ export function TicketCheckout({
                   <button
                     type="button"
                     className="ent-stepper-btn lg:size-10"
-                    onClick={() => setParty(Math.max(1, people - 1))}
-                    disabled={people <= 1}
+                    onClick={() => setParty(Math.max(minParty, people - 1))}
+                    disabled={people <= minParty}
                     aria-label="Una persona menos"
                   >
                     <Minus className="size-5" aria-hidden />
@@ -465,6 +477,10 @@ export function TicketCheckout({
               {people >= max && max === experience.maxPartySize ? (
                 <p className="mt-2 text-xs text-(--ent-ink-2)">
                   Para más de {experience.maxPartySize} personas, escribinos.
+                </p>
+              ) : minParty > 1 && people <= minParty ? (
+                <p className="mt-2 text-xs text-(--ent-ink-2)">
+                  Se reserva desde {minParty} personas.
                 </p>
               ) : null}
             </fieldset>
@@ -536,21 +552,6 @@ export function TicketCheckout({
                 )}
               </p>
             </div>
-
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-(--ent-paper-2)/60 p-3 text-sm">
-              <input
-                type="checkbox"
-                checked={optIn}
-                onChange={(e) => setOptIn(e.target.checked)}
-                className="mt-0.5 size-5 shrink-0 accent-(--ent-ink)"
-              />
-              <span>
-                Avisame por WhatsApp cuando haya nuevas películas.
-                <span className="block text-xs text-(--ent-ink-2)">
-                  Opcional. Podés darte de baja cuando quieras.
-                </span>
-              </span>
-            </label>
           </div>
         )}
       </div>
@@ -606,6 +607,7 @@ function OptionCard({
   checked,
   onSelect,
   title,
+  kind,
   amount,
   note,
 }: {
@@ -614,7 +616,10 @@ function OptionCard({
   compact?: boolean
   checked: boolean
   onSelect: () => void
+  /** La pregunta: «¿Pagás en efectivo?». */
   title: string
+  /** «Seña» / «Todo»: qué es el monto, en la versión de la compu. */
+  kind: string
   amount: string
   note: string
 }) {
@@ -627,8 +632,10 @@ function OptionCard({
   )
   if (compact) {
     return (
+      // Columna con el monto abajo: si una pregunta ocupa dos renglones y la
+      // otra uno, los montos quedan igual a la misma altura.
       <label
-        className="ent-option ent-option-compact cursor-pointer"
+        className="ent-option ent-option-compact flex cursor-pointer flex-col justify-between gap-1"
         data-checked={checked ? 'true' : 'false'}
       >
         <input
@@ -638,8 +645,16 @@ function OptionCard({
           onChange={onSelect}
           className="peer sr-only"
         />
-        <span className="block text-sm font-semibold">{title}</span>
-        <span className="ent-num mt-0.5 block text-base font-semibold">
+        <span className="block text-sm leading-snug font-semibold text-balance">{title}</span>
+        <span className="ent-num block text-base font-semibold">
+          <span
+            className={cn(
+              'mr-1 text-xs font-normal',
+              checked ? 'opacity-75' : 'text-(--ent-ink-2)',
+            )}
+          >
+            {kind}
+          </span>
           {amount}
           {unit}
         </span>
@@ -656,8 +671,8 @@ function OptionCard({
         className="peer sr-only"
       />
       <span className="flex items-baseline justify-between gap-3">
-        <span className="font-semibold">{title}</span>
-        <span className="ent-num text-lg font-semibold">
+        <span className="font-semibold text-balance">{title}</span>
+        <span className="ent-num shrink-0 text-lg font-semibold">
           {amount}
           {unit}
         </span>

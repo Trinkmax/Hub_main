@@ -54,7 +54,10 @@ export type ExperienceRow = {
   gallery: unknown
   price_cents: number
   deposit_cents: number
+  min_party_size: number
   max_party_size: number
+  /** Junto al total de la entrada: «Las bebidas se pagan aparte». */
+  price_note: string | null
   terms: string | null
   sort_order: number
   created_at: string
@@ -140,7 +143,11 @@ export type PublicExperience = {
   gallery: GalleryItem[]
   priceCents: number
   depositCents: number
+  /** Desde cuántas personas se vende (Cine y degustación: 2). */
+  minPartySize: number
   maxPartySize: number
+  /** Lo que aclara el total («Las bebidas se pagan aparte»), o null. */
+  priceNote: string | null
   terms: string | null
   functions: PublicFunction[]
   /** Sin publicar: solo aparece en la vista previa del dueño. */
@@ -182,6 +189,8 @@ export type PublicOrder = {
   experienceSlug: string | null
   posterUrl: string | null
   accent: string
+  /** La aclaración de la película («Las bebidas se pagan aparte»), o null. */
+  priceNote: string | null
   mpStatusDetail: string | null
   /** Volver a Mercado Pago con el mismo pedido (si el lugar sigue guardado). */
   retryUrl: string | null

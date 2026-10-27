@@ -36,6 +36,7 @@ import {
   type FieldPath,
   FormProvider,
   useForm,
+  useFormContext,
   useWatch,
 } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -130,7 +131,9 @@ export function ExperienceEditor({
   const published = useWatch({ control, name: 'published' })
   const price = useWatch({ control, name: 'price' })
   const deposit = useWatch({ control, name: 'deposit' })
+  const minParty = useWatch({ control, name: 'min_party_size' })
   const maxParty = useWatch({ control, name: 'max_party_size' })
+  const priceNote = useWatch({ control, name: 'price_note' })
   const synopsis = useWatch({ control, name: 'synopsis' })
   const stepsNote = useWatch({ control, name: 'steps_note' })
   const terms = useWatch({ control, name: 'terms' })
@@ -143,7 +146,7 @@ export function ExperienceEditor({
   const publicUrl = `${publicBase}/${savedSlug}`
   const previewUrl = `${publicBase}/${slug || '…'}`
   const busy = saving || publishing || deleting
-  const example = priceExample({ price, deposit, maxPartySize: maxParty })
+  const example = priceExample({ price, deposit, maxPartySize: maxParty, minPartySize: minParty })
   const ink = eventInk(experience.templateColor)
 
   const applyServerError = useCallback(
@@ -694,7 +697,7 @@ export function ExperienceEditor({
               description="Todo por persona. Con seña, el resto se paga en efectivo en el bar."
             >
               <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Controller
                     control={control}
                     name="price"
@@ -730,83 +733,43 @@ export function ExperienceEditor({
                       />
                     )}
                   />
-                  <Controller
-                    control={control}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <PartySizeField
+                    name="min_party_size"
+                    label="Mínimo por compra"
+                    hint="Desde cuántas personas se vende."
+                  />
+                  <PartySizeField
                     name="max_party_size"
-                    render={({ field }) => {
-                      const raw = field.value
-                      const typed =
-                        raw === '' || raw === null || raw === undefined ? '' : String(raw)
-                      const value = Number(typed)
-                      const current =
-                        typed !== '' && Number.isFinite(value) && value >= 1 ? value : 1
-                      const set = (next: number) =>
-                        field.onChange(Math.min(MAX_PARTY_SIZE, Math.max(1, Math.round(next))))
-                      return (
-                        <Field
-                          id="max_party_size"
-                          label="Máximo por compra"
-                          hint="Personas en una misma compra."
-                          // El schema no trae texto propio para este campo (zod lo diría en inglés).
-                          error={
-                            errors.max_party_size
-                              ? `Entre 1 y ${MAX_PARTY_SIZE} personas.`
-                              : undefined
-                          }
-                        >
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-11 shrink-0"
-                              aria-label="Una persona menos"
-                              disabled={current <= 1}
-                              onClick={() => set(current - 1)}
-                            >
-                              <Minus className="size-4" aria-hidden />
-                            </Button>
-                            <Input
-                              id="max_party_size"
-                              ref={field.ref}
-                              type="number"
-                              inputMode="numeric"
-                              min={1}
-                              max={MAX_PARTY_SIZE}
-                              value={typed}
-                              onChange={(event) =>
-                                field.onChange(
-                                  event.target.value === '' ? '' : Number(event.target.value),
-                                )
-                              }
-                              onBlur={() => {
-                                set(current)
-                                field.onBlur()
-                              }}
-                              aria-invalid={errors.max_party_size ? true : undefined}
-                              aria-describedby={describedBy('max_party_size', {
-                                hint: true,
-                                error: !!errors.max_party_size,
-                              })}
-                              className="h-11 w-20 text-center text-base tabular-nums md:text-base"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-11 shrink-0"
-                              aria-label="Una persona más"
-                              disabled={current >= MAX_PARTY_SIZE}
-                              onClick={() => set(current + 1)}
-                            >
-                              <Plus className="size-4" aria-hidden />
-                            </Button>
-                          </div>
-                        </Field>
-                      )
-                    }}
+                    label="Máximo por compra"
+                    hint="Personas en una misma compra."
                   />
                 </div>
+
+                <Field
+                  id="price_note"
+                  label="Aclaración junto al total"
+                  optional
+                  hint="Va en la entrada, debajo de lo que se paga: lo que no incluye el precio."
+                  error={errors.price_note?.message}
+                  counter={<CharCount value={priceNote} max={140} />}
+                >
+                  <Input
+                    id="price_note"
+                    maxLength={140}
+                    placeholder="Las bebidas se pagan aparte."
+                    className="h-11"
+                    aria-invalid={errors.price_note ? true : undefined}
+                    aria-describedby={describedBy('price_note', {
+                      hint: true,
+                      error: !!errors.price_note,
+                    })}
+                    defaultValue={initial.price_note ?? ''}
+                    {...register('price_note')}
+                  />
+                </Field>
 
                 <div className="flex items-start gap-2.5 rounded-xl bg-cream-tint px-3.5 py-3 text-sm">
                   <ReceiptText
@@ -1085,5 +1048,99 @@ export function ExperienceEditor({
         </AlertDialogContent>
       </AlertDialog>
     </FormProvider>
+  )
+}
+
+/**
+ * Personas por compra (mínimo o máximo): − número +, de 1 a MAX_PARTY_SIZE.
+ * Al salir del campo, lo tipeado se acomoda al rango.
+ */
+function PartySizeField({
+  name,
+  label,
+  hint,
+}: {
+  name: 'min_party_size' | 'max_party_size'
+  label: string
+  hint: string
+}) {
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext<ExperienceFormInput>()
+  const error = errors[name]
+  return (
+    <Controller
+      control={control}
+      name={name}
+      render={({ field }) => {
+        const raw = field.value
+        const typed = raw === '' || raw === null || raw === undefined ? '' : String(raw)
+        const value = Number(typed)
+        const current = typed !== '' && Number.isFinite(value) && value >= 1 ? value : 1
+        const set = (next: number) =>
+          field.onChange(Math.min(MAX_PARTY_SIZE, Math.max(1, Math.round(next))))
+        return (
+          <Field
+            id={name}
+            label={label}
+            hint={hint}
+            // El «mínimo mayor que el máximo» trae su texto; para lo demás, el
+            // rango (zod lo diría en inglés si el campo queda vacío).
+            error={
+              error
+                ? error.type === 'custom'
+                  ? error.message
+                  : `Entre 1 y ${MAX_PARTY_SIZE} personas.`
+                : undefined
+            }
+          >
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-11 shrink-0"
+                aria-label={`${label}: una persona menos`}
+                disabled={current <= 1}
+                onClick={() => set(current - 1)}
+              >
+                <Minus className="size-4" aria-hidden />
+              </Button>
+              <Input
+                id={name}
+                ref={field.ref}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_PARTY_SIZE}
+                value={typed}
+                onChange={(event) =>
+                  field.onChange(event.target.value === '' ? '' : Number(event.target.value))
+                }
+                onBlur={() => {
+                  set(current)
+                  field.onBlur()
+                }}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={describedBy(name, { hint: true, error: !!error })}
+                className="h-11 w-20 text-center text-base tabular-nums md:text-base"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-11 shrink-0"
+                aria-label={`${label}: una persona más`}
+                disabled={current >= MAX_PARTY_SIZE}
+                onClick={() => set(current + 1)}
+              >
+                <Plus className="size-4" aria-hidden />
+              </Button>
+            </div>
+          </Field>
+        )
+      }}
+    />
   )
 }

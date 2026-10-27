@@ -117,7 +117,9 @@ export async function createExperience(
       .maybeSingle(),
     supabase
       .from('event_experiences')
-      .select('slug, price_cents, deposit_cents, series, schedule_note, updated_at')
+      .select(
+        'slug, price_cents, deposit_cents, min_party_size, max_party_size, price_note, series, schedule_note, updated_at',
+      )
       .eq('tenant_id', tenantId)
       .order('updated_at', { ascending: false }),
   ])
@@ -128,11 +130,16 @@ export async function createExperience(
       slug: string
       price_cents: number
       deposit_cents: number
+      min_party_size: number
+      max_party_size: number
+      price_note: string | null
       series: string | null
       schedule_note: string | null
     }> | null) ?? []
-  // Los precios y la colección arrancan como los de la última película
-  // cargada: en Cine y degustación cambian por edición, no por película.
+  // Los precios, las personas por compra, la aclaración del total y la
+  // colección arrancan como los de la última película cargada: en Cine y
+  // degustación cambian por edición, no por película. Mínimo y máximo van
+  // juntos (la base pide mínimo ≤ máximo).
   const last = rows[0]
   const priceCents =
     parsed.data.price && parsed.data.price > 0
@@ -165,6 +172,13 @@ export async function createExperience(
       accent_hex: (template as { color_hex: string }).color_hex.toLowerCase(),
       price_cents: priceCents,
       deposit_cents: depositCents,
+      ...(last
+        ? {
+            min_party_size: last.min_party_size,
+            max_party_size: last.max_party_size,
+            price_note: last.price_note,
+          }
+        : {}),
       created_by: access.user.id,
       updated_by: access.user.id,
     })
@@ -232,7 +246,9 @@ export async function saveExperience(
       gallery: v.gallery,
       price_cents: v.price,
       deposit_cents: v.deposit,
+      min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
+      price_note: v.price_note,
       terms: v.terms,
       updated_by: access.user.id,
     })
@@ -259,6 +275,8 @@ export async function saveExperience(
       published: v.published,
       price_cents: v.price,
       deposit_cents: v.deposit,
+      min_party_size: v.min_party_size,
+      max_party_size: v.max_party_size,
       slug: v.slug,
     },
   })

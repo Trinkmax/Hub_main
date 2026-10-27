@@ -70,7 +70,9 @@ describe('experienceFormSchema', () => {
     gallery: [{ url: 'https://x.supabase.co/storage/v1/object/public/landing-media/a.webp' }],
     price: '35.000',
     deposit: 5000,
+    min_party_size: '2',
     max_party_size: '10',
+    price_note: '',
     terms: null,
   }
 
@@ -85,6 +87,26 @@ describe('experienceFormSchema', () => {
     expect(v.steps[0]?.label).toBeNull()
     expect(v.gallery[0]?.kind).toBe('scene')
     expect(v.max_party_size).toBe(10)
+    expect(v.min_party_size).toBe(2)
+    expect(v.price_note).toBeNull()
+  })
+
+  it('el mínimo de personas no puede pasar al máximo', () => {
+    const r = experienceFormSchema.safeParse({ ...base, min_party_size: 12, max_party_size: 10 })
+    expect(r.success).toBe(false)
+    if (r.success) return
+    expect(r.error.issues[0]?.path).toEqual(['min_party_size'])
+  })
+
+  it('la aclaración del total se guarda recortada y con tope de 140', () => {
+    const ok = experienceFormSchema.parse({
+      ...base,
+      price_note: '  Las bebidas se pagan aparte. ',
+    })
+    expect(ok.price_note).toBe('Las bebidas se pagan aparte.')
+    expect(experienceFormSchema.safeParse({ ...base, price_note: 'x'.repeat(141) }).success).toBe(
+      false,
+    )
   })
 
   it('la seña tiene que ser menor que el precio', () => {

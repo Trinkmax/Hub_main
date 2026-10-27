@@ -270,7 +270,9 @@ export function OrderView({
                   value={
                     balanceCents > 0
                       ? `${formatPesos(balanceCents)} en efectivo`
-                      : 'Nada más: ya está pago'
+                      : // No «nada más»: lo que no incluye el precio (en HUB,
+                        // las bebidas) se paga en el bar.
+                        'La entrada ya está paga'
                   }
                   strong={balanceCents > 0}
                 />
@@ -282,6 +284,9 @@ export function OrderView({
               />
             )}
           </dl>
+          {approved && order.priceNote ? (
+            <p className="mt-3 text-xs text-(--ent-ink-2)">{order.priceNote}</p>
+          ) : null}
         </div>
 
         <div className="ent-ticket-cut px-6" aria-hidden>

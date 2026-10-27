@@ -15,11 +15,22 @@ import { TicketCheckout } from './ticket-checkout'
 export function ExperienceView({
   page,
   fecha,
+  onlyAvailable = false,
 }: {
   page: PublicExperiencePage
   fecha: string | null
+  /**
+   * Llegó desde la cartelera filtrada por «Disponibles» (?ver=disponibles):
+   * las fechas agotadas no se muestran, ni arriba ni en la entrada. Si no
+   * queda ninguna con lugar, se muestran todas (y la entrada dice «Agotado»).
+   */
+  onlyAvailable?: boolean
 }) {
   const { experience, venue, others, preview } = page
+  const withSeats = experience.functions.filter((fn) => fn.state !== 'sold_out')
+  const hideSoldOut = onlyAvailable && withSeats.length > 0
+  const functions = hideSoldOut ? withSeats : experience.functions
+  const hiddenSoldOut = experience.functions.length - functions.length
   const scenes = experience.gallery.filter((g) => g.kind === 'scene')
   const venuePhotos = experience.gallery.filter((g) => g.kind === 'venue')
   const soldOut = experience.functions.length > 0 && allSoldOut(experience.functions)
@@ -29,7 +40,11 @@ export function ExperienceView({
   const nextAct = () => ['I', 'II', 'III', 'IV', 'V'][act++] ?? String(act)
 
   return (
-    <ExperienceProvider functions={experience.functions} initialDate={fecha}>
+    <ExperienceProvider
+      functions={functions}
+      initialDate={fecha}
+      minPartySize={experience.minPartySize}
+    >
       <div style={{ '--accent': experience.accent } as React.CSSProperties}>
         <TopBar
           venue={venue}
@@ -62,7 +77,10 @@ export function ExperienceView({
                     title="Elegí tu noche."
                   />
                   <Reveal>
-                    <FunctionPicker />
+                    <FunctionPicker
+                      hiddenSoldOut={hiddenSoldOut}
+                      allDatesHref={`/entradas/${venue.tenantSlug}/${experience.slug}`}
+                    />
                   </Reveal>
                 </section>
               ) : null}
@@ -132,7 +150,9 @@ export function ExperienceView({
                   title: experience.title,
                   priceCents: experience.priceCents,
                   depositCents: experience.depositCents,
+                  minPartySize: experience.minPartySize,
                   maxPartySize: experience.maxPartySize,
+                  priceNote: experience.priceNote,
                   terms: experience.terms,
                 }}
                 venue={{

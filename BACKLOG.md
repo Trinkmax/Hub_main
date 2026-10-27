@@ -1470,5 +1470,6 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   públicas ya usan la del bar.
 - **Comisión de las reservas online**: el gestor por defecto es «Venta online» sin comisión. Si los socios
   quieren otra cosa, se cambia en la configuración de Entradas (no hay que tocar código).
-- **Smoke con pago real**: falta probar de punta a punta con credenciales de prueba de Mercado Pago y con el
-  webhook en producción (necesita las credenciales del bar).
+- **Smoke con credenciales de prueba**: el circuito real ya anduvo el 27/10 (compra con seña aprobada → reserva
+  creada sola → devuelta con «Devolver» del panel). Falta ver si `sandbox_init_point` anda con las credenciales
+  de prueba nuevas (empiezan con `APP_USR-`, ya no `TEST-`).

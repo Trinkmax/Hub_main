@@ -100,11 +100,17 @@ export const experienceFormSchema = z
     gallery: z.array(galleryItemSchema).max(24, 'Máximo 24 fotos'),
     price: pesosField('Precio'),
     deposit: pesosField('Seña'),
+    min_party_size: z.coerce
+      .number({ error: 'Poné desde cuántas personas se vende' })
+      .int('Tiene que ser un número entero')
+      .min(1, 'Al menos 1 persona por compra')
+      .max(30, 'Máximo 30 personas por compra'),
     max_party_size: z.coerce
       .number({ error: 'Poné cuántas personas como máximo por compra' })
       .int('Tiene que ser un número entero')
       .min(1, 'Al menos 1 persona por compra')
       .max(30, 'Máximo 30 personas por compra'),
+    price_note: optionalText(140),
     terms: optionalText(800),
   })
   .superRefine((v, ctx) => {
@@ -116,6 +122,13 @@ export const experienceFormSchema = z
         code: 'custom',
         path: ['deposit'],
         message: 'La seña tiene que ser menor que el precio.',
+      })
+    }
+    if (v.min_party_size > v.max_party_size) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['min_party_size'],
+        message: 'El mínimo no puede ser más que el máximo.',
       })
     }
   })

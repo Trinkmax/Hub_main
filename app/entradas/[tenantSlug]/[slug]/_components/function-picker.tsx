@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { formatLongDate } from '@/lib/ticketing/dates'
 import { cn } from '@/lib/utils'
 import { FunctionStub } from '../../../_components/function-stub'
@@ -13,9 +14,15 @@ import { useExperience } from './experience-context'
 export function FunctionPicker({
   compact = false,
   className,
+  hiddenSoldOut = 0,
+  allDatesHref,
 }: {
   compact?: boolean
   className?: string
+  /** Fechas agotadas que no se muestran (llegó filtrando «Disponibles»). */
+  hiddenSoldOut?: number
+  /** La misma película con todas sus fechas. */
+  allDatesHref?: string
 }) {
   const { functions, selected, select } = useExperience()
 
@@ -52,6 +59,19 @@ export function FunctionPicker({
           ) : (
             'Elegí una fecha.'
           )}
+        </p>
+      ) : null}
+      {!compact && hiddenSoldOut > 0 ? (
+        <p className="mt-1 text-xs text-(--ent-muted)">
+          Te mostramos solo las fechas con lugar.{' '}
+          {allDatesHref ? (
+            <Link
+              href={selected ? `${allDatesHref}?fecha=${selected.date}` : allDatesHref}
+              className="font-semibold text-(--ent-cream-2) underline underline-offset-4 hover:text-(--ent-cream)"
+            >
+              Ver todas
+            </Link>
+          ) : null}
         </p>
       ) : null}
     </div>

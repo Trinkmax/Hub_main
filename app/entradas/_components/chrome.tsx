@@ -171,7 +171,7 @@ export function HowItWorks({
 }) {
   const payCopy = venue.canSell
     ? minDepositCents
-      ? `Seña desde ${formatPesos(minDepositCents)} por persona (el resto en efectivo en el bar) o el total${minPriceCents ? ` desde ${formatPesos(minPriceCents)}` : ''}. Con Mercado Pago: tarjeta, débito o dinero en cuenta.`
+      ? `Si el resto lo pagás en efectivo en el bar, señás desde ${formatPesos(minDepositCents)} por persona. Si no, pagás todo junto con Mercado Pago${minPriceCents ? `, desde ${formatPesos(minPriceCents)} por persona` : ''}: tarjeta, débito o dinero en cuenta.`
       : `El total${minPriceCents ? ` desde ${formatPesos(minPriceCents)} por persona` : ''}, con Mercado Pago: tarjeta, débito o dinero en cuenta.`
     : 'Escribinos por WhatsApp con la película, la fecha y cuántos son.'
   const steps = [
