@@ -1,8 +1,9 @@
 'use server'
 
+import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/audit'
-import { getAccount, MercadoPagoError } from '@/lib/mercadopago/client'
+import { getAccount, MercadoPagoError, refundPayment } from '@/lib/mercadopago/client'
 import { encryptToken } from '@/lib/meta/crypto'
 import { uniqueSlugFrom } from '@/lib/salon/slug-dedupe'
 import { createClient } from '@/lib/supabase/server'
@@ -16,7 +17,8 @@ import {
 } from '@/lib/tenant'
 import type { CurrentUser } from '@/lib/tenant/current'
 import type { Tenant } from '@/lib/tenant/types'
-import { pesosToCents } from './pricing'
+import { getMercadoPagoCredentials } from './credentials'
+import { formatPesos, pesosToCents } from './pricing'
 import {
   createExperienceSchema,
   type ExperienceFormInput,
@@ -26,6 +28,7 @@ import {
   type TicketingSettingsInput,
   ticketingSettingsSchema,
 } from './schemas'
+import { reconcilePaymentById, type SettleOutcome } from './settle'
 
 /**
  * Acciones del panel (Marketing → Entradas). Todo es del dueño: es la vidriera
@@ -557,4 +560,200 @@ export async function disconnectMercadoPago(slug: string): Promise<TicketingActi
   })
   revalidateTicketing(slug)
   return { ok: true, message: 'Mercado Pago desconectado. La cartelera sigue visible.' }
+}
+
+// ──────────────────────────────────────────────
+// Devoluciones
+// ──────────────────────────────────────────────
+
+const REFUND_CANCEL_REASON = 'Se devolvió el pago online.'
+
+/**
+ * La reserva de una compra devuelta se cancela solo si la persona todavía no
+ * llegó: si ya vino, decide el bar. Va con la seña en 0 porque el reporte de
+ * Señas toma la seña de una cancelada como plata que se quedó el bar, y esta
+ * se devolvió.
+ */
+async function cancelRefundedReservation(input: {
+  tenantId: string
+  userId: string
+  reservationId: string
+  orderId: string
+}): Promise<'cancelled' | 'not_pending' | 'error'> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancelled_reason: REFUND_CANCEL_REASON,
+      deposit_cents: 0,
+    })
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.reservationId)
+    .eq('status', 'pending')
+    .select('id')
+  if (error) {
+    console.error('[ticketing.refundTicketOrder] cancelar reserva', {
+      tenantId: input.tenantId,
+      orderId: input.orderId,
+      code: error.code,
+    })
+    return 'error'
+  }
+  if (!data?.length) return 'not_pending'
+
+  await supabase.rpc('recalc_reservation_commission', { p_reservation_id: input.reservationId })
+  await logAudit({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    action: 'salon_reservation.cancelled',
+    entity: 'salon_reservation',
+    entityId: input.reservationId,
+    payload: { reason: REFUND_CANCEL_REASON, ticket_order_id: input.orderId },
+  })
+  return 'cancelled'
+}
+
+/**
+ * «Devolver» desde Ventas online, sin entrar a Mercado Pago: pide la
+ * devolución total y la aplica por el mismo camino que el webhook (la compra
+ * pasa a «Devuelto» y la seña de la reserva a 0). Después cancela la reserva
+ * si la persona todavía no llegó.
+ */
+export async function refundTicketOrder(
+  slug: string,
+  orderId: string,
+): Promise<TicketingActionState> {
+  const access = await authorizeOwner(slug)
+  if (!access) return NO_ACCESS
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return { ok: false, message: 'Compra inválida.' }
+  const tenantId = access.tenant.id
+
+  const service = createServiceClient() as SBAny
+  const { data, error } = await service
+    .from('ticket_orders')
+    .select('id, status, mp_payment_id, reservation_id, paid_cents, total_cents')
+    .eq('tenant_id', tenantId)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.refundTicketOrder] leer compra', {
+      tenantId,
+      orderId,
+      code: error.code,
+    })
+    return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
+  }
+  const order = data as {
+    status: string
+    mp_payment_id: string | null
+    reservation_id: string | null
+    paid_cents: number | null
+    total_cents: number
+  } | null
+  if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  if (order.status === 'refunded') return { ok: true, message: 'Esa compra ya estaba devuelta.' }
+  if (order.status !== 'approved' || !order.mp_payment_id) {
+    return { ok: false, message: 'Solo se puede devolver una compra pagada.' }
+  }
+  const paymentId = order.mp_payment_id
+
+  const creds = await getMercadoPagoCredentials(tenantId)
+  if (!creds) return { ok: false, message: 'Conectá Mercado Pago para poder devolver.' }
+
+  let refundError: MercadoPagoError | null = null
+  try {
+    await refundPayment(creds.accessToken, paymentId, randomUUID())
+  } catch (error) {
+    if (!(error instanceof MercadoPagoError)) throw error
+    refundError = error
+    console.error('[ticketing.refundTicketOrder] devolución', {
+      tenantId,
+      orderId,
+      status: error.status,
+      code: error.code,
+      message: error.message,
+    })
+    if (error.isAuth) {
+      return {
+        ok: false,
+        message: 'Mercado Pago no acepta la cuenta conectada. Volvé a conectarla y probá de nuevo.',
+      }
+    }
+  }
+
+  // El mismo camino que el webhook. También verifica: si la devolución falló
+  // porque un intento anterior ya la había hecho (se cortó antes de contestar),
+  // el pago figura devuelto y está todo bien.
+  let outcome: SettleOutcome | null = null
+  try {
+    outcome = await reconcilePaymentById({ tenantId, paymentId, source: 'panel' })
+  } catch (error) {
+    console.error('[ticketing.refundTicketOrder] aplicar', {
+      tenantId,
+      orderId,
+      error: error instanceof Error ? error.message : 'unknown',
+    })
+  }
+  const refunded = outcome?.kind === 'settled' && outcome.status === 'refunded'
+
+  if (refundError && !refunded) {
+    return refundError.status === 0
+      ? { ok: false, message: 'Mercado Pago no respondió. Probá en un ratito.' }
+      : {
+          ok: false,
+          message:
+            'Mercado Pago no dejó hacer la devolución. Lo más común: la cuenta necesita saldo disponible por ese monto, y la plata «a liquidar» no cuenta. Probá cuando se libere o devolvela desde Mercado Pago.',
+        }
+  }
+
+  const reservation = order.reservation_id
+    ? await cancelRefundedReservation({
+        tenantId,
+        userId: access.user.id,
+        reservationId: order.reservation_id,
+        orderId,
+      })
+    : null
+
+  const paidCents = Number(order.paid_cents ?? order.total_cents)
+  await logAudit({
+    tenantId,
+    userId: access.user.id,
+    action: 'ticket_order.refund_requested',
+    entity: 'ticket_order',
+    entityId: orderId,
+    // Sin nombre ni teléfono (CLAUDE.md §9).
+    payload: { paid_cents: paidCents, refunded_now: refunded, reservation },
+  })
+
+  revalidateTicketing(slug)
+  if (order.reservation_id) {
+    for (const path of [
+      `/${slug}/reservas`,
+      `/${slug}/reservas/${order.reservation_id}`,
+      `/${slug}/operativo`,
+      `/${slug}/salon/reservas-operativo`,
+      `/${slug}/eventos/programados`,
+    ]) {
+      revalidatePath(path)
+    }
+  }
+
+  const pesos = formatPesos(paidCents)
+  const reservationNote =
+    reservation === 'cancelled'
+      ? ' y cancelamos la reserva'
+      : reservation === 'not_pending'
+        ? '. La reserva no se tocó porque ya no estaba pendiente'
+        : reservation === 'error'
+          ? '. No pudimos cancelar la reserva: cancelala desde Reservas'
+          : ''
+  return {
+    ok: true,
+    message: refunded
+      ? `Devolvimos ${pesos}${reservationNote}.`
+      : `Mercado Pago está procesando la devolución de ${pesos}${reservationNote}. En unos minutos la compra figura como devuelta.`,
+  }
 }

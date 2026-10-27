@@ -15,6 +15,7 @@ import type { AdminOrder } from '@/lib/ticketing/queries'
 import { cn } from '@/lib/utils'
 import {
   attentionView,
+  canRefund,
   formatOrderMoment,
   type OrderTone,
   orderAmountCents,
@@ -24,6 +25,7 @@ import {
   peopleLabel,
 } from '../_lib/orders'
 import { PanelSection } from './panel-section'
+import { RefundOrderButton } from './refund-order-button'
 import { RetryButton } from './retry-button'
 
 export type OrdersResult = { ok: true; orders: AdminOrder[] } | { ok: false }
@@ -156,6 +158,20 @@ function ReservationLink({ tenantSlug, order }: { tenantSlug: string; order: Adm
   return null
 }
 
+function Refund({ tenantSlug, order }: { tenantSlug: string; order: AdminOrder }) {
+  if (!canRefund(order)) return null
+  return (
+    <RefundOrderButton
+      tenantSlug={tenantSlug}
+      orderId={order.id}
+      guestName={order.guest_name}
+      amountLabel={formatPesos(orderAmountCents(order))}
+      functionLabel={`${order.title} · ${orderFunctionLabel(order)}`}
+      hasReservation={Boolean(order.reservation_id)}
+    />
+  )
+}
+
 function Amount({ order }: { order: AdminOrder }) {
   return (
     <span className={cn('tabular-nums', order.status === 'refunded' && 'line-through')}>
@@ -208,7 +224,10 @@ function OrderCard({
         <span className="text-xs text-muted-foreground tabular-nums">
           {formatOrderMoment(order.created_at, now)}
         </span>
-        <ReservationLink tenantSlug={tenantSlug} order={order} />
+        <div className="flex items-center gap-1">
+          <Refund tenantSlug={tenantSlug} order={order} />
+          <ReservationLink tenantSlug={tenantSlug} order={order} />
+        </div>
       </div>
     </article>
   )
@@ -268,7 +287,13 @@ function OrdersTable({
               <Attention order={order} />
             </TableCell>
             <TableCell className="align-top text-right">
-              <ReservationLink tenantSlug={tenantSlug} order={order} />
+              <div className="flex flex-col items-end gap-1">
+                <ReservationLink tenantSlug={tenantSlug} order={order} />
+                {/* El botón fantasma tiene relleno: así el texto queda alineado con «Ver reserva». */}
+                <div className="-mr-2.5">
+                  <Refund tenantSlug={tenantSlug} order={order} />
+                </div>
+              </div>
             </TableCell>
           </TableRow>
         ))}

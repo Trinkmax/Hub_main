@@ -14,12 +14,14 @@ import type { OrderAttention, OrderStatus } from './types'
 /**
  * Aplicar un pago de Mercado Pago a su pedido.
  *
- * Tres caminos llegan acá y los tres terminan en la MISMA función de la base
+ * Todos los caminos terminan en la MISMA función de la base
  * (ticketing_settle_order), que bloquea el pedido y crea la reserva una sola
  * vez:
  *   · el webhook de Mercado Pago (app/api/webhooks/mercadopago),
  *   · la vuelta del cliente a su entrada (trae el payment_id en la URL),
- *   · la entrada preguntando por su pedido cuando el webhook tarda.
+ *   · la entrada preguntando por su pedido cuando el webhook tarda,
+ *   · la conciliación cada 15 minutos (reconcile.ts),
+ *   · el botón «Devolver» del panel, apenas Mercado Pago acepta la devolución.
  *
  * Nunca se confía en lo que trae el aviso: siempre se le pide el pago a la API
  * de Mercado Pago con el token del bar. Un webhook falso, como mucho, hace que
@@ -31,7 +33,7 @@ import type { OrderAttention, OrderStatus } from './types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export type SettleSource = 'webhook' | 'return' | 'poll' | 'cron'
+export type SettleSource = 'webhook' | 'return' | 'poll' | 'cron' | 'panel'
 
 export type SettleOutcome =
   | {

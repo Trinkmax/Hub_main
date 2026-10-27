@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   attentionView,
+  canRefund,
   formatOrderMoment,
   holdExpired,
   orderAmountCents,
@@ -87,6 +88,15 @@ describe('attentionView', () => {
   it('sin aviso: null', () => {
     expect(attentionView(null)).toBeNull()
     expect(attentionView(undefined)).toBeNull()
+  })
+})
+
+describe('canRefund', () => {
+  it('solo una compra pagada se puede devolver', () => {
+    expect(canRefund({ status: 'approved' })).toBe(true)
+    expect(canRefund({ status: 'refunded' })).toBe(false)
+    expect(canRefund({ status: 'pending' })).toBe(false)
+    expect(canRefund({ status: 'rejected' })).toBe(false)
   })
 })
 
