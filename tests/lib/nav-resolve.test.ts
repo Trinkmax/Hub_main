@@ -203,7 +203,11 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
 
   it('las otras rutas de cada sección también la resaltan (activePaths con el slug)', () => {
     expect(entry(groups, 'Clientes')?.activePaths).toEqual(['/hub/acreditar', '/hub/local/captura'])
-    expect(entry(groups, 'Marketing')?.activePaths).toEqual(['/hub/enlaces', '/hub/paginas'])
+    expect(entry(groups, 'Marketing')?.activePaths).toEqual([
+      '/hub/enlaces',
+      '/hub/paginas',
+      '/hub/entradas',
+    ])
     expect(entry(groups, 'Estadísticas')?.activePaths).toEqual(['/hub/reviews'])
     expect(entry(groups, 'Configuración')?.activePaths).toEqual(['/hub/docs'])
   })

@@ -7,6 +7,7 @@ import { runWorker } from '@/lib/jobs/runner'
 import { syncTemplates } from '@/lib/meta/templates'
 import { refreshExpiringMetaTokens } from '@/lib/meta/token-refresh'
 import { createServiceClient } from '@/lib/supabase/service'
+import { reconcileRecentTicketOrders } from '@/lib/ticketing/reconcile'
 import { type GatedTask, gatedTasksDue } from './schedule'
 
 const JOB_LIMIT = Number(process.env.JOB_QUEUE_LIMIT ?? 100)
@@ -48,6 +49,8 @@ export async function runDispatch(now: Date = new Date()): Promise<DispatchResul
         await syncAllConnectedTemplates(service)
       } else if (task === 'refresh_meta_tokens') {
         await refreshExpiringMetaTokens()
+      } else if (task === 'reconcile_ticket_orders') {
+        await reconcileRecentTicketOrders()
       }
     } catch (e) {
       console.error(`[dispatch.${task}]`, (e as Error).message)

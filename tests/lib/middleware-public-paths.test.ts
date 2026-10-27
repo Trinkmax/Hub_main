@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isPublicPath } from '@/lib/supabase/middleware'
+import { RESERVED_SLUGS } from '@/lib/tenant/types'
 
 // Regresión: el proxy redirigía /api/cron/* a /login (sin sesión) → pg_cron/Vercel
 // nunca corrían los jobs. Las rutas de cron se auto-protegen con Bearer CRON_SECRET,
@@ -25,6 +26,16 @@ describe('isPublicPath', () => {
     expect(isPublicPath('/p/halloween-2026')).toBe(true)
     // Y 'p' está en RESERVED_SLUGS, así que no se la come el ruteo por tenant.
     expect(isPublicPath('/parana/clientes')).toBe(false)
+  })
+
+  it('la cartelera y las entradas online son públicas', () => {
+    // La abre gente sin cuenta desde WhatsApp o Instagram para comprar.
+    expect(isPublicPath('/entradas/hub')).toBe(true)
+    expect(isPublicPath('/entradas/hub/shrek-2')).toBe(true)
+    expect(isPublicPath('/entradas/hub/mi-entrada/3f1c2b9e-0000-4000-8000-000000000000')).toBe(true)
+    expect(RESERVED_SLUGS.has('entradas')).toBe(true)
+    // El panel de Entradas del dueño sigue cerrado.
+    expect(isPublicPath('/hub/entradas')).toBe(false)
   })
 
   it('las rutas de tenant NO son públicas', () => {

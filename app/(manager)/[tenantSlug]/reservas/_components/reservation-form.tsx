@@ -1474,7 +1474,12 @@ export function ReservationForm({
       {/* Origen */}
       <FieldGroup title="Cómo llegó la reserva" icon={MessageCircle}>
         <Segmented
-          options={ORIGINS.map((o) => ({ value: o, label: ORIGIN_LABELS[o] }))}
+          // «Web · Mercado Pago» no se elige a mano (la reserva entra sola al
+          // pagar): solo se muestra al editar una que vino de la web.
+          options={(values.origin === 'web' ? [...ORIGINS, 'web' as const] : ORIGINS).map((o) => ({
+            value: o,
+            label: ORIGIN_LABELS[o],
+          }))}
           value={values.origin}
           onChange={(v) =>
             form.setValue('origin', v as ReservationOrigin, { shouldValidate: true })

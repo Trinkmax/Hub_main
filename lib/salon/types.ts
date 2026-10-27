@@ -21,6 +21,8 @@ export type ReservationOrigin =
   | 'messenger'
   | 'in_person'
   | 'partner_referral'
+  /** Entró sola: la pagaron online con Mercado Pago (entradas online). */
+  | 'web'
 
 export type SalonZone = 'planta_alta' | 'planta_baja' | 'event_floating'
 
@@ -312,6 +314,7 @@ export const ORIGIN_LABELS: Record<ReservationOrigin, string> = {
   messenger: 'Messenger Hub',
   in_person: 'Presencial Hub',
   partner_referral: 'Amigo/Conocido de socio',
+  web: 'Web · Mercado Pago',
 }
 
 export const STATUS_LABELS: Record<SalonReservationStatus, string> = {

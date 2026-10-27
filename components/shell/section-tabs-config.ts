@@ -77,6 +77,10 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       // la pantalla con sus propias alturas y su «Volver» pregunta antes de perder cambios sin
       // guardar; tres links más arriba se los saltearían.
       { value: 'paginas', label: 'Páginas', path: 'paginas', exact: true },
+      // Entradas online (26/10/2026): la cartelera, Mercado Pago y las ventas. Exacta por lo mismo
+      // que Páginas: el editor de cada película (/entradas/[id]) tiene su barra de guardado y su
+      // «Volver» pregunta antes de perder cambios; las pestañas de arriba se lo saltearían.
+      { value: 'entradas', label: 'Entradas', path: 'entradas', exact: true },
     ],
   },
   // Owner-only, como antes en el sidebar.

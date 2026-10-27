@@ -76,12 +76,13 @@ describe('pestañas de sección: qué ve cada uno', () => {
     expect(section.showWhenNoneActive).toBe(false)
   })
 
-  it('Marketing: Tareas, Link de Instagram y Páginas (Páginas exacta: el editor va sin barra)', () => {
+  it('Marketing: Tareas, Link de Instagram, Páginas y Entradas (los editores van sin barra)', () => {
     expect(sectionNeedsViewer('marketing')).toBe(false)
     const section = resolveSection('marketing', SLUG)
-    expect(labels(section)).toEqual(['Tareas', 'Link de Instagram', 'Páginas'])
-    expect(hrefs(section)).toEqual(['/hub/tareas', '/hub/enlaces', '/hub/paginas'])
+    expect(labels(section)).toEqual(['Tareas', 'Link de Instagram', 'Páginas', 'Entradas'])
+    expect(hrefs(section)).toEqual(['/hub/tareas', '/hub/enlaces', '/hub/paginas', '/hub/entradas'])
     expect(section.tabs.find((t) => t.value === 'paginas')?.exact).toBe(true)
+    expect(section.tabs.find((t) => t.value === 'entradas')?.exact).toBe(true)
   })
 
   describe('Estadísticas: Reseñas con la misma regla que tenía el menú', () => {
@@ -294,11 +295,14 @@ describe('pestaña activa según la URL', () => {
     expect(active('clientes', '/hub/local/mesas')).toBeNull()
   })
 
-  it('Marketing: el editor de una página no marca nada', () => {
+  it('Marketing: el editor de una página o de una película no marca nada', () => {
     expect(active('marketing', '/hub/tareas')).toBe('tareas')
     expect(active('marketing', '/hub/enlaces')).toBe('enlaces')
     expect(active('marketing', '/hub/paginas')).toBe('paginas')
     expect(active('marketing', '/hub/paginas/pg1')).toBeNull()
+    expect(active('marketing', '/hub/entradas')).toBe('entradas')
+    expect(active('marketing', '/hub/entradas/')).toBe('entradas')
+    expect(active('marketing', '/hub/entradas/6f1c2a54-1b2c-4d5e-8f90-1a2b3c4d5e6f')).toBeNull()
   })
 
   it('prefijo con borde de segmento, sin query ni hash', () => {
@@ -324,6 +328,7 @@ describe('pestaña activa según la URL', () => {
     const marketing = resolveSection('marketing', SLUG)
     expect(sectionBarVisible(marketing, null)).toBe(false)
     expect(sectionBarVisible(marketing, 'paginas')).toBe(true)
+    expect(sectionBarVisible(marketing, 'entradas')).toBe(true)
   })
 })
 
