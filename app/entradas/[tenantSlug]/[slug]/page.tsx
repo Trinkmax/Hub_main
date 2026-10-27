@@ -70,11 +70,13 @@ export default async function ExperiencePage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string; slug: string }>
-  searchParams: Promise<{ fecha?: string | string[] }>
+  searchParams: Promise<{ fecha?: string | string[]; ver?: string | string[] }>
 }) {
   const [{ tenantSlug, slug }, sp] = await Promise.all([params, searchParams])
   const page = await resolvePage(tenantSlug, slug)
   if (!page) notFound()
   const fecha = typeof sp.fecha === 'string' && DATE_RE.test(sp.fecha) ? sp.fecha : null
-  return <ExperienceView page={page} fecha={fecha} />
+  // Viene de la cartelera filtrada por «Disponibles».
+  const onlyAvailable = sp.ver === 'disponibles'
+  return <ExperienceView page={page} fecha={fecha} onlyAvailable={onlyAvailable} />
 }

@@ -80,7 +80,9 @@ const EXPERIENCE: AdminExperience = {
   gallery: [],
   priceCents: 3_500_000,
   depositCents: 500_000,
+  minPartySize: 1,
   maxPartySize: 10,
+  priceNote: null,
   terms: null,
   functions: [
     {

@@ -7,6 +7,7 @@ import {
   isOnSale,
   lastSeatsThreshold,
   maxSelectable,
+  partySizeError,
   seatsLeft,
 } from '@/lib/ticketing/availability'
 import type { PublicFunction } from '@/lib/ticketing/types'
@@ -36,6 +37,13 @@ describe('functionState', () => {
     expect(functionState(0, 50)).toBe('sold_out')
     expect(functionState(10, 50)).toBe('last')
     expect(functionState(11, 50)).toBe('available')
+  })
+
+  it('con menos lugares que el mínimo de la película, para la web está agotada', () => {
+    // Cine y degustación se vende de a 2: si queda 1 lugar, no se puede comprar.
+    expect(functionState(1, 50, 2)).toBe('sold_out')
+    expect(functionState(2, 50, 2)).toBe('last')
+    expect(functionState(1, 50)).toBe('last')
   })
 
   it('el umbral de «últimos» es el 20 % con techo 10 y piso 1', () => {
@@ -75,5 +83,14 @@ describe('selección', () => {
     expect(maxSelectable({ left: 3 }, 10)).toBe(3)
     expect(maxSelectable({ left: 30 }, 10)).toBe(10)
     expect(maxSelectable({ left: 0 }, 10)).toBe(0)
+  })
+})
+
+describe('partySizeError', () => {
+  it('dice por qué no se puede comprar para esa cantidad', () => {
+    expect(partySizeError(1, 2, 10)).toBe('Se reserva desde 2 personas.')
+    expect(partySizeError(11, 2, 10)).toBe('Para más de 10 personas, escribinos.')
+    expect(partySizeError(2, 2, 10)).toBeNull()
+    expect(partySizeError(10, 2, 10)).toBeNull()
   })
 })

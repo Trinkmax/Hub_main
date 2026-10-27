@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { getAppUrl } from '@/lib/app-url'
-import { summarizeCatalog } from '@/lib/ticketing/catalog'
+import { parseCatalogFilters, summarizeCatalog } from '@/lib/ticketing/catalog'
 import { getPublicCatalog } from '@/lib/ticketing/queries'
 import { viewerOwnsTenant } from '@/lib/ticketing/viewer'
 import { CarteleraView, DEFAULT_INTRO } from './_components/cartelera-view'
@@ -56,11 +56,18 @@ export async function generateMetadata({
 
 export default async function CarteleraPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<{
+    mes?: string | string[]
+    pelicula?: string | string[]
+    ver?: string | string[]
+  }>
 }) {
-  const { tenantSlug } = await params
+  const [{ tenantSlug }, sp] = await Promise.all([params, searchParams])
   const catalog = await resolveCatalog(tenantSlug)
   if (!catalog) notFound()
-  return <CarteleraView catalog={catalog} />
+  // Un link puede llegar ya filtrado (?ver=disponibles): se arma así desde el server.
+  return <CarteleraView catalog={catalog} filters={parseCatalogFilters(sp)} />
 }

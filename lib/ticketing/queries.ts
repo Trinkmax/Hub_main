@@ -37,7 +37,7 @@ type SBAny = any
 export const DEFAULT_ACCENT = '#c0573e'
 
 const EXPERIENCE_COLUMNS =
-  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, max_party_size, terms, sort_order, created_at, updated_at'
+  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
 
 type TenantRow = {
   id: string
@@ -173,6 +173,7 @@ async function loadFunctions(
 }
 
 function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): PublicExperience {
+  const minPartySize = Math.max(1, row.min_party_size ?? 1)
   return {
     id: row.id,
     slug: row.slug,
@@ -189,9 +190,15 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
     gallery: parseGallery(row.gallery),
     priceCents: Number(row.price_cents),
     depositCents: Number(row.deposit_cents),
+    minPartySize,
     maxPartySize: row.max_party_size,
+    priceNote: row.price_note,
     terms: row.terms,
-    functions,
+    // Con menos lugares que el mínimo, para la venta online es «Agotado».
+    functions: functions.map((fn) => ({
+      ...fn,
+      state: functionState(fn.left, fn.capacity, minPartySize),
+    })),
     draft: !row.published,
   }
 }
@@ -391,7 +398,7 @@ export async function getPublicOrder(
     order.experience_id
       ? service
           .from('event_experiences')
-          .select('slug, poster_url, accent_hex')
+          .select('slug, poster_url, accent_hex, price_note')
           .eq('tenant_id', tenant.id)
           .eq('id', order.experience_id)
           .maybeSingle()
@@ -402,6 +409,7 @@ export async function getPublicOrder(
     slug: string
     poster_url: string | null
     accent_hex: string | null
+    price_note: string | null
   } | null
 
   const expired = isOrderExpired(order.status, order.hold_expires_at)
@@ -438,6 +446,7 @@ export async function getPublicOrder(
       experienceSlug: experience?.slug ?? null,
       posterUrl: experience?.poster_url ?? null,
       accent: experience?.accent_hex ?? DEFAULT_ACCENT,
+      priceNote: experience?.price_note ?? null,
       mpStatusDetail: order.mp_status_detail,
       retryUrl,
     },

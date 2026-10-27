@@ -11,7 +11,7 @@
 
 | Ruta | Quién entra | Qué es |
 |---|---|---|
-| `/entradas/[bar]` | **cualquiera, sin sesión** | La cartelera: todas las películas publicadas con sus fechas como talones. Vista «Películas» o «Por fecha». |
+| `/entradas/[bar]` | **cualquiera, sin sesión** | La cartelera: todas las películas publicadas con sus fechas como talones. Vista «Películas» o «Por fecha», y filtros por disponibilidad, mes y película (`?ver=disponibles&mes=2026-11&pelicula=shrek-2`). |
 | `/entradas/[bar]/[película]?fecha=` | **cualquiera** (el dueño ve también las no publicadas, como vista previa) | La película contada en actos (la función, el menú paso a paso, escenas, fotos reales) y «Tu entrada», donde se compra. |
 | `/entradas/[bar]/mi-entrada/[pedido]` | quien tenga el link | La entrada: adonde vuelve desde Mercado Pago. Confirma el pago sola y muestra el comprobante (agendar, compartir, cómo llegar). |
 | `/api/webhooks/mercadopago?t=[tenant_id]` | Mercado Pago | Avisos de pago. |
@@ -32,7 +32,7 @@ alcanza para que aparezca en la cartelera.
 
 | Tabla | Qué guarda | Quién la escribe |
 |---|---|---|
-| `event_experiences` | textos, afiche, portada, color, menú (`steps`), fotos (`gallery`: `scene` = de la película, `venue` = reales del bar), precio y seña **por persona**, máximo por compra, condiciones | el dueño (RLS owner) |
+| `event_experiences` | textos, afiche, portada, color, menú (`steps`), fotos (`gallery`: `scene` = de la película, `venue` = reales del bar), precio y seña **por persona**, mínimo y máximo por compra, la aclaración del total (`price_note`), condiciones | el dueño (RLS owner) |
 | `ticketing_settings` | la cuenta de Mercado Pago **cifrada**, el gestor de las reservas online, minutos que se guarda el lugar, textos de la cartelera, dirección, WhatsApp de consultas | el dueño (GRANT por columna) y el server para la cuenta de MP |
 | `ticket_orders` | cada intento de compra, con la foto de lo comprado (película, fecha, precio) | solo el server (service_role) |
 
@@ -42,7 +42,7 @@ configuración se guarda con update + insert (no upsert): el GRANT de UPDATE por
 no incluye `tenant_id` y PostgREST lo pondría en el `SET` del upsert (42501).
 
 Migraciones: `20261026120000_reservation_origin_web`, `20261026120100_ticketing_tables`,
-`20261026120200_ticketing_functions`.
+`20261026120200_ticketing_functions`, `20261027150000_ticketing_min_party_price_note`.
 
 ### La plata
 
@@ -51,9 +51,41 @@ Precio y seña son **por persona** (las reservas de cine de noviembre de 2026 te
 bar `(precio − seña) × personas` **en efectivo**. El panel pide pesos; la base guarda
 centavos.
 
+Las dos formas de pago se presentan por **cómo se paga el resto** (pedido de los socios,
+27/10/2026): «¿Pagás en efectivo?» → hoy solo la seña y el resto en efectivo en el bar;
+«¿Pagás con Mercado Pago?» → todo junto ahora. El saldo en el bar es solo en efectivo, así
+que quien quiere pagar con tarjeta o con Mercado Pago paga el total online.
+
+Nunca se promete «no pagás nada más»: en HUB las bebidas se cobran aparte. Lo que el
+precio no incluye va en la **aclaración del total** (`price_note`, por película, editable
+en el panel): se muestra junto a lo que se paga hoy y en «Mi entrada».
+
+**Mínimo por compra** (`min_party_size`, por película, 2 en Cine y degustación): la entrada
+arranca en el mínimo y no deja bajar; `startCheckout` lo explica («Se reserva desde 2
+personas») y `ticketing_create_order` lo vuelve a controlar. Una función con menos lugares
+que el mínimo figura «Agotado» para la venta online. Una película nueva copia mínimo,
+máximo y aclaración de la última cargada. La compra ya no ofrece «avisame por WhatsApp
+cuando haya nuevas películas» (los socios no contactan por ahí); la columna
+`marketing_opt_in` queda en `false`.
+
 La reserva que se crea lleva `deposit_cents` = lo que se pagó online (seña o total),
 `origin = 'web'`, `zone = 'event_floating'`, y un comentario destacado que dice qué se
 pagó y cuánto resta cobrar, para que lo vea el staff en el operativo.
+
+### Los filtros de la cartelera
+
+Pedido de los socios (27/10/2026): que quien quiere ver qué queda no tenga que mirar todas
+las agotadas. Tres filtros (`lib/ticketing/catalog.ts`, puros y testeados):
+
+- **Disponibilidad**: disponibles o agotadas. Con «Disponibles» desaparece toda película sin
+  lugar, y al tocar una fecha la página de la película también esconde las agotadas
+  (`?ver=disponibles`, con «Ver todas» para volver).
+- **Mes**: los meses que tienen funciones («Octubre», «Noviembre»; con el año si cruza).
+- **Película**: las publicadas, en el orden de la cartelera.
+
+Viven en la URL (`replaceState`, sin sumar pasos al Atrás): el bar puede mandar el link ya
+filtrado, p. ej. `/entradas/hub?ver=disponibles`. Un filtro que no está entre las opciones
+(un mes que ya pasó, una película despublicada) se ignora.
 
 ### Los lugares (el «Agotado»)
 

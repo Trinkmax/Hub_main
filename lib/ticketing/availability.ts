@@ -21,8 +21,13 @@ export function lastSeatsThreshold(capacity: number): number {
   return Math.max(1, Math.min(10, Math.ceil(capacity * 0.2)))
 }
 
-export function functionState(left: number, capacity: number): FunctionState {
-  if (left <= 0) return 'sold_out'
+/**
+ * `minParty` es el mínimo de personas de la película: con menos lugares que
+ * eso (Cine y degustación se vende de a 2 y queda 1), para la venta online la
+ * función ya está agotada.
+ */
+export function functionState(left: number, capacity: number, minParty = 1): FunctionState {
+  if (left <= 0 || left < minParty) return 'sold_out'
   if (left <= lastSeatsThreshold(capacity)) return 'last'
   return 'available'
 }
@@ -55,4 +60,15 @@ export function allSoldOut(functions: PublicFunction[]): boolean {
 /** Máximo de personas que se pueden elegir para una función. */
 export function maxSelectable(fn: Pick<PublicFunction, 'left'>, maxPartySize: number): number {
   return Math.max(0, Math.min(fn.left, maxPartySize))
+}
+
+/**
+ * Por qué no se puede comprar para esa cantidad de personas, o null si se
+ * puede: «Se reserva desde 2 personas.» / «Para más de 10 personas,
+ * escribinos.».
+ */
+export function partySizeError(partySize: number, min: number, max: number): string | null {
+  if (partySize < min) return `Se reserva desde ${min} personas.`
+  if (partySize > max) return `Para más de ${max} personas, escribinos.`
+  return null
 }

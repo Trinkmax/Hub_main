@@ -2,7 +2,7 @@ import { ArrowRight, Clock, MessageCircle, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { buildWaMeUrl } from '@/lib/phone'
 import { allSoldOut } from '@/lib/ticketing/availability'
-import { stepsSummary } from '@/lib/ticketing/catalog'
+import { filmHref, stepsSummary } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicExperience } from '@/lib/ticketing/types'
 import { FunctionStub } from '../../_components/function-stub'
@@ -19,6 +19,8 @@ export function FilmCard({
   whatsapp,
   venueName,
   priority = false,
+  soldOut: soldOutProp,
+  onlyAvailable = false,
 }: {
   experience: PublicExperience
   index: number
@@ -26,10 +28,15 @@ export function FilmCard({
   whatsapp: string | null
   venueName: string
   priority?: boolean
+  /** ¿Se agotó la película entera? Con un filtro, `experience` trae solo parte de las fechas. */
+  soldOut?: boolean
+  /** La cartelera está filtrada por «Disponibles»: la película tampoco muestra las agotadas. */
+  onlyAvailable?: boolean
 }) {
-  const href = `/entradas/${tenantSlug}/${experience.slug}`
+  const href = filmHref(tenantSlug, experience.slug, { onlyAvailable })
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
-  const soldOut = experience.functions.length > 0 && allSoldOut(experience.functions)
+  const soldOut =
+    soldOutProp ?? (experience.functions.length > 0 && allSoldOut(experience.functions))
   const steps = stepsSummary(experience.steps)
   const firstTime = experience.functions[0]?.time ?? null
   const waitlist =
@@ -124,7 +131,10 @@ export function FilmCard({
           <ul className="-mx-5 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-5 pt-1 pb-3 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {experience.functions.map((fn) => (
               <li key={fn.eventId} className="snap-start">
-                <FunctionStub fn={fn} href={`${href}?fecha=${fn.date}`} />
+                <FunctionStub
+                  fn={fn}
+                  href={filmHref(tenantSlug, experience.slug, { date: fn.date, onlyAvailable })}
+                />
               </li>
             ))}
           </ul>

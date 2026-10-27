@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAgenda,
+  catalogFilterOptions,
+  catalogFiltersQuery,
+  filmHref,
+  filterCatalog,
+  hasActiveFilters,
   monthsLabel,
+  NO_FILTERS,
+  parseCatalogFilters,
+  sanitizeCatalogFilters,
   splitHeadline,
   stepsSummary,
   summarizeCatalog,
@@ -37,7 +45,9 @@ function exp(partial: Partial<PublicExperience>): PublicExperience {
     gallery: [],
     priceCents: 3_500_000,
     depositCents: 500_000,
+    minPartySize: 1,
     maxPartySize: 10,
+    priceNote: null,
     terms: null,
     functions: [],
     ...partial,
@@ -155,5 +165,115 @@ describe('textos para quien compra', () => {
       'https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=123-abc',
     )
     expect(checkoutUrl('123-abc', false)).toContain('sandbox.mercadopago.com.ar')
+  })
+})
+
+describe('filtros de la cartelera', () => {
+  // La cartelera del 27/10/2026: todo agotado menos Shrek 2 el viernes 30.
+  const cartelera = [
+    exp({
+      slug: 'ratatouille',
+      title: 'Ratatouille',
+      functions: [fn('2026-11-02', 0, 'r1'), fn('2026-11-09', 0, 'r2')],
+    }),
+    exp({
+      slug: 'shrek-2',
+      title: 'Shrek 2',
+      functions: [fn('2026-10-27', 0, 's1'), fn('2026-10-30', 54, 's2'), fn('2026-11-03', 0, 's3')],
+    }),
+    exp({ slug: 'coraline', title: 'Coraline', functions: [fn('2026-11-24', 0, 'c1')] }),
+    exp({ slug: 'nueva', title: 'Nueva', functions: [] }),
+  ]
+
+  it('«Disponibles» deja solo Shrek 2 del viernes 30', () => {
+    const visible = filterCatalog(cartelera, { ...NO_FILTERS, availability: 'available' })
+    expect(visible.map((e) => e.slug)).toEqual(['shrek-2'])
+    expect(visible[0]?.functions.map((f) => f.eventId)).toEqual(['s2'])
+  })
+
+  it('«Agotadas» muestra solo las fechas sin lugar', () => {
+    const visible = filterCatalog(cartelera, { ...NO_FILTERS, availability: 'sold_out' })
+    expect(visible.map((e) => e.slug)).toEqual(['ratatouille', 'shrek-2', 'coraline'])
+    expect(visible[1]?.functions.map((f) => f.eventId)).toEqual(['s1', 's3'])
+  })
+
+  it('por mes: cada película con sus fechas de ese mes, y sin las que no tienen', () => {
+    const visible = filterCatalog(cartelera, { ...NO_FILTERS, month: '2026-10' })
+    expect(visible.map((e) => e.slug)).toEqual(['shrek-2'])
+    expect(visible[0]?.functions.map((f) => f.eventId)).toEqual(['s1', 's2'])
+  })
+
+  it('por película: esa sola, con todas sus fechas (aunque no tenga ninguna)', () => {
+    expect(filterCatalog(cartelera, { ...NO_FILTERS, film: 'nueva' }).map((e) => e.slug)).toEqual([
+      'nueva',
+    ])
+    const shrek = filterCatalog(cartelera, { ...NO_FILTERS, film: 'shrek-2' })
+    expect(shrek[0]?.functions).toHaveLength(3)
+  })
+
+  it('los filtros se suman', () => {
+    const visible = filterCatalog(cartelera, {
+      month: '2026-11',
+      film: 'shrek-2',
+      availability: 'available',
+    })
+    expect(visible).toEqual([])
+  })
+
+  it('sin filtros, la cartelera entera (las que no tienen fechas también)', () => {
+    expect(filterCatalog(cartelera, NO_FILTERS)).toEqual(cartelera)
+    expect(hasActiveFilters(NO_FILTERS)).toBe(false)
+  })
+
+  it('las opciones salen de la cartelera: los meses con funciones y las películas', () => {
+    const options = catalogFilterOptions(cartelera)
+    expect(options.months).toEqual([
+      { value: '2026-10', label: 'Octubre' },
+      { value: '2026-11', label: 'Noviembre' },
+    ])
+    expect(options.films.map((f) => f.label)).toEqual([
+      'Ratatouille',
+      'Shrek 2',
+      'Coraline',
+      'Nueva',
+    ])
+  })
+
+  it('si los meses cruzan de año, llevan el año', () => {
+    const options = catalogFilterOptions([
+      exp({ functions: [fn('2026-12-20', 9), fn('2027-01-10', 9)] }),
+    ])
+    expect(options.months.map((m) => m.label)).toEqual(['Diciembre 2026', 'Enero 2027'])
+  })
+
+  it('la URL ida y vuelta, y lo que no se entiende se ignora', () => {
+    const filters = parseCatalogFilters({ mes: '2026-11', pelicula: 'shrek-2', ver: 'disponibles' })
+    expect(filters).toEqual({ month: '2026-11', film: 'shrek-2', availability: 'available' })
+    expect(catalogFiltersQuery(filters)).toBe('?mes=2026-11&pelicula=shrek-2&ver=disponibles')
+    expect(catalogFiltersQuery(NO_FILTERS)).toBe('')
+    expect(parseCatalogFilters({ ver: 'agotadas' }).availability).toBe('sold_out')
+    expect(
+      parseCatalogFilters({ mes: '2026-13', pelicula: '../x', ver: ['disponibles', 'agotadas'] }),
+    ).toEqual(NO_FILTERS)
+  })
+
+  it('un link viejo (mes que ya pasó, película despublicada) no deja la cartelera vacía', () => {
+    const options = catalogFilterOptions(cartelera)
+    expect(
+      sanitizeCatalogFilters(
+        { month: '2026-09', film: 'chihiro', availability: 'available' },
+        options,
+      ),
+    ).toEqual({ month: null, film: null, availability: 'available' })
+  })
+
+  it('el link a la película lleva la fecha y, si se filtró, «Disponibles»', () => {
+    expect(filmHref('hub', 'shrek-2')).toBe('/entradas/hub/shrek-2')
+    expect(filmHref('hub', 'shrek-2', { date: '2026-10-30' })).toBe(
+      '/entradas/hub/shrek-2?fecha=2026-10-30',
+    )
+    expect(filmHref('hub', 'shrek-2', { date: '2026-10-30', onlyAvailable: true })).toBe(
+      '/entradas/hub/shrek-2?fecha=2026-10-30&ver=disponibles',
+    )
   })
 })

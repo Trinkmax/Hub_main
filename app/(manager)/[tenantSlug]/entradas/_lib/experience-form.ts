@@ -118,7 +118,9 @@ export function experienceToFormValues(experience: AdminExperience): ExperienceF
     })),
     price: pesosToInput(centsToPesos(experience.priceCents)),
     deposit: pesosToInput(centsToPesos(experience.depositCents)),
+    min_party_size: experience.minPartySize,
     max_party_size: experience.maxPartySize,
+    price_note: experience.priceNote ?? '',
     terms: experience.terms ?? '',
   }
 }
@@ -137,7 +139,9 @@ const FIELD_SECTION: Record<string, string> = {
   accent_hex: 'Color',
   price: 'Precios',
   deposit: 'Precios',
+  min_party_size: 'Precios',
   max_party_size: 'Precios',
+  price_note: 'Precios',
   steps: 'Menú',
   steps_note: 'Menú',
   gallery: 'Fotos',
@@ -195,22 +199,26 @@ export type PriceExample = {
 }
 
 /**
- * El ejemplo de la cuenta debajo de los precios, para dos personas (o una, si
- * el máximo por compra es 1): «2 personas: seña $10.000 hoy y $60.000 en
- * efectivo, o $70.000 todo junto». `null` mientras no haya un precio que
- * sirva.
+ * El ejemplo de la cuenta debajo de los precios, para dos personas (o lo que
+ * permitan el mínimo y el máximo por compra): «2 personas: seña $10.000 hoy y
+ * $60.000 en efectivo, o $70.000 todo junto». `null` mientras no haya un
+ * precio que sirva.
  */
 export function priceExample(input: {
   price: unknown
   deposit: unknown
   maxPartySize: unknown
+  minPartySize?: unknown
 }): PriceExample | null {
   const price = pesosFieldValue(input.price)
   if (price === null || price < 1) return null
   const priceCents = price * 100
   const depositCents = (pesosFieldValue(input.deposit) ?? 0) * 100
   const max = Number(input.maxPartySize)
-  const partySize = Number.isFinite(max) && max < 2 ? 1 : 2
+  const min = Number(input.minPartySize)
+  let partySize = 2
+  if (Number.isFinite(min) && min > partySize) partySize = Math.round(min)
+  if (Number.isFinite(max) && max >= 1 && max < partySize) partySize = Math.round(max)
   const people = partySize === 1 ? '1 persona' : `${partySize} personas`
   const full = quote({ priceCents, depositCents, partySize, option: 'full' })
   if (!hasDepositOption(depositCents, priceCents)) {

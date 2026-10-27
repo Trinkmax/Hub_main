@@ -44,10 +44,13 @@ function pickInitial(functions: PublicFunction[], date: string | null): PublicFu
 export function ExperienceProvider({
   functions: initialFunctions,
   initialDate,
+  minPartySize = 1,
   children,
 }: {
   functions: PublicFunction[]
   initialDate: string | null
+  /** El mínimo de personas de la película: con menos lugares, la función está agotada. */
+  minPartySize?: number
   children: ReactNode
 }) {
   const [functions, setFunctions] = useState(initialFunctions)
@@ -78,15 +81,22 @@ export function ExperienceProvider({
     [functions],
   )
 
-  const reportSeats = useCallback((eventId: string, left: number) => {
-    setFunctions((prev) =>
-      prev.map((f) =>
-        f.eventId === eventId
-          ? { ...f, left: Math.max(0, left), state: functionState(left, f.capacity) }
-          : f,
-      ),
-    )
-  }, [])
+  const reportSeats = useCallback(
+    (eventId: string, left: number) => {
+      setFunctions((prev) =>
+        prev.map((f) =>
+          f.eventId === eventId
+            ? {
+                ...f,
+                left: Math.max(0, left),
+                state: functionState(left, f.capacity, minPartySize),
+              }
+            : f,
+        ),
+      )
+    },
+    [minPartySize],
+  )
 
   // Si la elegida se agotó, pasar a la próxima con lugar.
   useEffect(() => {

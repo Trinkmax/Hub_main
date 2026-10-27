@@ -2,7 +2,7 @@ import { ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { availabilityLabel } from '@/lib/ticketing/availability'
-import type { AgendaMonth } from '@/lib/ticketing/catalog'
+import { type AgendaMonth, filmHref } from '@/lib/ticketing/catalog'
 import { dayNumber, monthShort, relativeDay, weekdayShort } from '@/lib/ticketing/dates'
 import { cn } from '@/lib/utils'
 
@@ -14,10 +14,13 @@ export function AgendaList({
   months,
   tenantSlug,
   today,
+  onlyAvailable = false,
 }: {
   months: AgendaMonth[]
   tenantSlug: string
   today: string
+  /** Filtrada por «Disponibles»: la película tampoco muestra las agotadas. */
+  onlyAvailable?: boolean
 }) {
   if (months.length === 0) {
     return (
@@ -107,7 +110,7 @@ export function AgendaList({
                     <div className={rowClass}>{content}</div>
                   ) : (
                     <Link
-                      href={`/entradas/${tenantSlug}/${experience.slug}?fecha=${fn.date}`}
+                      href={filmHref(tenantSlug, experience.slug, { date: fn.date, onlyAvailable })}
                       className={rowClass}
                     >
                       {content}

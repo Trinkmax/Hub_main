@@ -132,3 +132,153 @@ export function stepsSummary(steps: PublicExperience['steps']): string | null {
   }
   return `${steps.length} ${steps.length === 1 ? 'paso' : 'pasos'}`
 }
+
+// ──────────────────────────────────────────────
+// Los filtros de la cartelera
+// ──────────────────────────────────────────────
+// Pedido de los socios (27/10/2026): filtrar por mes, por película y por
+// disponibilidad, para que quien quiere ver qué queda no tenga que mirar
+// todas las agotadas. Viven en la URL (?mes=2026-11&pelicula=shrek-2&ver=
+// disponibles): así un link puede llegar ya filtrado.
+
+/** Qué fechas se ven: todas, solo las que tienen lugar o solo las agotadas. */
+export type AvailabilityFilter = 'all' | 'available' | 'sold_out'
+
+export type CatalogFilters = {
+  /** «2026-11», o null = todos los meses. */
+  month: string | null
+  /** El slug de la película, o null = todas. */
+  film: string | null
+  availability: AvailabilityFilter
+}
+
+export const NO_FILTERS: CatalogFilters = { month: null, film: null, availability: 'all' }
+
+export type FilterOption = { value: string; label: string }
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,59}$/
+
+const AVAILABILITY_PARAM = { available: 'disponibles', sold_out: 'agotadas' } as const
+
+/** Los parámetros de la URL → filtros. Lo que no se entiende se ignora. */
+export function parseCatalogFilters(params: {
+  mes?: string | string[]
+  pelicula?: string | string[]
+  ver?: string | string[]
+}): CatalogFilters {
+  const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : null)
+  const month = one(params.mes)
+  const film = one(params.pelicula)
+  const ver = one(params.ver)
+  return {
+    month: month && MONTH_RE.test(month) ? month : null,
+    film: film && SLUG_RE.test(film) ? film : null,
+    availability:
+      ver === AVAILABILITY_PARAM.available
+        ? 'available'
+        : ver === AVAILABILITY_PARAM.sold_out
+          ? 'sold_out'
+          : 'all',
+  }
+}
+
+/** Filtros → «?mes=2026-11&ver=disponibles» (vacío sin filtros). */
+export function catalogFiltersQuery(filters: CatalogFilters): string {
+  const qs = new URLSearchParams()
+  if (filters.month) qs.set('mes', filters.month)
+  if (filters.film) qs.set('pelicula', filters.film)
+  if (filters.availability !== 'all') qs.set('ver', AVAILABILITY_PARAM[filters.availability])
+  const out = qs.toString()
+  return out ? `?${out}` : ''
+}
+
+export function hasActiveFilters(filters: CatalogFilters): boolean {
+  return filters.month !== null || filters.film !== null || filters.availability !== 'all'
+}
+
+/**
+ * Las opciones de cada filtro, sacadas de la cartelera: los meses que tienen
+ * funciones («Octubre», «Noviembre»; con el año si cruza de año) y las
+ * películas en el orden en que se muestran.
+ */
+export function catalogFilterOptions(experiences: PublicExperience[]): {
+  months: FilterOption[]
+  films: FilterOption[]
+} {
+  const keys = [
+    ...new Set(experiences.flatMap((e) => e.functions.map((f) => monthKey(f.date)))),
+  ].sort()
+  const years = new Set(keys.map((k) => k.slice(0, 4)))
+  const months = keys.map((key) => {
+    const name = monthLong(`${key}-01`)
+    const label = `${name.charAt(0).toUpperCase()}${name.slice(1)}`
+    return { value: key, label: years.size > 1 ? `${label} ${key.slice(0, 4)}` : label }
+  })
+  const films = experiences.map((e) => ({ value: e.slug, label: e.title }))
+  return { months, films }
+}
+
+/**
+ * Un filtro que no está entre las opciones (un link viejo con un mes que ya
+ * pasó, una película que se despublicó) se ignora: mejor la cartelera entera
+ * que una vacía sin explicación.
+ */
+export function sanitizeCatalogFilters(
+  filters: CatalogFilters,
+  options: { months: FilterOption[]; films: FilterOption[] },
+): CatalogFilters {
+  return {
+    month:
+      filters.month && options.months.some((o) => o.value === filters.month) ? filters.month : null,
+    film: filters.film && options.films.some((o) => o.value === filters.film) ? filters.film : null,
+    availability: filters.availability,
+  }
+}
+
+function functionMatches(fn: PublicFunction, filters: CatalogFilters): boolean {
+  if (filters.month && monthKey(fn.date) !== filters.month) return false
+  if (filters.availability === 'available' && fn.state === 'sold_out') return false
+  if (filters.availability === 'sold_out' && fn.state !== 'sold_out') return false
+  return true
+}
+
+/**
+ * La cartelera filtrada: cada película con las funciones que pasan el filtro.
+ * Con mes o disponibilidad, una película sin ninguna función que pase no se
+ * muestra (con «Disponibles», Ratatouille agotada desaparece entera).
+ */
+export function filterCatalog(
+  experiences: PublicExperience[],
+  filters: CatalogFilters,
+): PublicExperience[] {
+  const byFunction = filters.month !== null || filters.availability !== 'all'
+  const out: PublicExperience[] = []
+  for (const e of experiences) {
+    if (filters.film && e.slug !== filters.film) continue
+    if (!byFunction) {
+      out.push(e)
+      continue
+    }
+    const functions = e.functions.filter((fn) => functionMatches(fn, filters))
+    if (functions.length > 0) out.push({ ...e, functions })
+  }
+  return out
+}
+
+/**
+ * El link a la página de una película. Con «Disponibles» elegido, la película
+ * también esconde las fechas agotadas (?ver=disponibles): quien filtró no
+ * quiere volver a verlas al pagar.
+ */
+export function filmHref(
+  tenantSlug: string,
+  slug: string,
+  opts: { date?: string; onlyAvailable?: boolean } = {},
+): string {
+  const qs = new URLSearchParams()
+  if (opts.date) qs.set('fecha', opts.date)
+  if (opts.onlyAvailable) qs.set('ver', AVAILABILITY_PARAM.available)
+  const query = qs.toString()
+  return `/entradas/${tenantSlug}/${slug}${query ? `?${query}` : ''}`
+}

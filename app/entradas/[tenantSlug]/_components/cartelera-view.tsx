@@ -1,4 +1,4 @@
-import { buildAgenda, summarizeCatalog } from '@/lib/ticketing/catalog'
+import { type CatalogFilters, summarizeCatalog } from '@/lib/ticketing/catalog'
 import type { PublicCatalog } from '@/lib/ticketing/queries'
 import { Footer, HowItWorks, Ribbon, TopBar, VenueReel } from '../../_components/chrome'
 import { Reveal } from '../../_components/reveal'
@@ -8,12 +8,17 @@ import { CarteleraHero } from './cartelera-hero'
 export const DEFAULT_INTRO =
   'Una película icónica en pantalla grande y, en cada escena clave, un plato inspirado en la historia que llega a tu mesa.'
 
-/** La cartelera ya con sus datos (la página solo los busca). */
-export function CarteleraView({ catalog }: { catalog: PublicCatalog }) {
+/** La cartelera ya con sus datos (la página solo los busca y lee los filtros de la URL). */
+export function CarteleraView({
+  catalog,
+  filters,
+}: {
+  catalog: PublicCatalog
+  filters?: CatalogFilters
+}) {
   const { venue, experiences, today } = catalog
   const summary = summarizeCatalog(experiences)
   const headline = venue.headline ?? summary.series ?? 'Cartelera'
-  const agenda = buildAgenda(experiences)
 
   const ribbon = [
     ...experiences.map((e) => e.title),
@@ -61,8 +66,8 @@ export function CarteleraView({ catalog }: { catalog: PublicCatalog }) {
             </div>
             {experiences.length > 0 ? (
               <p className="max-w-xs text-sm text-(--ent-cream-2)">
-                Tocá una fecha para ver la película, el menú y reservar. Las que dicen «Agotado» ya
-                no tienen lugar.
+                Tocá una fecha para ver la película, el menú y reservar. Para ver solo las que
+                tienen lugar, filtrá por «Disponibles».
               </p>
             ) : null}
           </Reveal>
@@ -70,7 +75,7 @@ export function CarteleraView({ catalog }: { catalog: PublicCatalog }) {
           {experiences.length > 0 ? (
             <CarteleraBoard
               experiences={experiences}
-              agenda={agenda}
+              initialFilters={filters}
               tenantSlug={venue.tenantSlug}
               today={today}
               whatsapp={venue.whatsapp}
