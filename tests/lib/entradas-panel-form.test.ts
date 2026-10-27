@@ -109,6 +109,7 @@ const EXPERIENCE: AdminExperience = {
   gallery: [{ url: 'https://x.supabase.co/a.webp', caption: null, kind: 'venue' }],
   priceCents: 3_500_000,
   depositCents: 500_000,
+  cashPriceCents: null,
   minPartySize: 1,
   maxPartySize: 10,
   priceNote: null,
@@ -151,6 +152,7 @@ describe('experienceToFormValues', () => {
     expect(parsed.data.max_party_size).toBe(10)
     expect(parsed.data.min_party_size).toBe(1)
     expect(parsed.data.price_note).toBeNull()
+    expect(parsed.data.cash_price).toBeNull()
   })
 })
 
@@ -177,6 +179,19 @@ describe('priceExample', () => {
     const example = priceExample({ price: '35.000', deposit: '5.000', maxPartySize: 1 })
     expect(example?.people).toBe('1 persona')
     expect(nbsp(example?.full ?? '')).toBe('$ 35.000')
+  })
+
+  it('con precio en efectivo: seña $10.000 hoy y $50.000 en efectivo, o $70.000', () => {
+    const example = priceExample({
+      price: '35.000',
+      deposit: '5.000',
+      cashPrice: '30.000',
+      maxPartySize: 10,
+      minPartySize: 2,
+    })
+    expect(nbsp(example?.deposit?.today ?? '')).toBe('$ 10.000')
+    expect(nbsp(example?.deposit?.cash ?? '')).toBe('$ 50.000')
+    expect(nbsp(example?.full ?? '')).toBe('$ 70.000')
   })
 
   it('con un mínimo de más de 2, el ejemplo es para el mínimo', () => {

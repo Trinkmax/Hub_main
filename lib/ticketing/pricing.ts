@@ -3,11 +3,12 @@ import type { PaymentOption } from './types'
 /**
  * La cuenta de una compra. Todo en centavos y POR PERSONA, como cobra el bar:
  * la seña de Cine y degustación son $5.000 por persona (las reservas de
- * noviembre de 2026 tienen 2 × $5.000 = $10.000, 4 × $5.000 = $20.000…) y el
- * total, $35.000 por persona.
+ * noviembre de 2026 tienen 2 × $5.000 = $10.000, 4 × $5.000 = $20.000…), el
+ * total con Mercado Pago $35.000 por persona y en efectivo $30.000.
  *
- *   seña  → hoy se paga deposit × personas; el resto, (price − deposit) ×
- *           personas, en efectivo el día de la función.
+ *   seña  → hoy se paga deposit × personas; el resto, (precio en efectivo −
+ *           deposit) × personas, en efectivo el día de la función. Sin
+ *           precio en efectivo propio, el precio en efectivo es `price`.
  *   total → hoy se paga price × personas y no queda nada por pagar.
  *
  * La misma cuenta la hace la base al crear el pedido (ticketing_create_order):
@@ -31,9 +32,16 @@ export function hasDepositOption(depositCents: number, priceCents: number): bool
   return depositCents > 0 && depositCents < priceCents
 }
 
+/** Lo que sale por persona señando y pagando el resto en efectivo. */
+export function cashPrice(priceCents: number, cashPriceCents: number | null | undefined): number {
+  return cashPriceCents ?? priceCents
+}
+
 export function quote(input: {
   priceCents: number
   depositCents: number
+  /** Total por persona con seña + efectivo; sin él, `priceCents`. */
+  cashPriceCents?: number | null
   partySize: number
   option: PaymentOption
 }): Quote {
@@ -41,7 +49,9 @@ export function quote(input: {
   const useDeposit =
     input.option === 'deposit' && hasDepositOption(input.depositCents, input.priceCents)
   const unitCents = useDeposit ? input.depositCents : input.priceCents
-  const balancePerPersonCents = useDeposit ? input.priceCents - input.depositCents : 0
+  const balancePerPersonCents = useDeposit
+    ? Math.max(0, cashPrice(input.priceCents, input.cashPriceCents) - input.depositCents)
+    : 0
   return {
     option: useDeposit ? 'deposit' : 'full',
     partySize,

@@ -131,6 +131,7 @@ export function ExperienceEditor({
   const published = useWatch({ control, name: 'published' })
   const price = useWatch({ control, name: 'price' })
   const deposit = useWatch({ control, name: 'deposit' })
+  const cashPrice = useWatch({ control, name: 'cash_price' })
   const minParty = useWatch({ control, name: 'min_party_size' })
   const maxParty = useWatch({ control, name: 'max_party_size' })
   const priceNote = useWatch({ control, name: 'price_note' })
@@ -146,7 +147,13 @@ export function ExperienceEditor({
   const publicUrl = `${publicBase}/${savedSlug}`
   const previewUrl = `${publicBase}/${slug || '…'}`
   const busy = saving || publishing || deleting
-  const example = priceExample({ price, deposit, maxPartySize: maxParty, minPartySize: minParty })
+  const example = priceExample({
+    price,
+    deposit,
+    cashPrice,
+    maxPartySize: maxParty,
+    minPartySize: minParty,
+  })
   const ink = eventInk(experience.templateColor)
 
   const applyServerError = useCallback(
@@ -697,14 +704,14 @@ export function ExperienceEditor({
               description="Todo por persona. Con seña, el resto se paga en efectivo en el bar."
             >
               <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-3">
                   <Controller
                     control={control}
                     name="price"
                     render={({ field }) => (
                       <PesosField
                         id="price"
-                        label="Precio por persona"
+                        label="Mercado Pago"
                         required
                         value={String(field.value ?? '')}
                         onChange={field.onChange}
@@ -718,11 +725,28 @@ export function ExperienceEditor({
                   />
                   <Controller
                     control={control}
+                    name="cash_price"
+                    render={({ field }) => (
+                      <PesosField
+                        id="cash_price"
+                        label="Efectivo"
+                        value={String(field.value ?? '')}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        inputRef={field.ref}
+                        placeholder="30.000"
+                        hint="Seña + lo que paga en el bar. Vacío: el mismo."
+                        error={errors.cash_price?.message}
+                      />
+                    )}
+                  />
+                  <Controller
+                    control={control}
                     name="deposit"
                     render={({ field }) => (
                       <PesosField
                         id="deposit"
-                        label="Seña por persona"
+                        label="Seña"
                         value={String(field.value ?? '')}
                         onChange={field.onChange}
                         onBlur={field.onBlur}

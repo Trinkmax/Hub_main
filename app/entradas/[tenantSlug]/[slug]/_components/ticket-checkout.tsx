@@ -9,7 +9,7 @@ import { buildWaMeUrl } from '@/lib/phone'
 import { allSoldOut, maxSelectable } from '@/lib/ticketing/availability'
 import { startCheckout } from '@/lib/ticketing/checkout-actions'
 import { formatLongDate, formatShortDate } from '@/lib/ticketing/dates'
-import { formatPesos, hasDepositOption, quote } from '@/lib/ticketing/pricing'
+import { cashPrice, formatPesos, hasDepositOption, quote } from '@/lib/ticketing/pricing'
 import type { PaymentOption } from '@/lib/ticketing/types'
 import { cn } from '@/lib/utils'
 import { RollNumber } from '../../../_components/roll-number'
@@ -35,6 +35,8 @@ type ExperienceInfo = {
   title: string
   priceCents: number
   depositCents: number
+  /** Total por persona señando y pagando el resto en efectivo; null = priceCents. */
+  cashPriceCents: number | null
   minPartySize: number
   maxPartySize: number
   /** Va junto al total: «Las bebidas se pagan aparte». */
@@ -107,9 +109,13 @@ export function TicketCheckout({
   const q = quote({
     priceCents: experience.priceCents,
     depositCents: experience.depositCents,
+    cashPriceCents: experience.cashPriceCents,
     partySize: people,
     option,
   })
+  // En efectivo puede salir menos que con Mercado Pago (HUB: $30.000 contra
+  // $35.000 por persona): la seña se paga hoy y el resto en el bar.
+  const cashCents = cashPrice(experience.priceCents, experience.cashPriceCents)
 
   // Lo que la persona escribió la vez anterior, en este celular.
   useEffect(() => {
@@ -248,7 +254,8 @@ export function TicketCheckout({
 
   // Las dos formas de pago se eligen por CÓMO se paga el resto (pedido de los
   // socios del 27/10): el saldo en el bar es solo en efectivo, así que quien
-  // quiere pagar con tarjeta o con Mercado Pago paga todo ahora.
+  // quiere pagar con tarjeta o con Mercado Pago paga todo ahora. Cada tarjeta
+  // dice lo que sale por persona de esa forma; el pie, lo de hoy y lo del bar.
   const paymentOptions = (compact: boolean) => (
     <div className={cn('grid gap-2.5', compact ? depositAvailable && 'grid-cols-2' : 'mt-3')}>
       {depositAvailable ? (
@@ -258,9 +265,9 @@ export function TicketCheckout({
           checked={option === 'deposit'}
           onSelect={() => setOption('deposit')}
           title="¿Pagás en efectivo?"
-          kind="Seña"
-          amount={formatPesos(experience.depositCents)}
-          note={`Hoy pagás solo la seña y los ${formatPesos(experience.priceCents - experience.depositCents)} por persona que faltan, en efectivo en el bar.`}
+          amount={formatPesos(cashCents)}
+          detail={`Hoy, seña de ${formatPesos(experience.depositCents)}`}
+          note={`Hoy señás ${formatPesos(experience.depositCents)} por persona y los ${formatPesos(cashCents - experience.depositCents)} restantes, en efectivo en el bar.`}
         />
       ) : null}
       <OptionCard
@@ -269,8 +276,8 @@ export function TicketCheckout({
         checked={option === 'full'}
         onSelect={() => setOption('full')}
         title={depositAvailable ? '¿Pagás con Mercado Pago?' : 'Pagás todo con Mercado Pago'}
-        kind="Todo"
         amount={formatPesos(experience.priceCents)}
+        detail="Todo junto, hoy"
         note="Pagás todo junto ahora, con tarjeta, débito o dinero en cuenta."
       />
     </div>
@@ -607,8 +614,8 @@ function OptionCard({
   checked,
   onSelect,
   title,
-  kind,
   amount,
+  detail,
   note,
 }: {
   name: string
@@ -618,9 +625,11 @@ function OptionCard({
   onSelect: () => void
   /** La pregunta: «¿Pagás en efectivo?». */
   title: string
-  /** «Seña» / «Todo»: qué es el monto, en la versión de la compu. */
-  kind: string
+  /** Lo que sale por persona pagando de esa forma. */
   amount: string
+  /** Debajo del monto, en la versión de la compu: «Hoy, seña de $5.000». */
+  detail: string
+  /** La explicación entera, en la del celular. */
   note: string
 }) {
   // Radio de verdad (teclado y lector de pantalla gratis), con la tarjeta
@@ -646,17 +655,16 @@ function OptionCard({
           className="peer sr-only"
         />
         <span className="block text-sm leading-snug font-semibold text-balance">{title}</span>
-        <span className="ent-num block text-base font-semibold">
-          <span
-            className={cn(
-              'mr-1 text-xs font-normal',
-              checked ? 'opacity-75' : 'text-(--ent-ink-2)',
-            )}
-          >
-            {kind}
+        <span className="block">
+          <span className="ent-num block text-base font-semibold">
+            {amount}
+            {unit}
           </span>
-          {amount}
-          {unit}
+          <span
+            className={cn('block text-[0.7rem]', checked ? 'opacity-75' : 'text-(--ent-ink-2)')}
+          >
+            {detail}
+          </span>
         </span>
       </label>
     )

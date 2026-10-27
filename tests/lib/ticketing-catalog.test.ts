@@ -45,6 +45,7 @@ function exp(partial: Partial<PublicExperience>): PublicExperience {
     gallery: [],
     priceCents: 3_500_000,
     depositCents: 500_000,
+    cashPriceCents: null,
     minPartySize: 1,
     maxPartySize: 10,
     priceNote: null,
