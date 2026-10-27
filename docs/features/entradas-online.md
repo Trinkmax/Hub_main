@@ -152,8 +152,14 @@ papel en dos caras (armar la entrada / a nombre de quién) con el total que rued
   `@layer components` (las utilidades de Tailwind le ganan cuando se combinan).
 - Solo se anima `transform`/`opacity` (y `filter` en entradas cortas); todo lo que se
   mueve solo se apaga con `prefers-reduced-motion`.
-- Mobile primero. En la compu la entrada acompaña la lectura en una columna fija con el
-  total y el botón siempre visibles.
+- Mobile primero. En la compu la entrada acompaña la lectura en una columna fija
+  (`.ent-ticket-col`), **solo si la ventana mide 768 px de alto o más**. Una notebook de
+  1440×900 tiene unos 790 px de ventana y ahí entra entera. En una más baja, la entrada
+  sigue el scroll de la página y aparece la barra de «Reservar» abajo a la derecha, como
+  en el celular.
+- En la compu, «Señá ahora / Pagá todo» va debajo de la perforación, de a dos en un
+  renglón y al lado del total. Arriba, en el cuerpo con scroll propio, quedaba escondido.
+  En el celular las dos tarjetas van en el cuerpo, con la explicación de cada opción.
 
 ---
 
