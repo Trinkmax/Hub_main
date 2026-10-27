@@ -150,6 +150,7 @@ export function ExperienceView({
                   title: experience.title,
                   priceCents: experience.priceCents,
                   depositCents: experience.depositCents,
+                  cashPriceCents: experience.cashPriceCents,
                   minPartySize: experience.minPartySize,
                   maxPartySize: experience.maxPartySize,
                   priceNote: experience.priceNote,

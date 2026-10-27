@@ -42,14 +42,21 @@ configuración se guarda con update + insert (no upsert): el GRANT de UPDATE por
 no incluye `tenant_id` y PostgREST lo pondría en el `SET` del upsert (42501).
 
 Migraciones: `20261026120000_reservation_origin_web`, `20261026120100_ticketing_tables`,
-`20261026120200_ticketing_functions`, `20261027150000_ticketing_min_party_price_note`.
+`20261026120200_ticketing_functions`, `20261027150000_ticketing_min_party_price_note`,
+`20261027190000_ticketing_cash_price`.
 
 ### La plata
 
 Precio y seña son **por persona** (las reservas de cine de noviembre de 2026 tenían
-`deposit_cents = 5000 × personas`). Con seña, hoy se paga `seña × personas` y en el
-bar `(precio − seña) × personas` **en efectivo**. El panel pide pesos; la base guarda
-centavos.
+`deposit_cents = 5000 × personas`). Hay dos precios: `price_cents` si paga todo con
+Mercado Pago y `cash_price_cents` si señá y paga el resto en efectivo (opcional; vacío =
+el mismo). En HUB: $35.000 con Mercado Pago y $30.000 en efectivo. Con seña, hoy se paga
+`seña × personas` y en el bar `(precio en efectivo − seña) × personas` **en efectivo**:
+para dos, $10.000 hoy y $50.000 en el bar. El panel pide pesos; la base guarda centavos.
+
+Con seña, la foto del pedido guarda el precio en efectivo como `full_price_cents`: así el
+saldo `(full_price_cents − unit_price_cents) × personas` sale bien en el comentario de la
+reserva que lee el staff y en «Mi entrada».
 
 Las dos formas de pago se presentan por **cómo se paga el resto** (pedido de los socios,
 27/10/2026): «¿Pagás en efectivo?» → hoy solo la seña y el resto en efectivo en el bar;

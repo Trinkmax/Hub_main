@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cashPrice,
   centsToMercadoPagoAmount,
   centsToPesos,
   formatPesos,
@@ -26,6 +27,32 @@ describe('quote', () => {
       balancePerPersonCents: 3_000_000,
       balanceCents: 6_000_000,
     })
+  })
+
+  it('con precio en efectivo (27/10): seña para 2, hoy $10.000 y $50.000 en el bar', () => {
+    // En efectivo sale $30.000 por persona: seña $5.000 + $25.000 en el bar.
+    const q = quote({
+      priceCents: PRICE,
+      depositCents: DEPOSIT,
+      cashPriceCents: 3_000_000,
+      partySize: 2,
+      option: 'deposit',
+    })
+    expect(q.totalCents).toBe(1_000_000)
+    expect(q.balancePerPersonCents).toBe(2_500_000)
+    expect(q.balanceCents).toBe(5_000_000)
+    // Todo con Mercado Pago sigue siendo $35.000 por persona.
+    const full = quote({
+      priceCents: PRICE,
+      depositCents: DEPOSIT,
+      cashPriceCents: 3_000_000,
+      partySize: 2,
+      option: 'full',
+    })
+    expect(full.totalCents).toBe(7_000_000)
+    expect(full.balanceCents).toBe(0)
+    expect(cashPrice(PRICE, 3_000_000)).toBe(3_000_000)
+    expect(cashPrice(PRICE, null)).toBe(PRICE)
   })
 
   it('todo junto para 2: hoy $70.000 y nada más', () => {

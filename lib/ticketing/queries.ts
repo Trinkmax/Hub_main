@@ -37,7 +37,7 @@ type SBAny = any
 export const DEFAULT_ACCENT = '#c0573e'
 
 const EXPERIENCE_COLUMNS =
-  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
+  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, cash_price_cents, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
 
 type TenantRow = {
   id: string
@@ -190,6 +190,7 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
     gallery: parseGallery(row.gallery),
     priceCents: Number(row.price_cents),
     depositCents: Number(row.deposit_cents),
+    cashPriceCents: row.cash_price_cents === null ? null : Number(row.cash_price_cents),
     minPartySize,
     maxPartySize: row.max_party_size,
     priceNote: row.price_note,

@@ -118,6 +118,10 @@ export function experienceToFormValues(experience: AdminExperience): ExperienceF
     })),
     price: pesosToInput(centsToPesos(experience.priceCents)),
     deposit: pesosToInput(centsToPesos(experience.depositCents)),
+    cash_price:
+      experience.cashPriceCents === null
+        ? ''
+        : pesosToInput(centsToPesos(experience.cashPriceCents)),
     min_party_size: experience.minPartySize,
     max_party_size: experience.maxPartySize,
     price_note: experience.priceNote ?? '',
@@ -139,6 +143,7 @@ const FIELD_SECTION: Record<string, string> = {
   accent_hex: 'Color',
   price: 'Precios',
   deposit: 'Precios',
+  cash_price: 'Precios',
   min_party_size: 'Precios',
   max_party_size: 'Precios',
   price_note: 'Precios',
@@ -201,7 +206,8 @@ export type PriceExample = {
 /**
  * El ejemplo de la cuenta debajo de los precios, para dos personas (o lo que
  * permitan el mínimo y el máximo por compra): «2 personas: seña $10.000 hoy y
- * $60.000 en efectivo, o $70.000 todo junto». `null` mientras no haya un
+ * $50.000 en efectivo, o $70.000 todo junto» (HUB: $30.000 en efectivo y
+ * $35.000 con Mercado Pago, por persona). `null` mientras no haya un
  * precio que sirva.
  */
 export function priceExample(input: {
@@ -209,11 +215,15 @@ export function priceExample(input: {
   deposit: unknown
   maxPartySize: unknown
   minPartySize?: unknown
+  /** Precio en efectivo por persona (vacío = el mismo precio). */
+  cashPrice?: unknown
 }): PriceExample | null {
   const price = pesosFieldValue(input.price)
   if (price === null || price < 1) return null
   const priceCents = price * 100
   const depositCents = (pesosFieldValue(input.deposit) ?? 0) * 100
+  const cash = pesosFieldValue(input.cashPrice)
+  const cashPriceCents = cash !== null && cash > 0 ? cash * 100 : null
   const max = Number(input.maxPartySize)
   const min = Number(input.minPartySize)
   let partySize = 2
@@ -224,7 +234,13 @@ export function priceExample(input: {
   if (!hasDepositOption(depositCents, priceCents)) {
     return { people, deposit: null, full: formatPesos(full.totalCents) }
   }
-  const withDeposit = quote({ priceCents, depositCents, partySize, option: 'deposit' })
+  const withDeposit = quote({
+    priceCents,
+    depositCents,
+    cashPriceCents,
+    partySize,
+    option: 'deposit',
+  })
   return {
     people,
     deposit: {

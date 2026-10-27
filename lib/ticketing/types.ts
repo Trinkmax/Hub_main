@@ -54,6 +54,8 @@ export type ExperienceRow = {
   gallery: unknown
   price_cents: number
   deposit_cents: number
+  /** Total por persona con seña + efectivo en el bar. null = price_cents. */
+  cash_price_cents: number | null
   min_party_size: number
   max_party_size: number
   /** Junto al total de la entrada: «Las bebidas se pagan aparte». */
@@ -143,6 +145,8 @@ export type PublicExperience = {
   gallery: GalleryItem[]
   priceCents: number
   depositCents: number
+  /** Total por persona si señá y paga el resto en efectivo (HUB: $30.000). null = el mismo precio. */
+  cashPriceCents: number | null
   /** Desde cuántas personas se vende (Cine y degustación: 2). */
   minPartySize: number
   maxPartySize: number

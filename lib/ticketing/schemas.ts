@@ -78,6 +78,21 @@ const pesosField = (label: string) =>
     return pesosToCents(raw)
   })
 
+/** Igual, pero se puede dejar vacío (null). */
+const optionalPesosField = (label: string) =>
+  z
+    .union([z.number(), z.string()])
+    .nullish()
+    .transform((v, ctx) => {
+      if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return null
+      const raw = typeof v === 'number' ? v : Number(v.replace(/\./g, '').replace(',', '.').trim())
+      if (!Number.isFinite(raw) || raw < 0) {
+        ctx.addIssue({ code: 'custom', message: `${label}: escribí un monto en pesos` })
+        return z.NEVER
+      }
+      return pesosToCents(raw)
+    })
+
 // ──────────────────────────────────────────────
 // Panel — la página de una película
 // ──────────────────────────────────────────────
@@ -100,6 +115,9 @@ export const experienceFormSchema = z
     gallery: z.array(galleryItemSchema).max(24, 'Máximo 24 fotos'),
     price: pesosField('Precio'),
     deposit: pesosField('Seña'),
+    // Total por persona si señá y paga el resto en efectivo. Vacío = el mismo
+    // precio (HUB: $30.000 en efectivo contra $35.000 con Mercado Pago).
+    cash_price: optionalPesosField('Precio en efectivo'),
     min_party_size: z.coerce
       .number({ error: 'Poné desde cuántas personas se vende' })
       .int('Tiene que ser un número entero')
@@ -122,6 +140,19 @@ export const experienceFormSchema = z
         code: 'custom',
         path: ['deposit'],
         message: 'La seña tiene que ser menor que el precio.',
+      })
+    }
+    if (v.cash_price !== null && v.cash_price < 100) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['cash_price'],
+        message: 'Poné el precio en efectivo por persona, o dejalo vacío.',
+      })
+    } else if (v.cash_price !== null && v.deposit > 0 && v.cash_price <= v.deposit) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['cash_price'],
+        message: 'El precio en efectivo tiene que ser mayor que la seña.',
       })
     }
     if (v.min_party_size > v.max_party_size) {

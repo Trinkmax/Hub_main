@@ -98,6 +98,16 @@ describe('experienceFormSchema', () => {
     expect(r.error.issues[0]?.path).toEqual(['min_party_size'])
   })
 
+  it('el precio en efectivo: pesos a centavos, vacío es null, y mayor que la seña', () => {
+    expect(experienceFormSchema.parse({ ...base, cash_price: '30.000' }).cash_price).toBe(3_000_000)
+    expect(experienceFormSchema.parse({ ...base, cash_price: '' }).cash_price).toBeNull()
+    expect(experienceFormSchema.parse({ ...base, cash_price: null }).cash_price).toBeNull()
+    const below = experienceFormSchema.safeParse({ ...base, cash_price: '5.000' })
+    expect(below.success).toBe(false)
+    if (!below.success) expect(below.error.issues[0]?.path).toEqual(['cash_price'])
+    expect(experienceFormSchema.safeParse({ ...base, cash_price: '0' }).success).toBe(false)
+  })
+
   it('la aclaración del total se guarda recortada y con tope de 140', () => {
     const ok = experienceFormSchema.parse({
       ...base,

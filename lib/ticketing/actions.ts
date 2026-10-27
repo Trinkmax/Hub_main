@@ -118,7 +118,7 @@ export async function createExperience(
     supabase
       .from('event_experiences')
       .select(
-        'slug, price_cents, deposit_cents, min_party_size, max_party_size, price_note, series, schedule_note, updated_at',
+        'slug, price_cents, deposit_cents, cash_price_cents, min_party_size, max_party_size, price_note, series, schedule_note, updated_at',
       )
       .eq('tenant_id', tenantId)
       .order('updated_at', { ascending: false }),
@@ -130,6 +130,7 @@ export async function createExperience(
       slug: string
       price_cents: number
       deposit_cents: number
+      cash_price_cents: number | null
       min_party_size: number
       max_party_size: number
       price_note: string | null
@@ -177,6 +178,12 @@ export async function createExperience(
             min_party_size: last.min_party_size,
             max_party_size: last.max_party_size,
             price_note: last.price_note,
+            // El de efectivo solo si sigue dejando algo para pagar en el bar
+            // con la seña nueva (la base lo exige).
+            cash_price_cents:
+              last.cash_price_cents !== null && Number(last.cash_price_cents) > depositCents
+                ? Number(last.cash_price_cents)
+                : null,
           }
         : {}),
       created_by: access.user.id,
@@ -246,6 +253,7 @@ export async function saveExperience(
       gallery: v.gallery,
       price_cents: v.price,
       deposit_cents: v.deposit,
+      cash_price_cents: v.cash_price,
       min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
       price_note: v.price_note,
@@ -275,6 +283,7 @@ export async function saveExperience(
       published: v.published,
       price_cents: v.price,
       deposit_cents: v.deposit,
+      cash_price_cents: v.cash_price,
       min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
       slug: v.slug,
