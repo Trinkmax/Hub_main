@@ -105,6 +105,14 @@ IP compartidas de celular). Además, rate limit de 8 intentos cada 10 minutos po
 5. Desconectar Mercado Pago no se puede con compras en curso, y el webhook contesta
    503 si el bar no tiene cuenta conectada (Mercado Pago reintenta).
 
+**Devolver desde el panel** (Ventas online → «Devolver», solo en compras pagadas): pide
+la devolución total a Mercado Pago (`POST /v1/payments/{id}/refunds`, clave de
+idempotencia nueva en cada intento), la aplica por el mismo camino que el webhook
+(compra «Devuelto», seña de la reserva en 0) y cancela la reserva si la persona todavía
+no llegó (`pending`). Si ya llegó, la reserva queda. Mercado Pago pide **saldo
+disponible** en la cuenta por el monto: la plata «a liquidar» no cuenta, y en ese caso
+el panel avisa y no toca nada.
+
 Casos que quedan marcados para que los mire una persona (`ticket_orders.attention`,
 se ven en el panel): `overbooked` (pagó cuando ya no quedaba lugar: la reserva se crea
 igual), `event_missing` (borraron la fecha: no hay reserva, hay que cargarla a mano),

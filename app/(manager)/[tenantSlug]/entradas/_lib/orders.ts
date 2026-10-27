@@ -102,6 +102,11 @@ export function attentionView(attention: OrderAttention | null | undefined): Att
   return ATTENTION[attention] ?? null
 }
 
+/** «Devolver» solo aparece en una compra pagada: la devuelta ya no tiene plata que devolver. */
+export function canRefund(order: { status: OrderStatus }): boolean {
+  return order.status === 'approved'
+}
+
 /** Lo que se cobró (si pagó) o lo que se iba a cobrar (si no), en centavos. */
 export function orderAmountCents(order: {
   status: OrderStatus

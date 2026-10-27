@@ -197,6 +197,48 @@ export async function getPayment(token: string, paymentId: string): Promise<Merc
   return paymentSchema.parse(await mpFetch(`/v1/payments/${paymentId}`, { token }))
 }
 
+// ──────────────────────────────────────────────
+// Devoluciones
+// ──────────────────────────────────────────────
+
+const refundSchema = z.object({
+  id: z.union([z.number(), z.string()]).transform((v) => String(v)),
+  payment_id: z
+    .union([z.number(), z.string()])
+    .transform((v) => String(v))
+    .nullish(),
+  amount: z.number().nullish(),
+  status: z.string().nullish(),
+})
+
+export type MercadoPagoRefund = z.infer<typeof refundSchema>
+
+/**
+ * Devuelve el pago ENTERO (sin `amount`, Mercado Pago devuelve el total).
+ *
+ * La clave de idempotencia es nueva en cada intento: Mercado Pago la exige y
+ * guarda la respuesta del primer pedido, así que con una clave fija por pedido
+ * un rechazo (sin saldo disponible, por ejemplo) quedaría pegado para siempre.
+ * Devolver dos veces no puede pasar: un pago ya devuelto entero no admite otra
+ * devolución total.
+ */
+export async function refundPayment(
+  token: string,
+  paymentId: string,
+  idempotencyKey: string,
+): Promise<MercadoPagoRefund> {
+  if (!/^\d{1,24}$/.test(paymentId)) {
+    throw new MercadoPagoError(400, 'invalid_payment_id', 'Id de pago inválido.')
+  }
+  const data = await mpFetch(`/v1/payments/${paymentId}/refunds`, {
+    token,
+    method: 'POST',
+    body: {},
+    idempotencyKey,
+  })
+  return refundSchema.parse(data)
+}
+
 const searchSchema = z.object({
   results: z.array(paymentSchema).default([]),
 })
