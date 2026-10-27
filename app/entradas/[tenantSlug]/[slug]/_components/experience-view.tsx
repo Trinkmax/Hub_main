@@ -122,7 +122,8 @@ export function ExperienceView({
             <aside
               id="entrada"
               aria-label="Tu entrada"
-              className="scroll-mt-24 pb-16 lg:sticky lg:top-24 lg:self-start lg:pt-10"
+              // Fija al costado solo si la pantalla da: ver .ent-ticket-col.
+              className="ent-ticket-col scroll-mt-24 pb-16 lg:self-start lg:pt-10"
             >
               <TicketCheckout
                 preview={preview}

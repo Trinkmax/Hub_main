@@ -876,6 +876,11 @@
     box-shadow: 0 12px 26px -12px rgb(26 37 31 / 0.6);
   }
 
+  .ent-option-compact {
+    border-radius: 14px;
+    padding: 0.7rem 0.85rem;
+  }
+
   .ent-stepper-btn {
     display: inline-flex;
     width: 3rem;
@@ -1073,5 +1078,33 @@
   .ent-option:has(input:focus-visible) {
     outline: 2px solid var(--ent-rust);
     outline-offset: 3px;
+  }
+
+  /* La entrada fija al costado en la compu, solo si la pantalla da para
+     verla: en una notebook baja (768 px de pantalla, ~650 de ventana)
+     fluye con la página, se ve entera y aparece la barra de «Reservar»
+     como en el celular. Fija y aun así más alta (muchas fechas), el cuerpo
+     scrollea adentro y el pie (forma de pago + total + botón) queda. */
+  @media (min-width: 64rem) and (min-height: 48rem) {
+    .ent-ticket-col {
+      position: sticky;
+      top: 4rem;
+    }
+
+    .ent-ticket-col .ent-form {
+      max-height: calc(100dvh - 8rem);
+    }
+
+    .ent-ticket-col .ent-ticket-body {
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
+    }
+
+    .ent-sticky-cta {
+      display: none;
+    }
   }
 }

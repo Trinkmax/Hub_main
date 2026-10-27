@@ -242,6 +242,31 @@ export function TicketCheckout({
   const generalError =
     error && !['guest_name', 'guest_phone'].includes(error.field ?? '') ? error.message : null
 
+  const paymentOptions = (compact: boolean) => (
+    <div className={cn('grid gap-2.5', compact ? depositAvailable && 'grid-cols-2' : 'mt-3')}>
+      {depositAvailable ? (
+        <OptionCard
+          name={`${ids}-option${compact ? '-c' : ''}`}
+          compact={compact}
+          checked={option === 'deposit'}
+          onSelect={() => setOption('deposit')}
+          title="Señá ahora"
+          amount={formatPesos(experience.depositCents)}
+          note={`El resto, ${formatPesos(experience.priceCents - experience.depositCents)} por persona, en efectivo en el bar.`}
+        />
+      ) : null}
+      <OptionCard
+        name={`${ids}-option${compact ? '-c' : ''}`}
+        compact={compact}
+        checked={option === 'full'}
+        onSelect={() => setOption('full')}
+        title="Pagá todo"
+        amount={formatPesos(experience.priceCents)}
+        note="Llegás y disfrutás: no pagás nada más."
+      />
+    </div>
+  )
+
   const footer = (
     <>
       <div className="ent-ticket-cut px-5" aria-hidden>
@@ -249,6 +274,20 @@ export function TicketCheckout({
       </div>
 
       <div className="px-5 pt-5 pb-6">
+        {venue.canSell && step === 'build' ? (
+          // En la compu la forma de pago va acá, al lado del total que cambia:
+          // la entrada fija puede ser más alta que la pantalla y «Pagá todo»
+          // quedaba escondido en el scroll de adentro. Lo que explicaba cada
+          // tarjeta lo dice el texto del total. En el celular va arriba.
+          // Debajo de la perforación las dos tarjetas se explican solas: el
+          // título queda para el lector de pantalla y la entrada entra entera
+          // en una notebook de 1440×900 (~790 px de ventana).
+          <fieldset className="mb-5 hidden lg:block">
+            <legend className="sr-only">¿Cómo querés pagar?</legend>
+            {paymentOptions(true)}
+          </fieldset>
+        ) : null}
+
         {venue.canSell ? (
           <div className="flex items-end justify-between gap-4">
             <div>
@@ -376,43 +415,52 @@ export function TicketCheckout({
               <FunctionPicker compact className="mt-3" />
             </fieldset>
 
-            <fieldset>
-              <legend className="text-sm font-semibold">¿Cuántos van?</legend>
-              <div className="mt-3 flex items-center gap-4">
-                <button
-                  type="button"
-                  className="ent-stepper-btn"
-                  onClick={() => setParty(Math.max(1, people - 1))}
-                  disabled={people <= 1}
-                  aria-label="Una persona menos"
-                >
-                  <Minus className="size-5" aria-hidden />
-                </button>
-                <div className="min-w-[4.5rem] text-center" aria-live="polite">
-                  <RollNumber
-                    value={String(people)}
-                    rank={people}
-                    className="ent-display ent-num block text-5xl leading-none"
-                  />
-                  <span className="ent-mono mt-1 block text-[0.58rem] text-(--ent-ink-2)">
-                    {people === 1 ? 'persona' : 'personas'}
-                  </span>
+            {/* Fieldset nombrado por aria-labelledby y no por legend: en la
+                compu va en un renglón (pregunta a la izquierda, contador a la
+                derecha) y una legend no se acomoda en una fila flex. */}
+            <fieldset aria-labelledby={`${ids}-party`}>
+              <div className="lg:flex lg:items-center lg:justify-between lg:gap-4">
+                <div className="flex items-center justify-between gap-3 lg:block">
+                  <p id={`${ids}-party`} className="text-sm font-semibold">
+                    ¿Cuántos van?
+                  </p>
+                  {selected?.state === 'last' ? (
+                    <span className="ent-last inline-flex items-center gap-1.5 text-xs font-semibold lg:mt-1">
+                      <span className="ent-pulse" aria-hidden />
+                      {selected.left === 1 ? 'Queda 1 lugar' : `Quedan ${selected.left}`}
+                    </span>
+                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="ent-stepper-btn"
-                  onClick={() => setParty(Math.min(max, people + 1))}
-                  disabled={people >= max}
-                  aria-label="Una persona más"
-                >
-                  <Plus className="size-5" aria-hidden />
-                </button>
-                {selected?.state === 'last' ? (
-                  <span className="ent-last ml-auto inline-flex items-center gap-1.5 text-xs font-semibold">
-                    <span className="ent-pulse" aria-hidden />
-                    {selected.left === 1 ? 'Queda 1 lugar' : `Quedan ${selected.left}`}
-                  </span>
-                ) : null}
+                <div className="mt-3 flex items-center gap-4 lg:mt-0 lg:gap-2">
+                  <button
+                    type="button"
+                    className="ent-stepper-btn lg:size-10"
+                    onClick={() => setParty(Math.max(1, people - 1))}
+                    disabled={people <= 1}
+                    aria-label="Una persona menos"
+                  >
+                    <Minus className="size-5" aria-hidden />
+                  </button>
+                  <div className="min-w-[4.5rem] text-center lg:min-w-[3.25rem]" aria-live="polite">
+                    <RollNumber
+                      value={String(people)}
+                      rank={people}
+                      className="ent-display ent-num block text-5xl leading-none lg:text-4xl"
+                    />
+                    <span className="ent-mono mt-1 block text-[0.58rem] text-(--ent-ink-2)">
+                      {people === 1 ? 'persona' : 'personas'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="ent-stepper-btn lg:size-10"
+                    onClick={() => setParty(Math.min(max, people + 1))}
+                    disabled={people >= max}
+                    aria-label="Una persona más"
+                  >
+                    <Plus className="size-5" aria-hidden />
+                  </button>
+                </div>
               </div>
               {people >= max && max === experience.maxPartySize ? (
                 <p className="mt-2 text-xs text-(--ent-ink-2)">
@@ -422,28 +470,9 @@ export function TicketCheckout({
             </fieldset>
 
             {venue.canSell ? (
-              <fieldset>
+              <fieldset className="lg:hidden">
                 <legend className="text-sm font-semibold">¿Cómo querés pagar?</legend>
-                <div className="mt-3 grid gap-2.5">
-                  {depositAvailable ? (
-                    <OptionCard
-                      name={`${ids}-option`}
-                      checked={option === 'deposit'}
-                      onSelect={() => setOption('deposit')}
-                      title="Señá ahora"
-                      amount={formatPesos(experience.depositCents)}
-                      note={`El resto, ${formatPesos(experience.priceCents - experience.depositCents)} por persona, en efectivo en el bar.`}
-                    />
-                  ) : null}
-                  <OptionCard
-                    name={`${ids}-option`}
-                    checked={option === 'full'}
-                    onSelect={() => setOption('full')}
-                    title="Pagá todo"
-                    amount={formatPesos(experience.priceCents)}
-                    note="Llegás y disfrutás: no pagás nada más."
-                  />
-                </div>
+                {paymentOptions(false)}
               </fieldset>
             ) : null}
           </div>
@@ -543,11 +572,12 @@ function TicketShell({
   footer?: React.ReactNode
   children: React.ReactNode
 }) {
-  // En la compu la entrada va fija al costado y puede ser más alta que la
-  // pantalla: el cuerpo scrollea adentro y el pie (total + botón) no se va
-  // nunca. En el celular fluye entera, sin scroll propio.
+  // En la compu, si la pantalla da, la entrada va fija al costado
+  // (.ent-ticket-col en entradas.css): si igual es más alta que la pantalla,
+  // el cuerpo scrollea adentro y el pie (forma de pago + total + botón) no se
+  // va nunca. En el celular y en notebooks bajas fluye entera.
   return (
-    <div className="ent-form ent-paper flex flex-col overflow-hidden rounded-[22px] shadow-[0_40px_80px_-30px_rgb(0_0_0/0.8)] lg:max-h-[calc(100dvh-10.5rem)]">
+    <div className="ent-form ent-paper flex flex-col overflow-hidden rounded-[22px] shadow-[0_40px_80px_-30px_rgb(0_0_0/0.8)]">
       <div
         className="flex items-start justify-between gap-3 px-5 pt-5 pb-4 text-(--ent-paper)"
         style={{
@@ -564,9 +594,7 @@ function TicketShell({
           {badge}
         </span>
       </div>
-      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:[mask-image:linear-gradient(to_bottom,#000_calc(100%-1.25rem),transparent)]">
-        {children}
-      </div>
+      <div className="ent-ticket-body">{children}</div>
       {footer ? <div className="shrink-0">{footer}</div> : null}
     </div>
   )
@@ -574,6 +602,7 @@ function TicketShell({
 
 function OptionCard({
   name,
+  compact = false,
   checked,
   onSelect,
   title,
@@ -581,6 +610,8 @@ function OptionCard({
   note,
 }: {
   name: string
+  /** La versión de la compu, de a dos en un renglón y sin la explicación. */
+  compact?: boolean
   checked: boolean
   onSelect: () => void
   title: string
@@ -589,6 +620,32 @@ function OptionCard({
 }) {
   // Radio de verdad (teclado y lector de pantalla gratis), con la tarjeta
   // entera como etiqueta: la elegida va rellena.
+  const unit = (
+    <span className={cn('ml-1 text-xs font-normal', checked ? 'opacity-75' : 'text-(--ent-ink-2)')}>
+      c/u
+    </span>
+  )
+  if (compact) {
+    return (
+      <label
+        className="ent-option ent-option-compact cursor-pointer"
+        data-checked={checked ? 'true' : 'false'}
+      >
+        <input
+          type="radio"
+          name={name}
+          checked={checked}
+          onChange={onSelect}
+          className="peer sr-only"
+        />
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="ent-num mt-0.5 block text-base font-semibold">
+          {amount}
+          {unit}
+        </span>
+      </label>
+    )
+  }
   return (
     <label className="ent-option cursor-pointer" data-checked={checked ? 'true' : 'false'}>
       <input
@@ -602,14 +659,7 @@ function OptionCard({
         <span className="font-semibold">{title}</span>
         <span className="ent-num text-lg font-semibold">
           {amount}
-          <span
-            className={cn(
-              'ml-1 text-xs font-normal',
-              checked ? 'opacity-75' : 'text-(--ent-ink-2)',
-            )}
-          >
-            c/u
-          </span>
+          {unit}
         </span>
       </span>
       <span

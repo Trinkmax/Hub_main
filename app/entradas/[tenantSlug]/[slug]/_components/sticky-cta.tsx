@@ -12,6 +12,9 @@ import { useExperience } from './experience-context'
  * pulgar, mientras se lee la historia. Aparece cuando el botón del principio
  * sale de pantalla y se esconde cuando la entrada ya está a la vista (no
  * tiene sentido tapar el ticket con un botón que lleva al ticket).
+ *
+ * En la compu solo aparece en pantallas bajas, donde la entrada no va fija
+ * al costado (.ent-sticky-cta en entradas.css), y va abajo a la derecha.
  */
 export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: boolean }) {
   const { selected } = useExperience()
@@ -45,7 +48,7 @@ export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: 
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:hidden',
+        'ent-sticky-cta fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:right-6 lg:left-auto lg:w-[26rem] lg:px-0 lg:pb-6',
         show ? 'translate-y-0' : 'pointer-events-none translate-y-[115%]',
       )}
       aria-hidden={!show}
