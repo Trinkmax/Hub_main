@@ -230,7 +230,7 @@ function NewExperienceDialog({
                   setErrors((current) => ({ ...current, deposit: undefined }))
                 }}
                 placeholder="5.000"
-                hint="El resto se paga en efectivo en el bar. Vacía o 0: solo pago total."
+                hint="Por persona; el resto se paga el día de la función. Vacía o 0: solo pago total."
                 error={errors.deposit}
               />
             </div>

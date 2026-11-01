@@ -96,6 +96,8 @@ export function CarteleraView({
             venue={venue}
             minDepositCents={summary.minDepositCents}
             minPriceCents={summary.minPriceCents}
+            cashOnly={summary.cashOnly}
+            fullPayment={summary.fullPayment}
           />
         ) : null}
       </main>

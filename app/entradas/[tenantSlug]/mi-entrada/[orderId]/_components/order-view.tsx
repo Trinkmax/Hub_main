@@ -265,14 +265,20 @@ export function OrderView({
                   label="Pagaste"
                   value={`${formatPesos(live.paidCents ?? order.totalCents)} ${order.option === 'deposit' ? '(seña)' : '(total)'}`}
                 />
+                {/* El resto, «en efectivo» solo si se compró así (precio en
+                    efectivo); si no, se paga como quiera en el local. Sin
+                    resto, nunca «nada más»: lo que no incluye el precio se
+                    paga en el bar. */}
                 <Row
-                  label="En el bar"
+                  label={
+                    balanceCents > 0 && !order.balanceCashOnly ? 'El día del evento' : 'En el bar'
+                  }
                   value={
-                    balanceCents > 0
-                      ? `${formatPesos(balanceCents)} en efectivo`
-                      : // No «nada más»: lo que no incluye el precio (en HUB,
-                        // las bebidas) se paga en el bar.
-                        'La entrada ya está paga'
+                    balanceCents <= 0
+                      ? 'La entrada ya está paga'
+                      : order.balanceCashOnly
+                        ? `${formatPesos(balanceCents)} en efectivo`
+                        : `${formatPesos(balanceCents)}, en el local`
                   }
                   strong={balanceCents > 0}
                 />

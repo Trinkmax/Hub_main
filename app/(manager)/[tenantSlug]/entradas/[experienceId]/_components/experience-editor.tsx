@@ -53,6 +53,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { eventInk } from '@/lib/salon/event-ink'
@@ -132,6 +133,7 @@ export function ExperienceEditor({
   const price = useWatch({ control, name: 'price' })
   const deposit = useWatch({ control, name: 'deposit' })
   const cashPrice = useWatch({ control, name: 'cash_price' })
+  const allowFullPayment = useWatch({ control, name: 'allow_full_payment' })
   const minParty = useWatch({ control, name: 'min_party_size' })
   const maxParty = useWatch({ control, name: 'max_party_size' })
   const priceNote = useWatch({ control, name: 'price_note' })
@@ -151,6 +153,7 @@ export function ExperienceEditor({
     price,
     deposit,
     cashPrice,
+    allowFullPayment,
     maxPartySize: maxParty,
     minPartySize: minParty,
   })
@@ -701,7 +704,7 @@ export function ExperienceEditor({
               id="precios"
               icon={Wallet}
               title="Precios"
-              description="Todo por persona. Con seña, el resto se paga en efectivo en el bar."
+              description="Todo por persona. Con seña, el resto se paga el día de la función."
             >
               <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -711,14 +714,14 @@ export function ExperienceEditor({
                     render={({ field }) => (
                       <PesosField
                         id="price"
-                        label="Mercado Pago"
+                        label="Precio"
                         required
                         value={String(field.value ?? '')}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
                         inputRef={field.ref}
-                        placeholder="35.000"
-                        hint="Si paga todo online."
+                        placeholder="45.000"
+                        hint="Con cualquier medio de pago."
                         error={errors.price?.message}
                       />
                     )}
@@ -734,8 +737,8 @@ export function ExperienceEditor({
                         onChange={field.onChange}
                         onBlur={field.onBlur}
                         inputRef={field.ref}
-                        placeholder="30.000"
-                        hint="Seña + lo que paga en el bar. Vacío: el mismo."
+                        placeholder="Vacío"
+                        hint="Solo si en efectivo sale menos: el resto, solo en efectivo."
                         error={errors.cash_price?.message}
                       />
                     )}
@@ -751,13 +754,54 @@ export function ExperienceEditor({
                         onChange={field.onChange}
                         onBlur={field.onBlur}
                         inputRef={field.ref}
-                        placeholder="5.000"
+                        placeholder="20.000"
                         hint="0 = solo pago total."
                         error={errors.deposit?.message}
                       />
                     )}
                   />
                 </div>
+
+                {/* Apagado, se reserva solo con seña (HUB desde el 30/10: $45.000,
+                    seña de $20.000 y el resto en el local). */}
+                <Controller
+                  control={control}
+                  name="allow_full_payment"
+                  render={({ field }) => (
+                    <div className="flex items-start justify-between gap-4 rounded-xl border border-border/70 px-3.5 py-3">
+                      <div className="grid min-w-0 gap-0.5">
+                        <Label htmlFor="allow_full_payment">Se puede pagar todo online</Label>
+                        <p
+                          id="allow_full_payment-hint"
+                          className="text-xs leading-snug text-muted-foreground text-pretty"
+                        >
+                          Apagado, se reserva solo con la seña y el resto se paga el día de la
+                          función.
+                        </p>
+                        {errors.allow_full_payment ? (
+                          <p
+                            id="allow_full_payment-error"
+                            role="alert"
+                            className="text-xs leading-snug text-destructive"
+                          >
+                            {errors.allow_full_payment.message}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Switch
+                        id="allow_full_payment"
+                        ref={field.ref}
+                        checked={Boolean(field.value)}
+                        onCheckedChange={field.onChange}
+                        onBlur={field.onBlur}
+                        aria-describedby={describedBy('allow_full_payment', {
+                          hint: true,
+                          error: !!errors.allow_full_payment,
+                        })}
+                      />
+                    </div>
+                  )}
+                />
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <PartySizeField
@@ -774,16 +818,16 @@ export function ExperienceEditor({
 
                 <Field
                   id="price_note"
-                  label="Aclaración junto al total"
+                  label="Aclaración del precio"
                   optional
-                  hint="Va en la entrada, debajo de lo que se paga: lo que no incluye el precio."
+                  hint="Va en la entrada, junto al precio."
                   error={errors.price_note?.message}
                   counter={<CharCount value={priceNote} max={140} />}
                 >
                   <Input
                     id="price_note"
                     maxLength={140}
-                    placeholder="Las bebidas se pagan aparte."
+                    placeholder="Incluye todos los pasos de la película."
                     className="h-11"
                     aria-invalid={errors.price_note ? true : undefined}
                     aria-describedby={describedBy('price_note', {
@@ -806,9 +850,16 @@ export function ExperienceEditor({
                       {example.deposit ? (
                         <>
                           seña <strong className="tabular-nums">{example.deposit.today}</strong> hoy
-                          y <strong className="tabular-nums">{example.deposit.cash}</strong> en
-                          efectivo, o <strong className="tabular-nums">{example.full}</strong> todo
-                          junto.
+                          y <strong className="tabular-nums">{example.deposit.rest}</strong>{' '}
+                          {example.deposit.cashOnly ? 'en efectivo' : 'el día de la función'}
+                          {example.full ? (
+                            <>
+                              , o <strong className="tabular-nums">{example.full}</strong> todo
+                              junto.
+                            </>
+                          ) : (
+                            '.'
+                          )}
                         </>
                       ) : (
                         <>

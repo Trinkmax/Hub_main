@@ -116,8 +116,11 @@ export const experienceFormSchema = z
     price: pesosField('Precio'),
     deposit: pesosField('Seña'),
     // Total por persona si señá y paga el resto en efectivo. Vacío = el mismo
-    // precio (HUB: $30.000 en efectivo contra $35.000 con Mercado Pago).
+    // precio para cualquier medio (HUB hasta noviembre: $30.000 en efectivo
+    // contra $35.000 con Mercado Pago; desde el 30/10, $45.000 para todo).
     cash_price: optionalPesosField('Precio en efectivo'),
+    // En false se reserva solo con seña (HUB desde el 30/10).
+    allow_full_payment: z.boolean(),
     min_party_size: z.coerce
       .number({ error: 'Poné desde cuántas personas se vende' })
       .int('Tiene que ser un número entero')
@@ -153,6 +156,13 @@ export const experienceFormSchema = z
         code: 'custom',
         path: ['cash_price'],
         message: 'El precio en efectivo tiene que ser mayor que la seña.',
+      })
+    }
+    if (!v.allow_full_payment && v.deposit <= 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allow_full_payment'],
+        message: 'Sin seña la entrada se paga toda online: poné una seña o dejá pagar todo.',
       })
     }
     if (v.min_party_size > v.max_party_size) {

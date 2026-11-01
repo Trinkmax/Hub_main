@@ -1,14 +1,16 @@
 import type { PaymentOption } from './types'
 
 /**
- * La cuenta de una compra. Todo en centavos y POR PERSONA, como cobra el bar:
- * la seña de Cine y degustación son $5.000 por persona (las reservas de
- * noviembre de 2026 tienen 2 × $5.000 = $10.000, 4 × $5.000 = $20.000…), el
- * total con Mercado Pago $35.000 por persona y en efectivo $30.000.
+ * La cuenta de una compra. Todo en centavos y POR PERSONA, como cobra el bar.
+ * Cine y degustación en HUB: hasta noviembre de 2026, seña de $5.000 y
+ * $30.000 en efectivo o $35.000 todo con Mercado Pago; desde las fechas nuevas
+ * (pedido del 30/10), $45.000 con cualquier medio, seña de $20.000 y el resto
+ * en el local.
  *
  *   seña  → hoy se paga deposit × personas; el resto, (precio en efectivo −
- *           deposit) × personas, en efectivo el día de la función. Sin
- *           precio en efectivo propio, el precio en efectivo es `price`.
+ *           deposit) × personas, el día de la función. Con precio en
+ *           efectivo propio, ese resto es solo en efectivo; sin él, el precio
+ *           es `price` para todo y el resto se paga como quiera.
  *   total → hoy se paga price × personas y no queda nada por pagar.
  *
  * La misma cuenta la hace la base al crear el pedido (ticketing_create_order):
@@ -22,9 +24,9 @@ export type Quote = {
   unitCents: number
   /** Lo que se cobra hoy. */
   totalCents: number
-  /** Lo que queda para pagar en el bar, por persona. */
+  /** Lo que queda para pagar el día de la función, por persona. */
   balancePerPersonCents: number
-  /** Lo que queda para pagar en el bar. */
+  /** Lo que queda para pagar el día de la función. */
   balanceCents: number
 }
 
@@ -32,7 +34,25 @@ export function hasDepositOption(depositCents: number, priceCents: number): bool
   return depositCents > 0 && depositCents < priceCents
 }
 
-/** Lo que sale por persona señando y pagando el resto en efectivo. */
+/**
+ * Las formas de pago de una película. Sin seña siempre se puede pagar todo
+ * (si no, no se vendería); con seña, el pago total se puede apagar.
+ */
+export function paymentOptions(input: {
+  priceCents: number
+  depositCents: number
+  allowFullPayment: boolean
+}): { deposit: boolean; full: boolean } {
+  const deposit = hasDepositOption(input.depositCents, input.priceCents)
+  return { deposit, full: input.allowFullPayment || !deposit }
+}
+
+/** Si el resto se paga solo en efectivo: pasa cuando hay precio en efectivo propio. */
+export function balanceCashOnly(cashPriceCents: number | null | undefined): boolean {
+  return cashPriceCents !== null && cashPriceCents !== undefined
+}
+
+/** Lo que sale por persona señando y pagando el resto en el bar. */
 export function cashPrice(priceCents: number, cashPriceCents: number | null | undefined): number {
   return cashPriceCents ?? priceCents
 }

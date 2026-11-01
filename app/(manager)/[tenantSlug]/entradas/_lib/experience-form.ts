@@ -1,4 +1,10 @@
-import { centsToPesos, formatPesos, hasDepositOption, quote } from '@/lib/ticketing/pricing'
+import {
+  centsToPesos,
+  formatPesos,
+  hasDepositOption,
+  paymentOptions,
+  quote,
+} from '@/lib/ticketing/pricing'
 import type { AdminExperience } from '@/lib/ticketing/queries'
 import type { ExperienceFormInput } from '@/lib/ticketing/schemas'
 
@@ -122,6 +128,7 @@ export function experienceToFormValues(experience: AdminExperience): ExperienceF
       experience.cashPriceCents === null
         ? ''
         : pesosToInput(centsToPesos(experience.cashPriceCents)),
+    allow_full_payment: experience.allowFullPayment,
     min_party_size: experience.minPartySize,
     max_party_size: experience.maxPartySize,
     price_note: experience.priceNote ?? '',
@@ -144,6 +151,7 @@ const FIELD_SECTION: Record<string, string> = {
   price: 'Precios',
   deposit: 'Precios',
   cash_price: 'Precios',
+  allow_full_payment: 'Precios',
   min_party_size: 'Precios',
   max_party_size: 'Precios',
   price_note: 'Precios',
@@ -197,18 +205,22 @@ export function pesosFieldValue(value: unknown): number | null {
 export type PriceExample = {
   /** «2 personas» */
   people: string
-  /** Con seña: lo de hoy y lo que queda en efectivo. `null` si no hay seña. */
-  deposit: { today: string; cash: string } | null
-  /** Todo junto. */
-  full: string
+  /**
+   * Con seña: lo de hoy y lo que queda para el día de la función (solo en
+   * efectivo si hay precio en efectivo). `null` si no hay seña.
+   */
+  deposit: { today: string; rest: string; cashOnly: boolean } | null
+  /** Todo junto, o `null` si la película se reserva solo con seña. */
+  full: string | null
 }
 
 /**
  * El ejemplo de la cuenta debajo de los precios, para dos personas (o lo que
- * permitan el mínimo y el máximo por compra): «2 personas: seña $10.000 hoy y
- * $50.000 en efectivo, o $70.000 todo junto» (HUB: $30.000 en efectivo y
- * $35.000 con Mercado Pago, por persona). `null` mientras no haya un
- * precio que sirva.
+ * permitan el mínimo y el máximo por compra). HUB desde el 30/10, $45.000 con
+ * seña de $20.000 y solo seña: «2 personas: seña $40.000 hoy y $50.000 el día
+ * del evento». Hasta noviembre ($30.000 en efectivo, $35.000 con Mercado
+ * Pago): «seña $10.000 hoy y $50.000 en efectivo, o $70.000 todo junto».
+ * `null` mientras no haya un precio que sirva.
  */
 export function priceExample(input: {
   price: unknown
@@ -217,6 +229,8 @@ export function priceExample(input: {
   minPartySize?: unknown
   /** Precio en efectivo por persona (vacío = el mismo precio). */
   cashPrice?: unknown
+  /** Si se puede pagar todo online (por defecto, sí). */
+  allowFullPayment?: unknown
 }): PriceExample | null {
   const price = pesosFieldValue(input.price)
   if (price === null || price < 1) return null
@@ -234,6 +248,11 @@ export function priceExample(input: {
   if (!hasDepositOption(depositCents, priceCents)) {
     return { people, deposit: null, full: formatPesos(full.totalCents) }
   }
+  const options = paymentOptions({
+    priceCents,
+    depositCents,
+    allowFullPayment: input.allowFullPayment !== false,
+  })
   const withDeposit = quote({
     priceCents,
     depositCents,
@@ -245,8 +264,9 @@ export function priceExample(input: {
     people,
     deposit: {
       today: formatPesos(withDeposit.totalCents),
-      cash: formatPesos(withDeposit.balanceCents),
+      rest: formatPesos(withDeposit.balanceCents),
+      cashOnly: cashPriceCents !== null,
     },
-    full: formatPesos(full.totalCents),
+    full: options.full ? formatPesos(full.totalCents) : null,
   }
 }

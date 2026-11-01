@@ -43,29 +43,55 @@ no incluye `tenant_id` y PostgREST lo pondría en el `SET` del upsert (42501).
 
 Migraciones: `20261026120000_reservation_origin_web`, `20261026120100_ticketing_tables`,
 `20261026120200_ticketing_functions`, `20261027150000_ticketing_min_party_price_note`,
-`20261027190000_ticketing_cash_price`.
+`20261027190000_ticketing_cash_price`, `20261101170000_ticketing_single_price`.
 
 ### La plata
 
 Precio y seña son **por persona** (las reservas de cine de noviembre de 2026 tenían
-`deposit_cents = 5000 × personas`). Hay dos precios: `price_cents` si paga todo con
-Mercado Pago y `cash_price_cents` si señá y paga el resto en efectivo (opcional; vacío =
-el mismo). En HUB: $35.000 con Mercado Pago y $30.000 en efectivo. Con seña, hoy se paga
-`seña × personas` y en el bar `(precio en efectivo − seña) × personas` **en efectivo**:
-para dos, $10.000 hoy y $50.000 en el bar. El panel pide pesos; la base guarda centavos.
+`deposit_cents = 5000 × personas`). `price_cents` es el precio; `cash_price_cents`, un
+precio en efectivo opcional (más bajo) que hace que el resto se pague **solo en efectivo**.
+Con seña, hoy se paga `seña × personas` y el día de la función `(precio en efectivo −
+seña) × personas` (sin precio en efectivo, `precio − seña`). El panel pide pesos; la base
+guarda centavos.
+
+**Desde el 01/11/2026 (pedido de los socios del 30/10), en HUB: un solo precio y solo
+seña.** $45.000 por persona con cualquier medio de pago, seña de $20.000 por persona y el
+resto ($25.000) el día del evento en el local, como quiera pagarlo. Para dos: hoy $40.000
+y $50.000 el día del evento. `cash_price_cents` quedó vacío y `allow_full_payment` en
+`false`: la entrada no ofrece pagar todo, muestra una tarjeta «Precio por persona» con la
+aclaración del precio («Incluye todos los pasos de la película») y lo que se paga hoy y
+después. `ticketing_create_order` rechaza el pago total donde está apagado y la columna
+`allow_full_payment` exige seña (si no, la película no se podría comprar).
+
+Hasta el 31/10: $35.000 con Mercado Pago o $30.000 en efectivo (seña de $5.000 y $25.000
+en efectivo en el bar). Ese esquema sigue andando para cualquier película con precio en
+efectivo cargado.
+
+**Si el resto es en efectivo, lo dice la foto del pedido** (`ticket_orders.balance_cash_only`,
+true cuando la película tenía precio en efectivo al comprar). Lo leen «Mi entrada» («En el
+bar: $X en efectivo» o «El día del evento: $X, en el local») y el comentario de la reserva
+para el staff («Resta cobrar $X en efectivo.» o «Resta cobrar $X.»): con un solo precio, el
+staff no tiene que rechazar una tarjeta.
+
+**Las condiciones** (`terms`, por película, editables en el panel → Condiciones) se leen
+antes de pagar: en el celular, justo antes del botón; en la compu, arriba de los datos del
+paso 2 (en el pie tapaban el campo del WhatsApp). En HUB dicen que las señas no tienen
+devolución y qué se puede hacer si no se puede ir. Una película nueva copia precios, formas
+de pago, aclaración y condiciones de la última cargada.
 
 Con seña, la foto del pedido guarda el precio en efectivo como `full_price_cents`: así el
 saldo `(full_price_cents − unit_price_cents) × personas` sale bien en el comentario de la
 reserva que lee el staff y en «Mi entrada».
 
-Las dos formas de pago se presentan por **cómo se paga el resto** (pedido de los socios,
-27/10/2026): «¿Pagás en efectivo?» → hoy solo la seña y el resto en efectivo en el bar;
-«¿Pagás con Mercado Pago?» → todo junto ahora. El saldo en el bar es solo en efectivo, así
-que quien quiere pagar con tarjeta o con Mercado Pago paga el total online.
+Con precio en efectivo, las dos formas de pago se presentan por **cómo se paga el resto**
+(pedido de los socios, 27/10/2026): «¿Pagás en efectivo?» → hoy solo la seña y el resto en
+efectivo en el bar; «¿Pagás con Mercado Pago?» → todo junto ahora. Con un solo precio y
+pago total permitido: «Reservá con seña» o «Pagá todo ahora».
 
-Nunca se promete «no pagás nada más»: en HUB las bebidas se cobran aparte. Lo que el
-precio no incluye va en la **aclaración del total** (`price_note`, por película, editable
-en el panel): se muestra junto a lo que se paga hoy y en «Mi entrada».
+Nunca se promete «no pagás nada más», y tampoco se habla de las bebidas (pedido del
+27/10). La **aclaración del precio** (`price_note`, por película, editable en el panel) va
+junto al total, o en la tarjeta del precio cuando se reserva solo con seña, y en «Mi
+entrada». En HUB: «Incluye todos los pasos de la película».
 
 **Mínimo por compra** (`min_party_size`, por película, 2 en Cine y degustación): la entrada
 arranca en el mínimo y no deja bajar; `startCheckout` lo explica («Se reserva desde 2

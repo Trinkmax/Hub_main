@@ -81,6 +81,7 @@ const EXPERIENCE: AdminExperience = {
   priceCents: 3_500_000,
   depositCents: 500_000,
   cashPriceCents: null,
+  allowFullPayment: true,
   minPartySize: 1,
   maxPartySize: 10,
   priceNote: null,
@@ -359,8 +360,9 @@ describe('Editor de una película', () => {
     expect(html).toContain('value="shrek"')
     expect(html).toContain('value="Cebollas"')
     expect(t.replace(/\s/g, ' ')).toMatch(
-      /2 personas: seña \$\s10\.000 hoy y \$\s60\.000 en efectivo, o \$\s70\.000 todo junto/,
+      /2 personas: seña \$\s10\.000 hoy y \$\s60\.000 el día de la función, o \$\s70\.000 todo junto/,
     )
+    expect(t).toContain('Se puede pagar todo online')
     expect(t).toContain('Apagada')
     expect(t).toContain('Vista previa')
     expect(t).toContain('Todo guardado')

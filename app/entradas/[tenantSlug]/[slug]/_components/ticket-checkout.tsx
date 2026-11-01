@@ -9,7 +9,13 @@ import { buildWaMeUrl } from '@/lib/phone'
 import { allSoldOut, maxSelectable } from '@/lib/ticketing/availability'
 import { startCheckout } from '@/lib/ticketing/checkout-actions'
 import { formatLongDate, formatShortDate } from '@/lib/ticketing/dates'
-import { cashPrice, formatPesos, hasDepositOption, quote } from '@/lib/ticketing/pricing'
+import {
+  balanceCashOnly,
+  cashPrice,
+  formatPesos,
+  paymentOptions,
+  quote,
+} from '@/lib/ticketing/pricing'
 import type { PaymentOption } from '@/lib/ticketing/types'
 import { cn } from '@/lib/utils'
 import { RollNumber } from '../../../_components/roll-number'
@@ -21,7 +27,7 @@ import { FunctionPicker } from './function-picker'
  *
  * Dos pasos, como dos caras de la entrada: primero se ARMA (qué noche,
  * cuántos van, seña o todo) con el total a la vista; después, a nombre de
- * quién. Partirlo así hace que en el celular no sea un formulario eterno y
+ * quién, con las condiciones justo antes de pagar. Partirlo así hace que en el celular no sea un formulario eterno y
  * que en la compu entre entero en la columna fija.
  *
  * Al pagar, el server guarda los lugares unos minutos y devuelve el link de
@@ -37,9 +43,11 @@ type ExperienceInfo = {
   depositCents: number
   /** Total por persona señando y pagando el resto en efectivo; null = priceCents. */
   cashPriceCents: number | null
+  /** Si se puede pagar todo online; si no, se reserva solo con seña. */
+  allowFullPayment: boolean
   minPartySize: number
   maxPartySize: number
-  /** Va junto al total: «Las bebidas se pagan aparte». */
+  /** Aclara el precio: «Incluye todos los pasos de la película». */
   priceNote: string | null
   terms: string | null
 }
@@ -86,7 +94,14 @@ export function TicketCheckout({
   preview: boolean
 }) {
   const { functions, selected, reportSeats } = useExperience()
-  const depositAvailable = hasDepositOption(experience.depositCents, experience.priceCents)
+  const available = paymentOptions(experience)
+  const depositAvailable = available.deposit
+  // Solo seña (HUB desde el 30/10): no hay nada que elegir, la entrada dice
+  // el precio, la seña de hoy y lo que queda para el día del evento.
+  const depositOnly = available.deposit && !available.full
+  // Con precio en efectivo propio, el resto es solo en efectivo; con un solo
+  // precio, se paga como quiera.
+  const cashOnly = balanceCashOnly(experience.cashPriceCents)
   // Cine y degustación no se vende para una sola persona: el mínimo es de la
   // película (la base lo vuelve a controlar al guardar el lugar).
   const minParty = Math.max(1, experience.minPartySize)
@@ -113,9 +128,11 @@ export function TicketCheckout({
     partySize: people,
     option,
   })
-  // En efectivo puede salir menos que con Mercado Pago (HUB: $30.000 contra
-  // $35.000 por persona): la seña se paga hoy y el resto en el bar.
+  // En efectivo puede salir menos que con Mercado Pago (HUB hasta noviembre:
+  // $30.000 contra $35.000 por persona): la seña se paga hoy y el resto en el
+  // bar. Sin precio en efectivo es el mismo precio.
   const cashCents = cashPrice(experience.priceCents, experience.cashPriceCents)
+  const restPerPerson = formatPesos(Math.max(0, cashCents - experience.depositCents))
 
   // Lo que la persona escribió la vez anterior, en este celular.
   useEffect(() => {
@@ -252,11 +269,12 @@ export function TicketCheckout({
   const generalError =
     error && !['guest_name', 'guest_phone'].includes(error.field ?? '') ? error.message : null
 
-  // Las dos formas de pago se eligen por CÓMO se paga el resto (pedido de los
-  // socios del 27/10): el saldo en el bar es solo en efectivo, así que quien
-  // quiere pagar con tarjeta o con Mercado Pago paga todo ahora. Cada tarjeta
-  // dice lo que sale por persona de esa forma; el pie, lo de hoy y lo del bar.
-  const paymentOptions = (compact: boolean) => (
+  // Con precio en efectivo, las dos formas de pago se eligen por CÓMO se paga
+  // el resto (pedido de los socios del 27/10): el saldo en el bar es solo en
+  // efectivo, así que quien quiere pagar con tarjeta paga todo ahora. Con un
+  // solo precio (pedido del 30/10), seña o todo junto. Cada tarjeta dice lo
+  // que sale por persona de esa forma; el pie, lo de hoy y lo que queda.
+  const optionCards = (compact: boolean) => (
     <div className={cn('grid gap-2.5', compact ? depositAvailable && 'grid-cols-2' : 'mt-3')}>
       {depositAvailable ? (
         <OptionCard
@@ -264,10 +282,14 @@ export function TicketCheckout({
           compact={compact}
           checked={option === 'deposit'}
           onSelect={() => setOption('deposit')}
-          title="¿Pagás en efectivo?"
+          title={cashOnly ? '¿Pagás en efectivo?' : 'Reservá con seña'}
           amount={formatPesos(cashCents)}
           detail={`Hoy, seña de ${formatPesos(experience.depositCents)}`}
-          note={`Hoy señás ${formatPesos(experience.depositCents)} por persona y los ${formatPesos(cashCents - experience.depositCents)} restantes, en efectivo en el bar.`}
+          note={
+            cashOnly
+              ? `Hoy señás ${formatPesos(experience.depositCents)} por persona y los ${restPerPerson} restantes, en efectivo en el bar.`
+              : `Hoy señás ${formatPesos(experience.depositCents)} por persona y el día del evento, en el local, pagás lo restante (${restPerPerson}).`
+          }
         />
       ) : null}
       <OptionCard
@@ -275,13 +297,46 @@ export function TicketCheckout({
         compact={compact}
         checked={option === 'full'}
         onSelect={() => setOption('full')}
-        title={depositAvailable ? '¿Pagás con Mercado Pago?' : 'Pagás todo con Mercado Pago'}
+        title={
+          !depositAvailable
+            ? 'Pagás todo con Mercado Pago'
+            : cashOnly
+              ? '¿Pagás con Mercado Pago?'
+              : 'Pagá todo ahora'
+        }
         amount={formatPesos(experience.priceCents)}
         detail="Todo junto, hoy"
         note="Pagás todo junto ahora, con tarjeta, débito o dinero en cuenta."
       />
     </div>
   )
+
+  // Solo seña: la tarjeta del precio, con el texto que pidieron los socios
+  // («Precio por persona: $45.000, incluye todos los pasos de la película.
+  // Para reservar…»). En el celular la aclaración del precio va acá y no
+  // junto al total; en la compu va la versión corta en el pie (en el cuerpo
+  // se cortaba con el scroll de adentro) y la aclaración, junto al total.
+  const priceCard = (compact: boolean) => (
+    <PriceCard
+      compact={compact}
+      title="Precio por persona"
+      amount={formatPesos(cashCents)}
+      detail={`Hoy, seña de ${formatPesos(experience.depositCents)}`}
+      note={`${experience.priceNote ? `${experience.priceNote} ` : ''}Para reservar, pagás una seña de ${formatPesos(experience.depositCents)} por persona. El día del evento, en el local, pagás lo restante (${restPerPerson} por persona${cashOnly ? ', en efectivo' : ''}).`}
+    />
+  )
+
+  // Las condiciones (en HUB: la seña no tiene devolución), legibles y antes
+  // de pagar, no en letra chica debajo del botón: pidieron que quede todo
+  // claro antes de comprar.
+  const termsBox = experience.terms ? (
+    <div className="rounded-xl border border-(--ent-ink)/15 bg-(--ent-ink)/[0.04] px-3.5 py-3">
+      <p className="ent-mono text-[0.6rem] text-(--ent-ink-2)">Antes de pagar</p>
+      <p className="mt-1.5 text-xs leading-relaxed whitespace-pre-line text-(--ent-ink) lg:mt-1 lg:text-[0.7rem] lg:leading-snug">
+        {experience.terms}
+      </p>
+    </div>
+  ) : null
 
   const footer = (
     <>
@@ -290,7 +345,9 @@ export function TicketCheckout({
       </div>
 
       <div className="px-5 pt-5 pb-6">
-        {venue.canSell && step === 'build' ? (
+        {venue.canSell && step === 'build' && depositOnly ? (
+          <div className="mb-5 hidden lg:block">{priceCard(true)}</div>
+        ) : venue.canSell && step === 'build' ? (
           // En la compu la forma de pago va acá, al lado del total que cambia:
           // la entrada fija puede ser más alta que la pantalla y «Pagá todo»
           // quedaba escondido en el scroll de adentro. Lo que explicaba cada
@@ -300,7 +357,7 @@ export function TicketCheckout({
           // en una notebook de 1440×900 (~790 px de ventana).
           <fieldset className="mb-5 hidden lg:block">
             <legend className="sr-only">¿Cómo querés pagar?</legend>
-            {paymentOptions(true)}
+            {optionCards(true)}
           </fieldset>
         ) : null}
 
@@ -315,20 +372,30 @@ export function TicketCheckout({
               />
             </div>
             <p className="max-w-[11rem] pb-1 text-right text-xs leading-snug text-(--ent-ink-2)">
-              {q.option === 'deposit' ? (
+              {q.option === 'deposit' && cashOnly ? (
                 <>
                   Seña de {people} {people === 1 ? 'persona' : 'personas'}. En el bar:{' '}
                   <strong className="text-(--ent-ink)">{formatPesos(q.balanceCents)}</strong> en
                   efectivo.
+                </>
+              ) : q.option === 'deposit' ? (
+                <>
+                  Seña de {people} {people === 1 ? 'persona' : 'personas'}. El día del evento:{' '}
+                  <strong className="text-(--ent-ink)">{formatPesos(q.balanceCents)}</strong>.
                 </>
               ) : (
                 <>
                   Total de {people} {people === 1 ? 'persona' : 'personas'}.
                 </>
               )}
-              {/* Lo que el precio no incluye (en HUB, las bebidas): antes decía
-                  «no pagás nada más» y las bebidas se cobran aparte. */}
-              {experience.priceNote ? <> {experience.priceNote}</> : null}
+              {/* La aclaración del precio; con solo seña, en el celular va en la
+                  tarjeta. */}
+              {experience.priceNote ? (
+                <span className={depositOnly ? 'hidden lg:inline' : undefined}>
+                  {' '}
+                  {experience.priceNote}
+                </span>
+              ) : null}
             </p>
           </div>
         ) : null}
@@ -340,6 +407,13 @@ export function TicketCheckout({
           >
             {generalError}
           </p>
+        ) : null}
+
+        {experience.terms && step === 'details' && venue.canSell ? (
+          // En el celular, justo antes del botón de pagar (la entrada fluye
+          // con la página y se lee entera). En la compu van en el cuerpo,
+          // arriba de los datos: en el pie tapaban el campo del WhatsApp.
+          <div className="mt-4 lg:hidden">{termsBox}</div>
         ) : null}
 
         {!venue.canSell ? (
@@ -398,15 +472,16 @@ export function TicketCheckout({
           </p>
         ) : venue.canSell ? (
           <p className="mt-3 text-center text-xs leading-relaxed text-(--ent-ink-2)">
-            {step === 'details'
-              ? `Te guardamos ${people === 1 ? 'el lugar' : `los ${people} lugares`} ${venue.holdMinutes} minutos mientras pagás. Tarjeta, débito o dinero en cuenta.`
-              : 'Pagás con Mercado Pago. Tu reserva queda hecha al instante.'}
-          </p>
-        ) : null}
-
-        {experience.terms && step === 'details' ? (
-          <p className="mt-3 border-t border-(--ent-ink)/10 pt-3 text-[0.7rem] leading-relaxed text-(--ent-ink-2)">
-            {experience.terms}
+            {step === 'details' ? (
+              <>
+                Te guardamos {people === 1 ? 'el lugar' : `los ${people} lugares`}{' '}
+                {venue.holdMinutes} minutos mientras pagás.
+                {/* En la compu, un renglón menos: la entrada fija es baja. */}
+                <span className="lg:hidden"> Tarjeta, débito o dinero en cuenta.</span>
+              </>
+            ) : (
+              'Pagás con Mercado Pago. Tu reserva queda hecha al instante.'
+            )}
           </p>
         ) : null}
       </div>
@@ -492,10 +567,15 @@ export function TicketCheckout({
               ) : null}
             </fieldset>
 
-            {venue.canSell ? (
+            {venue.canSell && depositOnly ? (
+              <div className="lg:hidden">
+                <p className="text-sm font-semibold">¿Cuánto sale?</p>
+                <div className="mt-3">{priceCard(false)}</div>
+              </div>
+            ) : venue.canSell ? (
               <fieldset className="lg:hidden">
                 <legend className="text-sm font-semibold">¿Cómo querés pagar?</legend>
-                {paymentOptions(false)}
+                {optionCards(false)}
               </fieldset>
             ) : null}
           </div>
@@ -510,6 +590,10 @@ export function TicketCheckout({
               {selected ? `${formatLongDate(selected.date)} · ${people}` : 'Cambiar'}
               {selected ? (people === 1 ? ' persona' : ' personas') : ''}
             </button>
+
+            {/* En la compu, arriba de los datos: abajo quedaban detrás del pie
+                fijo y se podía pagar sin verlas. */}
+            {venue.canSell && termsBox ? <div className="hidden lg:block">{termsBox}</div> : null}
 
             <div>
               <label htmlFor={`${ids}-name`} className="text-sm font-semibold">
@@ -694,6 +778,54 @@ function OptionCard({
         {note}
       </span>
     </label>
+  )
+}
+
+/** La misma tarjeta, sin nada que elegir: cuando la película se reserva solo con seña. */
+function PriceCard({
+  compact = false,
+  title,
+  amount,
+  detail,
+  note,
+}: {
+  /** La versión de la compu, en un renglón y sin la explicación. */
+  compact?: boolean
+  title: string
+  amount: string
+  /** Debajo del monto, en la versión de la compu: «Hoy, seña de $20.000». */
+  detail: string
+  /** La explicación entera, en la del celular. */
+  note: string
+}) {
+  if (compact) {
+    return (
+      <div
+        className="ent-option ent-option-compact ent-option-static flex items-center justify-between gap-3"
+        data-checked="false"
+      >
+        <span className="text-sm leading-snug font-semibold">{title}</span>
+        <span className="text-right">
+          <span className="ent-num block text-base font-semibold">
+            {amount}
+            <span className="ml-1 text-xs font-normal text-(--ent-ink-2)">c/u</span>
+          </span>
+          <span className="block text-[0.7rem] text-(--ent-ink-2)">{detail}</span>
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="ent-option ent-option-static" data-checked="false">
+      <p className="flex items-baseline justify-between gap-3">
+        <span className="font-semibold text-balance">{title}</span>
+        <span className="ent-num shrink-0 text-lg font-semibold">
+          {amount}
+          <span className="ml-1 text-xs font-normal text-(--ent-ink-2)">c/u</span>
+        </span>
+      </p>
+      <p className="mt-1 text-xs leading-snug text-(--ent-ink-2)">{note}</p>
+    </div>
   )
 }
 

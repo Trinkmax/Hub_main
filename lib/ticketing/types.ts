@@ -56,9 +56,11 @@ export type ExperienceRow = {
   deposit_cents: number
   /** Total por persona con seña + efectivo en el bar. null = price_cents. */
   cash_price_cents: number | null
+  /** Si se puede pagar todo online. En false se reserva solo con seña. */
+  allow_full_payment: boolean
   min_party_size: number
   max_party_size: number
-  /** Junto al total de la entrada: «Las bebidas se pagan aparte». */
+  /** Aclaración del precio en la entrada: «Incluye todos los pasos de la película». */
   price_note: string | null
   terms: string | null
   sort_order: number
@@ -80,6 +82,8 @@ export type TicketOrderRow = {
   unit_price_cents: number
   full_price_cents: number
   total_cents: number
+  /** El resto se paga solo en efectivo (foto del pedido). */
+  balance_cash_only: boolean
   guest_name: string
   guest_phone: string
   marketing_opt_in: boolean
@@ -145,12 +149,17 @@ export type PublicExperience = {
   gallery: GalleryItem[]
   priceCents: number
   depositCents: number
-  /** Total por persona si señá y paga el resto en efectivo (HUB: $30.000). null = el mismo precio. */
+  /**
+   * Total por persona si señá y paga el resto en efectivo. null = un solo
+   * precio para cualquier medio, y el resto se paga como quiera.
+   */
   cashPriceCents: number | null
+  /** Si se puede pagar todo online (HUB desde el 01/11: no, solo seña). */
+  allowFullPayment: boolean
   /** Desde cuántas personas se vende (Cine y degustación: 2). */
   minPartySize: number
   maxPartySize: number
-  /** Lo que aclara el total («Las bebidas se pagan aparte»), o null. */
+  /** Lo que aclara el precio («Incluye todos los pasos de la película»), o null. */
   priceNote: string | null
   terms: string | null
   functions: PublicFunction[]
@@ -188,12 +197,14 @@ export type PublicOrder = {
   unitPriceCents: number
   fullPriceCents: number
   totalCents: number
+  /** El resto se paga solo en efectivo. */
+  balanceCashOnly: boolean
   paidCents: number | null
   guestFirstName: string
   experienceSlug: string | null
   posterUrl: string | null
   accent: string
-  /** La aclaración de la película («Las bebidas se pagan aparte»), o null. */
+  /** La aclaración del precio de la película, o null. */
   priceNote: string | null
   mpStatusDetail: string | null
   /** Volver a Mercado Pago con el mismo pedido (si el lugar sigue guardado). */
