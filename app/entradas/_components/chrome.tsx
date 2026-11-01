@@ -164,22 +164,40 @@ export function HowItWorks({
   venue,
   minDepositCents,
   minPriceCents,
+  cashOnly,
+  fullPayment,
 }: {
   venue: PublicVenue
   minDepositCents: number | null
   minPriceCents: number | null
+  /** Alguna película cobra el resto solo en efectivo. */
+  cashOnly: boolean
+  /** Alguna película se puede pagar toda online. */
+  fullPayment: boolean
 }) {
-  const payCopy = venue.canSell
-    ? minDepositCents
-      ? `Si el resto lo pagás en efectivo en el bar, señás desde ${formatPesos(minDepositCents)} por persona. Si no, pagás todo junto con Mercado Pago${minPriceCents ? `, desde ${formatPesos(minPriceCents)} por persona` : ''}: tarjeta, débito o dinero en cuenta.`
-      : `El total${minPriceCents ? ` desde ${formatPesos(minPriceCents)} por persona` : ''}, con Mercado Pago: tarjeta, débito o dinero en cuenta.`
-    : 'Escribinos por WhatsApp con la película, la fecha y cuántos son.'
+  const from = (cents: number | null) => (cents ? ` desde ${formatPesos(cents)} por persona` : '')
+  const payCopy = !venue.canSell
+    ? 'Escribinos por WhatsApp con la película, la fecha y cuántos son.'
+    : !minDepositCents
+      ? `El total${from(minPriceCents)}, con Mercado Pago: tarjeta, débito o dinero en cuenta.`
+      : cashOnly
+        ? `Si el resto lo pagás en efectivo en el bar, señás${from(minDepositCents)}. Si no, pagás todo junto con Mercado Pago${minPriceCents ? `,${from(minPriceCents)}` : ''}: tarjeta, débito o dinero en cuenta.`
+        : fullPayment
+          ? `Señás${from(minDepositCents)} y el resto lo pagás el día del evento, en el local. O pagás todo junto ahora: tarjeta, débito o dinero en cuenta.`
+          : `Para reservar, señás${from(minDepositCents)} con Mercado Pago: tarjeta, débito o dinero en cuenta. El resto lo pagás el día del evento, en el local.`
   const steps = [
     {
       title: 'Elegí película y fecha',
       text: 'Las fechas con «Agotado» ya no tienen lugar. Las que dicen «Últimos» se están por llenar.',
     },
-    { title: venue.canSell ? 'Señá o pagá todo' : 'Reservá', text: payCopy },
+    {
+      title: !venue.canSell
+        ? 'Reservá'
+        : minDepositCents && !fullPayment
+          ? 'Señá tu lugar'
+          : 'Señá o pagá todo',
+      text: payCopy,
+    },
     {
       title: 'Tu lugar queda reservado',
       text: venue.canSell

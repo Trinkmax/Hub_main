@@ -70,6 +70,7 @@ describe('experienceFormSchema', () => {
     gallery: [{ url: 'https://x.supabase.co/storage/v1/object/public/landing-media/a.webp' }],
     price: '35.000',
     deposit: 5000,
+    allow_full_payment: true,
     min_party_size: '2',
     max_party_size: '10',
     price_note: '',
@@ -108,12 +109,29 @@ describe('experienceFormSchema', () => {
     expect(experienceFormSchema.safeParse({ ...base, cash_price: '0' }).success).toBe(false)
   })
 
-  it('la aclaración del total se guarda recortada y con tope de 140', () => {
+  it('solo seña necesita una seña (si no, la película no se podría comprar)', () => {
+    const onlyDeposit = experienceFormSchema.parse({
+      ...base,
+      price: '45.000',
+      deposit: '20.000',
+      allow_full_payment: false,
+    })
+    expect(onlyDeposit.allow_full_payment).toBe(false)
+    const noDeposit = experienceFormSchema.safeParse({
+      ...base,
+      deposit: '0',
+      allow_full_payment: false,
+    })
+    expect(noDeposit.success).toBe(false)
+    if (!noDeposit.success) expect(noDeposit.error.issues[0]?.path).toEqual(['allow_full_payment'])
+  })
+
+  it('la aclaración del precio se guarda recortada y con tope de 140', () => {
     const ok = experienceFormSchema.parse({
       ...base,
-      price_note: '  Las bebidas se pagan aparte. ',
+      price_note: '  Incluye todos los pasos de la película. ',
     })
-    expect(ok.price_note).toBe('Las bebidas se pagan aparte.')
+    expect(ok.price_note).toBe('Incluye todos los pasos de la película.')
     expect(experienceFormSchema.safeParse({ ...base, price_note: 'x'.repeat(141) }).success).toBe(
       false,
     )

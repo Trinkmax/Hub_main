@@ -110,6 +110,7 @@ const EXPERIENCE: AdminExperience = {
   priceCents: 3_500_000,
   depositCents: 500_000,
   cashPriceCents: null,
+  allowFullPayment: true,
   minPartySize: 1,
   maxPartySize: 10,
   priceNote: null,
@@ -153,6 +154,8 @@ describe('experienceToFormValues', () => {
     expect(parsed.data.min_party_size).toBe(1)
     expect(parsed.data.price_note).toBeNull()
     expect(parsed.data.cash_price).toBeNull()
+
+    expect(parsed.data.allow_full_payment).toBe(true)
   })
 })
 
@@ -161,7 +164,8 @@ describe('priceExample', () => {
     const example = priceExample({ price: '35.000', deposit: '5.000', maxPartySize: 10 })
     expect(example?.people).toBe('2 personas')
     expect(nbsp(example?.deposit?.today ?? '')).toBe('$ 10.000')
-    expect(nbsp(example?.deposit?.cash ?? '')).toBe('$ 60.000')
+    expect(nbsp(example?.deposit?.rest ?? '')).toBe('$ 60.000')
+    expect(example?.deposit?.cashOnly).toBe(false)
     expect(nbsp(example?.full ?? '')).toBe('$ 70.000')
   })
 
@@ -190,8 +194,34 @@ describe('priceExample', () => {
       minPartySize: 2,
     })
     expect(nbsp(example?.deposit?.today ?? '')).toBe('$ 10.000')
-    expect(nbsp(example?.deposit?.cash ?? '')).toBe('$ 50.000')
+    expect(nbsp(example?.deposit?.rest ?? '')).toBe('$ 50.000')
+    expect(example?.deposit?.cashOnly).toBe(true)
     expect(nbsp(example?.full ?? '')).toBe('$ 70.000')
+  })
+
+  it('solo seña (HUB desde el 30/10): seña $40.000 hoy y $50.000 el día, sin «todo junto»', () => {
+    const example = priceExample({
+      price: '45.000',
+      deposit: '20.000',
+      allowFullPayment: false,
+      maxPartySize: 10,
+      minPartySize: 2,
+    })
+    expect(nbsp(example?.deposit?.today ?? '')).toBe('$ 40.000')
+    expect(nbsp(example?.deposit?.rest ?? '')).toBe('$ 50.000')
+    expect(example?.deposit?.cashOnly).toBe(false)
+    expect(example?.full).toBeNull()
+  })
+
+  it('solo seña pero sin seña: igual se puede pagar todo', () => {
+    const example = priceExample({
+      price: '45.000',
+      deposit: '0',
+      allowFullPayment: false,
+      maxPartySize: 10,
+    })
+    expect(example?.deposit).toBeNull()
+    expect(nbsp(example?.full ?? '')).toBe('$ 90.000')
   })
 
   it('con un mínimo de más de 2, el ejemplo es para el mínimo', () => {

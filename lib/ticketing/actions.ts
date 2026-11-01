@@ -118,7 +118,7 @@ export async function createExperience(
     supabase
       .from('event_experiences')
       .select(
-        'slug, price_cents, deposit_cents, cash_price_cents, min_party_size, max_party_size, price_note, series, schedule_note, updated_at',
+        'slug, price_cents, deposit_cents, cash_price_cents, allow_full_payment, min_party_size, max_party_size, price_note, terms, series, schedule_note, updated_at',
       )
       .eq('tenant_id', tenantId)
       .order('updated_at', { ascending: false }),
@@ -131,16 +131,18 @@ export async function createExperience(
       price_cents: number
       deposit_cents: number
       cash_price_cents: number | null
+      allow_full_payment: boolean
       min_party_size: number
       max_party_size: number
       price_note: string | null
+      terms: string | null
       series: string | null
       schedule_note: string | null
     }> | null) ?? []
-  // Los precios, las personas por compra, la aclaración del total y la
-  // colección arrancan como los de la última película cargada: en Cine y
-  // degustación cambian por edición, no por película. Mínimo y máximo van
-  // juntos (la base pide mínimo ≤ máximo).
+  // Los precios, las formas de pago, las personas por compra, la aclaración
+  // del precio, las condiciones y la colección arrancan como los de la última
+  // película cargada: en Cine y degustación cambian por edición, no por
+  // película. Mínimo y máximo van juntos (la base pide mínimo ≤ máximo).
   const last = rows[0]
   const priceCents =
     parsed.data.price && parsed.data.price > 0
@@ -178,6 +180,9 @@ export async function createExperience(
             min_party_size: last.min_party_size,
             max_party_size: last.max_party_size,
             price_note: last.price_note,
+            terms: last.terms,
+            // Solo seña necesita una seña (la base lo exige).
+            allow_full_payment: depositCents > 0 ? last.allow_full_payment : true,
             // El de efectivo solo si sigue dejando algo para pagar en el bar
             // con la seña nueva (la base lo exige).
             cash_price_cents:
@@ -254,6 +259,7 @@ export async function saveExperience(
       price_cents: v.price,
       deposit_cents: v.deposit,
       cash_price_cents: v.cash_price,
+      allow_full_payment: v.allow_full_payment,
       min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
       price_note: v.price_note,
@@ -284,6 +290,7 @@ export async function saveExperience(
       price_cents: v.price,
       deposit_cents: v.deposit,
       cash_price_cents: v.cash_price,
+      allow_full_payment: v.allow_full_payment,
       min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
       slug: v.slug,

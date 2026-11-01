@@ -940,6 +940,11 @@
     padding: 0.7rem 0.85rem;
   }
 
+  /* Sin nada que elegir (solo seña): no se hunde al tocarla. */
+  .ent-option-static:active {
+    transform: none;
+  }
+
   .ent-stepper-btn {
     display: inline-flex;
     width: 3rem;

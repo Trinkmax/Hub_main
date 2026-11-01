@@ -10,7 +10,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { partySizeError } from './availability'
 import { getMercadoPagoCredentials } from './credentials'
 import { DEFAULT_TZ, formatShortDate, formatTime } from './dates'
-import { centsToMercadoPagoAmount } from './pricing'
+import { centsToMercadoPagoAmount, paymentOptions } from './pricing'
 import { isOrderExpired } from './queries'
 import { type CheckoutInput, checkoutSchema, orderIdSchema } from './schemas'
 import { reconcileOrder, reconcilePaymentById } from './settle'
@@ -107,7 +107,9 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
   const [{ data: experience }, { data: event }, creds] = await Promise.all([
     service
       .from('event_experiences')
-      .select('id, title, poster_url, published, min_party_size, max_party_size')
+      .select(
+        'id, title, poster_url, published, price_cents, deposit_cents, allow_full_payment, min_party_size, max_party_size',
+      )
       .eq('tenant_id', tenant.id)
       .eq('slug', data.experience_slug)
       .maybeSingle(),
@@ -136,6 +138,15 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
     Number(experience.max_party_size ?? 30),
   )
   if (partyError) return { ok: false, message: partyError, field: 'party_size' }
+  // Película que se reserva solo con seña: también lo controla la base.
+  const options = paymentOptions({
+    priceCents: Number(experience.price_cents),
+    depositCents: Number(experience.deposit_cents),
+    allowFullPayment: experience.allow_full_payment !== false,
+  })
+  if (data.option === 'full' && !options.full) {
+    return { ok: false, message: 'Esta película se reserva con seña.', field: 'option' }
+  }
 
   const { data: created, error: createError } = await service.rpc('ticketing_create_order', {
     p_tenant_id: tenant.id,

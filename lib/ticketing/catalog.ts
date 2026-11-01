@@ -1,4 +1,5 @@
 import { monthLong } from './dates'
+import { balanceCashOnly, paymentOptions } from './pricing'
 import type { GalleryItem, PublicExperience, PublicFunction } from './types'
 
 /**
@@ -15,6 +16,10 @@ export type CatalogSummary = {
   minDepositCents: number | null
   /** El precio total más bajo (por persona). */
   minPriceCents: number | null
+  /** Alguna película cobra el resto solo en efectivo (tiene precio en efectivo). */
+  cashOnly: boolean
+  /** Alguna película se puede pagar toda online (si no, todas son solo con seña). */
+  fullPayment: boolean
   /** «noviembre», «noviembre y diciembre», «noviembre a enero». */
   monthsLabel: string | null
   /** La colección si todas las películas comparten una («Cine y degustación»). */
@@ -61,6 +66,8 @@ export function summarizeCatalog(experiences: PublicExperience[]): CatalogSummar
     soldOut: functions.filter((f) => f.state === 'sold_out').length,
     minDepositCents: deposits.length > 0 ? Math.min(...deposits) : null,
     minPriceCents: prices.length > 0 ? Math.min(...prices) : null,
+    cashOnly: experiences.some((e) => balanceCashOnly(e.cashPriceCents)),
+    fullPayment: experiences.some((e) => paymentOptions(e).full),
     monthsLabel: monthsLabel(functions.map((f) => f.date)),
     series: onlySeries ?? null,
     venuePhotos: venuePhotos.slice(0, 12),

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  balanceCashOnly,
   cashPrice,
   centsToMercadoPagoAmount,
   centsToPesos,
   formatPesos,
   hasDepositOption,
   mercadoPagoAmountToCents,
+  paymentOptions,
   pesosToCents,
   quote,
 } from '@/lib/ticketing/pricing'
@@ -74,6 +76,40 @@ describe('quote', () => {
     expect(
       quote({ priceCents: PRICE, depositCents: DEPOSIT, partySize: 2.7, option: 'full' }).partySize,
     ).toBe(2)
+  })
+})
+
+describe('paymentOptions y balanceCashOnly (01/11: un solo precio y solo seña)', () => {
+  it('HUB desde el 30/10: $45.000, seña de $20.000 y sin pago total online', () => {
+    expect(
+      paymentOptions({ priceCents: 4_500_000, depositCents: 2_000_000, allowFullPayment: false }),
+    ).toEqual({ deposit: true, full: false })
+    const q = quote({
+      priceCents: 4_500_000,
+      depositCents: 2_000_000,
+      partySize: 2,
+      option: 'deposit',
+    })
+    expect(q.totalCents).toBe(4_000_000)
+    expect(q.balanceCents).toBe(5_000_000)
+  })
+
+  it('sin seña siempre se puede pagar todo, aunque esté apagado', () => {
+    expect(paymentOptions({ priceCents: PRICE, depositCents: 0, allowFullPayment: false })).toEqual(
+      { deposit: false, full: true },
+    )
+  })
+
+  it('como hasta hoy: seña o todo', () => {
+    expect(
+      paymentOptions({ priceCents: PRICE, depositCents: DEPOSIT, allowFullPayment: true }),
+    ).toEqual({ deposit: true, full: true })
+  })
+
+  it('el resto es solo en efectivo cuando hay precio en efectivo', () => {
+    expect(balanceCashOnly(3_000_000)).toBe(true)
+    expect(balanceCashOnly(null)).toBe(false)
+    expect(balanceCashOnly(undefined)).toBe(false)
   })
 })
 

@@ -151,6 +151,7 @@ export function ExperienceView({
                   priceCents: experience.priceCents,
                   depositCents: experience.depositCents,
                   cashPriceCents: experience.cashPriceCents,
+                  allowFullPayment: experience.allowFullPayment,
                   minPartySize: experience.minPartySize,
                   maxPartySize: experience.maxPartySize,
                   priceNote: experience.priceNote,

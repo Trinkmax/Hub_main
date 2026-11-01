@@ -37,7 +37,7 @@ type SBAny = any
 export const DEFAULT_ACCENT = '#c0573e'
 
 const EXPERIENCE_COLUMNS =
-  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, cash_price_cents, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
+  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, cash_price_cents, allow_full_payment, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
 
 type TenantRow = {
   id: string
@@ -191,6 +191,7 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
     priceCents: Number(row.price_cents),
     depositCents: Number(row.deposit_cents),
     cashPriceCents: row.cash_price_cents === null ? null : Number(row.cash_price_cents),
+    allowFullPayment: row.allow_full_payment ?? true,
     minPartySize,
     maxPartySize: row.max_party_size,
     priceNote: row.price_note,
@@ -332,7 +333,7 @@ export async function getPublicExperience(
 // ──────────────────────────────────────────────
 
 const ORDER_PUBLIC_COLUMNS =
-  'id, tenant_id, experience_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, guest_name, status, hold_expires_at, paid_cents, mp_status_detail, mp_preference_id'
+  'id, tenant_id, experience_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, mp_status_detail, mp_preference_id'
 
 type OrderPublicRow = Pick<
   TicketOrderRow,
@@ -347,6 +348,7 @@ type OrderPublicRow = Pick<
   | 'unit_price_cents'
   | 'full_price_cents'
   | 'total_cents'
+  | 'balance_cash_only'
   | 'guest_name'
   | 'status'
   | 'hold_expires_at'
@@ -442,6 +444,7 @@ export async function getPublicOrder(
       unitPriceCents: Number(order.unit_price_cents),
       fullPriceCents: Number(order.full_price_cents),
       totalCents: Number(order.total_cents),
+      balanceCashOnly: order.balance_cash_only ?? false,
       paidCents: order.paid_cents === null ? null : Number(order.paid_cents),
       guestFirstName: order.guest_name.trim().split(/\s+/)[0] ?? order.guest_name,
       experienceSlug: experience?.slug ?? null,
