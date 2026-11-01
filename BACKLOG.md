@@ -1455,10 +1455,6 @@ Lo que no estaba anotado arriba. Contexto y decisiones en `docs/features/adminis
 
 Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.md`):
 
-- **Cargar las fechas del mes con un Excel** (pedido de Nacho Badra, 30/10/2026): subir un
-  Excel con fecha y película y que el calendario muestre qué cambia (nuevas, movidas,
-  iguales) antes de guardar. Hoy no existe: las fechas se cargan una por una en Eventos →
-  Programados. Las de noviembre y diciembre de 2026 se cargaron por soporte.
 - **Conectar Mercado Pago por OAuth** («Conectar con Mercado Pago») en vez de pegar el Access Token: necesita
   una aplicación de la plataforma con redirect URI y refresh del token (vence a los 180 días). Hoy cada bar
   pega su token de producción.

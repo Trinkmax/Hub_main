@@ -1,4 +1,4 @@
-import { CalendarPlus } from 'lucide-react'
+import { CalendarPlus, FileSpreadsheet } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
+  TEMPLATE_EDIT_ROLES,
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { CalendarSearch } from './_components/calendar-search'
@@ -115,6 +116,15 @@ export default async function CalendarioPage({
           <div className="flex flex-wrap gap-2">
             <EventosTourButton role={access.role} />
             <CalendarSearch tenantSlug={tenantSlug} ym={ym} initialQuery={sp.buscar ?? null} />
+            {/* Las fechas del mes desde un Excel: los que arman la agenda (owner y anfitrión). */}
+            {TEMPLATE_EDIT_ROLES.includes(access.role) ? (
+              <Button asChild variant="outline" className="gap-2">
+                <Link href={`/${tenantSlug}/eventos/programados/importar`}>
+                  <FileSpreadsheet className="size-4" />
+                  Cargar con Excel
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/eventos/programados/nuevo`} data-tour="eventos-programar">
                 <CalendarPlus className="size-4" />
