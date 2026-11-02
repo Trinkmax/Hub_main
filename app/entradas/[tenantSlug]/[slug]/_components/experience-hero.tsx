@@ -1,8 +1,9 @@
-import { Clock, MapPin, Ticket, UtensilsCrossed } from 'lucide-react'
+import { Clock, MapPin, Play, Ticket, UtensilsCrossed } from 'lucide-react'
 import Image from 'next/image'
 import { stepsSummary } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicExperience } from '@/lib/ticketing/types'
+import { youtubeVideoId } from '@/lib/ticketing/video'
 import { Dust } from '../../../_components/chrome'
 import { Poster } from '../../../_components/poster'
 import { SelectedChip } from './selected-chip'
@@ -11,7 +12,8 @@ import { TiltPoster } from './tilt-poster'
 /**
  * Los créditos de apertura: la escena de la película de fondo (a oscuras,
  * con el color de la película), «HUB presenta», el título enorme y el afiche
- * flotando. El botón baja a la entrada; la fecha elegida queda al lado.
+ * flotando. El botón baja a la entrada; con video, otro baja a «Mirá cómo
+ * es»; la fecha elegida queda al lado.
  */
 export function ExperienceHero({
   experience,
@@ -28,6 +30,7 @@ export function ExperienceHero({
     experience.posterUrl
   const steps = stepsSummary(experience.steps)
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
+  const videoId = youtubeVideoId(experience.videoUrl)
 
   const credits: Array<{ icon: typeof Clock; text: string }> = []
   if (experience.scheduleNote) credits.push({ icon: Clock, text: experience.scheduleNote })
@@ -114,6 +117,15 @@ export function ExperienceHero({
               <Ticket className="size-4" aria-hidden />
               Reservá desde {formatPesos(fromCents)}
             </a>
+            {videoId ? (
+              <a
+                href="#video"
+                className="ent-press inline-flex h-14 items-center gap-2 rounded-full border border-(--ent-cream)/35 px-6 text-base font-semibold text-(--ent-cream) hover:border-(--ent-cream)/70"
+              >
+                <Play className="size-4 fill-current" aria-hidden />
+                Mirá cómo es
+              </a>
+            ) : null}
             <SelectedChip />
           </div>
         </div>

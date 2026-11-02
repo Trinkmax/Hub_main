@@ -126,6 +126,27 @@ describe('experienceFormSchema', () => {
     if (!noDeposit.success) expect(noDeposit.error.issues[0]?.path).toEqual(['allow_full_payment'])
   })
 
+  it('el video: un link de YouTube o nada', () => {
+    const ok = experienceFormSchema.parse({
+      ...base,
+      video_url: ' https://youtube.com/shorts/hF6H9bJ3EIo?si=x ',
+    })
+    expect(ok.video_url).toBe('https://youtube.com/shorts/hF6H9bJ3EIo?si=x')
+    expect(experienceFormSchema.parse({ ...base, video_url: '' }).video_url).toBeNull()
+    const bad = experienceFormSchema.safeParse({ ...base, video_url: 'https://vimeo.com/1' })
+    expect(bad.success).toBe(false)
+    if (!bad.success) expect(bad.error.issues[0]?.path).toEqual(['video_url'])
+  })
+
+  it('la imagen de previsualización: https o vacía', () => {
+    const url = 'https://x.supabase.co/storage/v1/object/public/landing-media/t/c.webp'
+    expect(experienceFormSchema.parse({ ...base, card_image_url: url }).card_image_url).toBe(url)
+    expect(experienceFormSchema.parse({ ...base, card_image_url: '' }).card_image_url).toBeNull()
+    expect(
+      experienceFormSchema.safeParse({ ...base, card_image_url: 'http://x/c.webp' }).success,
+    ).toBe(false)
+  })
+
   it('la aclaración del precio se guarda recortada y con tope de 140', () => {
     const ok = experienceFormSchema.parse({
       ...base,

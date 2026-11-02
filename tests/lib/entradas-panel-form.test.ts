@@ -3,6 +3,7 @@ import {
   experienceToFormValues,
   finalizeSlug,
   formatPesosInput,
+  imageSizeNote,
   invalidFormMessage,
   isExperienceFieldPath,
   parsePesosInput,
@@ -100,6 +101,8 @@ const EXPERIENCE: AdminExperience = {
   scheduleNote: 'Ingreso 21:00 · Película 21:20',
   posterUrl: 'https://x.supabase.co/storage/v1/object/public/landing-media/t/p.webp',
   heroUrl: null,
+  cardUrl: null,
+  videoUrl: null,
   accent: '#c0573e',
   steps: [
     { icon: '🧅', title: 'Cebollas', description: null, label: null },
@@ -238,6 +241,34 @@ describe('priceExample', () => {
   it('sin precio todavía: null', () => {
     expect(priceExample({ price: '', deposit: '5.000', maxPartySize: 10 })).toBeNull()
     expect(priceExample({ price: '0', deposit: '', maxPartySize: 10 })).toBeNull()
+  })
+})
+
+describe('imageSizeNote', () => {
+  const POSTER = { width: 1000, height: 1500 }
+  it('la medida justa: solo la dice', () => {
+    expect(imageSizeNote({ width: 1000, height: 1500 }, POSTER, 'poster')).toEqual({
+      ok: true,
+      text: 'Mide 1000 × 1500.',
+    })
+    expect(imageSizeNote({ width: 2000, height: 3000 }, POSTER, 'poster').ok).toBe(true)
+  })
+
+  it('otra proporción: avisa que se recorta y pide la medida', () => {
+    expect(imageSizeNote({ width: 1200, height: 900 }, POSTER, 'poster')).toEqual({
+      ok: false,
+      text: 'Mide 1200 × 900: no es vertical 2:3, así que se recorta como ves arriba. Pedila de 1000 × 1500.',
+    })
+    expect(
+      imageSizeNote({ width: 1080, height: 1920 }, { width: 1920, height: 1080 }, 'wide').text,
+    ).toContain('no es horizontal 16:9')
+  })
+
+  it('chica: avisa que se ve borrosa', () => {
+    expect(imageSizeNote({ width: 400, height: 600 }, POSTER, 'poster')).toEqual({
+      ok: false,
+      text: 'Mide 400 × 600: es chica y se va a ver borrosa. Mejor de 1000 × 1500.',
+    })
   })
 })
 

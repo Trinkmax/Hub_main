@@ -9,6 +9,7 @@ import {
   monthsLabel,
   NO_FILTERS,
   parseCatalogFilters,
+  previewImage,
   sanitizeCatalogFilters,
   splitHeadline,
   stepsSummary,
@@ -39,6 +40,8 @@ function exp(partial: Partial<PublicExperience>): PublicExperience {
     scheduleNote: null,
     posterUrl: null,
     heroUrl: null,
+    cardUrl: null,
+    videoUrl: null,
     accent: '#c0573e',
     steps: [],
     stepsNote: null,
@@ -57,6 +60,16 @@ function exp(partial: Partial<PublicExperience>): PublicExperience {
 }
 
 const venuePhoto = { url: 'https://x/hub-1.webp', caption: 'Sala', kind: 'venue' as const }
+
+describe('previewImage', () => {
+  it('afuera de la película va la de previsualización; sin ella, la vertical', () => {
+    expect(previewImage({ cardUrl: 'https://x/c.webp', posterUrl: 'https://x/p.webp' })).toBe(
+      'https://x/c.webp',
+    )
+    expect(previewImage({ cardUrl: null, posterUrl: 'https://x/p.webp' })).toBe('https://x/p.webp')
+    expect(previewImage({ cardUrl: null, posterUrl: null })).toBeNull()
+  })
+})
 
 describe('summarizeCatalog', () => {
   const catalog = [

@@ -1,5 +1,6 @@
 import { allSoldOut } from '@/lib/ticketing/availability'
 import type { PublicExperiencePage } from '@/lib/ticketing/queries'
+import { youtubeVideoId } from '@/lib/ticketing/video'
 import { Footer, TopBar } from '../../../_components/chrome'
 import { Reveal } from '../../../_components/reveal'
 import { ExperienceProvider } from './experience-context'
@@ -10,6 +11,7 @@ import { SceneGallery } from './scene-gallery'
 import { StickyCta } from './sticky-cta'
 import { ActHeading, OtherFilms, VenuePolaroids } from './story-sections'
 import { TicketCheckout } from './ticket-checkout'
+import { VideoShort } from './video-short'
 
 /** La película ya con sus datos (la página solo los busca y valida ?fecha). */
 export function ExperienceView({
@@ -35,6 +37,7 @@ export function ExperienceView({
   const venuePhotos = experience.gallery.filter((g) => g.kind === 'venue')
   const soldOut = experience.functions.length > 0 && allSoldOut(experience.functions)
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
+  const videoId = youtubeVideoId(experience.videoUrl)
 
   let act = 0
   const nextAct = () => ['I', 'II', 'III', 'IV', 'V'][act++] ?? String(act)
@@ -81,6 +84,29 @@ export function ExperienceView({
                       hiddenSoldOut={hiddenSoldOut}
                       allDatesHref={`/entradas/${venue.tenantSlug}/${experience.slug}`}
                     />
+                  </Reveal>
+                </section>
+              ) : null}
+
+              {/* El video de la experiencia (pedido de los socios, 02/11): después
+                  de elegir la noche y antes del menú, para el que todavía no
+                  entiende qué es esto. */}
+              {videoId ? (
+                <section aria-labelledby="video-titulo" className="scroll-mt-24 pb-16" id="video">
+                  <ActHeading
+                    id="video-titulo"
+                    act={nextAct()}
+                    kicker="Mirá cómo es"
+                    title="Así es una noche de cine."
+                  />
+                  <Reveal>
+                    <div className="grid items-center gap-8 sm:grid-cols-[minmax(0,1fr)_16.5rem] sm:gap-10">
+                      <p className="ent-display max-w-md text-[clamp(1.3rem,4.4vw,1.75rem)] leading-[1.3] font-normal text-(--ent-cream-2)">
+                        La película en pantalla grande y, en cada escena, su plato. Dale play y mirá
+                        cómo se vive.
+                      </p>
+                      <VideoShort id={videoId} title={experience.title} />
+                    </div>
                   </Reveal>
                 </section>
               ) : null}

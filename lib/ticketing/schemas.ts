@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
 import { pesosToCents } from './pricing'
 import type { ExperienceStep, GalleryItem } from './types'
+import { youtubeVideoId } from './video'
 
 /**
  * Los bordes de las entradas online (CLAUDE.md §6): lo que manda el panel, lo
@@ -40,6 +41,16 @@ const imageUrlField = z
 
 const optionalImageUrl = z
   .union([imageUrlField, z.literal(''), z.null(), z.undefined()])
+  .transform((v) => (v ? v : null))
+
+/**
+ * Igual, pero el campo puede faltar en el pedido (zod v4 no toma como opcional
+ * una unión con `undefined`): una pestaña del panel abierta antes de que
+ * existiera el campo igual puede guardar.
+ */
+const nullableImageUrl = z
+  .union([imageUrlField, z.literal('')])
+  .nullish()
   .transform((v) => (v ? v : null))
 
 export const accentField = z
@@ -109,6 +120,19 @@ export const experienceFormSchema = z
     schedule_note: optionalText(120),
     poster_url: optionalImageUrl,
     hero_url: optionalImageUrl,
+    // La de la cartelera (previsualización); vacía = la vertical de cine.
+    card_image_url: nullableImageUrl,
+    // Un link de YouTube (Short o video): se guarda como lo pegaron.
+    video_url: z
+      .string()
+      .trim()
+      .max(300, 'Ese link es demasiado largo.')
+      .nullish()
+      .transform((v) => (v ? v : null))
+      .refine(
+        (v) => v === null || youtubeVideoId(v) !== null,
+        'Ese link no es de un video de YouTube.',
+      ),
     accent_hex: accentField,
     steps: z.array(experienceStepSchema).max(16, 'Máximo 16 pasos'),
     steps_note: optionalText(400),

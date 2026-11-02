@@ -75,6 +75,14 @@ export function summarizeCatalog(experiences: PublicExperience[]): CatalogSummar
 }
 
 /**
+ * La imagen de una película AFUERA de su página (cartelera, «Por fecha»,
+ * «También en cartelera»): la de previsualización y, si no hay, la vertical.
+ */
+export function previewImage(e: Pick<PublicExperience, 'cardUrl' | 'posterUrl'>): string | null {
+  return e.cardUrl ?? e.posterUrl
+}
+
+/**
  * «Cine y degustación» → ["Cine y", "degustación"]: la última palabra va en
  * otro color. Una sola palabra queda entera en la segunda línea.
  */
@@ -86,7 +94,10 @@ export function splitHeadline(text: string): [string, string] {
 
 export type AgendaRow = {
   fn: PublicFunction
-  experience: Pick<PublicExperience, 'slug' | 'title' | 'posterUrl' | 'accent' | 'series'>
+  experience: Pick<
+    PublicExperience,
+    'slug' | 'title' | 'posterUrl' | 'cardUrl' | 'accent' | 'series'
+  >
 }
 
 export type AgendaMonth = { key: string; label: string; rows: AgendaRow[] }
@@ -100,6 +111,7 @@ export function buildAgenda(experiences: PublicExperience[]): AgendaMonth[] {
         slug: e.slug,
         title: e.title,
         posterUrl: e.posterUrl,
+        cardUrl: e.cardUrl,
         accent: e.accent,
         series: e.series,
       },

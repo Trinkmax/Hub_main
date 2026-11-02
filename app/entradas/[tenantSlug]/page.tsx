@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { getAppUrl } from '@/lib/app-url'
-import { parseCatalogFilters, summarizeCatalog } from '@/lib/ticketing/catalog'
+import { parseCatalogFilters, previewImage, summarizeCatalog } from '@/lib/ticketing/catalog'
 import { getPublicCatalog } from '@/lib/ticketing/queries'
 import { viewerOwnsTenant } from '@/lib/ticketing/viewer'
 import { CarteleraView, DEFAULT_INTRO } from './_components/cartelera-view'
@@ -32,7 +32,7 @@ export async function generateMetadata({
   const title = `${headline} · ${catalog.venue.tenantName}`
   const description = catalog.venue.intro ?? DEFAULT_INTRO
   const appUrl = await getAppUrl()
-  const image = catalog.experiences.find((e) => e.posterUrl)?.posterUrl ?? null
+  const image = catalog.experiences.map(previewImage).find(Boolean) ?? null
   return {
     title: { absolute: title },
     description,

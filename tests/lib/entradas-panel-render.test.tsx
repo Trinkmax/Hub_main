@@ -74,6 +74,8 @@ const EXPERIENCE: AdminExperience = {
   scheduleNote: 'Ingreso 21:00 · Película 21:20',
   posterUrl: null,
   heroUrl: null,
+  cardUrl: null,
+  videoUrl: null,
   accent: '#c0573e',
   steps: [{ icon: '🧅', title: 'Cebollas', description: null, label: null }],
   stepsNote: null,
