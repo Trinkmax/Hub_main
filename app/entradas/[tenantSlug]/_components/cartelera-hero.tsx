@@ -1,6 +1,6 @@
 import { ArrowDown } from 'lucide-react'
 import Image from 'next/image'
-import { type CatalogSummary, splitHeadline } from '@/lib/ticketing/catalog'
+import { type CatalogSummary, previewImage, splitHeadline } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicExperience } from '@/lib/ticketing/types'
 import { Dust } from '../../_components/chrome'
@@ -24,7 +24,7 @@ export function CarteleraHero({
   experiences: PublicExperience[]
 }) {
   const [line1, line2] = splitHeadline(headline)
-  const fan = experiences.filter((e) => e.posterUrl).slice(0, 3)
+  const fan = experiences.filter((e) => previewImage(e)).slice(0, 3)
   const accent = experiences[0]?.accent
 
   const stats: Array<{ value: string; label: string }> = []
@@ -80,7 +80,7 @@ export function CarteleraHero({
                     <div className="ent-poster-glow" />
                     <div className="ent-poster aspect-[2/3]">
                       <Image
-                        src={e.posterUrl as string}
+                        src={previewImage(e) as string}
                         alt=""
                         fill
                         priority={i === 0}

@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   CalendarPlus,
   Check,
+  CirclePlay,
   FileText,
   Globe,
   ImageIcon,
@@ -60,6 +61,7 @@ import { eventInk } from '@/lib/salon/event-ink'
 import { deleteExperience, saveExperience, setExperiencePublished } from '@/lib/ticketing/actions'
 import type { AdminExperience } from '@/lib/ticketing/queries'
 import { type ExperienceFormInput, experienceFormSchema } from '@/lib/ticketing/schemas'
+import { youtubeVideoId, youtubeWatchUrl } from '@/lib/ticketing/video'
 import { cn } from '@/lib/utils'
 import { FunctionChip } from '../../_components/function-chip'
 import { PanelSection } from '../../_components/panel-section'
@@ -79,6 +81,10 @@ import { ImageField } from './image-field'
 import { StepsEditor } from './steps-editor'
 
 const HEX_RE = /^#[0-9a-f]{6}$/i
+
+/** Las medidas que se le piden a la diseñadora (las dice cada campo). */
+const POSTER_SIZE = { width: 1000, height: 1500 }
+const COVER_SIZE = { width: 1920, height: 1080 }
 
 /** Lista plana de los campos con error («steps.2.title»), para el aviso de «revisá…». */
 function errorPaths(errors: FieldErrors<ExperienceFormInput>): string[] {
@@ -140,6 +146,8 @@ export function ExperienceEditor({
   const synopsis = useWatch({ control, name: 'synopsis' })
   const stepsNote = useWatch({ control, name: 'steps_note' })
   const terms = useWatch({ control, name: 'terms' })
+  const videoUrl = useWatch({ control, name: 'video_url' })
+  const videoId = youtubeVideoId(typeof videoUrl === 'string' ? videoUrl : '')
 
   const overviewHref = `/${tenantSlug}/entradas`
   const calendarHref = `/${tenantSlug}/eventos/programados`
@@ -596,25 +604,49 @@ export function ExperienceEditor({
               title="Imágenes"
               description="JPG, PNG, WebP o GIF de hasta 10 MB. Las achicamos al formato más liviano."
             >
-              <div className="grid gap-6 sm:grid-cols-[13rem_minmax(0,1fr)]">
-                <Controller
-                  control={control}
-                  name="poster_url"
-                  render={({ field }) => (
-                    <ImageField
-                      id="poster"
-                      label="Afiche vertical"
-                      hint="Proporción 2:3 (por ejemplo, 1000 × 1500). Es lo que se ve en la cartelera."
-                      tenantId={tenantId}
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      shape="poster"
-                      onBusyChange={onBusyChange}
-                      buttonRef={field.ref}
-                      error={errors.poster_url?.message}
-                    />
-                  )}
-                />
+              {/* Tres imágenes con su medida exacta (pedido de Nacho Badra, 02/11): la
+                  de la cartelera ya no es la vertical de la página, que se recortaba. */}
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                  <Controller
+                    control={control}
+                    name="card_image_url"
+                    render={({ field }) => (
+                      <ImageField
+                        id="card"
+                        label="Imagen de previsualización"
+                        hint="La que se ve en la cartelera. 1000 × 1500 px (vertical, 2:3). Vacía: va la vertical de cine."
+                        tenantId={tenantId}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        shape="poster"
+                        size={POSTER_SIZE}
+                        onBusyChange={onBusyChange}
+                        buttonRef={field.ref}
+                        error={errors.card_image_url?.message}
+                      />
+                    )}
+                  />
+                  <Controller
+                    control={control}
+                    name="poster_url"
+                    render={({ field }) => (
+                      <ImageField
+                        id="poster"
+                        label="Imagen vertical de cine"
+                        hint="La que se ve al entrar a la película. 1000 × 1500 px (vertical, 2:3)."
+                        tenantId={tenantId}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        shape="poster"
+                        size={POSTER_SIZE}
+                        onBusyChange={onBusyChange}
+                        buttonRef={field.ref}
+                        error={errors.poster_url?.message}
+                      />
+                    )}
+                  />
+                </div>
                 <Controller
                   control={control}
                   name="hero_url"
@@ -622,11 +654,12 @@ export function ExperienceEditor({
                     <ImageField
                       id="hero"
                       label="Imagen de portada"
-                      hint="Horizontal, 16:9 (por ejemplo, 1920 × 1080). Va de fondo arriba de la página; sin portada se usa una escena o el afiche."
+                      hint="De fondo, arriba de la página de la película. 1920 × 1080 px (horizontal, 16:9). Sin portada va una escena o la vertical."
                       tenantId={tenantId}
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       shape="wide"
+                      size={COVER_SIZE}
                       onBusyChange={onBusyChange}
                       buttonRef={field.ref}
                       error={errors.hero_url?.message}
@@ -634,6 +667,56 @@ export function ExperienceEditor({
                   )}
                 />
               </div>
+            </PanelSection>
+
+            <PanelSection
+              id="video"
+              icon={CirclePlay}
+              title="Video"
+              description="Un video vertical de YouTube (un Short) que muestre cómo es la experiencia. Va en la página de la película, en «Mirá cómo es»."
+            >
+              <Field
+                id="video_url"
+                label="Link de YouTube"
+                optional
+                hint={
+                  videoId ? (
+                    <>
+                      Se ve en la página.{' '}
+                      <a
+                        href={youtubeWatchUrl(videoId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-foreground underline underline-offset-4"
+                      >
+                        Ver el video en YouTube
+                      </a>
+                    </>
+                  ) : (
+                    'Pegá el link de «Compartir» del Short o del video.'
+                  )
+                }
+                error={
+                  errors.video_url?.message ??
+                  (videoUrl && !videoId ? 'Ese link no es de un video de YouTube.' : undefined)
+                }
+              >
+                <Input
+                  id="video_url"
+                  type="url"
+                  inputMode="url"
+                  autoComplete="off"
+                  placeholder="https://youtube.com/shorts/…"
+                  className="h-11"
+                  aria-invalid={errors.video_url || (videoUrl && !videoId) ? true : undefined}
+                  aria-describedby={describedBy('video_url', {
+                    hint: true,
+                    error: Boolean(errors.video_url || (videoUrl && !videoId)),
+                  })}
+                  defaultValue={initial.video_url ?? ''}
+                  {...register('video_url')}
+                />
+              </Field>
             </PanelSection>
 
             <PanelSection

@@ -37,7 +37,7 @@ type SBAny = any
 export const DEFAULT_ACCENT = '#c0573e'
 
 const EXPERIENCE_COLUMNS =
-  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, cash_price_cents, allow_full_payment, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
+  'id, tenant_id, template_id, slug, published, series, title, tagline, synopsis, schedule_note, poster_url, hero_url, card_image_url, video_url, accent_hex, steps, steps_note, gallery, price_cents, deposit_cents, cash_price_cents, allow_full_payment, min_party_size, max_party_size, price_note, terms, sort_order, created_at, updated_at'
 
 type TenantRow = {
   id: string
@@ -184,6 +184,8 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
     scheduleNote: row.schedule_note,
     posterUrl: row.poster_url,
     heroUrl: row.hero_url,
+    cardUrl: row.card_image_url ?? null,
+    videoUrl: row.video_url ?? null,
     accent: row.accent_hex ?? DEFAULT_ACCENT,
     steps: parseSteps(row.steps),
     stepsNote: row.steps_note,
@@ -297,7 +299,7 @@ export async function getPublicExperience(
     loadFunctions(service, tenant.id, [experience.template_id], tz),
     service
       .from('event_experiences')
-      .select('slug, title, poster_url, accent_hex')
+      .select('slug, title, poster_url, card_image_url, accent_hex')
       .eq('tenant_id', tenant.id)
       .eq('published', true)
       .neq('id', experience.id)
@@ -310,12 +312,14 @@ export async function getPublicExperience(
       slug: string
       title: string
       poster_url: string | null
+      card_image_url: string | null
       accent_hex: string | null
     }> | null) ?? []
   ).map((o) => ({
     slug: o.slug,
     title: o.title,
-    posterUrl: o.poster_url,
+    // «También en cartelera» es afuera de la película: va la de previsualización.
+    posterUrl: o.card_image_url ?? o.poster_url,
     accent: o.accent_hex ?? DEFAULT_ACCENT,
   }))
 

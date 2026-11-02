@@ -109,6 +109,8 @@ export function experienceToFormValues(experience: AdminExperience): ExperienceF
     schedule_note: experience.scheduleNote ?? '',
     poster_url: experience.posterUrl ?? '',
     hero_url: experience.heroUrl ?? '',
+    card_image_url: experience.cardUrl ?? '',
+    video_url: experience.videoUrl ?? '',
     accent_hex: experience.accent,
     steps: experience.steps.map((step) => ({
       icon: step.icon ?? '',
@@ -147,6 +149,8 @@ const FIELD_SECTION: Record<string, string> = {
   slug: 'Textos',
   poster_url: 'Imágenes',
   hero_url: 'Imágenes',
+  card_image_url: 'Imágenes',
+  video_url: 'Video',
   accent_hex: 'Color',
   price: 'Precios',
   deposit: 'Precios',
@@ -193,6 +197,35 @@ export function uploadErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
   if (/^(Solo imágenes|La imagen pesa)/.test(message)) return message
   return 'No pudimos subir la imagen. Revisá la conexión y probá de nuevo.'
+}
+
+/**
+ * Lo que se dice de la medida de una imagen: si cumple, la medida; si no es la
+ * proporción pedida, que se recorta (la previa de arriba muestra cómo); si es
+ * mucho más chica, que se va a ver borrosa.
+ */
+export function imageSizeNote(
+  measured: { width: number; height: number },
+  wanted: { width: number; height: number },
+  shape: 'poster' | 'wide',
+): { ok: boolean; text: string } {
+  const { width, height } = measured
+  const ask = `${wanted.width} × ${wanted.height}`
+  const ratio = width / height / (wanted.width / wanted.height)
+  if (Math.abs(ratio - 1) > 0.03) {
+    const proportion = shape === 'poster' ? 'vertical 2:3' : 'horizontal 16:9'
+    return {
+      ok: false,
+      text: `Mide ${width} × ${height}: no es ${proportion}, así que se recorta como ves arriba. Pedila de ${ask}.`,
+    }
+  }
+  if (width < wanted.width * 0.6) {
+    return {
+      ok: false,
+      text: `Mide ${width} × ${height}: es chica y se va a ver borrosa. Mejor de ${ask}.`,
+    }
+  }
+  return { ok: true, text: `Mide ${width} × ${height}.` }
 }
 
 /** «35.000» o 35000 (lo que tenga el campo) → pesos, o `null`. */

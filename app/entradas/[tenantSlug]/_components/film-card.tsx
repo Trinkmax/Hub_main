@@ -2,7 +2,7 @@ import { ArrowRight, Clock, MessageCircle, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { buildWaMeUrl } from '@/lib/phone'
 import { allSoldOut } from '@/lib/ticketing/availability'
-import { filmHref, stepsSummary } from '@/lib/ticketing/catalog'
+import { filmHref, previewImage, stepsSummary } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicExperience } from '@/lib/ticketing/types'
 import { FunctionStub } from '../../_components/function-stub'
@@ -64,7 +64,7 @@ export function FilmCard({
           <Poster
             title={experience.title}
             series={experience.series}
-            url={experience.posterUrl}
+            url={previewImage(experience)}
             sizes="(min-width: 1024px) 200px, 38vw"
             priority={priority}
           >

@@ -32,7 +32,7 @@ alcanza para que aparezca en la cartelera.
 
 | Tabla | Qué guarda | Quién la escribe |
 |---|---|---|
-| `event_experiences` | textos, afiche, portada, color, menú (`steps`), fotos (`gallery`: `scene` = de la película, `venue` = reales del bar), precio y seña **por persona**, mínimo y máximo por compra, la aclaración del total (`price_note`), condiciones | el dueño (RLS owner) |
+| `event_experiences` | textos, las tres imágenes (previsualización `card_image_url`, vertical de cine `poster_url`, portada `hero_url`), el video de YouTube (`video_url`), color, menú (`steps`), fotos (`gallery`: `scene` = de la película, `venue` = reales del bar), precio y seña **por persona**, mínimo y máximo por compra, la aclaración del precio (`price_note`), condiciones | el dueño (RLS owner) |
 | `ticketing_settings` | la cuenta de Mercado Pago **cifrada**, el gestor de las reservas online, minutos que se guarda el lugar, textos de la cartelera, dirección, WhatsApp de consultas | el dueño (GRANT por columna) y el server para la cuenta de MP |
 | `ticket_orders` | cada intento de compra, con la foto de lo comprado (película, fecha, precio) | solo el server (service_role) |
 
@@ -43,7 +43,8 @@ no incluye `tenant_id` y PostgREST lo pondría en el `SET` del upsert (42501).
 
 Migraciones: `20261026120000_reservation_origin_web`, `20261026120100_ticketing_tables`,
 `20261026120200_ticketing_functions`, `20261027150000_ticketing_min_party_price_note`,
-`20261027190000_ticketing_cash_price`, `20261101170000_ticketing_single_price`.
+`20261027190000_ticketing_cash_price`, `20261101170000_ticketing_single_price`,
+`20261102170000_ticketing_card_image_video`.
 
 ### La plata
 
@@ -104,6 +105,28 @@ cuando haya nuevas películas» (los socios no contactan por ahí); la columna
 La reserva que se crea lleva `deposit_cents` = lo que se pagó online (seña o total),
 `origin = 'web'`, `zone = 'event_floating'`, y un comentario destacado que dice qué se
 pagó y cuánto resta cobrar, para que lo vea el staff en el operativo.
+
+### Las imágenes y el video
+
+Pedido de Nacho Badra (02/11/2026): tres imágenes, cada una con su medida exacta, para que
+la diseñadora las arme a medida.
+
+| Imagen | Dónde se ve | Medida |
+| --- | --- | --- |
+| **Previsualización** (`card_image_url`) | Afuera de la película: la cartelera, «Por fecha», el abanico de arriba y «También en cartelera». Vacía: la vertical de cine (`previewImage`). | 1000 × 1500 px (2:3) |
+| **Vertical de cine** (`poster_url`) | Adentro de la película, al lado del título; también «Mi entrada». | 1000 × 1500 px (2:3) |
+| **Portada** (`hero_url`) | De fondo, arriba de la página de la película (y la imagen al compartir el link). | 1920 × 1080 px (16:9) |
+
+Todas se muestran recortadas a su marco (`object-cover`): una imagen de otra proporción se
+corta. El panel dice cuánto mide cada una y avisa si no es la proporción pedida («se recorta
+como ves arriba») o si es chica («se va a ver borrosa»).
+
+**El video** (`video_url`): un link de YouTube (Short o video) como sale de «Compartir»;
+`lib/ticketing/video.ts` saca el id (shorts, watch, youtu.be, embed, live) y el panel no
+deja guardar otro tipo de link. En la página va la sección «Mirá cómo es», después de las
+fechas y antes del menú, con el video en un celular, y un botón «Mirá cómo es» en la portada.
+Hasta que la persona toca play se muestra solo la miniatura de YouTube: el reproductor
+(`youtube-nocookie.com`, sin cookies de seguimiento) se carga recién ahí.
 
 ### Los filtros de la cartelera
 

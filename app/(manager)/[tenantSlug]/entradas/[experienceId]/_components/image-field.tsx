@@ -2,18 +2,20 @@
 
 import { ImagePlus, Loader2, Trash2, Upload } from 'lucide-react'
 import Image from 'next/image'
-import { type Ref, useRef, useState } from 'react'
+import { type Ref, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { uploadLandingImage } from '@/lib/landings/media'
 import { cn } from '@/lib/utils'
 import { isGifUrl } from '../../_components/poster-thumb'
-import { uploadErrorMessage } from '../../_lib/experience-form'
+import { imageSizeNote, uploadErrorMessage } from '../../_lib/experience-form'
 
 /**
- * Una imagen de la página (el afiche o la portada): se sube, se cambia o se
- * quita, con la previa en su proporción real.
+ * Una imagen de la página (previsualización, vertical de cine o portada): se
+ * sube, se cambia o se quita, con la previa en su proporción real. Abajo dice
+ * cuánto mide y avisa si no es la proporción que se pide (se va a recortar) o
+ * si es chica (se va a ver borrosa): la medida exacta la arma la diseñadora.
  *
  * Sube DESDE EL BROWSER al bucket público `landing-media` (la carpeta del
  * bar), igual que las imágenes de Páginas: una Server Action tiene 1 MB de
@@ -29,6 +31,7 @@ export function ImageField({
   value,
   onChange,
   shape,
+  size,
   onBusyChange,
   buttonRef,
   error,
@@ -41,6 +44,8 @@ export function ImageField({
   onChange: (url: string) => void
   /** `poster` = vertical 2:3 · `wide` = horizontal 16:9. */
   shape: 'poster' | 'wide'
+  /** La medida que se pide (px): para avisar si la imagen no la cumple. */
+  size: { width: number; height: number }
   /** +1 al empezar a subir, −1 al terminar (el editor no guarda a mitad de una subida). */
   onBusyChange: (delta: 1 | -1) => void
   buttonRef?: Ref<HTMLButtonElement>
@@ -48,6 +53,23 @@ export function ImageField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [dims, setDims] = useState<{ url: string; width: number; height: number } | null>(null)
+
+  // La medida real del archivo (no la de la previa achicada).
+  useEffect(() => {
+    if (!value) return
+    let cancelled = false
+    const img = new window.Image()
+    img.onload = () => {
+      if (!cancelled) setDims({ url: value, width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.src = value
+    return () => {
+      cancelled = true
+    }
+  }, [value])
+  const measured = dims && dims.url === value ? dims : null
+  const sizeNote = measured ? imageSizeNote(measured, size, shape) : null
   const [dragging, setDragging] = useState(false)
   const pickId = `${id}-pick`
 
@@ -166,6 +188,16 @@ export function ImageField({
       <p id={`${id}-hint`} className="text-xs leading-snug text-muted-foreground text-pretty">
         {hint}
       </p>
+      {value && sizeNote ? (
+        <p
+          className={cn(
+            'text-xs leading-snug text-pretty',
+            sizeNote.ok ? 'text-muted-foreground' : 'font-medium text-warning-text',
+          )}
+        >
+          {sizeNote.text}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

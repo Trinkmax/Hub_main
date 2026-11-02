@@ -48,6 +48,10 @@ export type ExperienceRow = {
   schedule_note: string | null
   poster_url: string | null
   hero_url: string | null
+  /** Imagen de previsualización (la de la cartelera). null = poster_url. */
+  card_image_url: string | null
+  /** Link de un video de YouTube (un Short) que muestra la experiencia. */
+  video_url: string | null
   accent_hex: string | null
   steps: unknown
   steps_note: string | null
@@ -143,6 +147,10 @@ export type PublicExperience = {
   scheduleNote: string | null
   posterUrl: string | null
   heroUrl: string | null
+  /** Imagen de previsualización (cartelera, «Por fecha», «También en cartelera»); null = posterUrl. */
+  cardUrl: string | null
+  /** Link de YouTube tal como lo cargó el bar (la página saca el id). */
+  videoUrl: string | null
   accent: string
   steps: ExperienceStep[]
   stepsNote: string | null

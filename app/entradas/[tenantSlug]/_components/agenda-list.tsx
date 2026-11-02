@@ -2,7 +2,7 @@ import { ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { availabilityLabel } from '@/lib/ticketing/availability'
-import { type AgendaMonth, filmHref } from '@/lib/ticketing/catalog'
+import { type AgendaMonth, filmHref, previewImage } from '@/lib/ticketing/catalog'
 import { dayNumber, monthShort, relativeDay, weekdayShort } from '@/lib/ticketing/dates'
 import { cn } from '@/lib/utils'
 
@@ -56,9 +56,9 @@ export function AgendaList({
                     </span>
                   </div>
                   <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-md bg-(--ent-surface-2)">
-                    {experience.posterUrl ? (
+                    {previewImage(experience) ? (
                       <Image
-                        src={experience.posterUrl}
+                        src={previewImage(experience) as string}
                         alt=""
                         fill
                         sizes="44px"

@@ -252,6 +252,8 @@ export async function saveExperience(
       schedule_note: v.schedule_note,
       poster_url: v.poster_url,
       hero_url: v.hero_url,
+      card_image_url: v.card_image_url,
+      video_url: v.video_url,
       accent_hex: v.accent_hex,
       steps: v.steps,
       steps_note: v.steps_note,
@@ -294,6 +296,7 @@ export async function saveExperience(
       min_party_size: v.min_party_size,
       max_party_size: v.max_party_size,
       slug: v.slug,
+      video: v.video_url !== null,
     },
   })
   revalidateTicketing(slug)
