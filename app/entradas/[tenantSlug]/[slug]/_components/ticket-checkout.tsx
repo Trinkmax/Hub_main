@@ -16,6 +16,7 @@ import {
   paymentOptions,
   quote,
 } from '@/lib/ticketing/pricing'
+import { splitTerms } from '@/lib/ticketing/terms'
 import type { PaymentOption } from '@/lib/ticketing/types'
 import { cn } from '@/lib/utils'
 import { RollNumber } from '../../../_components/roll-number'
@@ -329,6 +330,7 @@ export function TicketCheckout({
   // Las condiciones (en HUB: la seña no tiene devolución), legibles y antes
   // de pagar, no en letra chica debajo del botón: pidieron que quede todo
   // claro antes de comprar.
+  const termsLine = experience.terms ? splitTerms(experience.terms) : null
   const termsBox = experience.terms ? (
     <div className="rounded-xl border border-(--ent-ink)/15 bg-(--ent-ink)/[0.04] px-3.5 py-3">
       <p className="ent-mono text-[0.6rem] text-(--ent-ink-2)">Antes de pagar</p>
@@ -398,6 +400,26 @@ export function TicketCheckout({
               ) : null}
             </p>
           </div>
+        ) : null}
+
+        {venue.canSell && step === 'build' && termsLine ? (
+          // En la compu la entrada fija no tiene lugar para las condiciones
+          // enteras junto al precio: va la primera frase y el resto se
+          // despliega. En el celular van enteras en el cuerpo.
+          <details className="group mt-4 hidden rounded-xl border border-(--ent-ink)/15 bg-(--ent-ink)/[0.04] px-3.5 py-2 text-[0.72rem] leading-snug lg:block">
+            <summary className="cursor-pointer list-none text-(--ent-ink) [&::-webkit-details-marker]:hidden">
+              <span className="font-semibold">{termsLine.first}</span>
+              {termsLine.rest ? (
+                <span className="text-(--ent-ink-2) underline underline-offset-2 group-open:hidden">
+                  {' '}
+                  Ver más
+                </span>
+              ) : null}
+            </summary>
+            {termsLine.rest ? (
+              <p className="mt-1 whitespace-pre-line text-(--ent-ink)">{termsLine.rest}</p>
+            ) : null}
+          </details>
         ) : null}
 
         {generalError ? (
@@ -578,6 +600,12 @@ export function TicketCheckout({
                 {optionCards(false)}
               </fieldset>
             ) : null}
+
+            {/* Las condiciones también acá, junto al precio y antes de «Continuar»
+                (pedido de los socios, 02/11: «le falta la aclaración de las
+                señas»). En la compu van en el pie, ver `termsLine`. En el paso
+                2 se repiten enteras, justo antes de pagar. */}
+            {venue.canSell && termsBox ? <div className="lg:hidden">{termsBox}</div> : null}
           </div>
         ) : (
           <div className="space-y-5">
