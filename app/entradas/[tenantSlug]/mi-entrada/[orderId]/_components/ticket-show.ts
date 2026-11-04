@@ -80,6 +80,8 @@ export function useTicketShow({
   useEffect(() => {
     if (!enabled) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // Sin función y sin cámara: la página se queda donde está.
+      cameraFree.current = false
       setAct(4)
       return
     }
