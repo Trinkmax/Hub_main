@@ -1473,3 +1473,13 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **Smoke con credenciales de prueba**: el circuito real ya anduvo el 27/10 (compra con seña aprobada → reserva
   creada sola → devuelta con «Devolver» del panel). Falta ver si `sandbox_init_point` anda con las credenciales
   de prueba nuevas (empiezan con `APP_USR-`, ya no `TEST-`).
+
+## La puerta — lo que queda (03/11/2026)
+
+- **«Falta cobrar» es el total del grupo y no sigue a «¿Cuántos pasan?».** Dice «$100.000,
+  los 4» aunque pasen 2, y lo mismo al segundo escaneo. No hay registro de lo cobrado: hay
+  que confirmar con los socios si el resto se cobra en la puerta o en la mesa.
+- **Las reservas de antes no dicen quién las movió.** Desde el 03/11 `lib/salon/actions.ts`
+  guarda el usuario en `audit_log`; lo anterior quedó sin usuario.
+- **`types/database.ts` sigue desfasado** (le faltan `acc_*` y las tablas de entradas): el
+  código de entradas usa `SBAny` + zod.

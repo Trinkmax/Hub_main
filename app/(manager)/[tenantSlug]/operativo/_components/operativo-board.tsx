@@ -104,6 +104,7 @@ type Props = {
   earnRate: EarnRate | null
   canOperate: boolean
   canAward: boolean
+  canDoor: boolean
   /** Puede vincular la reserva a un socio (STAFF: dueño, caja, anfitrión). */
   canLink: boolean
   isOwner: boolean
@@ -148,6 +149,7 @@ export function OperativoBoard({
   earnRate,
   canOperate,
   canAward,
+  canDoor,
   canLink,
   isOwner,
 }: Props) {
@@ -820,6 +822,7 @@ export function OperativoBoard({
           live={live}
           tenantSlug={tenantSlug}
           canAward={canAward}
+          canDoor={canDoor}
         />
 
         <div className="mt-4 lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-6">
@@ -853,6 +856,7 @@ export function OperativoBoard({
               tenantSlug={tenantSlug}
               date={date}
               canAward={canAward}
+              canDoor={canDoor}
             />
 
             <LayoutGroup id="operativo">

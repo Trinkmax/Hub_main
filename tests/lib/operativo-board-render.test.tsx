@@ -266,6 +266,7 @@ describe('OperativoBoard (SSR)', () => {
         earnRate: { points: 1, everyCents: 100000 },
         canOperate: true,
         canAward: true,
+        canDoor: false,
         canLink: true,
         isOwner: true,
       }),
@@ -393,6 +394,7 @@ describe('OperativoBoard (SSR)', () => {
         earnRate: null,
         canOperate: true,
         canAward: true,
+        canDoor: false,
         canLink: true,
         isOwner: true,
       }),
@@ -426,6 +428,7 @@ describe('OperativoBoard (SSR)', () => {
       earnRate: null,
       canOperate: true,
       canAward: false,
+      canDoor: false,
       canLink: true,
       isOwner: false,
     }

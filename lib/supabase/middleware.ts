@@ -35,6 +35,7 @@ const PUBLIC_PREFIXES = [
   '/carta/', // carta read-only pública (QR de la carta)
   '/r/', // página pública de reseña
   '/v/', // QR de canje del socio: lo abre sin sesión para mostrárselo al mozo
+  '/e/', // QR de una entrada: sin sesión lleva a la entrada del cliente
   '/l/', // link público del bar (bio de Instagram)
   '/p/', // páginas HTML que sube el bar (landings)
   '/entradas/', // cartelera, página de cada película y la entrada del cliente

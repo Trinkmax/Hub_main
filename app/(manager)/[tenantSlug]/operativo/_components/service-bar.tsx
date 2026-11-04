@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarPlus, ScanLine, Search, X } from 'lucide-react'
+import { CalendarPlus, DoorOpen, ScanLine, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import type { Ref } from 'react'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ export function ServiceBar({
   tenantSlug,
   date,
   canAward,
+  canDoor,
 }: {
   ref?: Ref<HTMLInputElement>
   query: string
@@ -46,6 +47,7 @@ export function ServiceBar({
   tenantSlug: string
   date: string
   canAward: boolean
+  canDoor: boolean
 }) {
   const searching = query.trim().length > 0
 
@@ -115,6 +117,19 @@ export function ServiceBar({
             >
               <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
                 <ScanLine className="size-5" aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+          {canDoor ? (
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="size-11 rounded-full"
+              aria-label="Abrir la puerta: validar entradas con QR"
+            >
+              <Link href={`/${tenantSlug}/salon/puerta`} prefetch={false}>
+                <DoorOpen className="size-5" aria-hidden />
               </Link>
             </Button>
           ) : null}

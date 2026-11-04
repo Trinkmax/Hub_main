@@ -9,6 +9,28 @@ const CUSTOMER = 'aBcD1234efGH5678ijKL'
 const REDEEM = 'zZ99_yy88-xx77ww66vv'
 
 describe('parseScannedCode', () => {
+  const ENTRY = 'q83vEjR4TmSUaKxZ0Qd9bw'
+
+  it('URL de una entrada → puerta, cualquiera sea la pantalla', () => {
+    for (const fallback of ['customer', 'redemption', 'ticket'] as const) {
+      expect(parseScannedCode(`https://www.hubbar.com.ar/e/${ENTRY}`, fallback)).toEqual({
+        kind: 'ticket',
+        token: ENTRY,
+      })
+    }
+  })
+
+  it('el número de la entrada a mano, solo si la pantalla espera una entrada', () => {
+    expect(parseScannedCode('ab7f 3e12', 'ticket')).toEqual({ kind: 'ticket', token: 'AB7F3E12' })
+    expect(parseScannedCode('#AB7F-3E12', 'ticket')).toEqual({ kind: 'ticket', token: 'AB7F3E12' })
+    // Corto para un token de socio: no se confunde.
+    expect(parseScannedCode('ab7f3e12', 'customer')).toBeNull()
+  })
+
+  it('una URL de /e/ con otro largo no es una entrada', () => {
+    expect(parseScannedCode('https://hub.app/e/corto', 'customer')).toBeNull()
+  })
+
   it('URL completa de canje → validar', () => {
     expect(parseScannedCode(`https://hub.app/v/${REDEEM}`, 'customer')).toEqual({
       kind: 'redemption',

@@ -69,6 +69,12 @@ export const RESERVATION_OPERATOR_ROLES: ReadonlyArray<TenantRole> = [
   'host',
 ]
 
+/**
+ * Validar entradas en la puerta: los mismos que pueden marcar «Llegó», porque es
+ * la misma transición. Espeja `private.ticket_door_authorize` de la DB.
+ */
+export const TICKET_DOOR_ROLES: ReadonlyArray<TenantRole> = RESERVATION_OPERATOR_ROLES
+
 /** Lecturas operativas del día (capacidad, timeline, eventos del día). */
 export const SALON_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'host']
 
@@ -173,9 +179,10 @@ export function canAccessManagerPath(role: string, rest: ReadonlyArray<string>):
 /**
  * Sub-rutas de /salon accesibles para roles que NO viven en el salón. El host
  * usa el panel operativo (vista en vivo de reservas) durante el servicio —
- * misma capacidad de lectura que SALON_READ_ROLES.
+ * misma capacidad de lectura que SALON_READ_ROLES — y la puerta, porque quien
+ * recibe a la gente es quien valida las entradas.
  */
 export function canAccessSalonPath(role: string, rest: ReadonlyArray<string>): boolean {
-  if (role === 'host') return rest[1] === 'reservas-operativo'
+  if (role === 'host') return rest[1] === 'reservas-operativo' || rest[1] === 'puerta'
   return false
 }

@@ -1,6 +1,14 @@
 'use client'
 
-import { CalendarDays, ChevronLeft, ChevronRight, ScanLine, Wifi, WifiOff } from 'lucide-react'
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  DoorOpen,
+  ScanLine,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -63,6 +71,7 @@ export function DayNav({
   live,
   tenantSlug,
   canAward,
+  canDoor,
 }: {
   date: string
   today: string
@@ -70,6 +79,7 @@ export function DayNav({
   live: 'connecting' | 'live' | 'offline'
   tenantSlug: string
   canAward: boolean
+  canDoor: boolean
 }) {
   const [open, setOpen] = useState(false)
   const rel = relativeDay(date, today)
@@ -176,6 +186,14 @@ export function DayNav({
               <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
                 <ScanLine className="size-4" aria-hidden />
                 Escanear QR
+              </Link>
+            </Button>
+          ) : null}
+          {canDoor ? (
+            <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">
+              <Link href={`/${tenantSlug}/salon/puerta`} prefetch={false}>
+                <DoorOpen className="size-4" aria-hidden />
+                Puerta
               </Link>
             </Button>
           ) : null}

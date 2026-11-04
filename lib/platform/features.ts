@@ -16,6 +16,7 @@ export type FeatureKey =
   | 'kitchen' // pantalla de cocina /salon/cocina
   | 'reviews' // panel de reseñas del manager (Fase 4)
   | 'accounting' // Administración: contabilidad de la SAS /administracion (Sprint 1)
+  | 'ticket_door' // puerta: validar con QR las entradas compradas online /salon/puerta
 
 export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
 
@@ -69,6 +70,13 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     label: 'Reseñas',
     description: 'Panel de reseñas y pedido de reseña al cliente.',
     group: 'Fidelización',
+    defaultEnabled: false,
+  },
+  ticket_door: {
+    key: 'ticket_door',
+    label: 'Puerta (entradas con QR)',
+    description: 'Pestaña del salón para validar con QR las entradas compradas online.',
+    group: 'Salón',
     defaultEnabled: false,
   },
   // El interruptor de emergencia de todo el módulo: apagado, las RLS no

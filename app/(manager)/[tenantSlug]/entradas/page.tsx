@@ -93,7 +93,7 @@ export default async function EntradasPage({
         defaults={latestPrices(overview.experiences)}
       />
 
-      <OrdersSection tenantSlug={tenantSlug} result={orders} now={new Date()} />
+      <OrdersSection tenantSlug={tenantSlug} appUrl={appUrl} result={orders} now={new Date()} />
 
       <SettingsSection tenantSlug={tenantSlug} settings={settings} managers={managers} />
     </PageShell>
