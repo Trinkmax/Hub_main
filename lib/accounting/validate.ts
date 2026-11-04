@@ -65,6 +65,7 @@ import {
   isVoucherAllowedForKind,
   VOUCHER_CATALOG,
   voucherConditionCheck,
+  voucherNumberRequired,
 } from './voucher-types'
 
 /** Tope por importe de un formulario: $ 9.999.999.999,99 (E.6, `amount_too_large`). */
@@ -514,6 +515,8 @@ const MATRIX: Readonly<Record<DocumentKind, RoleTable>> = {
     sales_invoiced: { sides: DH, account: 'sales_invoiced' },
     sales_uninvoiced: { sides: DH, account: 'sales_uninvoiced' },
     vat: { sides: DH, account: 'vat_debit' },
+    // Ingresos Brutos y Comercio e Industria, en el mismo asiento del cierre (`lib/accounting/taxes.ts`).
+    manual: { sides: DH, account: 'any_postable' },
   },
   sales_invoice: SALES_DOC_ROLES,
   sales_debit_note: SALES_DOC_ROLES,
@@ -1273,7 +1276,7 @@ export function validateTotals(doc: ProposedDocument): PostingError[] {
 
 /** ¿El documento lleva comprobante fiscal? `required` | `forbidden` | `optional`. */
 export function fiscalVoucherRule(
-  doc: Pick<ProposedDocument, 'kind' | 'voucherType'>,
+  doc: Pick<ProposedDocument, 'kind' | 'voucherType' | 'number'>,
 ): 'required' | 'forbidden' | 'optional' {
   switch (doc.kind) {
     case 'purchase':
@@ -1282,6 +1285,8 @@ export function fiscalVoucherRule(
     case 'sales_invoice':
     case 'sales_debit_note':
     case 'sales_credit_note':
+      // Un tique sin número no entra al libro (reunión del 29/10/2026).
+      if (doc.voucherType === 'tique' && doc.number === null) return 'forbidden'
       return doc.voucherType && VOUCHER_CATALOG[doc.voucherType].ivaBook ? 'required' : 'forbidden'
     case 'collection':
     case 'bank_expense':
@@ -1635,6 +1640,22 @@ export function isAllowedComposition(kinds: readonly DocumentKind[]): boolean {
   if (kinds.length === 1) return SINGLE_KINDS.includes(kinds[0] as DocumentKind)
   const [first, ...rest] = kinds
   if (first === 'purchase' && kinds.length === 2 && rest[0] === 'payment') return true
+  // El impuesto a los débitos y créditos viaja junto con lo que lo generó (`withBankTax`).
+  if (
+    first === 'purchase' &&
+    kinds.length === 3 &&
+    rest[0] === 'payment' &&
+    rest[1] === 'bank_expense'
+  ) {
+    return true
+  }
+  if (
+    (first === 'payment' || first === 'expense' || first === 'cash_movement') &&
+    kinds.length === 2 &&
+    rest[0] === 'bank_expense'
+  ) {
+    return true
+  }
   if (first === 'sales_close' && rest.length >= 1 && rest.every((k) => k === 'collection'))
     return true
   if (first === 'sales_invoice' && kinds.length === 2 && rest[0] === 'collection') return true
@@ -1912,7 +1933,7 @@ export function validateDocument(
   }
   if (
     doc.voucherType &&
-    VOUCHER_CATALOG[doc.voucherType].numbered &&
+    voucherNumberRequired(doc.voucherType) &&
     doc.kind !== 'expense' &&
     (doc.pointOfSale === null || doc.number === null)
   ) {

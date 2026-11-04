@@ -41,7 +41,7 @@ import {
   WARNING_KEYS,
 } from './types'
 import { MAX_AMOUNT_CENTS, MAX_WRITE_OFF_CENTS } from './validate'
-import { SALES_CLOSE_VOUCHERS, VOUCHER_CATALOG } from './voucher-types'
+import { SALES_CLOSE_VOUCHERS, VOUCHER_CATALOG, voucherNumberRequired } from './voucher-types'
 
 export { CLOSE_WARNING_KEYS, WARNING_KEYS } from './types'
 
@@ -416,7 +416,7 @@ const PURCHASE_VOUCHER_TYPES = VOUCHER_TYPE_KEYS.filter((t) => VOUCHER_CATALOG[t
 ]
 
 function voucherNeedsNumber(type: VoucherType): boolean {
-  return VOUCHER_CATALOG[type].numbered
+  return voucherNumberRequired(type)
 }
 
 // ─── Nuevo gasto (H.5) ───────────────────────────────────────────────────────
@@ -638,6 +638,8 @@ export const paymentSchema = obj({
     .max(MAX_WRITE_OFF_CENTS, 'Hasta $ 1.000 se puede dar por cancelado.')
     .default(0),
   notes: optionalText(1000).default(null),
+  /** El gasto fijo que paga: Rentas o Municipalidad, ya devengados en cada cierre. Marca el mes como pagado. */
+  recurringExpenseId: uuidField().nullable().default(null),
 }).superRefine((v, ctx) => {
   const methods = v.methods.reduce((acc, m) => acc + m.amountCents, 0)
   const applied = v.applications.reduce((acc, a) => acc + a.amountCents, 0)
@@ -1228,6 +1230,8 @@ export const manualEntrySchema = obj({
     .min(2, 'Un asiento necesita al menos dos líneas.')
     .max(500, 'Demasiadas líneas.'),
   correctsDocumentId: uuidField().nullable().default(null),
+  /** El respaldo del asiento («nada sin respaldo», Silvia): el contrato, el resumen, el n.º. */
+  notes: optionalText(1000).default(null),
 }).superRefine((v, ctx) => {
   let debit = 0n
   let credit = 0n

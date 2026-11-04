@@ -313,6 +313,14 @@ export function isVoucherType(value: unknown): value is VoucherType {
   return typeof value === 'string' && (VOUCHER_TYPE_KEYS as readonly string[]).includes(value)
 }
 
+/**
+ * ¿El comprobante exige punto de venta y número? Un tique no (reunión del 29/10/2026): sin número se guarda igual y
+ * no entra al Libro IVA; con número, entra.
+ */
+export function voucherNumberRequired(type: VoucherType): boolean {
+  return VOUCHER_CATALOG[type].numbered && type !== 'tique'
+}
+
 /** «Factura A». Para un valor desconocido devuelve el texto tal cual (no rompe un listado viejo). */
 export function voucherLabel(type: string): string {
   return isVoucherType(type) ? VOUCHER_CATALOG[type].label : type

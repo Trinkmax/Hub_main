@@ -1,3 +1,4 @@
+import { parseTaxSettings, type TaxSettings } from '@/lib/accounting/taxes'
 import 'server-only'
 
 /**
@@ -80,6 +81,7 @@ export type AccSettingsRow = {
   bankTaxCreditComputableBp: number
   bankTaxDebitComputableBp: number
   uninvoicedSalesMode: UninvoicedSalesMode
+  taxSettings: TaxSettings
   closedPeriodVoidIvaMode: ClosedPeriodVoidIvaMode
   dueSoonDays: number
   openingStatus: OpeningStatus
@@ -237,6 +239,7 @@ export function parseSettingsRow(raw: unknown): AccSettingsRow | null {
     bankTaxDebitComputableBp: int(raw.bank_tax_debit_computable_bp) ?? 3300,
     uninvoicedSalesMode:
       oneOf(UNINVOICED_SALES_MODES, raw.uninvoiced_sales_mode) ?? 'separate_accounts',
+    taxSettings: parseTaxSettings(raw.tax_settings),
     closedPeriodVoidIvaMode:
       oneOf(CLOSED_PERIOD_VOID_IVA_MODES, raw.closed_period_void_iva_mode) ?? 'adjustment_only',
     dueSoonDays: int(raw.due_soon_days) ?? 7,
@@ -325,6 +328,7 @@ function parseTreasury(r: Rec): CatalogTreasury | null {
     bankPartyId: text(r.bank_party_id),
     balanceCents: int(r.balance_cents) ?? 0,
     active: bool(r.active, true),
+    chargesBankTax: typeof r.charges_bank_tax === 'boolean' ? r.charges_bank_tax : null,
     accountCode: text(r.account_code) ?? '',
     bankName: text(r.bank_name),
     cbuCvu: text(r.cbu_cvu),
@@ -417,6 +421,7 @@ export function postingSettingsOf(s: AccSettingsRow): PostingSettings {
     bankTaxCreditComputableBp: s.bankTaxCreditComputableBp,
     bankTaxDebitComputableBp: s.bankTaxDebitComputableBp,
     uninvoicedSalesMode: s.uninvoicedSalesMode,
+    taxSettings: s.taxSettings,
     ivaDueDay: s.ivaDueDay,
     iibbDueDay: s.iibbDueDay,
   }
@@ -477,6 +482,7 @@ export function buildPostingContext(
   for (const p of catalog.parties) {
     parties.set(p.id, {
       id: p.id,
+      systemKey: p.systemKey ?? null,
       kind: p.kind,
       name: p.name,
       tradeName: p.tradeName,
@@ -502,6 +508,7 @@ export function buildPostingContext(
       bankPartyId: t.bankPartyId,
       balanceCents: t.balanceCents,
       active: t.active,
+      chargesBankTax: t.chargesBankTax ?? null,
     })
   }
   const methods = new Map<string, SalesMethodRef>()

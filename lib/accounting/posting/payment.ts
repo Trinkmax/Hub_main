@@ -412,6 +412,7 @@ export function buildPayment(
     notes: input.notes,
     totalCents: M + W,
     controlAccountId,
+    recurringExpenseId: input.recurringExpenseId ?? null,
     warningsAck: ackList(input.warningsAck),
     lines: built.lines,
   })

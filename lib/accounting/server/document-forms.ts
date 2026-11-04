@@ -30,6 +30,7 @@ import {
   buildTransfer,
   buildTreasuryAdjustment,
   buildWalletCheck,
+  withBankTax,
 } from '@/lib/accounting/posting'
 import { PREVIEW_HASH_RE } from '@/lib/accounting/preview'
 import {
@@ -91,21 +92,29 @@ function defineForm<T extends FormMeta>(
 
 /** Esquema y armador de cada formulario. */
 const FORMS: Readonly<Record<DocumentForm, FormSpec>> = {
-  quick_expense: defineForm('quick_expense', quickExpenseSchema, buildQuickExpense),
-  purchase: defineForm('purchase', purchaseSchema, buildPurchase),
+  quick_expense: defineForm('quick_expense', quickExpenseSchema, (input, ctx, meta) =>
+    withBankTax(buildQuickExpense(input, ctx, meta), ctx, meta),
+  ),
+  purchase: defineForm('purchase', purchaseSchema, (input, ctx, meta) =>
+    withBankTax(buildPurchase(input, ctx, meta), ctx, meta),
+  ),
   purchase_credit_note: defineForm(
     'purchase_credit_note',
     purchaseCreditNoteSchema,
     buildPurchaseCreditNote,
   ),
-  payment: defineForm('payment', paymentSchema, buildPayment),
+  payment: defineForm('payment', paymentSchema, (input, ctx, meta) =>
+    withBankTax(buildPayment(input, ctx, meta), ctx, meta),
+  ),
   sales_close: defineForm('sales_close', salesCloseSchema, buildSalesClose),
   collection: defineForm('collection', collectionSchema, buildCollection),
   wallet_check: defineForm('wallet_check', walletCheckSchema, buildWalletCheck),
   sales_invoice: defineForm('sales_invoice', salesInvoiceSchema, buildSalesInvoice),
   transfer: defineForm('transfer', transferSchema, buildTransfer),
   bank_expense: defineForm('bank_expense', bankExpenseSchema, buildBankExpense),
-  cash_movement: defineForm('cash_movement', cashMovementSchema, buildCashMovement),
+  cash_movement: defineForm('cash_movement', cashMovementSchema, (input, ctx, meta) =>
+    withBankTax(buildCashMovement(input, ctx, meta), ctx, meta),
+  ),
   treasury_adjustment: defineForm(
     'treasury_adjustment',
     treasuryAdjustmentSchema,
