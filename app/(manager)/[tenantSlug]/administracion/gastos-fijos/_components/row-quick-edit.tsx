@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Los dos datos que se le cambian a un gasto fijo en el lugar, sin abrir la
- * ficha: cuánto es y qué día vence. Es la misma pieza en el renglón abierto de
- * la planilla y en cada renglón de «Completar».
+ * ficha: cuánto es y qué día vence. Es la pieza de cada renglón de «Completar».
  *
  * Solo dibuja y avisa: el guardado es de quien la usa (`useRowEdit`).
  * - Enter en cualquiera de los dos campos → `onCommit` (guardar). NUNCA envía

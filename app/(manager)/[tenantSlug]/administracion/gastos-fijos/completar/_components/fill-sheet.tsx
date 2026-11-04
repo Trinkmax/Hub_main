@@ -19,8 +19,8 @@ import {
   installmentsValues,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/gastos-fijos/[id]/_lib/form-payload'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
-import { Meter } from '@/components/administracion/charts/meter'
-import { type CategoryOption, CategoryPicker, MoneyHero } from '@/components/administracion/kit'
+import { type CategoryOption, CategoryPicker } from '@/components/administracion/kit'
+import { Totalizer } from '@/components/administracion/planilla/totalizer'
 import { Button } from '@/components/ui/button'
 import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import { cn } from '@/lib/utils'
@@ -191,47 +191,35 @@ export function FillSheet({
 
   return (
     <div className="space-y-5">
-      {/* La tira queda a la vista mientras se cargan los renglones (desde `sm`; en el celular
-          ocuparía media pantalla). El pegajoso va en el envoltorio: `card-hairline` posiciona. */}
-      <div className="z-20 sm:sticky sm:top-16">
-        <div className="card-hairline flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border bg-card/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85 sm:px-5">
-          <div className="flex min-w-0 flex-1 basis-72 flex-wrap items-end gap-x-6 gap-y-3">
-            <MoneyHero
-              size="md"
-              animate
-              cents={withAmount.length === 0 ? null : sumCents}
-              label="Suman los que ya tienen monto"
-            />
-            <div className="min-w-40 flex-1 space-y-1.5 pb-1">
-              <Meter
-                valueCents={withAmount.length}
-                totalCents={rows.length}
-                ariaLabel={`${withAmount.length} de ${rows.length} con monto`}
-              />
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground tabular-nums">
-                  {withAmount.length} de {rows.length}
-                </span>{' '}
-                con monto
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 gap-2 rounded-full"
-            onClick={() => setPasteOpen(true)}
-          >
-            <ClipboardPaste aria-hidden className="size-4" />
-            Pegar los montos desde mi planilla
-          </Button>
-        </div>
+      {/* El total queda a la vista mientras se cargan los renglones (desde `sm`; en el celular
+          ocuparía media pantalla). */}
+      <div className="z-20 grid gap-2.5 sm:sticky sm:top-[calc(3.5rem+var(--adm-nav-h,0px))]">
+        <Totalizer
+          items={[
+            {
+              label: 'Suman los que ya tienen monto',
+              cents: withAmount.length === 0 ? null : sumCents,
+            },
+            { label: 'Con monto', text: `${withAmount.length} de ${rows.length}` },
+          ]}
+        />
+      </div>
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 gap-2 md:pointer-fine:h-9"
+          onClick={() => setPasteOpen(true)}
+        >
+          <ClipboardPaste aria-hidden className="size-4" />
+          Pegar los montos desde mi planilla
+        </Button>
       </div>
 
       {pills}
 
       {shown.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-border bg-card/50 p-6 text-sm text-muted-foreground">
+        <p className="rounded-xl border border-border/70 bg-card p-6 text-center text-sm text-muted-foreground shadow-xs">
           {view === 'sin-monto'
             ? 'Todos tienen monto.'
             : view === 'varios'
@@ -241,7 +229,7 @@ export function FillSheet({
       ) : (
         <ul
           aria-label="Gastos fijos para completar"
-          className="card-hairline rounded-2xl border bg-card shadow-xs"
+          className="rounded-xl border border-border/70 bg-card shadow-xs"
         >
           {shown.map((row) => (
             <FillRow

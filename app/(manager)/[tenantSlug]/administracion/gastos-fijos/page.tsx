@@ -1,77 +1,44 @@
-import { Plus } from 'lucide-react'
-import Link from 'next/link'
-import {
-  AdmHeader,
-  AdmPage,
-  PanelError,
-  StatusPill,
-  type ViewPillItem,
-  ViewPills,
-} from '@/components/administracion/kit'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
+import { PanelError } from '@/components/administracion/kit'
+import { PlanillaBar, SimplePage } from '@/components/administracion/planilla'
+import { Totalizer } from '@/components/administracion/planilla/totalizer'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
-import { Button } from '@/components/ui/button'
-import { listAccounts, listRecurringExpenses, settleQuery } from '@/lib/accounting/queries'
+import { loadPostingCatalog } from '@/lib/accounting/context'
+import { payrollTotals } from '@/lib/accounting/payroll'
+import { listRecurringExpenses, settleQuery } from '@/lib/accounting/queries'
+import { getPayrollReport } from '@/lib/accounting/queries/payroll'
 import { listRecurringPayments } from '@/lib/accounting/queries/recurring'
-import {
-  addMonthsToYearMonth,
-  formatDayMonth,
-  monthOf,
-  todayInCordoba,
-  weekdayName,
-} from '@/lib/dates'
+import { addMonthsToYearMonth, monthOf, todayInCordoba } from '@/lib/dates'
+import { formatCentsShort } from '@/lib/money'
 import { BulkRecurringDialog } from '../compras/_components/bulk-recurring-dialog'
 import { isPurchaseImputation } from '../compras/_lib/accounts'
-import { firstParam, gastosFijosHref, isUuidLike, recurringHref } from '../compras/_lib/links'
+import { firstParam, gastosFijosHref, isUuidLike } from '../compras/_lib/links'
 import { requireComprasAccess } from '../compras/_lib/page-access'
+import { MonthSeg } from './_components/month-seg'
 import { SheetView } from './_components/sheet'
-import { SheetCharts } from './_components/sheet-charts'
-import { SheetEmpty } from './_components/sheet-empty'
+import { VoidedNotice } from './_components/voided-notice'
 import { buildSheet, defaultSheetMonth, parseSheetMonth } from './_lib/planilla'
 import {
-  monthTitle,
+  type AutoTaxPlan,
+  autoTaxPlan,
   monthWord,
-  parseInvoiceBucket,
-  parseSheetFilter,
   type Sheet,
-  sheetCarry,
+  sheetTotals,
 } from './_lib/planilla-words'
 
 export const metadata = { title: 'Gastos fijos' }
 
 /**
- * Cuántos quedan por pagar de ESE mes: es el contador de su píldora. Mirando
- * el mes que viene, lo que quedó de antes no cuenta (ya lo cuenta la píldora
- * de hoy): si no, «Noviembre 3» repetía a «Octubre 3» con otro nombre.
- */
-function monthLeft(sheet: Sheet): { own: number; carried: number } {
-  const carry = sheetCarry(sheet)
-  if (!carry) return { own: sheet.counts.falta, carried: 0 }
-  return { own: Math.max(0, sheet.counts.falta - carry.count), carried: carry.count }
-}
-
-/** «Octubre, este mes: 3 por pagar», para quien no ve la pastilla. */
-function monthAria(sheet: Sheet): string {
-  const which = sheet.isCurrent ? 'este mes' : 'el mes que viene'
-  const { own, carried } = monthLeft(sheet)
-  const left = own === 0 ? 'nada por pagar' : `${own} por pagar`
-  const before =
-    carried === 0 ? '' : `; ${carried === 1 ? 'queda 1' : `quedan ${carried}`} de antes`
-  return `${monthTitle(sheet.month)}, ${which}: ${left}${before}`
-}
-
-/**
- * Gastos fijos: la planilla de todos los meses, viva. Una sola hoja con el
- * número que manda («Te falta de gasto fijo», el mismo del Resumen), los
- * renglones colgados del día en que vencen y la fila de suma. Se paga y se
- * escribe en el renglón; el alta y la ficha completa siguen en
- * `/compras/gastos-fijos/[id]` y los montos de corrido, en `./completar`.
+ * Gastos fijos: la planilla de todos los meses, como la que ya llevan los socios. Arriba, el
+ * totalizador que pidió Tomi (total, pagado, por pagar y vencido, con los sueldos adentro). Abajo, una
+ * fila por gasto: tildar paga («como pagar la EPEC, vas marcando») y el monto se escribe en su celda.
+ * El alta y la ficha completa siguen en `/compras/gastos-fijos/[id]` y los montos de corrido, en
+ * `./completar`.
  *
- * La misma puerta que Compras: leen los dueños con acceso y la contadora, y
- * solo a quien carga se le dibujan los controles que escriben.
+ * La misma puerta que Compras: leen los dueños con acceso y la contadora, y solo a quien carga se le
+ * dibujan los controles que escriben.
  *
- * El estado vive en la URL: `?mes=` (el de hoy o el que viene), `?ver=`,
- * `?categoria=`, `?factura=` y `?abrir=<uuid>` (el renglón que entra abierto).
+ * El estado vive en la URL: `?mes=` (el de hoy o el que viene) y `?abrir=<uuid>` (el renglón que entra
+ * a la vista).
  */
 export default async function GastosFijosPage({
   params,
@@ -85,24 +52,10 @@ export default async function GastosFijosPage({
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
-  const header = (
-    <AdmHeader
-      title="Gastos fijos"
-      // En el celular lo dice la hoja (el número y su oración), y cada renglón que se saca de
-      // arriba es un renglón más de la planilla a la vista: la bajada queda para pantallas con lugar.
-      description={
-        <span className="hidden sm:inline">
-          Tu planilla de todos los meses: qué vence, qué pagaste y cuánto te falta.
-        </span>
-      }
-      badge={<ReadOnlyBadge className="ml-0" />}
-    />
-  )
-
-  const [rowsOutcome, paymentsOutcome, accountsOutcome] = await Promise.all([
+  const [rowsOutcome, paymentsOutcome, catalogOutcome] = await Promise.all([
     settleQuery(listRecurringExpenses(tenantId, { includeInactive: true, today })),
     settleQuery(listRecurringPayments(tenantId)),
-    canWrite ? settleQuery(listAccounts(tenantId)) : null,
+    canWrite ? settleQuery(loadPostingCatalog(tenantId)) : null,
   ])
 
   // Sin los pagos no se dibuja la hoja: un pagado que se ve «sin pagar» invita a pagar dos veces.
@@ -113,10 +66,10 @@ export default async function GastosFijosPage({
         ? paymentsOutcome.message
         : ''
     return (
-      <AdmPage>
-        {header}
+      <SimplePage>
+        <h1 className="sr-only">Gastos fijos</h1>
         <PanelError title="La planilla del mes" message={message} />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -124,16 +77,17 @@ export default async function GastosFijosPage({
   const payments = paymentsOutcome.data
 
   // «Pegar una lista»: las cuentas que sirven para un gasto (y sus grupos, para la ruta).
-  const catalog = accountsOutcome?.ok ? accountsOutcome.data : []
-  const imputable = new Set(catalog.filter(isPurchaseImputation).map((a) => a.id))
-  const miscAccountId = catalog.find((a) => a.systemKey === 'misc_expenses')?.id ?? null
-  const pasteList = (trigger: 'link' | 'primary') =>
-    canWrite && accountsOutcome?.ok ? (
+  const catalog = catalogOutcome?.ok ? catalogOutcome.data : null
+  const accounts = catalog?.accounts ?? []
+  const imputable = new Set(accounts.filter(isPurchaseImputation).map((a) => a.id))
+  const miscAccountId = accounts.find((a) => a.systemKey === 'misc_expenses')?.id ?? null
+  const pasteList =
+    canWrite && catalog ? (
       <BulkRecurringDialog
         tenantSlug={tenantSlug}
         today={today}
-        trigger={trigger}
-        accounts={catalog
+        trigger={rows.length === 0 ? 'primary' : 'link'}
+        accounts={accounts
           .filter((a) => imputable.has(a.id) || !a.postable)
           .map((a) => ({
             id: a.id,
@@ -149,32 +103,18 @@ export default async function GastosFijosPage({
         }
       />
     ) : null
-
-  if (rows.length === 0) {
-    return (
-      <AdmPage>
-        {header}
-        <SheetEmpty
-          canWrite={canWrite}
-          pasteList={pasteList('primary')}
-          addOne={
-            <Button asChild variant="outline" className="h-11 gap-2">
-              <Link href={recurringHref(tenantSlug, 'nuevo')}>
-                <Plus aria-hidden className="size-4" />
-                Cargar uno
-              </Link>
-            </Button>
-          }
-        />
-        <QuickActionsBar />
-      </AdmPage>
-    )
-  }
+  // Si el catálogo no se pudo leer, la tira de pago lo vuelve a decidir con lo que trae al abrirse.
+  const autoTax: AutoTaxPlan = catalog
+    ? autoTaxPlan({
+        settings: catalog.settings.taxSettings,
+        accounts: catalog.accounts,
+        parties: catalog.parties,
+      })
+    : {}
 
   const currentMonth = monthOf(today)
   const nextMonth = addMonthsToYearMonth(currentMonth, 1)
-  const build = (month: string) =>
-    buildSheet(rows, payments, { month, today, miscAccountId, canWrite })
+  const build = (month: string) => buildSheet(rows, payments, { month, today })
   const sheets = { current: build(currentMonth), next: build(nextMonth) }
 
   const openRaw = firstParam(sp.abrir)
@@ -195,70 +135,71 @@ export default async function GastosFijosPage({
   const sheet = month === nextMonth ? sheets.next : sheets.current
   const auto = asked === null && opened === null && fallback.auto
 
-  const categoryRaw = firstParam(sp.categoria)
-  const query = {
-    ver: parseSheetFilter(firstParam(sp.ver)),
-    categoria: isUuidLike(categoryRaw) ? categoryRaw : null,
-    factura: parseInvoiceBucket(firstParam(sp.factura)),
-  }
-
-  const monthPills: ViewPillItem[] = [sheets.current, sheets.next].map((s) => {
-    const left = monthLeft(s).own
-    return {
-      key: s.month,
-      label: monthTitle(s.month),
-      href: gastosFijosHref(tenantSlug, { mes: s.month }),
-      count: left > 0 ? left : undefined,
-      active: s.month === month,
-      ariaLabel: monthAria(s),
-      scroll: false,
-    }
-  })
+  // Si los sueldos no se pueden leer, la planilla igual se dibuja: su fila lo dice y no suman.
+  const payrollOutcome = await settleQuery(getPayrollReport(tenantId, month))
+  const payroll = payrollOutcome.ok ? payrollTotals(payrollOutcome.data.employees) : null
+  const totals = sheetTotals(sheet, payroll)
 
   return (
-    <AdmPage>
-      {header}
-
-      <div className="space-y-2">
-        <ViewPills
+    <SimplePage>
+      <h1 className="sr-only">Gastos fijos</h1>
+      <PlanillaBar>
+        <MonthSeg
           label="Mes de la planilla"
-          items={monthPills}
-          aside={
-            <>
-              {sheet.isCurrent ? null : (
-                // Si la hoja se abrió sola, en el celular ya lo dice la oración de abajo.
-                <StatusPill tone="info" className={auto ? 'max-sm:hidden' : undefined}>
-                  Todavía no empezó
-                </StatusPill>
-              )}
-              {/* En el celular no entra al lado de los meses y un renglón propio empuja la hoja:
-                  ahí el día lo dicen los renglones («Vence hoy», «Venció hace 3 días»). */}
-              <span className="text-sm text-muted-foreground max-sm:hidden">
-                Hoy es {weekdayName(today)} {formatDayMonth(today)}
-              </span>
-            </>
-          }
+          months={[currentMonth, nextMonth]}
+          active={month}
+          hrefOf={(m) => gastosFijosHref(tenantSlug, { mes: m })}
         />
         {auto ? (
-          <p className="text-sm text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             En {monthWord(currentMonth)} no vence ninguno: te muestro {monthWord(nextMonth)}.
-          </p>
+          </span>
         ) : null}
-      </div>
+        <ReadOnlyBadge className="ml-auto" />
+      </PlanillaBar>
+
+      <Totalizer
+        items={[
+          {
+            label: 'Total del mes',
+            cents: totals.totalCents,
+            hint:
+              totals.payrollCents !== null
+                ? `Con ${formatCentsShort(totals.payrollCents)} de sueldos`
+                : undefined,
+          },
+          { label: 'Pagado', cents: totals.paidCents, tone: 'ok' },
+          {
+            label: 'Por pagar',
+            cents: totals.pendingCents,
+            hint:
+              totals.noAmount === 0
+                ? undefined
+                : totals.noAmount === 1
+                  ? '1 sin monto: no suma'
+                  : `${totals.noAmount} sin monto: no suman`,
+          },
+          {
+            label: 'Vencido',
+            cents: totals.overdueCents,
+            tone: (totals.overdueCents ?? 0) > 0 ? 'bad' : 'default',
+          },
+        ]}
+      />
+
+      <VoidedNotice items={sheet.voided} canWrite={canWrite} />
 
       <SheetView
         sheet={sheet}
+        totals={totals}
+        payroll={payroll}
+        autoTax={autoTax}
         tenantSlug={tenantSlug}
         canWrite={canWrite}
-        query={query}
         openId={openId}
         miscAccountId={miscAccountId}
-        pasteList={pasteList('link')}
+        pasteList={pasteList}
       />
-
-      <SheetCharts sheet={sheet} tenantSlug={tenantSlug} />
-
-      <QuickActionsBar />
-    </AdmPage>
+    </SimplePage>
   )
 }

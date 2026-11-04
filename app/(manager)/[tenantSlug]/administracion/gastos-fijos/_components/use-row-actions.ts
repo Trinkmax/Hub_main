@@ -232,8 +232,8 @@ export type RowEditMark = { state: SaveState; failure: SaveFailure | null }
 const IDLE: RowEditMark = { state: 'idle', failure: null }
 
 /**
- * El monto y el día de un renglón, que se guardan solos: lo usan el renglón
- * abierto de la planilla y cada renglón de «Completar».
+ * El monto y el día de un renglón, que se guardan solos: lo usan la celda del
+ * monto de la planilla y cada renglón de «Completar».
  *
  * - Un solo guardado en vuelo por renglón. Lo que se escriba mientras tanto
  *   espera su turno y sale con el `updatedAt` que devolvió el anterior.

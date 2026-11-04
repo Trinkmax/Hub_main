@@ -5,40 +5,30 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/paste-amounts'
 import {
   buildSheet,
-  categoryBars,
-  chartScope,
   defaultSheetMonth,
-  dueDays,
-  dueStripDays,
-  paperSplit,
   parseSheetMonth,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla'
 import {
-  categoryTitle,
-  DUE_OUTSIDE_LABELS,
+  amountEditable,
+  askWords,
+  autoTaxPlan,
   detectInstallment,
-  dueTitle,
   installmentWords,
-  invoiceBucket,
-  matchesSheetQuery,
-  nextUpView,
-  ownItems,
+  morePayOptionsHref,
   papelLabel,
-  paperTitle,
-  parseInvoiceBucket,
-  parseSheetFilter,
+  payrollRowStatus,
+  payStripBlock,
   rowActions,
+  rowMenu,
+  rowStatus,
   rowSubline,
-  rowTint,
-  rowWords,
   type SheetItem,
   saveFailure,
   sheetCarry,
-  sheetFilterPills,
-  sheetSentence,
+  sheetTotals,
   shownTotals,
+  stripFromQr,
   tickState,
-  topCategoryBars,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
 import { fixedProgress } from '@/lib/accounting/home'
 import { type RecurringExpenseRow, recurringMonthStatus } from '@/lib/accounting/queries/documents'
@@ -50,9 +40,9 @@ import {
 } from '@/lib/accounting/recurring-status'
 import { daysBetween } from '@/lib/dates'
 
-// La planilla de gastos fijos (rediseño de oct 2026): una hoja por mes, con los
-// renglones colgados del día en que vencen. No inventa cuentas: cada renglón
-// es `recurringLine` y el número de arriba es `fixedProgress` (el del Resumen).
+// La planilla de gastos fijos (noviembre de 2026): una hoja por mes, una fila por gasto y tildar
+// paga. No inventa cuentas: cada renglón es `recurringLine` y el total es `fixedProgress` (el del
+// Resumen), más la planilla de Sueldos.
 
 /** Martes. El 10/10 fue sábado; el 15/10 es jueves; el 10/11, martes. */
 const TODAY = '2026-10-13'
@@ -61,8 +51,6 @@ const NOV = '2026-11'
 /** El espacio duro que `lib/money` pone entre el «$» y el número. */
 const NB = String.fromCharCode(160)
 const $ = (text: string) => `$${NB}${text}`
-
-const MISC = 'acc-varios'
 
 function mk(
   over: Partial<RecurringExpenseRow> & { id: string; name: string },
@@ -143,7 +131,7 @@ const INTERNET = mk({
 })
 const DEMO = [ALQUILER, DISPENSER, INTERNET]
 
-/** HUB al 13/10: 31 sin monto, todos al 10/11, seis en «Gastos varios», dos con la cuota en el nombre. */
+/** HUB al 13/10: 31 sin monto, todos al 10/11. */
 const HUB: RecurringExpenseRow[] = Array.from({ length: 31 }, (_, index) => {
   const n = index + 1
   const name =
@@ -151,8 +139,8 @@ const HUB: RecurringExpenseRow[] = Array.from({ length: 31 }, (_, index) => {
   return mk({
     id: `hub-${String(n).padStart(2, '0')}`,
     name,
-    accountId: n >= 26 ? MISC : `acc-${n % 5}`,
-    accountName: n >= 26 ? 'Gastos varios' : `Categoría ${n % 5}`,
+    accountId: `acc-${n % 5}`,
+    accountName: `Categoría ${n % 5}`,
   })
 })
 
@@ -160,8 +148,7 @@ const sheetOf = (
   rows: readonly RecurringExpenseRow[],
   month = OCT,
   payments: ReadonlyMap<string, RecurringPaymentFacts> | null = null,
-  canWrite = true,
-) => buildSheet(rows, payments, { month, today: TODAY, miscAccountId: MISC, canWrite })
+) => buildSheet(rows, payments, { month, today: TODAY })
 
 const itemOf = (row: RecurringExpenseRow, payments = new Map<string, RecurringPaymentFacts>()) => {
   const item = sheetOf([row], OCT, payments)
@@ -169,6 +156,23 @@ const itemOf = (row: RecurringExpenseRow, payments = new Map<string, RecurringPa
   if (!found) throw new Error('la hoja no devolvió el renglón')
   return found
 }
+
+function item0(sheet: { items: SheetItem[] }): SheetItem {
+  const item = sheet.items[0]
+  if (!item) throw new Error('hoja vacía')
+  return item
+}
+
+const loaded = (over: Partial<RecurringExpenseRow> = {}) =>
+  mk({
+    ...ALQUILER,
+    nextDueDate: '2026-11-10',
+    loadedDue: '2026-10-10',
+    lastDocumentId: 'doc-1',
+    lastDocumentDate: '2026-10-08',
+    monthStatus: undefined,
+    ...over,
+  })
 
 describe('la hoja del mes actual', () => {
   const sheet = sheetOf(DEMO)
@@ -184,64 +188,20 @@ describe('la hoja del mes actual', () => {
     expect(sheet.isCurrent).toBe(true)
   })
 
-  it('cuelga cada renglón de su día, en orden de día y nombre', () => {
-    expect(sheet.groups.map((g) => [g.day, g.place, g.items.map((i) => i.row.name)])).toEqual([
-      ['2026-10-10', 'month', ['Alquiler del local', 'Dispenser Agua']],
-      ['2026-10-15', 'month', ['Internet y teléfono']],
+  it('los renglones van en orden de día y nombre, en un solo tramo', () => {
+    expect(sheet.items.map((item) => [item.day, item.row.name])).toEqual([
+      ['2026-10-10', 'Alquiler del local'],
+      ['2026-10-10', 'Dispenser Agua'],
+      ['2026-10-15', 'Internet y teléfono'],
     ])
-    expect(sheet.groups[0]).toMatchObject({ dueCents: 88_000_000, remainingCents: 88_000_000 })
+    expect(sheet.stretches.map((stretch) => stretch.place)).toEqual(['month'])
     expect(sheet.later).toEqual([])
     expect(sheet.off).toEqual([])
-  })
-
-  it('cuenta lo vencido, lo que está por vencer y lo pago', () => {
-    expect(sheet.counts).toEqual({
-      todo: 3,
-      vencido: 2,
-      porVencer: 1,
-      falta: 3,
-      pagado: 0,
-      sinMonto: 0,
-      enCuotas: 0,
-    })
-  })
-
-  it('lo que sigue: primero lo vencido, por fecha y por nombre', () => {
-    expect(sheet.next?.row.name).toBe('Alquiler del local')
-    expect(sheet.afterNext.map((i) => i.row.name)).toEqual([
-      'Dispenser Agua',
-      'Internet y teléfono',
-    ])
-    expect(nextUpView(sheet, { canWrite: true })).toMatchObject({
-      kind: 'pay',
-      name: 'Alquiler del local',
-      amountCents: 85_000_000,
-      action: { kind: 'gasto', recurringId: 'gf-alquiler' },
-      billed: false,
-      after: 'Después: Dispenser Agua y 1 más.',
-    })
-  })
-
-  it('la oración de arriba cuenta cuántos son y cuánto venció', () => {
-    expect(sheetSentence(sheet)).toEqual({
-      kind: 'number',
-      cents: 91_500_000,
-      text: `Son 3 gastos de octubre. 2 ya vencieron: suman ${$('880.000')}.`,
-      allPaid: false,
-      noAmount: 0,
-    })
   })
 })
 
 describe('pagar no mueve el renglón', () => {
-  const paid = mk({
-    ...ALQUILER,
-    nextDueDate: '2026-11-10',
-    loadedDue: '2026-10-10',
-    lastDocumentId: 'doc-1',
-    lastDocumentDate: '2026-10-08',
-    monthStatus: undefined,
-  })
+  const paid = loaded()
   const payments = paidWith(
     'gf-alquiler',
     doc({ id: 'doc-1', totalCents: 85_000_000, paidCents: 85_000_000 }),
@@ -249,41 +209,31 @@ describe('pagar no mueve el renglón', () => {
   const before = sheetOf(DEMO)
   const after = sheetOf([paid, DISPENSER, INTERNET], OCT, payments)
 
-  it('queda tildado en su lugar, colgado del mismo día', () => {
+  it('queda tildado en su lugar y con el sello', () => {
     expect(after.items.map((i) => i.row.id)).toEqual(before.items.map((i) => i.row.id))
-    expect(after.groups.map((g) => g.day)).toEqual(before.groups.map((g) => g.day))
-    const item = after.items[0] as SheetItem
+    const item = item0(after)
+    expect(item.day).toBe('2026-10-10')
     expect(item.line.state).toBe('paid')
     expect(item.doc?.id).toBe('doc-1')
     expect(tickState(item)).toBe('done')
-    expect(rowTint(item)).toBe('ok')
-    expect(rowWords(item, TODAY)).toMatchObject({ label: 'Pagado el 08/10', tone: 'ok' })
+    expect(rowStatus(item, TODAY)).toMatchObject({
+      label: 'Pagado',
+      stamp: true,
+      title: 'Pagado el 08/10',
+      detail: 'el 08/10',
+      tone: 'ok',
+    })
+    expect(rowActions(item, { canWrite: true }).pay).toBeNull()
   })
 
-  it('el número baja y lo que sigue pasa al próximo', () => {
-    expect(after.progress.paidCents).toBe(85_000_000)
-    expect(after.progress.remainingCents).toBe(6_500_000)
-    expect(after.next?.row.name).toBe('Dispenser Agua')
-    expect(sheetSentence(after)).toMatchObject({
-      text: `Pagaste ${$('850.000')} de ${$('915.000')}. Te faltan 2.`,
+  it('el total no cambia: pasa de «Por pagar» a «Pagado»', () => {
+    const totals = sheetTotals(after, null)
+    expect(totals).toMatchObject({
+      totalCents: 91_500_000,
+      paidCents: 85_000_000,
+      pendingCents: 6_500_000,
     })
-    expect(rowActions(item0(after), { canWrite: true }).pay).toBeNull()
-  })
-
-  it('con todo pago, el número queda en cero y se dice «al día»', () => {
-    const allPaid = sheetOf([paid], OCT, payments)
-    expect(sheetSentence(allPaid)).toEqual({
-      kind: 'number',
-      cents: 0,
-      text: `Pagaste los ${$('850.000')} de gastos fijos de octubre.`,
-      allPaid: true,
-      noAmount: 0,
-    })
-    expect(nextUpView(allPaid, { canWrite: true })).toEqual({
-      kind: 'all_paid',
-      text: 'No queda nada por pagar en octubre.',
-      nextMonth: NOV,
-    })
+    expect(sheetTotals(before, null).totalCents).toBe(totals.totalCents)
   })
 
   it('«este mes no se paga» tampoco lo mueve: queda con raya en su día', () => {
@@ -298,28 +248,109 @@ describe('pagar no mueve el renglón', () => {
     const item = item0(sheet)
     expect(item.day).toBe('2026-10-10')
     expect(tickState(item)).toBe('skip')
-    expect(rowWords(item, TODAY)).toMatchObject({ label: 'Este mes no se paga', tone: 'muted' })
-    const actions = rowActions(item, { canWrite: true })
-    expect(actions).toMatchObject({ pay: null, skip: false, unskip: true, bill: false })
+    expect(rowStatus(item, TODAY)).toMatchObject({ label: 'Este mes no se paga', tone: 'muted' })
+    expect(rowActions(item, { canWrite: true })).toMatchObject({
+      pay: null,
+      skip: false,
+      unskip: true,
+      bill: false,
+    })
   })
 })
 
-function item0(sheet: { items: SheetItem[] }): SheetItem {
-  const item = sheet.items[0]
-  if (!item) throw new Error('hoja vacía')
-  return item
-}
+describe('el totalizador: total, pagado, por pagar y vencido', () => {
+  const PAYROLL = {
+    count: 2,
+    salaryCents: 100_000_000,
+    advancesCents: 10_000_000,
+    paidCents: 20_000_000,
+    owedCents: 70_000_000,
+  }
+
+  it('los gastos fijos solos: lo mismo que el Resumen', () => {
+    expect(sheetTotals(sheetOf(DEMO), null)).toEqual({
+      totalCents: 91_500_000,
+      paidCents: 0,
+      pendingCents: 91_500_000,
+      overdueCents: 88_000_000,
+      payrollCents: null,
+      noAmount: 0,
+    })
+  })
+
+  it('los sueldos suman: el total, lo adelantado y pagado, y lo que se debe', () => {
+    expect(sheetTotals(sheetOf(DEMO), PAYROLL)).toEqual({
+      totalCents: 191_500_000,
+      paidCents: 30_000_000,
+      pendingCents: 161_500_000,
+      overdueCents: 88_000_000,
+      payrollCents: 100_000_000,
+      noAmount: 0,
+    })
+  })
+
+  it('una planilla de sueldos vacía no suma ni se menciona', () => {
+    const empty = { count: 3, salaryCents: 0, advancesCents: 0, paidCents: 0, owedCents: 0 }
+    expect(sheetTotals(sheetOf(DEMO), empty)).toMatchObject({
+      totalCents: 91_500_000,
+      payrollCents: null,
+    })
+  })
+
+  it('nunca «$ 0» por un dato que falta: sin montos ni sueldos no hay número', () => {
+    expect(sheetTotals(sheetOf(HUB, NOV), null)).toEqual({
+      totalCents: null,
+      paidCents: null,
+      pendingCents: null,
+      overdueCents: null,
+      payrollCents: null,
+      noAmount: 31,
+    })
+    // Con los sueldos cargados, ya hay un total; los que no tienen monto siguen sin sumar.
+    expect(sheetTotals(sheetOf(HUB, NOV), PAYROLL)).toMatchObject({
+      totalCents: 100_000_000,
+      pendingCents: 70_000_000,
+      noAmount: 31,
+    })
+  })
+
+  it('un gasto con monto y otro sin: el que no tiene monto no suma y se avisa', () => {
+    const blank = mk({ id: 'gf-luz', name: 'Luz', nextDueDate: '2026-10-20', dueDay: 20 })
+    expect(sheetTotals(sheetOf([INTERNET, blank]), null)).toMatchObject({
+      totalCents: 3_500_000,
+      noAmount: 1,
+    })
+  })
+})
+
+describe('la fila fija de los sueldos', () => {
+  const sums = { count: 2, advancesCents: 0, paidCents: 0 }
+
+  it('dice cuánto falta, y el sello cuando no falta nada', () => {
+    expect(payrollRowStatus({ ...sums, salaryCents: 100, owedCents: 100 })).toEqual({
+      label: `Falta ${$('1')}`,
+      tone: 'muted',
+      stamp: false,
+    })
+    expect(payrollRowStatus({ ...sums, salaryCents: 100, owedCents: 0 })).toEqual({
+      label: 'Pagado',
+      tone: 'ok',
+      stamp: true,
+    })
+  })
+
+  it('sin equipo o sin sueldos lo dice; si no se pudo leer, también', () => {
+    expect(payrollRowStatus({ ...sums, count: 0, salaryCents: 0, owedCents: 0 }).label).toBe(
+      'Sin cargar',
+    )
+    expect(payrollRowStatus({ ...sums, salaryCents: 0, owedCents: 0 }).label).toBe('Sin sueldos')
+    expect(payrollRowStatus(null)).toMatchObject({ label: 'No se pudo leer', tone: 'bad' })
+  })
+})
 
 describe('la hoja del mes que viene', () => {
-  it('lo pagado este mes es pendiente el que viene, y todavía no se ofrece pagarlo', () => {
-    const paid = mk({
-      ...ALQUILER,
-      nextDueDate: '2026-11-10',
-      loadedDue: '2026-10-10',
-      lastDocumentId: 'doc-1',
-      lastDocumentDate: '2026-10-08',
-      monthStatus: undefined,
-    })
+  it('lo pagado este mes es pendiente el que viene, y no se paga dos veces', () => {
+    const paid = loaded()
     const payments = paidWith(
       'gf-alquiler',
       doc({ id: 'doc-1', totalCents: 85_000_000, paidCents: 85_000_000 }),
@@ -337,116 +368,61 @@ describe('la hoja del mes que viene', () => {
     expect(sheet.progress.remainingCents).toBe(85_000_000)
   })
 
-  it('lo vencido de antes sigue vencido contra hoy y va arriba, con su fecha vieja', () => {
+  it('lo vencido de antes sigue vencido contra hoy y va arriba, en su tramo', () => {
     const upcoming = mk({ id: 'gf-luz', name: 'Luz', amountCents: 12_000_000 })
     const sheet = sheetOf([upcoming, ALQUILER], NOV)
-    expect(sheet.groups.map((g) => [g.day, g.place])).toEqual([
-      ['2026-10-10', 'before'],
-      ['2026-11-10', 'month'],
+    expect(sheet.stretches.map((s) => [s.place, s.items.map((i) => i.row.name)])).toEqual([
+      ['before', ['Alquiler del local']],
+      ['month', ['Luz']],
     ])
     expect(item0(sheet).line.state).toBe('overdue')
-    expect(sheet.counts).toMatchObject({ vencido: 1, porVencer: 1 })
-    // Mirando el mes que viene no hay botón: se dice lo primero que vence de ESE mes.
-    expect(nextUpView(sheet, { canWrite: true })).toEqual({
-      kind: 'first_due',
-      when: 'Martes 10 de noviembre',
-      detail: `1 gasto · ${$('120.000')}`,
-      daysText: 'Faltan 28 días.',
-    })
-    // El número es SOLO lo de noviembre: lo que quedó de antes va aparte, con su importe y la
-    // hoja donde se paga. Un «Te falta · noviembre» con la deuda de octubre adentro sería un
-    // número con el mes equivocado.
-    expect(sheetSentence(sheet)).toEqual({
-      kind: 'number',
-      cents: 12_000_000,
-      text: 'Es un solo gasto de noviembre. El que quedó de antes sin pagar va aparte.',
-      allPaid: false,
-      noAmount: 0,
-      carried: { month: OCT, count: 1, cents: 85_000_000 },
-    })
+    // El total es SOLO lo de noviembre: un «Total de noviembre» con la deuda de octubre adentro
+    // sería un número con el mes equivocado. La deuda se ve en «Vencido» y en su tramo.
     expect(sheetCarry(sheet)).toMatchObject({
       month: OCT,
       count: 1,
       cents: 85_000_000,
       ownTotals: { count: 1, totalCents: 12_000_000, paidCents: 0, remainingCents: 12_000_000 },
     })
-    expect(ownItems(sheet).map((item) => item.row.name)).toEqual(['Luz'])
-    // Y los dibujos de noviembre no cuentan lo de octubre.
-    expect(categoryBars(chartScope(sheet))).toEqual([
-      { id: 'acc-alquiler', name: 'Alquiler', cents: 12_000_000, count: 1 },
-    ])
-    expect(
-      dueStripDays(chartScope(sheet))
-        .filter((d) => d.cents > 0)
-        .map((d) => d.date),
-    ).toEqual(['2026-11-10'])
+    expect(sheetTotals(sheet, null)).toMatchObject({
+      totalCents: 12_000_000,
+      pendingCents: 12_000_000,
+      overdueCents: 85_000_000,
+    })
   })
 
-  it('si lo único que hay es lo que quedó de antes: sin número ni «lo que sigue», y dice dónde se paga', () => {
-    // El bar de ejemplo en noviembre: los tres siguen sin pagar desde octubre.
+  it('si lo único que hay es lo que quedó de antes: sin total, con lo vencido', () => {
     const sheet = sheetOf(DEMO, NOV)
-    expect(sheet.groups.every((g) => g.place === 'before')).toBe(true)
-    expect(sheetSentence(sheet)).toEqual({
-      kind: 'carried',
-      title: 'Noviembre todavía no se armó',
-      text: `Acá abajo están los 3 que quedaron de antes sin pagar: suman ${$('915.000')}. Cuando los pagues, vas a ver los de noviembre.`,
-      carried: { month: OCT, count: 3, cents: 91_500_000 },
-    })
-    // El botón de pagar manda en la hoja de hoy; en la del mes que viene no se repite.
-    expect(nextUpView(sheet, { canWrite: true })).toEqual({ kind: 'none' })
-    expect(nextUpView(sheetOf(DEMO, OCT), { canWrite: true }).kind).toBe('pay')
-    expect(sheetSentence(sheetOf([ALQUILER], NOV))).toMatchObject({
-      kind: 'carried',
-      text: `Acá abajo está el que quedó de antes sin pagar: ${$('850.000')}. Cuando lo pagues, vas a ver el de noviembre.`,
-    })
-    // Nada de noviembre para dibujar.
-    expect(chartScope(sheet).items).toEqual([])
-    expect(chartScope(sheet).groups).toEqual([])
-  })
-
-  it('lo de noviembre sin monto y algo de antes: tampoco hay número, y lo de antes va aparte', () => {
-    const blank = mk({ id: 'gf-luz', name: 'Luz' })
-    expect(sheetSentence(sheetOf([blank, ALQUILER], NOV))).toEqual({
-      kind: 'no_amounts',
-      title: 'Todavía no sé cuánto te falta',
-      text: 'Es un solo gasto de noviembre y no tiene monto. El que quedó de antes sin pagar va aparte.',
-      carried: { month: OCT, count: 1, cents: 85_000_000 },
+    expect(sheet.stretches.map((s) => s.place)).toEqual(['before'])
+    expect(sheetCarry(sheet)).toMatchObject({ month: OCT, count: 3, cents: 91_500_000 })
+    expect(sheetTotals(sheet, null)).toMatchObject({
+      totalCents: null,
+      pendingCents: null,
+      overdueCents: 88_000_000,
     })
   })
 
-  it('en el mes de hoy no se separa nada: lo vencido de antes es parte de «Te falta»', () => {
+  it('en el mes de hoy no se separa nada: lo vencido de antes es parte de «Por pagar»', () => {
     const old = mk({ ...ALQUILER, nextDueDate: '2026-09-10', monthStatus: undefined })
     const sheet = sheetOf([old, INTERNET])
     expect(sheetCarry(sheet)).toBeNull()
-    expect(ownItems(sheet)).toBe(sheet.items)
-    expect(chartScope(sheet)).toBe(sheet)
-    expect(sheetSentence(sheet)).toMatchObject({ kind: 'number', cents: 88_500_000 })
+    expect(sheet.stretches.map((s) => s.place)).toEqual(['before', 'month'])
+    expect(sheetTotals(sheet, null)).toMatchObject({ pendingCents: 88_500_000 })
   })
 
   it('lo pagado por adelantado cuenta como pago de este mes y queda último', () => {
-    const ahead = mk({
-      ...ALQUILER,
-      nextDueDate: '2026-12-10',
-      loadedDue: '2026-11-10',
-      lastDocumentId: 'doc-2',
-      lastDocumentDate: '2026-10-02',
-      monthStatus: undefined,
-    })
+    const ahead = loaded({ nextDueDate: '2026-12-10', loadedDue: '2026-11-10' })
     const payments = paidWith(
       'gf-alquiler',
       doc({
-        id: 'doc-2',
+        id: 'doc-1',
         accountingDate: '2026-10-02',
         totalCents: 85_000_000,
         paidCents: 85_000_000,
       }),
     )
     const sheet = sheetOf([ahead, DISPENSER, INTERNET], OCT, payments)
-    expect(sheet.groups.map((g) => [g.day, g.place])).toEqual([
-      ['2026-10-10', 'month'],
-      ['2026-10-15', 'month'],
-      ['2026-11-10', 'ahead'],
-    ])
+    expect(sheet.stretches.map((s) => s.place)).toEqual(['month', 'ahead'])
     expect(sheet.items.at(-1)?.line.state).toBe('paid')
   })
 
@@ -465,7 +441,7 @@ describe('los 31 de HUB al 13/10 (un bar que recién cargó su lista)', () => {
   const october = sheetOf(HUB, OCT)
   const november = sheetOf(HUB, NOV)
 
-  it('octubre está vacío: se abre noviembre sola y se dice', () => {
+  it('octubre está vacío: se abre noviembre sola', () => {
     expect(october.items).toHaveLength(0)
     expect(november.items).toHaveLength(31)
     expect(defaultSheetMonth(october, november)).toEqual({ month: NOV, auto: true })
@@ -476,71 +452,9 @@ describe('los 31 de HUB al 13/10 (un bar que recién cargó su lista)', () => {
     })
   })
 
-  it('no hay número: «Todavía no sé cuánto te falta» (nunca «$ 0»)', () => {
-    expect(november.progress.state).toBe('no_amounts')
-    expect(sheetSentence(november)).toEqual({
-      kind: 'no_amounts',
-      title: 'Todavía no sé cuánto te falta',
-      text: 'Tenés 31 gastos fijos y ninguno tiene monto. Vencen el 10 de noviembre.',
-    })
-    expect(sheetSentence(october)).toEqual({
-      kind: 'empty',
-      title: 'En octubre no vence ninguno',
-      text: 'Lo próximo es el 10 de noviembre: 31 gastos, todavía sin monto.',
-      nextMonth: NOV,
-    })
-  })
-
-  it('un solo grupo, sin filtros que valgan la pena y sin nada para dibujar', () => {
-    expect(november.groups).toHaveLength(1)
-    expect(november.groups[0]).toMatchObject({
-      day: '2026-11-10',
-      place: 'month',
-      dueCents: 0,
-      remainingCents: 0,
-    })
-    expect(november.counts).toMatchObject({ todo: 31, vencido: 0, porVencer: 31, sinMonto: 31 })
-    // Los 31 están por vencer y sin monto: ninguna píldora filtraría nada.
-    expect(sheetFilterPills(november)).toEqual([])
-    expect(november.progress.countedRows).toBe(0)
-    expect(dueStripDays(november).every((d) => d.cents === 0)).toBe(true)
-    expect(categoryBars(november)).toEqual([])
-    expect(paperSplit(november).defined).toBe(false)
-  })
-
-  it('«Para arrancar»: cuántos faltan, cuántos quedaron en «Gastos varios» y que todos dicen el 10', () => {
-    expect(november.setup).toEqual({
-      missing: 31,
-      total: 31,
-      misc: 6,
-      sameDay: 10,
-      everPaid: false,
-    })
-    expect(nextUpView(november, { canWrite: true })).toEqual({
-      kind: 'setup',
-      setup: november.setup,
-    })
-    // También mirando octubre, que está vacío: es la acción del momento.
-    expect(nextUpView(october, { canWrite: true }).kind).toBe('setup')
-  })
-
-  it('quien solo mira no recibe pasos ni botones', () => {
-    const readOnly = sheetOf(HUB, NOV, null, false)
-    expect(readOnly.setup).toBeNull()
-    expect(nextUpView(readOnly, { canWrite: false })).toEqual({
-      kind: 'setup_readonly',
-      text: '31 gastos fijos sin monto: todavía no se sabe cuánto falta.',
-    })
-  })
-
-  it('en el renglón no hay «Pagar» (todavía no vencen): queda adentro, por adelantado', () => {
+  it('un renglón sin monto: se dice, y se puede pagar por adelantado al ponérselo', () => {
     const item = item0(november)
-    expect(rowWords(item, TODAY)).toMatchObject({
-      label: 'Sin monto',
-      detail: 'vence el 10/11',
-      text: 'Sin monto · vence el 10/11',
-      tone: 'muted',
-    })
+    expect(rowStatus(item, TODAY)).toMatchObject({ label: 'Sin monto', tone: 'muted' })
     expect(rowActions(item, { canWrite: true })).toMatchObject({
       pay: { kind: 'gasto', recurringId: item.row.id },
       payInRow: false,
@@ -549,59 +463,40 @@ describe('los 31 de HUB al 13/10 (un bar que recién cargó su lista)', () => {
       bill: true,
       edit: true,
     })
-    expect(november.next).toBeNull()
   })
 })
 
-describe('la frase de estado de cada renglón', () => {
-  const words = (row: RecurringExpenseRow, payments?: Map<string, RecurringPaymentFacts>) =>
-    rowWords(itemOf(row, payments), TODAY)
+describe('el estado de cada renglón', () => {
+  const status = (row: RecurringExpenseRow, payments?: Map<string, RecurringPaymentFacts>) =>
+    rowStatus(itemOf(row, payments), TODAY)
 
-  it('sin nada cargado: cuándo vence o hace cuánto venció', () => {
-    expect(words(ALQUILER)).toMatchObject({ label: 'Venció hace 3 días', tone: 'late' })
-    expect(
-      words(mk({ ...ALQUILER, nextDueDate: '2026-10-12', monthStatus: undefined })),
-    ).toMatchObject({ label: 'Venció ayer', tone: 'late' })
-    expect(words(mk({ ...ALQUILER, nextDueDate: TODAY, monthStatus: undefined }))).toMatchObject({
+  it('sin nada cargado: vencido, por vencer y lo que vence ya', () => {
+    expect(status(ALQUILER)).toMatchObject({ label: 'Vencido', tone: 'bad', stamp: false })
+    expect(status(mk({ ...ALQUILER, nextDueDate: TODAY, monthStatus: undefined }))).toMatchObject({
       label: 'Vence hoy',
       tone: 'warn',
     })
     expect(
-      words(mk({ ...ALQUILER, nextDueDate: '2026-10-14', monthStatus: undefined })),
+      status(mk({ ...ALQUILER, nextDueDate: '2026-10-14', monthStatus: undefined })),
     ).toMatchObject({ label: 'Vence mañana', tone: 'warn' })
-    // Dentro de los días de aviso (5): en ámbar y con el día de la semana.
-    expect(words(INTERNET)).toMatchObject({ label: 'Vence el jueves 15/10', tone: 'warn' })
-    // Más lejos es solo una fecha: en gris, sin píldora.
+    // Dentro de los días de aviso (5): en ámbar.
+    expect(status(INTERNET)).toMatchObject({ label: 'Por vencer', tone: 'warn' })
+    // Más lejos, en gris.
     expect(
-      words(mk({ ...ALQUILER, nextDueDate: '2026-10-28', monthStatus: undefined })),
-    ).toMatchObject({ label: 'Vence el 28/10', tone: null, detail: null })
-    // Vencido hace más de un mes y medio: la fecha dice más que contar días.
-    expect(
-      words(mk({ ...ALQUILER, nextDueDate: '2026-08-10', monthStatus: undefined })),
-    ).toMatchObject({ label: 'Venció el 10/08', tone: 'late' })
+      status(mk({ ...ALQUILER, nextDueDate: '2026-10-28', monthStatus: undefined })),
+    ).toMatchObject({ label: 'Por vencer', tone: 'muted', detail: null })
   })
 
-  it('sin monto: cuándo vence, y en rojo solo si ya pasó', () => {
-    expect(words(mk({ id: 'a', name: 'Luz', nextDueDate: '2026-10-20' }))).toMatchObject({
-      text: 'Sin monto · vence el 20/10',
+  it('sin monto: en rojo solo si ya pasó', () => {
+    expect(status(mk({ id: 'a', name: 'Luz', nextDueDate: '2026-10-20' }))).toMatchObject({
+      label: 'Sin monto',
       tone: 'muted',
     })
-    expect(words(mk({ id: 'a', name: 'Luz', nextDueDate: '2026-10-10' }))).toMatchObject({
-      text: 'Sin monto · venció el 10/10',
-      tone: 'late',
+    expect(status(mk({ id: 'a', name: 'Luz', nextDueDate: '2026-10-10' }))).toMatchObject({
+      label: 'Sin monto',
+      tone: 'bad',
     })
   })
-
-  const loaded = (over: Partial<RecurringExpenseRow> = {}) =>
-    mk({
-      ...ALQUILER,
-      nextDueDate: '2026-11-10',
-      loadedDue: '2026-10-10',
-      lastDocumentId: 'doc-1',
-      lastDocumentDate: '2026-10-08',
-      monthStatus: undefined,
-      ...over,
-    })
 
   it('pagaste menos que el monto: lo dice y arma la pregunta «¿Era eso?»', () => {
     const row = loaded({ amountCents: 18_000_000 })
@@ -610,24 +505,24 @@ describe('la frase de estado de cada renglón', () => {
       doc({ id: 'doc-1', totalCents: 17_000_000, paidCents: 17_000_000 }),
     )
     const item = itemOf(row, payments)
-    expect(rowWords(item, TODAY)).toMatchObject({
+    const short = rowStatus(item, TODAY)
+    expect(short).toMatchObject({
       label: `Pagaste ${$('170.000')}`,
       detail: `${$('10.000')} menos que el monto`,
       tone: 'warn',
       short: { expectedCents: 18_000_000, paidCents: 17_000_000 },
     })
-    expect(rowTint(item)).toBe('warn')
+    expect(askWords({ expectedCents: 18_000_000, paidCents: 17_000_000 })).toBe(
+      `Calculabas ${$('180.000')}. ¿Era eso?`,
+    )
     expect(tickState(item)).toBe('half')
-    // Nunca «Pagar» con el comprobante saldado: otro gasto daría por cargado el mes que viene.
+    // Nunca paga con el comprobante saldado: otro gasto daría por cargado el mes que viene.
     expect(rowActions(item, { canWrite: true })).toMatchObject({
       pay: null,
       payInRow: false,
       ask: true,
       skip: false,
     })
-    // Y no es «lo que sigue».
-    expect(sheetOf([row], OCT, payments).next).toBeNull()
-    expect(nextUpView(sheetOf([row], OCT, payments), { canWrite: true }).kind).toBe('review')
   })
 
   it('pagaste de más: figura pago, con lo que pagaste, y se ofrece usarlo de ahora en más', () => {
@@ -638,11 +533,10 @@ describe('la frase de estado de cada renglón', () => {
     )
     const item = itemOf(row, payments)
     // La diferencia con su palabra, como cuando pagaste de menos: nunca un importe pelado.
-    expect(rowWords(item, TODAY)).toMatchObject({
-      label: 'Pagado el 08/10',
-      detail: `${$('15.000')} más que el monto`,
-      text: `Pagado el 08/10 · ${$('15.000')} más que el monto`,
-      tone: 'ok',
+    expect(rowStatus(item, TODAY)).toMatchObject({
+      label: 'Pagado',
+      stamp: true,
+      detail: `el 08/10 · ${$('15.000')} más que el monto`,
       short: null,
     })
     expect(rowActions(item, { canWrite: true })).toMatchObject({ ask: false, keepPaid: true })
@@ -652,35 +546,39 @@ describe('la frase de estado de cada renglón', () => {
     const row = loaded()
     const owed = (over: Partial<RecurringDocument>) =>
       paidWith(row.id, doc({ id: 'doc-1', totalCents: 85_000_000, openCents: 85_000_000, ...over }))
-    expect(words(row, owed({ dueDate: '2026-10-25' }))).toMatchObject({
-      text: 'Lo debés · vence el 25/10',
+    expect(status(row, owed({ dueDate: '2026-10-25' }))).toMatchObject({
+      label: 'Lo debés',
+      detail: 'vence el 25/10',
       tone: 'warn',
     })
-    expect(words(row, owed({ dueDate: '2026-10-10' }))).toMatchObject({
-      text: 'Lo debés · venció hace 3 días',
-      tone: 'late',
+    expect(status(row, owed({ dueDate: '2026-10-10' }))).toMatchObject({
+      label: 'Lo debés',
+      detail: 'venció hace 3 días',
+      tone: 'bad',
     })
     expect(
-      words(row, owed({ dueDate: '2026-10-25', paidCents: 30_000_000, openCents: 55_000_000 })),
+      status(row, owed({ dueDate: '2026-10-25', paidCents: 30_000_000, openCents: 55_000_000 })),
     ).toMatchObject({
-      text: `Pagaste ${$('300.000')} · falta ${$('550.000')}`,
+      label: `Pagaste ${$('300.000')}`,
+      detail: `falta ${$('550.000')}`,
       tone: 'warn',
     })
     expect(
-      words(row, owed({ dueDate: '2026-10-10', paidCents: 30_000_000, openCents: 55_000_000 })),
+      status(row, owed({ dueDate: '2026-10-10', paidCents: 30_000_000, openCents: 55_000_000 })),
     ).toMatchObject({
-      text: `Lo debés · venció hace 3 días · pagaste ${$('300.000')}, falta ${$('550.000')}`,
-      tone: 'late',
+      label: 'Lo debés',
+      detail: `venció hace 3 días · pagaste ${$('300.000')}, falta ${$('550.000')}`,
+      tone: 'bad',
     })
   })
 
   it('pausado, terminado, última cuota y deuda de antes', () => {
-    expect(words(mk({ ...ALQUILER, active: false, monthStatus: undefined }))).toMatchObject({
+    expect(status(mk({ ...ALQUILER, active: false, monthStatus: undefined }))).toMatchObject({
       label: 'En pausa',
       tone: 'muted',
     })
     expect(
-      words(
+      status(
         mk({
           ...ALQUILER,
           active: false,
@@ -690,7 +588,11 @@ describe('la frase de estado de cada renglón', () => {
           monthStatus: undefined,
         }),
       ),
-    ).toMatchObject({ text: 'Terminó · la última cuota venció el 10/09', tone: 'muted' })
+    ).toMatchObject({
+      label: 'Terminó',
+      detail: 'la última cuota venció el 10/09',
+      tone: 'muted',
+    })
     // Se cargó la última cuota: se informa su pago y se avisa que no sigue.
     const last = loaded({ active: false, ended: true, endsOn: '2026-10-10', remainingDues: 0 })
     const payments = new Map<string, RecurringPaymentFacts>([
@@ -702,17 +604,16 @@ describe('la frase de estado de cada renglón', () => {
         },
       ],
     ])
-    expect(words(last, payments).extras).toEqual([
+    expect(status(last, payments).extras).toEqual([
       'Era la última cuota',
       `Debés ${$('40.000')} de antes`,
     ])
   })
 })
 
-describe('cuándo hay «Pagar» y qué hace', () => {
-  it('sin nada cargado y vencido o por vencer este mes: abre «Nuevo gasto» con el gasto fijo', () => {
-    const actions = rowActions(itemOf(ALQUILER), { canWrite: true })
-    expect(actions).toMatchObject({
+describe('qué hace tildar', () => {
+  it('sin nada cargado y vencido o por vencer este mes: abre la tira, con el gasto fijo', () => {
+    expect(rowActions(itemOf(ALQUILER), { canWrite: true })).toMatchObject({
       pay: { kind: 'gasto', recurringId: 'gf-alquiler' },
       payInRow: true,
       payAhead: false,
@@ -727,14 +628,7 @@ describe('cuándo hay «Pagar» y qué hace', () => {
   })
 
   it('con la factura cargada y sin pagar: «Pagar» con su proveedor o, si no tiene, a la factura', () => {
-    const base = mk({
-      ...ALQUILER,
-      nextDueDate: '2026-11-10',
-      loadedDue: '2026-10-10',
-      lastDocumentId: 'doc-1',
-      lastDocumentDate: '2026-10-08',
-      monthStatus: undefined,
-    })
+    const base = loaded()
     const owed = paidWith(
       base.id,
       doc({ id: 'doc-1', dueDate: '2026-10-25', totalCents: 85_000_000, openCents: 85_000_000 }),
@@ -748,9 +642,6 @@ describe('cuándo hay «Pagar» y qué hace', () => {
       pay: { kind: 'pagar', partyId: 'party-1' },
       payInRow: true,
     })
-    // En «Lo que sigue» se paga lo que le falta a la factura.
-    const next = nextUpView(sheetOf([withParty], OCT, owed), { canWrite: true })
-    expect(next).toMatchObject({ kind: 'pay', billed: true, amountCents: 85_000_000 })
   })
 
   it('en pausa solo se reanuda; uno terminado no se edita en el lugar', () => {
@@ -807,21 +698,318 @@ describe('cuándo hay «Pagar» y qué hace', () => {
   })
 
   it('con detalle (los sueldos) no se pregunta «¿Era eso?»', () => {
-    const row = mk({
-      ...ALQUILER,
+    const row = loaded({
       amountCents: 18_000_000,
-      nextDueDate: '2026-11-10',
-      loadedDue: '2026-10-10',
-      lastDocumentId: 'doc-1',
-      lastDocumentDate: '2026-10-08',
       breakdown: [{ label: 'Ana', kind: null, amountCents: 18_000_000 }],
-      monthStatus: undefined,
     })
     const payments = paidWith(
       row.id,
       doc({ id: 'doc-1', totalCents: 17_000_000, paidCents: 17_000_000 }),
     )
     expect(rowActions(itemOf(row, payments), { canWrite: true }).ask).toBe(false)
+  })
+})
+
+describe('un impuesto que se devenga solo no se paga como otro gasto', () => {
+  const ACCOUNTS = [
+    { id: 'acc-iibb', systemKey: 'iibb_expense' },
+    { id: 'acc-comercio', systemKey: 'municipal_tax_expense' },
+    { id: 'acc-alquiler', systemKey: null },
+  ]
+  const PARTIES = [
+    { id: 'p-rentas', systemKey: 'rentas', active: true },
+    { id: 'p-muni', systemKey: 'municipalidad', active: true },
+    { id: 'p-otro', systemKey: null, active: true },
+  ]
+  const settings = { auto: true }
+  const plan = autoTaxPlan({ settings, accounts: ACCOUNTS, parties: PARTIES })
+  const iibb = mk({ ...ALQUILER, id: 'gf-iibb', name: 'Ingresos Brutos', accountId: 'acc-iibb' })
+  const comercio = mk({ ...ALQUILER, id: 'gf-com', name: 'Comercio', accountId: 'acc-comercio' })
+
+  it('cada cuenta con su partícipe', () => {
+    expect(plan).toEqual({ 'acc-iibb': 'p-rentas', 'acc-comercio': 'p-muni' })
+  })
+
+  it('tildar abre el pago al partícipe, y no ofrece cargar otra factura', () => {
+    const actions = rowActions(itemOf(iibb), { canWrite: true, autoTax: plan })
+    expect(actions).toMatchObject({
+      pay: { kind: 'pagar', partyId: 'p-rentas' },
+      payInRow: true,
+      bill: false,
+      // El pago deja pagado este gasto fijo; igual se puede decir que este mes no se paga.
+      skip: true,
+    })
+    expect(rowActions(itemOf(comercio), { canWrite: true, autoTax: plan }).pay).toEqual({
+      kind: 'pagar',
+      partyId: 'p-muni',
+      recurringId: comercio.id,
+    })
+    const labels = rowMenu(itemOf(iibb), actions, { tenantSlug: 'hub', month: OCT }).map(
+      (entry) => entry.label,
+    )
+    expect(labels).not.toContain('Me llegó la factura y la pago después')
+    expect(labels).toContain('Este mes no se paga')
+  })
+
+  it('el que todavía no vence también va al partícipe', () => {
+    const later = mk({ ...iibb, nextDueDate: '2026-11-10', monthStatus: undefined })
+    expect(rowActions(itemOf(later), { canWrite: true, autoTax: plan })).toMatchObject({
+      pay: { kind: 'pagar', partyId: 'p-rentas' },
+      payInRow: false,
+      payAhead: true,
+    })
+  })
+
+  it('sin el partícipe activo no se ofrece pagar: nunca se carga el gasto de nuevo', () => {
+    const noParty = autoTaxPlan({
+      settings,
+      accounts: ACCOUNTS,
+      parties: PARTIES.filter((party) => party.systemKey !== 'rentas'),
+    })
+    expect(noParty['acc-iibb']).toBeNull()
+    expect(rowActions(itemOf(iibb), { canWrite: true, autoTax: noParty })).toMatchObject({
+      pay: null,
+      payInRow: false,
+    })
+  })
+
+  it('con los impuestos apagados, o en otra cuenta, se paga como cualquier gasto', () => {
+    const off = autoTaxPlan({ settings: { auto: false }, accounts: ACCOUNTS, parties: PARTIES })
+    expect(off).toEqual({})
+    expect(autoTaxPlan({ settings: null, accounts: ACCOUNTS, parties: PARTIES })).toEqual({})
+    expect(rowActions(itemOf(iibb), { canWrite: true, autoTax: off }).pay).toEqual({
+      kind: 'gasto',
+      recurringId: 'gf-iibb',
+    })
+    expect(rowActions(itemOf(ALQUILER), { canWrite: true, autoTax: plan }).pay).toEqual({
+      kind: 'gasto',
+      recurringId: 'gf-alquiler',
+    })
+  })
+
+  it('una factura ya cargada se sigue pagando con su proveedor', () => {
+    const billed = loaded({
+      id: 'gf-iibb',
+      accountId: 'acc-iibb',
+      partyId: 'p-otro',
+      partyName: 'Estudio',
+    })
+    const owed = paidWith(
+      billed.id,
+      doc({ id: 'doc-1', dueDate: '2026-10-25', totalCents: 85_000_000, openCents: 85_000_000 }),
+    )
+    expect(rowActions(itemOf(billed, owed), { canWrite: true, autoTax: plan }).pay).toEqual({
+      kind: 'pagar',
+      partyId: 'p-otro',
+    })
+  })
+})
+
+describe('el «⋯» de la fila: lo que no es de todos los días no se pierde', () => {
+  const menu = (
+    row: RecurringExpenseRow,
+    payments?: Map<string, RecurringPaymentFacts>,
+    isMisc = false,
+  ) => {
+    const item = itemOf(row, payments)
+    return rowMenu(item, rowActions(item, { canWrite: true }), {
+      tenantSlug: 'hub',
+      month: OCT,
+      isMisc,
+    })
+  }
+  const labels = (...args: Parameters<typeof menu>) => menu(...args).map((entry) => entry.label)
+  const entry = (list: ReturnType<typeof menu>, key: string) => {
+    const found = list.find((item) => item.key === key)
+    if (!found) throw new Error(`no está «${key}»`)
+    return found
+  }
+
+  it('un gasto sin pagar: la factura para después, saltear, editar, pausar y eliminar', () => {
+    const list = menu(ALQUILER)
+    expect(list.map((item) => item.label)).toEqual([
+      'Me llegó la factura y la pago después',
+      'Este mes no se paga',
+      'Editar',
+      'Pausar',
+      'Eliminar',
+    ])
+    const bill = entry(list, 'factura-despues')
+    expect(bill.href).toContain('/hub/administracion/compras/nueva?')
+    expect(bill.href).toContain('gasto-fijo=gf-alquiler')
+    expect(decodeURIComponent(bill.href ?? '')).toContain(
+      'volver=/hub/administracion/gastos-fijos?mes=2026-10',
+    )
+    expect(bill.hint).toBe('Queda como deuda con el proveedor. Cubre el vencimiento del 10/10.')
+    expect(entry(list, 'skip').hint).toBe('Usalo también si ya lo cargaste por otro lado.')
+    expect(entry(list, 'ficha').href).toBe('/hub/administracion/compras/gastos-fijos/gf-alquiler')
+    expect(entry(list, 'remove').run).toBe('remove')
+    // Las secciones van en orden: entre una y otra, una raya.
+    expect(list.map((item) => item.section)).toEqual(['pay', 'pay', 'edit', 'state', 'state'])
+  })
+
+  it('uno que todavía no vence se paga por adelantado, y dice qué vencimiento cubre', () => {
+    const luz = mk({ id: 'gf-luz', name: 'Luz', amountCents: 9_000_000 })
+    const pay = entry(menu(luz), 'pay')
+    expect(pay.label).toBe('Pagar por adelantado')
+    expect(pay.hint).toBe('Paga el vencimiento del 10/11.')
+    expect(pay.run).toBe('pay')
+  })
+
+  it('«no se paga», pausado y terminado', () => {
+    const skipped = mk({
+      ...ALQUILER,
+      nextDueDate: '2026-11-10',
+      skippedDue: '2026-10-10',
+      monthStatus: undefined,
+    })
+    expect(labels(skipped)).toContain('Sí se paga este mes')
+    const paused = mk({ ...ALQUILER, active: false, monthStatus: undefined })
+    expect(labels(paused)).toEqual(['Editar', 'Reanudar', 'Eliminar'])
+  })
+
+  it('pagaste distinto: «¿Era eso?» y «de ahora en más», con el importe', () => {
+    const row = loaded({ amountCents: 18_000_000 })
+    const short = entry(
+      menu(
+        row,
+        paidWith(row.id, doc({ id: 'doc-1', totalCents: 17_000_000, paidCents: 17_000_000 })),
+      ),
+      'keep',
+    )
+    expect(short).toMatchObject({
+      label: `Sí, dejar ${$('170.000')}`,
+      run: 'keep',
+      cents: 17_000_000,
+    })
+    const over = entry(
+      menu(
+        row,
+        paidWith(row.id, doc({ id: 'doc-1', totalCents: 19_500_000, paidCents: 19_500_000 })),
+      ),
+      'keep',
+    )
+    expect(over).toMatchObject({ label: `Usar ${$('195.000')} de ahora en más`, cents: 19_500_000 })
+  })
+
+  it('el comprobante y la factura sin proveedor', () => {
+    const row = loaded()
+    const paid = paidWith(
+      row.id,
+      doc({ id: 'doc-1', totalCents: 85_000_000, paidCents: 85_000_000 }),
+    )
+    expect(entry(menu(row, paid), 'comprobante').href).toBe(
+      '/hub/administracion/comprobantes/doc-1',
+    )
+    const owed = paidWith(
+      row.id,
+      doc({ id: 'doc-1', totalCents: 85_000_000, openCents: 85_000_000 }),
+    )
+    expect(entry(menu(row, owed), 'factura').label).toBe('Ver la factura y pagarla')
+  })
+
+  it('el detalle de sueldos y «Gastos varios»', () => {
+    const detailed = mk({
+      ...ALQUILER,
+      breakdown: [{ label: 'Ana', kind: null, amountCents: 85_000_000 }],
+    })
+    const list = menu(detailed)
+    expect(entry(list, 'ficha').label).toBe('Editar el detalle')
+    expect(entry(list, 'sueldos').href).toBe(
+      '/hub/administracion/libros/asiento-manual?tipo=sueldos',
+    )
+    expect(labels(ALQUILER)).not.toContain('Cambiar de categoría')
+    const misc = entry(menu(ALQUILER, undefined, true), 'categoria')
+    expect(misc.href).toBe('/hub/administracion/gastos-fijos/completar?ver=varios&foco=gf-alquiler')
+  })
+})
+
+describe('la celda del monto', () => {
+  const editable = (row: RecurringExpenseRow, payments?: Map<string, RecurringPaymentFacts>) => {
+    const item = itemOf(row, payments)
+    return amountEditable(item, rowActions(item, { canWrite: true }))
+  }
+
+  it('se escribe mientras no haya comprobante', () => {
+    expect(editable(ALQUILER)).toBe(true)
+    expect(editable(mk({ id: 'a', name: 'Luz', nextDueDate: '2026-10-20' }))).toBe(true)
+    const row = loaded()
+    expect(
+      editable(
+        row,
+        paidWith(row.id, doc({ id: 'doc-1', totalCents: 85_000_000, paidCents: 85_000_000 })),
+      ),
+    ).toBe(false)
+  })
+
+  it('con detalle es la suma; a quien solo mira, nunca', () => {
+    const detailed = mk({
+      ...ALQUILER,
+      breakdown: [{ label: 'Ana', kind: null, amountCents: 85_000_000 }],
+    })
+    expect(editable(detailed)).toBe(false)
+    const item = itemOf(ALQUILER)
+    expect(amountEditable(item, rowActions(item, { canWrite: false }))).toBe(false)
+  })
+})
+
+describe('la tira de pago', () => {
+  const account = { kind: 'account' as const, accountId: 'acc-1' }
+  const party = { kind: 'party' as const, partyId: 'p-1', accountId: 'acc-1' }
+  const base = { amountCents: 100, target: account, voucher: 'none' as const, hasNumber: false }
+
+  it('con monto y categoría, sin factura, se carga en la tira', () => {
+    expect(payStripBlock(base)).toBeNull()
+    expect(payStripBlock({ ...base, target: party, voucher: 'ticket' })).toBeNull()
+  })
+
+  it('dice qué falta', () => {
+    expect(payStripBlock({ ...base, amountCents: null })).toBe(
+      'Falta el monto: escribilo en la columna Monto.',
+    )
+    expect(payStripBlock({ ...base, target: null })).toBe(
+      'Este gasto fijo no tiene proveedor ni categoría que sirvan.',
+    )
+    expect(payStripBlock({ ...base, target: { ...party, accountId: null } })).toBe(
+      'Este gasto fijo no tiene una categoría que sirva.',
+    )
+  })
+
+  it('una factura pide proveedor y número, y el número lo puede traer el QR', () => {
+    expect(payStripBlock({ ...base, voucher: 'a' })).toBe('Una factura pide proveedor y número.')
+    expect(payStripBlock({ ...base, voucher: 'bc', hasNumber: true })).toBe(
+      'Una factura pide proveedor.',
+    )
+    expect(payStripBlock({ ...base, voucher: 'a', target: party })).toBe(
+      'Una factura pide el número.',
+    )
+    expect(payStripBlock({ ...base, voucher: 'a', target: party, hasNumber: true })).toBeNull()
+  })
+
+  it('el QR de ARCA completa el papel, el número y el total', () => {
+    expect(
+      stripFromQr({
+        voucherType: 'factura_a',
+        pointOfSale: 3,
+        number: 1290,
+        totalCents: 31_240_000,
+      }),
+    ).toEqual({ voucher: 'a', pointOfSale: 3, number: 1290, amountCents: 31_240_000 })
+    expect(
+      stripFromQr({ voucherType: 'factura_c', pointOfSale: 1, number: 2, totalCents: null }),
+    ).toMatchObject({ voucher: 'bc', amountCents: null })
+    // Un comprobante que no se carga no cambia el papel.
+    expect(
+      stripFromQr({ voucherType: null, pointOfSale: 1, number: 2, totalCents: 0 }),
+    ).toMatchObject({ voucher: null, amountCents: null })
+  })
+
+  it('«Más opciones» es el formulario entero, con el gasto fijo y la vuelta a la planilla', () => {
+    const href = morePayOptionsHref('hub', 'gf-1', OCT)
+    expect(href).toContain('/hub/administracion/compras/nueva?modo=pago&gasto-fijo=gf-1&volver=')
+    expect(decodeURIComponent(href)).toContain(
+      'volver=/hub/administracion/gastos-fijos?mes=2026-10',
+    )
   })
 })
 
@@ -855,72 +1043,22 @@ describe('un pago anulado deja el vencimiento corrido', () => {
   })
 })
 
-describe('filtros de la planilla', () => {
-  const installments = mk({
-    id: 'gf-heladera',
-    name: 'Heladera',
-    amountCents: 12_000_000,
-    nextDueDate: '2026-11-05',
-    dueDay: 5,
-    endsOn: '2027-03-05',
-    remainingDues: 5,
-    installmentsTotal: 6,
-  })
-  const noAmount = mk({ id: 'gf-luz', name: 'Luz', nextDueDate: '2026-10-20', dueDay: 20 })
-  const sheet = sheetOf([...DEMO, installments, noAmount])
-
-  it('solo se ofrecen las píldoras que filtran algo, con su cuenta', () => {
-    expect(sheetFilterPills(sheet)).toEqual([
-      { key: 'vencido', label: 'Vencido', count: 2 },
-      { key: 'por-vencer', label: 'Por vencer', count: 2 },
-      { key: 'sin-monto', label: 'Sin monto', count: 1 },
-      { key: 'en-cuotas', label: 'En cuotas', count: 1 },
-    ])
-    expect(sheet.counts).toMatchObject({ sinMonto: 1, enCuotas: 1 })
-  })
-
-  it('la URL filtra por estado, categoría y papel de siempre', () => {
-    const ids = (query: Parameters<typeof matchesSheetQuery>[1]) =>
-      [...sheet.items, ...sheet.later]
-        .filter((item) => matchesSheetQuery(item, query))
-        .map((item) => item.row.id)
-    const all = { ver: null, categoria: null, factura: null }
-    expect(ids({ ...all, ver: 'vencido' })).toEqual(['gf-alquiler', 'gf-dispenser'])
-    expect(ids({ ...all, ver: 'en-cuotas' })).toEqual(['gf-heladera'])
-    expect(ids({ ...all, ver: 'sin-monto' })).toEqual(['gf-luz'])
-    expect(ids({ ...all, categoria: 'acc-internet' })).toEqual(['gf-internet'])
-    expect(ids({ ...all, factura: 'nose' })).toHaveLength(5)
-    expect(ids({ ...all, factura: 'con' })).toEqual([])
-  })
-
-  it('lo que no es un filtro conocido se ignora', () => {
-    expect(parseSheetFilter('vencido')).toBe('vencido')
-    expect(parseSheetFilter('cualquiera')).toBeNull()
-    expect(parseSheetFilter(null)).toBeNull()
-    expect(parseInvoiceBucket('sin')).toBe('sin')
-    expect(parseInvoiceBucket('todos')).toBeNull()
-  })
-
-  it('las cuotas se dicen con palabras, al lado de los puntitos', () => {
+describe('las palabras de un renglón', () => {
+  it('las cuotas se dicen con palabras', () => {
     expect(installmentWords({ current: 2, total: 6, remaining: 5 })).toBe('cuota 2 de 6')
     expect(installmentWords({ current: null, total: null, remaining: 3 })).toBe('quedan 3')
     expect(installmentWords({ current: null, total: null, remaining: 1 })).toBe('última cuota')
     expect(installmentWords(null)).toBeNull()
   })
-})
 
-describe('el papel de siempre', () => {
-  it('se dice como en toda la sección: «Sin factura» nunca es otra cosa', () => {
+  it('el papel se dice como en toda la sección: «Sin factura» nunca es otra cosa', () => {
     expect(papelLabel('factura_a')).toBe('Factura A')
     expect(papelLabel('tique')).toBe('Tique')
     expect(papelLabel('sin_comprobante')).toBe('Sin factura')
     expect(papelLabel(null)).toBeNull()
-    expect(invoiceBucket('factura_c')).toBe('con')
-    expect(invoiceBucket('sin_comprobante')).toBe('sin')
-    expect(invoiceBucket(null)).toBe('nose')
   })
 
-  it('la línea gris del renglón escribe solo lo que está cargado', () => {
+  it('lo que se sabe del gasto escribe solo lo que está cargado', () => {
     expect(rowSubline(ALQUILER)).toEqual(['Alquiler'])
     expect(
       rowSubline({
@@ -934,70 +1072,8 @@ describe('el papel de siempre', () => {
       'sin factura',
     ])
   })
-})
 
-describe('los dibujos: cuándo aparecen y qué afirman', () => {
-  const sheet = sheetOf(DEMO)
-
-  it('qué días se te va la plata: todos los días del mes, con lo que falta', () => {
-    const days = dueStripDays(sheet)
-    expect(days).toHaveLength(31)
-    expect(days.filter((d) => d.cents > 0)).toEqual([
-      { date: '2026-10-10', cents: 88_000_000, count: 2, overdue: true },
-      { date: '2026-10-15', cents: 3_500_000, count: 1, overdue: false },
-    ])
-    expect(dueTitle(days)).toBe(`Tenés ${$('880.000')} vencidos del 10`)
-    // Sin vencidos, el día más cargado.
-    expect(dueTitle(days.filter((d) => !d.overdue))).toBe(`El 15 se te van ${$('35.000')}`)
-    expect(dueTitle([])).toBe('Este mes no queda nada por vencer')
-  })
-
-  it('lo vencido de meses anteriores va adelante, junto en UNA columna «Antes»', () => {
-    const old = mk({ ...ALQUILER, nextDueDate: '2026-09-10', monthStatus: undefined })
-    const older = mk({
-      ...DISPENSER,
-      nextDueDate: '2026-08-25',
-      dueDay: 25,
-      monthStatus: undefined,
-    })
-    const sheet = sheetOf([old, older, INTERNET])
-    const days = dueStripDays(sheet)
-    // Un «10» de septiembre adelante del día 1 sería un eje que miente: va con palabras.
-    expect(days[0]).toEqual({
-      date: '2026-08-25',
-      cents: 88_000_000,
-      count: 2,
-      overdue: true,
-      outside: 'before',
-    })
-    expect(DUE_OUTSIDE_LABELS.before).toBe('Antes')
-    expect(days).toHaveLength(32)
-    expect(days.slice(1).every((d) => d.outside === undefined)).toBe(true)
-    expect(dueTitle(days)).toBe(`Tenés ${$('880.000')} vencidos de antes`)
-    // La tabla los lista de a uno, cada uno con su fecha.
-    expect(dueDays(sheet)).toEqual([
-      { date: '2026-08-25', cents: 3_000_000, count: 1, overdue: true },
-      { date: '2026-09-10', cents: 85_000_000, count: 1, overdue: true },
-      { date: '2026-10-15', cents: 3_500_000, count: 1, overdue: false },
-    ])
-  })
-
-  it('con muchas categorías, las más chicas van juntas en «Otras»', () => {
-    const bar = (n: number) => ({ id: `c${n}`, name: `Categoría ${n}`, cents: 1000 - n, count: n })
-    const few = [1, 2, 3, 4, 5, 6, 7].map(bar)
-    // Con una sola de más no se junta nada: «Otras 1 categoría» ocuparía lo mismo.
-    expect(topCategoryBars(few)).toEqual({ top: few, rest: null })
-    const many = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(bar)
-    const { top, rest } = topCategoryBars(many)
-    expect(top).toEqual(many.slice(0, 6))
-    expect(rest).toEqual({ categories: 3, cents: 993 + 992 + 991, count: 7 + 8 + 9 })
-    // Nada se pierde: lo dibujado más «Otras» suma lo mismo que todas.
-    expect(top.reduce((sum, b) => sum + b.cents, 0) + (rest?.cents ?? 0)).toBe(
-      many.reduce((sum, b) => sum + b.cents, 0),
-    )
-  })
-
-  it('la fila de suma de un filtro: suma lo que se ve, sin los que no tienen monto', () => {
+  it('la suma de unos renglones: pagado más lo que falta, sin los que no tienen monto', () => {
     const blank = mk({ id: 'gf-luz', name: 'Luz', nextDueDate: '2026-10-20', dueDay: 20 })
     const all = sheetOf([...DEMO, blank])
     expect(shownTotals(all.items)).toEqual({
@@ -1007,14 +1083,6 @@ describe('los dibujos: cuándo aparecen y qué afirman', () => {
       remainingCents: all.progress.remainingCents,
       noAmount: 1,
     })
-    const overdue = all.items.filter((item) => item.line.state === 'overdue')
-    expect(shownTotals(overdue)).toEqual({
-      count: 2,
-      totalCents: 88_000_000,
-      paidCents: 0,
-      remainingCents: 88_000_000,
-      noAmount: 0,
-    })
     expect(shownTotals([])).toEqual({
       count: 0,
       totalCents: 0,
@@ -1022,41 +1090,6 @@ describe('los dibujos: cuándo aparecen y qué afirman', () => {
       remainingCents: 0,
       noAmount: 0,
     })
-  })
-
-  it('en qué se va lo fijo: por categoría, de mayor a menor', () => {
-    const bars = categoryBars(sheet)
-    expect(bars).toEqual([
-      { id: 'acc-alquiler', name: 'Alquiler', cents: 85_000_000, count: 1 },
-      { id: 'acc-internet', name: 'Internet', cents: 3_500_000, count: 1 },
-      { id: 'acc-plazos', name: 'Plazos fijos en pesos', cents: 3_000_000, count: 1 },
-    ])
-    expect(categoryTitle(bars)).toBe('Lo que más se lleva de lo fijo: Alquiler (93 %)')
-    // Suma lo mismo que el total de arriba.
-    expect(bars.reduce((sum, b) => sum + b.cents, 0)).toBe(sheet.progress.totalCents)
-  })
-
-  it('con qué papel pagás lo fijo: solo si alguno tiene papel de siempre', () => {
-    expect(paperSplit(sheet)).toEqual({
-      conCents: 0,
-      sinCents: 0,
-      noseCents: 91_500_000,
-      defined: false,
-    })
-    const mixed = sheetOf([
-      { ...ALQUILER, voucherType: 'sin_comprobante' },
-      DISPENSER,
-      { ...INTERNET, voucherType: 'factura_a' },
-    ])
-    const split = paperSplit(mixed)
-    expect(split).toEqual({
-      conCents: 3_500_000,
-      sinCents: 85_000_000,
-      noseCents: 3_000_000,
-      defined: true,
-    })
-    expect(paperTitle(split)).toBe(`${$('35.000')} de lo fijo van con factura`)
-    expect(paperTitle({ ...split, conCents: 0 })).toBe(`${$('850.000')} de lo fijo van sin factura`)
   })
 })
 
@@ -1182,38 +1215,17 @@ describe('por qué no se guardó un renglón', () => {
 })
 
 describe('bordes', () => {
-  it('sin ningún gasto fijo: hoja vacía, sin número y sin nada que hacer', () => {
+  it('sin ningún gasto fijo: hoja vacía y sin número', () => {
     const sheet = sheetOf([])
     expect(sheet.items).toEqual([])
+    expect(sheet.stretches).toEqual([])
     expect(sheet.progress.state).toBe('empty')
-    expect(sheetSentence(sheet)).toMatchObject({ kind: 'empty', nextMonth: null })
-    expect(nextUpView(sheet, { canWrite: true })).toEqual({ kind: 'none' })
-    expect(sheetFilterPills(sheet)).toEqual([])
+    expect(sheetTotals(sheet, null).totalCents).toBeNull()
   })
 
   it('un solo gasto, de nueve cifras y con un nombre de 60 caracteres', () => {
     const name = 'Mantenimiento integral de cámaras, freezers y heladeras 2026'
     const big = mk({ id: 'gf-big', name, amountCents: 99_999_999_900, nextDueDate: '2026-10-20' })
-    const sheet = sheetOf([big])
-    expect(sheetSentence(sheet)).toMatchObject({
-      cents: 99_999_999_900,
-      text: 'Es un solo gasto de octubre. Vence el martes 20/10.',
-    })
-    expect(nextUpView(sheet, { canWrite: true })).toMatchObject({
-      kind: 'pay',
-      name,
-      amountCents: 99_999_999_900,
-      after: null,
-    })
-    expect(categoryTitle(categoryBars(sheet))).toBe(
-      'Lo que más se lleva de lo fijo: Alquiler (100 %)',
-    )
-  })
-
-  it('un gasto con monto y otro sin: el que no tiene monto no suma y se avisa', () => {
-    const blank = mk({ id: 'gf-luz', name: 'Luz', nextDueDate: '2026-10-20', dueDay: 20 })
-    const sheet = sheetOf([INTERNET, blank])
-    expect(sheetSentence(sheet)).toMatchObject({ kind: 'number', cents: 3_500_000, noAmount: 1 })
-    expect(sheet.setup).toMatchObject({ missing: 1, total: 2, sameDay: null })
+    expect(sheetTotals(sheetOf([big]), null)).toMatchObject({ totalCents: 99_999_999_900 })
   })
 })
