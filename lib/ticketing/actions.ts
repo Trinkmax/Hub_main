@@ -398,6 +398,8 @@ export async function saveTicketingSettings(
     intro: parsed.data.intro,
     venue_address: parsed.data.venue_address,
     contact_whatsapp: parsed.data.contact_whatsapp,
+    transfer_alias: parsed.data.transfer_alias,
+    transfer_holder: parsed.data.transfer_holder,
     hold_minutes: parsed.data.hold_minutes,
     online_manager_id: parsed.data.online_manager_id,
     updated_by: access.user.id,
@@ -443,6 +445,8 @@ export async function saveTicketingSettings(
     payload: {
       hold_minutes: parsed.data.hold_minutes,
       online_manager_id: parsed.data.online_manager_id,
+      // A dónde va la plata de quien transfiere: que quede quién la cambió.
+      transfer_alias: parsed.data.transfer_alias,
     },
   })
   revalidateTicketing(slug)

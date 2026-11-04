@@ -62,6 +62,7 @@ export default async function MiEntradaPage({
           tenantName={page.venue.tenantName}
           address={page.venue.address}
           whatsapp={page.venue.whatsapp}
+          transfer={page.venue.transfer}
           paymentId={paymentId}
         />
       </main>

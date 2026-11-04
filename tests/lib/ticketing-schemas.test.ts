@@ -185,6 +185,20 @@ describe('ticketingSettingsSchema', () => {
     ).toBeNull()
   })
 
+  it('el alias para transferir: vacío es null y solo acepta un alias de verdad', () => {
+    const parse = (transfer_alias: string) =>
+      ticketingSettingsSchema.safeParse({ hold_minutes: 15, contact_whatsapp: '', transfer_alias })
+    expect(parse(' hubsas ').data?.transfer_alias).toBe('hubsas')
+    expect(parse('mi.bar-pagos.2026').data?.transfer_alias).toBe('mi.bar-pagos.2026')
+    expect(parse('').data?.transfer_alias).toBeNull()
+    expect(
+      ticketingSettingsSchema.parse({ hold_minutes: 15, contact_whatsapp: '' }).transfer_alias,
+    ).toBeNull()
+    expect(parse('corto').success).toBe(false)
+    expect(parse('con espacios').success).toBe(false)
+    expect(parse('un.alias.demasiado.largo').success).toBe(false)
+  })
+
   it('el lugar se guarda entre 5 y 60 minutos', () => {
     expect(ticketingSettingsSchema.safeParse({ hold_minutes: 2 }).success).toBe(false)
     expect(ticketingSettingsSchema.safeParse({ hold_minutes: 90 }).success).toBe(false)

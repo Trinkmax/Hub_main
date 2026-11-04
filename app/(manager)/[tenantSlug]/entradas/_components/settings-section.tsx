@@ -52,7 +52,11 @@ export function SettingsSection({
   managers: ManagerOption[]
 }) {
   const configured = Boolean(
-    settings.headline || settings.intro || settings.venue_address || settings.contact_whatsapp,
+    settings.headline ||
+      settings.intro ||
+      settings.venue_address ||
+      settings.contact_whatsapp ||
+      settings.transfer_alias,
   )
   const [open, setOpen] = useState(!configured)
 
@@ -71,6 +75,8 @@ export function SettingsSection({
     intro: settings.intro ?? '',
     venue_address: settings.venue_address ?? '',
     contact_whatsapp: settings.contact_whatsapp ?? '',
+    transfer_alias: settings.transfer_alias ?? '',
+    transfer_holder: settings.transfer_holder ?? '',
     hold_minutes: settings.hold_minutes ?? 15,
     online_manager_id: initialManager,
   }))
@@ -231,8 +237,46 @@ export function SettingsSection({
           />
           <FieldMessage
             error={errors.contact_whatsapp?.message}
-            hint="Aparece en la cartelera para consultas y para «avisame si se libera un lugar»."
+            hint="Aparece en la cartelera para consultas, para «avisame si se libera un lugar» y para mandar el comprobante de una transferencia."
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid content-start gap-1.5">
+            <Label htmlFor="cfg-transfer-alias">Alias para transferencias</Label>
+            <Input
+              id="cfg-transfer-alias"
+              maxLength={20}
+              placeholder="mi.bar.pagos"
+              className="h-11"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-invalid={errors.transfer_alias ? true : undefined}
+              defaultValue={initial.transfer_alias ?? ''}
+              {...form.register('transfer_alias')}
+            />
+            <FieldMessage
+              error={errors.transfer_alias?.message}
+              hint="Si Mercado Pago rechaza un pago, la entrada muestra este alias."
+            />
+          </div>
+          <div className="grid content-start gap-1.5">
+            <Label htmlFor="cfg-transfer-holder">A nombre de</Label>
+            <Input
+              id="cfg-transfer-holder"
+              maxLength={120}
+              placeholder="Mi Bar S.A.S., CUIT 30-12345678-9"
+              className="h-11"
+              aria-invalid={errors.transfer_holder ? true : undefined}
+              defaultValue={initial.transfer_holder ?? ''}
+              {...form.register('transfer_holder')}
+            />
+            <FieldMessage
+              error={errors.transfer_holder?.message}
+              hint="Para que sepan que transfieren a la cuenta correcta."
+            />
+          </div>
         </div>
 
         <fieldset className="min-w-0 space-y-2">

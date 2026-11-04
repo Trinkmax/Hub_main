@@ -17,17 +17,23 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildWaMeUrl } from '@/lib/phone'
 import { refreshOrder } from '@/lib/ticketing/checkout-actions'
-import { daysUntilLabel, peopleLabel, rejectionReason } from '@/lib/ticketing/copy'
+import {
+  daysUntilLabel,
+  peopleLabel,
+  rejectionReason,
+  transferProofMessage,
+} from '@/lib/ticketing/copy'
 import { buildIcs, formatLongDate } from '@/lib/ticketing/dates'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { tornClipBottom, tornClipTop, tornProfile } from '@/lib/ticketing/ticket-art'
-import type { OrderEntry, OrderStatus, PublicOrder } from '@/lib/ticketing/types'
+import type { OrderEntry, OrderStatus, PublicOrder, TransferAccount } from '@/lib/ticketing/types'
 import { mapsUrl } from '../../../../_components/chrome'
 import { LightsOff } from './lights-off'
 import { PaidStamp, RubberStamper } from './paid-stamp'
 import { Receipt } from './receipt'
 import { useTicketShow } from './ticket-show'
 import { TicketStub } from './ticket-stub'
+import { TransferSlip } from './transfer-slip'
 import { saveTicketImage, useTicketImage } from './use-ticket-image'
 
 /**
@@ -83,6 +89,7 @@ export function OrderView({
   tenantName,
   address,
   whatsapp,
+  transfer,
   paymentId,
 }: {
   order: PublicOrder
@@ -90,6 +97,7 @@ export function OrderView({
   tenantName: string
   address: string | null
   whatsapp: string | null
+  transfer: TransferAccount | null
   paymentId: string | null
 }) {
   const [live, setLive] = useState<Live>({
@@ -354,6 +362,7 @@ export function OrderView({
   )
 
   const header = <TicketHeader order={order} />
+  const expiredProofUrl = transferProofUrl(order, tenantName, whatsapp, transfer)
 
   return (
     <div
@@ -391,6 +400,17 @@ export function OrderView({
             </div>
           }
         />
+      ) : rejected ? (
+        <RejectedTicket
+          order={order}
+          tenantName={tenantName}
+          header={header}
+          reason={rejectionReason(live.statusDetail)}
+          retryUrl={retryUrl}
+          restartUrl={retryFilmUrl}
+          transfer={transfer}
+          whatsapp={whatsapp}
+        />
       ) : (
         <article className="ent-paper overflow-hidden rounded-[26px] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)] [--ent-hole:#090d0b]">
           {header}
@@ -398,22 +418,16 @@ export function OrderView({
           <div className="px-6 pt-6 pb-5">
             <StatusBlock
               waiting={waiting}
-              rejected={rejected}
+              rejected={false}
               expired={expired}
               refunded={refunded}
-              reason={rejectionReason(live.statusDetail)}
+              reason=""
               holdUntil={order.holdExpiresAt}
             />
 
-            <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-sm">
-              <Row label="Fecha" value={capitalizeFirst(formatLongDate(order.date))} />
-              <Row label="Hora" value={`${order.time} hs`} />
-              <Row label="Admite" value={peopleLabel(order.partySize)} />
-              <Row
-                label={order.option === 'deposit' ? 'Seña' : 'Total'}
-                value={formatPesos(order.totalCents)}
-              />
-            </dl>
+            <div className="mt-6">
+              <TicketDetails order={order} />
+            </div>
           </div>
 
           <div className="ent-ticket-cut px-6" aria-hidden>
@@ -421,32 +435,27 @@ export function OrderView({
           </div>
 
           <div className="px-6 pt-5 pb-6">
-            {rejected ? (
+            {expired ? (
               <div className="space-y-3">
-                {retryUrl ? (
-                  <a
-                    href={retryUrl}
-                    className="ent-press ent-btn-pay flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold"
-                  >
-                    <RotateCcw className="size-4" aria-hidden />
-                    Probar de nuevo
-                  </a>
-                ) : null}
                 <Link
                   href={retryFilmUrl}
-                  className="ent-press flex h-12 w-full items-center justify-center rounded-2xl border border-(--ent-ink)/20 text-sm font-semibold text-(--ent-ink)"
+                  className="ent-press flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-(--ent-ink) text-base font-semibold text-(--ent-paper)"
                 >
-                  Empezar de nuevo
+                  Reservar de nuevo
+                  <ArrowRight className="size-4" aria-hidden />
                 </Link>
+                {live.status === 'rejected' && expiredProofUrl ? (
+                  // Pudo vencerse mientras hacía la transferencia: el comprobante sigue valiendo.
+                  <a
+                    href={expiredProofUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ent-press flex h-12 w-full items-center justify-center rounded-2xl border border-(--ent-ink)/20 text-sm font-semibold text-(--ent-ink)"
+                  >
+                    Ya transferí: mandar comprobante
+                  </a>
+                ) : null}
               </div>
-            ) : expired ? (
-              <Link
-                href={retryFilmUrl}
-                className="ent-press flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-(--ent-ink) text-base font-semibold text-(--ent-paper)"
-              >
-                Reservar de nuevo
-                <ArrowRight className="size-4" aria-hidden />
-              </Link>
             ) : waiting ? (
               <div className="space-y-3">
                 <p className="text-center text-xs text-(--ent-ink-2)">
@@ -490,6 +499,129 @@ export function OrderView({
         </Link>
       </div>
     </div>
+  )
+}
+
+/** El WhatsApp para mandar el comprobante, si el bar tiene número y cuenta cargados. */
+function transferProofUrl(
+  order: PublicOrder,
+  tenantName: string,
+  whatsapp: string | null,
+  transfer: TransferAccount | null,
+): string | null {
+  if (!whatsapp || !transfer) return null
+  return buildWaMeUrl(
+    whatsapp,
+    transferProofMessage({
+      tenantName,
+      title: order.title,
+      dateLabel: formatLongDate(order.date),
+      time: order.time,
+      partySize: order.partySize,
+      guestName: order.guestFirstName,
+      amountLabel: formatPesos(order.totalCents),
+      alias: transfer.alias,
+      code: order.shortCode,
+    }),
+  )
+}
+
+/** Fecha, hora, personas y plata: lo mismo en todos los estados del pago. */
+function TicketDetails({ order }: { order: PublicOrder }) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-sm">
+      <Row label="Fecha" value={capitalizeFirst(formatLongDate(order.date))} />
+      <Row label="Hora" value={`${order.time} hs`} />
+      <Row label="Admite" value={peopleLabel(order.partySize)} />
+      <Row
+        label={order.option === 'deposit' ? 'Seña' : 'Total'}
+        value={formatPesos(order.totalCents)}
+      />
+    </dl>
+  )
+}
+
+/**
+ * El pago no se aprobó. Si el bar cargó una cuenta, lo primero que se ve es cómo
+ * transferir: casi todos los rechazos son del antifraude de Mercado Pago, y ahí
+ * reintentar no suele servir.
+ */
+export function RejectedTicket({
+  order,
+  tenantName,
+  header,
+  reason,
+  retryUrl,
+  restartUrl,
+  transfer,
+  whatsapp,
+}: {
+  order: PublicOrder
+  tenantName: string
+  header: React.ReactNode
+  reason: string
+  retryUrl: string | null
+  restartUrl: string
+  transfer: TransferAccount | null
+  whatsapp: string | null
+}) {
+  return (
+    <article className="ent-paper overflow-hidden rounded-[26px] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)] [--ent-hole:#090d0b]">
+      {header}
+
+      <div className="px-6 pt-6 pb-5">
+        <StatusBlock
+          waiting={false}
+          rejected
+          expired={false}
+          refunded={false}
+          reason={reason}
+          holdUntil={order.holdExpiresAt}
+        />
+        <div className={transfer ? 'mt-5' : 'mt-6'}>
+          {transfer ? (
+            <TransferSlip
+              alias={transfer.alias}
+              holder={transfer.holder}
+              amountCents={order.totalCents}
+              deposit={order.option === 'deposit'}
+              proofUrl={transferProofUrl(order, tenantName, whatsapp, transfer)}
+            />
+          ) : (
+            <TicketDetails order={order} />
+          )}
+        </div>
+      </div>
+
+      <div className="ent-ticket-cut px-6" aria-hidden>
+        <hr className="ent-perforation" />
+      </div>
+
+      <div className="px-6 pt-5 pb-6">
+        <div className="space-y-3">
+          {retryUrl ? (
+            <a
+              href={retryUrl}
+              className="ent-press ent-btn-pay flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold"
+            >
+              <RotateCcw className="size-4" aria-hidden />
+              Reintentar con Mercado Pago
+            </a>
+          ) : null}
+          <Link
+            href={restartUrl}
+            className="ent-press flex h-12 w-full items-center justify-center rounded-2xl border border-(--ent-ink)/20 text-sm font-semibold text-(--ent-ink)"
+          >
+            Empezar de nuevo
+          </Link>
+        </div>
+        {transfer ? (
+          <div className="mt-6">
+            <TicketDetails order={order} />
+          </div>
+        ) : null}
+      </div>
+    </article>
   )
 }
 

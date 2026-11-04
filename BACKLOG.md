@@ -1488,6 +1488,10 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   [local_smtp]»): muere en `supabase start`, antes del primer test. Los tests de la puerta en
   `tests/rls/ticketing.test.ts` todavía no corrieron en CI (se ensayaron contra la base con
   rollback y con una compra real en el bar demo). Cambiar a `[local_smtp]` o fijar la versión.
+- **La transferencia no reserva sola.** Si Mercado Pago rechaza el pago la entrada muestra el
+  alias, pero la reserva la carga alguien a mano y esa persona no recibe QR: entra por nombre.
+  Falta un «Confirmar transferencia» en el panel que apruebe el pedido (crea la reserva y le
+  aparece el QR), revisando que todavía haya lugar.
 - **La función de la entrada solo está en la muestra.** Para la compra real falta: pasarle
   `show` desde `OrderView`, celebrar también al volver de Mercado Pago con el pago ya aprobado
   (hoy `firstStatus` aprobado no anima), un resguardo para que el QR no quede oculto si fallan

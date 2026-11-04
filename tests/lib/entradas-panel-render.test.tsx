@@ -144,6 +144,8 @@ const SETTINGS: TicketingSettingsView = {
   intro: null,
   venue_address: null,
   contact_whatsapp: null,
+  transfer_alias: null,
+  transfer_holder: null,
   updated_at: null,
 }
 

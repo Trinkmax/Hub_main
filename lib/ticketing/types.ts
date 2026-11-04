@@ -124,6 +124,8 @@ export type TicketingSettingsView = {
   intro: string | null
   venue_address: string | null
   contact_whatsapp: string | null
+  transfer_alias: string | null
+  transfer_holder: string | null
   updated_at: string | null
 }
 
@@ -188,9 +190,18 @@ export type PublicVenue = {
   intro: string | null
   address: string | null
   whatsapp: string | null
+  /** A dónde transferir si Mercado Pago rechaza el pago. */
+  transfer: TransferAccount | null
   /** Hay cuenta de Mercado Pago conectada: se puede pagar online. */
   canSell: boolean
   holdMinutes: number
+}
+
+/** La cuenta del bar para pagar por transferencia. */
+export type TransferAccount = {
+  alias: string
+  /** «Mi Bar S.A.S., CUIT 30-…»: para que quien transfiere sepa que es la cuenta correcta. */
+  holder: string | null
 }
 
 /** La entrada del cliente (/entradas/<bar>/mi-entrada/<pedido>). */
