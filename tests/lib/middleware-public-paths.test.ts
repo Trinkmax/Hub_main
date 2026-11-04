@@ -38,6 +38,14 @@ describe('isPublicPath', () => {
     expect(isPublicPath('/hub/entradas')).toBe(false)
   })
 
+  it('la foto del comprobante por QR es pública: el celular no tiene sesión', () => {
+    // El QR se escanea con cualquier celular: sin esto caería en el login.
+    expect(isPublicPath('/subir/aBcD_123-token')).toBe(true)
+    // Y 'subir' está en RESERVED_SLUGS, así que no se la come el ruteo por tenant.
+    expect(RESERVED_SLUGS.has('subir')).toBe(true)
+    expect(isPublicPath('/subiendo/clientes')).toBe(false)
+  })
+
   it('las rutas de tenant NO son públicas', () => {
     expect(isPublicPath('/acme/clientes')).toBe(false)
     expect(isPublicPath('/acme/mensajeria/difusiones')).toBe(false)
