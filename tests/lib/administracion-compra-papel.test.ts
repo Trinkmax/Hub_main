@@ -10,57 +10,61 @@ import {
   ASK_WHEN_UNKNOWN,
   asksDue,
   asksPaper,
+  conditionForVoucher,
   conditionNoun,
-  dueChoices,
-  dueLine,
   dueSameDayWarning,
+  dueTermOf,
+  findPartyByCuit,
   gapWords,
   INVOICING_CHOICES,
   initialPayNow,
-  invoiceLetterChoices,
   invoicingGap,
+  letterBoxOf,
   newPartyTermToSend,
   otherPaperTypes,
-  paperLine,
   paperOfVoucher,
+  paperPicks,
+  parseTermDays,
   pendingItemText,
-  purchaseDraftMissing,
-  purchaseOutcomeNote,
-  purchaseStamp,
-  purchaseStepStates,
+  purchaseRoute,
   purchaseSubmitLabel,
-  purchaseTotalLabel,
   voucherForPaper,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/purchase-paper'
 import {
+  buildQuickExpenseValues,
+  buildQuickFromPurchase,
   QUICK_VOUCHERS,
   type QuickVoucher,
   withRemito,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import {
+  anyVoucherOptions,
   defaultVoucherFor,
   notInvoicedDefault,
   voucherOptionsFor,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/vouchers'
 import {
-  DueChips,
-  PayWhenCards,
-  TicketBar,
-} from '@/app/(manager)/[tenantSlug]/administracion/compras/nueva/_components/purchase-steps'
-import { PurchaseTicket } from '@/app/(manager)/[tenantSlug]/administracion/compras/nueva/_components/purchase-ticket'
+  CategoryCombobox,
+  DueTermLine,
+  LetterStamp,
+  PaperField,
+  PaperPicks,
+  PayOptions,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/nueva/_components/purchase-parts'
 import NuevaCompraPage from '@/app/(manager)/[tenantSlug]/administracion/compras/nueva/page'
 import { PAPER_OPTIONS } from '@/components/administracion/acciones/gasto-papel'
 import { pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
+import { bankTaxOf, DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
 import { IVA_CONDITIONS, type IvaCondition, type VoucherType } from '@/lib/accounting/types'
 import { prepare } from './accounting-fixtures'
 
 /**
- * «Cargar una compra que debo», lo nuevo de la pantalla: las cuatro tarjetas de
- * papel escriben un tipo de comprobante que YA se ofrecía, «¿Cómo te factura?»
- * aparece cuando el papel no entra con lo que sabemos del proveedor, y los
- * valores por defecto son los de siempre. Lo que se manda no cambió: lo
- * comprueba el hash de la vista previa de seis compras de ejemplo.
+ * «Cargar una compra», la pantalla con forma de factura: los botones de la letra escriben un tipo de
+ * comprobante que YA se ofrecía, «¿Cómo te factura?» aparece cuando el papel no entra con lo que
+ * sabemos del proveedor, y los valores por defecto son los de siempre. Lo que se manda no cambió: lo
+ * comprueba el hash de la vista previa de seis compras de ejemplo. «Compra y pago» sin factura manda
+ * exactamente lo mismo que «Nuevo gasto».
  */
 
 const ui = vi.hoisted(() => ({ readOnly: false }))
@@ -311,80 +315,71 @@ describe('los valores por defecto no cambiaron', () => {
   })
 })
 
-describe('¿Cuándo vence?: queda marcado el vencimiento que el formulario ya tiene', () => {
+describe('La debo: el plazo sale del vencimiento que el formulario ya tiene', () => {
   const issueDate = '2026-10-12'
-  const active = (choices: ReturnType<typeof dueChoices>) =>
-    choices.filter((c) => c.active).map((c) => c.key)
 
-  it('sin plazo, lo propuesto es «El mismo día» (la fecha del papel)', () => {
+  it('sin plazo, vence el mismo día (la fecha del papel): el valor por defecto no cambió', () => {
     const dueDate = suggestDueDate(issueDate, 0)
-    const choices = dueChoices({ issueDate, dueDate, termDays: 0 })
-    expect(active(choices)).toEqual(['same'])
-    expect(choices.map((c) => c.label)).toEqual([
-      'El mismo día',
-      'En 7 días',
-      'En 15 días',
-      'En 30 días',
-      'Otra fecha',
-      'Sin fecha',
-    ])
+    expect(dueTermOf({ issueDate, dueDate, termDays: 0 })).toEqual({
+      days: 0,
+      note: null,
+      suggestion: null,
+    })
     expect(dueSameDayWarning({ issueDate, dueDate, paying: false })).toBe(true)
     expect(dueSameDayWarning({ issueDate, dueDate, paying: true })).toBe(false)
   })
 
-  it('con plazo en la ficha, «A N días, como siempre»', () => {
+  it('con plazo en la ficha: «A 21 días, como siempre»', () => {
     const dueDate = suggestDueDate(issueDate, 21)
-    const choices = dueChoices({ issueDate, dueDate, termDays: 21 })
-    expect(active(choices)).toEqual(['term'])
-    expect(choices[0]).toMatchObject({
-      label: 'A 21 días, como siempre',
-      value: '2026-11-02',
+    expect(dueDate).toBe('2026-11-02')
+    expect(dueTermOf({ issueDate, dueDate, termDays: 21 })).toEqual({
       days: 21,
+      note: 'como siempre',
+      suggestion: null,
     })
   })
 
-  it('si el plazo es uno de los atajos, no se repite', () => {
-    const choices = dueChoices({
-      issueDate,
-      dueDate: suggestDueDate(issueDate, 7),
-      termDays: 7,
+  it('otro plazo que el de la ficha ya no es «como siempre»', () => {
+    expect(dueTermOf({ issueDate, dueDate: suggestDueDate(issueDate, 30), termDays: 21 })).toEqual({
+      days: 30,
+      note: null,
+      suggestion: null,
     })
-    expect(choices.map((c) => c.key)).toEqual(['term', 'same', 'd15', 'd30', 'other', 'none'])
-    expect(active(choices)).toEqual(['term'])
   })
 
-  it('sin plazo en la ficha pero con costumbre: «como las últimas veces» (sin marcar sola)', () => {
-    const choices = dueChoices({
-      issueDate,
-      dueDate: issueDate,
-      termDays: 0,
-      suggestedTermDays: 15,
-    })
-    expect(choices[0]?.label).toBe('A 15 días, como las últimas veces')
-    expect(active(choices)).toEqual(['same'])
-  })
-
-  it('una fecha a mano es «Otra fecha»; sin fecha, «Sin fecha»', () => {
-    expect(active(dueChoices({ issueDate, dueDate: '2026-10-20', termDays: 0 }))).toEqual(['other'])
-    expect(active(dueChoices({ issueDate, dueDate: null, termDays: 0 }))).toEqual(['none'])
-    expect(active(dueChoices({ issueDate, dueDate: '2026-10-19', termDays: 0 }))).toEqual(['d7'])
-  })
-
-  it('sin contestar (la alternativa apagada) no hay ninguna marcada', () => {
+  it('sin plazo en la ficha pero con costumbre: se ofrece, no se pone solo', () => {
     expect(
-      active(dueChoices({ issueDate, dueDate: issueDate, termDays: 0, answered: false })),
-    ).toEqual([])
+      dueTermOf({ issueDate, dueDate: issueDate, termDays: 0, suggestedTermDays: 15 }),
+    ).toEqual({ days: 0, note: null, suggestion: 15 })
+    expect(
+      dueTermOf({
+        issueDate,
+        dueDate: suggestDueDate(issueDate, 15),
+        termDays: 0,
+        suggestedTermDays: 15,
+      }),
+    ).toEqual({ days: 15, note: 'como las últimas veces', suggestion: null })
+    // Con plazo en la ficha, la costumbre no se ofrece: manda la ficha.
+    expect(
+      dueTermOf({ issueDate, dueDate: issueDate, termDays: 21, suggestedTermDays: 15 }).suggestion,
+    ).toBeNull()
   })
 
-  it('sin fecha del papel solo quedan «Otra fecha» y «Sin fecha»', () => {
-    expect(dueChoices({ issueDate: null, dueDate: null, termDays: 0 }).map((c) => c.key)).toEqual([
-      'other',
-      'none',
-    ])
+  it('sin fecha de pago, o sin fecha del papel, no hay plazo', () => {
+    expect(dueTermOf({ issueDate, dueDate: null, termDays: 21 }).days).toBeNull()
+    expect(dueTermOf({ issueDate: null, dueDate: issueDate, termDays: 21 }).days).toBeNull()
+  })
+
+  it('lo que se tipea en el plazo: días, y nada raro', () => {
+    expect(parseTermDays('21')).toBe(21)
+    expect(parseTermDays(' 7 ')).toBe(7)
+    expect(parseTermDays('0')).toBe(0)
+    expect(parseTermDays('999')).toBe(999)
+    for (const text of ['', 'a', '-3', '1,5', '1000']) expect(parseTermDays(text), text).toBeNull()
   })
 })
 
-describe('«Ya lo pagué» arma el mismo pago que «Guardar y pagar…»', () => {
+describe('«Ya la pagué» arma el mismo pago que «Guardar y pagar…»', () => {
   const treasuries = [
     { id: 't-mp', kind: 'wallet' as const, active: true },
     { id: 't-caja', kind: 'cash' as const, active: true },
@@ -421,124 +416,157 @@ describe('«Ya lo pagué» arma el mismo pago que «Guardar y pagar…»', () =>
         .treasuryAccountId,
     ).toBeNull()
   })
+
+  it('como en «Nuevo gasto»: el proveedor, después lo último de esta persona, después la Caja', () => {
+    const today = '2026-10-13'
+    const pick = (lastUsedWithParty: string | null, myLast: string | null) =>
+      initialPayNow({ treasuries, lastUsedWithParty, myLast, today }).treasuryAccountId
+    expect(pick('t-caja', 't-mp')).toBe('t-caja')
+    expect(pick(null, 't-mp')).toBe('t-mp')
+    expect(pick(null, 't-vieja')).toBe('t-caja')
+    expect(pick(null, null)).toBe('t-caja')
+  })
 })
 
-describe('el ticket: sello, renglones y letra chica', () => {
-  it('el sello dice qué papel es, con el mapa de toda la sección', () => {
-    expect(purchaseStamp('sin_comprobante')).toEqual({ tone: 'sin', text: 'Sin factura' })
-    expect(purchaseStamp('factura_a')).toEqual({ tone: 'factura', text: 'Con factura A' })
-    // La M es una A sujeta a retención: sella «A».
-    expect(purchaseStamp('factura_m')).toEqual({ tone: 'factura', text: 'Con factura A' })
-    expect(purchaseStamp('factura_c')?.text).toBe('Con factura C')
-    expect(purchaseStamp('tique')?.text).toBe('Con tique')
-    expect(purchaseStamp('recibo_a')?.text).toBe('Con recibo A')
-    expect(purchaseStamp('otro_comprobante')?.text).toBe('Con otro comprobante')
-    expect(purchaseStamp('nota_credito_a')?.text).toBe('Con nota de crédito A')
-    expect(purchaseStamp('nota_debito_a')?.text).toBe('Con nota de débito A')
-    expect(purchaseStamp(null)).toBeNull()
+describe('el recuadro de la letra', () => {
+  it('las letras van con su código de ARCA, y el título dice qué papel es', () => {
+    expect(letterBoxOf('factura_a')).toEqual({
+      mark: 'A',
+      word: false,
+      code: 'COD. 01',
+      title: 'FACTURA',
+    })
+    expect(letterBoxOf('factura_b')).toMatchObject({ mark: 'B', code: 'COD. 06' })
+    expect(letterBoxOf('factura_c')).toMatchObject({ mark: 'C', code: 'COD. 11' })
+    expect(letterBoxOf('factura_m')).toMatchObject({ mark: 'M', code: 'COD. 51' })
+    expect(letterBoxOf('nota_credito_a')).toMatchObject({
+      mark: 'A',
+      code: 'COD. 03',
+      title: 'NOTA DE CRÉDITO',
+    })
+    expect(letterBoxOf('nota_debito_c')).toMatchObject({
+      mark: 'C',
+      code: 'COD. 12',
+      title: 'NOTA DE DÉBITO',
+    })
+    expect(letterBoxOf('tique_factura_c')).toMatchObject({
+      mark: 'C',
+      code: 'COD. 111',
+      title: 'TIQUE FACTURA',
+    })
+    expect(letterBoxOf('recibo_b')).toMatchObject({ mark: 'B', title: 'RECIBO' })
   })
 
-  it('«Papel»: el nombre con su número, o el remito', () => {
-    expect(
-      paperLine({ voucherType: 'factura_a', pos: '0003', number: '00001290', remito: '' }),
-    ).toBe('Factura A 0003-00001290')
-    expect(paperLine({ voucherType: 'factura_a', pos: '0003', number: '', remito: '' })).toBe(
-      'Factura A',
-    )
-    expect(paperLine({ voucherType: 'sin_comprobante', pos: '', number: '', remito: '' })).toBe(
-      'Remito o nada',
-    )
-    expect(
-      paperLine({ voucherType: 'sin_comprobante', pos: '', number: '', remito: ' 0001-55 ' }),
-    ).toBe('Remito 0001-55')
-    expect(paperLine({ voucherType: null, pos: '', number: '', remito: '' })).toBeNull()
+  it('lo que no tiene letra va en palabra chica', () => {
+    expect(letterBoxOf('tique')).toEqual({
+      mark: 'TQ',
+      word: true,
+      code: 'COD. 83',
+      title: 'TIQUE',
+    })
+    expect(letterBoxOf('sin_comprobante')).toEqual({
+      mark: 'R',
+      word: true,
+      code: 'INTERNO',
+      title: 'REMITO',
+    })
+    expect(letterBoxOf('otro_comprobante')).toMatchObject({ mark: 'OT', title: 'COMPROBANTE' })
+    expect(letterBoxOf('ddjj_impuesto')).toMatchObject({ mark: 'DJ', code: '' })
+    expect(letterBoxOf(null)).toMatchObject({ mark: '–', code: '', title: 'COMPROBANTE' })
   })
 
-  it('lo que falta, en una oración (nunca un «$ 0»)', () => {
-    expect(
-      purchaseDraftMissing({
-        party: true,
-        account: false,
-        paper: false,
-        number: false,
-        total: true,
-      }),
-    ).toBe('Falta decir a quién le compraste y cuánto es.')
-    expect(
-      purchaseDraftMissing({ party: true, account: true, paper: true, number: false, total: true }),
-    ).toBe('Falta decir a quién le compraste, en qué le comprás, qué papel te dieron y cuánto es.')
-    expect(
-      purchaseDraftMissing({
-        party: false,
-        account: false,
-        paper: false,
-        number: true,
-        total: false,
-      }),
-    ).toBe('Falta el número del papel.')
-    expect(
-      purchaseDraftMissing({
-        party: false,
-        account: false,
-        paper: false,
-        number: false,
-        total: false,
-      }),
-    ).toBeNull()
+  it('una compra ofrece A, B, C, Tique y Remito, aunque ese proveedor no dé alguna', () => {
+    const labels = (condition: IvaCondition) =>
+      paperPicks({ family: 'factura', options: optionsFor(condition) }).map((pick) => pick.label)
+    for (const condition of IVA_CONDITIONS) {
+      expect(labels(condition), condition).toEqual(['A', 'B', 'C', 'Tique', 'Remito'])
+    }
   })
 
-  const note = (patch: Partial<Parameters<typeof purchaseOutcomeNote>[0]> = {}) =>
-    purchaseOutcomeNote({
+  it('una nota solo tiene letras; un organismo, solo lo que se le puede cargar', () => {
+    expect(
+      paperPicks({
+        family: 'nc',
+        options: voucherOptionsFor({ family: 'nc', condition: null }),
+      }).map((pick) => pick.type),
+    ).toEqual(['nota_credito_a', 'nota_credito_b', 'nota_credito_c', 'nota_credito_m'])
+    expect(paperPicks({ family: 'nd', options: [] }).map((pick) => pick.label)).toEqual([
+      'A',
+      'B',
+      'C',
+      'M',
+    ])
+    const agency = voucherOptionsFor({
+      family: 'factura',
+      condition: 'no_alcanzado',
+      isTaxAgency: true,
+    })
+    expect(
+      paperPicks({ family: 'factura', options: agency, isTaxAgency: true }).map(
+        (pick) => pick.label,
+      ),
+    ).toEqual(['Tique', 'Remito'])
+  })
+
+  it('sin proveedor todavía se puede elegir cualquier letra: la condición se mira cuando lo hay', () => {
+    expect(anyVoucherOptions('factura')).toContain('factura_c')
+    // A diferencia de lo que le corresponde a un responsable inscripto.
+    expect(optionsFor(null)).not.toContain('factura_c')
+    expect(anyVoucherOptions('nc')).toContain('nota_credito_c')
+    expect(anyVoucherOptions('nd')).toContain('nota_debito_b')
+    const picks = paperPicks({ family: 'factura', options: anyVoucherOptions('factura') })
+    expect(picks.map((pick) => pick.type)).toContain('factura_c')
+  })
+
+  it('quién da cada letra: para proponerlo al crear o corregir un proveedor', () => {
+    expect(conditionForVoucher('factura_a')).toBe('responsable_inscripto')
+    expect(conditionForVoucher('factura_b')).toBe('responsable_inscripto')
+    expect(conditionForVoucher('factura_m')).toBe('responsable_inscripto')
+    expect(conditionForVoucher('factura_c')).toBe('monotributo')
+    expect(conditionForVoucher('tique')).toBeNull()
+    expect(conditionForVoucher(null)).toBeNull()
+  })
+
+  it('una letra que no da: se pregunta por esa letra, no por «B o C»', () => {
+    const ask = (voucherType: VoucherType, condition: IvaCondition) =>
+      invoicingGap({
+        paper: paperOfVoucher(voucherType),
+        voucherType,
+        condition,
+        hasTaxId: true,
+        entersIvaBook: true,
+      })
+    expect(ask('factura_c', 'responsable_inscripto')).toEqual({
+      kind: 'mismatch',
+      suggest: 'monotributo',
+    })
+    expect(ask('factura_b', 'monotributo')).toEqual({
+      kind: 'mismatch',
+      suggest: 'responsable_inscripto',
+    })
+    expect(ask('factura_b', 'responsable_inscripto')).toBeNull()
+    expect(ask('factura_c', 'sin_datos')).toEqual({ kind: 'unknown', suggest: 'monotributo' })
+    const words = (condition: IvaCondition) =>
+      gapWords({ kind: 'mismatch', suggest: null }, { name: 'X', condition, paper: 'bc' }).body
+    expect(words('responsable_inscripto')).toContain('no da Factura C')
+    expect(words('monotributo')).toContain('no da Factura B')
+    expect(words('consumidor_final')).toContain('no da Factura B o C')
+  })
+})
+
+describe('el botón dice lo que hace y el importe tal cual se guarda', () => {
+  const label = (patch: Partial<Parameters<typeof purchaseSubmitLabel>[0]>) =>
+    purchaseSubmitLabel({
       docKind: 'purchase',
-      supplier: 'Barracuda',
-      voucherType: 'factura_a',
+      paying: false,
       totalCents: 12_000_000,
-      paidCents: null,
-      priorDebtCents: null,
       ...patch,
     }).replaceAll(NB, ' ')
 
-  it('lo debo: queda en su libreta; con o sin factura, lo que cambia es el Libro IVA', () => {
-    expect(note()).toBe('Queda anotado en la libreta de Barracuda. Entra al Libro IVA.')
-    expect(note({ voucherType: 'sin_comprobante' })).toBe(
-      'Queda anotado en la libreta de Barracuda. Sin factura: queda en tus números y no entra al Libro IVA.',
-    )
-    expect(note({ priorDebtCents: 333_660_000 })).toBe(
-      'Queda anotado en la libreta de Barracuda. Entra al Libro IVA. Con esto le vas a deber $ 3.456.600 en total.',
-    )
-  })
-
-  it('pagué una parte, pagué todo, y la nota de crédito', () => {
-    expect(note({ paidCents: 5_000_000 })).toContain(
-      'Pagás $ 50.000 ahora y le quedás debiendo $ 70.000.',
-    )
-    expect(note({ paidCents: 12_000_000 })).toContain('Queda pagado: con Barracuda no queda deuda.')
-    expect(note({ docKind: 'purchase_credit_note', voucherType: 'nota_credito_a' })).toBe(
-      'Queda a tu favor con Barracuda: se descuenta en el próximo pago.',
-    )
-  })
-
-  it('el rótulo del total y el vencimiento', () => {
-    expect(purchaseTotalLabel({ docKind: 'purchase', paying: false })).toBe('Le vas a deber')
-    expect(purchaseTotalLabel({ docKind: 'purchase', paying: true })).toBe('Pagás ahora')
-    expect(purchaseTotalLabel({ docKind: 'purchase_credit_note', paying: false })).toBe(
-      'Queda a tu favor',
-    )
-    expect(dueLine('2026-10-30')).toBe('Vence el 30/10')
-    expect(dueLine(null)).toBe('Sin fecha de pago')
-  })
-
-  it('el botón dice lo que hace y el importe tal cual se guarda', () => {
-    const label = (patch: Partial<Parameters<typeof purchaseSubmitLabel>[0]>) =>
-      purchaseSubmitLabel({
-        docKind: 'purchase',
-        paying: false,
-        totalCents: 12_000_000,
-        ...patch,
-      }).replaceAll(NB, ' ')
+  it('«Cargar compra · $ X», como en el prototipo', () => {
     expect(label({})).toBe('Cargar compra · $ 120.000')
     expect(label({ totalCents: null })).toBe('Cargar compra')
-    expect(label({ paying: true })).toBe('Cargar y pagar · $ 120.000')
+    expect(label({ paying: true })).toBe('Cargar compra y pago · $ 120.000')
     expect(label({ docKind: 'purchase_credit_note', totalCents: 6_050_000 })).toBe(
       'Cargar nota de crédito · $ 60.500',
     )
@@ -549,31 +577,13 @@ describe('el ticket: sello, renglones y letra chica', () => {
     expect(label({ totalCents: 99_999_999_950 })).toBe('Cargar compra · $ 999.999.999,50')
   })
 
-  it('las secciones se tildan solas: la primera que falta es la que toca', () => {
-    expect(purchaseStepStates([false, false, false, false])).toEqual([
-      'current',
-      'todo',
-      'todo',
-      'todo',
-    ])
-    expect(purchaseStepStates([true, false, true, false])).toEqual([
-      'done',
-      'current',
-      'done',
-      'todo',
-    ])
-    expect(purchaseStepStates([true, true, true])).toEqual(['done', 'done', 'done'])
-  })
-
   it('un solo libro: ningún texto dice «negro», «blanco», «afuera» ni «ganancia»', () => {
     const texts = [
       ...PAPER_OPTIONS.flatMap((o) => [o.title, o.consequence]),
       ...INVOICING_CHOICES.flatMap((c) => [c.label, c.hint]),
-      note(),
-      note({ voucherType: 'sin_comprobante' }),
-      note({ paidCents: 12_000_000 }),
-      note({ docKind: 'purchase_credit_note' }),
-      purchaseStamp('sin_comprobante')?.text ?? '',
+      label({}),
+      label({ paying: true }),
+      letterBoxOf('sin_comprobante').title,
       ...Object.values(
         gapWords(
           { kind: 'unknown', suggest: null },
@@ -584,6 +594,27 @@ describe('el ticket: sello, renglones y letra chica', () => {
       .join(' ')
       .toLowerCase()
     for (const word of FORBIDDEN) expect(texts, word).not.toContain(word)
+  })
+})
+
+describe('el QR de la factura busca al proveedor por su CUIT', () => {
+  const parties = [
+    { id: 'a', taxId: '30-71234568-9', active: false },
+    { id: 'b', taxId: null, active: true },
+    { id: 'c', taxId: '30712345689', active: true },
+    { id: 'd', taxId: '20-11111111-2', active: true },
+  ]
+
+  it('con o sin guiones; entre uno dado de baja y uno activo, el activo', () => {
+    expect(findPartyByCuit(parties, '30712345689')?.id).toBe('c')
+    expect(findPartyByCuit(parties, '30-71234568-9')?.id).toBe('c')
+    expect(findPartyByCuit(parties.slice(0, 2), '30712345689')?.id).toBe('a')
+  })
+
+  it('si no está, nada: se ofrece crearlo', () => {
+    expect(findPartyByCuit(parties, '27999999990')).toBeNull()
+    expect(findPartyByCuit(parties, '')).toBeNull()
+    expect(findPartyByCuit([], '30712345689')).toBeNull()
   })
 })
 
@@ -654,7 +685,7 @@ describe('el envío no cambió: seis compras de ejemplo dan la misma vista previ
     )
   })
 
-  it('Factura C pagada: «Ya lo pagué» manda el pago de «Guardar y pagar…»', () => {
+  it('Factura C pagada: «Ya la pagué» manda el pago de «Guardar y pagar…»', () => {
     const state = (payNow: PurchaseFormState['payNow']) =>
       base({
         party: { kind: 'existing', id: r.party('plomero') },
@@ -689,6 +720,274 @@ describe('el envío no cambió: seis compras de ejemplo dan la misma vista previ
     expect(hashes).toEqual([hashOf(withPerception), hashOf(creditNote), hashOf(fixed)])
     // El gasto fijo viaja en el envío: cambia el hash respecto de la misma compra sin marcar.
     expect(hashOf(fixed)).not.toBe(hashOf(base()))
+  })
+})
+
+describe('un tique no pide número', () => {
+  const { r, ctx } = prepare()
+  const tique = (patch: Partial<PurchaseFormState> = {}): PurchaseFormState => ({
+    party: { kind: 'existing', id: r.party('cocacola') },
+    voucherType: 'tique',
+    pointOfSale: null,
+    number: null,
+    issueDate: '2026-10-03',
+    dueDate: '2026-10-24',
+    amountMode: 'total',
+    totalCents: 4_500_000,
+    vatRateBp: 2100,
+    vatAdjustCents: 0,
+    accountId: r.account('purchases_soft_drinks'),
+    nets: {},
+    vatAdjust: {},
+    grossCents: null,
+    nonTaxedCents: null,
+    exemptCents: null,
+    internalTaxCents: null,
+    percIvaCents: null,
+    percIibbCents: null,
+    iibbJurisdictionCode: 904,
+    percGananciasCents: null,
+    otherTaxesCents: null,
+    otherTaxesAccountId: null,
+    controlTotalCents: null,
+    relatedDocumentId: null,
+    recurringExpenseId: null,
+    payNow: null,
+    notes: '',
+    ...patch,
+  })
+  const previewOf = (state: PurchaseFormState) => {
+    const { values } = buildPurchaseValues(state)
+    if (!values) throw new Error('faltan datos')
+    return { values, preview: previewDocumentForm('purchase', values, ctx) }
+  }
+
+  it('sin número se puede cargar a deber', () => {
+    const { values, preview } = previewOf(tique())
+    expect(values.pointOfSale).toBeNull()
+    expect(values.number).toBeNull()
+    expect(preview.ok).toBe(true)
+  })
+
+  it('un punto de venta suelto (el que propone el sistema) no viaja: la base lo rechazaría', () => {
+    const { values, preview } = previewOf(tique({ pointOfSale: 3 }))
+    expect(values.pointOfSale).toBeNull()
+    expect(values.number).toBeNull()
+    expect(preview.ok).toBe(true)
+  })
+
+  it('con los dos viajan los dos: entra al Libro IVA', () => {
+    const { values, preview } = previewOf(tique({ pointOfSale: 3, number: 1290 }))
+    expect(values.pointOfSale).toBe(3)
+    expect(values.number).toBe(1290)
+    expect(preview.ok).toBe(true)
+  })
+
+  it('una factura sí lo exige, y un remito nunca lleva', () => {
+    const invoice = previewOf(tique({ voucherType: 'factura_a' }))
+    expect(invoice.preview.ok).toBe(false)
+    const remito = previewOf(tique({ voucherType: 'sin_comprobante', pointOfSale: 3, number: 7 }))
+    expect(remito.values.pointOfSale).toBeNull()
+    expect(remito.values.number).toBeNull()
+  })
+})
+
+describe('«Compra y pago» cubre lo que hace la hoja «Nuevo gasto»', () => {
+  const { r, ctx } = prepare()
+  const today = '2026-10-13'
+  const pay = (patch: Partial<NonNullable<PurchaseFormState['payNow']>> = {}) => ({
+    treasuryAccountId: r.treasury('caja'),
+    amountCents: null,
+    date: today,
+    reference: '',
+    ...patch,
+  })
+  const state = (patch: Partial<PurchaseFormState> = {}): PurchaseFormState => ({
+    party: { kind: 'existing', id: r.party('cocacola') },
+    voucherType: 'sin_comprobante',
+    pointOfSale: null,
+    number: null,
+    issueDate: '2026-10-03',
+    dueDate: '2026-10-03',
+    amountMode: 'total',
+    totalCents: 4_500_000,
+    vatRateBp: 2100,
+    vatAdjustCents: 0,
+    accountId: r.account('purchases_soft_drinks'),
+    nets: {},
+    vatAdjust: {},
+    grossCents: null,
+    nonTaxedCents: null,
+    exemptCents: null,
+    internalTaxCents: null,
+    percIvaCents: null,
+    percIibbCents: null,
+    iibbJurisdictionCode: 904,
+    percGananciasCents: null,
+    otherTaxesCents: null,
+    otherTaxesAccountId: null,
+    controlTotalCents: null,
+    relatedDocumentId: null,
+    recurringExpenseId: null,
+    payNow: pay(),
+    notes: '',
+    ...patch,
+  })
+  const route = (
+    patch: Partial<PurchaseFormState> = {},
+    input: { family?: 'factura' | 'nc' | 'nd'; notes?: string; remito?: string } = {},
+  ) =>
+    purchaseRoute(state(patch), {
+      family: input.family ?? 'factura',
+      today,
+      notes: input.notes ?? '',
+      remito: input.remito ?? '',
+    })
+
+  it('sin proveedor, o con remito o tique sin número: va como un gasto', () => {
+    expect(route({ party: null })).toBe('quick_expense')
+    expect(route()).toBe('quick_expense')
+    expect(route({ voucherType: 'tique' })).toBe('quick_expense')
+  })
+
+  it('con factura, o con tique con número: la compra con su pago', () => {
+    expect(route({ voucherType: 'factura_a', pointOfSale: 3, number: 1 })).toBe('purchase')
+    expect(route({ voucherType: 'factura_b', pointOfSale: 3, number: 1 })).toBe('purchase')
+    expect(route({ voucherType: 'tique', pointOfSale: 3, number: 1 })).toBe('purchase')
+    expect(route({ voucherType: 'otro_comprobante' })).toBe('purchase')
+  })
+
+  it('a deber, y las notas: siempre la compra', () => {
+    expect(route({ payNow: null })).toBe('purchase')
+    expect(route({ payNow: null, party: null })).toBe('purchase')
+    expect(route({}, { family: 'nd' })).toBe('purchase')
+  })
+
+  it('lo que un gasto no sabe guardar sigue yendo por la compra', () => {
+    expect(route({ amountMode: 'detail' })).toBe('purchase')
+    expect(route({ percIibbCents: 100 })).toBe('purchase')
+    expect(route({ payNow: pay({ amountCents: 100 }) })).toBe('purchase')
+    expect(route({ payNow: pay({ date: '2026-10-10' }) })).toBe('purchase')
+    expect(route({ payNow: pay({ reference: '123' }) })).toBe('purchase')
+    expect(route({}, { notes: 'x'.repeat(281) })).toBe('purchase')
+    expect(route({}, { notes: 'x'.repeat(280) })).toBe('quick_expense')
+    // El número del remito va adelante de la nota: también ocupa lugar.
+    expect(route({}, { notes: 'x'.repeat(280), remito: '0001-55' })).toBe('purchase')
+  })
+
+  const direct = (patch: Partial<Parameters<typeof buildQuickExpenseValues>[0]> = {}) => {
+    const built = buildQuickExpenseValues({
+      amountCents: 4_500_000,
+      target: {
+        kind: 'party',
+        partyId: r.party('cocacola'),
+        accountId: r.account('purchases_soft_drinks'),
+      },
+      treasuryAccountId: r.treasury('caja'),
+      voucher: 'none',
+      vatRateBp: 2100,
+      vatAdjustCents: 0,
+      pointOfSale: null,
+      number: null,
+      date: '2026-10-03',
+      detail: '',
+      remito: '',
+      recurringExpenseId: null,
+      ...patch,
+    })
+    if (!built.values) throw new Error('faltan datos')
+    return built.values
+  }
+
+  it('manda exactamente lo mismo que la hoja: proveedor y remito', () => {
+    const { values } = buildQuickFromPurchase(state({ notes: 'Remito 55 · hielo' }), {
+      notes: 'hielo',
+      remito: '55',
+    })
+    expect(values).toEqual(direct({ detail: 'hielo', remito: '55' }))
+    const hash = (v: unknown) => {
+      const preview = previewDocumentForm('quick_expense', v, ctx)
+      if (!preview.ok) throw new Error(preview.message)
+      return preview.hash
+    }
+    expect(hash(values)).toBe(hash(direct({ detail: 'hielo', remito: '55' })))
+  })
+
+  it('sin proveedor: la cuenta sola', () => {
+    const accountId = r.account('purchases_soft_drinks')
+    const { values } = buildQuickFromPurchase(state({ party: null }), { notes: '', remito: '' })
+    expect(values).toEqual(direct({ target: { kind: 'account', accountId } }))
+    expect(values && previewDocumentForm('quick_expense', values, ctx).ok).toBe(true)
+  })
+
+  it('tique sin número: va como tique, y un punto de venta suelto no viaja', () => {
+    const { values } = buildQuickFromPurchase(state({ voucherType: 'tique', pointOfSale: 3 }), {
+      notes: '',
+      remito: '',
+    })
+    expect(values).toEqual(direct({ voucher: 'ticket' }))
+    expect(values && previewDocumentForm('quick_expense', values, ctx).ok).toBe(true)
+  })
+
+  it('proveedor nuevo: se crea junto con el gasto', () => {
+    const { values } = buildQuickFromPurchase(
+      state({
+        party: {
+          kind: 'new',
+          name: 'Hielo Cristal',
+          ivaCondition: 'monotributo',
+          taxId: '',
+          paymentTermDays: 0,
+        },
+      }),
+      { notes: '', remito: '' },
+    )
+    const accountId = r.account('purchases_soft_drinks')
+    expect(values).toEqual(
+      direct({
+        target: {
+          kind: 'new',
+          name: 'Hielo Cristal',
+          ivaCondition: 'monotributo',
+          taxId: '',
+          accountId,
+        },
+      }),
+    )
+  })
+
+  it('lo que falta queda en los campos de esta pantalla', () => {
+    const { missing, values } = buildQuickFromPurchase(
+      state({ totalCents: null, accountId: null, payNow: pay({ treasuryAccountId: null }) }),
+      { notes: '', remito: '' },
+    )
+    expect(values).toBeNull()
+    expect(missing).toMatchObject({
+      total: 'Escribí cuánto gastaste.',
+      account: 'Elegí en qué gastaste.',
+      payTreasury: 'Elegí con qué pagaste.',
+    })
+  })
+
+  it('una factura sin proveedor no se puede: lo pide en su campo', () => {
+    for (const voucherType of ['factura_a', 'factura_b', 'factura_c', 'factura_m'] as const) {
+      const { missing, values } = buildQuickFromPurchase(state({ party: null, voucherType }), {
+        notes: '',
+        remito: '',
+      })
+      expect(values, voucherType).toBeNull()
+      expect(missing.party, voucherType).toBe('Una factura necesita proveedor.')
+    }
+  })
+
+  it('el impuesto al cheque de lo que sale de un banco; de la caja, no', () => {
+    const settings = DEFAULT_TAX_SETTINGS
+    expect(bankTaxOf(10_000_000, { kind: 'bank' }, settings)).toBe(60_000)
+    expect(bankTaxOf(10_000_000, { kind: 'wallet' }, settings)).toBe(60_000)
+    expect(bankTaxOf(10_000_000, { kind: 'cash' }, settings)).toBe(0)
+    expect(bankTaxOf(10_000_000, { kind: 'bank', chargesBankTax: false }, settings)).toBe(0)
+    expect(bankTaxOf(10_000_000, undefined, settings)).toBe(0)
+    expect(bankTaxOf(10_000_000, { kind: 'bank' }, undefined)).toBe(0)
   })
 })
 
@@ -745,119 +1044,160 @@ describe('«¿Cómo te factura?» dibujado', () => {
   })
 })
 
-describe('el ticket y las preguntas de «¿Cuándo le pagás?»', () => {
-  const ticket = (patch: Partial<Parameters<typeof PurchaseTicket>[0]> = {}) =>
-    html(
-      createElement(PurchaseTicket, {
-        supplier: 'Barracuda',
-        subtitle: 'Compra del lun 12/10',
-        stamp: { tone: 'factura', text: 'Con factura A' },
-        stampNonce: 0,
-        rows: [
-          { key: 'papel', label: 'Papel', value: 'Factura A 0003-00001290' },
-          { key: 'en-que', label: 'En qué', value: 'Bebidas con alcohol' },
-        ],
-        totalLabel: 'Le vas a deber',
-        totalCents: 12_000_000,
-        totalHint: 'Vence el 30/10',
-        note: 'Queda anotado en la libreta de Barracuda. Entra al Libro IVA.',
-        pending: false,
-        entries: [],
-        ...patch,
-      }),
-    )
-
-  it('completo: a quién, el sello, el total y hasta cuándo', () => {
-    const read = text(ticket())
-    expect(read).toContain('Barracuda')
-    expect(read).toContain('Con factura A')
-    expect(read).toContain('Le vas a deber')
-    expect(read).toContain('$ 120.000')
-    expect(read).toContain('Vence el 30/10')
-    expect(read).toContain('Ver cómo queda en los libros')
+describe('las piezas de la factura', () => {
+  it('el recuadro: la letra y su código', () => {
+    const read = text(html(createElement(LetterStamp, { box: letterBoxOf('factura_a') })))
+    expect(read).toContain('A')
+    expect(read).toContain('COD. 01')
   })
 
-  it('en borrador no hay «$ 0» ni sello inventado', () => {
-    const read = text(
-      ticket({
-        supplier: null,
-        stamp: null,
-        totalCents: null,
-        totalHint: undefined,
-        note: 'Falta decir a quién le compraste y cuánto es.',
-        pending: true,
-      }),
-    )
-    expect(read).not.toContain('$ 0')
-    expect(read).not.toContain('Con factura')
-    expect(read).toContain('Todavía sin importe')
-    expect(read).toContain('Falta decir a quién le compraste y cuánto es.')
-  })
-
-  it('un nombre de 60 caracteres y nueve cifras entran enteros', () => {
-    const long = 'Distribuidora Mayorista de Bebidas y Alimentos del Centro SA'
-    const read = text(ticket({ supplier: long, totalCents: 99_999_999_900 }))
-    expect(read).toContain(long)
-    expect(read).toContain('$ 999.999.999')
-  })
-
-  it('las dos respuestas de «¿Cuándo le pagás?», con su consecuencia', () => {
+  it('los botones de la letra: marcan uno solo, con su nombre entero para el lector', () => {
     const out = html(
-      createElement(PayWhenCards, { name: 'cuando', paying: false, onChange: () => {} }),
-    )
-    const read = text(out)
-    expect(read).toContain('Más adelante: lo debo')
-    expect(read).toContain('Queda anotado en su libreta hasta que le pagues.')
-    expect(read).toContain('Ya lo pagué')
-    expect(read).toContain('Sale de la caja ahora. No queda deuda.')
-    // Por defecto queda a deber: es lo que pasaba si no se tocaba «Guardar y pagar…».
-    expect(out).toMatch(/value="despues"[^>]*checked=""|checked=""[^>]*value="despues"/)
-  })
-
-  it('los chips de vencimiento marcan uno solo', () => {
-    const choices = dueChoices({ issueDate: '2026-10-12', dueDate: '2026-10-12', termDays: 0 })
-    const out = html(
-      createElement(DueChips, {
-        labelId: 'vence',
-        choices,
+      createElement(PaperPicks, {
+        picks: paperPicks({ family: 'factura', options: optionsFor('responsable_inscripto') }),
+        value: 'factura_b',
         onPick: () => {},
-        dateField: null,
       }),
     )
     expect(out.split('aria-checked="true"').length - 1).toBe(1)
-    expect(out).toMatch(/aria-checked="true"[^>]*>El mismo día/)
+    expect(out).toContain('aria-label="Factura B"')
+    expect(out).toContain('aria-label="Tique"')
+    // Una sola parada de Tab: el grupo se recorre con las flechas.
+    expect(out.split('tabindex="0"').length - 1).toBe(1)
+    expect(text(out)).toBe('A B C Tique Remito')
   })
 
-  it('la barra del celular: el total o una raya, nunca «$ 0»', () => {
-    const bar = (cents: number | null) =>
+  it('«La debo» y «Ya la pagué»: una elegida, y el plazo se escribe solo con «La debo»', () => {
+    const term = dueTermOf({ issueDate: '2026-10-12', dueDate: '2026-11-02', termDays: 21 })
+    const line = (editable: boolean) =>
+      createElement(DueTermLine, {
+        id: 'plazo',
+        term,
+        editable,
+        value: '21',
+        onChange: () => {},
+        onBlur: () => {},
+        onNoDate: () => {},
+        onSuggestion: () => {},
+        onPutTerm: () => {},
+      })
+    const debt = html(
+      createElement(PayOptions, {
+        paying: false,
+        onChange: () => {},
+        debtLine: line(true),
+        paidLine: 'Es una compra y pago',
+      }),
+    )
+    expect(debt.split('aria-checked="true"').length - 1).toBe(1)
+    expect(debt).toMatch(/aria-checked="true"[^>]*>La debo/)
+    expect(debt).toContain('aria-label="Días de plazo"')
+    expect(debt).toContain('value="21"')
+    expect(text(debt)).toContain('días, como siempre')
+    expect(text(debt)).toContain('Sin fecha')
+
+    const paid = html(
+      createElement(PayOptions, {
+        paying: true,
+        onChange: () => {},
+        debtLine: line(false),
+        paidLine: 'Es una compra y pago',
+      }),
+    )
+    expect(paid).toMatch(/aria-checked="true"[^>]*>Ya la pagué/)
+    expect(paid).not.toContain('<input')
+    expect(text(paid)).toContain('A 21 días, como siempre')
+    expect(text(paid)).toContain('Es una compra y pago')
+  })
+
+  it('sin fecha de pago lo dice, y se vuelve a un plazo con un toque', () => {
+    const line = (editable: boolean) =>
       text(
         html(
-          createElement(TicketBar, {
-            label: 'Le vas a deber',
-            totalCents: cents,
-            onOpen: () => {},
+          createElement(DueTermLine, {
+            id: 'plazo',
+            term: dueTermOf({ issueDate: '2026-10-12', dueDate: null, termDays: 0 }),
+            editable,
+            value: '',
+            onChange: () => {},
+            onBlur: () => {},
+            onNoDate: () => {},
+            onSuggestion: () => {},
+            onPutTerm: () => {},
           }),
         ),
       )
-    expect(bar(12_000_000)).toContain('$ 120.000')
-    expect(bar(null)).not.toContain('$ 0')
-    expect(bar(0)).not.toContain('$ 0')
-    expect(bar(null)).toContain('Ver ticket')
+    expect(line(true)).toBe('Sin fecha de pago Poner plazo')
+    expect(line(false)).toBe('Sin fecha de pago')
+  })
+
+  it('la costumbre se ofrece al lado del plazo', () => {
+    const read = text(
+      html(
+        createElement(DueTermLine, {
+          id: 'plazo',
+          term: dueTermOf({
+            issueDate: '2026-10-12',
+            dueDate: '2026-10-12',
+            termDays: 0,
+            suggestedTermDays: 30,
+          }),
+          editable: true,
+          value: '',
+          onChange: () => {},
+          onBlur: () => {},
+          onNoDate: () => {},
+          onSuggestion: () => {},
+          onPutTerm: () => {},
+        }),
+      ),
+    )
+    expect(read).toContain('¿A 30, como las últimas?')
+  })
+
+  it('un campo del papel: su rótulo, «(opcional)» y su error en su lugar', () => {
+    const out = html(
+      // El contenido va como hijo (así se escribe en JSX): por eso las props se pasan sin `children`.
+      createElement(
+        PaperField,
+        { id: 'x', label: 'Proveedor', optional: true, error: 'Elegí uno.' } as Parameters<
+          typeof PaperField
+        >[0],
+        createElement('input', { id: 'x' }),
+      ),
+    )
+    expect(out).toContain('for="x"')
+    expect(text(out)).toBe('Proveedor (opcional) Elegí uno.')
+    expect(out).toContain('role="alert"')
+  })
+
+  it('«Va a…» muestra el nombre corto de la cuenta elegida, sin el «Compras:»', () => {
+    const read = text(
+      html(
+        createElement(CategoryCombobox, {
+          id: 'cuenta',
+          value: 'c-1',
+          selectedName: 'Compras: café e infusiones',
+          options: [],
+          featured: [],
+          pinned: [],
+          onChange: () => {},
+        }),
+      ),
+    )
+    expect(read).toContain('Café e infusiones')
+    expect(read).not.toContain('Compras:')
   })
 })
 
 // ─── Lo que sumó la auditoría ────────────────────────────────────────────────
 
 describe('todo lo que ofrecía el desplegable de antes se sigue pudiendo elegir', () => {
-  it('cada tipo de cada condición sale de una tarjeta, de «¿Es B o C?» o de «Es otro papel»', () => {
+  it('cada tipo de cada condición sale de un botón o de «Es otro papel»', () => {
     for (const condition of [...IVA_CONDITIONS, null]) {
       const options = optionsFor(condition)
       const reachable = new Set<VoucherType>([
-        ...PAPERS.flatMap((paper) => {
-          const type = voucherForPaper(paper, { options, condition })
-          return type ? [type] : []
-        }),
-        ...invoiceLetterChoices(options),
+        ...paperPicks({ family: 'factura', options }).map((pick) => pick.type),
         ...otherPaperTypes(options),
       ])
       for (const type of options) {
@@ -866,14 +1206,11 @@ describe('todo lo que ofrecía el desplegable de antes se sigue pudiendo elegir'
     }
   })
 
-  it('un exento puede dar B o C: la tarjeta escribe una y la otra se elige al lado', () => {
+  it('un exento puede dar B o C: las dos letras se tocan directo', () => {
     const options = optionsFor('exento')
-    expect(invoiceLetterChoices(options)).toEqual(['factura_b', 'factura_c'])
-    expect(voucherForPaper('bc', { options, condition: 'exento' })).toBe('factura_c')
-    // Con una sola letra posible no hay nada que preguntar.
-    expect(invoiceLetterChoices(optionsFor('responsable_inscripto'))).toEqual([])
-    expect(invoiceLetterChoices(optionsFor('monotributo'))).toEqual([])
-    expect(invoiceLetterChoices(optionsFor('sin_datos'))).toEqual([])
+    const picks = paperPicks({ family: 'factura', options }).map((pick) => pick.type)
+    expect(options).toEqual(expect.arrayContaining(['factura_b', 'factura_c']))
+    expect(picks).toEqual(expect.arrayContaining(['factura_b', 'factura_c']))
   })
 })
 
@@ -906,7 +1243,7 @@ describe('la página de la compra: quién llega al formulario', () => {
     page.canWrite = false
     const out = await render()
     const read = text(out)
-    expect(read).toContain('Cargar una compra que debo')
+    expect(read).toContain('Cargar una compra')
     expect(read).toContain('Ir a Comprobantes')
     expect(out).not.toContain('data-purchase-form')
     expect(out).not.toContain('<button')

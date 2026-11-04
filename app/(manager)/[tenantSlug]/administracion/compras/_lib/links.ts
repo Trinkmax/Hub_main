@@ -77,22 +77,28 @@ export function comprasHref(
 }
 
 /**
- * `…/compras?tab=gastos-fijos` (links guardados, avisos de antes) → la lista
- * nueva, con lo demás que traía la URL (`?accion=`). `null` si no hay que
- * redirigir.
+ * Lo que se mudó de lugar. Los links guardados y los avisos de antes siguen andando, con lo demás que
+ * traía la URL (`?accion=`). `null` si no hay que redirigir.
+ *
+ * - `?tab=gastos-fijos` → la lista nueva.
+ * - `?tab=pagos` → Pagos es un segmento adentro de Comprobantes (`?tab=comprobantes&ver=pagos`): así la
+ *   solapa marcada arriba es la que corresponde.
  */
 export function legacyComprasRedirect(
   slug: string,
   sp: Readonly<Record<string, string | string[] | undefined>>,
 ): string | null {
-  if (firstParam(sp.tab) !== 'gastos-fijos') return null
+  const tab = firstParam(sp.tab)
+  if (tab !== 'gastos-fijos' && tab !== 'pagos') return null
   const extra: Record<string, string> = {}
   for (const [key, value] of Object.entries(sp)) {
     if (key === 'tab') continue
     const first = firstParam(value)
     if (first) extra[key] = first
   }
-  return gastosFijosHref(slug, extra)
+  return tab === 'pagos'
+    ? comprasHref(slug, 'comprobantes', { ver: 'pagos', ...extra })
+    : gastosFijosHref(slug, extra)
 }
 
 export function supplierHref(slug: string, partyId: string, tab?: string): string {
@@ -110,9 +116,24 @@ export function recurringHref(slug: string, id: string | 'nuevo'): string {
   return `/${slug}/administracion/compras/gastos-fijos/${id}`
 }
 
+/** El Plan de la semana. `semana` = cualquier día de esa semana; `vista=mes` + `mes` = el mes entero. */
+export function weekPlanHref(
+  slug: string,
+  extra: Readonly<Record<string, string | null | undefined>> = {},
+): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) params.set(key, value)
+  }
+  const query = params.toString()
+  return `/${slug}/administracion/compras/semana${query ? `?${query}` : ''}`
+}
+
 export type NewPurchaseParams = {
   /** `factura` (default) · `nc` · `nd`. */
   tipo?: 'factura' | 'nc' | 'nd'
+  /** `pago`: «Compra y pago», la que se pagó en el momento. */
+  modo?: 'pago'
   proveedor?: string | null
   relacionada?: string | null
   gastoFijo?: string | null
@@ -123,6 +144,7 @@ export type NewPurchaseParams = {
 export function newPurchaseHref(slug: string, params: NewPurchaseParams = {}): string {
   const search = new URLSearchParams()
   if (params.tipo && params.tipo !== 'factura') search.set('tipo', params.tipo)
+  if (params.modo) search.set('modo', params.modo)
   if (params.proveedor) search.set('proveedor', params.proveedor)
   if (params.relacionada) search.set('relacionada', params.relacionada)
   if (params.gastoFijo) search.set('gasto-fijo', params.gastoFijo)

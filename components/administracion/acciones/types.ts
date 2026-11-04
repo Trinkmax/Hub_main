@@ -18,7 +18,9 @@ export type AccountingAction = (typeof ACCOUNTING_ACTIONS)[number]
  * Lo que puede acompañar a `?accion=`: ids que la hoja usa para precargar.
  * `gasto-fijo` abre «Nuevo gasto» con ese gasto fijo ya elegido (su proveedor o
  * su categoría, el monto y la caja habituales): lo usa la pantalla de Gastos
- * fijos. Va al final para que los links que ya existen no cambien de orden.
+ * fijos. En «Pago», ese gasto queda pagado (Rentas y Municipalidad se devengan en
+ * cada cierre: no se cargan de nuevo). Va al final para que los links que ya
+ * existen no cambien de orden.
  */
 export const ACTION_PARAM_KEYS = ['proveedor', 'cliente', 'caja', 'partida', 'gasto-fijo'] as const
 export type ActionParamKey = (typeof ACTION_PARAM_KEYS)[number]
@@ -31,7 +33,7 @@ export const ACTION_TITLES: Readonly<Record<AccountingAction, string>> = {
   gasto: 'Nuevo gasto',
   pagar: 'Pagar',
   cobrar: 'Registrar un cobro',
-  mover: 'Mover plata',
+  mover: 'Transferir a otra cuenta',
   ajustar: 'Contar la caja',
   movimiento: 'Otra entrada o salida',
 }

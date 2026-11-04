@@ -1,6 +1,6 @@
 'use client'
 
-import { Plus, Trash2, X } from 'lucide-react'
+import { ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   type FormEvent,
@@ -25,18 +25,21 @@ import {
   useDocumentPosting,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-document-posting'
 import { useSheetData } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-sheet-data'
+import { ledgerRail } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/libreta'
 import {
-  dueRail,
-  ledgerRail,
-} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/libreta'
-import { gastosFijosHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
+  documentHref,
+  gastosFijosHref,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
 import {
   activeQuick,
+  bankTaxNote,
   payHeadline,
+  paymentBankTax,
   paymentOutcome,
   payTicketRows,
   pendingRecurring,
   quickSelections,
+  weekBudgetNote,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-summary'
 import {
   PAY_TARGETS,
@@ -56,12 +59,14 @@ import { pendingItemText } from '@/app/(manager)/[tenantSlug]/administracion/com
 import {
   loadPartyDefaults,
   loadPartyItems,
+  loadPartyWeekPlan,
   loadSheetData,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-actions'
 import type {
   SheetData,
   SheetParty,
   SheetPartyItems,
+  SheetWeekPlan,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -75,47 +80,38 @@ import { pickTreasury } from '@/lib/accounting/defaults'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { PaymentValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
-import { formatDayLabel, formatIsoDay } from '@/lib/dates'
+import { formatDayLabel, formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { useAccounting } from '../accounting-provider'
-import {
-  ACTION_SHEET_QUESTION_FIELD,
-  ActionSheetBody,
-  ActionSheetFooter,
-  ActionSheetHeader,
-} from '../action-sheet'
+import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
+import { attachPendingFiles } from '../adjuntos/upload'
 import { Amount } from '../amount'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
 import { balanceText } from '../format'
-import { LedgerList, LedgerRail, LedgerRow, Pill } from '../kit'
+import { FotoQrButton } from '../foto-qr/foto-panel'
+import { Pill } from '../kit'
 import { MoneyField, MoneyInput } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
-import { TreasuryPicker } from '../treasury-picker'
+import { PRow, PTable, PTd, PTh } from '../planilla'
 import { TreasurySelect } from '../treasury-select'
 import { VoucherText } from '../voucher-text'
 import { exactAmountText, ticketTotalLabel } from './gasto-papel'
-import { TreasuryAfterHint, TreasuryAfterLine } from './gasto-piezas'
+import { TreasuryAfterHint } from './gasto-piezas'
 import {
   OtherThanSupplier,
   PayCover,
   PayTicket,
   type PayTicketRow,
-  TickMark,
   type UrgentSupplier,
   UrgentSuppliers,
 } from './pagar-piezas'
-import {
-  ADD_LINK,
-  BIG_MONEY_FIELD,
-  SHEET_QUESTION_BLOCK,
-  SheetQuestion,
-  TEXT_LINK,
-} from './sheet-parts'
-import { ACTION_TITLES, type ActionSheetProps } from './types'
+import { ADD_LINK, SHEET_QUESTION_BLOCK, SheetQuestion, TEXT_LINK } from './sheet-parts'
+import type { ActionSheetProps } from './types'
 
-const TITLE = ACTION_TITLES.pagar
+/** El nombre con que ya lo tienen educado al equipo: Compra, Compra y pago, Pago. */
+const TITLE = 'Pago'
 const DESCRIPTION = 'A quién, qué le pagás y con qué.'
 const LAST_TREASURY_KEY = 'hub_acc_pago_caja:'
 
@@ -175,15 +171,15 @@ function newRow(treasuryId: string | null, amountCents: number | null = null): M
 }
 
 /**
- * Hoja «Pagar»: tachar renglones de la libreta.
+ * Hoja «Pago», corta como el formulario de una planilla:
  *
- *   ¿A quién le pagás?  →  ¿Qué le pagás?  ·  ¿Cuánto?  ·  ¿Con qué?  →  «Le quedás debiendo $ X»
+ *   ¿A quién le pagás?  →  las facturas para tildar · Importe · Salió de · Fecha
  *
- * La primera pantalla junta lo que antes eran dos (qué se paga y después el
- * proveedor): lo más frecuente, pagarle a uno de los que más apuran, queda a un
- * toque, y las otras dos respuestas que pidieron los socios (un gasto fijo, otro
- * gasto) siguen ahí, abajo. Si se abrió desde un proveedor o una compra, no
- * pregunta.
+ * Debajo, en chico, lo que no se elige: cómo queda la deuda, el presupuesto de la semana y el impuesto
+ * al cheque que se anota solo. Lo de cada tanto (dos medios, n.º de transferencia, la nota, el
+ * resumen) y el asiento van plegados. La primera pantalla tiene lo más urgente a un toque, y las otras
+ * dos respuestas que pidieron los socios (un gasto fijo, otro gasto) siguen ahí, abajo. Si se abrió
+ * desde un proveedor o una compra, no pregunta.
  *
  * Mismas lecturas, misma cuenta (`planPayment`) y mismo envío (`postPayment`).
  */
@@ -435,7 +431,9 @@ function PagarForm({
         <ActionSheetHeader
           title={
             // Un renglón en el celular, como cuando llega lo que se le debe: el encabezado no salta.
-            <span className="max-sm:block max-sm:truncate">Pagar a {partyName(chosen)}</span>
+            <span className="max-sm:block max-sm:truncate">
+              {TITLE} a {partyName(chosen)}
+            </span>
           }
           description={DESCRIPTION}
         />
@@ -464,6 +462,10 @@ function PagarForm({
       party={chosen}
       partyItems={items.data}
       focusLine={lineFromUrl}
+      // Vino de la planilla de Gastos fijos a pagarle a este mismo: ese gasto queda pagado.
+      recurringExpenseId={
+        params['gasto-fijo'] && params.proveedor === chosen.id ? params['gasto-fijo'] : null
+      }
       onChangeParty={() => setPartyId(null)}
       close={close}
       setDirty={setDirty}
@@ -471,12 +473,14 @@ function PagarForm({
   )
 }
 
-function PaymentForm({
+/** El formulario, con el proveedor ya elegido y lo que se le debe ya leído. */
+export function PaymentForm({
   tenantSlug,
   data,
   party,
   partyItems,
   focusLine,
+  recurringExpenseId = null,
   onChangeParty,
   close,
   setDirty,
@@ -486,6 +490,8 @@ function PaymentForm({
   party: SheetParty
   partyItems: SheetPartyItems
   focusLine: string | null
+  /** El gasto fijo que queda pagado con este pago. */
+  recurringExpenseId?: string | null
   onChangeParty: () => void
   close: () => void
   setDirty: (dirty: boolean) => void
@@ -570,6 +576,21 @@ function PaymentForm({
   const [showReference, setShowReference] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [applying, startApplying] = useTransition()
+  const [files, setFiles] = useState<File[]>([])
+  const [weekPlan, setWeekPlan] = useState<SheetWeekPlan | null>(null)
+
+  // Lo que dice el Plan de la semana de este proveedor. Si no se puede leer, la hoja sigue sin eso.
+  useEffect(() => {
+    let alive = true
+    loadPartyWeekPlan(tenantSlug, party.id)
+      .then((result) => {
+        if (alive && result.ok) setWeekPlan(result.data)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [tenantSlug, party.id])
 
   // Lo que el sistema recuerda: con qué se le pagó la última vez.
   useEffect(() => {
@@ -635,6 +656,7 @@ function PaymentForm({
           methods: resolved.methods,
           writeOffCents: plan.writeOffCents,
           notes: notes.trim() === '' ? null : notes.trim(),
+          recurringExpenseId,
         }
   const key = values ? JSON.stringify(values) : ''
   const ctx = useMemo(() => withItems(data.ctx, partyItems.items), [data.ctx, partyItems.items])
@@ -653,6 +675,14 @@ function PaymentForm({
     if (first) rememberTreasury(tenantSlug, first)
     posting.undoToast(saved.message, saved)
     router.refresh()
+    // La foto va al pago (el primer comprobante; el impuesto al cheque es otro). Si alguna no sube,
+    // avisa y se suma después desde el comprobante.
+    void attachPendingFiles({
+      tenantSlug,
+      documentId: saved.result.documents[0]?.id ?? null,
+      files,
+      openDocument: (id) => router.push(documentHref(tenantSlug, id)),
+    })
     close()
   }
 
@@ -664,7 +694,7 @@ function PaymentForm({
     isKnownField: (k) => KNOWN_FIELDS.has(k) || k.startsWith('methods.'),
   })
 
-  const dirty = amountTouched || rowsTouched || notes.trim() !== ''
+  const dirty = amountTouched || rowsTouched || notes.trim() !== '' || files.length > 0
   useEffect(() => {
     setDirty(dirty)
   }, [dirty, setDirty])
@@ -792,7 +822,8 @@ function PaymentForm({
   const debtTotal = debts.reduce((sum, d) => sum + d.openCents, 0)
   const creditTotal = credits.reduce((sum, c) => sum + c.openCents, 0)
   const multiRow = rows.length > 1
-  const submitLabel = plan.amountCents > 0 ? `Pagar ${formatCentsShort(plan.amountCents)}` : 'Pagar'
+  const submitLabel =
+    plan.amountCents > 0 ? `Cargar pago · ${exactAmountText(plan.amountCents)}` : 'Cargar pago'
 
   // ── Lo que se lee: los atajos, cómo queda la deuda y el ticket ──
   const quick = quickSelections(debts, today)
@@ -821,6 +852,10 @@ function PaymentForm({
     count: debts.length,
   })
 
+  const bankTax = paymentBankTax(resolved.methods, data.ctx)
+  const budgetNote = weekBudgetNote(weekPlan)
+  const hasExtras = showReference || Boolean(single?.reference) || showNotes || notes !== ''
+
   return (
     <>
       {/* En el celular el encabezado fijo es UN renglón con el nombre (cortado si es largo) y
@@ -828,8 +863,8 @@ function PaymentForm({
           el título en dos renglones y la oración en otros dos, el marco se comía media pantalla. */}
       <ActionSheetHeader
         title={
-          <span title={`Pagar a ${name}`} className="max-sm:block max-sm:truncate">
-            Pagar a {name}
+          <span title={`${TITLE} a ${name}`} className="max-sm:block max-sm:truncate">
+            {TITLE} a {name}
           </span>
         }
         description={<span className="max-sm:hidden">{headline}</span>}
@@ -900,10 +935,9 @@ function PaymentForm({
 
               {debts.length > 0 ? (
                 <>
-                  {/* En el celular las dos píldoras van lado a lado (de a una por renglón dejaban
-                      entrar dos compras y media en la primera pantalla) y el link, en su renglón:
-                      nada queda escondido detrás del borde. Con importes muy largos bajan de
-                      renglón en vez de cortarse. */}
+                  {/* En el celular las dos píldoras van lado a lado y el link, en su renglón: nada
+                      queda escondido detrás del borde. Con importes muy largos bajan de renglón en
+                      vez de cortarse. */}
                   <fieldset className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0">
                     <legend className="sr-only">Atajos para tildar</legend>
                     {quick.overdue.ids.length > 0 &&
@@ -911,7 +945,7 @@ function PaymentForm({
                       <Pill
                         size="touch"
                         active={quickActive === 'overdue'}
-                        className="max-sm:px-3 md:pointer-fine:h-9"
+                        className="max-sm:px-3 md:pointer-fine:h-8"
                         onClick={() => pickQuick(quick.overdue.ids)}
                       >
                         Lo vencido
@@ -923,7 +957,7 @@ function PaymentForm({
                     <Pill
                       size="touch"
                       active={quickActive === 'all'}
-                      className="max-sm:px-3 md:pointer-fine:h-9"
+                      className="max-sm:px-3 md:pointer-fine:h-8"
                       onClick={() => pickQuick(quick.all.ids)}
                     >
                       Todo
@@ -946,95 +980,122 @@ function PaymentForm({
                     </button>
                   </fieldset>
 
-                  <LedgerList aria-label="Compras sin pagar">
-                    {debts.map((d) => {
-                      const on = selected.has(d.lineId)
-                      const partial = partialOpen.has(d.lineId)
-                      const target = targets.get(d.lineId) ?? null
-                      const fieldId = `${uid}-f-${d.lineId}`
-                      return (
-                        <LedgerRow
-                          key={d.lineId}
-                          rail={<LedgerRail {...dueRail(d.dueDate, today)} />}
-                          title={
-                            <span className="inline-flex items-start gap-2.5 text-left">
-                              <span className="mt-0.5">
-                                <TickMark on={on} />
-                              </span>
-                              <span>
-                                <VoucherText text={itemText(d.label)} />
-                              </span>
-                            </span>
-                          }
-                          onClick={() => toggleDebt(d.lineId, !on)}
-                          pressed={on}
-                          tint={on ? 'ok' : undefined}
-                          amount={
-                            <Amount cents={d.openCents} decimals={exactDecimals(d.openCents)} />
-                          }
-                        >
-                          {on ? (
-                            partial ? (
-                              <div className="flex flex-wrap items-center gap-2 pb-1">
-                                <Label
-                                  htmlFor={`${fieldId}-parcial`}
-                                  className="shrink-0 text-xs text-muted-foreground"
-                                >
-                                  Pagar de esta
-                                </Label>
-                                <MoneyInput
-                                  id={`${fieldId}-parcial`}
-                                  size="sm"
-                                  align="end"
-                                  value={target}
-                                  maxCents={d.openCents}
-                                  onValueChange={(cents) => {
-                                    setTargets((prev) => {
-                                      const next = new Map(prev)
-                                      if (cents === null || cents >= d.openCents) {
-                                        next.delete(d.lineId)
-                                      } else next.set(d.lineId, cents)
-                                      return next
-                                    })
-                                    posting.clearFieldErrors()
-                                  }}
-                                  className="w-40"
+                  <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+                    <PTable label="Compras sin pagar" minWidth={380}>
+                      <thead>
+                        <tr>
+                          <PTh className="w-9">
+                            <span className="sr-only">Pagar</span>
+                          </PTh>
+                          <PTh>Comprobante</PTh>
+                          <PTh>Vence</PTh>
+                          <PTh align="right">Saldo</PTh>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {debts.map((d) => {
+                          const on = selected.has(d.lineId)
+                          const partial = partialOpen.has(d.lineId)
+                          const target = targets.get(d.lineId) ?? null
+                          const fieldId = `${uid}-f-${d.lineId}`
+                          return (
+                            <PRow key={d.lineId} className={cn('relative', on && 'bg-primary/5')}>
+                              <PTd className="pr-0">
+                                <Checkbox
+                                  id={fieldId}
+                                  checked={on}
+                                  onCheckedChange={(checked) =>
+                                    toggleDebt(d.lineId, checked === true)
+                                  }
+                                  className="pointer-coarse:size-5"
                                 />
-                                <button
-                                  type="button"
-                                  className={cn(TEXT_LINK, 'text-xs')}
-                                  onClick={() => {
-                                    setPartialOpen((prev) => {
-                                      const next = new Set(prev)
-                                      next.delete(d.lineId)
-                                      return next
-                                    })
-                                    setTargets((prev) => {
-                                      const next = new Map(prev)
-                                      next.delete(d.lineId)
-                                      return next
-                                    })
-                                  }}
+                              </PTd>
+                              <PTd>
+                                {/* Toda la fila tilda: la etiqueta se estira hasta los bordes. */}
+                                <label
+                                  htmlFor={fieldId}
+                                  className="block cursor-pointer after:absolute after:inset-0 after:content-['']"
                                 >
-                                  Toda
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                className={cn(TEXT_LINK, 'text-xs')}
-                                onClick={() =>
-                                  setPartialOpen((prev) => new Set(prev).add(d.lineId))
-                                }
+                                  <VoucherText text={itemText(d.label)} />
+                                </label>
+                                {on ? (
+                                  partial ? (
+                                    <div className="relative z-10 flex flex-wrap items-center gap-2 pt-1">
+                                      <Label
+                                        htmlFor={`${fieldId}-parcial`}
+                                        className="shrink-0 text-xs text-muted-foreground"
+                                      >
+                                        Pagar de esta
+                                      </Label>
+                                      <MoneyInput
+                                        id={`${fieldId}-parcial`}
+                                        size="sm"
+                                        align="end"
+                                        value={target}
+                                        maxCents={d.openCents}
+                                        onValueChange={(cents) => {
+                                          setTargets((prev) => {
+                                            const next = new Map(prev)
+                                            if (cents === null || cents >= d.openCents) {
+                                              next.delete(d.lineId)
+                                            } else next.set(d.lineId, cents)
+                                            return next
+                                          })
+                                          posting.clearFieldErrors()
+                                        }}
+                                        className="w-36"
+                                      />
+                                      <button
+                                        type="button"
+                                        className={cn(TEXT_LINK, 'text-xs')}
+                                        onClick={() => {
+                                          setPartialOpen((prev) => {
+                                            const next = new Set(prev)
+                                            next.delete(d.lineId)
+                                            return next
+                                          })
+                                          setTargets((prev) => {
+                                            const next = new Map(prev)
+                                            next.delete(d.lineId)
+                                            return next
+                                          })
+                                        }}
+                                      >
+                                        Toda
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={cn(TEXT_LINK, 'relative z-10 block text-xs')}
+                                      onClick={() =>
+                                        setPartialOpen((prev) => new Set(prev).add(d.lineId))
+                                      }
+                                    >
+                                      Pagar solo una parte
+                                    </button>
+                                  )
+                                ) : null}
+                              </PTd>
+                              <PTd
+                                className={cn(
+                                  'whitespace-nowrap',
+                                  d.dueDate !== null && d.dueDate < today
+                                    ? 'text-destructive'
+                                    : 'text-muted-foreground',
+                                )}
                               >
-                                Pagar solo una parte
-                              </button>
-                            )
-                          ) : null}
-                        </LedgerRow>
-                      )
-                    })}
-                  </LedgerList>
+                                {d.dueDate ? formatDayMonth(d.dueDate) : 'Sin fecha'}
+                              </PTd>
+                              <PTd align="right">
+                                <Amount cents={d.openCents} decimals={exactDecimals(d.openCents)} />
+                              </PTd>
+                            </PRow>
+                          )
+                        })}
+                      </tbody>
+                    </PTable>
+                  </div>
                 </>
               ) : null}
             </section>
@@ -1042,47 +1103,58 @@ function PaymentForm({
 
           {/* A tu favor: se descuenta primero */}
           {credits.length > 0 ? (
-            <section aria-labelledby={`${uid}-a-favor`} className="grid gap-2">
-              <div>
-                <h3 id={`${uid}-a-favor`} className="text-sm font-semibold">
-                  A tu favor
-                </h3>
-                <p className="text-xs text-muted-foreground">Se descuenta primero.</p>
-              </div>
-              <LedgerList aria-label="A tu favor">
-                {credits.map((c) => {
-                  const on = creditOn.has(c.lineId)
-                  return (
-                    <LedgerRow
-                      key={c.lineId}
-                      rail={<LedgerRail label="a tu" value="favor" tone="ok" />}
-                      title={
-                        <span className="inline-flex items-start gap-2.5 text-left">
-                          <span className="mt-0.5">
-                            <TickMark on={on} />
-                          </span>
-                          <span>
+            <section aria-labelledby={`${uid}-a-favor`} className="grid gap-1.5">
+              <h3 id={`${uid}-a-favor`} className="text-sm font-semibold">
+                A tu favor{' '}
+                <span className="text-xs font-normal text-muted-foreground">
+                  Se descuenta primero.
+                </span>
+              </h3>
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+                <PTable label="A tu favor" minWidth={380}>
+                  <tbody>
+                    {credits.map((c) => {
+                      const on = creditOn.has(c.lineId)
+                      const fieldId = `${uid}-c-${c.lineId}`
+                      return (
+                        <PRow key={c.lineId} className={cn('relative', on && 'bg-primary/5')}>
+                          <PTd className="w-9 pr-0">
+                            <Checkbox
+                              id={fieldId}
+                              checked={on}
+                              onCheckedChange={(checked) => {
+                                setCreditOn((prev) => {
+                                  const next = new Set(prev)
+                                  if (checked === true) next.add(c.lineId)
+                                  else next.delete(c.lineId)
+                                  return next
+                                })
+                                posting.clearFieldErrors()
+                              }}
+                              className="pointer-coarse:size-5"
+                            />
+                          </PTd>
+                          <PTd>
                             {/* El número entero: truncado, «Nota de crédito A 0003-000…» no se distingue de otra. */}
-                            <VoucherText text={itemText(c.label)} />
-                          </span>
-                        </span>
-                      }
-                      meta={<span className="tabular-nums">del {formatIsoDay(c.entryDate)}</span>}
-                      onClick={() => {
-                        setCreditOn((prev) => {
-                          const next = new Set(prev)
-                          if (on) next.delete(c.lineId)
-                          else next.add(c.lineId)
-                          return next
-                        })
-                        posting.clearFieldErrors()
-                      }}
-                      pressed={on}
-                      amount={<Amount cents={c.openCents} decimals={exactDecimals(c.openCents)} />}
-                    />
-                  )
-                })}
-              </LedgerList>
+                            <label
+                              htmlFor={fieldId}
+                              className="block cursor-pointer after:absolute after:inset-0 after:content-['']"
+                            >
+                              <VoucherText text={itemText(c.label)} />
+                            </label>
+                          </PTd>
+                          <PTd className="whitespace-nowrap text-muted-foreground">
+                            del {formatIsoDay(c.entryDate)}
+                          </PTd>
+                          <PTd align="right">
+                            <Amount cents={c.openCents} decimals={exactDecimals(c.openCents)} />
+                          </PTd>
+                        </PRow>
+                      )
+                    })}
+                  </tbody>
+                </PTable>
+              </div>
             </section>
           ) : null}
 
@@ -1105,11 +1177,11 @@ function PaymentForm({
             </InlineNotice>
           ) : null}
 
-          {/* ¿Cuánto le pagás?: el importe y, debajo, lo que cubre */}
-          <div className={SHEET_QUESTION_BLOCK}>
+          {/* Importe · Salió de · Fecha */}
+          <div className="grid items-start gap-3 sm:grid-cols-3">
             <MoneyField
               id={`${uid}-monto`}
-              label="¿Cuánto le pagás?"
+              label="Importe"
               required
               value={shownAmount}
               onValueChange={(cents) => {
@@ -1123,8 +1195,7 @@ function PaymentForm({
                   ? `Lo tildado ${exactAmountText(plan.appliedCents)} menos lo que tenés a favor ${exactAmountText(plan.creditUsedCents)}.`
                   : undefined
               }
-              className={BIG_MONEY_FIELD}
-              fieldClassName={ACTION_SHEET_QUESTION_FIELD}
+              className="[&_input]:font-semibold"
             >
               {amountTouched && plan.suggestedCents > 0 && amount !== plan.suggestedCents ? (
                 <button
@@ -1139,52 +1210,185 @@ function PaymentForm({
                 </button>
               ) : null}
             </MoneyField>
-            <PayCover outcome={outcome} />
-            {plan.canWriteOff ? (
-              <label
-                htmlFor={`${uid}-dif`}
-                className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-secondary/50 p-3 text-sm"
-              >
-                <Checkbox
-                  id={`${uid}-dif`}
-                  checked={writeOff}
-                  onCheckedChange={(checked) => setWriteOff(checked === true)}
-                  className="mt-0.5"
+
+            {hasTreasuries && single ? (
+              <div className="grid min-w-0 gap-1.5">
+                <Label htmlFor={`${uid}-caja`}>
+                  Salió de
+                  <span aria-hidden="true" className="text-destructive">
+                    *
+                  </span>
+                </Label>
+                <TreasurySelect
+                  id={`${uid}-caja`}
+                  value={single.treasuryId}
+                  onValueChange={(next) => setRow(single.key, { treasuryId: next })}
+                  treasuries={data.treasuries}
+                  invalid={Boolean(methodsError) && !single.treasuryId}
                 />
-                <span className="space-y-0.5">
-                  <span className="block font-medium">
-                    Dar por pagados los {exactAmountText(plan.restCents)} que faltan
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    Para diferencias chicas de redondeo (hasta $ 1.000).
-                  </span>
+              </div>
+            ) : null}
+
+            <DateField
+              id={`${uid}-fecha`}
+              label="Fecha"
+              value={date}
+              onValueChange={(next) => {
+                setDate(next)
+                posting.clearFieldErrors()
+              }}
+              min={data.booksStartDate}
+              max={data.today}
+              today={data.today}
+              required
+              error={errors.date ?? null}
+              hint={
+                closedMonth && data.firstOpenDate
+                  ? `Ese mes está cerrado: el pago va el ${formatIsoDay(data.firstOpenDate)}.`
+                  : undefined
+              }
+            />
+          </div>
+
+          {!hasTreasuries ? (
+            <InlineNotice>
+              No hay cajas ni cuentas activas para pagar. Activá una en Ajustes › Cajas y cuentas.
+            </InlineNotice>
+          ) : null}
+
+          {/* Con dos medios, cada uno con su caja y su importe */}
+          {hasTreasuries && !single ? (
+            <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+              <legend className="mb-1.5 text-sm font-medium">Salió de</legend>
+              {rows.map((row, index) => (
+                <div key={row.key} className="grid gap-2 rounded-xl bg-secondary/50 p-3">
+                  <div className="flex items-center gap-2">
+                    <TreasurySelect
+                      aria-label={`Medio ${index + 1}`}
+                      value={row.treasuryId}
+                      onValueChange={(next) => setRow(row.key, { treasuryId: next })}
+                      treasuries={data.treasuries}
+                      invalid={Boolean(methodsError) && !row.treasuryId}
+                      className="min-w-0 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 shrink-0 text-muted-foreground md:size-9"
+                      aria-label={`Quitar el medio ${index + 1}`}
+                      onClick={() => removeRow(row.key)}
+                    >
+                      <Trash2 className="size-4" aria-hidden />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <MoneyInput
+                      aria-label={`Importe del medio ${index + 1}`}
+                      value={row.amountCents}
+                      align="end"
+                      onValueChange={(cents) => setRow(row.key, { amountCents: cents })}
+                      invalid={Boolean(methodsError) && (row.amountCents ?? 0) <= 0}
+                    />
+                    <Input
+                      aria-label={`N.º de transferencia del medio ${index + 1}`}
+                      value={row.reference}
+                      maxLength={60}
+                      autoComplete="off"
+                      placeholder="N.º de transferencia"
+                      onChange={(e) => setRow(row.key, { reference: e.target.value })}
+                      className="h-11 text-base placeholder:text-muted-foreground/50 md:h-10 md:text-sm"
+                    />
+                  </div>
+                </div>
+              ))}
+              <button type="button" className={ADD_LINK} onClick={addRow}>
+                <Plus className="size-3.5" aria-hidden />
+                Otro medio
+              </button>
+              {resolved.unassignedCents !== 0 && !methodsError ? (
+                <p className="text-xs text-warning-text">
+                  {resolved.unassignedCents > 0
+                    ? `Falta asignar ${formatCents(resolved.unassignedCents)} a un medio.`
+                    : `Los medios suman ${formatCents(-resolved.unassignedCents)} más que el monto.`}
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
+          {methodsError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {methodsError}
+            </p>
+          ) : null}
+
+          {plan.canWriteOff ? (
+            <label
+              htmlFor={`${uid}-dif`}
+              className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-secondary/50 p-3 text-sm"
+            >
+              <Checkbox
+                id={`${uid}-dif`}
+                checked={writeOff}
+                onCheckedChange={(checked) => setWriteOff(checked === true)}
+                className="mt-0.5"
+              />
+              <span className="space-y-0.5">
+                <span className="block font-medium">
+                  Dar por pagados los {exactAmountText(plan.restCents)} que faltan
                 </span>
-              </label>
+                <span className="block text-xs text-muted-foreground">
+                  Para diferencias chicas de redondeo (hasta $ 1.000).
+                </span>
+              </span>
+            </label>
+          ) : null}
+
+          {/* En chico, lo que no se elige */}
+          <div className="grid gap-1" aria-live="polite">
+            <p
+              className={cn(
+                'text-sm text-pretty',
+                nothingYet ? 'text-muted-foreground' : 'font-medium',
+              )}
+            >
+              {outcome.sentence}
+            </p>
+            {outcome.details.map((detail) => (
+              <p key={detail} className="text-xs text-muted-foreground text-pretty">
+                {detail}
+              </p>
+            ))}
+            {budgetNote || bankTax ? (
+              <p className="text-xs text-muted-foreground text-pretty">
+                {budgetNote}
+                {budgetNote && bankTax ? ' ' : null}
+                {bankTax ? bankTaxNote(bankTax) : null}
+              </p>
             ) : null}
           </div>
 
-          {/* ¿Con qué pagás? */}
-          {hasTreasuries ? (
-            <div className={SHEET_QUESTION_BLOCK}>
-              <SheetQuestion id={`${uid}-con-que`} required>
-                ¿Con qué pagás?
-              </SheetQuestion>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Mientras guarda no se cambia la foto: es la que va a quedar en el pago. */}
+            <FotoQrButton
+              tenantSlug={tenantSlug}
+              files={files}
+              onFiles={setFiles}
+              disabled={posting.pending}
+            />
+          </div>
+
+          {/* Lo de cada tanto, plegado. Se abre solo si ya tiene algo adentro. */}
+          <details open={hasExtras || undefined} className="group/mas">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0 [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                aria-hidden
+                className="size-3.5 transition-transform group-open/mas:rotate-90 motion-reduce:transition-none"
+              />
+              Más opciones
+            </summary>
+            <div className="grid gap-4 pt-3">
               {single ? (
                 <>
-                  <TreasuryPicker
-                    id={`${uid}-caja`}
-                    aria-labelledby={`${uid}-con-que`}
-                    value={single.treasuryId}
-                    onValueChange={(next) => setRow(single.key, { treasuryId: next })}
-                    treasuries={data.treasuries}
-                    invalid={Boolean(methodsError) && !single.treasuryId}
-                  />
-                  {singleTreasury ? (
-                    <TreasuryAfterLine
-                      treasury={singleTreasury}
-                      amountCents={plan.amountCents > 0 ? plan.amountCents : null}
-                    />
-                  ) : null}
                   {showReference || single.reference ? (
                     <div className="grid gap-1.5">
                       <Label htmlFor={`${uid}-ref`}>
@@ -1219,162 +1423,79 @@ function PaymentForm({
                         Agregar n.º de transferencia
                       </button>
                     )}
-                    <button type="button" className={ADD_LINK} onClick={addRow}>
-                      <Plus className="size-3.5" aria-hidden />
-                      Pagar con dos medios
-                    </button>
+                    {hasTreasuries ? (
+                      <button type="button" className={ADD_LINK} onClick={addRow}>
+                        <Plus className="size-3.5" aria-hidden />
+                        Pagar con dos medios
+                      </button>
+                    ) : null}
                   </div>
                 </>
-              ) : (
-                <fieldset
-                  aria-labelledby={`${uid}-con-que`}
-                  className="grid min-w-0 gap-2 border-0 p-0"
-                >
-                  {rows.map((row, index) => (
-                    <div key={row.key} className="grid gap-2 rounded-xl bg-secondary/50 p-3">
-                      <div className="flex items-center gap-2">
-                        <TreasurySelect
-                          aria-label={`Medio ${index + 1}`}
-                          value={row.treasuryId}
-                          onValueChange={(next) => setRow(row.key, { treasuryId: next })}
-                          treasuries={data.treasuries}
-                          invalid={Boolean(methodsError) && !row.treasuryId}
-                          className="min-w-0 flex-1"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-11 shrink-0 text-muted-foreground md:size-9"
-                          aria-label={`Quitar el medio ${index + 1}`}
-                          onClick={() => removeRow(row.key)}
-                        >
-                          <Trash2 className="size-4" aria-hidden />
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <MoneyInput
-                          aria-label={`Importe del medio ${index + 1}`}
-                          value={row.amountCents}
-                          align="end"
-                          onValueChange={(cents) => setRow(row.key, { amountCents: cents })}
-                          invalid={Boolean(methodsError) && (row.amountCents ?? 0) <= 0}
-                        />
-                        <Input
-                          aria-label={`N.º de transferencia del medio ${index + 1}`}
-                          value={row.reference}
-                          maxLength={60}
-                          autoComplete="off"
-                          placeholder="N.º de transferencia"
-                          onChange={(e) => setRow(row.key, { reference: e.target.value })}
-                          className="h-11 text-base placeholder:text-muted-foreground/50 md:h-10 md:text-sm"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <button type="button" className={ADD_LINK} onClick={addRow}>
-                    <Plus className="size-3.5" aria-hidden />
-                    Otro medio
-                  </button>
-                  {resolved.unassignedCents !== 0 && !methodsError ? (
-                    <p className="text-xs text-warning-text">
-                      {resolved.unassignedCents > 0
-                        ? `Falta asignar ${formatCents(resolved.unassignedCents)} a un medio.`
-                        : `Los medios suman ${formatCents(-resolved.unassignedCents)} más que el monto.`}
-                    </p>
-                  ) : null}
-                </fieldset>
-              )}
-              {methodsError ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {methodsError}
-                </p>
               ) : null}
-            </div>
-          ) : (
-            <InlineNotice>
-              No hay cajas ni cuentas activas para pagar. Activá una en Ajustes › Cajas y cuentas.
-            </InlineNotice>
-          )}
 
-          {/* El ticket: lo que va a pasar, en palabras */}
-          <PayTicket
-            name={name}
-            subtitle={date ? formatDayLabel(date) : 'Sin fecha'}
-            rows={ticketRows}
-            more={ticketLines.more}
-            moreCents={ticketLines.moreCents}
-            creditUsedCents={plan.creditUsedCents}
-            writeOffCents={plan.writeOffCents}
-            totalLabel={
-              multiRow
-                ? `Salen de ${rows.length} medios`
-                : singleTreasury
-                  ? ticketTotalLabel(singleTreasury)
-                  : 'Pagás'
-            }
-            totalCents={plan.amountCents > 0 ? plan.amountCents : null}
-            totalHint={
-              singleTreasury && plan.amountCents > 0 ? (
-                <TreasuryAfterHint treasury={singleTreasury} amountCents={plan.amountCents} />
-              ) : undefined
-            }
-            note={[outcome.sentence, ...outcome.details].join(' ')}
-            pending={nothingYet}
-          />
+              {showNotes || notes ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor={`${uid}-nota`}>
+                    Nota{' '}
+                    <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                  </Label>
+                  <Textarea
+                    id={`${uid}-nota`}
+                    value={notes}
+                    maxLength={1000}
+                    rows={2}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="text-base md:text-sm"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotes(true)
+                    requestAnimationFrame(() => document.getElementById(`${uid}-nota`)?.focus())
+                  }}
+                  className={ADD_LINK}
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  Agregar una nota
+                </button>
+              )}
 
-          <DateField
-            id={`${uid}-fecha`}
-            label="Fecha del pago"
-            value={date}
-            onValueChange={(next) => {
-              setDate(next)
-              posting.clearFieldErrors()
-            }}
-            min={data.booksStartDate}
-            max={data.today}
-            today={data.today}
-            required
-            error={errors.date ?? null}
-            hint={
-              closedMonth && data.firstOpenDate
-                ? `Ese mes está cerrado: el pago va el ${formatIsoDay(data.firstOpenDate)}.`
-                : undefined
-            }
-          />
+              <PayCover outcome={outcome} />
 
-          {showNotes || notes ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${uid}-nota`}>
-                Nota <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
-              </Label>
-              <Textarea
-                id={`${uid}-nota`}
-                value={notes}
-                maxLength={1000}
-                rows={2}
-                onChange={(e) => setNotes(e.target.value)}
-                className="text-base md:text-sm"
+              {/* El ticket: lo que va a pasar, en palabras */}
+              <PayTicket
+                name={name}
+                subtitle={date ? formatDayLabel(date) : 'Sin fecha'}
+                rows={ticketRows}
+                more={ticketLines.more}
+                moreCents={ticketLines.moreCents}
+                creditUsedCents={plan.creditUsedCents}
+                writeOffCents={plan.writeOffCents}
+                totalLabel={
+                  multiRow
+                    ? `Salen de ${rows.length} medios`
+                    : singleTreasury
+                      ? ticketTotalLabel(singleTreasury)
+                      : 'Pagás'
+                }
+                totalCents={plan.amountCents > 0 ? plan.amountCents : null}
+                totalHint={
+                  singleTreasury && plan.amountCents > 0 ? (
+                    <TreasuryAfterHint treasury={singleTreasury} amountCents={plan.amountCents} />
+                  ) : undefined
+                }
+                note={[outcome.sentence, ...outcome.details].join(' ')}
+                pending={nothingYet}
               />
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setShowNotes(true)
-                requestAnimationFrame(() => document.getElementById(`${uid}-nota`)?.focus())
-              }}
-              className={ADD_LINK}
-            >
-              <Plus className="size-3.5" aria-hidden />
-              Agregar una nota
-            </button>
-          )}
+          </details>
 
           <EntryPreview
             entries={entries}
-            label="Ver cómo queda en los libros"
-            emptyText="Elegí qué pagás y con qué para ver cómo queda en los libros."
+            label="Ver el asiento"
+            emptyText="Elegí qué pagás y de dónde sale para ver el asiento."
           />
 
           {unknownPreviewError ? (

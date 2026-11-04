@@ -54,7 +54,7 @@ import { ACTION_TITLES, type ActionSheetProps } from './types'
 const TITLE = ACTION_TITLES.mover
 const DESCRIPTION = 'De una caja a otra. No es un gasto ni un pago.'
 
-/** Hoja «Mover plata» (H.11): D destino / H origen, mismo importe. */
+/** Hoja «Transferir a otra cuenta» (H.11): D destino / H origen, mismo importe. */
 export function MoverSheet(props: ActionSheetProps) {
   const { tenantSlug } = props
   const load = useSheetLoad(() => loadCajasVentasCatalog(tenantSlug), tenantSlug)
@@ -234,7 +234,8 @@ function MoverForm({
     posting.submit(values, preview.state, preview.key)
   }
 
-  const submitLabel = amount !== null && amount > 0 ? `Mover ${moneyLabel(amount)}` : 'Mover plata'
+  const submitLabel =
+    amount !== null && amount > 0 ? `Transferir ${moneyLabel(amount)}` : 'Transferir'
   const fromError = errorOf('fromTreasuryId')
   const toError = errorOf('toTreasuryId')
   const onlyTwo = pair.length === 2

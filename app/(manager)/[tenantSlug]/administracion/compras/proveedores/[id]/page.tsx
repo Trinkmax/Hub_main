@@ -1,8 +1,6 @@
-import { ChevronLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { type ReactNode, Suspense } from 'react'
-import { AdmPage, PanelError, type ViewPillItem, ViewPills } from '@/components/administracion/kit'
+import { SimplePage } from '@/components/administracion/planilla'
 import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import {
   exportHref,
@@ -13,11 +11,11 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { getArcaLookupStatus, getPadronVerification } from '@/lib/arca/queries'
-import { formatIsoDay, todayInCordoba } from '@/lib/dates'
+import { todayInCordoba } from '@/lib/dates'
 import { formatCuit, normalizeCuit } from '@/lib/fiscal'
 import { SupplierAccountProvider } from '../../_components/supplier-account-picker'
 import { isPurchaseImputation } from '../../_lib/accounts'
-import { comprasHref, firstParam, isUuidLike, supplierHref } from '../../_lib/links'
+import { firstParam, isUuidLike, supplierHref } from '../../_lib/links'
 import { requireComprasAccess } from '../../_lib/page-access'
 import { creditPairs } from '../../_lib/payment-plan'
 import { supplierAccountOptions, supplierCategoryChoices } from '../../_lib/suppliers'
@@ -26,36 +24,21 @@ import { ArcaVerification } from './_components/arca-verification'
 import { DataTab } from './_components/data-tab'
 import { PendingTab } from './_components/pending-tab'
 import { StatementSkeleton, StatementTab } from './_components/statement-tab'
-import { SupplierCover } from './_components/supplier-cover'
 import { SupplierEditProvider } from './_components/supplier-edit'
+import { SupplierHead } from './_components/supplier-head'
 
 export const metadata = { title: 'Proveedor' }
 
 /**
- * Las vistas de la hoja (`?tab=`). Los tres valores de antes siguen valiendo:
- * `estado` (por defecto) y `pendientes` muestran LA MISMA vista, «Su libreta»
- * (primero lo que se le debe, después los movimientos); `datos` es «Sus datos».
- */
-const TABS = ['estado', 'pendientes', 'datos'] as const
-type SupplierTab = (typeof TABS)[number]
-
-function isSupplierTab(value: string): value is SupplierTab {
-  return (TABS as readonly string[]).includes(value)
-}
-
-/**
- * La hoja de un proveedor: su libreta, con su tapa.
+ * La cuenta corriente de un proveedor: su nombre, [Ficha] [Compra] [Pagar], el totalizador (Saldo ·
+ * Plazo · Va a) y la tabla de siempre (Fecha · Comprobante · Vence · Debe · Haber · Saldo). Debajo, lo
+ * que está sin pagar y lo que hay a favor.
  *
- * - **La tapa**: «Le debés $ X», la acción del momento ([Pagarle]) y sus tres
- *   datos de carga. Verde por defecto; `?tapa=crema` muestra la variante clara
- *   (parámetro temporal de revisión, como `?hero=crema` del Resumen).
- * - **Su libreta**: «Lo que le debés» (una compra sin pagar por renglón; sin
- *   deuda no se dibuja, la tapa ya lo dice) y debajo sus movimientos (te dejó ·
- *   le pagaste · le debés).
- * - **Sus datos**: para pedirle, para cargarle y los fiscales.
+ * `?tab=datos` es la ficha (contactos, días de entrega, CUIT), con el botón «Ficha». Los otros dos
+ * valores de antes (`estado`, `pendientes`) muestran la cuenta, como cualquier otro.
  *
- * El selector de categoría y «Editar datos» se montan UNA vez para toda la
- * página (se abren desde la tapa y desde «Sus datos»), solo para quien carga.
+ * El selector de categoría y «Editar datos» se montan UNA vez para toda la página (se abren desde el
+ * totalizador y desde la ficha), solo para quien carga.
  */
 export default async function SupplierPage({
   params,
@@ -66,8 +49,7 @@ export default async function SupplierPage({
 }) {
   const { tenantSlug, id } = await params
   const sp = await searchParams
-  const rawTab = firstParam(sp.tab)
-  const tab: SupplierTab = isSupplierTab(rawTab) ? rawTab : 'estado'
+  const ficha = firstParam(sp.tab) === 'datos'
   const baseHref = supplierHref(tenantSlug, id)
   const { access, canWrite } = await requireComprasAccess(tenantSlug, baseHref)
   if (!isUuidLike(id)) notFound()
@@ -85,8 +67,8 @@ export default async function SupplierPage({
     (party.taxIdType === 'cuit' || party.taxIdType === 'cuil') && party.taxId
       ? normalizeCuit(party.taxId)
       : null
-  // El plan y ARCA, para quien carga y en las dos vistas: la categoría y «Editar datos» se
-  // abren también desde la tapa. Si fallan, la hoja se ve igual, sin esos dos botones.
+  // El plan y ARCA, para quien carga y en las dos vistas: la categoría y «Editar datos» se abren
+  // también desde el totalizador. Si fallan, la página se ve igual, sin esos dos botones.
   const [positionOutcome, verificationOutcome, accounts, arcaLookup, settingsOutcome] =
     await Promise.all([
       settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
@@ -95,7 +77,7 @@ export default async function SupplierPage({
       canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
       settleQuery(getAccountingSettings(tenantId)),
     ])
-  // Sin los saldos iniciales, «no le debés nada» es por lo cargado: la tapa lo aclara.
+  // Sin los saldos iniciales, «al día» es por lo cargado: el totalizador lo aclara.
   const openingPending = settingsOutcome.ok && settingsOutcome.data?.openingStatus === 'pending'
   const position = positionOutcome.ok ? positionOutcome.data : null
   const verification = verificationOutcome?.ok ? verificationOutcome.data : null
@@ -122,32 +104,20 @@ export default async function SupplierPage({
       )
     : []
 
-  const views: ViewPillItem[] = [
-    { key: 'libreta', label: 'Su libreta', href: baseHref, active: tab !== 'datos' },
-    {
-      key: 'datos',
-      label: 'Sus datos',
-      href: supplierHref(tenantSlug, id, 'datos'),
-      active: tab === 'datos',
-    },
-  ]
   const plan = accounts?.ok ? accounts.data : null
   const hasBalance = (position?.debtCents ?? 0) > 0 || (position?.creditCents ?? 0) > 0
-  const tone = firstParam(sp.tapa) === 'crema' ? 'crema' : 'bosque'
 
   const body = (
     <>
-      <SupplierCover
+      <SupplierHead
         tenantSlug={tenantSlug}
         party={party}
         position={position}
         positionError={positionOutcome.ok ? null : positionOutcome.message}
-        verification={verification}
         canWrite={canWrite}
         canPickCategory={plan !== null}
-        tone={tone}
-        today={today}
         baseHref={baseHref}
+        ficha={ficha}
         exportHref={exportHref(tenantSlug, 'estado-de-cuenta', {
           participe: party.id,
           desde: `${today.slice(0, 4)}-01-01`,
@@ -157,9 +127,7 @@ export default async function SupplierPage({
         openingPending={openingPending}
       />
 
-      <ViewPills label={`Vistas de ${shown}`} items={views} />
-
-      {tab === 'datos' ? (
+      {ficha ? (
         <DataTab
           tenantSlug={tenantSlug}
           party={party}
@@ -169,21 +137,6 @@ export default async function SupplierPage({
         />
       ) : (
         <>
-          {position ? (
-            <PendingTab
-              tenantSlug={tenantSlug}
-              partyId={party.id}
-              position={position}
-              pairs={pairs}
-              today={today}
-              canWrite={canWrite}
-            />
-          ) : (
-            <PanelError
-              title="Lo que le debés"
-              message={positionOutcome.ok ? '' : positionOutcome.message}
-            />
-          )}
           <Suspense
             key={`${firstParam(sp.periodo)}|${firstParam(sp.despues)}`}
             fallback={<StatementSkeleton />}
@@ -200,21 +153,23 @@ export default async function SupplierPage({
               unusedCreditCents={position?.creditCents ?? 0}
             />
           </Suspense>
+          {position ? (
+            <PendingTab
+              tenantSlug={tenantSlug}
+              partyId={party.id}
+              position={position}
+              pairs={pairs}
+              today={today}
+              canWrite={canWrite}
+            />
+          ) : null}
         </>
       )}
     </>
   )
 
   return (
-    <AdmPage width="comfortable">
-      <Link
-        href={comprasHref(tenantSlug)}
-        className="-ml-1.5 inline-flex min-h-9 items-center gap-1 self-start rounded-md px-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
-      >
-        <ChevronLeft aria-hidden className="size-4" />
-        Compras y pagos
-      </Link>
-
+    <SimplePage>
       {canWrite ? (
         <EditScope
           tenantSlug={tenantSlug}
@@ -227,19 +182,15 @@ export default async function SupplierPage({
       ) : (
         body
       )}
-
-      <p className="text-xs text-muted-foreground">
-        Saldos al {formatIsoDay(today)}. Los importes incluyen IVA.
-      </p>
       <QuickActionsBar />
-    </AdmPage>
+    </SimplePage>
   )
 }
 
 /**
- * Los dos diálogos de la hoja, montados una sola vez: «¿En qué le comprás a…?»
+ * Los dos diálogos de la página, montados una sola vez: «¿En qué le comprás a…?»
  * (si se pudo leer el plan) y «Editar datos». Los botones que los abren viven
- * en la tapa y en «Sus datos».
+ * en el totalizador y en la ficha.
  */
 function EditScope({
   tenantSlug,

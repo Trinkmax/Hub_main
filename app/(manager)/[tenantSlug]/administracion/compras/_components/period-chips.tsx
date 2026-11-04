@@ -3,7 +3,6 @@
 import { CalendarRange } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useId, useState, useTransition } from 'react'
-import { Pill } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,25 +10,18 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { formatRange } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import type { PeriodChip } from '../_lib/period'
+import { SEGMENT_LIST, segmentOption } from './segment'
 
 /** Lo que se borra al cambiar de período: la página y los períodos viejos. */
 const RESET_PARAMS = ['despues', 'mes', 'desde', 'hasta', 'pagina']
 
-/** 44 px donde se toca con el dedo y 36 solo con mouse: la misma regla de `RangeFilter`. */
-const CHIP_SIZE = 'md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
-
 /**
- * El período de una lista de Compras (Este mes · Mes pasado · … · Rango), con
- * el aspecto de los filtros de período de Ventas y Cajas (`RangeFilter`): cada
- * opción es una píldora y la elegida va RELLENA en tinta.
+ * El período de una lista de Compras (Este mes · Mes pasado · … · Rango), como un segmento chico de
+ * la barra. Con un rango elegido a mano, las fechas SON el control: «01/08 – 13/10/2026» abre el
+ * selector. Qué fechas abarca lo elegido queda en el `title` (y para lectores).
  *
- * Con un rango elegido a mano, las fechas SON el control: una sola píldora
- * rellena («01/08 – 13/10/2026») que abre el selector. Ya no hay un botón
- * «Rango elegido» al lado de una etiqueta quieta (el texto queda solo para
- * lectores).
- *
- * El período viaja en `?periodo=` como siempre (la URL se comparte y «atrás»
- * funciona); cambiarlo vuelve a la primera página.
+ * El período viaja en `?periodo=` como siempre (la URL se comparte y «atrás» funciona); cambiarlo
+ * vuelve a la primera página.
  */
 export function PeriodChips({
   chips,
@@ -77,98 +69,105 @@ export function PeriodChips({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5" aria-busy={pending}>
-      {chips.map((chip) => (
-        <Pill
-          key={chip.key}
-          size="touch"
-          active={active === chip.value}
-          disabled={pending}
-          onClick={() => go(chip.value)}
-          className={CHIP_SIZE}
+    <div
+      className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      aria-busy={pending}
+    >
+      <div className={SEGMENT_LIST}>
+        {chips.map((chip) => {
+          const on = active === chip.value
+          return (
+            <button
+              key={chip.key}
+              type="button"
+              aria-pressed={on}
+              title={on ? label : undefined}
+              disabled={pending}
+              onClick={() => go(chip.value)}
+              className={cn(segmentOption(on), 'not-first:border-l not-first:border-border/70')}
+            >
+              {chip.label}
+            </button>
+          )
+        })}
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next)
+            if (next) {
+              setDraftFrom(from)
+              setDraftTo(to)
+            }
+          }}
         >
-          {chip.label}
-        </Pill>
-      ))}
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (next) {
-            setDraftFrom(from)
-            setDraftTo(to)
-          }
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Pill
-            size="touch"
-            icon={CalendarRange}
-            active={custom}
-            disabled={pending}
-            className={cn(CHIP_SIZE, custom && 'tabular-nums')}
-          >
-            {custom ? (
-              <>
-                <span className="sr-only">Rango elegido: </span>
-                {formatRange(from, to)}
-              </>
-            ) : (
-              'Rango'
-            )}
-          </Pill>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 space-y-3">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Rango de fechas</p>
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <Label htmlFor={`${uid}-desde`} className="text-xs text-muted-foreground">
-                Desde
-              </Label>
-              <Input
-                id={`${uid}-desde`}
-                type="date"
-                value={draftFrom}
-                max={max}
-                onChange={(e) => setDraftFrom(e.target.value)}
-                className="h-11 text-base md:text-sm"
-              />
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={pending}
+              className={cn(
+                segmentOption(custom),
+                'border-l border-border/70',
+                custom && 'tabular-nums',
+              )}
+            >
+              <CalendarRange aria-hidden className="size-3.5" />
+              {custom ? (
+                <>
+                  <span className="sr-only">Rango elegido: </span>
+                  {formatRange(from, to)}
+                </>
+              ) : (
+                'Rango'
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 space-y-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Rango de fechas</p>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <Label htmlFor={`${uid}-desde`} className="text-xs text-muted-foreground">
+                  Desde
+                </Label>
+                <Input
+                  id={`${uid}-desde`}
+                  type="date"
+                  value={draftFrom}
+                  max={max}
+                  onChange={(e) => setDraftFrom(e.target.value)}
+                  className="h-11 text-base md:text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`${uid}-hasta`} className="text-xs text-muted-foreground">
+                  Hasta
+                </Label>
+                <Input
+                  id={`${uid}-hasta`}
+                  type="date"
+                  value={draftTo}
+                  max={max}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  className="h-11 text-base md:text-sm"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor={`${uid}-hasta`} className="text-xs text-muted-foreground">
-                Hasta
-              </Label>
-              <Input
-                id={`${uid}-hasta`}
-                type="date"
-                value={draftTo}
-                max={max}
-                onChange={(e) => setDraftTo(e.target.value)}
-                className="h-11 text-base md:text-sm"
-              />
-            </div>
-          </div>
-          {invalid ? (
-            <p role="alert" className="text-xs text-destructive">
-              El «hasta» no puede ser anterior al «desde».
-            </p>
-          ) : null}
-          <Button
-            type="button"
-            className="h-11 w-full"
-            disabled={invalid || (!draftFrom && !draftTo)}
-            onClick={applyRange}
-          >
-            Ver ese rango
-          </Button>
-        </PopoverContent>
-      </Popover>
-      {/* Con un chip elegido, qué fechas abarca; con un rango, ya lo dice su píldora. */}
-      {custom ? null : (
-        <span className="ml-1 text-xs tabular-nums text-muted-foreground max-sm:hidden">
-          {label}
-        </span>
-      )}
+            {invalid ? (
+              <p role="alert" className="text-xs text-destructive">
+                El «hasta» no puede ser anterior al «desde».
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              className="h-11 w-full"
+              disabled={invalid || (!draftFrom && !draftTo)}
+              onClick={applyRange}
+            >
+              Ver ese rango
+            </Button>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {custom ? null : <span className="sr-only">{label}</span>}
     </div>
   )
 }

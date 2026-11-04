@@ -10,6 +10,7 @@ import type { QuickExpenseValues } from '@/lib/accounting/server/document-types'
 import type { IvaCondition, VatRateBp } from '@/lib/accounting/types'
 import { isVoucherType, VOUCHER_CATALOG } from '@/lib/accounting/voucher-types'
 import { formatDayMonth } from '@/lib/dates'
+import type { PurchaseFormState } from './purchase'
 import type { SheetRecurring } from './sheet-types'
 
 /**
@@ -312,6 +313,88 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
     recurringExpenseId: state.recurringExpenseId,
   }
   return { values, missing: {} }
+}
+
+// ─── La misma carga desde «Compra y pago» ────────────────────────────────────
+
+/** Las rutas del esquema y del motor de un gasto → los campos de la pantalla de la compra. */
+const QUICK_FIELD_OF: Readonly<Record<string, string>> = {
+  amountCents: 'total',
+  target: 'account',
+  'target.partyId': 'party',
+  'target.accountId': 'account',
+  newParty: 'party',
+  'newParty.name': 'newPartyName',
+  'newParty.taxId': 'newPartyTaxId',
+  treasuryAccountId: 'payTreasury',
+  voucher: 'voucherType',
+  vatRateBp: 'vatRate',
+  vatAdjustCents: 'total',
+  pointOfSale: 'number',
+  number: 'number',
+  date: 'issueDate',
+  detail: 'notes',
+}
+
+/**
+ * «Compra y pago» sin factura: lo mismo que manda «Nuevo gasto». Toma el estado de la compra (la
+ * misma pantalla) y arma los valores del gasto, con los errores ya en los campos de esa pantalla.
+ *
+ * `notes` y `remito` van aparte porque `state.notes` ya trae el número de remito adelante, y acá lo
+ * vuelve a poner `buildQuickExpenseValues`.
+ */
+export function buildQuickFromPurchase(
+  state: PurchaseFormState,
+  input: { notes: string; remito: string },
+): {
+  values: QuickExpenseFormValues | null
+  missing: Record<string, string>
+  fieldOf: Record<string, string>
+} {
+  const fieldOf = { ...QUICK_FIELD_OF }
+  const voucher = quickVoucherFromType(state.voucherType)
+  const party = state.party
+  // Una factura pide proveedor. Sin proveedor solo se puede remito o tique.
+  if (voucher === null || (party === null && isInvoiceVoucher(voucher))) {
+    return { values: null, missing: { party: 'Una factura necesita proveedor.' }, fieldOf }
+  }
+
+  const accountId = state.accountId
+  const target: ExpenseTarget | null =
+    party === null
+      ? accountId
+        ? { kind: 'account', accountId }
+        : null
+      : party.kind === 'existing'
+        ? { kind: 'party', partyId: party.id, accountId }
+        : {
+            kind: 'new',
+            name: party.name,
+            ivaCondition: party.ivaCondition,
+            taxId: party.taxId,
+            accountId,
+          }
+  const hasNumber = state.pointOfSale !== null && state.number !== null
+
+  const built = buildQuickExpenseValues({
+    amountCents: state.totalCents,
+    target,
+    treasuryAccountId: state.payNow?.treasuryAccountId ?? null,
+    voucher,
+    vatRateBp: isQuickVatRate(state.vatRateBp) ? state.vatRateBp : 2100,
+    vatAdjustCents: state.vatAdjustCents,
+    pointOfSale: hasNumber ? state.pointOfSale : null,
+    number: hasNumber ? state.number : null,
+    date: state.issueDate,
+    detail: input.notes,
+    remito: input.remito,
+    recurringExpenseId: state.recurringExpenseId,
+  })
+  const missing: Record<string, string> = {}
+  for (const [path, message] of Object.entries(built.missing)) {
+    missing[fieldOf[path] ?? path] = message
+  }
+  return { values: built.values, missing, fieldOf }
 }
 
 // ─── Gastos fijos en «¿En qué?» ──────────────────────────────────────────────

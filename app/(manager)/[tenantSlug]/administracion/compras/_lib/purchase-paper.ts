@@ -1,8 +1,7 @@
 /**
- * «Cargar una compra que debo», lo puro de la presentación nueva: de las cuatro
- * tarjetas de papel al tipo de comprobante que YA se ofrecía, cuándo hay que
- * preguntar «¿Cómo te factura?», las fechas de «¿Cuándo vence?», el pago en el
- * mismo envío, el sello y la letra chica del ticket y el texto del botón.
+ * «Cargar una compra», lo puro de la pantalla con forma de factura: el recuadro de la letra y lo que
+ * se puede elegir en él, cuándo hay que preguntar «¿Cómo te factura?», el plazo de «La debo», el pago
+ * en el mismo envío, por dónde se manda una compra y pago, y el texto del botón.
  * Lo prueba `tests/lib/administracion-compra-papel.test.ts`.
  *
  * Nada de esto cambia lo que se manda: cada función devuelve un valor que el
@@ -12,18 +11,22 @@
  */
 
 import { exactAmountText } from '@/components/administracion/acciones/gasto-papel'
-import { type PaperStamp, voucherStamp } from '@/components/administracion/voucher-stamp'
-import { pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
+import { pickTreasury } from '@/lib/accounting/defaults'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import type { IvaCondition, VoucherType } from '@/lib/accounting/types'
 import { VOUCHER_CATALOG, voucherConditionCheck } from '@/lib/accounting/voucher-types'
-import { formatDayMonth } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
+import { daysBetween } from '@/lib/dates'
 import type { PurchaseFormState } from './purchase'
-import type { QuickVoucher } from './quick-expense'
+import { QUICK_DETAIL_MAX, type QuickVoucher, withRemito } from './quick-expense'
 import type { SheetTreasury } from './sheet-types'
-import { notInvoicedDefault, type PurchaseDocKind } from './vouchers'
+import {
+  CREDIT_NOTE_ORDER,
+  DEBIT_NOTE_ORDER,
+  notInvoicedDefault,
+  type PurchaseDocKind,
+  type PurchaseFamily,
+} from './vouchers'
 
 /**
  * ESPERA EL SÍ DEL DUEÑO (duda 2 del índice de la tanda 2). Apagada, la compra
@@ -112,15 +115,99 @@ export function otherPaperTypes(options: readonly VoucherType[]): VoucherType[] 
   return options.filter((type) => paperOfVoucher(type) === null)
 }
 
+// ─── El recuadro de la letra ─────────────────────────────────────────────────
+
+export type LetterBox = {
+  /** Lo que va adentro del recuadro: «A», «TQ», «R». */
+  mark: string
+  /** Una palabra y no una letra: va más chica. */
+  word: boolean
+  /** La letra chica de abajo: «COD. 01», «INTERNO». */
+  code: string
+  /** El título del papel: «FACTURA», «TIQUE», «REMITO». */
+  title: string
+}
+
+const FAMILY_TITLES: Readonly<Partial<Record<string, string>>> = {
+  factura: 'FACTURA',
+  tique_factura: 'TIQUE FACTURA',
+  nota_credito: 'NOTA DE CRÉDITO',
+  nota_debito: 'NOTA DE DÉBITO',
+  recibo: 'RECIBO',
+  tique: 'TIQUE',
+  sin_comprobante: 'REMITO',
+  ddjj: 'DDJJ O BOLETA',
+}
+
+const WORD_MARKS: Readonly<Partial<Record<VoucherType, string>>> = {
+  tique: 'TQ',
+  sin_comprobante: 'R',
+  otro_comprobante: 'OT',
+  ddjj_impuesto: 'DJ',
+}
+
+/** Lo que dibuja el recuadro de arriba de una factura, para cualquier tipo de comprobante. */
+export function letterBoxOf(type: VoucherType | null): LetterBox {
+  if (type === null) return { mark: '–', word: false, code: '', title: 'COMPROBANTE' }
+  const info = VOUCHER_CATALOG[type]
+  const mark = info.letter ?? WORD_MARKS[type] ?? '–'
+  const code =
+    info.afipCode !== null
+      ? `COD. ${String(info.afipCode).padStart(2, '0')}`
+      : type === 'sin_comprobante'
+        ? 'INTERNO'
+        : ''
+  return {
+    mark,
+    word: info.letter === null,
+    code,
+    title: FAMILY_TITLES[info.family] ?? 'COMPROBANTE',
+  }
+}
+
+export type PaperPick = { type: VoucherType; label: string; wide: boolean }
+
+const LETTERS_OF_NOTE = (order: readonly VoucherType[]): PaperPick[] =>
+  order.map((type) => ({ type, label: VOUCHER_CATALOG[type].letter ?? '', wide: false }))
+
 /**
- * «¿Es B o C?»: las dos letras, cuando el proveedor puede dar cualquiera de las
- * dos (un exento). La tarjeta «Factura B o C» escribe una sola (la recordada, o
- * la de la regla), y sin esta pregunta la otra no se podía elegir: el
- * desplegable de antes ofrecía las dos. Vacío = hay una sola letra posible.
+ * Los botones debajo del recuadro: A, B y C, y en una compra también Tique y Remito. Se ofrecen aunque
+ * el proveedor no los dé: si te dio una Factura A y figura como monotributista, tocarla abre «¿Cómo te
+ * factura?» (ver `invoicingGap`). Un organismo no: una DDJJ no tiene letra y se elige de una lista.
  */
-export function invoiceLetterChoices(options: readonly VoucherType[]): VoucherType[] {
-  const letters = options.filter((type) => type === 'factura_b' || type === 'factura_c')
-  return letters.length > 1 ? letters : []
+export function paperPicks(input: {
+  family: PurchaseFamily
+  options: readonly VoucherType[]
+  isTaxAgency?: boolean
+}): PaperPick[] {
+  const picks: PaperPick[] =
+    input.family === 'nc'
+      ? LETTERS_OF_NOTE(CREDIT_NOTE_ORDER)
+      : input.family === 'nd'
+        ? LETTERS_OF_NOTE(DEBIT_NOTE_ORDER)
+        : [
+            { type: 'factura_a', label: 'A', wide: false },
+            { type: 'factura_b', label: 'B', wide: false },
+            { type: 'factura_c', label: 'C', wide: false },
+            { type: 'tique', label: 'Tique', wide: true },
+            {
+              type: notInvoicedDefault(input.options) ?? 'sin_comprobante',
+              label: 'Remito',
+              wide: true,
+            },
+          ]
+  return input.isTaxAgency ? picks.filter((pick) => input.options.includes(pick.type)) : picks
+}
+
+/**
+ * Cómo factura quien da ese comprobante. Se usa para proponerlo al crear un proveedor o al corregir su
+ * ficha: una Factura C la da un monotributista; A y B, un responsable inscripto.
+ */
+export function conditionForVoucher(type: VoucherType | null): IvaCondition | null {
+  const letter = type ? VOUCHER_CATALOG[type].letter : null
+  if (letter === 'A' || letter === 'B' || letter === 'M') return 'responsable_inscripto'
+  if (letter === 'C') return 'monotributo'
+  return null
 }
 
 // ─── «¿Cómo te factura?» ─────────────────────────────────────────────────────
@@ -138,6 +225,8 @@ export type InvoicingGap = { kind: 'unknown' | 'mismatch' | 'cuit'; suggest: Iva
 
 export function invoicingGap(input: {
   paper: QuickVoucher | null
+  /** El comprobante exacto que se tocó. Con los botones A, B y C se sabe cuál es de los dos. */
+  voucherType?: VoucherType | null
   condition: IvaCondition
   hasTaxId: boolean
   /** El papel elegido entra al Libro IVA (`VOUCHER_CATALOG[type].ivaBook`). */
@@ -145,8 +234,9 @@ export function invoicingGap(input: {
 }): InvoicingGap | null {
   const rejected = (type: VoucherType) =>
     voucherConditionCheck(type, input.condition).status === 'rejected'
-  const blocked =
-    input.paper === 'a'
+  const blocked = input.voucherType
+    ? rejected(input.voucherType)
+    : input.paper === 'a'
       ? rejected('factura_a')
       : input.paper === 'bc'
         ? rejected('factura_b') && rejected('factura_c')
@@ -154,7 +244,9 @@ export function invoicingGap(input: {
   if (blocked) {
     return {
       kind: input.condition === 'sin_datos' ? 'unknown' : 'mismatch',
-      suggest: input.paper === 'a' ? 'responsable_inscripto' : null,
+      suggest:
+        (input.voucherType ? conditionForVoucher(input.voucherType) : null) ??
+        (input.paper === 'a' ? 'responsable_inscripto' : null),
     }
   }
   if (!input.hasTaxId && input.entersIvaBook) return { kind: 'cuit', suggest: null }
@@ -193,6 +285,17 @@ const PAPER_NAMES: Readonly<Record<QuickVoucher, string>> = {
   none: 'Remito',
 }
 
+/**
+ * El nombre del papel que no coincide. En «B o C» la condición dice cuál de los dos se tocó: un
+ * responsable inscripto sí da B y un monotributista sí da C.
+ */
+function paperNameFor(paper: QuickVoucher | null, condition: IvaCondition): string {
+  if (paper === null) return 'ese papel'
+  if (paper === 'bc' && condition === 'responsable_inscripto') return 'Factura C'
+  if (paper === 'bc' && condition === 'monotributo') return 'Factura B'
+  return PAPER_NAMES[paper]
+}
+
 /** El título y la explicación del bloque «¿Cómo te factura?», según lo que falte. */
 export function gapWords(
   gap: InvoicingGap,
@@ -211,85 +314,57 @@ export function gapWords(
     }
   }
   const noun = conditionNoun(input.condition)
-  const paper = input.paper ? PAPER_NAMES[input.paper] : 'ese papel'
+  const paper = paperNameFor(input.paper, input.condition)
   return {
     title: `${input.name} figura como ${noun}`,
     body: `Un ${noun} no da ${paper}. Si te dio una, corregí cómo factura:`,
   }
 }
 
-// ─── ¿Cuándo vence? ──────────────────────────────────────────────────────────
+// ─── La debo: a cuántos días ─────────────────────────────────────────────────
 
-export type DueChoice = {
-  key: 'term' | 'same' | 'd7' | 'd15' | 'd30' | 'other' | 'none'
-  label: string
-  /** La fecha que escribe. `null` = sin fecha. `undefined` = abre el campo («Otra fecha»). */
-  value: string | null | undefined
-  /** Los días que suma a la fecha del papel (para «Pagarle siempre a N días»). */
+export type DueTerm = {
+  /** Días entre la fecha del papel y el vencimiento. `null`: sin fecha de pago. */
   days: number | null
-  active: boolean
+  /** Lo que se dice al lado del plazo cuando es el de siempre. */
+  note: 'como siempre' | 'como las últimas veces' | null
+  /** El plazo de sus últimas compras, si no es el que está puesto: se ofrece con un toque. */
+  suggestion: number | null
 }
 
-const QUICK_DAYS = [7, 15, 30] as const
-
 /**
- * Los chips de «¿Cuándo vence?». Queda marcado el que coincide con el
- * vencimiento que el formulario YA tiene (el de `suggestDueDate`, o el que tocó
- * la persona): el valor por defecto no cambia, solo se ve.
- *
- * `answered: false` (solo con `ASK_WHEN_UNKNOWN`): ninguno marcado.
+ * «A 21 días, como siempre»: el plazo que resulta de las dos fechas. Sale del vencimiento que el
+ * formulario YA tiene (el de `suggestDueDate`, o el que tocó la persona): el valor por defecto no
+ * cambia, solo se dice.
  */
-export function dueChoices(input: {
+export function dueTermOf(input: {
   issueDate: string | null
   dueDate: string | null
   /** El plazo de la ficha del proveedor (0 = no tiene). */
   termDays: number
   /** El plazo de sus últimas compras, si es siempre el mismo (`defaults.suggestedTermDays`). */
   suggestedTermDays?: number | null
-  answered?: boolean
-}): DueChoice[] {
-  const { issueDate, dueDate } = input
-  const answered = input.answered ?? true
-  const out: DueChoice[] = []
-  const add = (key: DueChoice['key'], label: string, days: number) => {
-    if (!issueDate) return
-    out.push({ key, label, value: suggestDueDate(issueDate, days), days, active: false })
+}): DueTerm {
+  const { issueDate, dueDate, termDays } = input
+  const suggested = termDays > 0 ? 0 : (input.suggestedTermDays ?? 0)
+  const days = issueDate && dueDate ? daysBetween(issueDate, dueDate) : null
+  return {
+    days,
+    note:
+      days !== null && days > 0 && days === termDays
+        ? 'como siempre'
+        : days !== null && days > 0 && days === suggested
+          ? 'como las últimas veces'
+          : null,
+    suggestion: suggested > 0 && days !== suggested ? suggested : null,
   }
+}
 
-  const suggested = input.suggestedTermDays ?? 0
-  const usual = input.termDays > 0 ? input.termDays : suggested > 0 ? suggested : 0
-  if (usual > 0) {
-    add(
-      'term',
-      input.termDays > 0
-        ? `A ${usual} días, como siempre`
-        : `A ${usual} días, como las últimas veces`,
-      usual,
-    )
-  }
-  add('same', 'El mismo día', 0)
-  for (const days of QUICK_DAYS) {
-    // El plazo de siempre ya tiene su chip: no se repite.
-    if (days !== usual) add(`d${days}`, `En ${days} días`, days)
-  }
-
-  const match = answered && dueDate !== null ? out.find((c) => c.value === dueDate) : undefined
-  if (match) match.active = true
-  out.push({
-    key: 'other',
-    label: 'Otra fecha',
-    value: undefined,
-    days: null,
-    active: answered && dueDate !== null && !match,
-  })
-  out.push({
-    key: 'none',
-    label: 'Sin fecha',
-    value: null,
-    days: null,
-    active: answered && dueDate === null,
-  })
-  return out
+/** Lo que se tipea en el plazo: un número de días, de 0 a un año largo. `null`: no se entiende. */
+export function parseTermDays(text: string): number | null {
+  const digits = text.trim()
+  if (!/^\d{1,3}$/.test(digits)) return null
+  return Number(digits)
 }
 
 /**
@@ -323,12 +398,15 @@ export function dueSameDayWarning(input: {
 export function initialPayNow(input: {
   treasuries: ReadonlyArray<Pick<SheetTreasury, 'id' | 'kind' | 'active'>>
   lastUsedWithParty: string | null
+  /** Lo último que pagó esta persona en este dispositivo (`pickTreasury`). */
+  myLast?: string | null
   today: string
 }): NonNullable<PurchaseFormState['payNow']> {
   return {
     treasuryAccountId: pickTreasury({
       treasuries: input.treasuries.filter((t) => t.active),
       lastUsedWithParty: input.lastUsedWithParty,
+      myLastQuickExpense: input.myLast ?? null,
       order: input.treasuries.map((t) => t.id),
     }),
     amountCents: null,
@@ -337,100 +415,62 @@ export function initialPayNow(input: {
   }
 }
 
-// ─── El ticket ───────────────────────────────────────────────────────────────
+// ─── Por dónde se manda ──────────────────────────────────────────────────────
 
-/** El sello del papel: el mismo mapa de toda la sección (la Factura M sella «A»). */
-export function purchaseStamp(voucherType: string | null | undefined): PaperStamp | null {
-  return voucherStamp(voucherType)
-}
+export type PurchaseRoute = 'purchase' | 'quick_expense'
 
-/** «Papel»: el nombre del comprobante con su número, como va en el ticket. */
-export function paperLine(input: {
-  voucherType: VoucherType | null
-  pos: string
-  number: string
-  remito: string
-}): string | null {
-  if (!input.voucherType) return null
-  if (isNotInvoicedVoucher(input.voucherType)) {
-    const remito = input.remito.trim()
-    return remito ? `Remito ${remito}` : 'Remito o nada'
-  }
-  const label = VOUCHER_CATALOG[input.voucherType].label
-  const number = [input.pos, input.number].filter((part) => part !== '').join('-')
-  return number && input.pos !== '' && input.number !== '' ? `${label} ${number}` : label
+function hasAmount(cents: number | null): boolean {
+  return cents !== null && cents > 0
 }
 
 /**
- * Lo que falta para poder cargarla, en una oración («Falta decir a quién le
- * compraste y cuánto es.»). `null` = no falta nada de lo que se sabe nombrar.
- * Mientras falte, el ticket queda en borrador: nunca promete un «$ 0».
+ * «Compra y pago» cubre lo que hacía la hoja «Nuevo gasto», con la misma decisión:
+ *
+ * - Sin proveedor, o con remito o tique sin número: es un gasto de contado (`postQuickExpense`).
+ * - Con factura: la compra con su pago en el mismo envío (`postPurchase` con `payNow`). Es donde se
+ *   elige la letra exacta y el resto del papel.
+ * - Remito o tique con lo que un gasto no lleva (renglones, percepciones, un pago parcial, otra fecha
+ *   de pago, n.º de transferencia, una nota larga): también la compra, que siempre los supo guardar.
+ *
+ * A deber, o una nota de crédito o de débito, siempre la compra.
  */
-export function purchaseDraftMissing(missing: {
-  party: boolean
-  account: boolean
-  paper: boolean
-  number: boolean
-  total: boolean
-}): string | null {
-  const parts = [
-    missing.party ? 'a quién le compraste' : null,
-    missing.account ? 'en qué le comprás' : null,
-    missing.paper ? 'qué papel te dieron' : null,
-    missing.total ? 'cuánto es' : null,
-  ].filter((part): part is string => part !== null)
-  if (parts.length === 0) return missing.number ? 'Falta el número del papel.' : null
-  const last = parts.at(-1) ?? ''
-  const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(', ')} y ${last}`
-  return `Falta decir ${list}.${missing.number ? ' También falta el número del papel.' : ''}`
+export function purchaseRoute(
+  state: PurchaseFormState,
+  input: { family: PurchaseFamily; today: string; notes: string; remito: string },
+): PurchaseRoute {
+  const pay = state.payNow
+  if (pay === null || input.family !== 'factura') return 'purchase'
+  if (state.party === null) return 'quick_expense'
+  const hasNumber = state.pointOfSale !== null && state.number !== null
+  const plain =
+    state.voucherType === 'sin_comprobante' || (state.voucherType === 'tique' && !hasNumber)
+  if (!plain) return 'purchase'
+  const paperExtras =
+    state.amountMode === 'detail' ||
+    hasAmount(state.percIvaCents) ||
+    hasAmount(state.percIibbCents) ||
+    hasAmount(state.percGananciasCents) ||
+    hasAmount(state.otherTaxesCents)
+  const payExtras =
+    pay.amountCents !== null ||
+    pay.reference.trim() !== '' ||
+    (pay.date !== null && pay.date !== input.today)
+  const detail =
+    state.voucherType === 'sin_comprobante' ? withRemito(input.remito, input.notes) : input.notes
+  return paperExtras || payExtras || detail.length > QUICK_DETAIL_MAX ? 'purchase' : 'quick_expense'
 }
 
-/** El rótulo del total: qué pasa con esa plata. */
-export function purchaseTotalLabel(input: { docKind: PurchaseDocKind; paying: boolean }): string {
-  if (input.docKind === 'purchase_credit_note') return 'Queda a tu favor'
-  return input.paying ? 'Pagás ahora' : 'Le vas a deber'
-}
+// ─── El QR de la factura ─────────────────────────────────────────────────────
 
-/** Debajo del total de una compra a deber: «Vence el 30/10» / «Sin fecha de pago». */
-export function dueLine(dueDate: string | null): string {
-  return dueDate ? `Vence el ${formatDayMonth(dueDate)}` : 'Sin fecha de pago'
-}
-
-/**
- * La letra chica del ticket: qué queda después de cargarla, siempre cierto.
- * Una compra sin factura se debe igual y queda en los números: lo único que
- * cambia es que no entra al Libro IVA.
- */
-export function purchaseOutcomeNote(input: {
-  docKind: PurchaseDocKind
-  /** Como se lo nombra: el de fantasía, si tiene. */
-  supplier: string
-  voucherType: VoucherType | null
-  totalCents: number
-  /** Lo que se paga ahora (`null` = queda todo a deber). */
-  paidCents: number | null
-  /** Lo que ya se le debía, si se pudo leer. */
-  priorDebtCents: number | null
-}): string {
-  const { supplier, totalCents } = input
-  if (input.docKind === 'purchase_credit_note') {
-    return `Queda a tu favor con ${supplier}: se descuenta en el próximo pago.`
-  }
-  const book = isNotInvoicedVoucher(input.voucherType)
-    ? 'Sin factura: queda en tus números y no entra al Libro IVA.'
-    : input.voucherType && VOUCHER_CATALOG[input.voucherType].ivaBook
-      ? 'Entra al Libro IVA.'
-      : 'No entra al Libro IVA.'
-  if (input.paidCents !== null) {
-    const rest = totalCents - input.paidCents
-    return rest > 0
-      ? `Pagás ${formatCentsShort(input.paidCents)} ahora y le quedás debiendo ${formatCentsShort(rest)}. ${book}`
-      : `Queda pagado: con ${supplier} no queda deuda. ${book}`
-  }
-  const prior = input.priorDebtCents ?? 0
-  const sum =
-    prior > 0 ? ` Con esto le vas a deber ${formatCentsShort(prior + totalCents)} en total.` : ''
-  return `Queda anotado en la libreta de ${supplier}. ${book}${sum}`
+/** El proveedor de esa CUIT, entre los que se les puede cargar una compra. */
+export function findPartyByCuit<T extends { taxId: string | null; active: boolean }>(
+  parties: readonly T[],
+  cuit: string,
+): T | null {
+  const digits = cuit.replace(/\D/g, '')
+  if (digits.length !== 11) return null
+  const same = parties.filter((party) => (party.taxId ?? '').replace(/\D/g, '') === digits)
+  return same.find((party) => party.active) ?? same[0] ?? null
 }
 
 /** El botón que guarda, con la forma del de «Nuevo gasto» («Cargar gasto · $ 12.500»). */
@@ -445,24 +485,11 @@ export function purchaseSubmitLabel(input: {
       : input.docKind === 'purchase_debit_note'
         ? 'Cargar nota de débito'
         : input.paying
-          ? 'Cargar y pagar'
+          ? 'Cargar compra y pago'
           : 'Cargar compra'
   return input.totalCents !== null && input.totalCents > 0
     ? `${verb} · ${exactAmountText(input.totalCents)}`
     : verb
-}
-
-// ─── Las cuatro secciones ────────────────────────────────────────────────────
-
-export type PurchaseStepState = 'done' | 'current' | 'todo'
-
-/**
- * El círculo de cada sección: tilde si ya está, número relleno en la primera
- * que falta y gris en las de después. Todas están siempre abiertas.
- */
-export function purchaseStepStates(done: readonly boolean[]): PurchaseStepState[] {
-  const first = done.indexOf(false)
-  return done.map((ok, index) => (ok ? 'done' : index === first ? 'current' : 'todo'))
 }
 
 /**

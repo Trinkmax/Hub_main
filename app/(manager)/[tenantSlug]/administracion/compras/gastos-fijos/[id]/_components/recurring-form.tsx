@@ -6,10 +6,7 @@ import { useRouter } from 'next/navigation'
 import { type FormEvent, type ReactNode, useId, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { isImplicitSubmit } from '@/app/(manager)/[tenantSlug]/administracion/configurar/_lib/wizard'
-import {
-  detectInstallment,
-  papelLabel,
-} from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
+import { detectInstallment } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
 import { Amount } from '@/components/administracion/amount'
 import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
@@ -18,12 +15,11 @@ import {
   type CategoryOption,
   CategoryPicker,
   categoryShortName,
-  StepCard,
-  type StepState,
   WALLET_ICONS,
 } from '@/components/administracion/kit'
 import { MoneyField } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
+import { Planilla } from '@/components/administracion/planilla'
 import type { TreasuryOption } from '@/components/administracion/treasury-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,7 +29,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveRecurringExpense } from '@/lib/accounting/actions/master'
 import { addMonthsToYearMonth, formatIsoDay, monthOf, weekdayName } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { suggestAccount } from '../../../_lib/bulk'
 import { gastosFijosHref } from '../../../_lib/links'
@@ -56,7 +51,6 @@ import {
 import { InstallmentsField } from './installments-field'
 import { PaperField, VatRatePills } from './paper-field'
 import { type BreakdownDraft, RecurringBreakdown } from './recurring-breakdown'
-import { RowPreview } from './row-preview'
 
 export type { RecurringFormValues } from '../_lib/form-payload'
 
@@ -107,17 +101,9 @@ function Ask({
 }
 
 /**
- * La ficha de un gasto fijo: un renglón de la planilla, abierto en grande. Tres
- * secciones numeradas, todas a la vista, que se tildan solas (la forma del
- * cierre del día) y, al lado, el renglón que se arma en vivo:
- *
- *   1 · ¿Qué es?           nombre y en qué se gasta
- *   2 · ¿Cuánto y cuándo?  monto, cada cuánto, qué día vence y si es en cuotas
- *   3 · ¿Cómo lo pagás?    qué papel te dan, a quién y con qué
- *
- * Mismo estado, mismas validaciones y MISMA acción que el formulario anterior
- * (`saveRecurringExpense` con el paquete de `buildRecurringPayload`): cambió el
- * orden y cómo se pregunta. Enter en un campo no guarda: se guarda con el botón.
+ * La ficha de un gasto fijo: un solo bloque, con los campos en una grilla. Mismo estado, mismas
+ * validaciones y MISMA acción que siempre (`saveRecurringExpense` con el paquete de
+ * `buildRecurringPayload`). Enter en un campo no guarda: se guarda con el botón.
  */
 export function RecurringForm({
   tenantSlug,
@@ -228,7 +214,7 @@ export function RecurringForm({
           return
         }
         toast.success(result.message)
-        // De vuelta a la planilla, con el renglón abierto y resaltado.
+        // De vuelta a la planilla, con el renglón a la vista y marcado.
         const saved = result.data
         const dueMonth = monthOf(saved.nextDueDate)
         const thisMonth = monthOf(today)
@@ -242,11 +228,9 @@ export function RecurringForm({
 
   const id = (name: string) => `${uid}-${name}`
   const account = accounts.find((a) => a.id === form.accountId) ?? null
-  const party = parties.find((p) => p.id === form.partyId) ?? null
   const treasuryOptions = treasuries.filter(
     (t) => t.active !== false || t.id === form.treasuryAccountId,
   )
-  const treasury = treasuries.find((t) => t.id === form.treasuryAccountId) ?? null
   // La categoría que propone el nombre: se muestra como «Sugerida»; la elige la persona.
   const suggestedId = useMemo(
     () => (editing || form.accountId ? null : suggestAccount(form.name, categories)),
@@ -254,19 +238,6 @@ export function RecurringForm({
   )
   const suggested = suggestedId ? categories.find((c) => c.id === suggestedId) : undefined
   const nameInstallment = useMemo(() => detectInstallment(form.name), [form.name])
-  const frequencyLabel =
-    RECURRING_FREQUENCIES.find((f) => f.value === form.frequency)?.label.toLowerCase() ?? ''
-
-  // Las secciones se tildan solas: hecha con sus datos; «te toca» la primera que falta.
-  const done = [
-    form.name.trim().length >= 2 && form.accountId !== null,
-    detailed || form.amountCents !== null,
-    form.voucherType !== null || form.partyId !== null || form.treasuryAccountId !== null,
-  ]
-  const firstOpen = done.indexOf(false)
-  const stateOf = (index: number): StepState =>
-    done[index] ? 'done' : index === firstOpen ? 'current' : 'todo'
-  const amountShown = detailed ? detailTotal : form.amountCents
 
   return (
     <form
@@ -280,51 +251,47 @@ export function RecurringForm({
       }}
       noValidate
       data-form={uid}
-      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start"
+      className="grid gap-3.5"
     >
-      {/* El pegajoso va en el envoltorio: la tarjeta (`card-hairline`) trae su propia posición. */}
-      <div className="lg:sticky lg:top-20 lg:order-last">
-        <RowPreview
-          name={form.name}
-          accountName={account?.name ?? null}
-          voucherType={form.voucherType}
-          partyName={party?.name ?? null}
-          amountCents={amountShown}
-          nextDueDate={form.nextDueDate}
-          dueDay={form.dueDay}
-          frequency={form.frequency}
-          dues={dues}
-          installmentsTotal={installmentsTotal}
-          ended={stillEnded}
-          today={today}
-        />
-      </div>
+      <Planilla className="overflow-visible">
+        <div className="grid gap-x-6 gap-y-5 p-4 sm:p-5 md:grid-cols-2">
+          <Ask label="Nombre" htmlFor={id('name')} error={errors.name}>
+            <Input
+              id={id('name')}
+              value={form.name}
+              maxLength={80}
+              autoComplete="off"
+              // En un alta el cursor arranca acá: es lo primero que se escribe.
+              autoFocus={!editing}
+              placeholder="Alquiler, luz, internet…"
+              aria-invalid={errors.name ? true : undefined}
+              onChange={(e) => set('name', e.target.value)}
+              className="h-11 text-base md:text-sm"
+            />
+          </Ask>
 
-      <div className="min-w-0 space-y-4">
-        <StepCard
-          open
-          n={1}
-          title="¿Qué es?"
-          state={stateOf(0)}
-          // Solo la categoría: el nombre ya es el título de la pantalla y el campo de abajo.
-          summary={done[0] ? (account?.name ?? 'Sin categoría') : 'El nombre y en qué se gasta.'}
-        >
-          <div className="grid gap-5">
-            <Ask label="Nombre" htmlFor={id('name')} error={errors.name}>
-              <Input
-                id={id('name')}
-                value={form.name}
-                maxLength={80}
-                autoComplete="off"
-                // En un alta el cursor arranca acá: es lo primero que se escribe.
-                autoFocus={!editing}
-                placeholder="Alquiler, luz, internet…"
-                aria-invalid={errors.name ? true : undefined}
-                onChange={(e) => set('name', e.target.value)}
-                className="h-11 text-base md:text-sm"
-              />
+          {detailed ? (
+            <Ask label="¿Cuánto pagás?">
+              <p className="flex min-h-11 items-center gap-1.5 text-sm">
+                <Amount cents={detailTotal} decimals={0} className="font-medium" />{' '}
+                <span className="text-xs text-muted-foreground">(la suma del detalle)</span>
+              </p>
             </Ask>
+          ) : (
+            <MoneyField
+              id={id('amountCents')}
+              label="¿Cuánto pagás?"
+              optional
+              value={form.amountCents}
+              onValueChange={(cents) => set('amountCents', cents)}
+              error={errors.amountCents ?? null}
+              decimals="auto"
+              className="[&_input]:md:h-11"
+              hint="Si cambia todos los meses (la luz), poné lo de la última vez. Sin monto no suma en el total del mes."
+            />
+          )}
 
+          <div className="md:col-span-2">
             <Ask
               id={id('accountId-label')}
               label="¿En qué se gasta?"
@@ -376,103 +343,70 @@ export function RecurringForm({
               ) : null}
             </Ask>
           </div>
-        </StepCard>
 
-        <StepCard
-          open
-          n={2}
-          title="¿Cuánto y cuándo?"
-          state={stateOf(1)}
-          summary={
-            amountShown !== null
-              ? `${formatCentsShort(amountShown)} · ${frequencyLabel} · el día ${form.dueDay}`
-              : 'Cuánto pagás, cada cuánto y qué día vence.'
-          }
-        >
-          <div className="grid gap-5">
-            {detailed ? (
-              <Ask label="¿Cuánto pagás?">
-                <p className="text-sm">
-                  <Amount cents={detailTotal} decimals={0} className="font-medium" />{' '}
-                  <span className="text-xs text-muted-foreground">(la suma del detalle)</span>
-                </p>
-              </Ask>
-            ) : (
-              <MoneyField
-                id={id('amountCents')}
-                label="¿Cuánto pagás?"
-                optional
-                value={form.amountCents}
-                onValueChange={(cents) => set('amountCents', cents)}
-                error={errors.amountCents ?? null}
-                decimals="auto"
-                className="max-w-56 [&_input]:md:h-11"
-                hint="Si cambia todos los meses (la luz), poné lo de la última vez. Si no sabés, dejalo vacío: no va a sumar en «Te falta de gasto fijo»."
+          <Ask id={id('frequency')} label="¿Cada cuánto?" error={errors.frequency}>
+            <ChoiceChips<RecurringFrequency>
+              labelledBy={id('frequency')}
+              value={form.frequency}
+              onChange={(value) => set('frequency', value)}
+              options={RECURRING_FREQUENCIES.map((f) => ({ value: f.value, label: f.label }))}
+            />
+          </Ask>
+
+          <Ask label="¿Qué día vence?" htmlFor={id('dueDay')} error={errors.dueDay}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id={id('dueDay')}
+                value={String(form.dueDay)}
+                inputMode="numeric"
+                autoComplete="off"
+                aria-invalid={errors.dueDay ? true : undefined}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
+                  const day = digits === '' ? 1 : Math.min(31, Math.max(1, Number(digits)))
+                  setDueDay(day)
+                }}
+                className="h-11 w-16 text-center text-base tabular-nums md:text-sm"
               />
+              <span className="text-sm text-muted-foreground">de cada mes</span>
+            </div>
+            {stillEnded ? null : (
+              <p className="text-sm text-pretty">
+                {/* Abierto con un vencimiento que ya pasó: es el que se debe, no «el próximo». */}
+                {form.nextDueDate < today ? 'Venció el' : 'El próximo es el'}{' '}
+                {weekdayName(form.nextDueDate)} {formatIsoDay(form.nextDueDate).slice(0, 5)}
+                {form.nextDueDate < today ? ': todavía no lo pagaste.' : '.'}{' '}
+                {dateOpen ? null : (
+                  <button
+                    type="button"
+                    onClick={() => setDateOpen(true)}
+                    className={cn(QUIET_LINK, 'pointer-coarse:min-h-11')}
+                  >
+                    Cambiar la fecha
+                  </button>
+                )}
+              </p>
             )}
-
-            <Ask id={id('frequency')} label="¿Cada cuánto?" error={errors.frequency}>
-              <ChoiceChips<RecurringFrequency>
-                labelledBy={id('frequency')}
-                value={form.frequency}
-                onChange={(value) => set('frequency', value)}
-                options={RECURRING_FREQUENCIES.map((f) => ({ value: f.value, label: f.label }))}
+            {dateOpen || errors.nextDueDate ? (
+              <DateField
+                id={id('nextDueDate')}
+                label="Próximo vencimiento"
+                required
+                value={form.nextDueDate}
+                onValueChange={(next) => {
+                  if (!next) return
+                  setDueTouched(true)
+                  set('nextDueDate', next)
+                }}
+                shortcuts={false}
+                today={today}
+                error={errors.nextDueDate ?? null}
+                hint="Desde acá se cuentan los próximos."
               />
-            </Ask>
+            ) : null}
+          </Ask>
 
-            <Ask label="¿Qué día vence?" htmlFor={id('dueDay')} error={errors.dueDay}>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  id={id('dueDay')}
-                  value={String(form.dueDay)}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  aria-invalid={errors.dueDay ? true : undefined}
-                  onChange={(e) => {
-                    const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
-                    const day = digits === '' ? 1 : Math.min(31, Math.max(1, Number(digits)))
-                    setDueDay(day)
-                  }}
-                  className="h-11 w-16 text-center text-base tabular-nums md:text-sm"
-                />
-                <span className="text-sm text-muted-foreground">de cada mes</span>
-              </div>
-              {stillEnded ? null : (
-                <p className="text-sm text-pretty">
-                  {/* Abierto con un vencimiento que ya pasó: es el que se debe, no «el próximo». */}
-                  {form.nextDueDate < today ? 'Venció el' : 'El próximo es el'}{' '}
-                  {weekdayName(form.nextDueDate)} {formatIsoDay(form.nextDueDate).slice(0, 5)}
-                  {form.nextDueDate < today ? ': todavía no lo pagaste.' : '.'}{' '}
-                  {dateOpen ? null : (
-                    <button
-                      type="button"
-                      onClick={() => setDateOpen(true)}
-                      className={cn(QUIET_LINK, 'pointer-coarse:min-h-11')}
-                    >
-                      Cambiar la fecha
-                    </button>
-                  )}
-                </p>
-              )}
-              {dateOpen || errors.nextDueDate ? (
-                <DateField
-                  id={id('nextDueDate')}
-                  label="Próximo vencimiento"
-                  required
-                  value={form.nextDueDate}
-                  onValueChange={(next) => {
-                    if (!next) return
-                    setDueTouched(true)
-                    set('nextDueDate', next)
-                  }}
-                  shortcuts={false}
-                  today={today}
-                  error={errors.nextDueDate ?? null}
-                  hint="Desde acá se cuentan los próximos."
-                />
-              ) : null}
-            </Ask>
-
+          <div className="md:col-span-2">
             <InstallmentsField
               idPrefix={id('cuotas')}
               draft={installments}
@@ -491,22 +425,8 @@ export function RecurringForm({
               error={errors.endsOn ?? errors.installmentsTotal}
             />
           </div>
-        </StepCard>
 
-        <StepCard
-          open
-          n={3}
-          title="¿Cómo lo pagás?"
-          state={stateOf(2)}
-          summary={
-            done[2]
-              ? [papelLabel(form.voucherType), party?.name, treasury?.name]
-                  .filter(Boolean)
-                  .join(' · ')
-              : 'El papel, a quién le pagás y con qué. Si no sabés, lo completás después.'
-          }
-        >
-          <div className="grid gap-5">
+          <div className="md:col-span-2">
             <PaperField
               idPrefix={id('papel')}
               voucherType={form.voucherType}
@@ -516,64 +436,64 @@ export function RecurringForm({
               hasParty={form.partyId !== null}
               error={errors.voucherType}
             />
-
-            <Ask label="¿A quién le pagás?" htmlFor={id('partyId')} error={errors.partyId}>
-              <PartyCombobox
-                id={id('partyId')}
-                value={form.partyId}
-                onValueChange={(next) => set('partyId', next)}
-                parties={parties}
-                invalid={Boolean(errors.partyId)}
-              />
-              {form.partyId ? (
-                <button
-                  type="button"
-                  className={cn(QUIET_LINK, 'min-h-11 justify-self-start md:min-h-0')}
-                  onClick={() => set('partyId', null)}
-                >
-                  <X className="size-3" aria-hidden />
-                  Sin proveedor
-                </button>
-              ) : null}
-            </Ask>
-
-            <Ask
-              id={id('treasuryAccountId')}
-              label="¿Con qué lo pagás casi siempre?"
-              error={errors.treasuryAccountId}
-            >
-              <ChoiceChips<string>
-                labelledBy={id('treasuryAccountId')}
-                value={form.treasuryAccountId ?? NO_TREASURY}
-                onChange={(value) => set('treasuryAccountId', value === NO_TREASURY ? null : value)}
-                options={[
-                  ...treasuryOptions.map((t) => {
-                    const Icon = WALLET_ICONS[t.kind]
-                    return {
-                      value: t.id,
-                      label: (
-                        <>
-                          <Icon aria-hidden className="size-4" />
-                          {t.name}
-                        </>
-                      ),
-                      ariaLabel: t.name,
-                    }
-                  }),
-                  { value: NO_TREASURY, label: 'Lo elijo cada vez' },
-                ]}
-              />
-            </Ask>
           </div>
-        </StepCard>
 
-        <section className="card-hairline rounded-2xl border bg-card shadow-xs">
+          <Ask label="¿A quién le pagás?" htmlFor={id('partyId')} error={errors.partyId}>
+            <PartyCombobox
+              id={id('partyId')}
+              value={form.partyId}
+              onValueChange={(next) => set('partyId', next)}
+              parties={parties}
+              invalid={Boolean(errors.partyId)}
+            />
+            {form.partyId ? (
+              <button
+                type="button"
+                className={cn(QUIET_LINK, 'min-h-11 justify-self-start md:min-h-0')}
+                onClick={() => set('partyId', null)}
+              >
+                <X className="size-3" aria-hidden />
+                Sin proveedor
+              </button>
+            ) : null}
+          </Ask>
+
+          <Ask
+            id={id('treasuryAccountId')}
+            label="¿Con qué lo pagás casi siempre?"
+            error={errors.treasuryAccountId}
+          >
+            <ChoiceChips<string>
+              labelledBy={id('treasuryAccountId')}
+              value={form.treasuryAccountId ?? NO_TREASURY}
+              onChange={(value) => set('treasuryAccountId', value === NO_TREASURY ? null : value)}
+              options={[
+                ...treasuryOptions.map((t) => {
+                  const Icon = WALLET_ICONS[t.kind]
+                  return {
+                    value: t.id,
+                    label: (
+                      <>
+                        <Icon aria-hidden className="size-4" />
+                        {t.name}
+                      </>
+                    ),
+                    ariaLabel: t.name,
+                  }
+                }),
+                { value: NO_TREASURY, label: 'Lo elijo cada vez' },
+              ]}
+            />
+          </Ask>
+        </div>
+
+        <div className="border-t border-border/70">
           <button
             type="button"
             aria-expanded={moreOpen}
             aria-controls={id('mas')}
             onClick={() => setMoreOpen((value) => !value)}
-            className="flex min-h-12 w-full cursor-pointer items-center gap-2 rounded-2xl px-4 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+            className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-4 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
           >
             <ChevronRight
               aria-hidden
@@ -588,7 +508,10 @@ export function RecurringForm({
             </span>
           </button>
           {moreOpen ? (
-            <div id={id('mas')} className="grid gap-5 border-t border-border/60 p-4 sm:p-5">
+            <div
+              id={id('mas')}
+              className="grid gap-x-6 gap-y-5 border-t border-border/70 p-4 sm:p-5 md:grid-cols-2"
+            >
               <Ask
                 label="Avisarme antes"
                 htmlFor={id('remindDaysBefore')}
@@ -621,55 +544,59 @@ export function RecurringForm({
                 </Ask>
               )}
 
-              <Ask
-                label="Detalle del monto"
-                hint="Para los sueldos: un renglón por persona y por concepto. El monto pasa a ser la suma."
-              >
-                {detailed ? (
-                  <RecurringBreakdown
-                    idPrefix={id('breakdown')}
-                    lines={lines}
-                    onChange={(next) => {
-                      setLines(next)
-                      if (errors.breakdown) setErrors(({ breakdown: _b, ...rest }) => rest)
-                    }}
-                    error={errors.breakdown}
-                  />
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 justify-self-start md:h-9"
-                    onClick={() => setLines([newBreakdownDraft()])}
-                  >
-                    Detallar el monto
-                  </Button>
-                )}
-              </Ask>
+              <div className="md:col-span-2">
+                <Ask
+                  label="Detalle del monto"
+                  hint="Para los sueldos: un renglón por persona y por concepto. El monto pasa a ser la suma."
+                >
+                  {detailed ? (
+                    <RecurringBreakdown
+                      idPrefix={id('breakdown')}
+                      lines={lines}
+                      onChange={(next) => {
+                        setLines(next)
+                        if (errors.breakdown) setErrors(({ breakdown: _b, ...rest }) => rest)
+                      }}
+                      error={errors.breakdown}
+                    />
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 justify-self-start md:h-9"
+                      onClick={() => setLines([newBreakdownDraft()])}
+                    >
+                      Detallar el monto
+                    </Button>
+                  )}
+                </Ask>
+              </div>
 
-              <Ask label="Notas" htmlFor={id('notes')} error={errors.notes}>
-                <Textarea
-                  id={id('notes')}
-                  value={form.notes}
-                  maxLength={280}
-                  rows={2}
-                  onChange={(e) => set('notes', e.target.value)}
-                  className="text-base md:text-sm"
-                />
-              </Ask>
+              <div className="md:col-span-2">
+                <Ask label="Notas" htmlFor={id('notes')} error={errors.notes}>
+                  <Textarea
+                    id={id('notes')}
+                    value={form.notes}
+                    maxLength={280}
+                    rows={2}
+                    onChange={(e) => set('notes', e.target.value)}
+                    className="text-base md:text-sm"
+                  />
+                </Ask>
+              </div>
             </div>
           ) : null}
-        </section>
+        </div>
 
         {editing ? (
           stillEnded ? (
-            <p className="rounded-xl bg-secondary/50 p-3.5 text-sm text-muted-foreground">
+            <p className="border-t border-border/70 px-4 py-3 text-sm text-muted-foreground sm:px-5">
               Terminó: ya pasó la última cuota.
             </p>
           ) : (
             <Label
               htmlFor={id('paused')}
-              className="flex items-start justify-between gap-4 rounded-xl bg-secondary/50 p-3.5"
+              className="flex items-start justify-between gap-4 border-t border-border/70 px-4 py-3 sm:px-5"
             >
               <span className="space-y-1">
                 <span className="block text-sm font-medium leading-none">En pausa</span>
@@ -685,31 +612,27 @@ export function RecurringForm({
             </Label>
           )
         ) : null}
+      </Planilla>
 
-        {banner ? (
-          <div
-            role="alert"
-            className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
-          >
-            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <p className="text-pretty">{banner}</p>
-          </div>
-        ) : null}
-
-        {/* En el celular el pie queda a mano, pegado abajo. */}
-        <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
-          {/* En el celular se vuelve con «‹ Gastos fijos», arriba: el pie es solo el botón. */}
-          <Button asChild variant="ghost" className="h-12 max-sm:hidden">
-            <Link href={backHref}>Cancelar</Link>
-          </Button>
-          <Button
-            type="submit"
-            className="h-12 min-w-[200px] rounded-xl text-base"
-            disabled={pending}
-          >
-            {pending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar gasto fijo'}
-          </Button>
+      {banner ? (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <p className="text-pretty">{banner}</p>
         </div>
+      ) : null}
+
+      {/* En el celular el pie queda a mano, pegado abajo. */}
+      <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        {/* En el celular se vuelve con «‹ Gastos fijos», arriba: el pie es solo el botón. */}
+        <Button asChild variant="ghost" className="h-11 max-sm:hidden md:pointer-fine:h-9">
+          <Link href={backHref}>Cancelar</Link>
+        </Button>
+        <Button type="submit" className="h-11 md:pointer-fine:h-9" disabled={pending}>
+          {pending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar gasto fijo'}
+        </Button>
       </div>
     </form>
   )

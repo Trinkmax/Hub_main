@@ -8,7 +8,7 @@
 import { vatFromNet } from '@/lib/accounting/iva'
 import type { PurchaseValues } from '@/lib/accounting/server/document-types'
 import type { IvaCondition, VatRateBp, VoucherType } from '@/lib/accounting/types'
-import { VOUCHER_CATALOG } from '@/lib/accounting/voucher-types'
+import { VOUCHER_CATALOG, voucherNumberRequired } from '@/lib/accounting/voucher-types'
 import { docKindOf } from './vouchers'
 
 /** Las alícuotas del detalle, en el orden en que se muestran (las tres primeras siempre). */
@@ -248,7 +248,11 @@ export function buildPurchaseValues(state: PurchaseFormState): {
   }
 
   const docKind = docKindOf(type)
-  const numbered = VOUCHER_CATALOG[type].numbered
+  // Un tique no exige número: con los dos entra al Libro IVA; a medias, va sin ninguno (la base no
+  // acepta un punto de venta sin número). El remito y la DDJJ nunca llevan.
+  const numbered =
+    VOUCHER_CATALOG[type].numbered &&
+    (voucherNumberRequired(type) || (state.pointOfSale !== null && state.number !== null))
   const values: PurchaseFormValues = {
     docKind,
     partyId: party.kind === 'existing' ? party.id : null,

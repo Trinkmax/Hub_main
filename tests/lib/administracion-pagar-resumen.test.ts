@@ -3,11 +3,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import {
   activeQuick,
+  bankTaxNote,
   payHeadline,
+  paymentBankTax,
   paymentOutcome,
   payTicketRows,
   pendingRecurring,
   quickSelections,
+  weekBudgetNote,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-summary'
 import {
   defaultDebtSelection,
@@ -22,9 +25,14 @@ import {
   TickMark,
   UrgentSuppliers,
 } from '@/components/administracion/acciones/pagar-piezas'
+import { PaymentForm } from '@/components/administracion/acciones/pagar-sheet'
+import { Sheet } from '@/components/ui/sheet'
+import { DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
+import type { PostingContext } from '@/lib/accounting/types'
+import { E7, prepare } from './accounting-fixtures'
 
 /**
- * La hoja «Pagar», lo que se LEE: la oración que dice cómo queda la deuda
+ * La hoja «Pago», lo que se LEE: la oración que dice cómo queda la deuda
  * después del pago, contra los números de `planPayment` (la misma ecuación del
  * motor), los atajos que mueven los tildes y el ticket. La cuenta en sí la
  * prueba `administracion-compras.test.ts`.
@@ -34,6 +42,18 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/compras',
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
+}))
+// Dibujar la hoja no llama a la base: lo que lee, lo lee cuando se monta en el navegador.
+vi.mock('@/lib/accounting/actions/documents', () => ({
+  allocateItems: vi.fn(),
+  postPayment: vi.fn(),
+  undoDocument: vi.fn(),
+}))
+vi.mock('@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-actions', () => ({
+  loadPartyDefaults: vi.fn(),
+  loadPartyItems: vi.fn(),
+  loadPartyWeekPlan: vi.fn(),
+  loadSheetData: vi.fn(),
 }))
 
 const TODAY = '2026-10-13'
@@ -80,6 +100,65 @@ const DEBTS = [
   debt('1205', 77_440_000, '2026-11-20'),
 ]
 const TOTAL = 333_660_000
+
+describe('lo que se dice en chico: el plan de la semana y el impuesto al cheque', () => {
+  const settings = { auto: true, iibbBp: 300, municipalBp: 70, bankTaxBp: 60, base: 'invoiced_net' }
+  const ctxOf = (taxSettings: typeof settings | undefined = settings) =>
+    ({
+      settings: { taxSettings },
+      treasuries: new Map([
+        ['caja', { id: 'caja', kind: 'cash', chargesBankTax: null }],
+        ['bbva', { id: 'bbva', kind: 'bank', chargesBankTax: null }],
+        ['mp', { id: 'mp', kind: 'wallet', chargesBankTax: null }],
+        ['apagado', { id: 'apagado', kind: 'bank', chargesBankTax: false }],
+        ['encendida', { id: 'encendida', kind: 'cash', chargesBankTax: true }],
+      ]),
+    }) as unknown as Parameters<typeof paymentBankTax>[1]
+  const from = (treasuryAccountId: string, amountCents: number) => ({
+    treasuryAccountId,
+    amountCents,
+  })
+
+  it('el 0,6 % de lo que sale de un banco o una billetera; del efectivo, nada', () => {
+    expect(paymentBankTax([from('bbva', 61_660_000)], ctxOf())).toEqual({ cents: 369_960, bp: 60 })
+    expect(paymentBankTax([from('mp', 100_000)], ctxOf())).toEqual({ cents: 600, bp: 60 })
+    expect(paymentBankTax([from('caja', 100_000)], ctxOf())).toBeNull()
+  })
+
+  it('manda lo que se decidió en la cuenta', () => {
+    expect(paymentBankTax([from('apagado', 100_000)], ctxOf())).toBeNull()
+    expect(paymentBankTax([from('encendida', 100_000)], ctxOf())).toEqual({ cents: 600, bp: 60 })
+  })
+
+  it('con dos medios, sobre la cuenta que puso más (la misma regla del motor)', () => {
+    expect(paymentBankTax([from('mp', 100_000), from('bbva', 300_000)], ctxOf())?.cents).toBe(1_800)
+    // El efectivo no cuenta, aunque haya puesto más.
+    expect(paymentBankTax([from('caja', 900_000), from('mp', 100_000)], ctxOf())?.cents).toBe(600)
+  })
+
+  it('con los impuestos apagados o sin dato, no dice nada', () => {
+    expect(paymentBankTax([from('bbva', 100_000)], ctxOf({ ...settings, auto: false }))).toBeNull()
+    expect(paymentBankTax([from('bbva', 100_000)], ctxOf({ ...settings, bankTaxBp: 0 }))).toBeNull()
+    expect(
+      paymentBankTax([from('bbva', 100_000)], {
+        settings: {},
+        treasuries: new Map(),
+      } as unknown as Parameters<typeof paymentBankTax>[1]),
+    ).toBeNull()
+    expect(paymentBankTax([], ctxOf())).toBeNull()
+  })
+
+  it('las palabras, en pesos y con centavos', () => {
+    expect(plain(bankTaxNote({ cents: 369_960, bp: 60 }))).toBe(
+      'Impuesto al cheque 0,6 %: $ 3.699,60, se anota solo.',
+    )
+    expect(plain(weekBudgetNote({ budgetCents: 45_000_000, paidCents: 41_000_000 }) ?? '')).toBe(
+      'Presupuesto de la semana $ 450.000, ya pagaste $ 410.000.',
+    )
+    expect(weekBudgetNote({ budgetCents: 0, paidCents: 100 })).toBeNull()
+    expect(weekBudgetNote(null)).toBeNull()
+  })
+})
 
 describe('paymentOutcome: cómo queda la deuda, contra los números del plan', () => {
   it('pago total: no le debés más nada', () => {
@@ -417,5 +496,115 @@ describe('las piezas de «Pagar» dibujadas', () => {
 
   it('el tilde es un adorno: el estado lo anuncia el renglón', () => {
     expect(html(createElement(TickMark, { on: true }))).toContain('aria-hidden="true"')
+  })
+})
+
+describe('la hoja «Pago» dibujada', () => {
+  /** Las tres facturas del proveedor del caso E7, con los impuestos prendidos. */
+  const form = (treasuryKinds: readonly string[] = ['bank', 'wallet', 'cash']) => {
+    const { ctx: base } = prepare(E7)
+    const ctx: PostingContext = {
+      ...base,
+      settings: { ...base.settings, taxSettings: DEFAULT_TAX_SETTINGS },
+    }
+    const items = [...ctx.openItems.values()]
+    const first = items[0]
+    if (!first) throw new Error('Sin partidas')
+    const party = ctx.parties.get(first.partyId)
+    if (!party) throw new Error('Sin proveedor')
+    const treasuries = [...ctx.treasuries.values()]
+      .filter((t) => treasuryKinds.includes(t.kind))
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        kind: t.kind,
+        balanceCents: t.balanceCents,
+        active: true,
+        allowNegative: true,
+      }))
+    return html(
+      createElement(
+        Sheet,
+        { open: true },
+        createElement(PaymentForm, {
+          tenantSlug: 'hub',
+          data: {
+            ctx,
+            firstOpenDate: null,
+            booksStartDate: '2026-01-01',
+            today: ctx.today,
+            treasuries,
+            parties: [],
+            accounts: [],
+            suggestions: [],
+            recurring: [],
+            balances: null,
+            iibbJurisdictionCode: 904,
+          },
+          party: {
+            id: party.id,
+            name: party.name,
+            tradeName: party.tradeName,
+            kind: party.kind,
+            taxIdType: 'cuit',
+            taxId: null,
+            ivaCondition: 'responsable_inscripto',
+            paymentTermDays: 0,
+            active: true,
+            systemKey: null,
+            defaultAccountId: null,
+            defaultVoucherType: null,
+            commissionVatMode: 'none',
+            updatedAt: null,
+          },
+          partyItems: { partyId: party.id, items },
+          focusLine: first.lineId,
+          onChangeParty: () => {},
+          close: () => {},
+          setDirty: () => {},
+        }),
+      ),
+    )
+  }
+
+  it('el título es «Pago», con lo que manda: las facturas, Importe, Salió de y Fecha', () => {
+    const out = form()
+    const read = text(out)
+    expect(read).toContain('Pago a ')
+    expect(read).not.toContain('Pagar a ')
+    expect(read).toContain('¿Qué le pagás?')
+    expect(read).toContain('Factura A 0003-00001180')
+    for (const label of ['Vence', 'Saldo', 'Importe', 'Salió de', 'Fecha']) {
+      expect(read).toContain(label)
+    }
+    expect(read).toContain('Cargar pago · $ ')
+    // Cada factura se tilda: `?partida=` llega con esa sola marcada.
+    expect(out.split('role="checkbox"').length - 1).toBeGreaterThan(1)
+    expect(out).toContain('aria-checked="true"')
+    expect(out).toContain('aria-checked="false"')
+  })
+
+  it('lo de cada tanto no se borró: queda plegado, y el asiento también', () => {
+    const out = form()
+    const read = text(out)
+    expect(out).toContain('<details')
+    expect(read).toContain('Más opciones')
+    expect(read).toContain('Agregar n.º de transferencia')
+    expect(read).toContain('Pagar con dos medios')
+    expect(read).toContain('Agregar una nota')
+    expect(read).toContain('Ver el asiento')
+    expect(read).toContain('Nada: le dejo plata a cuenta')
+    expect(read).toContain('Pagar solo una parte')
+  })
+
+  it('suma la foto del comprobante', () => {
+    expect(form()).toContain('aria-label="Foto del comprobante"')
+  })
+
+  it('saliendo de un banco avisa el impuesto al cheque; del efectivo, no', () => {
+    const bank = text(form(['bank']))
+    expect(bank).toContain('Impuesto al cheque 0,6 %:')
+    expect(bank).toContain('se anota solo')
+    expect(text(form(['cash']))).not.toContain('Impuesto al cheque')
   })
 })

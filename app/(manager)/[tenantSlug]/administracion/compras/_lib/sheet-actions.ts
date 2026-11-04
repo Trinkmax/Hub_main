@@ -29,7 +29,10 @@ import {
 } from '@/lib/accounting/queries/forms'
 import { listPartyBalances } from '@/lib/accounting/queries/parties'
 import { AccQueryError } from '@/lib/accounting/queries/shared'
+import { getWeekPlan } from '@/lib/accounting/queries/week-plan'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
+import { mondayOf } from '@/lib/accounting/week-plan'
+import { todayInCordoba } from '@/lib/dates'
 import type {
   QuickSuggestion,
   SheetData,
@@ -38,6 +41,7 @@ import type {
   SheetPartyItems,
   SheetRecurring,
   SheetResult,
+  SheetWeekPlan,
 } from './sheet-types'
 
 const LOAD_FAILED = 'No pudimos cargar los datos. Probá de nuevo; si sigue, avisanos.'
@@ -221,6 +225,29 @@ export async function loadPartyDefaults(
     }
   } catch (error) {
     return failure('defaults', error)
+  }
+}
+
+/**
+ * Lo presupuestado y lo pagado esta semana a un proveedor, para la nota de la hoja «Pago». Ayuda pero
+ * no es imprescindible: si falla, `null` y la hoja sigue sin eso.
+ */
+export async function loadPartyWeekPlan(
+  slug: string,
+  partyId: string,
+): Promise<SheetResult<SheetWeekPlan | null>> {
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return { ok: false, message: auth.state.message }
+    if (!uuid.safeParse(partyId).success) return { ok: true, data: null }
+    const rows = await optional(getWeekPlan(auth.tenantId, mondayOf(todayInCordoba())), [])
+    const row = rows.find((candidate) => candidate.partyId === partyId)
+    return {
+      ok: true,
+      data: row ? { budgetCents: row.budgetCents, paidCents: row.paidCents } : null,
+    }
+  } catch (error) {
+    return failure('week-plan', error)
   }
 }
 

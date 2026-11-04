@@ -91,7 +91,9 @@ export function TreasurySelect({
         aria-labelledby={aria['aria-labelledby']}
         aria-label={aria['aria-label']}
         className={cn(
-          'h-11 w-full text-base md:h-10 md:text-sm data-[size=default]:h-11 md:data-[size=default]:h-10',
+          // `min-w-0`: el nombre y el saldo no empujan el ancho de la grilla. `@container`: si la
+          // cuenta queda angosta se va el saldo (sigue en la lista), nunca el nombre.
+          '@container h-11 w-full min-w-0 text-base md:h-10 md:text-sm data-[size=default]:h-11 md:data-[size=default]:h-10 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1',
           className,
         )}
       >
@@ -109,7 +111,7 @@ export function TreasurySelect({
                 <span className="truncate">{t.name}</span>
                 <span
                   className={cn(
-                    'shrink-0 text-xs tabular-nums text-muted-foreground',
+                    'shrink-0 text-xs tabular-nums text-muted-foreground @max-[15.5rem]:hidden',
                     t.kind !== 'credit_card' && t.balanceCents < 0 && 'text-destructive',
                   )}
                 >

@@ -81,9 +81,18 @@ describe('links: «Gastos fijos» salió de las pestañas de Compras', () => {
     )
   })
 
+  it('`?tab=pagos` sigue valiendo: Pagos es un segmento de Comprobantes', () => {
+    expect(legacyComprasRedirect('hub', { tab: 'pagos' })).toBe(
+      '/hub/administracion/compras?tab=comprobantes&ver=pagos',
+    )
+    expect(legacyComprasRedirect('hub', { tab: 'pagos', periodo: '2026-09', q: 'coca' })).toBe(
+      '/hub/administracion/compras?tab=comprobantes&ver=pagos&periodo=2026-09&q=coca',
+    )
+  })
+
   it('las demás pestañas no redirigen', () => {
     expect(legacyComprasRedirect('hub', {})).toBeNull()
-    expect(legacyComprasRedirect('hub', { tab: 'pagos' })).toBeNull()
+    expect(legacyComprasRedirect('hub', { tab: 'comprobantes' })).toBeNull()
     expect(legacyComprasRedirect('hub', { tab: 'cualquiera' })).toBeNull()
   })
 })
@@ -281,10 +290,10 @@ describe('proveedores: lo que ya hacía la lista', () => {
   it('el pie suma las filas que se ven', () => {
     expect(
       supplierTotals([
-        { systemKey: null, debtCents: 100, creditCents: 10, overdueCents: 40 },
-        { systemKey: null, debtCents: 50, creditCents: 0, overdueCents: 0 },
+        { systemKey: null, debtCents: 100, creditCents: 10, overdueCents: 40, dueSoonCents: 25 },
+        { systemKey: null, debtCents: 50, creditCents: 0, overdueCents: 0, dueSoonCents: 5 },
       ]),
-    ).toEqual({ debtCents: 150, overdueCents: 40, creditCents: 10 })
+    ).toEqual({ debtCents: 150, overdueCents: 40, dueSoonCents: 30, creditCents: 10 })
   })
 })
 
@@ -352,9 +361,9 @@ describe('nombres y accesos (12/10/2026)', () => {
     expect(entry?.accounting).toBe('read')
   })
 
-  it('⌘K: «Pagar» abre la hoja (que pregunta qué se paga)', () => {
+  it('⌘K: «Pago» abre la hoja (que pregunta a quién se le paga)', () => {
     const entry = accounting.find((e) => e.id === 'acc-pay')
-    expect(entry?.label).toBe('Pagar')
+    expect(entry?.label).toBe('Pago')
     expect(entry?.accountingAction).toBe('pagar')
     expect(entry?.accounting).toBe('write')
   })
@@ -376,7 +385,7 @@ describe('nombres y accesos (12/10/2026)', () => {
     expect(tabs.indexOf(fijos as (typeof tabs)[number])).toBe(
       tabs.indexOf(compras as (typeof tabs)[number]) + 1,
     )
-    expect(compras?.label).toBe('Compras')
+    expect(compras?.label).toBe('Compras y pagos')
     expect(fijos?.path).toBe('administracion/gastos-fijos')
     expect({ roles: fijos?.roles, feature: fijos?.feature, accounting: fijos?.accounting }).toEqual(
       {

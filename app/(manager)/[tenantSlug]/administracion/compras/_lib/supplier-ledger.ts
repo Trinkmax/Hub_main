@@ -1,88 +1,61 @@
 /**
- * La hoja de UN proveedor («su libreta»), lo puro: qué dice la tapa («Le debés
- * $ X · 3 compras sin pagar…»), los tres datos que hacen que la próxima compra
- * sea de un toque (en qué le comprás, cómo te factura, cuándo le pagás), los
- * renglones de la libreta con sus tres palabras (te dejó · le pagaste · le
- * debés) y la escalera de la deuda en el tiempo.
+ * La cuenta corriente de UN proveedor, lo puro: qué dice su totalizador (Saldo · Plazo · Va a), los
+ * tramos de lo que se le debe y la escalera de la deuda en el tiempo.
  * Lo prueba `tests/lib/administracion-proveedor-libreta.test.ts`.
  *
- * Sin I/O y sin cuentas nuevas: todo sale de lo que ya devuelven
- * `getPartyPosition` y `getPartyStatement` (el saldo corrido lo calcula la base).
+ * Sin I/O y sin cuentas nuevas: todo sale de lo que ya devuelven `getPartyPosition` y
+ * `getPartyStatement` (el saldo corrido lo calcula la base).
  */
 
 import { categoryShortName } from '@/components/administracion/kit/category'
+import type { TotalizerItem } from '@/components/administracion/planilla/totalizer'
 import type { AgingSummary } from '@/lib/accounting/aging'
 import type { PartyStatementRow } from '@/lib/accounting/queries/parties'
-import type { IvaCondition, TaxIdType } from '@/lib/accounting/types'
-import { addDays, daysBetween, eachIsoDay, formatDayMonth, formatIsoDay } from '@/lib/dates'
+import type { TaxIdType } from '@/lib/accounting/types'
+import { addDays, eachIsoDay, formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
 import { formatCentsShort } from '@/lib/money'
 import { dueRail, SOON_DAYS } from './libreta'
 
-// ─── La tapa ─────────────────────────────────────────────────────────────────
-
-export type SupplierHero =
-  | { kind: 'debt'; cents: number; sentence: string }
-  | { kind: 'credit'; cents: number; sentence: string }
-  | { kind: 'clear'; title: string; sentence: string }
-
-function count(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`
-}
+// ─── El totalizador ──────────────────────────────────────────────────────────
 
 /**
- * El número de la tapa y su oración. Sin deuda no se muestra «$ 0»: se dice
- * «No le debés nada».
+ * «Saldo»: lo que se le debe. Sin deuda no se escribe un «$ 0»: se dice. Sin los saldos iniciales,
+ * «al día» sería por lo cargado nomás, así que no se promete. Lo que hay a favor va aparte: no se
+ * resta hasta que se usa en un pago.
  */
-export function supplierHero(input: {
+export function supplierBalanceItem(input: {
   debtCents: number
   creditCents: number
-  /** Cuántas compras sin pagar. */
-  debtCount: number
   overdueCents: number
-  oldestDueDate: string | null
-  nextDueDate: string | null
-  today: string
-  /**
-   * Faltan los saldos iniciales: «al día» sería por lo cargado nomás (lo que le debías al
-   * arrancar todavía no está). Lo mismo que dice el Resumen.
-   */
+  dueSoonCents: number
   openingPending?: boolean
-}): SupplierHero {
-  const favor =
-    input.creditCents > 0 ? ` Tenés ${formatCentsShort(input.creditCents)} a favor.` : ''
+}): TotalizerItem {
   if (input.debtCents > 0) {
-    const many = input.debtCount !== 1
-    const what = `${count(input.debtCount, 'compra sin pagar', 'compras sin pagar')}.`
-    let when: string
-    if (input.overdueCents > 0 && input.oldestDueDate) {
-      const late = Math.max(1, daysBetween(input.oldestDueDate, input.today))
-      const ago = `hace ${count(late, 'día', 'días')}`
-      when = many ? `La más vieja venció ${ago}.` : `Venció ${ago}.`
-    } else if (input.nextDueDate) {
-      const days = daysBetween(input.today, input.nextDueDate)
-      const day =
-        days <= 0 ? 'hoy' : days === 1 ? 'mañana' : `el ${formatDayMonth(input.nextDueDate)}`
-      when = many ? `Nada vencido: la próxima vence ${day}.` : `Vence ${day}.`
-    } else {
-      when = 'Sin fecha de pago.'
+    return {
+      label: 'Saldo',
+      cents: input.debtCents,
+      tone: input.overdueCents > 0 ? 'bad' : input.dueSoonCents > 0 ? 'warn' : 'default',
+      hint: input.creditCents > 0 ? `${formatCentsShort(input.creditCents)} a favor` : undefined,
     }
-    return { kind: 'debt', cents: input.debtCents, sentence: `${what} ${when}${favor}` }
   }
   if (input.creditCents > 0) {
-    return {
-      kind: 'credit',
-      cents: input.creditCents,
-      sentence: 'No le debés nada. Se descuenta solo de la próxima compra.',
-    }
+    return { label: 'A favor', cents: input.creditCents, tone: 'ok' }
   }
-  return {
-    kind: 'clear',
-    title: 'No le debés nada',
-    sentence: input.openingPending
-      ? 'Por lo que cargaste. Si le debías de antes de arrancar, entra con los saldos iniciales.'
-      : 'Está al día.',
-  }
+  return input.openingPending
+    ? { label: 'Saldo', text: 'Sin deuda cargada', hint: 'Faltan los saldos iniciales' }
+    : { label: 'Saldo', text: 'Al día', tone: 'ok' }
+}
+
+/** «21 días», «1 día»; sin plazo, lo dice. */
+export function supplierTermText(days: number): string {
+  if (days <= 0) return 'Sin plazo'
+  return days === 1 ? '1 día' : `${days} días`
+}
+
+/** A qué cuenta van sus compras, con la palabra del dueño: «Bebidas sin alcohol». */
+export function supplierCategoryText(defaultAccountName: string | null): string | null {
+  return defaultAccountName ? categoryShortName(defaultAccountName) : null
 }
 
 export type AgingTranche = { key: 'overdue' | 'week' | 'later'; label: string; cents: number }
@@ -101,7 +74,7 @@ export function agingTranches(aging: Pick<AgingSummary, 'totals'>): AgingTranche
   ]
 }
 
-/** El detalle de «¿Cómo se calcula?»: los tramos de antigüedad que tienen algo, y el total. */
+/** El detalle del pie de «Sin pagar»: los tramos de antigüedad que tienen algo, y el total. */
 export function agingMath(
   aging: Pick<AgingSummary, 'totals' | 'totalCents'>,
 ): Array<{ label: string; cents: number; total?: boolean }> {
@@ -116,29 +89,6 @@ export function agingMath(
   return [...rows, { label: 'Le debés', cents: aging.totalCents, total: true }]
 }
 
-// ─── Sus tres datos de carga ─────────────────────────────────────────────────
-
-export type SupplierFact = {
-  key: 'category' | 'invoicing' | 'term'
-  /** Está cargado. */
-  set: boolean
-  /** Lo que se lee cuando está («Bebidas sin alcohol», «Le pagás a 21 días»). */
-  text: string
-  /** Cuando falta y se puede cargar: el botón («En qué le comprás»). */
-  missing: string
-  /** Cuando falta y mira la contadora: se lee como falta, sin botón. */
-  missingReadOnly: string
-}
-
-const CONDITION_LABELS: Readonly<Record<IvaCondition, string>> = {
-  responsable_inscripto: 'Responsable inscripto',
-  monotributo: 'Monotributo',
-  exento: 'Exento',
-  consumidor_final: 'Consumidor final',
-  no_alcanzado: 'No alcanzado por el IVA',
-  sin_datos: 'Sin datos',
-}
-
 /** «CUIT 30-70111222-5», «DNI 30123456», o `null` si no tiene. */
 export function documentText(taxIdType: TaxIdType, taxId: string | null): string | null {
   if (taxIdType === 'none' || !taxId) return null
@@ -146,49 +96,7 @@ export function documentText(taxIdType: TaxIdType, taxId: string | null): string
   return `${taxIdType === 'cuil' ? 'CUIL' : 'CUIT'} ${formatCuit(taxId)}`
 }
 
-/**
- * Los tres datos que destraban la carga: con los tres puestos, cargarle una
- * compra es elegir el papel y escribir el total.
- */
-export function supplierFacts(party: {
-  defaultAccountName: string | null
-  ivaCondition: IvaCondition
-  taxIdType: TaxIdType
-  taxId: string | null
-  paymentTermDays: number
-}): SupplierFact[] {
-  const document = documentText(party.taxIdType, party.taxId)
-  const knowsInvoicing = party.ivaCondition !== 'sin_datos'
-  return [
-    {
-      key: 'category',
-      set: party.defaultAccountName !== null,
-      text: party.defaultAccountName ? categoryShortName(party.defaultAccountName) : '',
-      missing: 'En qué le comprás',
-      missingReadOnly: 'Sin categoría',
-    },
-    {
-      key: 'invoicing',
-      set: knowsInvoicing,
-      text: knowsInvoicing
-        ? `${CONDITION_LABELS[party.ivaCondition]} · ${document ?? 'Sin CUIT'}`
-        : '',
-      missing: 'Cómo te factura',
-      missingReadOnly: document
-        ? `Sin datos de cómo factura · ${document}`
-        : 'Sin datos de cómo factura',
-    },
-    {
-      key: 'term',
-      set: party.paymentTermDays > 0,
-      text: `Le pagás a ${count(party.paymentTermDays, 'día', 'días')}`,
-      missing: 'A cuántos días le pagás',
-      missingReadOnly: 'Sin plazo',
-    },
-  ]
-}
-
-// ─── Los renglones de su libreta ─────────────────────────────────────────────
+// ─── Los movimientos ─────────────────────────────────────────────────────────
 
 /**
  * El verbo de un movimiento: el sentido lo da la palabra, nunca solo el color
@@ -354,16 +262,6 @@ export function ledgerTrendTitle(input: {
   if (diff > 0) return `${input.lead} le pasaste a deber ${formatCentsShort(diff)} más`
   if (diff < 0) return `${input.lead} le bajaste la deuda en ${formatCentsShort(-diff)}`
   return `${input.lead} la deuda quedó igual`
-}
-
-/**
- * Lo que se lee al lado del verbo de un movimiento. Un pago se llama «Pago» a
- * secas, y «Le pagaste Pago» suena a error: se nombra por su número («n.º 12»).
- * El resto lleva su papel («Factura A 0003-00001100»).
- */
-export function ledgerLineName(line: Pick<LedgerLine, 'label' | 'seq'>): string {
-  if (line.label.trim().toLowerCase() !== 'pago') return line.label
-  return line.seq !== null ? `n.º ${line.seq}` : 'ver el pago'
 }
 
 /** Cuántos días quietos se dejan a la vista antes del primer escalón. */

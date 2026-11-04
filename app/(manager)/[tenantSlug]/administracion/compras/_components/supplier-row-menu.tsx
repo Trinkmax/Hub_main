@@ -16,16 +16,17 @@ import { useSupplierAccountPicker } from './supplier-account-picker'
 const ITEM = 'min-h-11 gap-2 md:min-h-8'
 
 /**
- * El ⋯ de un proveedor en la libreta: lo que no es LA acción del momento (esa
- * es [Pagar], que va afuera, al lado del importe). Cargarle una compra a
- * deber, cargar algo que ya se le pagó, pagarle o dejarle plata a cuenta,
- * elegir su categoría y abrir su libreta. Las mismas reglas de siempre
- * (`supplierRowActions`); la contadora no lo ve.
+ * El ⋯ de un proveedor en la planilla: lo que no es LA acción del momento (esa
+ * es [Pagar], que va afuera, al lado del saldo). Cargarle una compra, una compra
+ * que ya se le pagó, pagarle o dejarle plata a cuenta, elegir su categoría y
+ * abrir su cuenta corriente. Las mismas reglas de siempre (`supplierRowActions`);
+ * la contadora no lo ve.
  */
 export function SupplierRowMenu({
   partyId,
   name,
   buyHref,
+  paidHref,
   canPay,
   hasDebt,
   account,
@@ -35,6 +36,8 @@ export function SupplierRowMenu({
   name: string
   /** La compra con este proveedor ya elegido. `null`: está desactivado. */
   buyHref: string | null
+  /** «Compra y pago»: la misma, ya pagada. `null`: está desactivado. */
+  paidHref: string | null
   /** Hay algo para pagarle o está activo (plata a cuenta). */
   canPay: boolean
   /** Le debés algo: «Pagarle». Si no, «Dejarle plata a cuenta». */
@@ -56,7 +59,7 @@ export function SupplierRowMenu({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-11 shrink-0 rounded-full text-muted-foreground hover:text-foreground md:size-9"
+          className="size-10 shrink-0 rounded-md text-muted-foreground hover:text-foreground md:pointer-fine:size-7"
           aria-label={`Más acciones con ${name}`}
         >
           <Ellipsis className="size-4" aria-hidden />
@@ -68,16 +71,17 @@ export function SupplierRowMenu({
             <DropdownMenuItem asChild className={ITEM}>
               <Link href={buyHref}>
                 <FilePlus2 className="size-4" aria-hidden />
-                Cargarle una compra que le debo
+                Compra
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className={ITEM}
-              onSelect={() => openAction('gasto', { proveedor: partyId })}
-            >
-              <ShoppingBasket className="size-4" aria-hidden />
-              Le pagué algo recién
-            </DropdownMenuItem>
+            {paidHref ? (
+              <DropdownMenuItem asChild className={ITEM}>
+                <Link href={paidHref}>
+                  <ShoppingBasket className="size-4" aria-hidden />
+                  Compra y pago
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </>
         ) : null}
         {canPay ? (
@@ -99,7 +103,7 @@ export function SupplierRowMenu({
         <DropdownMenuItem asChild className={ITEM}>
           <Link href={libretaHref}>
             <BookOpen className="size-4" aria-hidden />
-            Ver su libreta
+            Ver su cuenta corriente
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

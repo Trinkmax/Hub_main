@@ -1,4 +1,4 @@
-import { createElement, type ReactElement } from 'react'
+import { createElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -8,14 +8,15 @@ import {
   ledgerTrendTitle,
   ledgerVerb,
   statementBalancePoints,
-  supplierFacts,
-  supplierHero,
+  supplierBalanceItem,
+  supplierCategoryText,
   supplierLedger,
+  supplierTermText,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/supplier-ledger'
 import { DataTab } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/data-tab'
-import { LedgerLines } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/ledger-lines'
 import { PendingTab } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/pending-tab'
-import { SupplierCover } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/supplier-cover'
+import { StatementTab } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/statement-tab'
+import { SupplierHead } from '@/app/(manager)/[tenantSlug]/administracion/compras/proveedores/[id]/_components/supplier-head'
 import { agingSummary, trafficLight } from '@/lib/accounting/aging'
 import type {
   OpenItemRow,
@@ -25,13 +26,18 @@ import type {
 } from '@/lib/accounting/queries/parties'
 
 /**
- * La hoja de un proveedor («su libreta»): qué dice la tapa, sus tres datos de
- * carga, los renglones con sus tres palabras (te dejó · le pagaste · le debés)
- * y la escalera de la deuda. Y ya dibujada: sin deuda no hay «$ 0» y la
- * contadora no recibe ningún botón de carga, de pago ni de edición.
+ * La cuenta corriente de un proveedor: qué dice su totalizador (Saldo · Plazo ·
+ * Va a), la tabla de siempre (Fecha · Comprobante · Vence · Debe · Haber · Saldo)
+ * y la escalera de la deuda. Y ya dibujada: sin deuda no hay «$ 0» y la contadora
+ * no recibe ningún botón de carga, de pago ni de edición.
  */
 
 const ui = vi.hoisted(() => ({ readOnly: false }))
+const reads = vi.hoisted(() => ({ getPartyStatement: vi.fn() }))
+vi.mock('@/lib/accounting/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/accounting/queries')>()),
+  getPartyStatement: reads.getPartyStatement,
+}))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/compras/proveedores/x',
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -58,8 +64,21 @@ vi.mock('@/lib/accounting/actions/documents', () => ({
   unallocateItem: vi.fn(),
 }))
 
+// Los «⋯» se dibujan abiertos: lo que importa es qué ofrecen a cada uno.
+vi.mock('@/components/ui/dropdown-menu', () => {
+  const Pass = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
+  return {
+    DropdownMenu: Pass,
+    DropdownMenuContent: Pass,
+    DropdownMenuItem: Pass,
+    DropdownMenuSeparator: () => null,
+    DropdownMenuTrigger: Pass,
+  }
+})
+
 afterEach(() => {
   ui.readOnly = false
+  reads.getPartyStatement.mockReset()
 })
 
 const TODAY = '2026-10-13'
@@ -200,81 +219,49 @@ const CREDIT = item({
   openCents: 6_050_000,
 })
 
-describe('la tapa: el número y su oración', () => {
-  const base = {
-    debtCents: 0,
-    creditCents: 0,
-    debtCount: 0,
-    overdueCents: 0,
-    oldestDueDate: null,
-    nextDueDate: null,
-    today: TODAY,
-  }
+describe('el totalizador: el saldo y su tono', () => {
+  const base = { debtCents: 0, creditCents: 0, overdueCents: 0, dueSoonCents: 0 }
 
-  it('con deuda vencida: cuántas compras y desde cuándo la más vieja', () => {
-    const hero = supplierHero({
-      ...base,
-      debtCents: 333_660_000,
-      debtCount: 3,
-      overdueCents: 121_000_000,
-      oldestDueDate: '2026-10-01',
-      creditCents: 6_050_000,
-    })
-    expect(hero.kind).toBe('debt')
-    expect(plain(hero.sentence)).toBe(
-      '3 compras sin pagar. La más vieja venció hace 12 días. Tenés $ 60.500 a favor.',
-    )
-  })
-
-  it('con deuda al día: cuándo vence la próxima', () => {
+  it('con deuda: el tono dice qué tan urgente es, y lo que hay a favor va aparte', () => {
     expect(
-      supplierHero({ ...base, debtCents: 100, debtCount: 2, nextDueDate: '2026-10-21' }).sentence,
-    ).toBe('2 compras sin pagar. Nada vencido: la próxima vence el 21/10.')
-    expect(
-      supplierHero({ ...base, debtCents: 100, debtCount: 1, nextDueDate: TODAY }).sentence,
-    ).toBe('1 compra sin pagar. Vence hoy.')
-    expect(
-      supplierHero({ ...base, debtCents: 100, debtCount: 1, nextDueDate: '2026-10-14' }).sentence,
-    ).toBe('1 compra sin pagar. Vence mañana.')
-  })
-
-  it('una sola compra, vencida ayer, o sin fecha', () => {
-    expect(
-      supplierHero({
+      supplierBalanceItem({
         ...base,
-        debtCents: 100,
-        debtCount: 1,
-        overdueCents: 100,
-        oldestDueDate: '2026-10-12',
-      }).sentence,
-    ).toBe('1 compra sin pagar. Venció hace 1 día.')
-    expect(supplierHero({ ...base, debtCents: 100, debtCount: 1 }).sentence).toBe(
-      '1 compra sin pagar. Sin fecha de pago.',
-    )
+        debtCents: 333_660_000,
+        overdueCents: 121_000_000,
+        creditCents: 6_050_000,
+      }),
+    ).toMatchObject({ label: 'Saldo', cents: 333_660_000, tone: 'bad' })
+    expect(
+      plain(String(supplierBalanceItem({ ...base, debtCents: 100, creditCents: 6_050_000 }).hint)),
+    ).toBe('$ 60.500 a favor')
+    expect(supplierBalanceItem({ ...base, debtCents: 100, dueSoonCents: 100 }).tone).toBe('warn')
+    expect(supplierBalanceItem({ ...base, debtCents: 100 }).tone).toBe('default')
   })
 
   it('sin deuda con algo a favor, y sin nada: nunca «$ 0»', () => {
-    expect(supplierHero({ ...base, creditCents: 6_050_000 })).toEqual({
-      kind: 'credit',
+    expect(supplierBalanceItem({ ...base, creditCents: 6_050_000 })).toEqual({
+      label: 'A favor',
       cents: 6_050_000,
-      sentence: 'No le debés nada. Se descuenta solo de la próxima compra.',
+      tone: 'ok',
     })
-    expect(supplierHero(base)).toEqual({
-      kind: 'clear',
-      title: 'No le debés nada',
-      sentence: 'Está al día.',
-    })
+    expect(supplierBalanceItem(base)).toEqual({ label: 'Saldo', text: 'Al día', tone: 'ok' })
   })
 
-  it('sin los saldos iniciales, «al día» es por lo cargado: lo aclara', () => {
-    const hero = supplierHero({ ...base, openingPending: true })
-    expect(hero.kind).toBe('clear')
-    expect(hero.sentence).not.toContain('Está al día')
-    expect(hero.sentence).toContain('saldos iniciales')
+  it('sin los saldos iniciales, «al día» es por lo cargado: no se promete', () => {
+    const item = supplierBalanceItem({ ...base, openingPending: true })
+    expect(item.text).toBe('Sin deuda cargada')
+    expect(item.hint).toBe('Faltan los saldos iniciales')
+    expect(item.tone).toBeUndefined()
     // Con deuda no cambia nada: el número es el número.
-    expect(supplierHero({ ...base, debtCents: 100, debtCount: 1, openingPending: true }).kind).toBe(
-      'debt',
-    )
+    expect(supplierBalanceItem({ ...base, debtCents: 100, openingPending: true }).cents).toBe(100)
+  })
+
+  it('el plazo y a dónde van sus compras, con las palabras del dueño', () => {
+    expect(supplierTermText(21)).toBe('21 días')
+    expect(supplierTermText(1)).toBe('1 día')
+    expect(supplierTermText(0)).toBe('Sin plazo')
+    expect(supplierCategoryText('Compras: bebidas sin alcohol')).toBe('Bebidas sin alcohol')
+    expect(supplierCategoryText(null)).toBeNull()
   })
 
   it('los tres tramos de toda la sección suman la deuda', () => {
@@ -297,38 +284,12 @@ describe('la tapa: el número y su oración', () => {
   })
 })
 
-describe('sus tres datos de carga', () => {
-  it('con los tres puestos', () => {
-    const facts = supplierFacts(party())
-    expect(facts.map((f) => [f.key, f.set, f.text])).toEqual([
-      ['category', true, 'Bebidas sin alcohol'],
-      ['invoicing', true, 'Responsable inscripto · CUIT 30-70111222-5'],
-      ['term', true, 'Le pagás a 21 días'],
-    ])
-  })
-
-  it('el proveedor típico de un bar que recién arranca: faltan los tres', () => {
-    const facts = supplierFacts(bare())
-    expect(facts.every((f) => !f.set)).toBe(true)
-    expect(facts.map((f) => f.missing)).toEqual([
-      'En qué le comprás',
-      'Cómo te factura',
-      'A cuántos días le pagás',
-    ])
-    expect(facts.map((f) => f.missingReadOnly)).toEqual([
-      'Sin categoría',
-      'Sin datos de cómo factura',
-      'Sin plazo',
-    ])
-  })
-
-  it('sabemos cómo factura pero no el CUIT; y un DNI se nombra como DNI', () => {
-    const noCuit = supplierFacts(party({ taxIdType: 'none', taxId: null }))
-    expect(noCuit[1]?.text).toBe('Responsable inscripto · Sin CUIT')
+describe('cómo se nombra su documento', () => {
+  it('un DNI se nombra como DNI; sin documento, nada', () => {
+    expect(documentText('cuit', '30701112225')).toBe('CUIT 30-70111222-5')
     expect(documentText('dni', '30123456')).toBe('DNI 30123456')
     expect(documentText('cuil', '20123456786')).toBe('CUIL 20-12345678-6')
     expect(documentText('none', null)).toBeNull()
-    expect(supplierFacts(party({ paymentTermDays: 1 }))[2]?.text).toBe('Le pagás a 1 día')
   })
 })
 
@@ -388,7 +349,7 @@ const STATEMENT = [
   }),
 ]
 
-describe('los renglones de su libreta', () => {
+describe('los movimientos', () => {
   it('el verbo dice el sentido: te dejó, le pagaste, te descontó', () => {
     const up = { increaseCents: 100, decreaseCents: 0 }
     const down = { increaseCents: 0, decreaseCents: 100 }
@@ -547,19 +508,17 @@ describe('la escalera de la deuda', () => {
 
 // ─── Lo que se ve armado ─────────────────────────────────────────────────────
 
-function cover(patch: Partial<Parameters<typeof SupplierCover>[0]> = {}) {
+function head(patch: Partial<Parameters<typeof SupplierHead>[0]> = {}) {
   return html(
-    createElement(SupplierCover, {
+    createElement(SupplierHead, {
       tenantSlug: SLUG,
       party: party(),
       position: position(THREE, [CREDIT]),
       positionError: null,
-      verification: null,
       canWrite: true,
       canPickCategory: false,
-      tone: 'bosque',
-      today: TODAY,
       baseHref: `/hub/administracion/compras/proveedores/${PARTY_ID}`,
+      ficha: false,
       exportHref: '/api/x',
       exportFileName: 'x.csv',
       ...patch,
@@ -567,41 +526,53 @@ function cover(patch: Partial<Parameters<typeof SupplierCover>[0]> = {}) {
   )
 }
 
-describe('la tapa dibujada', () => {
-  it('con deuda: el nombre, «Le debés», los tramos y [Pagarle] al lado', () => {
-    const out = cover()
+describe('arriba de la cuenta corriente', () => {
+  it('el nombre en Fraunces, Saldo · Plazo · Va a, y [Ficha] [Compra] [Pagar]', () => {
+    const out = head()
     const read = text(out)
     expect(out).toContain('<h1')
+    expect(out).toContain('font-serif')
     expect(read).toContain('Distribuidora de Bebidas Demo SA')
-    expect(read).toContain('Le debés')
+    for (const label of ['Saldo', 'Plazo', 'Va a']) expect(read).toContain(label)
     expect(read).toContain('3.336.600')
-    expect(read).toContain('3 compras sin pagar. La más vieja venció hace 12 días.')
-    for (const word of ['Vencido', 'Vence esta semana', 'Más adelante'])
-      expect(read).toContain(word)
-    expect(read).toContain('Pagarle')
-    expect(read).toContain('Cargarle una compra')
+    expect(read).toContain('21 días')
     expect(read).toContain('Bebidas sin alcohol')
-    expect(read).toContain('Le pagás a 21 días')
+    for (const action of ['Ficha', 'Compra', 'Pagar']) expect(read).toContain(action)
+    expect(read).toContain('Proveedores')
+    // Lo de cada tanto, en el ⋯.
+    expect(read).toContain('Compra y pago')
+    expect(read).toContain('Me hizo una nota de crédito')
+    expect(read).toContain('Exportar su cuenta de este año')
+    // La tapa verde y sus oraciones ya no están.
+    expect(out).not.toContain('adm-hero')
+    expect(read).not.toContain('¿Cómo se calcula?')
   })
 
-  it('el proveedor típico de un bar que arranca: sin «$ 0» y con «Cargarle una compra»', () => {
-    const read = text(cover({ party: bare(), position: position([]) }))
-    expect(read).toContain('No le debés nada')
-    expect(read).toContain('Está al día.')
+  it('«Ficha» abre `?tab=datos`, y desde ahí se vuelve a la cuenta', () => {
+    expect(head()).toContain(`/hub/administracion/compras/proveedores/${PARTY_ID}?tab=datos`)
+    const ficha = head({ ficha: true })
+    expect(text(ficha)).toContain('Cuenta corriente')
+    expect(ficha).not.toContain('?tab=datos')
+  })
+
+  it('el proveedor típico de un bar que arranca: sin «$ 0» y con «Compra»', () => {
+    const read = text(head({ party: bare(), position: position([]) }))
+    expect(read).toContain('Al día')
+    expect(read).toContain('Sin plazo')
+    expect(read).toContain('Sin categoría')
     expect(read).not.toContain('$ 0')
-    expect(read).toContain('Cargarle una compra')
-    expect(read).not.toContain('Pagarle')
+    expect(read).toContain('Compra')
   })
 
-  it('HUB sin saldos iniciales: la tapa del proveedor no promete «al día»', () => {
-    const read = text(cover({ party: bare(), position: position([]), openingPending: true }))
-    expect(read).toContain('No le debés nada')
-    expect(read).toContain('Por lo que cargaste.')
-    expect(read).not.toContain('Está al día.')
+  it('HUB sin saldos iniciales: no promete «al día»', () => {
+    const read = text(head({ party: bare(), position: position([]), openingPending: true }))
+    expect(read).toContain('Sin deuda cargada')
+    expect(read).toContain('Faltan los saldos iniciales')
+    expect(read).not.toContain('Al día')
   })
 
-  it('si no se pudo leer cuánto se le debe, lo dice en el lugar del número', () => {
-    const read = text(cover({ position: null, positionError: 'No pudimos cargar esto.' }))
+  it('si no se pudo leer cuánto se le debe, lo dice y deja reintentar', () => {
+    const read = text(head({ position: null, positionError: 'No pudimos cargar esto.' }))
     expect(read).toContain('No pudimos cargar esto.')
     expect(read).toContain('Reintentar')
     expect(read).not.toContain('$ 0')
@@ -609,15 +580,15 @@ describe('la tapa dibujada', () => {
 
   it('la contadora solo puede exportar: ni pagar, ni cargar, ni editar', () => {
     ui.readOnly = true
-    const out = cover({ party: bare(), canWrite: false })
+    const out = head({ party: bare(), canWrite: false })
     const read = text(out)
     expect(read).toContain('Solo lectura')
-    expect(read).toContain('Exportar su libreta de este año')
-    expect(read).not.toContain('Pagarle')
-    expect(read).not.toContain('Cargarle una compra')
-    // Lo que falta se lee como falta, sin «＋» para tocar.
+    expect(read).toContain('Exportar su cuenta de este año')
+    expect(read).toContain('Ficha')
+    expect(read).not.toContain('Pagar')
+    expect(read).not.toContain('Compra')
+    // Lo que falta se lee como falta, sin nada para tocar.
     expect(read).toContain('Sin categoría')
-    expect(read).toContain('Sin datos de cómo factura')
     expect(read).toContain('Sin plazo')
     expect(out.split('<button').length - 1).toBe(1)
   })
@@ -625,7 +596,7 @@ describe('la tapa dibujada', () => {
   it('un nombre de 60 caracteres con fantasía y nueve cifras', () => {
     const long = 'Distribuidora Mayorista de Bebidas y Alimentos del Centro SA'
     const read = text(
-      cover({
+      head({
         party: party({ name: long, tradeName: 'La Mayorista' }),
         position: position([item({ amountCents: 99_999_999_900, openCents: 99_999_999_900 })]),
       }),
@@ -650,17 +621,32 @@ function owed(canWrite: boolean, pos: PartyPosition) {
 }
 
 describe('«Lo que le debés»', () => {
-  it('una compra por renglón, con su vencimiento en el margen y [Pagar]', () => {
-    const read = text(owed(true, position(THREE, [CREDIT])))
+  it('una compra por fila, con su vencimiento, [Pagar] y la doble raya', () => {
+    const out = owed(true, position(THREE, [CREDIT]))
+    const read = text(out)
     expect(read).toContain('Lo que le debés')
+    for (const head of ['Comprobante', 'Del', 'Vence', 'Falta']) expect(read).toContain(head)
     expect(read).toContain('vencido hace 12 días')
     expect(read).toContain('vence en 5 días')
     expect(read).toContain('vence el 20/11')
-    expect(read).toContain('de $ 1.000.000')
-    expect(read).toContain('Total: le debés $ 3.336.600')
+    expect(read).toContain('de un total de $ 1.000.000')
+    expect(read).toContain('Total $ 3.336.600')
+    expect(out).toContain('adm-double-rule')
     expect(read).toContain('Pagar')
     expect(read).toContain('A tu favor')
     expect(read).toContain('Usarlo ahora')
+  })
+
+  it('[Pagar] de una fila abre el pago con ESA compra tildada', () => {
+    const out = owed(true, position(THREE))
+    expect(out).toContain('Pagar Factura A 0003-00001100')
+  })
+
+  it('los tramos de antigüedad quedan al pie, con lo que suman', () => {
+    const read = text(owed(true, position(THREE)))
+    expect(read).toContain('Vencido de 1 a 30 días: $ 1.210.000')
+    expect(read).toContain('Vence esta semana: $ 1.352.200')
+    expect(read).toContain('Más adelante: $ 774.400')
   })
 
   it('una compra sin factura se debe igual', () => {
@@ -669,19 +655,18 @@ describe('«Lo que le debés»', () => {
     expect(read).toContain('$ 1.352.200')
   })
 
-  it('sin deuda no se dibuja: la tapa ya dice «No le debés nada» y trae la acción', () => {
-    // Tres «nada» apilados y dos botones principales iguales: el panel no va.
+  it('sin deuda no se dibuja: el totalizador ya lo dice', () => {
     expect(owed(true, position([]))).toBe('')
-    // Sin deuda pero con algo a favor: el panel es solo eso, sin «Lo que le debés» ni carga.
+    // Sin deuda pero con algo a favor: solo eso, sin «Lo que le debés» ni carga.
     const onlyCredit = text(owed(true, position([], [CREDIT])))
     expect(onlyCredit).toContain('A tu favor')
     expect(onlyCredit).toContain('Se descuenta sola en el próximo pago.')
     expect(onlyCredit).not.toContain('Lo que le debés')
-    expect(onlyCredit).not.toContain('Cargarle una compra')
+    expect(onlyCredit).not.toContain('Usarlo ahora')
     expect(onlyCredit).not.toContain('$ 0')
   })
 
-  it('la contadora ve los renglones sin ningún botón', () => {
+  it('la contadora ve las filas sin ningún botón', () => {
     ui.readOnly = true
     const withDebt = owed(false, position(THREE, [CREDIT]))
     expect(text(withDebt)).toContain('vencido hace 12 días')
@@ -744,33 +729,98 @@ describe('«Sus datos»', () => {
   })
 })
 
-describe('los renglones de tres columnas', () => {
-  const ledger = supplierLedger({
-    rows: STATEMENT,
+describe('la tabla de la cuenta corriente', () => {
+  const page = (rows: PartyStatementRow[], patch: Record<string, unknown> = {}) => ({
+    rows,
+    nextCursor: null,
+    totalRows: rows.length,
     from: '2026-07-16',
     to: TODAY,
     openingCents: 0,
-    hasMore: false,
-    today: TODAY,
+    ...patch,
   })
-  const out = html(createElement(LedgerLines, { tenantSlug: SLUG, ledger }))
-  const read = text(out)
+  const statement = async (
+    canWrite: boolean,
+    patch: Partial<Parameters<typeof StatementTab>[0]> = {},
+  ) =>
+    html(
+      await StatementTab({
+        tenantId: 't-1',
+        tenantSlug: SLUG,
+        partyId: PARTY_ID,
+        partyName: 'Distribuidora de Bebidas Demo SA',
+        baseHref: `/hub/administracion/compras/proveedores/${PARTY_ID}`,
+        sp: {},
+        today: TODAY,
+        canWrite,
+        unusedCreditCents: 0,
+        ...patch,
+      }),
+    )
 
-  it('las tres palabras de la libreta y cada movimiento con su verbo', () => {
-    for (const word of ['Te dejó', 'Le pagaste', 'Le debés']) expect(read).toContain(word)
-    expect(read).toContain('Al 15/07 no le debías nada')
-    expect(read).toContain('Te descontó')
-    expect(read).toContain('vencida hace 12 días')
-    expect(read).toContain('Hoy le debés')
-    expect(read).toContain('$ 3.276.100')
-  })
-
-  it('cada comprobante lleva a su ficha', () => {
+  it('Fecha · Comprobante · Vence · Debe · Haber · Saldo, con centavos y doble raya', async () => {
+    reads.getPartyStatement.mockResolvedValue(page(STATEMENT))
+    const out = await statement(true)
+    const read = text(out)
+    for (const head of ['Fecha', 'Comprobante', 'Vence', 'Debe', 'Haber', 'Saldo']) {
+      expect(read).toContain(head)
+    }
+    // Lo que te dejó va al Haber; lo que le pagaste, al Debe.
+    expect(read).toContain('$ 1.210.000,00')
+    expect(read).toContain('$ 500.000,00')
+    expect(read).toContain('$ 3.276.100,00')
+    expect(read).toContain('Saldo al 15/07/2026')
+    expect(out).toContain('adm-double-rule')
+    // Lo que ya venció va en rojo, y cada fila lleva a su comprobante.
+    expect(out).toContain('text-destructive')
     expect(out).toContain('/hub/administracion/comprobantes/00000000-0000-4000-8000-0000000000d1')
+    // La escalera queda plegada debajo, con la misma plata.
+    expect(read).toContain('Ver cómo fue la deuda')
+    expect(read).toContain('le pasaste a deber')
   })
 
-  it('en angosto el importe va con su signo (el sentido no depende del color)', () => {
-    expect(read).toContain('+ $ 1.210.000')
-    expect(read).toContain('− $ 500.000')
+  it('con algo a favor sin usar, el saldo de la tabla lo aclara', async () => {
+    reads.getPartyStatement.mockResolvedValue(page(STATEMENT))
+    const read = text(await statement(true, { unusedCreditCents: 6_050_000 }))
+    expect(read).toContain('ya restado $ 60.500 a favor')
+  })
+
+  it('un saldo a favor se dice con palabras, nunca con un menos pelado', async () => {
+    reads.getPartyStatement.mockResolvedValue(
+      page([line({ runningBalanceCents: -6_050_000, increaseCents: 0, decreaseCents: 6_050_000 })]),
+    )
+    const read = text(await statement(true))
+    expect(read).toContain('A favor $ 60.500,00')
+    expect(read).not.toContain('−$ 60.500')
+  })
+
+  it('si la lista sigue, ofrece los siguientes y no inventa un saldo final', async () => {
+    reads.getPartyStatement.mockResolvedValue(
+      page(STATEMENT, { nextCursor: 'cursor', totalRows: 300 }),
+    )
+    const out = await statement(true)
+    expect(text(out)).toContain('Ver los siguientes')
+    expect(text(out)).toContain('Ves 4 de 300 movimientos')
+    expect(out).not.toContain('adm-double-rule')
+  })
+
+  it('sin movimientos: una oración, y el primer paso solo para quien carga', async () => {
+    reads.getPartyStatement.mockResolvedValue(page([]))
+    const owner = text(await statement(true))
+    expect(owner).toContain('No hubo movimientos en los últimos 90 días')
+    expect(owner).toContain('Cargar una compra')
+    expect(owner).not.toContain('$ 0')
+
+    ui.readOnly = true
+    const accountant = await statement(false)
+    expect(text(accountant)).toContain('No hubo movimientos')
+    expect(accountant).not.toContain('compras/nueva')
+  })
+
+  it('si no se pudo leer, lo dice adentro de la hoja y deja reintentar', async () => {
+    reads.getPartyStatement.mockRejectedValue(new Error('boom'))
+    const read = text(await statement(true))
+    expect(read).toContain('No pudimos cargar esto')
+    expect(read).toContain('Reintentar')
   })
 })

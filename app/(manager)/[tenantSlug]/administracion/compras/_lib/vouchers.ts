@@ -137,6 +137,16 @@ export function voucherOptionsFor(input: {
 }
 
 /**
+ * Todavía sin proveedor: cualquier tipo de la familia. El motor recién mira la condición cuando hay a
+ * quién cargárselo, y con el papel en la mano la letra se puede elegir antes que el nombre.
+ */
+export function anyVoucherOptions(family: PurchaseFamily): VoucherType[] {
+  if (family === 'nc') return [...CREDIT_NOTE_ORDER]
+  if (family === 'nd') return [...DEBIT_NOTE_ORDER]
+  return [...PURCHASE_VOUCHER_ORDER]
+}
+
+/**
  * El tipo que se propone (H.6): el último con ese proveedor si se puede usar;
  * si no, por su condición (RI: A; monotributo: C; exento: B); si nada sirve,
  * el primero de la lista.

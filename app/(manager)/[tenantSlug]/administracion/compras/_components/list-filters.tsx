@@ -76,12 +76,12 @@ export function LiveSearch({
       {pending ? (
         <LoaderCircle
           aria-hidden
-          className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none"
+          className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none"
         />
       ) : (
         <Search
           aria-hidden
-          className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
         />
       )}
       <Input
@@ -100,7 +100,7 @@ export function LiveSearch({
             apply(value)
           }
         }}
-        className="h-11 rounded-full pr-11 pl-10 text-base md:h-10 md:pr-10 md:text-sm [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 rounded-lg pr-10 pl-8 text-base md:text-[13px] md:pointer-fine:h-8 md:pointer-fine:pr-8 [&::-webkit-search-cancel-button]:hidden"
       />
       {value !== '' ? (
         <button
@@ -111,9 +111,9 @@ export function LiveSearch({
             apply('')
             document.getElementById(id)?.focus()
           }}
-          className="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:right-1 md:size-9"
+          className="absolute top-1/2 right-0 flex size-10 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:size-8"
         >
-          <X aria-hidden className="size-4" />
+          <X aria-hidden className="size-3.5" />
         </button>
       ) : null}
     </div>

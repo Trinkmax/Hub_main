@@ -1,11 +1,11 @@
 /**
- * La libreta de proveedores («Compras y pagos»), lo puro: qué renglones se ven
- * y en qué grupo, cuántos hay en cada filtro, qué dice el margen de cada uno
- * («vencido hace 12 días») y cómo se lee el estado de un comprobante en
- * palabras. Sin I/O: lo usan la pestaña (servidor) y la hoja «Pagar» (cliente).
- * Lo prueba `tests/lib/administracion-libreta.test.ts`.
+ * La libreta de proveedores («Compras y pagos»), lo puro: qué filas se ven,
+ * cuántas hay en cada filtro, qué suma el totalizador, qué dice el vencimiento
+ * de una compra («vencido hace 12 días») y cómo se lee el estado de un
+ * comprobante en palabras. Sin I/O: lo usan la pestaña (servidor) y la hoja
+ * «Pago» (cliente). Lo prueba `tests/lib/administracion-libreta.test.ts`.
  *
- * Por qué acá y no en la pestaña: el héroe, los contadores de las píldoras y la
+ * Por qué acá y no en la pestaña: el totalizador, los contadores del filtro y la
  * lista salen de UNA sola lectura (`listParties` sin filtro ni búsqueda), así
  * que coinciden siempre. El filtro y la búsqueda usan los mismos predicados de
  * esa lectura (`matchesPartyFilter` / `matchesPartyQuery`), que llegan por
@@ -13,12 +13,13 @@
  */
 
 import type { LedgerTone } from '@/components/administracion/kit/ledger'
-import type { PayablesTranches } from '@/lib/accounting/home'
+import type { TotalizerItem } from '@/components/administracion/planilla/totalizer'
 import type { DocumentListRow } from '@/lib/accounting/queries/documents'
 import type { PartyListFilter, PartyListRow } from '@/lib/accounting/queries/parties'
-import { daysBetween, formatDayMonth, MONTH_NAMES_SHORT, monthName, monthRange } from '@/lib/dates'
+import { daysBetween, formatDayMonth, monthName, monthRange } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import {
+  isTaxOrPayroll,
   isVisibleSupplier,
   SUPPLIER_FILTERS,
   type SupplierClassification,
@@ -27,9 +28,6 @@ import {
   supplierClassification,
   supplierTotals,
 } from './suppliers'
-
-/** Cuántos renglones «sin deuda» se ven antes de «Ver los N que faltan». */
-export const SETTLED_PREVIEW = 12
 
 /** Lo que vence dentro de estos días es «esta semana» (el mismo corte de la base). */
 export const SOON_DAYS = 7
@@ -58,22 +56,18 @@ export type LibretaPredicates = {
 }
 
 export type LibretaView = {
-  /** Cuántos hay en cada píldora, con la búsqueda aplicada (lo que se ve al tocarla). */
+  /** Cuántos hay en cada filtro, con la búsqueda aplicada (lo que se ve al tocarlo). */
   counts: Record<SupplierFilterValue, number>
-  /** «Les debés»: lo más vencido primero. */
+  /** A los que se les debe: lo más vencido primero. */
   debt: LibretaEntry[]
-  /** «Tenés a favor»: sin deuda y con algo a favor. */
+  /** Sin deuda y con algo a favor. */
   credit: LibretaEntry[]
-  /** «Sin deuda»: lo que se ve de entrada… */
+  /** Sin deuda ni nada a favor. */
   settled: LibretaEntry[]
-  /** …y lo que queda detrás de «Ver los N que faltan» (vacío con búsqueda u otro filtro). */
-  settledMore: LibretaEntry[]
   /** Todos los que entran en el filtro, en el orden en que se dibujan. */
   shown: LibretaEntry[]
-  /** Σ de los que se ven (el pie de la hoja). */
+  /** Σ de los que se ven (la fila del total). */
   totals: SupplierTotals
-  /** La deuda más grande de los que se ven: el largo entero de la barrita. */
-  maxDebtCents: number
 }
 
 function entryOf(
@@ -94,8 +88,9 @@ function byUrgency(a: LibretaEntry, b: LibretaEntry): number {
 }
 
 /**
- * La libreta ya armada: los renglones del filtro y la búsqueda de la URL, en
- * sus tres grupos, y el contador de cada píldora.
+ * La libreta ya armada: las filas del filtro y la búsqueda de la URL, y el
+ * contador de cada filtro. Los impuestos y sueldos no son proveedores: solo
+ * aparecen en su filtro (su deuda se sigue viendo ahí y en Sueldos).
  *
  * `rows` son TODOS los del grupo (lo que devuelve `listParties` sin filtro).
  * Si las fichas no se pudieron leer (`classes: null`), la libreta se arma
@@ -107,8 +102,6 @@ export function libretaView(input: {
   filter: SupplierFilterValue
   q: string
   match: LibretaPredicates
-  /** Cuántos «sin deuda» se ven de entrada (`SETTLED_PREVIEW`). */
-  preview?: number
 }): LibretaView {
   const q = input.q.trim()
   const found = input.rows.filter((row) => input.match.query(row, q))
@@ -118,6 +111,7 @@ export function libretaView(input: {
     const def = SUPPLIER_FILTERS.find((f) => f.value === value) ?? SUPPLIER_FILTERS[0]
     if (!input.match.filter(entry.row, def.filter)) return false
     if (!isVisibleSupplier(entry.row, def.filter)) return false
+    if (def.filter !== 'taxes_payroll' && isTaxOrPayroll(entry.row)) return false
     return !def.unclassifiedOnly || entry.state === 'unclassified'
   }
 
@@ -128,24 +122,64 @@ export function libretaView(input: {
   const visible = entries.filter((e) => inFilter(e, input.filter)).sort(byUrgency)
   const debt = visible.filter((e) => e.row.debtCents > 0)
   const credit = visible.filter((e) => e.row.debtCents <= 0 && e.row.creditCents > 0)
-  const rest = visible.filter((e) => e.row.debtCents <= 0 && e.row.creditCents <= 0)
-  // Solo se pliega la lista entera: con una búsqueda o un filtro, lo que se pidió está a la vista.
-  const folds = input.filter === 'todos' && q === ''
-  const preview = Math.max(1, input.preview ?? SETTLED_PREVIEW)
-  const settled = folds ? rest.slice(0, preview) : rest
-  const settledMore = folds ? rest.slice(preview) : []
-  const shown = [...debt, ...credit, ...rest]
+  const settled = visible.filter((e) => e.row.debtCents <= 0 && e.row.creditCents <= 0)
+  const shown = [...debt, ...credit, ...settled]
 
   return {
     counts,
     debt,
     credit,
     settled,
-    settledMore,
     shown,
     totals: supplierTotals(shown.map((e) => e.row)),
-    maxDebtCents: debt.reduce((max, e) => Math.max(max, e.row.debtCents), 0),
   }
+}
+
+/**
+ * Lo que suma el totalizador de arriba: los proveedores, salvo en el filtro
+ * «Impuestos y sueldos», que suma los suyos. No depende de la búsqueda ni de los
+ * otros filtros: es la foto de lo que se debe, no de lo que se está mirando.
+ */
+export function libretaGroupTotals(
+  rows: readonly PartyListRow[],
+  filter: SupplierFilterValue,
+): SupplierTotals {
+  const taxes = filter === 'impuestos'
+  return supplierTotals(rows.filter((row) => isTaxOrPayroll(row) === taxes))
+}
+
+/**
+ * Los tres números de arriba. Si faltan los saldos iniciales y no hay nada cargado, no es «$ 0»
+ * (el bar puede deber de antes): es que todavía no se sabe. Lo que hay a favor va aparte: no se
+ * resta de lo que se debe hasta que se usa en un pago.
+ */
+export function libretaTotalizerItems(
+  totals: SupplierTotals,
+  opts: { openingPending?: boolean } = {},
+): TotalizerItem[] {
+  const pending = opts.openingPending === true
+  const unknown = pending && totals.debtCents === 0
+  const favor =
+    totals.creditCents > 0 ? `${formatCentsShort(totals.creditCents)} a favor` : undefined
+  return [
+    {
+      label: 'Le debés',
+      cents: unknown ? null : totals.debtCents,
+      hint: unknown
+        ? 'Faltan los saldos iniciales'
+        : (favor ?? (pending ? 'Lo cargado hasta ahora' : undefined)),
+    },
+    {
+      label: 'Vencido',
+      cents: unknown ? null : totals.overdueCents,
+      tone: totals.overdueCents > 0 ? 'bad' : 'default',
+    },
+    {
+      label: 'Vence esta semana',
+      cents: unknown ? null : totals.dueSoonCents,
+      tone: totals.dueSoonCents > 0 ? 'warn' : 'default',
+    },
+  ]
 }
 
 /** Con fantasía: «Fantasía (Razón social)». Es el `title` del renglón y su nombre a la vista. */
@@ -189,6 +223,11 @@ export function dueRail(dueDate: string | null, today: string, soonDays = SOON_D
   return { label: 'vence el', value: formatDayMonth(dueDate), tone: 'muted' }
 }
 
+/** Lo mismo en una sola línea, para una celda: «vencido hace 12 días», «vence el 20/11». */
+export function railText(rail: RailWords): string {
+  return `${rail.label} ${rail.value}${rail.unit ? ` ${rail.unit}` : ''}`
+}
+
 type RailRow = Pick<
   PartyListRow,
   'debtCents' | 'creditCents' | 'overdueCents' | 'dueSoonCents' | 'oldestDueDate' | 'nextDueDate'
@@ -220,30 +259,6 @@ export function ledgerRail(row: RailRow, today: string): RailWords | null {
   }
   if (row.creditCents > 0) return { label: 'a tu', value: 'favor', tone: 'ok' }
   return null
-}
-
-/** El margen-fecha de un comprobante: el mes arriba y el día grande («oct» · «08»). */
-export function dateRail(iso: string): { label: string; value: string } {
-  const month = Number(iso.slice(5, 7))
-  return { label: MONTH_NAMES_SHORT[month - 1] ?? '', value: iso.slice(8, 10) }
-}
-
-// ─── El héroe ────────────────────────────────────────────────────────────────
-
-/**
- * La oración del número «Le debés a proveedores»: a cuántos y qué tan urgente
- * es. La urgencia sale de `payablesTranches` (la frase del Resumen), así las dos
- * pantallas dicen lo mismo de la misma deuda.
- */
-export function libretaSentence(
-  debtors: number,
-  tranches: Pick<PayablesTranches, 'sentence' | 'title' | 'isEmpty'>,
-): string {
-  if (tranches.isEmpty || debtors <= 0) return ''
-  const who = debtors === 1 ? 'A 1 proveedor.' : `A ${debtors} proveedores.`
-  // Con algo vencido o por vencer hay una oración; si no, el título ya es la frase entera.
-  const urgency = tranches.sentence ?? `${tranches.title}.`
-  return `${who} ${urgency}`
 }
 
 // ─── El período, en palabras ─────────────────────────────────────────────────
@@ -363,39 +378,33 @@ export function documentRowState(row: DocumentRowLike, today: string): DocumentR
 
 // ─── Pagos ───────────────────────────────────────────────────────────────────
 
-type PaymentRowLike = Pick<DocumentListRow, 'status' | 'totalCents'>
+type TotalRowLike = Pick<DocumentListRow, 'kind' | 'status' | 'totalCents'>
 
 /**
- * La línea de arriba de «Pagos»: «hiciste 3 pagos por $ 1.147.250». Solo
- * cuando la página trae TODO lo del período y no hay búsqueda: nunca un total a
- * medias. `null` = no se dice nada.
+ * La suma de la fila del total de Comprobantes y Pagos: lo anulado no cuenta y
+ * una nota de crédito resta.
  */
-export function paymentsHeadline(input: {
-  rows: readonly PaymentRowLike[]
-  totalRows: number
-  searching: boolean
-}): { count: number; cents: number } | null {
-  if (input.searching || input.rows.length === 0) return null
-  if (input.totalRows !== input.rows.length) return null
-  const live = input.rows.filter((r) => r.status !== 'voided')
-  if (live.length === 0) return null
-  return { count: live.length, cents: live.reduce((sum, r) => sum + r.totalCents, 0) }
+export function documentsTotal(rows: readonly TotalRowLike[]): number {
+  return rows.reduce((sum, row) => {
+    if (row.status === 'voided') return sum
+    return row.kind === 'purchase_credit_note' ? sum - row.totalCents : sum + row.totalCents
+  }, 0)
 }
 
-/** «con Caja» / «con 2 medios»: con qué se pagó, en gris. */
+/** «Caja» / «2 medios»: de dónde salió un pago. */
 export function paymentMeansText(means: ReadonlyArray<{ label: string }> | null): string | null {
   if (!means || means.length === 0) return null
   const first = means[0]
-  return means.length === 1 && first ? `con ${first.label}` : `con ${means.length} medios`
+  return means.length === 1 && first ? first.label : `${means.length} medios`
 }
 
-/** «pagó Factura A 0003-00001100 (+2)» / «quedó a cuenta»: qué canceló el pago. */
+/** «Factura A 0003-00001100 (+2)» / «A cuenta»: qué canceló el pago. */
 export function paymentAppliedText(
   appliedTo: ReadonlyArray<{ label: string }> | null,
 ): string | null {
   if (!appliedTo) return null
   const first = appliedTo[0]
-  if (!first) return 'quedó a cuenta'
+  if (!first) return 'A cuenta'
   const rest = appliedTo.length - 1
-  return rest > 0 ? `pagó ${first.label} (+${rest})` : `pagó ${first.label}`
+  return rest > 0 ? `${first.label} (+${rest})` : first.label
 }

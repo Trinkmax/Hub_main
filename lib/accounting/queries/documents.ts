@@ -118,6 +118,8 @@ export type DocumentListRow = {
    * este comprobante, la más grande primero). `null` en los demás.
    */
   appliedTo: DocumentAmountItem[] | null
+  /** Fotos o PDF adjuntos: si tiene su respaldo. */
+  attachmentCount: number
   createdByName: string
   createdAt: string
 }
@@ -438,10 +440,19 @@ type DocBase = {
   controlAccountId: string | null
   createdByName: string
   createdAt: string
+  /** Fotos o PDF adjuntos al comprobante. */
+  attachmentCount: number
+}
+
+/** `acc_document_attachments(count)` llega como `[{ count: 2 }]`. */
+function attachmentCountOf(value: unknown): number {
+  if (!Array.isArray(value)) return 0
+  const [first] = value as unknown[]
+  return isRecord(first) ? int(first.count) : 0
 }
 
 const DOC_LIST_COLUMNS =
-  'id, seq, kind, voucher_type, point_of_sale, number, party_id, party_name_snapshot, issue_date, accounting_date, due_date, description, total_cents, status, control_account_id, created_by_name, created_at'
+  'id, seq, kind, voucher_type, point_of_sale, number, party_id, party_name_snapshot, issue_date, accounting_date, due_date, description, total_cents, status, control_account_id, created_by_name, created_at, acc_document_attachments(count)'
 
 function parseDocBase(row: UnknownRecord): DocBase {
   return {
@@ -462,6 +473,7 @@ function parseDocBase(row: UnknownRecord): DocBase {
     controlAccountId: strOrNull(row.control_account_id),
     createdByName: str(row.created_by_name),
     createdAt: str(row.created_at),
+    attachmentCount: attachmentCountOf(row.acc_document_attachments),
   }
 }
 
@@ -904,6 +916,7 @@ async function enrichDocuments(
       imputation: imputations.get(doc.id) ?? null,
       means: settlement ? settlement.means : null,
       appliedTo: settlement ? settlement.appliedTo : null,
+      attachmentCount: doc.attachmentCount,
       createdByName: doc.createdByName,
       createdAt: doc.createdAt,
     }
