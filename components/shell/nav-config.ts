@@ -182,9 +182,9 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
-        // acceso por persona; la contadora ve SOLO esta entrada. Compras,
-        // Ventas, Cajas, Libros y Plan de cuentas son pestañas de la sección,
-        // así que resalta en cualquier /administracion/*.
+        // acceso por persona; la contadora ve SOLO esta entrada. Las seis palabras
+        // (Resumen, Compras y pagos, Gastos y sueldos, Ventas, Caja, Contabilidad)
+        // las dibuja la sección, así que resalta en cualquier /administracion/*.
         label: 'Administración',
         href: (s) => `/${s}/administracion`,
         icon: 'Landmark',

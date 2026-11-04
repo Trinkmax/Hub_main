@@ -114,7 +114,8 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       },
       {
         value: 'compras',
-        label: 'Compras',
+        label: 'Compras y pagos',
+        shortLabel: 'Compras',
         path: 'administracion/compras',
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
@@ -125,10 +126,10 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       // marcan esta pestaña (`alsoPaths`).
       {
         value: 'gastos-fijos',
-        label: 'Gastos fijos',
-        shortLabel: 'Fijos',
+        label: 'Gastos y sueldos',
+        shortLabel: 'Gastos',
         path: 'administracion/gastos-fijos',
-        alsoPaths: ['administracion/compras/gastos-fijos'],
+        alsoPaths: ['administracion/compras/gastos-fijos', 'administracion/sueldos'],
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
         accounting: 'read',
@@ -143,7 +144,7 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       },
       {
         value: 'cajas',
-        label: 'Cajas',
+        label: 'Caja',
         path: 'administracion/cajas',
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
@@ -161,7 +162,7 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       },
       {
         value: 'libros',
-        label: 'Libros',
+        label: 'Contabilidad',
         path: 'administracion/libros',
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',

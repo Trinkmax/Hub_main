@@ -1,6 +1,7 @@
 'use client'
 
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 import { createContext, type ReactNode, useCallback, useContext, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
@@ -24,16 +25,26 @@ export function SidebarProvider({
   initialCollapsed: boolean
   children: ReactNode
 }) {
-  const [collapsed, setCollapsed] = useState(initialCollapsed)
+  const pathname = usePathname()
+  const [persisted, setCollapsed] = useState(initialCollapsed)
+  // Administración arranca sin el menú del panel, para que entren las planillas: solo de esta
+  // sección, sin pisar la preferencia guardada. El botón del topbar lo muestra igual.
+  const inAdmin = /^\/[^/]+\/administracion(\/|$)/.test(pathname)
+  const [adminOverride, setAdminOverride] = useState<boolean | null>(null)
+  const collapsed = inAdmin ? (adminOverride ?? true) : persisted
 
   const toggle = useCallback(() => {
+    if (inAdmin) {
+      setAdminOverride((prev) => !(prev ?? true))
+      return
+    }
     setCollapsed((prev) => {
       const next = !prev
       // biome-ignore lint/suspicious/noDocumentCookie: cookie no-httpOnly leída por el server en el primer render (mismo patrón que hub_theme); Cookie Store API aún no es universal
       document.cookie = `${SIDEBAR_COOKIE}=${next ? 'collapsed' : 'open'}; path=/; max-age=31536000; samesite=lax`
       return next
     })
-  }, [])
+  }, [inAdmin])
 
   return <SidebarContext.Provider value={{ collapsed, toggle }}>{children}</SidebarContext.Provider>
 }

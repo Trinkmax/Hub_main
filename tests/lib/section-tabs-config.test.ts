@@ -134,12 +134,12 @@ describe('pestañas de sección: qué ve cada uno', () => {
   describe('Administración: las puertas de los seis ítems que tenía el menú, más «Importar» y «Gastos fijos»', () => {
     const ALL = [
       'Resumen',
-      'Compras',
-      'Gastos fijos',
+      'Compras y pagos',
+      'Gastos y sueldos',
       'Ventas',
-      'Cajas',
+      'Caja',
       'Importar',
-      'Libros',
+      'Contabilidad',
       'Plan de cuentas',
     ]
     const accountingOn: TenantFeatures = { ...allOff, accounting: true }
@@ -162,8 +162,9 @@ describe('pestañas de sección: qué ve cada uno', () => {
         '/hub/administracion/libros',
         '/hub/administracion/plan-de-cuentas',
       ])
-      // «Gastos fijos» va justo después de «Compras» y, en el celular, se acorta.
-      expect(section.tabs[2]).toMatchObject({ value: 'gastos-fijos', shortLabel: 'Fijos' })
+      // «Gastos y sueldos» va justo después de «Compras y pagos» y, en el celular, se acorta.
+      expect(section.tabs[1]).toMatchObject({ value: 'compras', shortLabel: 'Compras' })
+      expect(section.tabs[2]).toMatchObject({ value: 'gastos-fijos', shortLabel: 'Gastos' })
       expect(section.tabs[0]?.exact).toBe(true)
       expect(section.tabs.slice(1).every((t) => !t.exact)).toBe(true)
       expect(section.showWhenNoneActive).toBe(true)
