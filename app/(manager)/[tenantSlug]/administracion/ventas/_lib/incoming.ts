@@ -1,5 +1,5 @@
 /**
- * «Plata por cobrar»: lo que te deben las tarjetas, las apps y los clientes,
+ * «Por cobrar»: lo que te deben las tarjetas, las apps y los clientes,
  * dicho como el seguimiento de un envío (ya tendría que haber llegado · llega
  * esta semana · más adelante). Puro: lo prueba
  * `administracion-ventas-cobrar.test.ts`.
@@ -13,7 +13,6 @@
  * está atrasado, y «esta semana» son los próximos `due_soon_days` (7).
  */
 
-import type { LedgerTone } from '@/components/administracion/kit'
 import { DEFAULT_SOON_DAYS } from '@/lib/accounting/aging'
 import type { OpenItemRow, PartyListRow } from '@/lib/accounting/queries/parties'
 import {
@@ -23,9 +22,7 @@ import {
   formatDayMonth,
   formatWeekdayDayMonth,
   isRealIsoDay,
-  WEEKDAY_NAMES_SHORT,
   weekdayName,
-  weekdayOf,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 
@@ -87,173 +84,50 @@ export function receivableTranches(
   return out
 }
 
-/** Quien tiene plata a favor (un cliente que pagó de más, una app a la que le debemos). */
-export type Creditor = { name: string; cents: number; isCustomer: boolean }
-
-/** Desde cuántos nombres «a favor de …» deja de nombrarlos uno por uno. */
-const MAX_CREDITOR_NAMES = 3
-
-/**
- * El cierre de la oración cuando alguien tiene plata a favor, dicho con su
- * nombre: «Además, a Mercado Pago le debemos $ 174.600.» Sin nombres (no se
- * pasaron), la cuenta igual: «Además hay $ X a favor de ellos.»
- */
-function creditClause(cents: number, creditors: readonly Creditor[] | undefined): string {
-  const amount = formatCentsShort(cents)
-  const named = (creditors ?? []).filter((c) => c.cents > 0)
-  if (named.length === 1) {
-    const [only] = named
-    if (only) {
-      return only.isCustomer
-        ? `Además, ${only.name} tiene ${amount} a favor.`
-        : `Además, a ${only.name} le debemos ${amount}.`
-    }
-  }
-  if (named.length > 1 && named.length <= MAX_CREDITOR_NAMES) {
-    const names = named.map((c) => c.name)
-    return `Además hay ${amount} a favor de ${names.slice(0, -1).join(', ')} y ${names.at(-1)}.`
-  }
-  if (named.length > MAX_CREDITOR_NAMES) {
-    return `Además hay ${amount} a favor de ${named.length} de ellos (filtro «A favor»).`
-  }
-  return `Además hay ${amount} a favor de ellos.`
-}
-
-/** La oración del héroe de «Plata por cobrar». */
-export function incomingSentence(
-  tranches: ReceivableTranches,
-  opts: { creditCents?: number; creditors?: readonly Creditor[] } = {},
-): string {
-  const parts: string[] = []
-  if (tranches.lateCents > 0) {
-    parts.push(`${formatCentsShort(tranches.lateCents)} ya tendrían que haber llegado.`)
-  }
-  if (tranches.weekCents > 0) {
-    parts.push(`Esta semana llegan ${formatCentsShort(tranches.weekCents)}.`)
-  }
-  if (parts.length === 0 && tranches.laterCents > 0) {
-    parts.push('Todavía no llegó la fecha de nada.')
-  }
-  if (tranches.walletCents > 0) {
-    parts.push(
-      `${formatCentsShort(tranches.walletCents)} ya están en Mercado Pago: falta contarla.`,
-    )
-  }
-  if (parts.length === 0) parts.push('Todavía no llegó la fecha de nada.')
-  if ((opts.creditCents ?? 0) > 0) {
-    parts.push(creditClause(opts.creditCents ?? 0, opts.creditors))
-  }
-  return parts.join(' ')
-}
-
-export type IncomingStrip = { tone: 'late' | 'info' | 'muted'; word: string; sentence: string }
-
-/** La franja «En camino» de «El mes»: una palabra y una oración. `null` si no te deben nada. */
-export function incomingStrip(tranches: ReceivableTranches): IncomingStrip | null {
-  if (tranches.lateCents > 0) {
-    return {
-      tone: 'late',
-      word: 'Atrasado',
-      sentence: `Hay ${formatCentsShort(tranches.lateCents)} que ya tendrían que haber llegado.`,
-    }
-  }
-  if (tranches.weekCents > 0) {
-    return {
-      tone: 'info',
-      word: 'Esta semana',
-      sentence: `Esta semana te llegan ${formatCentsShort(tranches.weekCents)}.`,
-    }
-  }
-  const dated = tranches.laterCents
-  if (dated > 0) {
-    return {
-      tone: 'muted',
-      word: 'En camino',
-      sentence: `Tenés ${formatCentsShort(tranches.totalCents)} por cobrar: todavía no llegó la fecha.`,
-    }
-  }
-  if (tranches.walletCents > 0) {
-    return {
-      tone: 'muted',
-      word: 'Falta contar',
-      sentence: `Hay ${formatCentsShort(tranches.walletCents)} en Mercado Pago que falta contar.`,
-    }
-  }
-  return null
-}
-
 function arrivalWords(date: string, today: string): string {
   return date === today ? 'hoy' : `el ${formatWeekdayDayMonth(date)}`
 }
 
-type MetaRow = Pick<
-  PartyListRow,
-  'debtCents' | 'overdueCents' | 'nextDueDate' | 'creditCents' | 'active'
->
-
-/**
- * El estado de un pagador en palabras, debajo de su nombre: «$ 1.479.954 ya
- * tendría que haber llegado», «Lo próximo llega el mar 13/10», «Ya está en tu
- * Mercado Pago: contala para anotarlo».
- */
-export function receivableMeta(
-  row: MetaRow,
-  opts: { today: string; walletName?: string | null },
-): string {
-  const parts: string[] = []
-  if (row.debtCents > 0) {
-    if (opts.walletName) parts.push(`Ya está en tu ${opts.walletName}: contala para anotarlo`)
-    else if (row.overdueCents > 0) {
-      parts.push(`${formatCentsShort(row.overdueCents)} ya tendría que haber llegado`)
-    } else if (row.nextDueDate) {
-      parts.push(`Lo próximo llega ${arrivalWords(row.nextDueDate, opts.today)}`)
-    } else parts.push('Sin fecha de llegada')
-  } else if (row.creditCents > 0) parts.push('No te debe nada')
-  if (!row.active) parts.push('desactivado')
-  return parts.join(' · ')
+export type ReceivableArrival = {
+  /** `late` ya tendría que haber llegado · `wallet` ya está en la app, falta contarla. */
+  kind: 'late' | 'date' | 'wallet' | 'none'
+  /** «Atrasado», «Hoy», «Mañana», «En 10 días», «Falta contarla». */
+  text: string
+  /** Lo que aclara un atraso: desde cuándo y, si no es todo, cuánto. */
+  note: string | null
 }
 
-export type ReceivableRail = {
-  kind: 'late' | 'today' | 'date' | 'wallet' | 'none'
-  label?: string
-  value?: string
-  unit?: string
-  tone: LedgerTone
-}
-
-type RailRow = Pick<PartyListRow, 'debtCents' | 'overdueCents' | 'oldestDueDate' | 'nextDueDate'>
+type ArrivalRow = Pick<PartyListRow, 'debtCents' | 'overdueCents' | 'oldestDueDate' | 'nextDueDate'>
 
 /**
- * El margen del renglón de un pagador: desde cuándo está atrasado o para
- * cuándo llega. Nunca un importe.
+ * La columna «Llega» de un pagador. Lo de una billetera nunca es un atraso: ya está en la app, y lo
+ * que falta es contarla. Sin deuda no llega nada.
  */
-export function receivableRail(
-  row: RailRow,
+export function receivableArrival(
+  row: ArrivalRow,
   opts: { today: string; wallet?: boolean },
-): ReceivableRail {
-  if (row.debtCents <= 0) return { kind: 'none', value: '—', tone: 'muted' }
-  if (opts.wallet) return { kind: 'wallet', unit: 'sin contar', tone: 'muted' }
-  if (row.overdueCents > 0 && row.oldestDueDate && isRealIsoDay(row.oldestDueDate)) {
-    const days = Math.max(1, daysBetween(row.oldestDueDate, opts.today))
+): ReceivableArrival {
+  if (row.debtCents <= 0) return { kind: 'none', text: '—', note: null }
+  if (opts.wallet) return { kind: 'wallet', text: 'Falta contarla', note: null }
+  if (row.overdueCents > 0) {
+    const days =
+      row.oldestDueDate && isRealIsoDay(row.oldestDueDate)
+        ? Math.max(1, daysBetween(row.oldestDueDate, opts.today))
+        : null
+    const late = days === null ? null : days === 1 ? '1 día tarde' : `${days} días tarde`
+    const part = row.overdueCents < row.debtCents ? formatCentsShort(row.overdueCents) : null
     return {
       kind: 'late',
-      value: String(days),
-      unit: days === 1 ? 'día tarde' : 'días tarde',
-      tone: 'late',
+      text: 'Atrasado',
+      note: [part, late].filter(Boolean).join(' · ') || null,
     }
   }
   const next = row.nextDueDate
-  if (next && isRealIsoDay(next)) {
-    if (next === opts.today) return { kind: 'today', label: 'llega', value: 'hoy', tone: 'ok' }
-    return {
-      kind: 'date',
-      label: 'llega',
-      value: next.slice(8, 10),
-      unit: WEEKDAY_NAMES_SHORT[weekdayOf(next)] ?? '',
-      tone: 'muted',
-    }
-  }
-  return { kind: 'none', value: '—', tone: 'muted' }
+  if (!next || !isRealIsoDay(next)) return { kind: 'none', text: 'Sin fecha', note: null }
+  const days = daysBetween(opts.today, next)
+  if (days <= 0) return { kind: 'date', text: 'Hoy', note: null }
+  if (days === 1) return { kind: 'date', text: 'Mañana', note: null }
+  return { kind: 'date', text: `En ${days} días`, note: null }
 }
 
 // ─── Cuándo llega, día por día ───────────────────────────────────────────────
@@ -273,7 +147,7 @@ export const INCOMING_WINDOW_DAYS = 14
 
 /**
  * Lo que tiene que entrar cada día de las próximas dos semanas. Lo atrasado NO
- * entra (ya lo dice el héroe): la tira es lo que viene.
+ * entra (ya lo dice su número arriba): la tira es lo que viene.
  */
 export function incomingDays(
   items: readonly Pick<OpenItemRow, 'dueDate' | 'openCents'>[],

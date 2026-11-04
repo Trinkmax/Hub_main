@@ -1,24 +1,13 @@
-import { ArrowUp, CalendarCheck, Plus, ReceiptText } from 'lucide-react'
-import Link from 'next/link'
+import { Plus, ReceiptText } from 'lucide-react'
 import { Suspense } from 'react'
-import {
-  MoneyHero,
-  Panel,
-  PanelLink,
-  PanelSection,
-  RetryButton,
-  StatusPill,
-} from '@/components/administracion/kit'
-import { Button } from '@/components/ui/button'
-import type { MonthDayState } from '@/lib/accounting/home'
-import { cashDiffText, type MonthState, type ProjectionDay } from '@/lib/accounting/projection'
+import { PanelLink, RetryButton, StatusPill } from '@/components/administracion/kit'
+import { cashDiffText, type ProjectionDay } from '@/lib/accounting/projection'
 import { type DailyCloseDay, getDocument } from '@/lib/accounting/queries/documents'
 import type { CashCountTreasury } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
-import { capitalizeFirst, formatDayMonth, weekdayName } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
-import { longDayTitle, nightPaceText, nightSentence } from '../_lib/almanac'
-import { ExampleTicket } from '../cierre/_components/close-pieces'
+import { capitalizeFirst } from '@/lib/dates'
+import { formatCents, formatCentsShort } from '@/lib/money'
+import { longDay, longDayTitle, nightPaceText, nightSentence } from '../_lib/planilla'
 import { CloseTicket } from '../cierre/_components/close-ticket'
 import { closeTicketProps } from '../cierre/_lib/close-ticket-props'
 import { CashCountDialog } from './cash-count-dialog'
@@ -26,16 +15,14 @@ import { NoteCell, TargetCell } from './day-cells'
 import { NightTicketSkeleton } from './skeletons'
 
 /**
- * La noche elegida: lo que se muestra al lado del almanaque (debajo, en el
- * celular) cuando se toca un día. Una noche cargada trae el MISMO ticket que
- * se armó al cerrarla (`CloseTicket`), con lo que pasó después («ya llegó»,
- * «llega el…»): lo que cargaste ayer lo encontrás igual hoy.
+ * El detalle de una noche con su cierre: lo que se abre al tocar «Ver cierre» en la planilla. Trae el
+ * MISMO ticket que se armó al cerrarla (`CloseTicket`), con lo que pasó después («ya llegó», «llega
+ * el…»), y al lado el objetivo, el evento y lo que entró por caja.
  *
- * El ticket pide el comprobante entero de cada turno (unas quince lecturas),
- * así que va en su propio `Suspense`: el resto de la noche aparece enseguida y
- * al cambiar de día se ve el esqueleto de un ticket, no el ticket viejo.
+ * El ticket pide el comprobante entero de cada turno (unas quince lecturas), así que va en su propio
+ * `Suspense`: el resto de la noche aparece enseguida.
  *
- * Quien solo mira ve lo mismo sin ningún botón de carga ni celdas editables.
+ * Quien solo mira ve lo mismo sin ningún botón de carga ni celdas que se escriban.
  */
 
 export type NightSheetProps = {
@@ -44,12 +31,10 @@ export type NightSheetProps = {
   base: string
   /** Hoy (`yyyy-MM-dd`): contra esto se dice si algo «llega» o «tendría que haber llegado». */
   today: string
-  /** La noche elegida (`defaultDay`); `null` si el mes no tiene ninguna para mostrar. */
-  day: string | null
-  state: MonthDayState | null
+  /** La noche abierta. */
+  day: string
   /** «octubre». */
   monthName: string
-  monthState: MonthState
   projectionDay: ProjectionDay | null
   /** Los cierres de esa noche (uno por turno). */
   closes: DailyCloseDay['closes']
@@ -61,81 +46,28 @@ export type NightSheetProps = {
   canWrite: boolean
 }
 
-/** «miércoles 07/10», para los lectores de pantalla de las celdas que se editan. */
-function dayWords(day: string): string {
-  return `${weekdayName(day)} ${formatDayMonth(day)}`.trim()
-}
+const SECTION = 'space-y-3 border-t border-border/70 pt-4'
 
-const SHEET = 'card-hairline rounded-2xl border bg-card p-4 shadow-xs sm:p-5'
-const DAY_TITLE = 'font-serif text-xl font-semibold leading-tight tracking-tight text-balance'
-
-/** El link de vuelta, solo donde la noche queda debajo del almanaque. */
-function BackToAlmanac() {
-  return (
-    <a
-      href="#almanaque"
-      className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring xl:hidden"
-    >
-      <ArrowUp aria-hidden className="size-3.5" />
-      Volver al almanaque
-    </a>
-  )
-}
-
-/*
- * Las celdas que se editan en el lugar (`TargetCell`, `NoteCell`) son las de la planilla: un
- * «Cargar ✎» gris de 12 px. Acá, mientras esa noche no tiene objetivo o nota, el mismo botón se
- * viste de botón de verdad (contorno, 44 px, la acción escrita). Se apunta al botón solo mientras
- * muestra su «Cargar» (`:has(>span.text-xs)`): apenas se guarda, vuelve a mostrar el importe.
- * El texto que se ve está dentro del nombre que lee el lector («Cargar el objetivo del…»,
- * «Agregar una nota al…»): quien maneja la pantalla por voz lo encuentra igual.
- */
-const TARGET_PROMPT = [
-  '[&>button:has(>span.text-xs)]:mx-0 [&>button:has(>span.text-xs)]:h-11 [&>button:has(>span.text-xs)]:rounded-full [&>button:has(>span.text-xs)]:border [&>button:has(>span.text-xs)]:border-border/70 [&>button:has(>span.text-xs)]:bg-card [&>button:has(>span.text-xs)]:px-4 [&>button:has(>span.text-xs)]:shadow-xs',
-  'md:pointer-fine:[&>button:has(>span.text-xs)]:h-9',
-  '[&>button:has(>span.text-xs)>span]:sr-only [&>button:has(>span.text-xs)>svg]:hidden',
-  "[&>button:has(>span.text-xs)]:before:text-sm [&>button:has(>span.text-xs)]:before:font-medium [&>button:has(>span.text-xs)]:before:text-foreground [&>button:has(>span.text-xs)]:before:content-['Cargar_el_objetivo']",
-].join(' ')
-
-const NOTE_PROMPT = [
-  '[&>button:has(>span.text-xs)]:mx-0 [&>button:has(>span.text-xs)]:h-11 [&>button:has(>span.text-xs)]:rounded-full [&>button:has(>span.text-xs)]:border [&>button:has(>span.text-xs)]:border-border/70 [&>button:has(>span.text-xs)]:bg-card [&>button:has(>span.text-xs)]:px-4 [&>button:has(>span.text-xs)]:shadow-xs',
-  'md:pointer-fine:[&>button:has(>span.text-xs)]:h-9',
-  '[&>button:has(>span.text-xs)>span]:sr-only [&>button:has(>span.text-xs)>svg]:hidden',
-  "[&>button:has(>span.text-xs)]:before:text-sm [&>button:has(>span.text-xs)]:before:font-medium [&>button:has(>span.text-xs)]:before:text-foreground [&>button:has(>span.text-xs)]:before:content-['＋_Agregar_una_nota']",
-].join(' ')
-
-/** El objetivo del día (se edita en el lugar) y cómo quedó contra lo vendido. */
+/** El objetivo del día (se escribe en el lugar) y cómo quedó contra lo vendido. */
 function TargetLine({
   day,
   projectionDay,
   canWrite,
-  label,
 }: {
   day: string
   projectionDay: ProjectionDay | null
   canWrite: boolean
-  label: string
 }) {
   const target = projectionDay?.targetCents ?? null
   const compliance = projectionDay?.compliance
   // Una sola cosa en la pastilla: «16 % abajo del objetivo» (no «84 % · 16 % abajo»).
   const pace = compliance?.kind === 'value' ? compliance : null
-  if (canWrite && target === null) {
-    return (
-      <div className="grid justify-items-start gap-1.5">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <div className={TARGET_PROMPT}>
-          <TargetCell day={day} dayLabel={dayWords(day)} targetCents={target} align="start" />
-        </div>
-      </div>
-    )
-  }
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm text-muted-foreground">Objetivo de esa noche</span>
       <span className="flex flex-wrap items-center justify-end gap-2">
         {canWrite ? (
-          <TargetCell day={day} dayLabel={dayWords(day)} targetCents={target} />
+          <TargetCell day={day} dayLabel={longDay(day)} targetCents={target} />
         ) : (
           <span className="text-sm font-medium tabular-nums">
             {target === null ? 'Sin objetivo' : formatCentsShort(target)}
@@ -154,43 +86,29 @@ function TargetLine({
 /** Los eventos del calendario de esa noche y la nota a mano. */
 function EventLine({
   day,
-  projectionDay,
+  note,
   events,
   canWrite,
-  lead,
 }: {
   day: string
-  projectionDay: ProjectionDay | null
+  note: string | null
   events: readonly string[]
   canWrite: boolean
-  /** «Esa noche» / «Ese día». */
-  lead: string
 }) {
-  const note = projectionDay?.note ?? null
   if (!canWrite && events.length === 0 && !note) return null
   return (
     <div className="space-y-1">
       {events.length > 0 ? (
-        <p className="flex items-start gap-2 text-sm text-pretty">
-          <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-adm-s2" />
-          <span>
-            <span className="text-muted-foreground">{lead}: </span>
-            <span className="font-medium">{events.join(' · ')}</span>
-          </span>
+        <p className="text-sm text-pretty">
+          <span className="text-muted-foreground">Esa noche: </span>
+          <span className="font-medium">{events.join(' · ')}</span>
         </p>
       ) : null}
       {canWrite ? (
-        note === null ? (
-          // Sin nota: el botón «＋ Agregar una nota», sin rótulo al lado (diría lo mismo dos veces).
-          <div className={NOTE_PROMPT}>
-            <NoteCell day={day} dayLabel={dayWords(day)} note={note} />
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-2 text-sm">
-            <span className="text-muted-foreground">Nota</span>
-            <NoteCell day={day} dayLabel={dayWords(day)} note={note} />
-          </div>
-        )
+        <div className="flex flex-wrap items-center gap-x-2 text-sm">
+          <span className="text-muted-foreground">Nota</span>
+          <NoteCell day={day} dayLabel={longDay(day)} note={note} />
+        </div>
       ) : note ? (
         <p className="text-sm text-pretty">
           <span className="text-muted-foreground">Nota: </span>
@@ -202,89 +120,7 @@ function EventLine({
 }
 
 export function NightSheet(props: NightSheetProps) {
-  const { day, state, base, canWrite, monthName, monthState, projectionDay, events } = props
-
-  // El mes no tiene ninguna noche cargada: se enseña qué va a aparecer, con un ticket de muestra.
-  if (!day || !state) {
-    const past = monthState === 'past'
-    return (
-      <div className="space-y-4">
-        <Panel
-          title={past ? `No se cargó ningún cierre en ${monthName}` : 'El ticket de cada noche'}
-        >
-          {past ? null : (
-            <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
-              Cuando {canWrite ? 'cargues' : 'se cargue'} un cierre, tocás ese día en el almanaque y
-              acá aparece su ticket: cuánto se vendió, cómo te pagaron y qué día llega cada cosa.
-            </p>
-          )}
-        </Panel>
-        {past ? null : (
-          <div className="relative">
-            <p className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Ejemplo
-            </p>
-            <div aria-hidden className="opacity-80">
-              <ExampleTicket />
-            </div>
-          </div>
-        )}
-        {/* Sin «Volver al almanaque»: acá no se eligió ninguna noche, no hay a dónde volver. */}
-      </div>
-    )
-  }
-
-  const title = longDayTitle(day)
-
-  if (state === 'today' || state === 'future') {
-    const today = state === 'today'
-    return (
-      <div className="space-y-4">
-        <Panel>
-          <PanelSection>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className={DAY_TITLE}>{title}</h2>
-              <StatusPill tone={today ? 'info' : 'muted'}>
-                {today ? 'En curso' : 'Todavía no llegó'}
-              </StatusPill>
-            </div>
-            {today ? (
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground text-pretty">
-                La noche todavía no terminó. El cierre se carga cuando cierran la caja; para el bar,
-                el día cambia a las 5 de la mañana.
-              </p>
-            ) : null}
-            {today && canWrite ? (
-              <Button asChild variant="outline" className="mt-3 h-11 gap-2">
-                <Link href={`${base}/ventas/cierre?fecha=${day}`}>
-                  <CalendarCheck className="size-4" aria-hidden />
-                  Cargar el cierre de hoy
-                </Link>
-              </Button>
-            ) : null}
-          </PanelSection>
-          <PanelSection className="space-y-3">
-            <TargetLine
-              day={day}
-              projectionDay={projectionDay}
-              canWrite={canWrite}
-              label="Objetivo de ese día"
-            />
-            <EventLine
-              day={day}
-              projectionDay={projectionDay}
-              events={events}
-              canWrite={canWrite}
-              lead="Ese día"
-            />
-          </PanelSection>
-        </Panel>
-        <BackToAlmanac />
-      </div>
-    )
-  }
-
-  // ── Una noche cargada ──
+  const { day, base, canWrite, monthName, projectionDay, events } = props
   const loadedCents = props.closes.reduce((sum, close) => sum + close.totalCents, 0)
   const netCents = projectionDay?.netCents ?? loadedCents
   const sentence = nightSentence({ loadedCents, netCents })
@@ -296,27 +132,33 @@ export function NightSheet(props: NightSheetProps) {
   )
 
   return (
-    <div className="space-y-4">
-      <section className={SHEET} aria-label={`La noche del ${dayWords(day)}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className={DAY_TITLE}>{title}</h2>
-          <StatusPill tone="ok">Cargado</StatusPill>
+    <div className="grid gap-4">
+      <section aria-label={`La noche del ${longDay(day)}`} className="space-y-3">
+        {/* A la derecha va la X de la hoja: el título no se le mete abajo. */}
+        <div className="flex flex-wrap items-center gap-2 pr-8">
+          <h2 className="font-serif text-xl leading-tight font-semibold tracking-tight text-balance">
+            {longDayTitle(day)}
+          </h2>
           {props.closes.length > 1 ? (
             <StatusPill tone="muted">{props.closes.length} turnos</StatusPill>
           ) : null}
         </div>
-        <MoneyHero
-          className="mt-4"
-          size="md"
-          cents={loadedCents}
-          label="Vendido esa noche"
-          sentence={sentence}
-        />
-        {bar > 0 && delivery > 0 ? (
-          <p className="mt-3 text-xs tabular-nums text-muted-foreground">
-            Salón {formatCentsShort(bar)} · Delivery {formatCentsShort(delivery)}
+        <div>
+          <p className="text-xs text-muted-foreground">Vendido esa noche</p>
+          <p className="text-2xl leading-tight font-semibold tracking-tight tabular-nums">
+            {formatCents(loadedCents, { decimals: loadedCents % 100 === 0 ? 0 : 2 })}
           </p>
-        ) : null}
+          {sentence ? (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground text-pretty">
+              {sentence}
+            </p>
+          ) : null}
+          {bar > 0 && delivery > 0 ? (
+            <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+              Salón {formatCentsShort(bar)} · Delivery {formatCentsShort(delivery)}
+            </p>
+          ) : null}
+        </div>
       </section>
 
       <Suspense fallback={<NightTicketSkeleton />}>
@@ -331,68 +173,57 @@ export function NightSheet(props: NightSheetProps) {
         />
       </Suspense>
 
-      <Panel>
-        <PanelSection className="space-y-3">
-          <TargetLine
-            day={day}
-            projectionDay={projectionDay}
-            canWrite={canWrite}
-            label="Objetivo de esa noche"
-          />
-          <EventLine
-            day={day}
-            projectionDay={projectionDay}
-            events={events}
-            canWrite={canWrite}
-            lead="Esa noche"
-          />
-        </PanelSection>
-        <PanelSection title="Ventas contra caja">
-          <div className="rounded-xl bg-secondary/50 p-3">
-            {cash?.kind === 'compared' && projectionDay ? (
-              <p className="text-sm text-pretty">
-                Entró ese día{' '}
-                <span className="font-medium tabular-nums">
-                  {formatCentsShort(projectionDay.cashCountedCents)}
-                </span>
-                {' · '}
-                <span
-                  className={
-                    cash.diffCents === 0
-                      ? 'font-medium text-success'
-                      : cash.diffCents < 0
-                        ? 'font-medium text-warning-text'
-                        : 'font-medium'
-                  }
-                >
-                  {cashDiffText(cash.diffCents)}
-                </span>
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground text-pretty">
-                Todavía no {canWrite ? 'anotaste' : 'se anotó'} lo que entró ese día.
-              </p>
-            )}
-            {canWrite && projectionDay ? (
-              <div className="mt-2">
-                <CashCountDialog
-                  trigger="button"
-                  day={day}
-                  dayLabel={dayWords(day)}
-                  treasuries={dialogTreasuries}
-                  initial={props.counts}
-                  salesCents={projectionDay.hasClose ? projectionDay.realCents : null}
-                  countedCents={projectionDay.cashCountedCents}
-                />
-              </div>
-            ) : null}
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground text-pretty">
-            Compara lo vendido en el salón con la plata que entró ese día. No cambia ningún saldo.
+      <section className={SECTION}>
+        <TargetLine day={day} projectionDay={projectionDay} canWrite={canWrite} />
+        <EventLine
+          day={day}
+          note={projectionDay?.note ?? null}
+          events={events}
+          canWrite={canWrite}
+        />
+      </section>
+
+      <section className={SECTION}>
+        <h3 className="text-sm font-semibold">Ventas contra caja</h3>
+        {cash?.kind === 'compared' && projectionDay ? (
+          <p className="text-sm text-pretty">
+            Entró ese día{' '}
+            <span className="font-medium tabular-nums">
+              {formatCentsShort(projectionDay.cashCountedCents)}
+            </span>
+            {' · '}
+            <span
+              className={
+                cash.diffCents === 0
+                  ? 'font-medium text-success'
+                  : cash.diffCents < 0
+                    ? 'font-medium text-destructive'
+                    : 'font-medium'
+              }
+            >
+              {cashDiffText(cash.diffCents)}
+            </span>
           </p>
-        </PanelSection>
-      </Panel>
-      <BackToAlmanac />
+        ) : (
+          <p className="text-sm text-muted-foreground text-pretty">
+            Todavía no {canWrite ? 'anotaste' : 'se anotó'} lo que entró ese día.
+          </p>
+        )}
+        {canWrite && projectionDay ? (
+          <CashCountDialog
+            trigger="button"
+            day={day}
+            dayLabel={longDay(day)}
+            treasuries={dialogTreasuries}
+            initial={props.counts}
+            salesCents={projectionDay.hasClose ? projectionDay.realCents : null}
+            countedCents={projectionDay.cashCountedCents}
+          />
+        ) : null}
+        <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+          Compara lo vendido en el salón con la plata que entró ese día. No cambia ningún saldo.
+        </p>
+      </section>
     </div>
   )
 }
@@ -442,15 +273,14 @@ async function NightTicket({
   if (docs.length !== closes.length) {
     const failed = results.find((result) => !result.ok)
     return (
-      <Panel title="No pudimos traer el ticket de esa noche.">
-        <div className="flex flex-col items-start gap-3">
-          <p role="alert" className="text-sm text-muted-foreground text-pretty">
-            {failed && !failed.ok ? failed.message : 'Probá de nuevo en un momento.'}
-          </p>
-          <RetryButton />
-          {vouchers}
-        </div>
-      </Panel>
+      <div className="flex flex-col items-start gap-3 border-t border-border/70 pt-4">
+        <p className="text-sm font-semibold">No pudimos traer el ticket de esa noche.</p>
+        <p role="alert" className="text-sm text-muted-foreground text-pretty">
+          {failed && !failed.ok ? failed.message : 'Probá de nuevo en un momento.'}
+        </p>
+        <RetryButton />
+        {vouchers}
+      </div>
     )
   }
 

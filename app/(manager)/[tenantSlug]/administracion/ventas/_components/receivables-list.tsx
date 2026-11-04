@@ -1,12 +1,11 @@
-import { Wallet } from 'lucide-react'
 import Link from 'next/link'
-import { Amount } from '@/components/administracion/amount'
-import { LedgerList, LedgerRail, LedgerRow } from '@/components/administracion/kit'
+import { StatusPill } from '@/components/administracion/kit'
+import { PRow, PTable, PTd, PTh, PTotalRow, ROW_ACTION } from '@/components/administracion/planilla'
 import { ActionButton } from '@/components/administracion/quick-actions'
-import { PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import type { PartyListRow } from '@/lib/accounting/queries/parties'
 import { formatCentsShort } from '@/lib/money'
-import { receivableMeta, receivableRail, type WalletBox } from '../_lib/incoming'
+import { cn } from '@/lib/utils'
+import { receivableArrival, type WalletBox } from '../_lib/incoming'
 
 export function partyDisplayName(row: Pick<PartyListRow, 'partyName' | 'tradeName'>): string {
   return row.tradeName && row.tradeName !== row.partyName ? row.tradeName : row.partyName
@@ -19,17 +18,15 @@ function creditText(row: PartyListRow): string | null {
   return row.partyKind === 'customer' ? `A favor ${amount}` : `Le debemos ${amount}`
 }
 
-const ROW_ACTION = 'h-11 rounded-full px-4 md:pointer-fine:h-9'
+const NAME_LINK =
+  'rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring'
 
 /**
- * «Quién te debe»: un renglón por tarjeta, app o cliente con algo abierto. En
- * el margen, desde cuándo está atrasado o para cuándo llega; en el centro,
- * quién es y su estado en palabras; a la derecha, cuánto y la acción del
- * momento: «Ya entró» abre la hoja de cobrar con ese pagador elegido. Una
+ * «Por cobrar»: un renglón por tarjeta, app o cliente con algo abierto. Quién, cuándo llega y
+ * cuánto, y la acción del momento: «Ya entró» abre la hoja de cobrar con ese pagador elegido. Una
  * billetera con su caja no se cobra: se cuenta («Contar Mercado Pago»).
  *
- * El renglón entero lleva a la ficha; el botón queda por encima del link.
- * Quien solo mira ve los mismos renglones sin botones.
+ * El nombre lleva a la ficha. Quien solo mira ve los mismos renglones sin botones.
  */
 export function ReceivablesList({
   rows,
@@ -46,101 +43,100 @@ export function ReceivablesList({
   today: string
   canWrite: boolean
 }) {
+  const total = rows.reduce((sum, row) => sum + Math.max(0, row.debtCents), 0)
   return (
-    <LedgerList aria-label="Quién te debe" bare>
-      {rows.map((row) => {
-        const wallet = wallets.get(row.partyId) ?? null
-        const rail = receivableRail(row, { today, wallet: wallet !== null })
-        const name = partyDisplayName(row)
-        const kind = PARTY_KIND_LABELS[row.partyKind] ?? 'Cliente'
-        const state = receivableMeta(row, { today, walletName: wallet?.name ?? null })
-        const credit = creditText(row)
-        const debt =
-          row.debtCents > 0 ? (
-            <Amount
-              cents={row.debtCents}
-              decimals={0}
-              className="font-serif text-lg font-semibold"
-            />
-          ) : null
-        const button =
-          canWrite && row.debtCents > 0 ? (
-            wallet ? (
-              <ActionButton
-                action="ajustar"
-                params={{ caja: wallet.treasuryId }}
-                variant="outline"
-                className={ROW_ACTION}
-              >
-                Contar {wallet.name}
-              </ActionButton>
-            ) : (
-              <ActionButton
-                action="cobrar"
-                params={{ cliente: row.partyId }}
-                variant="outline"
-                className={ROW_ACTION}
-                aria-label={`Ya entró: anotar lo que pagó ${name}`}
-              >
-                Ya entró
-              </ActionButton>
-            )
-          ) : null
-        return (
-          <LedgerRow
-            key={row.partyId}
-            href={`${base}/ventas/clientes/${row.partyId}`}
-            title={name}
-            muted={!row.active}
-            rail={
-              rail.kind === 'wallet' ? (
-                <LedgerRail icon={Wallet} unit={rail.unit} tone={rail.tone} />
-              ) : (
-                <LedgerRail
-                  label={rail.label}
-                  value={rail.value}
-                  unit={rail.unit}
-                  tone={rail.tone}
-                />
-              )
-            }
-            // Con botón, en el celular el importe va debajo del nombre y el botón a su lado (un
-            // piso menos); en la compu, importe y botón a la derecha, como siempre.
-            meta={
-              <>
-                {button && debt ? (
-                  <span className="block text-foreground sm:hidden">{debt}</span>
+    <PTable minWidth={520} label="Quién te debe">
+      <thead>
+        <tr>
+          <PTh>Quién</PTh>
+          <PTh>Llega</PTh>
+          <PTh align="right">A cobrar</PTh>
+          {canWrite ? (
+            <PTh>
+              <span className="sr-only">Qué hacer</span>
+            </PTh>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const wallet = wallets.get(row.partyId) ?? null
+          const name = partyDisplayName(row)
+          const arrival = receivableArrival(row, { today, wallet: wallet !== null })
+          const credit = creditText(row)
+          return (
+            <PRow key={row.partyId} className={row.active ? undefined : 'text-muted-foreground'}>
+              <PTd>
+                <Link href={`${base}/ventas/clientes/${row.partyId}`} className={NAME_LINK}>
+                  {name}
+                </Link>
+                {row.active ? null : (
+                  <small className="block text-xs text-muted-foreground">desactivado</small>
+                )}
+              </PTd>
+              <PTd className="whitespace-nowrap">
+                {arrival.kind === 'late' ? (
+                  <StatusPill tone="late">{arrival.text}</StatusPill>
+                ) : arrival.kind === 'date' ? (
+                  arrival.text
+                ) : (
+                  <span className="text-muted-foreground">{arrival.text}</span>
+                )}
+                {arrival.note ? (
+                  <small className="ml-2 text-xs text-muted-foreground">{arrival.note}</small>
                 ) : null}
-                <span>{state ? `${kind} · ${state}` : kind}</span>
-              </>
-            }
-            amount={
-              button
-                ? undefined
-                : (debt ??
-                  // Sin deuda: lo que tiene a favor, o nada («No te debe nada» ya lo dice el renglón).
-                  (credit ? <span className="text-sm font-normal">{credit}</span> : undefined))
-            }
-            amountNote={button || !debt ? undefined : credit}
-            action={
-              button ? (
-                <span className="flex items-center gap-3">
-                  <span className="text-right max-sm:hidden">
-                    {debt}
-                    {credit ? (
-                      <span className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
-                        {credit}
-                      </span>
-                    ) : null}
-                  </span>
-                  {button}
-                </span>
-              ) : undefined
-            }
-          />
-        )
-      })}
-    </LedgerList>
+              </PTd>
+              <PTd align="right" className="font-medium">
+                {row.debtCents > 0 ? formatCentsShort(row.debtCents) : null}
+                {credit ? (
+                  <small
+                    className={cn(
+                      'text-xs font-normal text-muted-foreground',
+                      row.debtCents > 0 && 'block',
+                    )}
+                  >
+                    {credit}
+                  </small>
+                ) : null}
+              </PTd>
+              {canWrite ? (
+                <PTd className="w-[9.5rem] whitespace-nowrap text-right">
+                  {row.debtCents <= 0 ? null : wallet ? (
+                    <ActionButton
+                      action="ajustar"
+                      params={{ caja: wallet.treasuryId }}
+                      variant="outline"
+                      size="sm"
+                      className={cn('pointer-coarse:h-10', ROW_ACTION)}
+                    >
+                      Contar {wallet.name}
+                    </ActionButton>
+                  ) : (
+                    <ActionButton
+                      action="cobrar"
+                      params={{ cliente: row.partyId }}
+                      variant="outline"
+                      size="sm"
+                      className={cn('pointer-coarse:h-10', ROW_ACTION)}
+                      aria-label={`Ya entró: anotar lo que pagó ${name}`}
+                    >
+                      Ya entró
+                    </ActionButton>
+                  )}
+                </PTd>
+              ) : null}
+            </PRow>
+          )
+        })}
+      </tbody>
+      <tfoot>
+        <PTotalRow>
+          <PTd colSpan={2}>Total</PTd>
+          <PTd align="right">{formatCentsShort(total)}</PTd>
+          {canWrite ? <PTd /> : null}
+        </PTotalRow>
+      </tfoot>
+    </PTable>
   )
 }
 
@@ -148,8 +144,8 @@ export function ReceivablesList({
 export function SettledParties({ rows, base }: { rows: readonly PartyListRow[]; base: string }) {
   if (rows.length === 0) return null
   return (
-    <details className="group/fold border-t border-border/60 pt-1">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+    <details className="group/fold min-w-0">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10 [&::-webkit-details-marker]:hidden">
         <span className="rounded-full bg-secondary px-1.5 py-px font-mono text-[11px] tabular-nums">
           {rows.length}
         </span>
@@ -160,7 +156,7 @@ export function SettledParties({ rows, base }: { rows: readonly PartyListRow[]; 
           <li key={row.partyId}>
             <Link
               href={`${base}/ventas/clientes/${row.partyId}`}
-              className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:min-h-8"
+              className="inline-flex min-h-8 items-center rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10"
             >
               {partyDisplayName(row)}
             </Link>

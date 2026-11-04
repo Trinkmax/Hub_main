@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { closesByDay, missingDays } from '@/components/administracion/cajas-ventas/closes'
@@ -8,14 +8,13 @@ import {
   hrefWith,
   type PageSearchParams,
 } from '@/components/administracion/cajas-ventas/periods'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { PillLink } from '@/components/administracion/kit/pill'
+import { SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
 import { loadPostingCatalog, loadPostingContext } from '@/lib/accounting/context'
 import { listDocuments } from '@/lib/accounting/queries/documents'
 import { getSalesRangeDefaults } from '@/lib/accounting/queries/forms'
-import { getSalesProjection } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { CHANNELS, type Channel } from '@/lib/accounting/types'
@@ -49,11 +48,7 @@ export const metadata = { title: 'Cierre del día' }
 /** Cuántos días que faltan se muestran arriba como atajo. */
 const MISSING_SHORTCUTS = 4
 
-/**
- * En el celular la pantalla es una carga: menos aire entre el encabezado y el primer paso,
- * para que en la primera pantalla entren los primeros medios. En compu, el marco de siempre.
- */
-const PAGE_CLASS = 'max-sm:space-y-4 max-sm:py-4'
+const TITLE = 'font-serif text-2xl font-semibold tracking-tight'
 
 function dayTitle(day: string): string {
   return `${weekdayName(day)} ${formatIsoDay(day)}`
@@ -65,7 +60,7 @@ function dayTitle(day: string): string {
  * falta ninguno, el día de servicio (antes de las 5:00 es ayer). Un día ya
  * cargado muestra sus cierres y deja cargar otro turno.
  *
- * La página arma el marco (título, el día con sus flechas y los días que
+ * La página arma el marco (el título con el día, sus flechas y los días que
  * faltan) y le pasa al formulario los medios ya «vestidos»: a qué grupo va
  * cada uno, a dónde entra la plata y cuándo. Lo que se guarda lo decide el
  * formulario, igual que siempre.
@@ -82,32 +77,30 @@ export default async function CierreDelDiaPage({
   const base = `/${tenantSlug}/administracion`
   const { access, canWrite } = await requireAdminPage(tenantSlug, `${base}/ventas/cierre`)
 
-  const header = (
-    <AdmHeader
-      back={{ href: `${base}/ventas`, label: 'Ventas' }}
-      title="Cierre del día"
-      badge={<ReadOnlyBadge className="ml-0" />}
-      // En el celular lo dice el primer paso, y cada renglón que se saca de arriba es un
-      // campo más a la vista: la descripción queda para pantallas con lugar.
-      description={
-        <span className="hidden sm:inline">
-          Anotá lo que se vendió y cómo te pagaron: el ticket del día se arma solo. Si un medio no
-          tuvo ventas, dejalo vacío.
-        </span>
-      }
-    />
+  const back = (
+    <Link
+      href={`${base}/ventas`}
+      className="inline-flex min-h-8 items-center gap-1 rounded-sm text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+    >
+      <ChevronLeft className="size-4" aria-hidden />
+      Ventas
+    </Link>
   )
 
   if (!canWrite) {
     return (
-      <AdmPage width="comfortable" className={PAGE_CLASS}>
-        {header}
+      <SimplePage>
+        <div className="flex flex-wrap items-center gap-3">
+          {back}
+          <ReadOnlyBadge />
+        </div>
+        <h1 className={TITLE}>Cierre del día</h1>
         <ReadOnlyNotice
-          description="El cierre del día lo cargan los dueños. Con Contabilidad ves cada cierre en Ventas › Cierres del día."
+          description="El cierre del día lo cargan los dueños. Con Contabilidad ves cada cierre en Ventas, tocando «Ver cierre» en la planilla."
           href={`${base}/ventas`}
-          linkLabel="Ir a Cierres del día"
+          linkLabel="Ir a la planilla"
         />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -162,65 +155,59 @@ export default async function CierreDelDiaPage({
   // Los que no entran como atajo se dicen igual: «y 3 más».
   const moreMissing = pending.length - otherMissing.length
 
-  const dayNav = (
-    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
-      <nav
-        aria-label="Día del cierre"
-        className="card-hairline flex items-center gap-1 self-start rounded-full border bg-card p-1 shadow-xs"
-      >
-        <DayStep
-          href={canPrev ? hrefWith(`${base}/ventas/cierre`, { fecha: prev }) : null}
-          label={`Día anterior: ${dayTitle(prev)}`}
-        >
-          <ChevronLeft className="size-4" />
-        </DayStep>
-        <div className="flex items-center gap-2 px-1.5">
-          <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
-          <span className="min-w-[152px] text-center text-sm font-semibold tabular-nums">
-            {dayTitle(date)}
-          </span>
-        </div>
-        <DayStep
-          href={canNext ? hrefWith(`${base}/ventas/cierre`, { fecha: next }) : null}
-          label={`Día siguiente: ${dayTitle(next)}`}
-        >
-          <ChevronRight className="size-4" />
-        </DayStep>
-      </nav>
-      {otherMissing.length > 0 ? (
-        // En el celular, UNA fila que se desliza de costado (con desvanecido a la derecha para
-        // que se note que sigue): son atajos, no pueden ocupar más que el primer campo.
-        <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 text-sm whitespace-nowrap [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:whitespace-normal">
-          <span className="text-muted-foreground">{missingLabel}</span>
-          {otherMissing.map((d) => (
-            // Rellenos (no en contorno) y en ámbar: «falta» es un estado, y lo dice la palabra de al lado.
-            <PillLink
-              key={d}
-              href={hrefWith(`${base}/ventas/cierre`, { fecha: d })}
-              className="h-11 border-warning/30 bg-warning/15 text-warning-text hover:bg-warning/25 md:h-9"
-            >
-              {formatWeekdayDayMonth(d)}
-            </PillLink>
-          ))}
-          {moreMissing > 0 ? (
-            // El aire de la derecha deja pasar el último texto por delante del desvanecido.
-            <span className="pr-8 text-muted-foreground sm:pr-0">y {moreMissing} más</span>
-          ) : (
-            <span aria-hidden className="w-4 shrink-0 sm:hidden" />
-          )}
-        </div>
-      ) : null}
-    </div>
+  // La primera fila: volver, los días que faltan y las flechas. Abajo, el título con el día.
+  const frame = (
+    <>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {back}
+        {otherMissing.length > 0 ? (
+          // En el celular, UNA fila que se desliza de costado: son atajos, no pueden ocupar más que
+          // el primer campo.
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto text-sm whitespace-nowrap [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:whitespace-normal">
+            <span className="text-muted-foreground">{missingLabel}</span>
+            {otherMissing.map((d) => (
+              // En ámbar: «falta» es un estado, y lo dice la palabra de al lado.
+              <PillLink
+                key={d}
+                href={hrefWith(`${base}/ventas/cierre`, { fecha: d })}
+                className="h-11 border-warning/30 bg-warning/15 text-warning-text hover:bg-warning/25 md:pointer-fine:h-8"
+              >
+                {formatWeekdayDayMonth(d)}
+              </PillLink>
+            ))}
+            {moreMissing > 0 ? (
+              <span className="text-muted-foreground">y {moreMissing} más</span>
+            ) : null}
+          </div>
+        ) : null}
+        <nav aria-label="Día del cierre" className="ml-auto flex items-center gap-1">
+          <DayStep
+            href={canPrev ? hrefWith(`${base}/ventas/cierre`, { fecha: prev }) : null}
+            label={`Día anterior: ${dayTitle(prev)}`}
+          >
+            <ChevronLeft className="size-4" />
+          </DayStep>
+          <DayStep
+            href={canNext ? hrefWith(`${base}/ventas/cierre`, { fecha: next }) : null}
+            label={`Día siguiente: ${dayTitle(next)}`}
+          >
+            <ChevronRight className="size-4" />
+          </DayStep>
+        </nav>
+      </div>
+      <h1 className={TITLE}>
+        Cierre del {weekdayName(date)} {formatDayMonth(date)}
+      </h1>
+    </>
   )
 
   // ─── Días que no se cargan acá ─────────────────────────────────────────────
   const notice = (message: string, link: { href: string; label: string } | null) => (
-    <AdmPage width="comfortable" className={PAGE_CLASS}>
-      {header}
-      {dayNav}
+    <SimplePage>
+      {frame}
       <div
         role="status"
-        className="flex items-start gap-3 rounded-2xl border border-info/30 bg-info/10 p-4 text-sm sm:p-5"
+        className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm"
       >
         <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
         <div className="space-y-3">
@@ -232,7 +219,7 @@ export default async function CierreDelDiaPage({
           ) : null}
         </div>
       </div>
-    </AdmPage>
+    </SimplePage>
   )
 
   if (date < booksStart) {
@@ -255,7 +242,7 @@ export default async function CierreDelDiaPage({
   }
 
   // Ya se sabe qué día es: lo de ese día se pide junto (antes iba una lectura atrás de la otra).
-  const [dayCloses, ranges, dayTarget] = await Promise.all([
+  const [dayCloses, ranges] = await Promise.all([
     // Los cierres ya cargados de ese día (un día puede tener varios turnos).
     settleQuery(
       listDocuments(tenantId, {
@@ -268,8 +255,6 @@ export default async function CierreDelDiaPage({
     ),
     // El último «hasta» de cada tipo y punto de venta (la base lo trae desde la #13).
     settleQuery(getSalesRangeDefaults(tenantId)),
-    // El objetivo de ventas del día (Ventas › Proyección), para el ticket. Si falla, no se muestra.
-    settleQuery(getSalesProjection(tenantId, { from: date, to: date })),
   ])
   const existing: ExistingClose[] = dayCloses.ok
     ? dayCloses.data.rows.map((d) => ({
@@ -321,12 +306,12 @@ export default async function CierreDelDiaPage({
         name: m.name,
         kind: m.kind,
         channel: m.channel,
+        entersTo: view.entersTo,
         destination: view.destination,
         isCash,
         group: view.group,
         payer: view.payer,
         mercadoPago: isMercadoPago,
-        arrival: view.arrival,
       }
     })
 
@@ -357,46 +342,22 @@ export default async function CierreDelDiaPage({
       active: p.active,
     }))
 
-  // El objetivo del día, si lo cargaron (en cero cuenta como «sin objetivo»: lo resuelve el ticket).
-  const targetCents = dayTarget.ok ? (dayTarget.data[0]?.targetCents ?? null) : null
-
   // Después de guardar: el próximo día que falta (o la lista de cierres si no falta ninguno).
   const after = missing.find((d) => d !== date) ?? null
 
   return (
-    <AdmPage width="comfortable" className={PAGE_CLASS}>
-      {header}
-      {dayNav}
+    <SimplePage>
+      {frame}
       {!recent.ok || !dayCloses.ok ? (
         <div
           role="status"
-          className="flex items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4 text-sm"
+          className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm"
         >
           <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p className="text-pretty text-warning-text">
             No pudimos revisar qué días ya están cargados. Si este día ya tiene cierre, al guardar
             te avisamos.
           </p>
-        </div>
-      ) : null}
-      {salesPoints.length === 0 && methods.length > 0 && existing.length === 0 ? (
-        // Sin puntos de venta el día entero queda como venta sin factura. Se dice ANTES del
-        // primer importe: enterarse en el paso 3, con todo cargado, obligaba a salir y perderlo.
-        <div className="flex flex-wrap items-center justify-between gap-x-4 rounded-2xl bg-secondary/50 px-4 py-2.5 text-sm max-sm:pb-1 sm:px-5">
-          <p className="min-w-0 flex-1 basis-64 text-pretty">
-            <span className="font-medium">Todavía no cargaste puntos de venta.</span>{' '}
-            <span className="text-muted-foreground">
-              Este cierre queda entero como venta sin factura (se registra igual). Si facturás,
-              cargalos antes de empezar.
-            </span>
-          </p>
-          <Link
-            href={`${base}/ajustes?tab=puntos-de-venta`}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-sm font-medium whitespace-nowrap text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
-          >
-            Cargar mis puntos de venta
-            <ArrowRight className="size-3.5" aria-hidden />
-          </Link>
         </div>
       ) : null}
       <SalesCloseForm
@@ -418,9 +379,8 @@ export default async function CierreDelDiaPage({
         }
         afterSaveLabel={after ? `${weekdayName(after)} ${formatDayMonth(after)}` : null}
         mercadoPago={mercadoPago}
-        targetCents={targetCents}
       />
-    </AdmPage>
+    </SimplePage>
   )
 }
 
@@ -504,7 +464,7 @@ function DayStep({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-11 md:size-9"
+        className="size-11 md:pointer-fine:size-9"
         aria-label={label}
         disabled
       >
@@ -513,7 +473,7 @@ function DayStep({
     )
   }
   return (
-    <Button asChild variant="ghost" size="icon" className="size-11 md:size-9">
+    <Button asChild variant="ghost" size="icon" className="size-11 md:pointer-fine:size-9">
       <Link href={href} aria-label={label}>
         {children}
       </Link>

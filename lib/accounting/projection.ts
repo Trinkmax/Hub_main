@@ -17,7 +17,13 @@
  * las acreditaciones, en «Neto por medio».
  */
 
-import { formatWeekdayDayMonth } from '@/lib/dates'
+import {
+  daysInMonth,
+  formatWeekdayDayMonth,
+  isRealYearMonth,
+  toIsoDay,
+  weekdayOf,
+} from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 
 /** Una fila de `acc_report_sales_projection`, en centavos. */
@@ -287,6 +293,45 @@ export function buildProjection(
   }
 
   return { days, totals, summary, cash }
+}
+
+// ─── Copiar el mes pasado ────────────────────────────────────────────────────
+
+export type TargetOfDay = { day: string; targetCents: number | null }
+
+/**
+ * Los objetivos de `month`, copiados de los de `fromMonth` por día de la semana y número de semana: el primer
+ * lunes toma el del primer lunes, el tercer sábado el del tercer sábado. Un quinto lunes que el otro mes no tuvo
+ * toma el último lunes de ese mes (así no queda un hueco en un mes más largo).
+ *
+ * Devuelve solo los días que tienen de dónde copiar: un día sin objetivo en el mes de origen no borra nada.
+ */
+export function copyMonthTargets(input: {
+  month: string
+  fromMonth: string
+  targets: readonly TargetOfDay[]
+}): Array<{ day: string; targetCents: number }> {
+  const { month, fromMonth } = input
+  if (!isRealYearMonth(month) || !isRealYearMonth(fromMonth)) return []
+  const year = Number(month.slice(0, 4))
+  const monthNumber = Number(month.slice(5, 7))
+  const fromYear = Number(fromMonth.slice(0, 4))
+  const fromNumber = Number(fromMonth.slice(5, 7))
+  const fromDays = daysInMonth(fromYear, fromNumber)
+  const fromFirstWeekday = weekdayOf(toIsoDay(fromYear, fromNumber, 1))
+  const source = new Map(input.targets.map((t) => [t.day, t.targetCents]))
+
+  const out: Array<{ day: string; targetCents: number }> = []
+  for (let dayNumber = 1; dayNumber <= daysInMonth(year, monthNumber); dayNumber += 1) {
+    const day = toIsoDay(year, monthNumber, dayNumber)
+    const ordinal = Math.ceil(dayNumber / 7)
+    const firstSameWeekday = 1 + ((weekdayOf(day) - fromFirstWeekday + 7) % 7)
+    let fromDay = firstSameWeekday + 7 * (ordinal - 1)
+    if (fromDay > fromDays) fromDay -= 7
+    const targetCents = source.get(toIsoDay(fromYear, fromNumber, fromDay)) ?? null
+    if (hasTarget(targetCents)) out.push({ day, targetCents })
+  }
+  return out
 }
 
 // ─── Textos ──────────────────────────────────────────────────────────────────

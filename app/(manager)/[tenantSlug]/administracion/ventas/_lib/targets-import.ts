@@ -1,7 +1,8 @@
 /**
- * «Cargar una lista» de los objetivos de un mes (pedido de los socios,
+ * «Pegar una lista» de los objetivos de un mes (pedido de los socios,
  * 12/10/2026): se pega la columna «Objetivo» de la planilla, un monto por
- * renglón, y el primer renglón es el día 1. Puro: lo prueba
+ * renglón, y el primer renglón es el día 1 (o el día de la celda donde se pegó,
+ * si se pega directo en la planilla). Puro: lo prueba
  * `administracion-proyeccion.test.ts`.
  */
 
@@ -44,13 +45,19 @@ function amountCell(raw: string): string {
 
 /**
  * Lo pegado → el objetivo de cada día de `month` (`yyyy-MM`). El renglón 1 es
- * el día 1; un renglón vacío en el medio deja ese día sin objetivo, y los que
- * no se pegan (la lista es más corta que el mes) quedan como estaban.
+ * el día `fromDay` (el 1, si no se dice otro); un renglón vacío en el medio deja
+ * ese día sin objetivo, y los que no se pegan (la lista es más corta que el mes)
+ * quedan como estaban.
  */
-export function parseTargetsList(text: string, month: string): TargetsImportResult {
+export function parseTargetsList(
+  text: string,
+  month: string,
+  opts: { fromDay?: number } = {},
+): TargetsImportResult {
   const year = Number(month.slice(0, 4))
   const monthNumber = Number(month.slice(5, 7))
   const monthDays = daysInMonth(year, monthNumber)
+  const fromDay = Math.max(1, Math.trunc(opts.fromDay ?? 1))
 
   const lines = text.split(/\r?\n/).map(amountCell)
   // Lo vacío del final no cuenta: es el salto de línea que deja copiar de una planilla.
@@ -74,11 +81,11 @@ export function parseTargetsList(text: string, month: string): TargetsImportResu
     headerSkipped,
   }
   for (const [index, cell] of lines.entries()) {
-    if (index >= monthDays) {
+    if (fromDay + index > monthDays) {
       if (cell !== '') out.overflow += 1
       continue
     }
-    const day = toIsoDay(year, monthNumber, index + 1)
+    const day = toIsoDay(year, monthNumber, fromDay + index)
     const line = index + 1 + (headerSkipped ? 1 : 0)
     if (cell === '') {
       out.items.push({ day, targetCents: null })

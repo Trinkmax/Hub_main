@@ -21,25 +21,28 @@ import { useMasterAction } from '../../ajustes/_components/use-master-action'
 import { parseTargetsList, type TargetsImportResult } from '../_lib/targets-import'
 
 /**
- * «Cargar una lista» de los objetivos del mes (pedido de los socios,
+ * «Pegar una lista» de los objetivos del mes (pedido de los socios,
  * 12/10/2026): se pega la columna «Objetivo» de la planilla, un monto por
  * renglón desde el día 1, y queda cargado el mes entero. Las notas de cada día
  * no se tocan.
  *
  * `variant` cambia solo el botón que lo abre: `primary` cuando es EL paso
- * siguiente (el mes todavía no tiene objetivo) y `quiet` cuando acompaña a otra
- * cosa. El diálogo y lo que se guarda son los mismos.
+ * siguiente (el mes todavía no tiene objetivo y no hay de dónde copiarlo) y
+ * `quiet` cuando acompaña a otra cosa. El diálogo y lo que se guarda son los
+ * mismos.
  */
 export function TargetsImportDialog({
   month,
   monthLabel,
   variant = 'quiet',
+  className,
 }: {
   /** `yyyy-MM`. */
   month: string
-  /** «Octubre 2026». */
+  /** «Octubre». */
   monthLabel: string
   variant?: 'quiet' | 'primary'
+  className?: string
 }) {
   const uid = useId()
   const { tenantSlug } = useAccounting()
@@ -69,20 +72,21 @@ export function TargetsImportDialog({
     <>
       <Button
         type="button"
+        size="sm"
         variant={variant === 'primary' ? 'default' : 'outline'}
-        className={variant === 'primary' ? 'h-11 gap-2 px-5' : 'h-11 gap-2 md:pointer-fine:h-9'}
+        className={className}
         onClick={() => {
           setError(null)
           setOpen(true)
         }}
       >
         <ListPlus className="size-4" aria-hidden />
-        Cargar una lista
+        Pegar una lista
       </Button>
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Cargar los objetivos de {monthLabel}</DialogTitle>
+            <DialogTitle>Pegar los objetivos de {monthLabel.toLowerCase()}</DialogTitle>
             <DialogDescription>
               Copiá de tu planilla la columna del objetivo y pegala acá: un monto por renglón, y el
               primer renglón es el día 1. Un renglón vacío deja ese día sin objetivo.
