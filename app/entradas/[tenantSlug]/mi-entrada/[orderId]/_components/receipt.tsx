@@ -22,6 +22,7 @@ export function Receipt({
   const deposit = order.option === 'deposit'
   return (
     <div className="ent-receipt-slot">
+      <span className="ent-receipt-head" aria-hidden />
       <section className="ent-receipt" aria-label="Comprobante de pago">
         {order.sample ? (
           <p className="mb-1 text-center text-[0.68rem] font-bold tracking-[0.2em]">

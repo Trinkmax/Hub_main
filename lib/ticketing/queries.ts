@@ -608,7 +608,8 @@ export async function getSampleOrder(
       .select('event_date, starts_at_local')
       .eq('tenant_id', tenant.id)
       .eq('template_id', experience.template_id)
-      .gte('event_date', today)
+      // Una función que todavía no fue: sin el botón fijo de la noche, que taparía la escena.
+      .gt('event_date', today)
       .order('event_date', { ascending: true })
       .limit(1)
       .maybeSingle(),
@@ -618,7 +619,7 @@ export async function getSampleOrder(
   const partySize = Math.min(Math.max(options.people ?? 2, 1), 10)
   const deposit = Number(experience.deposit_cents) > 0
   const unit = deposit ? Number(experience.deposit_cents) : Number(experience.price_cents)
-  const name = options.name?.trim().slice(0, 24) || 'Juli'
+  const name = options.name?.trim().slice(0, 24) || 'Nacho'
   const total = unit * partySize
   const now = new Date()
   return {

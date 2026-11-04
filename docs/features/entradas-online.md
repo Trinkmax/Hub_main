@@ -14,7 +14,7 @@
 | `/entradas/[bar]` | **cualquiera, sin sesión** | La cartelera: todas las películas publicadas con sus fechas como talones. Vista «Películas» o «Por fecha», y filtros por disponibilidad, mes y película (`?ver=disponibles&mes=2026-11&pelicula=shrek-2`). |
 | `/entradas/[bar]/[película]?fecha=` | **cualquiera** (el dueño ve también las no publicadas, como vista previa) | La película contada en actos (la función, el menú paso a paso, escenas, fotos reales) y «Tu entrada», donde se compra. |
 | `/entradas/[bar]/mi-entrada/[pedido]` | quien tenga el link | La entrada: adonde vuelve desde Mercado Pago. Confirma el pago sola y muestra la entrada con su QR y el comprobante (guardar como imagen, agendar, compartir, cómo llegar). |
-| `/entradas/[bar]/muestra` | quien tenga el link | Una entrada de muestra para ver y filmar la animación sin pagar. No toca la base. `?video=1` saca los botones y corta el talón solo; `?ver=puerta` muestra lo que ve quien recibe; `?pelicula=`, `?nombre=` y `?personas=` la ajustan. |
+| `/entradas/[bar]/muestra` | quien tenga el link | Una entrada de muestra para ver y filmar la animación sin pagar. No toca la base. Muestra la función entera: el sello, el QR que se genera y el comprobante que se imprime, con la página bajando sola (`ticket-show.ts`). `?video=1` saca los botones y sigue solo hasta cortar el talón; `?ver=puerta` muestra lo que ve quien recibe; `?pelicula=`, `?nombre=` y `?personas=` la ajustan. |
 | `/e/[código]` | cualquiera | Adonde lleva el QR si lo abre la cámara del teléfono: quien recibe en ese bar va a la puerta; cualquier otra persona, a la entrada. |
 | `/[bar]/salon/puerta` | `owner`, `cashier`, `waiter`, `host` | La puerta: escanear las entradas y dejar pasar. El escáner de «Sumar puntos» también las reconoce. |
 | `/api/webhooks/mercadopago?t=[tenant_id]` | Mercado Pago | Avisos de pago. |
@@ -282,6 +282,8 @@ quedarse tranquilo. En la puerta se corta el talón, como en el cine.
 - `lib/ticketing/ticket-image.ts`: la imagen que se guarda. Es un canvas dibujado a mano
   con los mismos trazos: pasar el DOM a imagen falla en Safari con máscaras y SVG. Se
   prepara antes del toque porque Safari no deja compartir un archivo si hay que esperar.
+
+**La función** (`ticket-show.ts`, `data-act` en `.ent-counter`): por actos y con cámara, para que nada pase fuera de la pantalla. Sello de goma que golpea, QR renglón por renglón, comprobante que se imprime mientras la página baja y, al final, las acciones. Si la persona toca la pantalla, la cámara se queda quieta y los actos siguen; con «reducir movimiento» no hay función. Por ahora solo la usa la muestra (prop `show` de `ApprovedTicket`): la compra real sigue con la animación corta hasta que los dueños la aprueben.
 
 **El QR** (`lib/ticketing/ticket-qr.ts`) lleva `/e/<id del pedido en base64url>`, 22
 caracteres en vez de 36: menos módulos, puntos más grandes. Va con corrección Q.

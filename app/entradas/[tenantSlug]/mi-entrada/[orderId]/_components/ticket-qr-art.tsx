@@ -37,7 +37,7 @@ export function TicketQrArt({ qr, label }: { qr: TicketQr; label: string }) {
         </g>
       ))}
       <g transform={`translate(${center} ${center}) scale(${qr.hole * 0.46})`}>
-        <path d={STAR_PATH} fill="currentColor" />
+        <path className="ent-qr-star" d={STAR_PATH} fill="currentColor" />
       </g>
     </svg>
   )

@@ -72,7 +72,9 @@ export function TicketStub({
           <span className="ent-qr-head" aria-hidden />
         </button>
 
-        <p className="ent-serial mt-4 text-center text-sm">{formatShortCode(shortCode)}</p>
+        <p className="ent-serial ent-serial-type mx-auto mt-4 w-fit text-center text-sm">
+          {formatShortCode(shortCode)}
+        </p>
 
         {partial ? (
           <div className="mt-3 text-center">
@@ -96,7 +98,7 @@ export function TicketStub({
             </p>
           </div>
         ) : (
-          <p className="mt-2 text-center text-sm font-semibold text-(--ent-ink)">
+          <p className="ent-stub-note mt-2 text-center text-sm font-semibold text-(--ent-ink)">
             Mostrá este QR en la puerta.
           </p>
         )}
@@ -104,7 +106,7 @@ export function TicketStub({
         <button
           type="button"
           onClick={onEnlarge}
-          className="ent-press mx-auto mt-3 flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold text-(--ent-ink) underline-offset-4 hover:underline"
+          className="ent-press ent-stub-note mx-auto mt-3 flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold text-(--ent-ink) underline-offset-4 hover:underline"
         >
           <Maximize2 className="size-4" aria-hidden />
           Agrandar
