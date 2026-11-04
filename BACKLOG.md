@@ -1483,3 +1483,12 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   guarda el usuario en `audit_log`; lo anterior quedó sin usuario.
 - **`types/database.ts` sigue desfasado** (le faltan `acc_*` y las tablas de entradas): el
   código de entradas usa `SBAny` + zod.
+- **El job `rls` de CI no llega a correr.** `supabase/setup-cli@v1` usa `version: latest` y el
+  CLI nuevo rechaza `[inbucket]` de `supabase/config.toml` («no longer supported. Use
+  [local_smtp]»): muere en `supabase start`, antes del primer test. Los tests de la puerta en
+  `tests/rls/ticketing.test.ts` todavía no corrieron en CI (se ensayaron contra la base con
+  rollback y con una compra real en el bar demo). Cambiar a `[local_smtp]` o fijar la versión.
+- **La función de la entrada solo está en la muestra.** Para la compra real falta: pasarle
+  `show` desde `OrderView`, celebrar también al volver de Mercado Pago con el pago ya aprobado
+  (hoy `firstStatus` aprobado no anima), un resguardo para que el QR no quede oculto si fallan
+  los scripts, y sacar las reglas viejas de `[data-celebrate]`. Espera el «sí» de los dueños.

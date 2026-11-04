@@ -65,3 +65,36 @@ export function PaidStamp({
     </div>
   )
 }
+
+/**
+ * El sello de goma de la boletería, de costado: baja, golpea y se va, y deja la
+ * marca de `PaidStamp`. Solo aparece en la función (ver ticket-show.ts).
+ */
+export function RubberStamper() {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  return (
+    <div className="ent-stamper" aria-hidden>
+      <svg viewBox="0 0 128 160" className="block size-full" aria-hidden="true">
+        <defs>
+          <linearGradient id={`${id}w`} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stopColor="#c08a55" />
+            <stop offset="0.42" stopColor="#94622f" />
+            <stop offset="1" stopColor="#573518" />
+          </linearGradient>
+          <linearGradient id={`${id}m`} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stopColor="#59605b" />
+            <stop offset="0.4" stopColor="#262c28" />
+            <stop offset="1" stopColor="#141815" />
+          </linearGradient>
+        </defs>
+        <ellipse cx="64" cy="30" rx="27" ry="25" fill={`url(#${id}w)`} />
+        <ellipse cx="55" cy="20" rx="10" ry="6.5" fill="#fff" opacity="0.24" />
+        <path d="M49 50C52 66 50 78 41 92H87C78 78 76 66 79 50Z" fill={`url(#${id}w)`} />
+        <rect x="31" y="90" width="66" height="13" rx="4" fill={`url(#${id}m)`} />
+        <rect x="6" y="102" width="116" height="30" rx="7" fill={`url(#${id}w)`} />
+        <rect x="6" y="102" width="116" height="7" rx="3.5" fill="#fff" opacity="0.14" />
+        <rect x="10" y="132" width="108" height="11" rx="3" fill="#7a2d1c" />
+      </svg>
+    </div>
+  )
+}

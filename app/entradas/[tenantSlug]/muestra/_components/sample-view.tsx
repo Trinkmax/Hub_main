@@ -18,12 +18,12 @@ import type { PublicOrder } from '@/lib/ticketing/types'
 import { LightsOff } from '../../mi-entrada/[orderId]/_components/lights-off'
 import {
   ApprovedTicket,
-  Confetti,
   capitalizeFirst,
   Row,
   StatusBlock,
   TicketHeader,
 } from '../../mi-entrada/[orderId]/_components/order-view'
+import { centerOf, glideTo } from '../../mi-entrada/[orderId]/_components/ticket-show'
 import {
   saveTicketImage,
   useTicketImage,
@@ -32,8 +32,10 @@ import {
 // Lo que dura «Estamos confirmando tu pago…» antes de aprobarse.
 const CONFIRM_MS = 2200
 const TEAR_MS = 1300
-// Grabando no hay botones: da tiempo a ver todo y a bajar hasta el talón.
-const VIDEO_TEAR_MS = 12_000
+// Grabando no hay botones: la película sigue sola. Al terminar la función espera un
+// momento, sube al talón, lo corta y vuelve arriba.
+const VIDEO_HOLD_MS = 1800
+const CAMERA_TO_STUB_MS = 1000
 
 /**
  * La muestra usa las mismas piezas que la entrada de verdad, pero no le pregunta nada
@@ -118,6 +120,8 @@ function TicketRound({
   )
 
   useEffect(() => {
+    // Cada vuelta arranca de arriba.
+    window.scrollTo({ top: 0, behavior: 'instant' })
     const timer = setTimeout(() => setApproved(true), CONFIRM_MS)
     return () => clearTimeout(timer)
   }, [])
@@ -140,19 +144,21 @@ function TicketRound({
     }, TEAR_MS)
   }, [])
 
-  useEffect(() => {
-    if (!video || !approved) return
-    const timer = setTimeout(tear, VIDEO_TEAR_MS)
-    return () => clearTimeout(timer)
-  }, [video, approved, tear])
+  // Primero la cámara va al talón, para ver cómo se corta.
+  const cutAtDoor = useCallback(
+    (backToTop: boolean) => {
+      const stub = document.querySelector('.ent-half-stub')
+      if (stub) glideTo(centerOf(stub, 0.56), CAMERA_TO_STUB_MS)
+      setTimeout(tear, CAMERA_TO_STUB_MS + 350)
+      if (backToTop) setTimeout(() => glideTo(0, 1300), CAMERA_TO_STUB_MS + TEAR_MS + 1100)
+    },
+    [tear],
+  )
 
   return (
     <div
       className={`relative mx-auto w-full ${approved ? 'max-w-md lg:max-w-[55rem]' : 'max-w-md'}`}
-      data-celebrate={approved}
     >
-      {approved ? <Confetti /> : null}
-
       {approved ? (
         <ApprovedTicket
           order={order}
@@ -177,6 +183,8 @@ function TicketRound({
           saving={image.saving}
           saveFailed={image.failed}
           whatsappSelf={null}
+          show
+          onShowDone={video ? () => setTimeout(() => cutAtDoor(true), VIDEO_HOLD_MS) : undefined}
         />
       ) : (
         <article className="ent-paper overflow-hidden rounded-[26px] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)] [--ent-hole:#090d0b]">
@@ -224,7 +232,7 @@ function TicketRound({
             <button
               type="button"
               className="ent-press ent-ghost ent-sample-btn"
-              onClick={tear}
+              onClick={() => cutAtDoor(false)}
               disabled={falling}
             >
               <Scissors className="size-4" aria-hidden />

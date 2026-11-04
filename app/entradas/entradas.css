@@ -1421,6 +1421,285 @@
     }
   }
 
+  /* ═══ La función: la entrada por actos (ver ticket-show.ts) ════
+     `data-act` va de 0 a 4. Lo que todavía no entró en escena queda oculto, lo que
+     está en su acto se anima, y lo que ya pasó vuelve a su estado normal, que es el
+     último cuadro de su animación: no hay salto. Las duraciones coinciden con las
+     constantes de ticket-show.ts. */
+  .ent-stamper {
+    display: none;
+  }
+
+  /* Acto 0: papel en blanco. */
+  .ent-counter[data-act="0"] .ent-seal {
+    opacity: 0;
+  }
+
+  .ent-counter:is([data-act="0"], [data-act="1"]) .ent-qr-print {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  .ent-counter:is([data-act="0"], [data-act="1"]) .ent-guilloche,
+  .ent-counter:is([data-act="0"], [data-act="1"]) .ent-serial-type,
+  .ent-counter:is([data-act="0"], [data-act="1"]) .ent-stub-note {
+    opacity: 0;
+  }
+
+  .ent-counter:is([data-act="0"], [data-act="1"], [data-act="2"]) .ent-receipt {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  .ent-counter:is([data-act="0"], [data-act="1"], [data-act="2"], [data-act="3"]) .ent-after {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+    pointer-events: none;
+  }
+
+  .ent-counter[data-act="4"] .ent-after {
+    transition:
+      opacity 520ms ease,
+      transform 620ms var(--ent-ease-out);
+  }
+
+  /* Acto 1: el sello. Golpea en el cuadro 47 % de 1500 ms (705 ms). */
+  .ent-counter[data-act="1"] .ent-stamper {
+    display: block;
+    position: absolute;
+    z-index: 6;
+    top: 7.8rem;
+    right: 0.5rem;
+    width: 6.9rem;
+    height: 8.625rem;
+    pointer-events: none;
+    transform-origin: 50% 88%;
+    filter: drop-shadow(0 14px 12px rgb(0 0 0 / 0.42));
+    animation: ent-stamper 1500ms both;
+  }
+
+  @keyframes ent-stamper {
+    0% {
+      transform: translate3d(0, -270%, 0) rotate(9deg);
+      animation-timing-function: var(--ent-ease-out);
+    }
+    30% {
+      transform: translate3d(0, -62%, 0) rotate(-5deg);
+      animation-timing-function: ease-in-out;
+    }
+    39% {
+      transform: translate3d(0, -80%, 0) rotate(-9deg);
+      animation-timing-function: cubic-bezier(0.55, 0, 1, 0.6);
+    }
+    47% {
+      transform: translate3d(0, 0, 0) rotate(-13deg) scale(1.02, 0.95);
+    }
+    52% {
+      transform: translate3d(0, 0, 0) rotate(-13deg) scale(1, 1);
+    }
+    62% {
+      transform: translate3d(0, 0, 0) rotate(-13deg);
+      animation-timing-function: ease-in-out;
+    }
+    76% {
+      transform: translate3d(0, -26%, 0) rotate(-9deg);
+      animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+    }
+    100% {
+      opacity: 0.9;
+      transform: translate3d(0, -300%, 0) rotate(7deg);
+    }
+  }
+
+  /* La marca aparece con el golpe, con la tinta mojada, y se seca. */
+  .ent-counter[data-act="1"] .ent-seal {
+    animation: ent-seal-hit 1500ms linear both;
+  }
+
+  @keyframes ent-seal-hit {
+    0%,
+    46.9% {
+      opacity: 0;
+      filter: brightness(0.62) saturate(1.7);
+    }
+    47% {
+      opacity: 1;
+      filter: brightness(0.62) saturate(1.7);
+    }
+    100% {
+      opacity: 1;
+      filter: none;
+    }
+  }
+
+  /* El golpe se siente en todo el papel. */
+  .ent-counter[data-act="1"] .ent-admit {
+    animation: ent-paper-hit 1500ms linear both;
+  }
+
+  @keyframes ent-paper-hit {
+    0%,
+    46.9% {
+      transform: none;
+    }
+    49% {
+      transform: translate3d(0, 5px, 0) rotate(0.35deg);
+    }
+    53% {
+      transform: translate3d(0, -2px, 0) rotate(-0.12deg);
+    }
+    58%,
+    100% {
+      transform: none;
+    }
+  }
+
+  /* Los destellos salen del sello, con el golpe. */
+  .ent-counter[data-act] .ent-admit .ent-confetti {
+    z-index: 5;
+  }
+
+  .ent-counter[data-act] .ent-admit .ent-confetti span {
+    top: 12.95rem;
+    left: calc(100% - 3.95rem);
+    animation-delay: calc(var(--k, 0) * 12ms + 700ms);
+  }
+
+  /* Acto 2: el QR. Crece la roseta, se imprime renglón por renglón, y al final la
+     ✦ y el número. */
+  .ent-counter[data-act="2"] .ent-guilloche {
+    transform-origin: 50% 50%;
+    animation: ent-rosette 2200ms var(--ent-ease-out) both;
+  }
+
+  @keyframes ent-rosette {
+    from {
+      opacity: 0;
+      transform: rotate(-24deg) scale(0.86);
+    }
+    to {
+      opacity: 0.3;
+      transform: none;
+    }
+  }
+
+  .ent-counter[data-act="2"] .ent-qr-print {
+    animation: ent-print-rows 2300ms steps(var(--rows, 37), end) 600ms both;
+  }
+
+  .ent-counter[data-act="2"] .ent-qr-head {
+    display: block;
+    animation: ent-print-head 2300ms steps(var(--rows, 37), end) 600ms both;
+  }
+
+  .ent-qr-star {
+    transform-origin: 0 0;
+  }
+
+  .ent-counter[data-act="2"] .ent-qr-star {
+    animation: ent-star-pop 620ms var(--ent-ease-out) 2850ms both;
+  }
+
+  @keyframes ent-star-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.1) rotate(-120deg);
+    }
+    55% {
+      opacity: 1;
+      transform: scale(1.6) rotate(12deg);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .ent-counter[data-act="2"] .ent-qr-plate {
+    animation: ent-plate-done 520ms var(--ent-ease-out) 2900ms both;
+  }
+
+  @keyframes ent-plate-done {
+    40% {
+      transform: translate3d(0, -3px, 0) scale(1.018);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  .ent-counter[data-act="2"] .ent-serial-type {
+    animation: ent-type 480ms steps(9, end) 3150ms both;
+  }
+
+  @keyframes ent-type {
+    from {
+      opacity: 1;
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      opacity: 1;
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  .ent-counter[data-act="2"] .ent-stub-note {
+    animation: ent-fade 420ms ease 3400ms both;
+  }
+
+  /* Acto 3: el comprobante. Se imprime de arriba para abajo, a los saltitos, con el
+     cabezal de la impresora, y al final lo corta la guillotina. */
+  .ent-receipt-head {
+    display: none;
+    position: absolute;
+    z-index: 2;
+    inset: 0 0.85rem;
+    pointer-events: none;
+  }
+
+  .ent-receipt-head::after {
+    content: "";
+    position: absolute;
+    inset: 0 -0.15rem auto;
+    height: 5px;
+    border-radius: 3px;
+    background: linear-gradient(to right, #262b28, #3d4440 50%, #262b28);
+    box-shadow: 0 3px 8px rgb(0 0 0 / 0.55);
+  }
+
+  /* Mientras se imprime, sin el filtro: la sombra no se ve sobre la sala oscura y
+     repintarla en cada renglón demoraba los primeros. */
+  .ent-counter:is([data-act="2"], [data-act="3"]) .ent-receipt-slot {
+    filter: none;
+  }
+
+  .ent-counter[data-act="3"] .ent-receipt-head {
+    display: block;
+    animation: ent-print-head 3400ms steps(var(--lines, 34), end) 300ms both;
+  }
+
+  .ent-counter[data-act="3"] .ent-receipt {
+    animation:
+      ent-print-rows 3400ms steps(var(--lines, 34), end) 300ms both,
+      ent-receipt-cut 460ms var(--ent-ease-out) 3780ms both;
+  }
+
+  @keyframes ent-receipt-cut {
+    0% {
+      transform: none;
+    }
+    35% {
+      transform: translate3d(0, 9px, 0) rotate(-0.7deg);
+    }
+    100% {
+      transform: translate3d(0, 3px, 0) rotate(-0.2deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ent-counter[data-act] .ent-stamper {
+      display: none;
+    }
+  }
+
   /* En la puerta: el talón se corta por el troquel y cae. El lugar que deja se
      cierra despacio, recién cuando el papel ya se separó. */
   .ent-stub-slot {

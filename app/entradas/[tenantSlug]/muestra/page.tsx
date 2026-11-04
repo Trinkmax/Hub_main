@@ -11,7 +11,7 @@ import { SampleView } from './_components/sample-view'
  *
  * `?pelicula=<slug>` elige la película, `?nombre=` el nombre, `?personas=` cuántos y
  * `?ver=puerta` abre lo que ve quien recibe. `?video=1` es para grabar: sin los botones
- * de la muestra, y el talón se corta solo.
+ * de la muestra, la película entera sigue sola y el talón se corta al final.
  */
 export const dynamic = 'force-dynamic'
 

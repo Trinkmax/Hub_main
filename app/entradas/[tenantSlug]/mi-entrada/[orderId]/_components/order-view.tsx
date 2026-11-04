@@ -24,8 +24,9 @@ import { tornClipBottom, tornClipTop, tornProfile } from '@/lib/ticketing/ticket
 import type { OrderEntry, OrderStatus, PublicOrder } from '@/lib/ticketing/types'
 import { mapsUrl } from '../../../../_components/chrome'
 import { LightsOff } from './lights-off'
-import { PaidStamp } from './paid-stamp'
+import { PaidStamp, RubberStamper } from './paid-stamp'
 import { Receipt } from './receipt'
+import { useTicketShow } from './ticket-show'
 import { TicketStub } from './ticket-stub'
 import { saveTicketImage, useTicketImage } from './use-ticket-image'
 
@@ -576,6 +577,8 @@ export function ApprovedTicket({
   saveFailed,
   whatsappSelf,
   contact,
+  show = false,
+  onShowDone,
 }: {
   order: PublicOrder
   tenantName: string
@@ -599,8 +602,13 @@ export function ApprovedTicket({
   whatsappSelf: string | null
   /** Cómo escribir al bar, para cuando la entrada ya no sirve. */
   contact?: React.ReactNode
+  /** Presentar la entrada por actos, con la página bajando sola (ver ticket-show.ts). */
+  show?: boolean
+  onShowDone?: () => void
 }) {
   const qr = order.qr
+  const rootRef = useRef<HTMLDivElement>(null)
+  const act = useTicketShow({ enabled: show, qrReady: Boolean(qr), rootRef, onDone: onShowDone })
   const countdown = daysUntilLabel(order.date, order.today)
   const doorNight = order.date === order.today && !entry.cancelled
   const showStub = (falling || (!torn && !entry.cancelled && !past)) && qr
@@ -615,8 +623,14 @@ export function ApprovedTicket({
   const closed = !torn && (entry.cancelled || past)
 
   return (
-    <div className="ent-counter">
+    <div ref={rootRef} className="ent-counter" data-act={show ? act : undefined}>
       <div className="ent-admit [--ent-hole:#090d0b]" data-falling={falling}>
+        {show && act === 1 ? (
+          <>
+            <RubberStamper />
+            <Confetti />
+          </>
+        ) : null}
         <article
           className="ent-paper ent-notched ent-half ent-half-top"
           data-torn={torn || falling}
@@ -717,80 +731,85 @@ export function ApprovedTicket({
           />
         ) : null}
 
-        {qr && !torn && !closed ? (
-          <div className="mt-7">
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-              className="ent-press ent-save flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold"
-            >
-              {saving ? (
-                <Loader2 className="size-5 animate-spin" aria-hidden />
-              ) : (
-                <Download className="size-5" aria-hidden />
-              )}
-              Guardar entrada y comprobante
-            </button>
-            <p className="mt-2 text-center text-sm text-(--ent-cream-2)">
-              Se guarda como imagen en tu celular: sirve aunque no tengas señal.
-            </p>
-            {saveFailed ? (
-              <p role="alert" className="mt-2 text-center text-sm font-semibold text-(--ent-gold)">
-                No pudimos armar la imagen. Probá de nuevo o sacale una captura a la entrada.
+        <div className="ent-after">
+          {qr && !torn && !closed ? (
+            <div className="mt-7">
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={saving}
+                className="ent-press ent-save flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold"
+              >
+                {saving ? (
+                  <Loader2 className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <Download className="size-5" aria-hidden />
+                )}
+                Guardar entrada y comprobante
+              </button>
+              <p className="mt-2 text-center text-sm text-(--ent-cream-2)">
+                Se guarda como imagen en tu celular: sirve aunque no tengas señal.
               </p>
-            ) : null}
-            {whatsappSelf ? (
-              <a
-                href={whatsappSelf}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ent-press mx-auto mt-1 flex h-11 w-fit items-center gap-2 text-sm font-semibold text-(--ent-cream) underline-offset-4 hover:underline"
-              >
-                <MessageCircle className="size-4" aria-hidden />
-                Mandarme el link por WhatsApp
-              </a>
-            ) : null}
-          </div>
-        ) : null}
+              {saveFailed ? (
+                <p
+                  role="alert"
+                  className="mt-2 text-center text-sm font-semibold text-(--ent-gold)"
+                >
+                  No pudimos armar la imagen. Probá de nuevo o sacale una captura a la entrada.
+                </p>
+              ) : null}
+              {whatsappSelf ? (
+                <a
+                  href={whatsappSelf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ent-press mx-auto mt-1 flex h-11 w-fit items-center gap-2 text-sm font-semibold text-(--ent-cream) underline-offset-4 hover:underline"
+                >
+                  <MessageCircle className="size-4" aria-hidden />
+                  Mandarme el link por WhatsApp
+                </a>
+              ) : null}
+            </div>
+          ) : null}
 
-        {closed ? (
-          contact
-        ) : (
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <ActionButton onClick={onAgendar} icon={CalendarPlus} label="Agendar" />
-            <ActionButton onClick={onShare} icon={Share2} label="Compartir" />
-            {address ? (
-              <a
-                href={mapsUrl(address)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ent-press ent-ghost flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold"
-              >
-                <MapPin className="size-4" aria-hidden />
-                Cómo llegar
-              </a>
-            ) : (
-              <Link
-                href={filmUrl}
-                className="ent-press ent-ghost flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold"
-              >
-                <ArrowRight className="size-4" aria-hidden />
-                El menú
-              </Link>
-            )}
-          </div>
-        )}
+          {closed ? (
+            contact
+          ) : (
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <ActionButton onClick={onAgendar} icon={CalendarPlus} label="Agendar" />
+              <ActionButton onClick={onShare} icon={Share2} label="Compartir" />
+              {address ? (
+                <a
+                  href={mapsUrl(address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ent-press ent-ghost flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold"
+                >
+                  <MapPin className="size-4" aria-hidden />
+                  Cómo llegar
+                </a>
+              ) : (
+                <Link
+                  href={filmUrl}
+                  className="ent-press ent-ghost flex h-16 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold"
+                >
+                  <ArrowRight className="size-4" aria-hidden />
+                  El menú
+                </Link>
+              )}
+            </div>
+          )}
 
-        {!torn && !closed ? (
-          <p className="mt-4 text-center text-xs text-(--ent-muted)">
-            ¿Sin el celular a mano? En la puerta decí que reservaste a nombre de{' '}
-            {order.guestFirstName}.
-          </p>
-        ) : null}
+          {!torn && !closed ? (
+            <p className="mt-4 text-center text-xs text-(--ent-muted)">
+              ¿Sin el celular a mano? En la puerta decí que reservaste a nombre de{' '}
+              {order.guestFirstName}.
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      {doorNight && qr && !torn && !falling && !closed ? (
+      {doorNight && qr && !torn && !falling && !closed && act === 4 ? (
         <div className="ent-door-bar lg:hidden">
           <button
             type="button"
