@@ -1,12 +1,18 @@
 import 'server-only'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getAppUrl } from '@/lib/app-url'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { functionState, isOnSale, seatsLeft } from './availability'
-import { checkoutUrl } from './copy'
-import { DEFAULT_TZ, formatTime, nowLocalIn, todayIn } from './dates'
+import { checkoutUrl, guestShortName } from './copy'
+import { DEFAULT_TZ, formatTime, nowLocalIn, serviceDayIn, todayIn } from './dates'
+import { orderEntryFrom } from './door'
+import { entryCodeFromOrderId, shortCodeFromOrderId } from './entry-code'
 import { parseGallery, parseSteps } from './schemas'
+import { buildTicketQr } from './ticket-qr'
 import type {
   ExperienceRow,
+  OrderEntry,
   OrderStatus,
   PublicExperience,
   PublicFunction,
@@ -337,13 +343,14 @@ export async function getPublicExperience(
 // ──────────────────────────────────────────────
 
 const ORDER_PUBLIC_COLUMNS =
-  'id, tenant_id, experience_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, mp_status_detail, mp_preference_id'
+  'id, tenant_id, experience_id, reservation_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, paid_at, mp_status_detail, mp_preference_id, mp_payment_id, mp_payment_type, terms'
 
 type OrderPublicRow = Pick<
   TicketOrderRow,
   | 'id'
   | 'tenant_id'
   | 'experience_id'
+  | 'reservation_id'
   | 'title'
   | 'event_date'
   | 'event_time'
@@ -357,9 +364,25 @@ type OrderPublicRow = Pick<
   | 'status'
   | 'hold_expires_at'
   | 'paid_cents'
+  | 'paid_at'
   | 'mp_status_detail'
   | 'mp_preference_id'
+  | 'mp_payment_id'
+  | 'mp_payment_type'
+  | 'terms'
 >
+
+const ORDER_RESERVATION_COLUMNS =
+  'status, reservation_date, reservation_time_local, estimated_guests, actual_guests, arrived_at'
+
+type OrderReservationRow = {
+  status: string
+  reservation_date: string
+  reservation_time_local: string
+  estimated_guests: number
+  actual_guests: number | null
+  arrived_at: string | null
+}
 
 export function isOrderExpired(
   status: OrderStatus,
@@ -400,7 +423,7 @@ export async function getPublicOrder(
   const order = data as OrderPublicRow | null
   if (!order) return null
 
-  const [venue, { data: exp }, { data: mode }] = await Promise.all([
+  const [venue, { data: exp }, { data: mode }, { data: res, error: resError }] = await Promise.all([
     loadVenue(service, tenant),
     order.experience_id
       ? service
@@ -411,6 +434,14 @@ export async function getPublicOrder(
           .maybeSingle()
       : Promise.resolve({ data: null }),
     service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
+    order.reservation_id
+      ? service
+          .from('salon_reservations')
+          .select(ORDER_RESERVATION_COLUMNS)
+          .eq('tenant_id', tenant.id)
+          .eq('id', order.reservation_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ])
   const experience = exp as {
     slug: string
@@ -418,6 +449,26 @@ export async function getPublicOrder(
     accent_hex: string | null
     price_note: string | null
   } | null
+  if (resError) {
+    // La puerta valida igual contra la base: acá solo se pierde el dato al día.
+    console.error('[ticketing.getPublicOrder] no se pudo leer la reserva', {
+      tenantId: tenant.id,
+      code: resError.code,
+    })
+  }
+  const reservation = res as OrderReservationRow | null
+  const tz = tenant.timezone ?? DEFAULT_TZ
+  const today = serviceDayIn(tz)
+  const entry = orderEntryFrom(reservation, order.party_size, (iso) =>
+    formatInTimeZone(new Date(iso), tz, 'HH:mm'),
+  )
+  // La reserva sigue al evento: si lo movieron, la entrada dice la fecha nueva.
+  const date = reservation?.reservation_date ?? order.event_date
+  const time = formatTime(reservation?.reservation_time_local ?? order.event_time)
+  // El QR solo si todavía puede usarse. Un pedido sin reserva (la función ya no
+  // existe) también lo lleva: en la puerta avisa, y quien recibe lo resuelve.
+  const usable =
+    order.status === 'approved' && !entry.cancelled && entry.inside < entry.total && date >= today
 
   const expired = isOrderExpired(order.status, order.hold_expires_at)
   // Rechazado o a medio pagar con el lugar todavía guardado: se puede volver
@@ -436,13 +487,13 @@ export async function getPublicOrder(
     venue,
     order: {
       id: order.id,
-      shortCode: order.id.slice(0, 8).toUpperCase(),
+      shortCode: shortCodeFromOrderId(order.id),
       status: order.status,
       expired,
       holdExpiresAt: order.hold_expires_at,
       title: order.title,
-      date: order.event_date,
-      time: formatTime(order.event_time),
+      date,
+      time,
       partySize: order.party_size,
       option: order.payment_option,
       unitPriceCents: Number(order.unit_price_cents),
@@ -457,6 +508,153 @@ export async function getPublicOrder(
       priceNote: experience?.price_note ?? null,
       mpStatusDetail: order.mp_status_detail,
       retryUrl,
+      guestShortName: guestShortName(order.guest_name),
+      mpPaymentId: order.mp_payment_id,
+      mpPaymentType: order.mp_payment_type,
+      paidAtLabel: order.paid_at
+        ? formatInTimeZone(new Date(order.paid_at), tz, 'dd/MM/yyyy HH:mm')
+        : null,
+      terms: order.terms,
+      today,
+      entry,
+      qr: usable ? buildTicketQr(`${await getAppUrl()}/e/${entryCodeFromOrderId(order.id)}`) : null,
+    },
+  }
+}
+
+/**
+ * Cómo va la llegada de una entrada, para la página del cliente (pregunta cada
+ * tanto mientras la función es hoy). `null` si no se pudo saber: la página se queda
+ * con lo último que sabía, no con «nadie entró».
+ */
+export async function getOrderEntry(
+  service: SBAny,
+  tenantId: string,
+  reservationId: string | null,
+  partySize: number,
+  tz: string,
+): Promise<OrderEntry | null> {
+  if (!reservationId) {
+    return orderEntryFrom(null, partySize, () => '')
+  }
+  const { data, error } = await service
+    .from('salon_reservations')
+    .select(ORDER_RESERVATION_COLUMNS)
+    .eq('tenant_id', tenantId)
+    .eq('id', reservationId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.getOrderEntry]', { tenantId, code: error.code })
+    return null
+  }
+  return orderEntryFrom(data as OrderReservationRow | null, partySize, (iso) =>
+    formatInTimeZone(new Date(iso), tz, 'HH:mm'),
+  )
+}
+
+/**
+ * Una entrada de muestra, para ver y filmar cómo queda sin pagar: la película y los
+ * precios son los de verdad, y todo lo demás es inventado. No toca la base. El
+ * comprobante dice que es una muestra y el QR no sirve en la puerta: su pedido no
+ * existe, así que sale «No figura».
+ */
+export const SAMPLE_ORDER_ID = '00000000-0000-4000-8000-000000000000'
+
+type SampleExperienceRow = {
+  id: string
+  template_id: string
+  slug: string
+  title: string
+  poster_url: string | null
+  accent_hex: string | null
+  price_note: string | null
+  terms: string | null
+  price_cents: number
+  deposit_cents: number
+}
+
+export async function getSampleOrder(
+  tenantSlug: string,
+  options: { film?: string; name?: string; people?: number },
+): Promise<PublicOrderPage | null> {
+  const service = createServiceClient() as SBAny
+  const tenant = await loadTenant(service, tenantSlug)
+  if (!tenant) return null
+  const tz = tenant.timezone ?? DEFAULT_TZ
+
+  let query = service
+    .from('event_experiences')
+    .select(
+      'id, template_id, slug, title, poster_url, accent_hex, price_note, terms, price_cents, deposit_cents',
+    )
+    .eq('tenant_id', tenant.id)
+    .eq('published', true)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+  if (options.film) query = query.eq('slug', options.film)
+  const { data: rows, error } = await query
+  if (error) {
+    console.error('[ticketing.getSampleOrder]', { tenantId: tenant.id, code: error.code })
+    throw new Error('No pudimos cargar la muestra.')
+  }
+  const experience = (rows as SampleExperienceRow[] | null)?.[0]
+  if (!experience) return null
+
+  const today = serviceDayIn(tz)
+  const [venue, { data: next }] = await Promise.all([
+    loadVenue(service, tenant),
+    service
+      .from('scheduled_events')
+      .select('event_date, starts_at_local')
+      .eq('tenant_id', tenant.id)
+      .eq('template_id', experience.template_id)
+      .gte('event_date', today)
+      .order('event_date', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const event = next as { event_date: string; starts_at_local: string } | null
+
+  const partySize = Math.min(Math.max(options.people ?? 2, 1), 10)
+  const deposit = Number(experience.deposit_cents) > 0
+  const unit = deposit ? Number(experience.deposit_cents) : Number(experience.price_cents)
+  const name = options.name?.trim().slice(0, 24) || 'Juli'
+  const total = unit * partySize
+  const now = new Date()
+  return {
+    venue,
+    order: {
+      id: SAMPLE_ORDER_ID,
+      shortCode: 'MUESTRA0',
+      status: 'approved',
+      expired: false,
+      holdExpiresAt: now.toISOString(),
+      title: experience.title,
+      date: event?.event_date ?? today,
+      time: formatTime(event?.starts_at_local ?? '21:00:00'),
+      partySize,
+      option: deposit ? 'deposit' : 'full',
+      unitPriceCents: unit,
+      fullPriceCents: Number(experience.price_cents),
+      totalCents: total,
+      balanceCashOnly: false,
+      paidCents: total,
+      guestFirstName: name,
+      experienceSlug: experience.slug,
+      posterUrl: experience.poster_url,
+      accent: experience.accent_hex ?? DEFAULT_ACCENT,
+      priceNote: experience.price_note,
+      mpStatusDetail: 'accredited',
+      retryUrl: null,
+      guestShortName: name,
+      mpPaymentId: '000000000000',
+      mpPaymentType: 'credit_card',
+      paidAtLabel: formatInTimeZone(now, tz, 'dd/MM/yyyy HH:mm'),
+      terms: experience.terms,
+      today,
+      entry: { inside: 0, total: partySize, atLabel: null, cancelled: false },
+      qr: buildTicketQr(`${await getAppUrl()}/e/${entryCodeFromOrderId(SAMPLE_ORDER_ID)}`),
+      sample: true,
     },
   }
 }
@@ -626,7 +824,74 @@ export type AdminOrder = Pick<
   | 'mp_status_detail'
   | 'created_at'
   | 'paid_at'
->
+> & {
+  /** La reserva, para saber si ya entraron. */
+  reservation: {
+    status: string
+    estimated_guests: number
+    actual_guests: number | null
+    arrived_at: string | null
+  } | null
+  /** Si en la puerta dejaron pasar y lo deshicieron: queda a la vista de los dueños. */
+  undo: OrderUndo | null
+}
+
+export type OrderUndo = {
+  by: string | null
+  at: string
+  from: number
+  to: number
+}
+
+/** Los «Deshacer» de la puerta de estas compras: quién, cuándo y de cuánto a cuánto. */
+async function loadOrderUndos(
+  supabase: SBAny,
+  tenantId: string,
+  orderIds: string[],
+): Promise<Map<string, OrderUndo>> {
+  const undos = new Map<string, OrderUndo>()
+  if (orderIds.length === 0) return undos
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('entity_id, user_id, created_at, payload')
+    .eq('tenant_id', tenantId)
+    .eq('entity', 'ticket_order')
+    .eq('action', 'ticket_order.door_undo')
+    .in('entity_id', orderIds)
+  if (error) {
+    console.error('[ticketing.loadOrderUndos]', { tenantId, code: error.code })
+    return undos
+  }
+  const rows = (data ?? []) as Array<{
+    entity_id: string
+    user_id: string | null
+    created_at: string
+    payload: { from?: number; to?: number }
+  }>
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))] as string[]
+  const { data: people } = userIds.length
+    ? await supabase
+        .from('reservation_managers')
+        .select('user_id, display_name')
+        .eq('tenant_id', tenantId)
+        .in('user_id', userIds)
+    : { data: [] }
+  const names = new Map(
+    ((people ?? []) as Array<{ user_id: string; display_name: string }>).map((p) => [
+      p.user_id,
+      p.display_name,
+    ]),
+  )
+  for (const row of rows) {
+    undos.set(row.entity_id, {
+      by: row.user_id ? (names.get(row.user_id) ?? null) : null,
+      at: row.created_at,
+      from: Number(row.payload?.from ?? 0),
+      to: Number(row.payload?.to ?? 0),
+    })
+  }
+  return undos
+}
 
 /** Las últimas compras (pagadas, en curso y caídas) para la pestaña Entradas. */
 export async function listRecentOrders(tenantId: string, limit = 60): Promise<AdminOrder[]> {
@@ -634,7 +899,7 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
   const { data, error } = await supabase
     .from('ticket_orders')
     .select(
-      'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, created_at, paid_at',
+      'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, created_at, paid_at, reservation:salon_reservations(status, estimated_guests, actual_guests, arrived_at)',
     )
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
@@ -643,7 +908,13 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
     console.error('[ticketing.listRecentOrders]', { tenantId, code: error.code })
     throw new Error('No pudimos cargar las ventas.')
   }
-  return (data as AdminOrder[] | null) ?? []
+  const orders = (data as Omit<AdminOrder, 'undo'>[] | null) ?? []
+  const undos = await loadOrderUndos(
+    supabase,
+    tenantId,
+    orders.filter((o) => o.status === 'approved').map((o) => o.id),
+  )
+  return orders.map((o) => ({ ...o, undo: undos.get(o.id) ?? null }))
 }
 
 /** Los gestores activos, para «¿A nombre de quién quedan las reservas?». */

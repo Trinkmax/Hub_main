@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarPlus, Receipt, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CalendarPlus, MessageCircle, Receipt, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { formatPhoneForDisplay } from '@/lib/phone'
+import { buildWaMeUrl, formatPhoneForDisplay } from '@/lib/phone'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { AdminOrder } from '@/lib/ticketing/queries'
 import { cn } from '@/lib/utils'
@@ -19,8 +19,11 @@ import {
   formatOrderMoment,
   type OrderTone,
   orderAmountCents,
+  orderEntryLabel,
   orderFunctionLabel,
   orderStatusView,
+  orderTicketMessage,
+  orderUndoLabel,
   paymentOptionLabel,
   peopleLabel,
 } from '../_lib/orders'
@@ -48,10 +51,12 @@ const TONE_CLASS: Record<OrderTone, string> = {
  */
 export function OrdersSection({
   tenantSlug,
+  appUrl,
   result,
   now,
 }: {
   tenantSlug: string
+  appUrl: string
   result: OrdersResult
   now: Date
 }) {
@@ -82,12 +87,12 @@ export function OrdersSection({
           <ul className="grid gap-2.5 md:hidden">
             {result.orders.map((order) => (
               <li key={order.id}>
-                <OrderCard tenantSlug={tenantSlug} order={order} now={now} />
+                <OrderCard tenantSlug={tenantSlug} appUrl={appUrl} order={order} now={now} />
               </li>
             ))}
           </ul>
           <div className="hidden md:block">
-            <OrdersTable tenantSlug={tenantSlug} orders={result.orders} now={now} />
+            <OrdersTable tenantSlug={tenantSlug} appUrl={appUrl} orders={result.orders} now={now} />
           </div>
         </>
       )}
@@ -110,6 +115,62 @@ function StatusChip({ order, now }: { order: AdminOrder; now: Date }) {
       ) : null}
       {status.label}
     </span>
+  )
+}
+
+/** Ya validada en la puerta (o marcada «Llegó» en la lista). */
+function EntryChip({ order }: { order: AdminOrder }) {
+  const label = orderEntryLabel(order)
+  if (!label) return null
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted/60 px-2 py-0.5 text-xs font-medium text-foreground tabular-nums">
+      {label}
+    </span>
+  )
+}
+
+/** Lo deshicieron en la puerta: queda a la vista de los dueños. */
+function UndoChip({ order }: { order: AdminOrder }) {
+  if (!order.undo) return null
+  const { label, hint } = orderUndoLabel(order.undo)
+  return (
+    <span
+      title={hint}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning-text tabular-nums"
+    >
+      {label}
+    </span>
+  )
+}
+
+/**
+ * Mandarle la entrada a quien pagó, por su WhatsApp. Abre el chat con el mensaje
+ * escrito: es lo que necesitan los que pagaron antes de que existiera el QR.
+ */
+function SendTicket({
+  tenantSlug,
+  appUrl,
+  order,
+}: {
+  tenantSlug: string
+  appUrl: string
+  order: AdminOrder
+}) {
+  if (order.status !== 'approved') return null
+  const link = `${appUrl}/entradas/${tenantSlug}/mi-entrada/${order.id}`
+  const href = buildWaMeUrl(order.guest_phone, orderTicketMessage(order, link))
+  if (!href) return null
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-foreground underline-offset-2 hover:underline md:min-h-0"
+    >
+      <MessageCircle className="size-3.5" aria-hidden />
+      Mandar entrada
+      <span className="sr-only">a {order.guest_name}</span>
+    </a>
   )
 }
 
@@ -182,10 +243,12 @@ function Amount({ order }: { order: AdminOrder }) {
 
 function OrderCard({
   tenantSlug,
+  appUrl,
   order,
   now,
 }: {
   tenantSlug: string
+  appUrl: string
   order: AdminOrder
   now: Date
 }) {
@@ -201,7 +264,11 @@ function OrderCard({
             {formatPhoneForDisplay(order.guest_phone)}
           </p>
         </div>
-        <StatusChip order={order} now={now} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusChip order={order} now={now} />
+          <EntryChip order={order} />
+          <UndoChip order={order} />
+        </div>
       </div>
       <p className="mt-2 text-sm">
         <span className="font-medium">{order.title}</span>
@@ -224,8 +291,9 @@ function OrderCard({
         <span className="text-xs text-muted-foreground tabular-nums">
           {formatOrderMoment(order.created_at, now)}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           <Refund tenantSlug={tenantSlug} order={order} />
+          <SendTicket tenantSlug={tenantSlug} appUrl={appUrl} order={order} />
           <ReservationLink tenantSlug={tenantSlug} order={order} />
         </div>
       </div>
@@ -235,10 +303,12 @@ function OrderCard({
 
 function OrdersTable({
   tenantSlug,
+  appUrl,
   orders,
   now,
 }: {
   tenantSlug: string
+  appUrl: string
   orders: AdminOrder[]
   now: Date
 }) {
@@ -284,10 +354,13 @@ function OrdersTable({
             </TableCell>
             <TableCell className="space-y-1.5 align-top whitespace-normal">
               <StatusChip order={order} now={now} />
+              <EntryChip order={order} />
+              <UndoChip order={order} />
               <Attention order={order} />
             </TableCell>
             <TableCell className="align-top text-right">
               <div className="flex flex-col items-end gap-1">
+                <SendTicket tenantSlug={tenantSlug} appUrl={appUrl} order={order} />
                 <ReservationLink tenantSlug={tenantSlug} order={order} />
                 {/* El botón fantasma tiene relleno: así el texto queda alineado con «Ver reserva». */}
                 <div className="-mr-2.5">

@@ -242,3 +242,295 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
     TEST_TIMEOUT,
   )
 })
+
+/**
+ * La puerta (20261103190000): validar con QR.
+ *
+ * ticket_orders solo lo lee el dueño, pero en la puerta están mozos, cajeros y la
+ * anfitriona: por eso funciones con el rol chequeado adentro. Cocina, otro bar y
+ * anon no pasan; y la misma entrada no entra dos veces.
+ */
+describeIfRls('RLS — la puerta (validar entradas con QR)', () => {
+  let service: SupabaseClient
+  let ownerA: UserClient
+  let waiterA: UserClient
+  let kitchenA: UserClient
+  let ownerB: UserClient
+  let tenantA: { id: string; slug: string }
+  let tenantB: { id: string; slug: string }
+  let orderToday: string
+  let orderLater: string
+
+  async function paidOrder(eventId: string, experienceId: string, partySize: number) {
+    const { data: created, error } = await service.rpc('ticketing_create_order', {
+      p_tenant_id: tenantA.id,
+      p_experience_id: experienceId,
+      p_event_id: eventId,
+      p_party_size: partySize,
+      p_option: 'deposit',
+      p_guest_name: 'Ana Puerta',
+      p_guest_phone: `+549351${Math.floor(1000000 + Math.random() * 8999999)}`,
+      p_marketing_opt_in: false,
+      p_client_ip: `10.0.${Math.floor(Math.random() * 200)}.1`,
+      p_meal_type: 'dinner',
+    })
+    if (error) throw new Error(`create order failed: ${error.message}`)
+    const id = (created as { id: string; total_cents: number }).id
+    const total = (created as { id: string; total_cents: number }).total_cents
+    const { error: settleError } = await service.rpc('ticketing_settle_order', {
+      p_tenant_id: tenantA.id,
+      p_order_id: id,
+      p_payment_id: id,
+      p_mp_status: 'approved',
+      p_mp_status_detail: 'accredited',
+      p_payment_type: 'credit_card',
+      p_paid_cents: total,
+      p_paid_at: new Date().toISOString(),
+    })
+    if (settleError) throw new Error(`settle failed: ${settleError.message}`)
+    return id
+  }
+
+  beforeAll(async () => {
+    service = getServiceClient()
+    ownerA = await createUserClient({ email: uniqueEmail('door-owner-a') })
+    waiterA = await createUserClient({ email: uniqueEmail('door-waiter-a') })
+    kitchenA = await createUserClient({ email: uniqueEmail('door-kitchen-a') })
+    ownerB = await createUserClient({ email: uniqueEmail('door-owner-b') })
+    tenantA = await createTenant({
+      name: 'Bar Puerta A',
+      slug: uniqueSlug('door-a'),
+      ownerId: ownerA.userId,
+    })
+    tenantB = await createTenant({
+      name: 'Bar Puerta B',
+      slug: uniqueSlug('door-b'),
+      ownerId: ownerB.userId,
+    })
+    await service.from('memberships').insert([
+      { tenant_id: tenantA.id, user_id: waiterA.userId, role: 'waiter' },
+      { tenant_id: tenantA.id, user_id: kitchenA.userId, role: 'kitchen' },
+    ])
+
+    const { data: tpl, error: tplError } = await service
+      .from('scheduled_event_templates')
+      .insert({
+        tenant_id: tenantA.id,
+        name: 'Cine Puerta',
+        slug: uniqueSlug('door-tpl'),
+        color_hex: '#3f6aa0',
+        default_capacity: 20,
+        default_meal_type: 'dinner',
+        active: true,
+      })
+      .select('id')
+      .single()
+    if (tplError || !tpl) throw new Error(`template insert failed: ${tplError?.message}`)
+    const templateId = (tpl as { id: string }).id
+
+    const { data: exp, error: expError } = await service
+      .from('event_experiences')
+      .insert({
+        tenant_id: tenantA.id,
+        template_id: templateId,
+        slug: 'cine-puerta',
+        title: 'Cine Puerta',
+        price_cents: 1_000_000,
+        deposit_cents: 500_000,
+        terms: 'Las señas no tienen devolución.',
+        published: true,
+      })
+      .select('id')
+      .single()
+    if (expError || !exp) throw new Error(`experience insert failed: ${expError?.message}`)
+    const experienceId = (exp as { id: string }).id
+
+    // Las dos funciones son a futuro (se venden hasta que empiezan). A la de «hoy»
+    // se le corre la fecha DESPUÉS de pagarla, igual que si movieran el evento.
+    const insertEvent = async (date: string) => {
+      const { data, error } = await service
+        .from('scheduled_events')
+        .insert({
+          tenant_id: tenantA.id,
+          template_id: templateId,
+          event_date: date,
+          starts_at_local: '21:00',
+          capacity: 20,
+          meal_type: 'dinner',
+        })
+        .select('id')
+        .single()
+      if (error || !data) throw new Error(`event insert failed: ${error?.message}`)
+      return (data as { id: string }).id
+    }
+    const eventToday = await insertEvent('2031-03-03')
+    const eventLater = await insertEvent('2031-03-10')
+    orderToday = await paidOrder(eventToday, experienceId, 2)
+    orderLater = await paidOrder(eventLater, experienceId, 2)
+
+    // El día de servicio del bar (Córdoba, corte a las 5 AM): UTC-3 y 5 horas.
+    const day = new Date(Date.now() - 8 * 3_600_000).toISOString().slice(0, 10)
+    const moved = await service
+      .from('scheduled_events')
+      .update({ event_date: day })
+      .eq('id', eventToday)
+    if (moved.error) throw new Error(`no se pudo mover el evento: ${moved.error.message}`)
+    await service
+      .from('salon_reservations')
+      .update({ reservation_date: day })
+      .eq('scheduled_event_id', eventToday)
+  }, HOOK_TIMEOUT)
+
+  afterAll(async () => {
+    await service.from('tenants').delete().in('id', [tenantA?.id, tenantB?.id].filter(Boolean))
+    for (const u of [ownerA, waiterA, kitchenA, ownerB]) if (u) await deleteUser(u.userId)
+  }, HOOK_TIMEOUT)
+
+  it(
+    'el mozo no puede leer los pedidos, pero sí mirar una entrada: sin teléfono',
+    async () => {
+      const direct = await waiterA.client.from('ticket_orders').select('id').eq('id', orderToday)
+      expect(direct.data ?? []).toHaveLength(0)
+
+      const { data, error } = await waiterA.client.rpc('ticket_door_lookup', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(error).toBeNull()
+      expect(data).toMatchObject({ order_id: orderToday, guest_name: 'Ana Puerta', party_size: 2 })
+      expect(JSON.stringify(data)).not.toContain('+549351')
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'cocina, otro bar y anon no pasan',
+    async () => {
+      const kitchen = await kitchenA.client.rpc('ticket_door_lookup', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(kitchen.error?.message).toContain('forbidden')
+
+      const otherBar = await ownerB.client.rpc('ticket_door_admit', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+        p_guests: 1,
+        p_expected_inside: 0,
+      })
+      expect(otherBar.error?.message).toContain('forbidden')
+
+      const anon = await getAnonClient().rpc('ticket_door_lookup', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(anon.error).not.toBeNull()
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'una entrada de otro bar no aparece en el mío',
+    async () => {
+      const { data, error } = await ownerB.client.rpc('ticket_door_lookup', {
+        p_tenant_id: tenantB.id,
+        p_order_id: orderToday,
+      })
+      expect(error).toBeNull()
+      expect(data).toBeNull()
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'entran de a partes y la misma entrada no entra dos veces',
+    async () => {
+      const admit = (guests: number, expected: number) =>
+        waiterA.client.rpc('ticket_door_admit', {
+          p_tenant_id: tenantA.id,
+          p_order_id: orderToday,
+          p_guests: guests,
+          p_expected_inside: expected,
+        })
+
+      const first = await admit(1, 0)
+      expect(first.error).toBeNull()
+      expect(first.data.reservation).toMatchObject({ status: 'arrived', actual_guests: 1 })
+
+      // Otro celular que miró la pantalla antes: no suma a los mismos dos veces.
+      const stale = await admit(1, 0)
+      expect(stale.error?.message).toContain('ticket_stale')
+
+      const tooMany = await admit(2, 1)
+      expect(tooMany.error?.message).toContain('ticket_invalid_guests')
+
+      const second = await admit(1, 1)
+      expect(second.error).toBeNull()
+      expect(second.data.reservation).toMatchObject({ status: 'arrived', actual_guests: 2 })
+
+      const again = await admit(1, 2)
+      expect(again.error?.message).toContain('ticket_already_used')
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'deshacer: solo quien dejó pasar y una sola vez',
+    async () => {
+      const otherPerson = await ownerA.client.rpc('ticket_door_undo', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(otherPerson.error?.message).toContain('ticket_undo_other_user')
+
+      const undo = await waiterA.client.rpc('ticket_door_undo', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(undo.error).toBeNull()
+      expect(undo.data.reservation).toMatchObject({ status: 'arrived', actual_guests: 1 })
+
+      const twice = await waiterA.client.rpc('ticket_door_undo', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderToday,
+      })
+      expect(twice.error?.message).toContain('ticket_undo_unavailable')
+
+      // Queda el rastro, y lo ve el dueño.
+      const { data: trail } = await ownerA.client
+        .from('audit_log')
+        .select('action, user_id')
+        .eq('entity_id', orderToday)
+        .eq('action', 'ticket_order.door_undo')
+      expect(trail).toEqual([{ action: 'ticket_order.door_undo', user_id: waiterA.userId }])
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'una entrada de otro día no pasa',
+    async () => {
+      const { error } = await waiterA.client.rpc('ticket_door_admit', {
+        p_tenant_id: tenantA.id,
+        p_order_id: orderLater,
+        p_guests: 1,
+        p_expected_inside: 0,
+      })
+      expect(error?.message).toContain('ticket_other_day')
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
+    'cada compra guarda las condiciones de ese momento',
+    async () => {
+      const { data } = await ownerA.client
+        .from('ticket_orders')
+        .select('terms')
+        .eq('id', orderToday)
+        .single()
+      expect((data as { terms: string | null }).terms).toBe('Las señas no tienen devolución.')
+    },
+    TEST_TIMEOUT,
+  )
+})

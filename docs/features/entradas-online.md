@@ -13,7 +13,10 @@
 |---|---|---|
 | `/entradas/[bar]` | **cualquiera, sin sesión** | La cartelera: todas las películas publicadas con sus fechas como talones. Vista «Películas» o «Por fecha», y filtros por disponibilidad, mes y película (`?ver=disponibles&mes=2026-11&pelicula=shrek-2`). |
 | `/entradas/[bar]/[película]?fecha=` | **cualquiera** (el dueño ve también las no publicadas, como vista previa) | La película contada en actos (la función, el menú paso a paso, escenas, fotos reales) y «Tu entrada», donde se compra. |
-| `/entradas/[bar]/mi-entrada/[pedido]` | quien tenga el link | La entrada: adonde vuelve desde Mercado Pago. Confirma el pago sola y muestra el comprobante (agendar, compartir, cómo llegar). |
+| `/entradas/[bar]/mi-entrada/[pedido]` | quien tenga el link | La entrada: adonde vuelve desde Mercado Pago. Confirma el pago sola y muestra la entrada con su QR y el comprobante (guardar como imagen, agendar, compartir, cómo llegar). |
+| `/entradas/[bar]/muestra` | quien tenga el link | Una entrada de muestra para ver y filmar la animación sin pagar. No toca la base. `?video=1` saca los botones y corta el talón solo; `?ver=puerta` muestra lo que ve quien recibe; `?pelicula=`, `?nombre=` y `?personas=` la ajustan. |
+| `/e/[código]` | cualquiera | Adonde lleva el QR si lo abre la cámara del teléfono: quien recibe en ese bar va a la puerta; cualquier otra persona, a la entrada. |
+| `/[bar]/salon/puerta` | `owner`, `cashier`, `waiter`, `host` | La puerta: escanear las entradas y dejar pasar. El escáner de «Sumar puntos» también las reconoce. |
 | `/api/webhooks/mercadopago?t=[tenant_id]` | Mercado Pago | Avisos de pago. |
 | `/[bar]/entradas` | `owner` | Panel: la cartelera (link para mandar), la cuenta de Mercado Pago, las películas, las ventas online y la configuración. |
 | `/[bar]/entradas/[id]` | `owner` | El editor de la página de una película. |
@@ -259,7 +262,77 @@ papel en dos caras (armar la entrada / a nombre de quién) con el total que rued
 
 ---
 
-## 5. Probar
+## 5. La entrada con QR y la puerta
+
+Pedido del 03/11/2026: los clientes piden un comprobante al pagar la seña. Al pagar,
+la boletería da **dos papeles**: la entrada, para la puerta, y el comprobante, para
+quedarse tranquilo. En la puerta se corta el talón, como en el cine.
+
+**Qué ve el cliente** (`mi-entrada/_components/`)
+
+- `ticket-stub.tsx`: el talón con el QR, el número y una roseta de seguridad que sale
+  del id del pedido (`guillocheFor`): no hay dos iguales.
+- `receipt.tsx`: el comprobante, en papel térmico. Cuánto, cuándo, a nombre de quién
+  (primer nombre e inicial), operación de Mercado Pago, cuánto falta y las condiciones.
+  Lleva «Documento no válido como factura». Las condiciones son una foto de la compra
+  (`ticket_orders.terms`): las compras anteriores al 01/11/2026 no las muestran.
+- `paid-stamp.tsx`: el sello de la boletería.
+- `lights-off.tsx`: «se apagan las luces», el QR a pantalla completa. No deja que la
+  pantalla se apague (`wakeLock`). La noche de la función aparece un botón fijo.
+- `lib/ticketing/ticket-image.ts`: la imagen que se guarda. Es un canvas dibujado a mano
+  con los mismos trazos: pasar el DOM a imagen falla en Safari con máscaras y SVG. Se
+  prepara antes del toque porque Safari no deja compartir un archivo si hay que esperar.
+
+**El QR** (`lib/ticketing/ticket-qr.ts`) lleva `/e/<id del pedido en base64url>`, 22
+caracteres en vez de 36: menos módulos, puntos más grandes. Va con corrección Q.
+
+> **Antes de cambiar el dibujo del QR, repetir la prueba de lectura.** Los ojos con
+> agujeritos adentro seguían leyéndose en la cámara del iPhone (Vision), pero ZXing, que
+> es lo que usa nuestro escáner en iPhone, dejaba de leerlos. Hay que probar con los dos,
+> con la imagen nítida y con borrosa, inclinada, oscura y con reflejo. OpenCV no lee ojos
+> redondeados, pero ningún celular lo usa.
+
+**La llegada no se guarda aparte.** Es la de la reserva (`arrived`, `arrived_at`,
+`actual_guests`): da igual si la marcaron con el QR o con el botón «Llegó», y el tablero,
+la comisión y lo que ve el cliente coinciden. Un grupo que llega de a partes va sumando en
+`actual_guests`.
+
+> `actual_guests` baja el cupo calculado mientras falta parte del grupo: una entrada de 4
+> con 2 adentro cuenta 2. La venta online corta a la hora de la función, así que la ventana
+> en la que eso podría liberar un lugar es chica. Se aceptó a propósito.
+
+**Las funciones** (migración `20261103190000_ticketing_door.sql`): `ticket_orders` solo lo
+lee el dueño y en la puerta hay mozos, cajeros y anfitriona, así que van por `SECURITY
+DEFINER` con el rol chequeado adentro (`private.ticket_door_authorize`):
+
+| Función | Qué hace |
+|---|---|
+| `ticket_door_lookup` | Mira una entrada, por id o por el número impreso. No toca nada. Otro bar: `null`. |
+| `ticket_door_admit` | Deja pasar a N. Vuelve a validar todo con la fila bloqueada, y compara cuántos había adentro cuando quien recibe miró la pantalla (`p_expected_inside`): dos celulares no cuentan dos veces a los mismos, y un reintento sin señal tampoco. |
+| `ticket_door_undo` | Deshace el último «Dejar pasar». |
+| `ticket_door_today` | Las funciones de hoy y cuántos entraron: el cartel arriba de la cámara. |
+
+**Deshacer** (decisión del 03/11/2026, por el toque de más: «Dejar pasar a 4» cuando
+llegaron 2). Borrar una llegada permite esconder plata o hacer pasar a alguien con la
+entrada de otro, así que lleva cuatro candados, todos en la base: como máximo 30 segundos,
+solo quien dejó pasar, una vez por entrada, y queda en `audit_log` (las funciones lo
+escriben en la misma transacción). Los dueños lo ven en Ventas online: «Deshizo Luz ·
+21:05». Pasado eso, se corrige en Reservas, que desde el mismo cambio también guarda quién
+hizo cada cosa.
+
+**El veredicto** (`lib/ticketing/door.ts`, puro): `admit`, `used`, `other_day`, `not_paid`,
+`refunded`, `cancelled` o `no_reservation`. La pantalla (`components/door/`) dice una sola
+cosa y grande: verde pasan, óxido no, dorado es otro día o hay que preguntar. Escanear no
+marca nada; dejar pasar es un toque, para ver antes cuánto falta cobrar.
+
+**Quién la ve:** la pestaña «Puerta» del salón sale con el flag `ticket_door` (por defecto
+apagado, se prende por bar desde `/admin`: el trigger `guard_feature_flags_write` solo deja a
+un superadmin). La página en sí solo pide el rol, así que un QR abierto con la
+cámara funciona igual. El panel «Ventas online» muestra quién entró y tiene **Mandar
+entrada**: abre el WhatsApp de quien pagó con el link escrito, para los que pagaron antes
+del QR o perdieron el link.
+
+## 6. Probar
 
 - Unit: `tests/lib/ticketing-*.test.ts`, `tests/lib/mercadopago-*.test.ts`,
   `tests/lib/entradas-panel-*.test.ts`.

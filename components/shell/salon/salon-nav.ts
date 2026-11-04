@@ -2,13 +2,14 @@ import {
   CalendarCheck,
   ChefHat,
   ClipboardList,
+  DoorOpen,
   type LucideIcon,
   QrCode,
   ScanLine,
   User,
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
-import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
+import { REDEMPTION_STAFF_ROLES, TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 
 /**
@@ -23,6 +24,7 @@ import type { TenantRole } from '@/lib/tenant/types'
  *   1. Sumar puntos — escanear el QR del socio es lo que más se hace.
  *   2. QR del club  — el mozo lo muestra al cerrar la cuenta.
  *   3. Reservas     — el pase de lista de la noche.
+ *   4. Puerta       — las noches de cine: validar las entradas con QR.
  */
 export type SalonTab = {
   key: string
@@ -65,6 +67,16 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     icon: CalendarCheck,
     href: (s) => `/${s}/salon/reservas-operativo`,
     match: (p, s) => p === `/${s}/salon` || p.startsWith(`/${s}/salon/reservas-operativo`),
+  },
+  {
+    key: 'puerta',
+    label: 'Puerta',
+    title: 'Puerta',
+    icon: DoorOpen,
+    href: (s) => `/${s}/salon/puerta`,
+    match: (p, s) => p.startsWith(`/${s}/salon/puerta`),
+    roles: TICKET_DOOR_ROLES,
+    feature: 'ticket_door',
   },
   {
     key: 'mesas',

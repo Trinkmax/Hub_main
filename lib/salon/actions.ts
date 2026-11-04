@@ -226,6 +226,7 @@ async function syncCustomerServiceAlerts(
   tenantId: string,
   customerId: string,
   alerts: ReadonlyArray<ServiceAlert> | undefined,
+  userId: string,
 ): Promise<void> {
   const incoming = personScopedAlerts(alerts ?? [])
   if (incoming.length === 0) return
@@ -275,7 +276,7 @@ async function syncCustomerServiceAlerts(
   // Guardamos las claves del aviso, nunca el nombre ni el teléfono.
   await logAudit({
     tenantId,
-    userId: null,
+    userId,
     action: 'customer.service_alerts.updated',
     entity: 'customer',
     entityId: customerId,
@@ -486,6 +487,7 @@ export async function createSalonReservation(
       access.tenant.id,
       customerId,
       parsed.data.service_alerts,
+      access.user.id,
     )
   }
 
@@ -631,6 +633,7 @@ export async function updateSalonReservation(
       access.tenant.id,
       patch.customer_id,
       patch.service_alerts,
+      access.user.id,
     )
   }
 
@@ -639,7 +642,7 @@ export async function updateSalonReservation(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'salon_reservation.updated',
     entity: 'salon_reservation',
     entityId: id,
@@ -679,7 +682,7 @@ export async function cancelSalonReservation(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'salon_reservation.cancelled',
     entity: 'salon_reservation',
     entityId: parsed.data.id,
@@ -754,7 +757,7 @@ export async function transitionStatus(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: `salon_reservation.${parsed.data.to}`,
     entity: 'salon_reservation',
     entityId: parsed.data.id,
@@ -842,7 +845,7 @@ export async function updateActualGuests(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'salon_reservation.actual_guests_updated',
     entity: 'salon_reservation',
     entityId: parsed.data.id,
@@ -953,7 +956,7 @@ export async function updateReservationTableLabel(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'salon_reservation.table_assigned',
     entity: 'salon_reservation',
     entityId: parsed.data.id,
@@ -1097,11 +1100,17 @@ export async function linkReservationCustomer(slug: string, id: string): Promise
   if (linkError) return { ok: false, message: humanizeSalonError(linkError.message) }
 
   await markCustomerAcquiredByReservation(supabase, access.tenant.id, customerId)
-  await syncCustomerServiceAlerts(supabase, access.tenant.id, customerId, row.service_alerts ?? [])
+  await syncCustomerServiceAlerts(
+    supabase,
+    access.tenant.id,
+    customerId,
+    row.service_alerts ?? [],
+    access.user.id,
+  )
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: created ? 'customer.created' : 'salon_reservation.customer_linked',
     entity: created ? 'customer' : 'salon_reservation',
     entityId: created ? customerId : row.id,
@@ -1210,7 +1219,7 @@ export async function bulkUpdateActualGuests(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'salon_reservation.attendance_roll_call',
     entity: 'salon_reservation',
     entityId: null,
@@ -1361,7 +1370,7 @@ export async function moveScheduledEvent(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'scheduled_event.moved',
     entity: 'scheduled_event',
     entityId: parsed.data.id,
@@ -1421,7 +1430,7 @@ export async function deleteScheduledEvent(slug: string, id: string): Promise<Ac
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'scheduled_event.deleted',
     entity: 'scheduled_event',
     entityId: id,
@@ -1488,7 +1497,7 @@ export async function upsertScheduledTemplate(
   // El catálogo ya no lo toca solo el dueño: dejamos rastro de quién lo cambió.
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: isUpdate ? 'scheduled_event_template.updated' : 'scheduled_event_template.created',
     entity: 'scheduled_event_template',
     entityId: id,
@@ -1552,7 +1561,7 @@ export async function quickCreateScheduledTemplate(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'scheduled_event_template.created',
     entity: 'scheduled_event_template',
     entityId: (data as { id: string }).id,
@@ -1665,7 +1674,7 @@ export async function upsertRateTier(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'commission.tier_changed',
     entity: 'commission_rate_tier',
     entityId: id ?? null,
@@ -1746,7 +1755,7 @@ export async function markCommissionPaid(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'commission.paid',
     entity: 'commission_ledger',
     payload: { count: data, ledger_ids: parsed.data.ledger_ids },
@@ -2065,7 +2074,7 @@ export async function upsertCakeOption(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: isUpdate ? 'cake_option.updated' : 'cake_option.created',
     entity: 'cake_option',
     entityId: id,
@@ -2098,7 +2107,7 @@ export async function deleteCakeOption(slug: string, id: string): Promise<Action
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: 'cake_option.deleted',
     entity: 'cake_option',
     entityId: id,

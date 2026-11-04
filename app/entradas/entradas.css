@@ -1156,6 +1156,490 @@
     outline-offset: 3px;
   }
 
+  /* ═══ La entrada con QR: la boletería te da dos papeles ═══════
+     La entrada, para la puerta. El comprobante, para quedarte tranquilo.
+     Al pagar se imprimen; en la puerta se corta el talón por el troquel. */
+  .ent-admit {
+    position: relative;
+    z-index: 1;
+    filter: drop-shadow(0 30px 34px rgb(0 0 0 / 0.62));
+  }
+
+  /* Un filtro sobre lo que se mueve se repinta en cada cuadro. */
+  .ent-admit[data-falling="true"] {
+    filter: none;
+  }
+
+  .ent-half {
+    --notch: 13px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ent-half-top {
+    --notch-y: 100%;
+    border-radius: 26px 26px 0 0;
+  }
+
+  .ent-half-stub {
+    --notch-y: 0%;
+    border-radius: 0 0 26px 26px;
+  }
+
+  /* El troquel: agujeritos de verdad, una mitad en cada papel. */
+  .ent-half-top:not([data-torn="true"])::after,
+  .ent-half-stub::before {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    left: 15px;
+    right: 15px;
+    height: 6px;
+    background:
+      radial-gradient(circle 2.4px at center, var(--ent-hole) 96%, transparent) left / 11px 6px
+      repeat-x;
+    pointer-events: none;
+  }
+
+  .ent-half-top::after {
+    bottom: -3px;
+  }
+
+  .ent-half-stub::before {
+    top: -3px;
+  }
+
+  /* La roseta de seguridad, como la de un billete: no hay dos iguales. */
+  .ent-guilloche {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--accent);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  /* La chapa del QR: el papel más claro de la entrada, para que el lector vea
+     el máximo contraste. La tinta sale de la película, siempre bien oscura. */
+  .ent-qr-plate {
+    position: relative;
+    display: block;
+    width: min(100%, 15.75rem);
+    margin-inline: auto;
+    padding: 0.85rem;
+    border-radius: 20px;
+    background: #fffcf2;
+    color: #141d18;
+    box-shadow:
+      0 0 0 1px rgb(26 37 31 / 0.08),
+      0 16px 26px -18px rgb(26 37 31 / 0.55);
+    cursor: zoom-in;
+    transition:
+      transform 180ms var(--ent-ease-out),
+      box-shadow 180ms ease;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-qr-plate:hover {
+      transform: translate3d(0, -2px, 0);
+    }
+  }
+
+  .ent-qr-plate:active {
+    transform: scale(0.98);
+  }
+
+  /* Si el navegador sabe mezclar colores, la tinta sale de la película. */
+  @supports (color: color-mix(in oklab, red, blue)) {
+    .ent-qr-plate {
+      color: color-mix(in oklab, var(--accent) 32%, #0a0f0c);
+    }
+  }
+
+  .ent-serial {
+    font-family: var(--ent-mono-font);
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    font-variant-numeric: tabular-nums lining-nums;
+    color: var(--ent-rust-deep);
+  }
+
+  /* El sello de goma de la boletería. */
+  .ent-seal {
+    position: absolute;
+    color: var(--ent-rust-deep);
+    transform: rotate(-13deg);
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='r'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.32'/></filter><rect width='100%25' height='100%25' filter='url(%23r)'/></svg>");
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='r'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 2.32'/></filter><rect width='100%25' height='100%25' filter='url(%23r)'/></svg>");
+  }
+
+  /* Los que ya entraron de un grupo: la ✦ perforada por quien recibe. */
+  .ent-punch {
+    color: rgb(26 37 31 / 0.28);
+  }
+
+  .ent-punch[data-on="true"] {
+    color: var(--ent-hole);
+    animation: ent-punch 260ms var(--ent-ease-out) both;
+  }
+
+  @keyframes ent-punch {
+    from {
+      transform: scale(1.5);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+
+  /* El comprobante: papel térmico, más frío y más fino que la entrada, que
+     sale de atrás de ella. El borde de abajo, cortado por la guillotina. */
+  .ent-receipt-slot {
+    position: relative;
+    z-index: 0;
+    margin-top: -1.15rem;
+    padding-inline: 0.85rem;
+    overflow: hidden;
+    filter: drop-shadow(0 16px 18px rgb(0 0 0 / 0.55));
+  }
+
+  .ent-receipt {
+    --zig: 15px;
+    padding: 2.35rem 1.2rem 1.55rem;
+    background:
+      linear-gradient(to bottom, rgb(24 28 26 / 0.24), transparent 1.5rem),
+      linear-gradient(to bottom, #fbfbf7, #f2f2ec);
+    color: #27292b;
+    font-family: var(--ent-mono-font);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    -webkit-mask:
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig)
+      100%;
+    mask:
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig)
+      100%;
+  }
+
+  .ent-receipt-rule {
+    margin-block: 0.6rem;
+    border: 0;
+    border-top: 1.5px dashed rgb(39 41 43 / 0.34);
+  }
+
+  .ent-qr-head {
+    display: none;
+    position: absolute;
+    inset: 0.85rem;
+    pointer-events: none;
+  }
+
+  .ent-qr-head::after {
+    content: "";
+    position: absolute;
+    inset: 0 -0.4rem auto;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 14px 2px color-mix(in oklab, var(--accent) 70%, transparent);
+  }
+
+  /* Al aprobarse el pago: se imprime la entrada. */
+  [data-celebrate="true"] .ent-qr-print {
+    animation: ent-print-rows 980ms steps(var(--rows, 37), end) 420ms both;
+  }
+
+  [data-celebrate="true"] .ent-qr-head {
+    display: block;
+    animation: ent-print-head 980ms steps(var(--rows, 37), end) 420ms both;
+  }
+
+  @keyframes ent-print-rows {
+    from {
+      clip-path: inset(0 0 100% 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  @keyframes ent-print-head {
+    0% {
+      transform: translate3d(0, 0, 0);
+      opacity: 1;
+    }
+    99% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(0, 100%, 0);
+      opacity: 0;
+    }
+  }
+
+  [data-celebrate="true"] .ent-seal {
+    animation: ent-thump 340ms var(--ent-ease-out) 1420ms both;
+  }
+
+  [data-celebrate="true"] .ent-half-top {
+    animation: ent-thud 300ms ease-out 1560ms both;
+  }
+
+  @keyframes ent-thump {
+    from {
+      opacity: 0;
+      transform: rotate(-5deg) scale(1.9);
+    }
+    60% {
+      opacity: 1;
+      transform: rotate(-13deg) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(-13deg) scale(1);
+    }
+  }
+
+  @keyframes ent-thud {
+    30% {
+      transform: translate3d(0, 2px, 0);
+    }
+  }
+
+  /* El rollo térmico avanza a los saltitos. */
+  [data-celebrate="true"] .ent-receipt {
+    animation: ent-receipt-feed 1.15s steps(20, end) 1.7s both;
+  }
+
+  @keyframes ent-receipt-feed {
+    from {
+      transform: translate3d(0, -100%, 0);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  /* En la puerta: el talón se corta por el troquel y cae. El lugar que deja se
+     cierra despacio, recién cuando el papel ya se separó. */
+  .ent-stub-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 620ms var(--ent-ease-in-out) 460ms;
+  }
+
+  .ent-stub-slot[data-gone="true"] {
+    grid-template-rows: 0fr;
+  }
+
+  .ent-stub-slot > * {
+    min-height: 0;
+  }
+
+  .ent-half-stub[data-falling="true"] {
+    z-index: 2;
+    pointer-events: none;
+    transform-origin: 7% 0%;
+    animation: ent-stub-fall 1.3s cubic-bezier(0.5, 0.02, 0.86, 0.45) both;
+  }
+
+  @keyframes ent-stub-fall {
+    0% {
+      transform: none;
+    }
+    16% {
+      transform: translate3d(2px, 5px, 0) rotate(1.3deg);
+    }
+    30% {
+      transform: translate3d(4px, 11px, 0) rotate(2.6deg);
+    }
+    100% {
+      transform: translate3d(46px, 115vh, 0) rotate(21deg);
+    }
+  }
+
+  /* «Se apagan las luces»: el QR a pantalla completa para mostrar en la puerta. */
+  .ent-lights {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: #030504;
+    color: var(--ent-cream);
+    animation: ent-fade 380ms ease both;
+  }
+
+  .ent-lights::backdrop {
+    background: #030504;
+  }
+
+  .ent-lights-screen {
+    width: min(84vw, 58dvh, 30rem);
+    padding: clamp(0.9rem, 3.4vw, 1.5rem);
+    border-radius: 24px;
+    background: #fffef8;
+    color: #0f1712;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.4),
+      0 0 70px 6px rgb(255 243 218 / 0.3),
+      0 30px 180px 40px color-mix(in oklab, var(--accent) 34%, transparent);
+    animation: ent-screen-on 620ms var(--ent-ease-out) 140ms both;
+  }
+
+  @keyframes ent-screen-on {
+    from {
+      opacity: 0;
+      filter: brightness(0.25);
+      transform: scale(0.965);
+    }
+    to {
+      opacity: 1;
+      filter: brightness(1);
+      transform: none;
+    }
+  }
+
+  /* La noche de la función, en la puerta: un toque y aparece el QR, sin buscarlo. */
+  .ent-door-bar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgb(9 13 11 / 0.96) 60%, transparent);
+    animation: ent-rise-bar 420ms var(--ent-ease-out) 300ms both;
+  }
+
+  @keyframes ent-rise-bar {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 100%, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* En la compu entran los dos papeles uno al lado del otro, sobre el mostrador
+     de la boletería. En el celular el comprobante sale de atrás de la entrada. */
+  @media (min-width: 64rem) {
+    .ent-counter {
+      display: grid;
+      grid-template-columns: minmax(0, 28rem) minmax(0, 23rem);
+      align-items: start;
+      justify-content: center;
+      gap: 3rem;
+    }
+
+    .ent-counter .ent-receipt-slot {
+      margin-top: 0;
+      padding-inline: 0;
+      transform: rotate(1.1deg);
+      transform-origin: 50% 0;
+    }
+
+    .ent-counter .ent-receipt {
+      padding-top: 1.75rem;
+      background: linear-gradient(to bottom, #fbfbf7, #f2f2ec);
+    }
+  }
+
+  @supports (color: color-mix(in oklab, red, blue)) {
+    .ent-lights-screen {
+      color: color-mix(in oklab, var(--accent) 26%, #070b09);
+    }
+  }
+
+  /* Los controles de la entrada de muestra (/entradas/<bar>/muestra). */
+  .ent-sample-bar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 35;
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom));
+    background: rgb(9 13 11 / 0.92);
+    scrollbar-width: none;
+  }
+
+  .ent-sample-btn {
+    display: inline-flex;
+    flex: none;
+    height: 2.75rem;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    padding-inline: 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .ent-sample-btn[aria-pressed="true"] {
+    background: var(--ent-cream);
+    color: var(--ent-ink);
+  }
+
+  .ent-save {
+    background: var(--ent-cream);
+    color: var(--ent-ink);
+    box-shadow: 0 16px 34px -18px rgb(243 236 218 / 0.5);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-save:hover {
+      background: #fff8e6;
+    }
+  }
+
+  .ent-ghost {
+    background: rgb(243 236 218 / 0.08);
+    color: var(--ent-cream);
+    box-shadow: inset 0 0 0 1px var(--ent-line);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ent-ghost:hover {
+      background: rgb(243 236 218 / 0.13);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-celebrate="true"] .ent-qr-print,
+    [data-celebrate="true"] .ent-seal,
+    [data-celebrate="true"] .ent-half-top,
+    [data-celebrate="true"] .ent-receipt,
+    .ent-punch[data-on="true"] {
+      animation: none;
+    }
+
+    [data-celebrate="true"] .ent-qr-head {
+      display: none;
+    }
+
+    .ent-half-stub[data-falling="true"] {
+      animation: ent-fade 240ms ease reverse both;
+    }
+
+    .ent-stub-slot {
+      transition-duration: 1ms;
+      transition-delay: 240ms;
+    }
+
+    .ent-lights-screen,
+    .ent-door-bar {
+      animation: none;
+    }
+  }
+
   /* La entrada fija al costado en la compu, solo si la pantalla da para
      verla: en una notebook baja (768 px de pantalla, ~650 de ventana)
      fluye con la página, se ve entera y aparece la barra de «Reservar»

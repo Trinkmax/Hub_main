@@ -1,3 +1,5 @@
+import type { TicketQr } from './ticket-art'
+
 /**
  * Tipos de las entradas online (Cine y degustación y cualquier otro formato
  * del calendario que el bar ponga a la venta).
@@ -98,6 +100,8 @@ export type TicketOrderRow = {
   mp_status: string | null
   mp_status_detail: string | null
   mp_payment_type: string | null
+  /** Las condiciones de la película al comprar (foto). */
+  terms: string | null
   paid_cents: number | null
   paid_at: string | null
   reservation_id: string | null
@@ -217,4 +221,32 @@ export type PublicOrder = {
   mpStatusDetail: string | null
   /** Volver a Mercado Pago con el mismo pedido (si el lugar sigue guardado). */
   retryUrl: string | null
+  /** «Ignacio B.»: el nombre en el comprobante. */
+  guestShortName: string
+  /** El número de operación de Mercado Pago, para el comprobante. */
+  mpPaymentId: string | null
+  /** Con qué pagó (`payment_type` de Mercado Pago). */
+  mpPaymentType: string | null
+  /** «03/11/2026 13:55», ya en el huso del bar. */
+  paidAtLabel: string | null
+  /** Las condiciones que aceptó al pagar (foto del pedido). Compras viejas: sin condiciones. */
+  terms: string | null
+  /** Hoy en el bar (día de servicio): para saber si la función es hoy o ya pasó. */
+  today: string
+  /** Quiénes ya entraron: sale de la reserva. */
+  entry: OrderEntry
+  /** El QR de la puerta. Solo si la entrada está paga y todavía sirve. */
+  qr: TicketQr | null
+  /** Entrada de muestra: no es una compra de verdad y el comprobante lo dice. */
+  sample?: boolean
+}
+
+/** La llegada de una entrada a la puerta. */
+export type OrderEntry = {
+  inside: number
+  total: number
+  /** «21:04», ya en el huso del bar. */
+  atLabel: string | null
+  /** Cancelaron la reserva: la entrada ya no sirve. */
+  cancelled: boolean
 }

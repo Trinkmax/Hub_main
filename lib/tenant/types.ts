@@ -98,6 +98,7 @@ export const RESERVED_SLUGS = new Set([
   'carta',
   'r',
   'v', // QR de canje (/v/[redeem_token])
+  'e', // QR de una entrada (/e/[código])
   'l', // link público del bar para la bio de Instagram (/l/[tenantSlug])
   'p', // páginas HTML que publica el bar (/p/[slug])
   'entradas', // cartelera y entradas online (/entradas/[tenantSlug]/…)

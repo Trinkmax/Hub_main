@@ -186,3 +186,11 @@ export function buildIcs(input: {
   lines.push('END:VEVENT', 'END:VCALENDAR')
   return `${lines.join('\r\n')}\r\n`
 }
+
+/**
+ * Hoy para el bar: hasta las 5 AM sigue siendo «ayer» (el cine de las 21:00 sigue
+ * siendo de hoy a la 1 de la mañana). Mismo corte que `private.ticket_door_service_day`.
+ */
+export function serviceDayIn(tz: string, now: Date = new Date()): string {
+  return formatInTimeZone(new Date(now.getTime() - 5 * 3_600_000), tz, 'yyyy-MM-dd')
+}

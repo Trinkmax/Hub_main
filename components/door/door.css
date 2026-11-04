@@ -1,0 +1,482 @@
+/* ============================================================
+   La puerta — «el acomodador»
+   ============================================================
+   Quien recibe mira la pantalla de reojo, con la fila adelante y poca luz. Toda la
+   pantalla es el veredicto: verde pasan, óxido ya entraron o no pasan, dorado es
+   otro día. La entrada es el mismo papel que tiene el cliente en su celular.
+   Los colores son propios: el salón es claro, y esta pantalla no sigue el tema.
+   ============================================================ */
+@layer components {
+  .door {
+    --door-paper: #f6efdc;
+    --door-paper-2: #ece2c8;
+    --door-ink: #1a251f;
+    --door-ink-2: #4b5850;
+    --door-cream: #f8f2e1;
+    --door-night: #0a100d;
+    --door-pine: #0f3f2d;
+    --door-pine-2: #0a2d20;
+    --door-rust: #9c3f2a;
+    --door-rust-2: #7a2d1c;
+    --door-gold: #e9c070;
+    --door-gold-2: #d9a94f;
+    --door-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --door-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --door-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --door-serif: var(--font-fraunces), ui-serif, Georgia, serif;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color-scheme: light;
+    /* Llena de borde a borde lo que deja el chrome del salón: el documento sigue
+       siendo el único que scrollea (contrato de scroll del shell). */
+    min-height: calc(100dvh - var(--salon-topbar-h) - var(--salon-tabbar-h));
+    /* El shell deja 1rem de aire arriba de la barra de abajo: acá el color llega hasta ella. */
+    margin-bottom: -1rem;
+  }
+
+  .door-verdict {
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem 1rem 1.25rem;
+    background: var(--door-field);
+    color: var(--door-on-field);
+    animation: door-flood 260ms var(--door-ease-out) both;
+  }
+
+  .door-verdict[data-tone="pass"] {
+    --door-field: linear-gradient(170deg, #14563d, var(--door-pine) 42%, var(--door-pine-2));
+    --door-on-field: var(--door-cream);
+    --door-soft: rgb(248 242 225 / 0.82);
+  }
+
+  .door-verdict[data-tone="stop"] {
+    --door-field: linear-gradient(170deg, #b24a32, var(--door-rust) 42%, var(--door-rust-2));
+    --door-on-field: #fff5e6;
+    --door-soft: rgb(255 245 230 / 0.88);
+  }
+
+  .door-verdict[data-tone="wait"] {
+    --door-field: linear-gradient(170deg, #f2cf88, var(--door-gold) 50%, var(--door-gold-2));
+    --door-on-field: #231a07;
+    --door-soft: rgb(35 26 7 / 0.82);
+  }
+
+  @keyframes door-flood {
+    from {
+      opacity: 0.4;
+      filter: saturate(0.7);
+    }
+    to {
+      opacity: 1;
+      filter: none;
+    }
+  }
+
+  .door-word {
+    font-family: var(--door-serif);
+    font-weight: 600;
+    font-size: clamp(3.4rem, 19vw, 5.25rem);
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    font-variant-numeric: lining-nums;
+    text-wrap: balance;
+    animation: door-word 340ms var(--door-ease-out) both;
+  }
+
+  @keyframes door-word {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .door-name {
+    margin-top: 0.5rem;
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .door-note {
+    margin-top: 0.25rem;
+    font-size: 1rem;
+    line-height: 1.35;
+    color: var(--door-soft);
+  }
+
+  /* La entrada: el mismo papel y el mismo troquel que ve el cliente. */
+  .door-ticket {
+    position: relative;
+    margin-top: 1.25rem;
+    filter: drop-shadow(0 18px 20px rgb(0 0 0 / 0.38));
+  }
+
+  .door-ticket[data-falling="true"] {
+    filter: none;
+  }
+
+  .door-half {
+    --notch: 11px;
+    position: relative;
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.5), transparent 55%), var(--door-paper);
+    color: var(--door-ink);
+    overflow: hidden;
+    -webkit-mask:
+      radial-gradient(circle var(--notch) at 0 var(--notch-y), transparent 98%, #000 100%) left /
+      51% 100% no-repeat,
+      radial-gradient(circle var(--notch) at 100% var(--notch-y), transparent 98%, #000 100%) right
+      / 51% 100% no-repeat;
+    mask:
+      radial-gradient(circle var(--notch) at 0 var(--notch-y), transparent 98%, #000 100%) left /
+      51% 100% no-repeat,
+      radial-gradient(circle var(--notch) at 100% var(--notch-y), transparent 98%, #000 100%) right
+      / 51% 100% no-repeat;
+  }
+
+  .door-half-top {
+    --notch-y: 100%;
+    border-radius: 20px 20px 0 0;
+  }
+
+  /* Sin la parte de la plata, la entrada queda entera: redonda y sin muescas. */
+  .door-half-top[data-alone="true"] {
+    border-radius: 20px;
+    -webkit-mask: none;
+    mask: none;
+  }
+
+  .door-half-stub {
+    --notch-y: 0%;
+    border-radius: 0 0 20px 20px;
+    border-top: 2px dashed rgb(26 37 31 / 0.24);
+  }
+
+  .door-poster {
+    position: relative;
+    flex: none;
+    width: 3.5rem;
+    height: 5rem;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--door-paper-2);
+    box-shadow: 0 6px 12px -6px rgb(0 0 0 / 0.5);
+  }
+
+  .door-label {
+    font-family: var(--door-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--door-ink-2);
+  }
+
+  .door-serial {
+    font-family: var(--door-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: #a3442e;
+  }
+
+  .door-owed {
+    font-family: var(--door-serif);
+    font-weight: 600;
+    font-size: 2rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .door-step {
+    display: inline-flex;
+    width: 3.25rem;
+    height: 3.25rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--door-ink);
+    color: var(--door-paper);
+    transition:
+      transform 140ms var(--door-ease-out),
+      opacity 150ms ease;
+  }
+
+  .door-step:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+
+  .door-step:disabled {
+    opacity: 0.22;
+  }
+
+  .door-cta {
+    /* Por encima de la sombra de la entrada, que si no le cae arriba. */
+    position: relative;
+    z-index: 1;
+    display: flex;
+    width: 100%;
+    min-height: 4.25rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    border-radius: 18px;
+    background: var(--door-on-field);
+    color: var(--door-cta-ink, #0f3f2d);
+    font-size: 1.25rem;
+    font-weight: 700;
+    box-shadow: 0 16px 28px -14px rgb(0 0 0 / 0.65);
+    transition: transform 140ms var(--door-ease-out);
+  }
+
+  .door-verdict[data-tone="stop"] .door-cta {
+    --door-cta-ink: #7a2d1c;
+  }
+
+  .door-verdict[data-tone="wait"] .door-cta {
+    --door-cta-ink: #f8e6bd;
+  }
+
+  .door-cta:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .door-cta:disabled {
+    opacity: 0.75;
+  }
+
+  .door-quiet {
+    display: flex;
+    min-height: 3rem;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--door-soft);
+  }
+
+  /* Lo que tarda en volver a la cámara sola. */
+  .door-countdown {
+    position: absolute;
+    inset: auto 0 0;
+    height: 4px;
+    border-radius: 0 0 18px 18px;
+    background: currentColor;
+    opacity: 0.35;
+    transform-origin: 0 50%;
+    animation: door-countdown var(--door-wait, 3200ms) linear both;
+  }
+
+  @keyframes door-countdown {
+    to {
+      transform: scaleX(0);
+    }
+  }
+
+  /* El corte. El lugar que deja se cierra recién cuando el papel ya se separó. */
+  .door-stub-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 480ms var(--door-ease-in-out) 340ms;
+  }
+
+  .door-stub-slot[data-gone="true"] {
+    grid-template-rows: 0fr;
+  }
+
+  .door-stub-slot > * {
+    min-height: 0;
+  }
+
+  .door-half-stub[data-falling="true"] {
+    z-index: 2;
+    transform-origin: 7% 0%;
+    animation: door-fall 1.15s cubic-bezier(0.5, 0.02, 0.86, 0.45) both;
+  }
+
+  @keyframes door-fall {
+    0% {
+      transform: none;
+    }
+    18% {
+      transform: translate3d(2px, 4px, 0) rotate(1.4deg);
+    }
+    32% {
+      transform: translate3d(3px, 10px, 0) rotate(2.8deg);
+    }
+    100% {
+      transform: translate3d(40px, 90vh, 0) rotate(19deg);
+    }
+  }
+
+  .door-roll {
+    display: inline-block;
+    animation: door-roll 460ms var(--door-ease-out) 260ms both;
+  }
+
+  @keyframes door-roll {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 55%, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* ── La cámara ───────────────────────────────────────────── */
+  .door-scan {
+    display: flex;
+    flex-direction: column;
+    background: var(--door-night);
+    color: var(--door-cream);
+  }
+
+  .door-sign {
+    padding: 0.9rem 1rem 0.85rem;
+    background: var(--door-night);
+    border-bottom: 1px solid rgb(248 242 225 / 0.12);
+  }
+
+  .door-lens {
+    position: relative;
+    aspect-ratio: 1;
+    width: 100%;
+    max-height: 62dvh;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .door-lens video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* La mira tiene forma de talón: las esquinas y el troquel arriba y abajo. */
+  .door-finder {
+    position: absolute;
+    inset: 12%;
+    pointer-events: none;
+    --c: rgb(248 242 225 / 0.95);
+    background:
+      linear-gradient(var(--c), var(--c)) left top / 34px 3px no-repeat,
+      linear-gradient(var(--c), var(--c)) left top / 3px 34px no-repeat,
+      linear-gradient(var(--c), var(--c)) right top / 34px 3px no-repeat,
+      linear-gradient(var(--c), var(--c)) right top / 3px 34px no-repeat,
+      linear-gradient(var(--c), var(--c)) left bottom / 34px 3px no-repeat,
+      linear-gradient(var(--c), var(--c)) left bottom / 3px 34px no-repeat,
+      linear-gradient(var(--c), var(--c)) right bottom / 34px 3px no-repeat,
+      linear-gradient(var(--c), var(--c)) right bottom / 3px 34px no-repeat;
+    box-shadow: 0 0 0 100vmax rgb(4 7 5 / 0.42);
+  }
+
+  .door-finder::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: #e5634c;
+    box-shadow: 0 0 16px 3px rgb(229 99 76 / 0.75);
+    animation: door-sweep 2.1s var(--door-ease-in-out) infinite alternate;
+  }
+
+  @keyframes door-sweep {
+    from {
+      transform: translate3d(0, 0.5rem, 0);
+    }
+    to {
+      transform: translate3d(0, calc(76vmin - 0.5rem), 0);
+    }
+  }
+
+  .door-field-input {
+    width: 100%;
+    height: 3.5rem;
+    border-radius: 14px;
+    border: 1.5px solid rgb(248 242 225 / 0.3);
+    background: rgb(248 242 225 / 0.08);
+    padding-inline: 1rem;
+    font-family: var(--door-mono);
+    font-size: 1.15rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--door-cream);
+    outline: none;
+  }
+
+  .door-field-input::placeholder {
+    color: rgb(248 242 225 / 0.42);
+    letter-spacing: 0.1em;
+  }
+
+  .door-field-input:focus {
+    border-color: var(--door-gold);
+    box-shadow: 0 0 0 3px rgb(233 192 112 / 0.25);
+  }
+
+  .door-btn {
+    display: flex;
+    min-height: 3.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: transform 140ms var(--door-ease-out);
+  }
+
+  .door-btn:active {
+    transform: scale(0.98);
+  }
+
+  .door-btn-main {
+    background: var(--door-cream);
+    color: var(--door-ink);
+  }
+
+  .door-btn-soft {
+    background: rgb(248 242 225 / 0.1);
+    color: var(--door-cream);
+  }
+
+  .door :focus-visible {
+    outline: 3px solid var(--door-gold);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .door-verdict,
+    .door-word,
+    .door-roll,
+    .door-finder::after {
+      animation: none;
+    }
+
+    .door-half-stub[data-falling="true"] {
+      animation: door-gone 200ms ease both;
+    }
+
+    .door-stub-slot {
+      transition-duration: 1ms;
+      transition-delay: 200ms;
+    }
+  }
+
+  @keyframes door-gone {
+    to {
+      opacity: 0;
+    }
+  }
+}

@@ -11,10 +11,10 @@ import { partySizeError } from './availability'
 import { getMercadoPagoCredentials } from './credentials'
 import { DEFAULT_TZ, formatShortDate, formatTime } from './dates'
 import { centsToMercadoPagoAmount, paymentOptions } from './pricing'
-import { isOrderExpired } from './queries'
+import { getOrderEntry, isOrderExpired } from './queries'
 import { type CheckoutInput, checkoutSchema, orderIdSchema } from './schemas'
 import { reconcileOrder, reconcilePaymentById } from './settle'
-import type { OrderStatus, TicketOrderRow } from './types'
+import type { OrderEntry, OrderStatus, TicketOrderRow } from './types'
 
 /**
  * Las acciones de la compra pública: las llama gente SIN cuenta desde
@@ -268,6 +268,8 @@ export type OrderRefreshResult =
       expired: boolean
       paidCents: number | null
       statusDetail: string | null
+      /** Quiénes ya entraron, si la entrada está paga. */
+      entry: OrderEntry | null
     }
   | { ok: false }
 
@@ -309,7 +311,10 @@ export async function refreshOrder(input: {
 
   const ip = await getRequestIp()
   try {
-    rateLimit({ key: `ticket-refresh:${ip}`, limit: 60, windowMs: 60_000 })
+    // Por IP alto (todo el bar sale por el mismo Wi-Fi la noche de la función) y por
+    // pedido el que cuida de verdad: alcanza para el polling de pago y el de la puerta.
+    rateLimit({ key: `ticket-refresh:${ip}`, limit: 300, windowMs: 60_000 })
+    rateLimit({ key: `ticket-refresh-order:${orderId.data}`, limit: 40, windowMs: 60_000 })
   } catch (e) {
     if (e instanceof RateLimitedError) return { ok: false }
     throw e
@@ -318,7 +323,7 @@ export async function refreshOrder(input: {
   const service = createServiceClient() as SBAny
   const { data: tenant } = await service
     .from('tenants')
-    .select('id')
+    .select('id, timezone')
     .eq('slug', input.tenantSlug)
     .maybeSingle()
   if (!tenant) return { ok: false }
@@ -326,13 +331,21 @@ export async function refreshOrder(input: {
   const read = async () => {
     const { data } = await service
       .from('ticket_orders')
-      .select('status, hold_expires_at, paid_cents, mp_status_detail, created_at')
+      .select(
+        'status, hold_expires_at, paid_cents, mp_status_detail, created_at, reservation_id, party_size',
+      )
       .eq('tenant_id', tenant.id)
       .eq('id', orderId.data)
       .maybeSingle()
     return data as Pick<
       TicketOrderRow,
-      'status' | 'hold_expires_at' | 'paid_cents' | 'mp_status_detail' | 'created_at'
+      | 'status'
+      | 'hold_expires_at'
+      | 'paid_cents'
+      | 'mp_status_detail'
+      | 'created_at'
+      | 'reservation_id'
+      | 'party_size'
     > | null
   }
 
@@ -372,5 +385,15 @@ export async function refreshOrder(input: {
     expired: isOrderExpired(order.status, order.hold_expires_at),
     paidCents: order.paid_cents === null ? null : Number(order.paid_cents),
     statusDetail: order.mp_status_detail,
+    entry:
+      order.status === 'approved'
+        ? await getOrderEntry(
+            service,
+            tenant.id,
+            order.reservation_id,
+            order.party_size,
+            tenant.timezone ?? DEFAULT_TZ,
+          )
+        : null,
   }
 }

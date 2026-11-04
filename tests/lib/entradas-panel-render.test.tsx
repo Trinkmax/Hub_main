@@ -109,6 +109,8 @@ const EXPERIENCE: AdminExperience = {
 
 function order(over: Partial<AdminOrder>): AdminOrder {
   return {
+    reservation: null,
+    undo: null,
     id: 'o1',
     title: 'Shrek',
     event_date: '2026-12-01',
@@ -199,7 +201,12 @@ describe('Ventas online', () => {
       }),
     ]
     const html = renderToString(
-      createElement(OrdersSection, { tenantSlug: 'hub', result: { ok: true, orders }, now: NOW }),
+      createElement(OrdersSection, {
+        tenantSlug: 'hub',
+        appUrl: 'https://hub.test',
+        result: { ok: true, orders },
+        now: NOW,
+      }),
     )
     const t = text(html)
     expect(t).toContain('Pagado')
@@ -212,19 +219,90 @@ describe('Ventas online', () => {
     expect(t).toContain('Hoy 17:42')
     expect(html).toContain('href="/hub/reservas/r-1"')
     expect(html).toContain('href="/hub/reservas/nuevo?date=2026-12-15"')
+    // La entrada se le puede mandar a quien pagó, por su WhatsApp, y a nadie más.
+    expect(t).toContain('Mandar entrada')
+    expect(html).toContain('https://wa.me/5493515551234?text=')
+    expect(html).toContain(encodeURIComponent('https://hub.test/entradas/hub/mi-entrada/'))
+  })
+
+  it('un «Deshacer» de la puerta queda a la vista de los dueños', () => {
+    const orders = [
+      order({
+        id: 'o-1',
+        status: 'approved',
+        undo: { by: 'Luz', at: '2026-12-02T00:05:00Z', from: 4, to: 0 },
+      }),
+    ]
+    const t = text(
+      renderToString(
+        createElement(OrdersSection, {
+          tenantSlug: 'hub',
+          appUrl: 'https://hub.test',
+          result: { ok: true, orders },
+          now: NOW,
+        }),
+      ),
+    )
+    expect(t).toContain('Deshizo Luz · 21:05')
+  })
+
+  it('dice si ya entraron: de una o de a partes', () => {
+    const orders = [
+      order({
+        id: 'o-1',
+        status: 'approved',
+        reservation_id: 'r-1',
+        reservation: {
+          status: 'arrived',
+          estimated_guests: 2,
+          actual_guests: 2,
+          arrived_at: '2026-12-02T00:04:00Z',
+        },
+      }),
+      order({
+        id: 'o-2',
+        status: 'approved',
+        party_size: 4,
+        reservation_id: 'r-2',
+        reservation: {
+          status: 'arrived',
+          estimated_guests: 4,
+          actual_guests: 2,
+          arrived_at: '2026-12-02T00:10:00Z',
+        },
+      }),
+    ]
+    const t = text(
+      renderToString(
+        createElement(OrdersSection, {
+          tenantSlug: 'hub',
+          appUrl: 'https://hub.test',
+          result: { ok: true, orders },
+          now: NOW,
+        }),
+      ),
+    )
+    expect(t).toContain('Entraron · 21:04')
+    expect(t).toContain('Entraron 2 de 4 · 21:10')
   })
 
   it('vacío y con error, cada uno con su texto', () => {
     const empty = renderToString(
       createElement(OrdersSection, {
         tenantSlug: 'hub',
+        appUrl: 'https://hub.test',
         result: { ok: true, orders: [] },
         now: NOW,
       }),
     )
     expect(text(empty)).toContain('Todavía no hubo ventas online')
     const failed = renderToString(
-      createElement(OrdersSection, { tenantSlug: 'hub', result: { ok: false }, now: NOW }),
+      createElement(OrdersSection, {
+        tenantSlug: 'hub',
+        appUrl: 'https://hub.test',
+        result: { ok: false },
+        now: NOW,
+      }),
     )
     expect(text(failed)).toContain('No pudimos cargar las ventas')
     expect(text(failed)).toContain('Reintentar')

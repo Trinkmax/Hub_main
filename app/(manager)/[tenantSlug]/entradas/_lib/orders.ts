@@ -152,3 +152,53 @@ export function formatOrderMoment(iso: string, now: Date = new Date(), tz = DEFA
   if (day.slice(0, 4) === today.slice(0, 4)) return `${formatInTimeZone(at, tz, 'dd/MM')} ${time}`
   return `${formatInTimeZone(at, tz, 'dd/MM/yyyy')} ${time}`
 }
+
+/**
+ * Si ya entraron, cómo decirlo: «Entraron 2 de 4 · 21:04». Sale de la reserva, así
+ * que también cuenta si los marcaron a mano en la lista. `null` si todavía no.
+ */
+export function orderEntryLabel(
+  order: {
+    party_size: number
+    reservation: {
+      status: string
+      estimated_guests: number
+      actual_guests: number | null
+      arrived_at: string | null
+    } | null
+  },
+  tz: string = DEFAULT_TZ,
+): string | null {
+  const reservation = order.reservation
+  if (!reservation || !['arrived', 'seated', 'closed'].includes(reservation.status)) return null
+  const total = Math.max(order.party_size, reservation.estimated_guests)
+  const inside = reservation.actual_guests ?? reservation.estimated_guests
+  const at = reservation.arrived_at
+    ? ` · ${formatInTimeZone(new Date(reservation.arrived_at), tz, 'HH:mm')}`
+    : ''
+  return `${inside >= total ? 'Entraron' : `Entraron ${inside} de ${total}`}${at}`
+}
+
+/**
+ * El mensaje con el link de la entrada, para mandárselo a quien pagó: los que ya
+ * pagaron antes del QR, o quien perdió el link.
+ */
+export function orderTicketMessage(order: { title: string; guest_name: string }, link: string) {
+  const firstName = order.guest_name.trim().split(/\s+/)[0] ?? ''
+  return `¡Hola ${firstName}! Esta es tu entrada para ${order.title}, con el QR para la puerta y el comprobante: ${link}`
+}
+
+/**
+ * Dejaron pasar y lo deshicieron en la puerta: «Deshizo Luz · 21:05». Queda a la
+ * vista porque borrar una llegada también puede esconder plata.
+ */
+export function orderUndoLabel(
+  undo: { by: string | null; at: string; from: number; to: number },
+  tz: string = DEFAULT_TZ,
+): { label: string; hint: string } {
+  const at = formatInTimeZone(new Date(undo.at), tz, 'HH:mm')
+  return {
+    label: `Deshizo ${undo.by ?? 'alguien del equipo'} · ${at}`,
+    hint: `En la puerta dejaron pasar y después lo deshicieron: de ${undo.from} a ${undo.to} adentro.`,
+  }
+}

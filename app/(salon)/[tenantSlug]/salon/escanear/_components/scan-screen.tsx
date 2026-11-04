@@ -10,12 +10,19 @@ import {
   RotateCcw,
   ScanLine,
 } from 'lucide-react'
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 // Los dos paneles se comparten con la caja (/acreditar): el mozo con el celular
 // y el cajero con la tablet tienen que ver EXACTAMENTE lo mismo.
 import { PunchStamper } from '@/app/(manager)/[tenantSlug]/acreditar/_components/punch-stamper'
 import { RedemptionPanel } from '@/app/(manager)/[tenantSlug]/acreditar/_components/redemption-panel'
+import { TicketDoorPanel } from '@/components/door/ticket-door-panel'
+import {
+  forgetCameraDenied,
+  rememberCameraDenied,
+  useCameraGuard,
+  useRecentCode,
+} from '@/components/door/use-camera-guard'
 import { AwardForm, type AwardResultData } from '@/components/loyalty/award-form'
 import { CustomerHeader } from '@/components/loyalty/customer-header'
 import { Button } from '@/components/ui/button'
@@ -29,18 +36,25 @@ import { cn } from '@/lib/utils'
 
 // La pantalla que más usa el mozo en el turno.
 //
-// Un solo escáner para los dos QR que circulan por el bar (ver
+// Un solo escáner para los QR que circulan por el bar (ver
 // lib/redemptions/scan.ts) — el mozo no elige "qué" está escaneando:
 //
 //   /c/<qr_token>     → el socio en mano: acreditarle el consumo y sellar
 //   /v/<redeem_token> → un canje pedido: validarlo y entregarlo
+//   /e/<código>       → una entrada: dejarla pasar (lo mismo que la pestaña Puerta)
 //
 // La cámara arranca sola al entrar: antes había que tocar "Escanear" primero,
 // un toque de peaje en la acción más repetida del turno.
 
-type Step = 'scanning' | 'denied' | 'resolving' | 'customer' | 'success' | 'redemption' | 'manual'
-
-const CAMERA_DENIED_KEY = 'hub_salon_camera_denied'
+type Step =
+  | 'scanning'
+  | 'denied'
+  | 'resolving'
+  | 'customer'
+  | 'success'
+  | 'redemption'
+  | 'ticket'
+  | 'manual'
 
 function fmtPesos(cents: number) {
   return `$${Math.round(cents / 100).toLocaleString('es-AR')}`
@@ -58,60 +72,18 @@ export function ScanScreen({
   // Si venimos de /v/<token> el canje ya está resuelto: ni abrimos la cámara.
   const [step, setStep] = useState<Step>(initialCode ? 'redemption' : 'scanning')
   const [redeemToken, setRedeemToken] = useState<string | null>(initialCode)
+  const [ticketToken, setTicketToken] = useState<string | null>(null)
   const [customer, setCustomer] = useState<CustomerByQr | null>(null)
   const [result, setResult] = useState<AwardResultData | null>(null)
   const [manualCode, setManualCode] = useState('')
   const [manualKind, setManualKind] = useState<ScanKind>('customer')
   const [, startLookup] = useTransition()
 
-  // Si la última vez la cámara fue denegada, no volvemos a disparar el prompt
-  // solo: mostramos el estado y que el mozo decida.
-  //
-  // Pero la marca guardada no alcanza para creerle: hasta el 02/10/2026 el
-  // propio sitio bloqueaba la cámara en Chrome (`Permissions-Policy: camera=()`,
-  // ver next.config.ts), así que todos los Android quedaron con la marca puesta
-  // sin que el mozo hubiera negado nada. Donde el navegador sabe decir el estado
-  // real del permiso, manda ese: solo `denied` muestra la pantalla de "sin
-  // acceso"; `prompt` o `granted` borran la marca y la cámara arranca sola.
-  useEffect(() => {
-    if (initialCode) return
-    let marked = false
-    try {
-      marked = localStorage.getItem(CAMERA_DENIED_KEY) === '1'
-    } catch {
-      // localStorage bloqueado (modo privado): seguimos con la cámara.
-    }
-    if (!marked) return
-
-    let cancelled = false
-    const forget = () => {
-      try {
-        localStorage.removeItem(CAMERA_DENIED_KEY)
-      } catch {}
-    }
-    const query = navigator.permissions?.query?.bind(navigator.permissions)
-    if (!query) {
-      setStep('denied')
-      return
-    }
-    // `camera` no está en el tipo PermissionName de todos los lib.dom, y
-    // Firefox tira TypeError con ese nombre: ahí vale la marca, como antes.
-    query({ name: 'camera' as PermissionName })
-      .then((status) => {
-        if (cancelled) return
-        if (status.state === 'denied') setStep('denied')
-        else forget()
-      })
-      .catch(() => {
-        if (!cancelled) setStep('denied')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [initialCode])
+  const recentTicket = useRecentCode()
+  useCameraGuard(() => setStep('denied'), !initialCode)
 
   const resolveCode = useCallback(
-    (raw: string, fallback: ScanKind) => {
+    (raw: string, fallback: ScanKind, fromCamera = false) => {
       const scanned = parseScannedCode(raw, fallback)
       if (!scanned) {
         toast.error('No reconocimos el código. Probá de nuevo o cargalo a mano.')
@@ -120,6 +92,12 @@ export function ScanScreen({
       if (scanned.kind === 'redemption') {
         setRedeemToken(scanned.token)
         setStep('redemption')
+        return
+      }
+      if (scanned.kind === 'ticket') {
+        if (fromCamera && recentTicket.isRecent(scanned.token)) return
+        setTicketToken(scanned.token)
+        setStep('ticket')
         return
       }
       // El QR personal necesita un viaje al server. Sin este estado el mozo
@@ -137,12 +115,13 @@ export function ScanScreen({
         setStep('customer')
       })
     },
-    [tenantSlug],
+    [tenantSlug, recentTicket],
   )
 
   const reset = useCallback(() => {
     setStep('scanning')
     setRedeemToken(null)
+    setTicketToken(null)
     setCustomer(null)
     setResult(null)
     setManualCode('')
@@ -151,6 +130,19 @@ export function ScanScreen({
 
   if (step === 'redemption' && redeemToken) {
     return <RedemptionPanel tenantSlug={tenantSlug} redeemToken={redeemToken} onReset={reset} />
+  }
+
+  if (step === 'ticket' && ticketToken) {
+    return (
+      <TicketDoorPanel
+        tenantSlug={tenantSlug}
+        token={ticketToken}
+        onDone={() => {
+          recentTicket.remember(ticketToken)
+          reset()
+        }}
+      />
+    )
   }
 
   // ── Consumo acreditado ────────────────────────────────────────────────
@@ -245,16 +237,17 @@ export function ScanScreen({
         className="card-hairline space-y-4 rounded-2xl border bg-card p-5"
       >
         {/* El toggle es necesario, no decorativo: un token pelado es idéntico en
-            los dos casos, así que alguien tiene que decir qué es. Antes el salón
+            socio y canje, así que alguien tiene que decir qué es. Antes el salón
             asumía SIEMPRE "canje" y todo código de socio tipeado a mano moría en
             "este código no existe". */}
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold">¿Qué código estás cargando?</legend>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {(
               [
-                ['customer', 'QR del socio'],
-                ['redemption', 'Código de canje'],
+                ['customer', 'Socio'],
+                ['redemption', 'Canje'],
+                ['ticket', 'Entrada'],
               ] as const
             ).map(([kind, label]) => (
               <Button
@@ -288,7 +281,9 @@ export function ScanScreen({
           <p className="text-xs text-muted-foreground">
             {manualKind === 'customer'
               ? 'El socio lo ve en su billetera, abajo del QR, agrupado de a 4.'
-              : 'Es el código que acompaña al QR del beneficio.'}
+              : manualKind === 'ticket'
+                ? 'Son los 8 caracteres que están debajo del QR de la entrada.'
+                : 'Es el código que acompaña al QR del beneficio.'}
           </p>
         </div>
 
@@ -325,9 +320,7 @@ export function ScanScreen({
           size="xl"
           className="h-14 w-full gap-2"
           onClick={() => {
-            try {
-              localStorage.removeItem(CAMERA_DENIED_KEY)
-            } catch {}
+            forgetCameraDenied()
             setStep('scanning')
           }}
         >
@@ -360,15 +353,13 @@ export function ScanScreen({
           onScan={(codes: IDetectedBarcode[]) => {
             const code = codes[0]?.rawValue
             if (!code) return
-            resolveCode(code, 'customer')
+            resolveCode(code, 'customer', true)
           }}
           onError={(e) => {
             const msg = e instanceof Error ? e.message : ''
             const denied = /denied|NotAllowed|Permission/i.test(msg)
             if (denied) {
-              try {
-                localStorage.setItem(CAMERA_DENIED_KEY, '1')
-              } catch {}
+              rememberCameraDenied()
               setStep('denied')
               return
             }
@@ -381,8 +372,8 @@ export function ScanScreen({
           components={{ finder: true, torch: true }}
         />
         <p className="px-4 py-3 text-center text-sm text-muted-foreground text-balance">
-          Apuntá al QR que te muestra el cliente. Sirve tanto el suyo para sumar puntos como el de
-          un beneficio para entregar.
+          Apuntá al QR que te muestra el cliente. Sirve el suyo para sumar puntos, el de un
+          beneficio para entregar y el de una entrada para dejarla pasar.
         </p>
       </div>
 

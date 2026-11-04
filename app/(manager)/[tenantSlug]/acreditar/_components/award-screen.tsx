@@ -58,6 +58,13 @@ export function AwardScreen({
         setStep('redemption')
         return
       }
+      // Una entrada no suma puntos: se valida en la puerta.
+      if (scanned.kind === 'ticket') {
+        window.location.assign(
+          `/${tenantSlug}/salon/puerta?code=${encodeURIComponent(scanned.token)}`,
+        )
+        return
+      }
       startLookup(async () => {
         const r = await lookupCustomerByQr(tenantSlug, scanned.token)
         if (!r.ok) {

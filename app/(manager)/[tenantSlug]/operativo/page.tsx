@@ -1,5 +1,6 @@
 import type { Viewport } from 'next'
 import { notFound } from 'next/navigation'
+import { isFeatureEnabled } from '@/lib/platform/features'
 import { resolveEarnRate } from '@/lib/points/earn-rate'
 import { listRecentQrAwards, listRules } from '@/lib/points/queries'
 import { serviceDayEndIso, serviceDayInCordoba, serviceDayStartIso } from '@/lib/salon/operativo'
@@ -17,7 +18,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
+import { REDEMPTION_STAFF_ROLES, TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
 import { OperativoBoard } from './_components/operativo-board'
 
 export const metadata = { title: 'Operativo' }
@@ -119,6 +120,10 @@ export default async function OperativoPage({
       earnRate={resolveEarnRate(rules)}
       canOperate={(RESERVATION_OPERATOR_ROLES as ReadonlyArray<string>).includes(access.role)}
       canAward={(REDEMPTION_STAFF_ROLES as ReadonlyArray<string>).includes(access.role)}
+      canDoor={
+        isFeatureEnabled(access.tenant, 'ticket_door') &&
+        (TICKET_DOOR_ROLES as ReadonlyArray<string>).includes(access.role)
+      }
       canLink={(RESERVATION_STAFF_ROLES as ReadonlyArray<string>).includes(access.role)}
       isOwner={access.role === 'owner'}
     />

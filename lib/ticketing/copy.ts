@@ -48,3 +48,40 @@ export function checkoutUrl(preferenceId: string, live: boolean): string {
   const host = live ? 'https://www.mercadopago.com.ar' : 'https://sandbox.mercadopago.com.ar'
   return `${host}/checkout/v1/redirect?pref_id=${encodeURIComponent(preferenceId)}`
 }
+
+/** Con qué pagó, como lo dice una persona. */
+export function paymentTypeLabel(type: string | null | undefined): string {
+  switch (type) {
+    case 'credit_card':
+      return 'Tarjeta de crédito'
+    case 'debit_card':
+      return 'Tarjeta de débito'
+    case 'prepaid_card':
+      return 'Tarjeta prepaga'
+    case 'account_money':
+      return 'Dinero en cuenta'
+    default:
+      return 'Mercado Pago'
+  }
+}
+
+/**
+ * «Ignacio Baldovino» → «Ignacio B.». La entrada se abre con su link y la imagen
+ * se comparte: alcanza para reconocerse sin dejar el nombre completo dando vueltas.
+ */
+export function guestShortName(name: string): string {
+  const [first = '', ...rest] = name.trim().split(/\s+/)
+  const initial = rest.at(-1)?.charAt(0)
+  return initial ? `${first} ${initial.toUpperCase()}.` : first
+}
+
+/** «Faltan 27 días» / «Es mañana» / «Es hoy». Una fecha pasada no dice nada. */
+export function daysUntilLabel(date: string, today: string): string | null {
+  const days = Math.round(
+    (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+  )
+  if (!Number.isFinite(days) || days < 0) return null
+  if (days === 0) return 'Es hoy'
+  if (days === 1) return 'Es mañana'
+  return `Faltan ${days} días`
+}
