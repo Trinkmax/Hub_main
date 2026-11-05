@@ -172,14 +172,15 @@ describeIfRls('RPC mark_session_paid', () => {
     expect(result.idempotent).toBe(true)
   })
 
-  it('qr_token rotó tras cobrar', async () => {
+  it('el QR de la mesa no cambia al cobrar: es el que está impreso', async () => {
+    // Desde 20260527 la mesa tiene un QR fijo (carta única): ya no se rota al cerrar la cuenta.
     const service = getServiceClient()
     const { data: pt } = await service
       .from('physical_tables')
       .select('qr_token')
       .eq('tenant_id', tenant.id)
       .single()
-    expect(pt?.qr_token).not.toBe(qrToken)
+    expect(pt?.qr_token).toBe(qrToken)
   })
 
   it('kitchen no puede mark_session_paid', async () => {

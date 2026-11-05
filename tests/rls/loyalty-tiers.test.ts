@@ -64,13 +64,13 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
     // Niveles: Plata desde 100, Oro desde 500
     const { data: plata } = await service
       .from('loyalty_tiers')
-      .insert({ tenant_id: tenantA.id, name: 'Plata', min_lifetime_points: 100 })
+      .insert({ tenant_id: tenantA.id, name: 'Plata', min_category_points: 100 })
       .select('id')
       .single()
     plataId = (plata as { id: string }).id
     const { data: oro } = await service
       .from('loyalty_tiers')
-      .insert({ tenant_id: tenantA.id, name: 'Oro', min_lifetime_points: 500 })
+      .insert({ tenant_id: tenantA.id, name: 'Oro', min_category_points: 500 })
       .select('id')
       .single()
     oroId = (oro as { id: string }).id
@@ -95,7 +95,7 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
     if (ownerB) await deleteUser(ownerB.userId)
   })
 
-  it('ganar puntos acumula lifetime y sube el nivel', async () => {
+  it('ganar puntos suma a la categoría y sube el nivel', async () => {
     // 10000 centavos → 100 pts → cruza Plata
     const { error } = await ownerA.client.rpc('award_points_by_amount', {
       p_customer_id: customerId,
@@ -105,21 +105,23 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
 
     const { data } = await service
       .from('customers')
-      .select('points_balance, lifetime_points_earned, current_tier_id')
+      .select('points_balance, lifetime_points_earned, category_points, current_tier_id')
       .eq('id', customerId)
       .single()
     const c = data as {
       points_balance: number
       lifetime_points_earned: number
+      category_points: number
       current_tier_id: string | null
     }
     expect(c.points_balance).toBe(100)
     expect(c.lifetime_points_earned).toBe(100)
+    expect(c.category_points).toBe(100)
     expect(c.current_tier_id).toBe(plataId)
   })
 
   it('recompensa tier-locked: bloquea por debajo del nivel, permite al alcanzarlo', async () => {
-    // Aún en Plata (lifetime 100 < Oro 500) → tier_locked
+    // Aún en Plata (categoría 100 < Oro 500) → tier_locked
     const blocked = await ownerA.client.rpc('redeem_reward', {
       p_customer_id: customerId,
       p_reward_id: lockedRewardId,
@@ -127,22 +129,22 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
     expect(blocked.error).not.toBeNull()
     expect(blocked.error?.message ?? '').toContain('tier_locked')
 
-    // Ganar 400 pts más → lifetime 500 → Oro
+    // Ganar 400 pts más → categoría 500 → Oro
     await ownerA.client.rpc('award_points_by_amount', {
       p_customer_id: customerId,
       p_amount_cents: 40000,
     })
     const { data: afterEarn } = await service
       .from('customers')
-      .select('lifetime_points_earned, current_tier_id, points_balance')
+      .select('category_points, current_tier_id, points_balance')
       .eq('id', customerId)
       .single()
     const ae = afterEarn as {
-      lifetime_points_earned: number
+      category_points: number
       current_tier_id: string
       points_balance: number
     }
-    expect(ae.lifetime_points_earned).toBe(500)
+    expect(ae.category_points).toBe(500)
     expect(ae.current_tier_id).toBe(oroId)
 
     // Ahora sí puede canjear
@@ -152,28 +154,34 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
     })
     expect(ok.error).toBeNull()
 
-    // El canje NO baja lifetime ni nivel (sólo el balance gastable)
+    // El canje NO baja la categoría ni el nivel (sólo el balance gastable)
     const { data: afterRedeem } = await service
       .from('customers')
-      .select('lifetime_points_earned, current_tier_id, points_balance')
+      .select('category_points, current_tier_id, points_balance')
       .eq('id', customerId)
       .single()
     const ar = afterRedeem as {
-      lifetime_points_earned: number
+      category_points: number
       current_tier_id: string
       points_balance: number
     }
-    expect(ar.lifetime_points_earned).toBe(500)
+    expect(ar.category_points).toBe(500)
     expect(ar.current_tier_id).toBe(oroId)
     expect(ar.points_balance).toBe(490)
   })
 
   it('grant_tier_benefits es idempotente por período', async () => {
-    // Configurar beneficio mensual en Oro
-    await service
-      .from('loyalty_tiers')
-      .update({ benefit_cadence: 'monthly', benefit_reward_id: benefitRewardId })
-      .eq('id', oroId)
+    // Beneficio mensual de Oro (desde 20260701 los beneficios viven en `tier_benefits`)
+    const { error: benefitError } = await service.from('tier_benefits').insert({
+      tenant_id: tenantA.id,
+      tier_id: oroId,
+      kind: 'recurring_reward',
+      label: 'Trago del mes',
+      reward_id: benefitRewardId,
+      cadence: 'monthly',
+      quantity: 1,
+    })
+    expect(benefitError).toBeNull()
 
     const first = await service.rpc('grant_tier_benefits')
     const firstCount = Array.isArray(first.data) ? (first.data[0]?.granted_count ?? 0) : 0
@@ -204,7 +212,7 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
     // pero insertar en tenant A (ajeno) debe fallar por RLS.
     const { error } = await ownerB.client
       .from('loyalty_tiers')
-      .insert({ tenant_id: tenantA.id, name: 'Hack', min_lifetime_points: 1 })
+      .insert({ tenant_id: tenantA.id, name: 'Hack', min_category_points: 1 })
     expect(error).not.toBeNull()
   })
 })

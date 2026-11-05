@@ -65,6 +65,10 @@ jobs:
           echo "SUPABASE_URL=http://127.0.0.1:54321" >> "$GITHUB_ENV"
           echo "SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_ENV"
           echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)" >> "$GITHUB_ENV"
+          # Las mismas con el nombre que lee la app (`lib/supabase/service.ts`): sin esto, las pruebas que pasan por
+          # el código de la app cortan con «Missing Supabase service role configuration».
+          echo "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)" >> "$GITHUB_ENV"
 
       - name: Run RLS tests
         run: npx vitest run tests/rls

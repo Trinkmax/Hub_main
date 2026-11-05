@@ -79,6 +79,15 @@ describeIfRls('RLS — welcome reward (config + grants + one-shot via RPC)', () 
       .single()
     if (!t) throw new Error('table setup failed')
     tableA = t
+
+    // El staff abre la mesa: desde 20260527 escanear el QR ya no crea la sesión.
+    const { error: openError } = await ownerA.client.rpc('activate_table_session', {
+      p_qr_token: t.qr_token,
+      p_party_size: 4,
+      p_source: 'manual',
+      p_alias: null,
+    })
+    if (openError) throw new Error(`open session failed: ${openError.message}`)
   })
 
   afterAll(async () => {
@@ -131,12 +140,21 @@ describeIfRls('RLS — welcome reward (config + grants + one-shot via RPC)', () 
       expect(readError).toBeNull()
       expect(read).toBeTruthy()
 
-      const { error: writeError } = await cashierA.client
+      // RLS no da error en un UPDATE que no le corresponde: no toca ninguna fila.
+      const { data: written } = await cashierA.client
         // biome-ignore lint/suspicious/noExplicitAny: tabla nueva sin tipos regenerados aún
         .from('welcome_reward_configs' as any)
         .update({ enabled: false })
         .eq('tenant_id', tenantA.id)
-      expect(writeError).toBeTruthy()
+        .select('tenant_id')
+      expect(written ?? []).toEqual([])
+      const { data: still } = await getServiceClient()
+        // biome-ignore lint/suspicious/noExplicitAny: tabla nueva sin tipos regenerados aún
+        .from('welcome_reward_configs' as any)
+        .select('enabled')
+        .eq('tenant_id', tenantA.id)
+        .single()
+      expect((still as { enabled: boolean } | null)?.enabled).toBe(true)
     })
 
     it('owner de OTRO tenant no ve la config de A', async () => {

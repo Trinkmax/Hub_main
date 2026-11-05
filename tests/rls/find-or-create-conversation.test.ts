@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { findOrCreateConversation } from '@/lib/meta/conversations'
+import { conversationKey } from '@/lib/phone'
 import {
   createTenant,
   createUserClient,
@@ -109,13 +110,14 @@ describeIfRls('findOrCreateConversation — idempotencia y vinculación de clien
 
     expect(id1).toBe(id2)
 
-    // Solo hay una fila en la DB para este (channel, external_user_id)
+    // Solo hay una fila para este (channel, external_user_id), guardado con la clave canónica: el saliente
+    // (+549…) y el entrante (wa_id 54…) son el mismo hilo.
     const service = getServiceClient()
     const { data } = await service
       .from('conversations')
       .select('id')
       .eq('channel_id', channelId)
-      .eq('external_user_id', externalUserId)
+      .eq('external_user_id', conversationKey(externalUserId))
     expect(data).toHaveLength(1)
   })
 

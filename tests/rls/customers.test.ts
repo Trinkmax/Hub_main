@@ -118,7 +118,7 @@ describeIfRls('RLS — customers + capture', () => {
     expect(rows?.[0]?.opt_in_marketing).toBe(true)
   })
 
-  it('submit_capture deduplica por phone (no crea segundo customer)', async () => {
+  it('submit_capture con un teléfono que ya es socio no crea otro ni pisa su ficha', async () => {
     const { createClient } = await import('@supabase/supabase-js')
     const anonClient = createClient(
       process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321',
@@ -146,6 +146,8 @@ describeIfRls('RLS — customers + capture', () => {
     })
     const second_result = Array.isArray(second) ? second[0] : second
     expect(second_result?.was_new).toBe(false)
+    // Que entre a su cuenta: cualquiera que tipee ese teléfono no puede cambiarle los datos ni el permiso.
+    expect(second_result?.needs_login).toBe(true)
 
     const service = getServiceClient()
     const { data: rows } = await service
@@ -154,17 +156,16 @@ describeIfRls('RLS — customers + capture', () => {
       .eq('tenant_id', tenantA.id)
       .eq('phone', phone)
     expect(rows?.length).toBe(1)
-    // primer envío ganó el nombre, no se sobrescribe
+    // La ficha queda como la dejó el primer envío: ni el nombre ni el permiso de promos cambian.
     expect(rows?.[0]?.first_name).toBe('Pedro')
-    // pero opt-in se actualizó porque el segundo lo aceptó
-    expect(rows?.[0]?.opt_in_marketing).toBe(true)
+    expect(rows?.[0]?.opt_in_marketing).toBe(false)
 
     const { count } = await service
       .from('customer_capture_submissions')
       .select('*', { count: 'exact', head: true })
       .eq('tenant_id', tenantA.id)
       .eq('phone', phone)
-    expect(count).toBe(2)
+    expect(count).toBe(1)
   })
 
   it('submit_capture rechaza link inactivo', async () => {
