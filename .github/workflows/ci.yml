@@ -56,7 +56,8 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # La misma que `devDependencies`: la última dejó de aceptar `[inbucket]` de config.toml.
+          version: 2.98.1
 
       - name: Start Supabase
         run: |
