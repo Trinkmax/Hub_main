@@ -219,7 +219,9 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
       .eq('id', broadcast.id)
       .single()
     const stats = data?.stats as Record<string, number> | null
-    expect(stats?.excluded).toBe(3)
+    // De los 5 de la lista, el borrado ya no está en la audiencia: quedan afuera el que no acepta promos y el de
+    // «No contactar». Lo que dice el nombre de la prueba.
+    expect(stats?.excluded).toBe(2)
     expect(stats?.total).toBe(2)
   })
 })

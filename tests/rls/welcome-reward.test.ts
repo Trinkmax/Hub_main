@@ -441,6 +441,14 @@ describeIfRls('RLS — welcome reward (config + grants + one-shot via RPC)', () 
         .select('id, qr_token')
         .single()
       if (!rC || !tC) throw new Error('setup C failed')
+      // El staff abre la mesa antes de que se sume nadie.
+      const { error: openError } = await ownerC.client.rpc('activate_table_session', {
+        p_qr_token: tC.qr_token,
+        p_party_size: 2,
+        p_source: 'manual',
+        p_alias: null,
+      })
+      expect(openError).toBeNull()
 
       // Config disabled (default)
       await service
