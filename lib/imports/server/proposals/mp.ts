@@ -50,6 +50,7 @@ import {
   type OpenItemPool,
   type ProposalDraft,
   partyLabel,
+  remainingBankTax,
   type StagedItem,
   systemAccountId,
   treasuriesOfKind,
@@ -98,6 +99,8 @@ export type MpDraftInput = {
   readonly pool: OpenItemPool
   /** Días con cobros o ajustes de Mercado Pago cargados a mano. */
   readonly manualDays: ReadonlySet<IsoDate>
+  /** Impuesto al cheque que el sistema ya anotó al pagar con la billetera, por día (centavos). */
+  readonly autoBankTax?: ReadonlyMap<IsoDate, number>
   readonly postedTransfers: readonly PostedTransfer[]
   readonly taxRules: readonly MpTaxRule[]
   readonly decisions: (key: string) => ProposalDecisions
@@ -470,7 +473,13 @@ export function buildMpDrafts(input: MpDraftInput): ProposalDraft[] {
   // ── Ley 25.413 del día ──
   for (const [day, v] of [...ley.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const key = `mp:${day}:ley25413:${tag}`
-    const total = v.credit + v.debit
+    // Lo que el sistema ya anotó al pagar con la billetera no se vuelve a contar.
+    const { remainingCents: debit, notedCents } = remainingBankTax(
+      v.debit,
+      input.autoBankTax?.get(day) ?? 0,
+    )
+    const total = v.credit + debit
+    const notedNote: NoteKey[] = notedCents > 0 ? ['bank_tax_noted'] : []
     const summary: DraftSummary = {
       kind: 'mp_bank_tax',
       date: day,
@@ -478,7 +487,24 @@ export function buildMpDrafts(input: MpDraftInput): ProposalDraft[] {
       counterparty: wallet?.name ?? 'Mercado Pago',
       total_cents: total,
       item_count: v.ids.size,
-      detail: { credit_cents: v.credit, debit_cents: v.debit },
+      detail: { credit_cents: v.credit, debit_cents: debit, noted_cents: notedCents },
+      ...(notedNote.length > 0 ? { notes: notedNote } : {}),
+    }
+    if (total === 0 && notedCents > 0) {
+      drafts.push({
+        key,
+        form: 'bank_expense',
+        values: null,
+        itemIds: [...v.ids],
+        needs: [],
+        summary: {
+          ...summary,
+          total_cents: notedCents,
+          detail: { ...summary.detail, debit_cents: notedCents },
+        },
+        skip: { reason: 'already_loaded', date: day },
+      })
+      continue
     }
     drafts.push({
       key,
@@ -496,7 +522,7 @@ export function buildMpDrafts(input: MpDraftInput): ProposalDraft[] {
               vatPerceptionCents: 0,
               feesNoVatCents: 0,
               ley25413CreditCents: v.credit,
-              ley25413DebitCents: v.debit,
+              ley25413DebitCents: debit,
               sircrebCents: 0,
               interestCents: 0,
               others: [],

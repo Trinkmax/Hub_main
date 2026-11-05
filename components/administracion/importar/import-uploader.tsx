@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { takeDroppedFile } from '@/components/administracion/drop/drop-store'
 import { StepCard, StepRail, type StepRailItem } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,6 +38,7 @@ import {
   planMercadoPago,
   planMisComprobantes,
   type UploadPlan,
+  type WrongPlace,
   wrongPlace,
 } from '@/lib/imports/ui/upload'
 import { defaultInflateRaw } from '@/lib/imports/zip'
@@ -119,6 +121,32 @@ function errorKey(detail: Record<string, unknown> | undefined): string | null {
   return typeof detail?.key === 'string' ? detail.key : null
 }
 
+/** Un archivo que no se reconoció: lo que trae y lo que esperábamos, para ver qué pasó. */
+function FileColumns({ found, expected }: { found: string[]; expected: readonly string[] }) {
+  return (
+    <dl className="grid gap-2 text-sm">
+      {[
+        { title: 'Tu archivo trae', names: found },
+        { title: 'Esperábamos', names: expected },
+      ].map(({ title, names }) => (
+        <div key={title} className="grid gap-1">
+          <dt className="font-medium">{title}</dt>
+          <dd className="flex flex-wrap gap-1.5">
+            {names.map((name) => (
+              <span
+                key={name}
+                className="rounded-md border border-border bg-card px-1.5 py-0.5 text-xs [overflow-wrap:anywhere]"
+              >
+                {name}
+              </span>
+            ))}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 /**
  * Subir un archivo, en tres pasos a la vista: ① bajalo de allá (qué fechas
  * pedir y cómo se baja), ② subilo acá (se lee y se reconoce en el navegador, se
@@ -137,6 +165,9 @@ function errorKey(detail: Record<string, unknown> | undefined): string | null {
  * su barra, y el armado. Si se corta, se retoma desde la tanda que faltó
  * (reenviar no duplica), y si el archivo ya se había subido, se sigue en ese
  * lote o se ofrece abrirlo. Lo que se manda no cambió (`batchInput`).
+ *
+ * Un archivo arrastrado a cualquier pantalla (`GlobalDrop`) llega por el
+ * `drop-store` y arranca directo en el paso 2.
  */
 export function ImportUploader({
   slug,
@@ -183,10 +214,7 @@ export function ImportUploader({
   /** El «cómo se baja», plegado cuando hoy no hay nada para pedir. */
   const [showHow, setShowHow] = useState(false)
   const [reading, setReading] = useState(false)
-  const [readError, setReadError] = useState<{
-    message: string
-    goTo: UiImportSource | null
-  } | null>(null)
+  const [readError, setReadError] = useState<WrongPlace | null>(null)
   const [file, setFile] = useState<LoadedFile | null>(null)
   const [bankLayout, setBankLayout] = useState<BankLayout | null>(null)
   const [job, setJob] = useState<Job>({ kind: 'idle' })
@@ -282,11 +310,17 @@ export function ImportUploader({
         inflateRaw: defaultInflateRaw,
       })
       if (!opened.ok) {
-        setReadError({ message: opened.message, goTo: null })
+        // No se pudo abrir, pero por el nombre ya se sabe qué es: se dice qué archivo sirve.
+        setReadError(
+          (opened.detected ? wrongPlace(source, opened.detected) : null) ?? {
+            message: opened.message,
+            goTo: null,
+          },
+        )
         setAnnounce(opened.message)
         return
       }
-      const wrong = wrongPlace(source, opened.detected)
+      const wrong = wrongPlace(source, opened.detected, opened.table.rows)
       if (wrong) {
         setReadError(wrong)
         setAnnounce(wrong.message)
@@ -309,6 +343,17 @@ export function ImportUploader({
       setReading(false)
     }
   }
+
+  // Lo que se soltó en cualquier pantalla (`GlobalDrop`) entra por el mismo camino que elegirlo. Se
+  // mira después de cada dibujo y no solo al montar: si se soltó estando ya acá, `GlobalDrop`
+  // navega a esta misma ruta y este cargador no se vuelve a montar.
+  useEffect(() => {
+    if (reading || uploadingRef.current) return
+    const dropped = takeDroppedFile()
+    if (!dropped) return
+    setActive(2)
+    void onFile(dropped)
+  })
 
   /** Sube el plan: lote → filas en tandas → armado. Se puede retomar. */
   const upload = async (
@@ -682,6 +727,7 @@ export function ImportUploader({
                 inset
                 question={readError.message}
               >
+                {readError.columns ? <FileColumns {...readError.columns} /> : null}
                 {readError.goTo ? (
                   <QuestionAnswers>
                     <Button asChild variant="outline" className={`${ANSWER_BUTTON} gap-2`}>
@@ -691,6 +737,9 @@ export function ImportUploader({
                       </Link>
                     </Button>
                   </QuestionAnswers>
+                ) : null}
+                {readError.howTo ? (
+                  <div className="border-t border-border/60 pt-3">{howTo}</div>
                 ) : null}
               </QuestionCard>
             ) : null}

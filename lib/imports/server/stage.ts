@@ -33,6 +33,7 @@ import {
 } from '@/lib/accounting/action-state'
 import { accFailure, asRecord, intOf, rpcFailure, textOf } from '@/lib/accounting/actions/support'
 import { ACC_GENERIC_ERROR } from '@/lib/accounting/errors'
+import { AUTO_BANK_TAX_NOTE } from '@/lib/accounting/posting/treasury'
 import { addDays } from '@/lib/dates'
 import { createClient } from '@/lib/supabase/server'
 import { mcNaturalKey } from '../arca/mis-comprobantes'
@@ -442,7 +443,14 @@ async function importedDocumentIds(
   return out
 }
 
-type DocRow = { id: string; date: string; total: number; kind: string; description: string }
+type DocRow = {
+  id: string
+  date: string
+  total: number
+  kind: string
+  description: string
+  notes: string | null
+}
 
 async function documentsInRange(
   supabase: Supabase,
@@ -455,7 +463,7 @@ async function documentsInRange(
   const rows = await pagedRows((a, b) => {
     let q = supabase
       .from('acc_documents')
-      .select('id, accounting_date, total_cents, kind, description, party_id')
+      .select('id, accounting_date, total_cents, kind, description, party_id, notes')
       .eq('tenant_id', tenantId)
       .eq('status', 'posted')
       .in('kind', [...kinds])
@@ -476,6 +484,7 @@ async function documentsInRange(
       total,
       kind: textOf(r.kind) ?? '',
       description: textOf(r.description) ?? '',
+      notes: textOf(r.notes),
     })
   }
   return out
@@ -631,18 +640,27 @@ export async function loadPostedTransfers(
   return out
 }
 
+/** Los gastos bancarios ya cargados en una cuenta, por quién los cargó. */
+export type BankExpenseFacts = {
+  /** Cargados A MANO: `<día>:<total>` (diseño §4.0: «misma cuenta, mismo día y mismo total»). */
+  manual: Set<string>
+  /** Impuesto al cheque que el sistema anotó solo al pagar: día → centavos. */
+  autoTax: Map<string, number>
+}
+
 /**
- * Gastos bancarios de esta cuenta cargados A MANO en el período: `<día>:<total>`
- * (diseño §4.0: «misma cuenta, mismo día y mismo total → Ya registrado»).
+ * Los gastos bancarios de esta cuenta en el período. Lo que se anotó solo al pagar
+ * (`AUTO_BANK_TAX_NOTE`) va aparte: no es «lo mismo cargado a mano» sino una parte del impuesto del
+ * día, que la propuesta le resta a lo que trae el archivo.
  */
-export async function loadManualBankExpenses(
+export async function loadBankExpenseFacts(
   supabase: Supabase,
   tenantId: string,
   o: { treasuryId: string; from: string; to: string },
-): Promise<Set<string>> {
-  const out = new Set<string>()
+): Promise<BankExpenseFacts> {
+  const facts: BankExpenseFacts = { manual: new Set(), autoTax: new Map() }
   const docs = await documentsInRange(supabase, tenantId, ['bank_expense'], o.from, o.to)
-  if (docs.length === 0) return out
+  if (docs.length === 0) return facts
   const lines = await treasuryLines(
     supabase,
     tenantId,
@@ -652,12 +670,19 @@ export async function loadManualBankExpenses(
     lines.filter((l) => l.treasuryId === o.treasuryId).map((l) => l.documentId),
   )
   const mine = docs.filter((d) => onBank.has(d.id))
-  if (mine.length === 0) return out
+  if (mine.length === 0) return facts
+  for (const d of mine) {
+    if (d.notes === AUTO_BANK_TAX_NOTE) {
+      facts.autoTax.set(d.date, (facts.autoTax.get(d.date) ?? 0) + d.total)
+    }
+  }
+  const others = mine.filter((d) => d.notes !== AUTO_BANK_TAX_NOTE)
+  if (others.length === 0) return facts
   const imported = await importedDocumentIds(
     supabase,
     tenantId,
-    mine.map((d) => d.id),
+    others.map((d) => d.id),
   )
-  for (const d of mine) if (!imported.has(d.id)) out.add(`${d.date}:${d.total}`)
-  return out
+  for (const d of others) if (!imported.has(d.id)) facts.manual.add(`${d.date}:${d.total}`)
+  return facts
 }

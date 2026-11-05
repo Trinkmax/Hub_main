@@ -6,8 +6,8 @@
  * Puro: lo usan la lectura (`queries/onboarding.ts`), la página de la guía y la
  * tarjeta «Primeros pasos» del Resumen. Los textos van de vos, cortos.
  *
- * Los ítems «a mano» (los que solo pasan afuera de la plataforma, como pedirle
- * a los proveedores que facturen a la SAS) se marcan con «Ya lo hice»
+ * Los ítems «a mano» (lo que no se puede ver desde la base, como pedirle a los
+ * proveedores que facturen a la SAS o revisar los impuestos) se marcan con «Ya lo hice»
  * (`markOnboardingStep` → `acc_guide_progress`, guía `arranque`). Algunos
  * automáticos aceptan además esa marca («Ya cargué los que tengo»).
  */
@@ -183,27 +183,24 @@ export const ONBOARDING_SECTION_LABEL: Readonly<Record<OnboardingSection, string
   monthly: 'Todos los meses',
 }
 
-/** La bajada de cada sección, en una línea. */
-export const ONBOARDING_SECTION_HINT: Readonly<Record<OnboardingSection, string>> = {
-  day1: 'Se hace una sola vez. Seguí el orden: cada paso usa lo que cargaste antes.',
-  // Los mismos minutos que «Tu rutina» de la portada (`guideRoutine`).
-  daily: 'A la mañana siguiente, unos 10 minutos. El resto lo arma la plataforma.',
-  weekly: 'Bajás dos archivos y la plataforma arma todo: vos revisás y confirmás.',
-  monthly: 'Las compras de ARCA, los saldos y el cierre del mes con la contadora.',
-}
-
+/*
+ * Las claves viven en la base (`acc_guide_progress` guarda las marcas a mano): no se renombran. El
+ * paso «Puntos de venta» (`sales_points`) salió de la lista hasta que el bar facture desde el
+ * sistema (reunión del 29/10/2026): la base lo sigue contando, acá solo no se pide.
+ */
 export const ONBOARDING_ITEM_IDS = [
   'sas_data',
   'treasuries',
   'sales_methods',
   'platforms',
-  'sales_points',
+  'taxes',
   'opening',
   'access',
   'chart_review',
   'arca',
   'arca_first_import',
   'recurring',
+  'payroll',
   'mp_connect',
   'suppliers_message',
   'daily_close',
@@ -225,7 +222,7 @@ export type OnboardingItemId = (typeof ONBOARDING_ITEM_IDS)[number]
 export type OnboardingKind = 'auto' | 'manual' | 'info'
 
 /** La hoja de acción rápida que abre el botón, sobre la misma guía. */
-export type OnboardingSheet = 'gasto' | 'cobrar' | 'ajustar'
+export type OnboardingSheet = 'cobrar' | 'ajustar'
 
 /** La mini guía «¿Cómo lo bajo?» del archivo que se sube (diseño §5.1.4). */
 export type OnboardingHowTo = 'mis_comprobantes' | 'mercado_pago' | 'banco'
@@ -294,11 +291,11 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
   {
     id: 'treasuries',
     section: 'day1',
-    title: 'Cajas y cuentas',
+    title: 'Cuentas: caja, bancos y billeteras',
     where: { label: 'Ajustes › Cajas y cuentas', path: '/ajustes?tab=cajas' },
     what: 'Dónde está la plata de la SAS: la caja de efectivo, cada banco y Mercado Pago.',
     how: [
-      'Tocá «Agregar una caja o cuenta» y elegí el tipo: efectivo, banco, billetera o tarjeta de crédito.',
+      'Agregá cada cuenta y elegí el tipo: efectivo, banco, billetera o tarjeta de crédito.',
       'En el banco cargá el CBU (los 22 números de la cuenta), el alias y el número de cuenta.',
       'En Mercado Pago cargá el CVU (es como el CBU, pero de una billetera) y el alias.',
       'Si la empresa tiene tarjeta de crédito, sumala también.',
@@ -307,7 +304,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
       'Ejemplo: «Caja del local» (efectivo), el banco con su CBU y alias, y Mercado Pago con su CVU.',
     auto: 'Con el CBU y el CVU reconoce sola las transferencias entre tus cuentas.',
     minutes: 5,
-    actionLabel: 'Ir a Cajas y cuentas',
+    actionLabel: 'Ir a las cuentas',
     manualLabel: 'Ya cargué las que tengo',
     kind: 'auto',
     manualOverride: true,
@@ -325,7 +322,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
       'Si te paga otro (tarjetas, apps), poné en cuántos días llega la plata a tu cuenta.',
     ],
     example: 'Ejemplo: «Débito» entra al banco y llega a los 2 días.',
-    auto: 'Reparte cada cierre del día entre tus cajas y anota lo que queda en camino.',
+    auto: 'Reparte cada cierre del día entre tus cuentas y deja por cobrar lo que no entró.',
     minutes: 5,
     actionLabel: 'Revisar los medios',
     kind: 'auto',
@@ -333,7 +330,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
   {
     id: 'platforms',
     section: 'day1',
-    title: 'Apps de delivery, tarjetas y Mercado Pago',
+    title: 'Comisiones de apps, tarjetas y Mercado Pago',
     where: { label: 'Ajustes › Medios de cobro', path: '/ajustes?tab=participes' },
     what: 'Con cuáles trabajás y cuánto te descuenta cada una antes de pagarte.',
     how: [
@@ -350,33 +347,34 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     kind: 'manual',
   },
   {
-    id: 'sales_points',
+    id: 'taxes',
     section: 'day1',
-    title: 'Puntos de venta',
-    where: { label: 'Ajustes › Puntos de venta', path: '/ajustes?tab=puntos-de-venta' },
-    what: 'Los puntos de venta con los que facturás hoy y a qué canal va cada uno.',
+    title: 'Impuestos: Ingresos Brutos, Comercio e Industria, débitos y créditos',
+    where: { label: 'Ajustes › Impuestos', path: '/ajustes?tab=impuestos' },
+    what: 'Los porcentajes de los impuestos que se calculan solos, y sobre qué se calcula cada uno.',
+    whatLabel: 'Qué revisás',
     how: [
-      'El punto de venta es el número que va antes del guion en cada factura.',
-      'Mirá una factura del sistema que usás hoy y cargá cada número con su canal: salón, delivery o eventos.',
-      'El de la plataforma lo crea solo «Conectar ARCA»: no lo cargues a mano.',
+      'Fijate que cada porcentaje sea el tuyo: Ingresos Brutos, Comercio e Industria y el impuesto al cheque.',
+      'Elegí la base de los dos primeros: lo facturado sin IVA o todo lo vendido.',
+      'Si tenés dudas, preguntale a la contadora: se cambian ahí mismo cuando quieras.',
     ],
-    // \u2060 (unión de palabras): que «0003-00014501» no se corte en el guion.
-    example: 'Ejemplo: en la factura 0003-\u206000014501 el punto de venta es el 3.',
-    auto: null,
-    minutes: 3,
-    actionLabel: 'Ir a Puntos de venta',
-    kind: 'auto',
+    example: 'Ejemplo: Ingresos Brutos 3 % sobre lo facturado, sin IVA.',
+    auto: 'Ingresos Brutos y Comercio e Industria salen en cada cierre del día. El impuesto al cheque, al pagar con banco o billetera.',
+    minutes: 5,
+    actionLabel: 'Ir a Impuestos',
+    manualLabel: 'Ya los revisé',
+    kind: 'manual',
   },
   {
     id: 'opening',
     section: 'day1',
     title: 'Saldos iniciales',
-    where: { label: 'Configurar › Saldos iniciales', path: '/configurar' },
+    where: { label: 'Saldos iniciales', path: '/configurar' },
     what: 'Cuánta plata había y cuánto se debía el día que arrancan los libros.',
     how: [
-      'Plata en cada caja: el efectivo contado, el banco según el resumen y Mercado Pago según la app.',
+      'Plata en cada cuenta: el efectivo contado, el banco según el resumen y Mercado Pago según la app.',
       'Deudas con proveedores: cada factura sin pagar, con su importe y su vencimiento.',
-      'Lo que te debían: lo de tarjetas y apps que estaba en camino, y clientes con cuenta.',
+      'Lo que te debían: lo de tarjetas y apps que estaba por cobrar, y clientes con cuenta.',
       'Si no tenés los números, tocá «No tengo los números: arrancar todo en cero».',
     ],
     example:
@@ -389,13 +387,13 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
   {
     id: 'access',
     section: 'day1',
-    title: 'Accesos',
+    title: 'Accesos: socios y contadora',
     where: { label: 'Ajustes › Accesos', path: '/ajustes?tab=accesos' },
     what: 'Quién más entra a Administración: tus socios y la contadora.',
     how: [
       'Administración es privada: solo la ven los dueños que habilites.',
-      'Dales acceso a los socios que van a cargar gastos y cierres.',
-      'Sumá a la contadora: ve y baja los libros, pero no carga ni cambia nada.',
+      'Dales acceso a los socios que van a cargar compras, pagos y cierres.',
+      'Sumá a la contadora: ve y baja los libros, reimputa y hace asientos. No carga compras, pagos ni ventas.',
     ],
     example: null,
     auto: null,
@@ -409,12 +407,12 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'chart_review',
     section: 'day1',
     title: 'Plan de cuentas con la contadora',
-    where: { label: 'Plan de cuentas', path: '/plan-de-cuentas' },
+    where: { label: 'Contabilidad › Plan de cuentas', path: '/plan-de-cuentas' },
     what: 'La lista de cuentas donde se ordena cada gasto y cada venta. Ya viene una armada para bares.',
     whatLabel: 'Qué revisás',
     how: [
       'Pedile a la contadora que la mire: la ve y la baja desde su acceso.',
-      'Si te pide otra cuenta, creala con «Nueva cuenta», en «Plan completo».',
+      'Si te pide otra cuenta, la creás ahí mismo.',
       'Si ella ya tiene un plan propio, se trae con «Importar plan».',
     ],
     example: 'Ejemplo: si quiere separar las propinas, creás la cuenta «Propinas a repartir».',
@@ -429,7 +427,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     section: 'day1',
     title: 'Conectar ARCA',
     where: { label: 'Ajustes › ARCA', path: '/ajustes/arca' },
-    what: 'La conexión con ARCA, para que la plataforma consulte y facture sola.',
+    what: 'La conexión con ARCA, para que la plataforma complete los datos sola con la CUIT.',
     whatLabel: 'Qué hacés',
     how: [
       'Lo hace quien maneja la clave fiscal de la SAS, con la guía paso a paso.',
@@ -437,7 +435,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
       'Cada paso se marca solo apenas la plataforma lo ve hecho.',
     ],
     example: null,
-    auto: 'Completa proveedores y clientes con solo la CUIT y te deja facturar eventos desde acá.',
+    auto: 'Completa proveedores y clientes con solo la CUIT.',
     minutes: 40,
     actionLabel: 'Empezar a conectar',
     kind: 'auto',
@@ -446,11 +444,11 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'arca_first_import',
     section: 'day1',
     title: 'Proveedores y compras del mes pasado',
-    where: { label: 'Importar › ARCA', path: '/importar/arca' },
+    where: { label: 'Arrastrá el archivo, o Ajustes › Importar', path: '/importar/arca' },
     what: 'Las facturas que te hicieron el mes pasado, desde «Mis Comprobantes»: la parte de ARCA donde aparece toda factura hecha a la CUIT de la SAS.',
     how: [
       'En ARCA entrá a «Mis Comprobantes» › «Recibidos» y bajá el mes pasado en «CSV»: baja un archivo ZIP.',
-      'Arrastralo tal cual a Importar › ARCA, sin abrirlo con Excel.',
+      'Arrastralo tal cual a cualquier pantalla, sin abrirlo con Excel: se reconoce solo.',
       'En «¿Los tenés de antes?» decí en qué le comprás a cada proveedor nuevo: bebidas, verdulería, alquiler…',
       'Contestá lo que te pregunte y cargá: entran todas juntas.',
     ],
@@ -465,16 +463,15 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'recurring',
     section: 'day1',
     title: 'Gastos fijos',
-    where: { label: 'Gastos fijos', path: '/gastos-fijos' },
+    where: { label: 'Gastos y sueldos › Gastos fijos', path: '/gastos-fijos' },
     what: 'Lo que pagás todos los meses, con su día de vencimiento.',
     how: [
-      'Si los tenés en una planilla, tocá «Pegar una lista». Si no, cargalos de a uno: cuánto más o menos y qué día vence.',
+      'Si los tenés en una planilla, pegá la lista. Si no, agregalos de a uno: cuánto más o menos y qué día vence.',
       'Sumá el alquiler, la luz, el gas, el agua, internet, los sistemas que pagás por mes, el contador y los seguros.',
-      'Si quedaron sin monto o sin día, «Completar la planilla» los recorre todos de corrido.',
       'No es una deuda hasta que lo pagás o cargás su factura: es tu planilla del mes.',
     ],
     example: 'Ejemplo: Alquiler · vence el 10 · alrededor de $ 850.000.',
-    auto: 'Te avisa antes de cada vencimiento y se paga en un toque, con «Pagar» en su renglón.',
+    auto: 'Te avisa antes de cada vencimiento y se paga desde su renglón.',
     minutes: 10,
     actionLabel: 'Cargar gastos fijos',
     manualLabel: 'Ya cargué los que tengo',
@@ -482,15 +479,33 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     manualOverride: true,
   },
   {
+    id: 'payroll',
+    section: 'day1',
+    title: 'Empleados y sueldos',
+    where: { label: 'Gastos y sueldos › Sueldos', path: '/sueldos' },
+    what: 'Cada empleado con su sueldo del mes y cada cuánto le pagás.',
+    how: [
+      'Agregá a cada empleado con su sueldo.',
+      'Después, cada adelanto o pago se anota en su renglón y el saldo sale solo.',
+      'Los recibos y las cargas sociales los sigue llevando la contadora.',
+    ],
+    example: 'Ejemplo: sueldo de $ 900.000, con un adelanto de $ 200.000: le debés $ 700.000.',
+    auto: 'Dice cuánto le debés a cada uno a fin de mes.',
+    minutes: 10,
+    actionLabel: 'Ir a Sueldos',
+    manualLabel: 'Ya están cargados',
+    kind: 'manual',
+  },
+  {
     id: 'mp_connect',
     section: 'day1',
     title: 'Conectar Mercado Pago',
-    where: { label: 'Importar › Mercado Pago', path: '/importar/mercado-pago' },
+    where: { label: 'Ajustes › Importar › Mercado Pago', path: '/importar/mercado-pago' },
     what: 'A qué medio de cobro va cada canal de Mercado Pago (QR, posnet, link de pago) y el primer reporte.',
     how: [
-      'En Importar › Mercado Pago elegí a qué medio de cobro va cada canal.',
-      'Desde la compu, bajá el reporte de «Liquidaciones»: el detalle de cada cobro, su comisión y lo que te depositaron.',
-      'Subilo y confirmá los días.',
+      'Elegí a qué medio de cobro va cada canal.',
+      'Desde la compu, bajá el reporte de «Liquidaciones»: el detalle de cada cobro, su comisión y lo que te depositaron. El de Cobros no sirve: no trae los descuentos.',
+      'Arrastralo a cualquier pantalla y confirmá los días.',
     ],
     example: 'Ejemplo: los cobros con QR van a «QR» y los del posnet de Mercado Pago a «Débito».',
     auto: 'Separa la comisión, el IVA y los impuestos de cada cobro.',
@@ -522,16 +537,16 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'daily_close',
     section: 'daily',
     title: 'Cierre del día',
-    where: { label: 'Ventas › Cargar cierre', path: '/ventas/cierre' },
+    where: { label: '+ Cargar › Cierre del día', path: '/ventas/cierre' },
     what: 'Lo que vendiste el día anterior y cómo te pagaron.',
     how: [
       'Abrí el cierre de caja del sistema que usás hoy.',
       'Copiá la columna de importes y pegala en el primer medio: se reparte sola hacia abajo.',
-      'En «¿Qué facturaste?» escribí el último número de cada punto de venta y el total.',
+      'Si facturaste, cargá cuánto fue con factura.',
       'Si contaste el efectivo, anotalo: la diferencia queda como faltante o sobrante.',
     ],
     example: null,
-    auto: 'Reparte la venta entre tus cajas y anota lo que queda en camino.',
+    auto: 'Reparte la venta entre tus cuentas, deja por cobrar lo que no entró y calcula Ingresos Brutos y Comercio e Industria.',
     minutes: 5,
     actionLabel: 'Cargar el cierre',
     kind: 'auto',
@@ -540,33 +555,29 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'small_expenses',
     section: 'daily',
     title: 'Gastos chicos',
-    where: {
-      label: '«+ Cargar» › «Pagué algo recién» (o ⌘K en la compu)',
-      path: null,
-    },
+    where: { label: '+ Cargar › Compra y pago', path: '/compras/nueva?modo=pago' },
     what: 'Lo que pagás en el momento y no tiene factura a nombre de la SAS.',
     whatLabel: 'Qué es',
     how: [
-      'Tocá «+ Cargar» y elegí «Pagué algo recién».',
-      'Escribí el importe y elegí en qué se gastó y con qué caja lo pagaste.',
+      'Tocá «+ Cargar» y elegí «Compra y pago».',
+      'Escribí el importe, el papel que te dieron y de qué cuenta salió la plata.',
     ],
     example: 'Ejemplo: hielo por $ 6.000, pagado con la plata de la caja.',
     auto: null,
     minutes: 1,
-    // El mismo botón que la receta «Compré y pagué en el momento» (no el título de la hoja).
-    actionLabel: 'Cargar un gasto',
-    sheet: 'gasto',
+    // El mismo botón que la receta «Compré y pagué en el momento».
+    actionLabel: 'Cargar compra y pago',
     kind: 'info',
   },
   {
     id: 'mp_weekly',
     section: 'weekly',
     title: 'Mercado Pago',
-    where: { label: 'Importar › Mercado Pago', path: '/importar/mercado-pago' },
+    where: { label: 'Arrastrá el archivo, o Ajustes › Importar', path: '/importar/mercado-pago' },
     what: 'El reporte de «Liquidaciones» desde la última vez que lo subiste.',
     how: [
       'Desde la compu, bajá «Liquidaciones» en CSV (hasta 60 días por reporte).',
-      'Subilo en Importar › Mercado Pago.',
+      'Arrastralo a cualquier pantalla: se reconoce solo.',
       'Revisá los días nuevos y confirmalos.',
     ],
     example: 'Ejemplo: cada lunes bajás desde el lunes anterior hasta ayer.',
@@ -580,15 +591,15 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'bank_weekly',
     section: 'weekly',
     title: 'Banco',
-    where: { label: 'Importar › Banco', path: '/importar/banco' },
+    where: { label: 'Arrastrá el archivo, o Ajustes › Importar', path: '/importar/banco' },
     what: 'Los movimientos del banco desde la última vez que los subiste.',
     how: [
       'En el home banking de la empresa, exportá los movimientos en CSV, TXT o Excel.',
-      'Subilos en Importar › Banco. La primera vez decinos qué es cada columna.',
+      'Arrastralos a cualquier pantalla. La primera vez decinos qué es cada columna.',
       'Revisá y confirmá. Muchos bancos guardan solo los últimos 3 meses: no lo dejes pasar.',
     ],
     example: 'Ejemplo: cada lunes exportás la semana anterior.',
-    auto: 'Arma los gastos del banco de cada día y reconoce tus transferencias.',
+    auto: 'Reconoce el impuesto al cheque, las comisiones, el IVA y el SIRCREB, y no cuenta dos veces lo que ya se anotó al pagar.',
     minutes: 10,
     actionLabel: 'Subir los movimientos del banco',
     howTo: 'banco',
@@ -598,12 +609,12 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'arca_monthly',
     section: 'monthly',
     title: 'Compras de ARCA (del 11 en adelante)',
-    where: { label: 'Importar › ARCA', path: '/importar/arca' },
+    where: { label: 'Arrastrá el archivo, o Ajustes › Importar', path: '/importar/arca' },
     what: 'Las facturas que te hicieron, bajadas de «Mis Comprobantes».',
     how: [
       'Esperá al día 11: muchas facturas llegan tarde a ARCA.',
       'Bajá «Recibidos» desde el 1 del mes anterior hasta hoy, en CSV.',
-      'Subilo tal cual: las que ya estaban cargadas se saltean solas.',
+      'Arrastralo tal cual: las que ya estaban cargadas se saltean solas.',
     ],
     example: 'Ejemplo: el 11 de noviembre bajás desde el 1 de octubre hasta ese día.',
     auto: 'Saltea las que ya cargaste y crea los proveedores nuevos.',
@@ -616,7 +627,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'mp_invoice',
     section: 'monthly',
     title: 'Factura de Mercado Pago',
-    where: { label: 'Importar › ARCA', path: '/importar/arca' },
+    where: { label: 'Arrastrá el archivo, o Ajustes › Importar', path: '/importar/arca' },
     what: 'La factura de las comisiones que te cobró Mercado Pago en el mes.',
     how: [
       'Llega con las compras de ARCA: no la cargues a mano.',
@@ -631,13 +642,13 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
   {
     id: 'treasury_check',
     section: 'monthly',
-    title: 'Contar las cajas',
-    where: { label: 'Cajas › Contar la caja', path: '/cajas' },
+    title: 'Contar las cuentas',
+    where: { label: 'Caja', path: '/cajas' },
     what: 'Que lo que dice la plataforma coincida con lo que hay de verdad.',
     whatLabel: 'Qué controlás',
     how: [
       'Contá el efectivo de la caja y mirá el saldo del banco y el de Mercado Pago.',
-      'En «Contar la caja» escribí lo que hay de verdad en cada una.',
+      'En «+ Cargar» › «Contar la caja», o en el renglón de cada cuenta, escribí lo que hay de verdad.',
       'La diferencia queda anotada sola.',
     ],
     example:
@@ -652,18 +663,18 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'month_close',
     section: 'monthly',
     title: 'Cerrar el mes con la contadora',
-    where: { label: 'Libros › Fin de mes', path: '/libros/cierres' },
+    where: { label: 'Contabilidad › Cierre de mes', path: '/libros/cierres' },
     what: 'Revisar el mes que pasó y cerrarlo para que no cambie más.',
     whatLabel: 'Qué hacés',
     how: [
-      'En Libros › Fin de mes mirá los avisos: cada uno dice qué falta.',
+      'En Contabilidad › Cierre de mes mirá los avisos: cada uno dice qué falta.',
       'Cuando esté todo, cerrá el mes. Si hace falta, se puede reabrir.',
-      'La contadora baja el «Paquete del mes» desde Libros.',
+      'Bajá los libros para la contadora, o que los baje ella con su acceso.',
     ],
     example: null,
     auto: 'Arma sola los libros del mes: diario, IVA compras e IVA ventas.',
     minutes: 15,
-    actionLabel: 'Ir a Fin de mes',
+    actionLabel: 'Ir a Cierre de mes',
     kind: 'auto',
   },
 ]
@@ -680,10 +691,11 @@ export const ONBOARDING_HAVE_AT_HAND: readonly string[] = [
   'El saldo de Mercado Pago de ese mismo día.',
   'El efectivo contado de la caja.',
   'Las facturas sin pagar a proveedores: proveedor, número, importe y vencimiento.',
-  'Lo que te deben: lo de tarjetas y apps que está en camino, y clientes con cuenta.',
+  'Lo que te deben: lo de tarjetas y apps que está por cobrar, y clientes con cuenta.',
   'La comisión que te cobra cada app y cada tarjeta (está en sus liquidaciones).',
   'Los gastos fijos con su día de vencimiento.',
-  'Una factura del sistema de caja que usás hoy, para ver tus puntos de venta.',
+  'Los porcentajes de Ingresos Brutos y de Comercio e Industria.',
+  'El sueldo de cada empleado.',
 ]
 
 /** «Lo que hace la plataforma sola» (pie de la guía). */
@@ -692,8 +704,10 @@ export const PLATFORM_DOES: readonly string[] = [
   'Detecta comprobantes repetidos y saltea lo que ya cargaste.',
   'Separa la comisión, el IVA y los impuestos de cada cobro de Mercado Pago.',
   'Arma los gastos del banco de cada día y reconoce tus transferencias.',
+  'Reconoce los archivos que arrastrás a cualquier pantalla.',
+  'Lee el QR de ARCA de la factura y completa el comprobante.',
   'Propone en qué se gasta con cada proveedor.',
-  'Numera y autoriza con ARCA las facturas que hacés desde acá.',
+  'Calcula Ingresos Brutos y Comercio e Industria en cada cierre, y el impuesto al cheque al pagar con banco o billetera.',
   'Arma sola los libros del mes: diario, IVA compras e IVA ventas.',
   'Te avisa los vencimientos: gastos fijos y el certificado de ARCA.',
 ]
@@ -701,7 +715,7 @@ export const PLATFORM_DOES: readonly string[] = [
 /** Lo que se sigue cargando a mano y por qué (diseño §4.5). */
 export type OnboardingManualTask = {
   title: string
-  /** El «Dónde»: lo que se toca para llegar (el lanzador entra por la situación, no por la hoja). */
+  /** El «Dónde»: lo que se toca para llegar. */
   where: { label: string; path: string | null }
   sheet?: OnboardingSheet
   /** El botón que abre `sheet`: el mismo de la receta del día a día. */
@@ -713,36 +727,34 @@ export type OnboardingManualTask = {
 export const ONBOARDING_STAYS_MANUAL: readonly OnboardingManualTask[] = [
   {
     title: 'Lo vendido cada día y cómo te pagaron',
-    where: { label: 'Ventas › Cargar cierre', path: '/ventas/cierre' },
+    where: { label: '+ Cargar › Cierre del día', path: '/ventas/cierre' },
     why: 'Hasta que tu sistema de caja esté conectado a la plataforma, lo pegás desde su cierre de caja.',
   },
   {
     title: 'Gastos chicos sin factura',
-    where: { label: '«+ Cargar» › «Pagué algo recién»', path: null },
-    sheet: 'gasto',
-    sheetLabel: 'Cargar un gasto',
+    where: { label: '+ Cargar › Compra y pago', path: '/compras/nueva?modo=pago' },
     why: 'El hielo o la verdulería no tienen factura a nombre de la SAS, así que no están en ARCA.',
   },
   {
     title: 'Lo que te depositan las tarjetas',
-    where: { label: '«+ Cargar» › «Me entró plata»', path: null },
+    where: { label: '+ Cargar › Entró plata', path: null },
     sheet: 'cobrar',
     sheetLabel: 'Anotar lo que entró',
     why: 'Todavía no leemos las liquidaciones de las tarjetas. Con los porcentajes de Ajustes › Medios de cobro, el cobro viene casi armado.',
   },
   {
-    title: 'Sueldos y cargas sociales',
-    where: { label: 'Libros › Sueldos del mes', path: '/libros/asiento-manual?tipo=sueldos' },
-    why: 'Te los pasa la contadora una vez por mes.',
+    title: 'Sueldos y adelantos',
+    where: { label: 'Gastos y sueldos › Sueldos', path: '/sueldos' },
+    why: 'Cada adelanto y cada pago se anota en su renglón. Los recibos y las cargas sociales los lleva la contadora.',
   },
   {
     title: 'Facturas del exterior, en papel o de contingencia',
-    where: { label: 'Compras y pagos › Cargar una compra que debo', path: '/compras/nueva' },
+    where: { label: '+ Cargar › Compra', path: '/compras/nueva' },
     why: 'No aparecen en Mis Comprobantes de ARCA.',
   },
   {
     title: 'Los saldos iniciales',
-    where: { label: 'Configurar › Saldos iniciales', path: '/configurar' },
+    where: { label: 'Saldos iniciales', path: '/configurar' },
     why: 'Es una sola vez, el día que arrancan los libros.',
   },
 ]
@@ -878,8 +890,6 @@ function evaluate(
         done: d.salesMethods > 0,
         pending: d.salesMethods > 0 ? null : 'No hay medios activos.',
       }
-    case 'sales_points':
-      return { done: d.salesPoints > 0, pending: d.salesPoints > 0 ? null : 'Cargá al menos uno.' }
     case 'opening':
       return { done: d.openingDone, pending: d.openingDone ? null : 'Faltan los saldos iniciales.' }
     case 'access': {
@@ -928,6 +938,8 @@ function evaluate(
       }
     // Solo pasan afuera de la plataforma: los da por hechos la marca «Ya lo hice».
     case 'platforms':
+    case 'taxes':
+    case 'payroll':
     case 'chart_review':
     case 'suppliers_message':
       return { done: false, pending: null }

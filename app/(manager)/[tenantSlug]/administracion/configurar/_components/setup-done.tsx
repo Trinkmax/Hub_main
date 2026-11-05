@@ -55,7 +55,7 @@ export function SetupDone({
           Administración ya está configurada.
         </h2>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
-          Todo lo que cargues desde ahora suma en las cajas, las cuentas y los libros.
+          Todo lo que cargues desde ahora suma en las cuentas y en los libros.
         </p>
       </div>
 
@@ -121,9 +121,9 @@ export function SetupDone({
           />
           <ActionTile
             icon={Receipt}
-            title="Cargá un gasto"
-            hint="El hielo, la verdulería, un flete"
-            href={`${base}?accion=gasto`}
+            title="Cargá una compra"
+            hint="Lo que te llegó, lo pagues después o en el momento"
+            href={`${base}/compras/nueva`}
           />
           <ActionTile
             icon={BookOpen}

@@ -1,21 +1,29 @@
-import { ImportHistory } from '@/components/administracion/importar/import-history'
+import Link from 'next/link'
+import { DroppedFileQuestion } from '@/components/administracion/importar/dropped-file-question'
 import {
   HistoryEmpty,
-  HistoryList,
   HistoryPager,
+  HistoryTable,
 } from '@/components/administracion/importar/inbox/history-list'
-import { HowItWorks } from '@/components/administracion/importar/inbox/how-it-works'
-import { AgendaLine, NextUp } from '@/components/administracion/importar/inbox/next-up'
-import { ImportTray } from '@/components/administracion/importar/inbox/tray'
-import { StillManual } from '@/components/administracion/importar/page-bits'
-import { AdmHeader, AdmPage, Panel, PanelError, PillLink } from '@/components/administracion/kit'
+import {
+  ImportCoverage,
+  ImportSourcesTable,
+} from '@/components/administracion/importar/inbox/source-table'
+import { PanelError } from '@/components/administracion/kit'
+import {
+  Planilla,
+  PlanillaFoot,
+  PlanillaTitle,
+  SimplePage,
+} from '@/components/administracion/planilla'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { Button } from '@/components/ui/button'
 import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { listTreasuryAccounts } from '@/lib/accounting/queries/treasury'
 import { todayInCordoba } from '@/lib/dates'
 import { listImportBatches } from '@/lib/imports/server/queries'
-import { buildInbox } from '@/lib/imports/ui/inbox'
+import { buildInbox, importSourceRows } from '@/lib/imports/ui/inbox'
 import {
   IMPORT_SOURCE_COPY,
   importHref,
@@ -28,18 +36,16 @@ export const metadata = { title: 'Importar · Administración' }
 
 /** Archivos del historial por página. */
 const HISTORY_PAGE = 20
-/** Con cuántos archivos se arman las bandejas (cobertura, lo que espera y lo que toca). */
+/** Con cuántos archivos se arma la tabla (qué falta traer y qué quedó esperando). */
 const INBOX_BATCHES = 200
 
 /**
- * «Importar»: la bandeja de entrada. Arriba, lo que toca ahora (o «Así
- * funciona» mientras el bar nunca cargó nada desde un archivo); después las
- * tres bandejas (ARCA, Mercado Pago, el banco), cada una con lo que falta
- * traer, lo ya traído y las hojas que esperan; y abajo todo lo que se subió.
+ * «Importar», al que se llega por el engranaje: el archivo se arrastra a cualquier pantalla, así
+ * que esto queda como una tabla (de dónde, qué archivo, la última vez y «Subir») y el historial.
+ * Si lo que se soltó no se reconoció, arriba se pregunta de dónde es.
  *
- * Todo lo que se muestra sale de `buildInbox()` (puro, con tests): acá solo se
- * lee y se dibuja. La contadora ve las bandejas y el historial, sin ningún
- * botón de carga.
+ * Todo lo que se muestra sale de `buildInbox()` (puro, con tests): acá solo se lee y se dibuja. La
+ * contadora ve lo mismo sin ningún botón de carga.
  */
 export default async function ImportarPage({
   params,
@@ -69,43 +75,19 @@ export default async function ImportarPage({
     settleQuery(getAccountingSettings(tenantId)),
   ])
 
-  const header = (teaching: boolean) => (
-    <AdmHeader
-      title="Importar"
-      badge={<ReadOnlyBadge />}
-      description={
-        canWrite ? (
-          // Con «Así funciona» abajo (bajalo, subilo, revisá), en el celular la bajada dice
-          // lo mismo dos veces y empuja las bandejas fuera de la primera pantalla.
-          <span className={teaching ? 'max-sm:hidden' : undefined}>
-            Lo que ARCA, Mercado Pago y el banco ya saben no hace falta tipearlo: lo bajás de allá,
-            lo subís acá y lo revisás.
-          </span>
-        ) : (
-          'Lo que se subió de ARCA, Mercado Pago y el banco, y en qué quedó cada archivo.'
-        )
-      }
-    />
-  )
+  const inbox = batches.ok
+    ? buildInbox({
+        today,
+        batches: batches.data,
+        treasuries: treasuries.ok ? treasuries.data : null,
+        booksStartDate: settings.ok ? (settings.data?.booksStartDate ?? null) : null,
+        hasCuit: settings.ok && settings.data ? settings.data.cuit !== null : null,
+        canWrite,
+        slug: tenantSlug,
+      })
+    : null
 
-  if (!batches.ok) {
-    return (
-      <AdmPage>
-        {header(false)}
-        <PanelError title="Tus archivos" message={batches.message} />
-      </AdmPage>
-    )
-  }
-
-  const inbox = buildInbox({
-    today,
-    batches: batches.data,
-    treasuries: treasuries.ok ? treasuries.data : null,
-    booksStartDate: settings.ok ? (settings.data?.booksStartDate ?? null) : null,
-    hasCuit: settings.ok && settings.data ? settings.data.cuit !== null : null,
-    canWrite,
-    slug: tenantSlug,
-  })
+  const sourceRows = inbox ? importSourceRows(inbox, tenantSlug) : []
 
   const historyHref = (extra: Record<string, string | null>) => {
     const q = new URLSearchParams()
@@ -120,94 +102,88 @@ export default async function ImportarPage({
   const last = rows[rows.length - 1]
   const olderHref = hasOlder && last ? historyHref({ antes: last.createdAt }) : null
   const newestHref = before ? historyHref({}) : null
-  // Filtrar por origen sirve cuando hay archivos de más de uno: con un solo archivo de ARCA,
-  // cuatro píldoras (dos renglones en el celular) para elegir entre nada.
-  const sourcesUsed = new Set(batches.data.map((b) => b.source)).size
+  // Filtrar por origen sirve cuando hay archivos de más de uno.
+  const sourcesUsed = batches.ok ? new Set(batches.data.map((b) => b.source)).size : 0
   const showFilter = source !== null || sourcesUsed > 1
 
   return (
-    <AdmPage>
-      {header(canWrite && !inbox.everLoaded)}
+    <SimplePage>
+      <h1 className="sr-only">Importar</h1>
+      <ReadOnlyBadge className="w-fit" />
+      {canWrite ? <DroppedFileQuestion slug={tenantSlug} /> : null}
 
-      {canWrite && inbox.next ? <NextUp next={inbox.next} /> : null}
-      {canWrite && !inbox.everLoaded ? (
-        <HowItWorks startNote={inbox.startNote} agenda={inbox.agenda} />
-      ) : canWrite && !inbox.next ? (
-        <AgendaLine agenda={inbox.agenda} />
-      ) : null}
+      {inbox ? (
+        <Planilla>
+          <ImportSourcesTable
+            rows={sourceRows}
+            photoHref={canWrite ? `/${tenantSlug}/administracion/compras/nueva` : null}
+          />
+          <ImportCoverage rows={sourceRows} />
+          {canWrite ? (
+            <PlanillaFoot className="text-xs text-muted-foreground">
+              <span>También podés arrastrar el archivo a cualquier pantalla.</span>
+              <span>{inbox.agenda}</span>
+            </PlanillaFoot>
+          ) : null}
+        </Planilla>
+      ) : (
+        <PanelError title="Tus archivos" message={batches.ok ? '' : batches.message} />
+      )}
 
       {!treasuries.ok || !settings.ok ? (
         <p className="text-sm text-muted-foreground">
-          No pude leer tus cajas: puede faltar algún aviso.
+          No pude leer tus cuentas: puede faltar algún aviso.
         </p>
       ) : null}
 
-      {/* Tres columnas recién desde `xl`: con el menú abierto, en 1024–1279 px cada bandeja
-          quedaba de 218 px y los botones se salían. En el medio, ARCA (la mensual) va sola
-          arriba y las dos semanales, lado a lado. */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {inbox.trays.map((tray, index) => (
-          <ImportTray
-            key={tray.source}
-            tray={tray}
-            wide={index === 0}
-            className={index === 0 ? 'md:max-xl:col-span-2' : undefined}
+      <section id="historial" aria-label="Historial" className="scroll-mt-28">
+        <Planilla>
+          <PlanillaTitle
+            title="Historial"
+            actions={
+              showFilter ? (
+                <nav aria-label="Filtrar los archivos por origen" className="flex flex-wrap gap-1">
+                  {[null, ...UI_IMPORT_SOURCES].map((s) => {
+                    const q = new URLSearchParams()
+                    if (s) q.set('origen', s)
+                    return (
+                      <Button
+                        key={s ?? 'todos'}
+                        asChild
+                        size="sm"
+                        variant={s === source ? 'secondary' : 'ghost'}
+                      >
+                        <Link
+                          href={`${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`}
+                          scroll={false}
+                          aria-current={s === source ? 'true' : undefined}
+                        >
+                          {s ? IMPORT_SOURCE_COPY[s].short : 'Todos'}
+                        </Link>
+                      </Button>
+                    )
+                  })}
+                </nav>
+              ) : null
+            }
           />
-        ))}
-      </div>
-
-      {history.ok ? (
-        <Panel
-          id="historial"
-          title="Todo lo que subiste"
-          description="Cada archivo, del más nuevo al más viejo."
-        >
-          {showFilter ? (
-            <nav
-              aria-label="Filtrar los archivos por origen"
-              className="mb-3 flex flex-wrap gap-1.5"
-            >
-              {[null, ...UI_IMPORT_SOURCES].map((s) => {
-                const q = new URLSearchParams()
-                if (s) q.set('origen', s)
-                return (
-                  <PillLink
-                    key={s ?? 'todos'}
-                    href={`${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`}
-                    scroll={false}
-                    active={s === source}
-                    className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
-                  >
-                    {s ? IMPORT_SOURCE_COPY[s].short : 'Todos'}
-                  </PillLink>
-                )
-              })}
-            </nav>
-          ) : null}
-          {canWrite ? (
-            rows.length === 0 ? (
-              <HistoryEmpty newestHref={newestHref} />
-            ) : (
-              <div className="space-y-3">
-                <HistoryList slug={tenantSlug} rows={rows} today={today} />
-                <HistoryPager olderHref={olderHref} newestHref={newestHref} />
-              </div>
-            )
+          {!history.ok ? (
+            <PanelError title="Historial" message={history.message} />
+          ) : rows.length === 0 ? (
+            <HistoryEmpty newestHref={newestHref} reader={!canWrite} />
           ) : (
-            <ImportHistory
-              slug={tenantSlug}
-              rows={rows}
-              today={today}
-              olderHref={olderHref}
-              newestHref={newestHref}
-            />
+            <>
+              <HistoryTable slug={tenantSlug} rows={rows} today={today} />
+              {olderHref || newestHref ? (
+                <PlanillaFoot>
+                  <span className="text-xs text-muted-foreground">Mostrando {rows.length}</span>
+                  <HistoryPager olderHref={olderHref} newestHref={newestHref} />
+                </PlanillaFoot>
+              ) : null}
+            </>
           )}
-        </Panel>
-      ) : (
-        <PanelError title="Todo lo que subiste" message={history.message} />
-      )}
-
-      {canWrite ? <StillManual slug={tenantSlug} /> : null}
-    </AdmPage>
+        </Planilla>
+      </section>
+    </SimplePage>
   )
 }

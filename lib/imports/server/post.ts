@@ -57,6 +57,7 @@ import {
 import { parsePostBundleResult } from '@/lib/accounting/server/rpc-results'
 import type { PostingResult, WarningKey } from '@/lib/accounting/types'
 import { createClient } from '@/lib/supabase/server'
+import { importPostingContext } from './proposals/common'
 import { findPostedTransfer } from './proposals/mp'
 import {
   type ExistingProposal,
@@ -403,7 +404,7 @@ export async function postImportProposalsFor(
       loadFirstOpenDate(tenantId),
     ])
     if (!loaded.ok) return loaded.state
-    const ctx = loaded.ctx
+    const ctx = importPostingContext(loaded.ctx)
 
     // Transferencias ya cargadas (por el otro importador mientras tanto).
     const transferKeys = toBuild.filter(({ p }) => p.form === 'transfer' && parsedForms.has(p.key))

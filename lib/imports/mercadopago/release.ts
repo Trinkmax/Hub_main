@@ -119,6 +119,19 @@ export function isMpSettlementHeader(row: readonly Cell[]): boolean {
   return names.has('transaction type') && names.has('settlement net amount')
 }
 
+/**
+ * ¿Es el reporte de Cobros («collection-….csv», `activities_collection`)? Se detecta para avisar: no
+ * trae el desglose de impuestos (`mercadopago.md` §1.4). Las dos columnas salen de esa documentación;
+ * se buscan adentro del título por si el panel las trae con el nombre en castellano adelante.
+ */
+export function isMpCollectionHeader(row: readonly Cell[]): boolean {
+  const names = row.map((c) => normalizeHeader(c))
+  return (
+    names.some((n) => /\boperation id\b/.test(n)) &&
+    names.some((n) => /\bnet received amount\b/.test(n))
+  )
+}
+
 // ─── TAXES_DISAGGREGATED ─────────────────────────────────────────────────────
 
 /**
@@ -356,7 +369,12 @@ export function parseReleaseReport(
 ): MpParseResult {
   const header = findHeaderRow(rows, MP_HEADER_RULES, isMpReleaseHeader, 15)
   if (!header) {
-    const settlement = rows.slice(0, 15).some((r) => isMpSettlementHeader(r))
+    const head = rows.slice(0, 15)
+    const code = head.some((r) => isMpSettlementHeader(r))
+      ? 'mp_settlement'
+      : head.some((r) => isMpCollectionHeader(r))
+        ? 'mp_collection'
+        : 'mp_no_header'
     return {
       ok: false,
       layout: null,
@@ -364,7 +382,7 @@ export function parseReleaseReport(
       decimal: '.',
       items: [],
       rowErrors: [],
-      fileIssues: [issue('error', settlement ? 'mp_settlement' : 'mp_no_header', null)],
+      fileIssues: [issue('error', code, null)],
       initialBalance: null,
       finalBalance: null,
       period: null,

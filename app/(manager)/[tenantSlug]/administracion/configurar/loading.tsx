@@ -2,7 +2,7 @@ import { AdmPage } from '@/components/administracion/kit/adm-page'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /**
- * Puesta en marcha mientras carga: el encabezado, el riel de seis pasos, dos
+ * Puesta en marcha mientras carga: el encabezado, el riel de cinco pasos, dos
  * secciones numeradas y, al costado, el papel del ticket. La forma real de la
  * pantalla, sin spinner.
  */

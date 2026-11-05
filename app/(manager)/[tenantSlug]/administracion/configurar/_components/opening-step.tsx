@@ -179,7 +179,7 @@ function countLine(count: number, cents: number, one: string, many: string): str
 }
 
 /**
- * Los saldos iniciales (el paso 6 de la puesta en marcha): lo que había en cada
+ * Los saldos iniciales (el paso 5 de la puesta en marcha): lo que había en cada
  * caja y lo que se debía el primer día → `postOpening`, o «Arrancar en cero»
  * (`skipOpening`). Se carga UNA sola vez.
  *
@@ -392,9 +392,9 @@ export function OpeningStep({
   const finish = (message: string) => {
     clearDraft()
     toast.success(message)
-    // El ticket queda con su tilde y la página pasa sola a «Listo».
+    // Es el último paso de la puesta en marcha: el ticket queda con su tilde y se sigue al Resumen.
     setDone(true)
-    router.refresh()
+    router.push(`/${tenantSlug}/administracion`)
   }
 
   const submit = (accepted: WarningKey[]) => {

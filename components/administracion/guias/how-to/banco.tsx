@@ -46,8 +46,8 @@ export function HowToBanco({
           sirve para importar.
         </HowToStep>
         <HowToStep n={5}>
-          Arrastrá el archivo a la pantalla de importar. La primera vez quizás te preguntemos qué es
-          cada columna (fecha, detalle, importe): después lo reconocemos solo.
+          Arrastrá el archivo a cualquier pantalla de Administración. La primera vez quizás te
+          preguntemos qué es cada columna (fecha, detalle, importe): después lo reconocemos solo.
         </HowToStep>
       </ol>
       <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground text-pretty">

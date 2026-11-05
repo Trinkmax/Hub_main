@@ -13,10 +13,15 @@ import { Button } from '@/components/ui/button'
 import { formatIsoDay } from '@/lib/dates'
 import { Callout } from '../../../ajustes/_components/form-bits'
 import type { WizardState } from '../../_lib/wizard'
-import { enabledMethodCount, puntosSummary, treasuryNames } from '../../_lib/wizard-steps'
+import {
+  enabledMethodCount,
+  filledSalesPoints,
+  puntosSummary,
+  treasuryNames,
+} from '../../_lib/wizard-steps'
 
 /**
- * Paso 5 de la puesta en marcha · «Revisá y arrancá».
+ * Paso 4 de la puesta en marcha · «Revisá y arrancá».
  *
  * Todo lo elegido, en palabras, sobre un ticket: es lo que se va a crear. Hasta
  * acá no se guardó nada; el botón de este paso es el ÚNICO guardado del
@@ -77,7 +82,9 @@ export function StepReview({
         <Line label="Medios prendidos">
           {methods === 0 ? 'Ninguno' : `${methods} ${methods === 1 ? 'medio' : 'medios'}`}
         </Line>
-        <Line label="Puntos de venta">{puntosSummary(state)}</Line>
+        {filledSalesPoints(state).length > 0 ? (
+          <Line label="Puntos de venta">{puntosSummary(state)}</Line>
+        ) : null}
         <TicketRule />
         <TicketNote>Vas a quedar como quien da los accesos.</TicketNote>
       </Ticket>

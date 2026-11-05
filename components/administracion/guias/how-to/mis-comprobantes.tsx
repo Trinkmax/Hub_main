@@ -79,7 +79,8 @@ export function HowToMisComprobantes({
           Arriba de la tabla tocá <b>«CSV»</b>. Se baja un archivo <b>.zip</b>.
         </HowToStep>
         <HowToStep n={6}>
-          Arrastrá ese <b>.zip tal cual</b> a la pantalla de importar. No hace falta abrirlo.
+          Arrastrá ese <b>.zip tal cual</b> a cualquier pantalla de Administración. No hace falta
+          abrirlo.
         </HowToStep>
       </ol>
       <HowToNote

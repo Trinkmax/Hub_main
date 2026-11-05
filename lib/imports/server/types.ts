@@ -270,6 +270,7 @@ export const NOTE_KEYS = [
   'unmatched_charges',
   'rule_applied',
   'reimport',
+  'bank_tax_noted',
 ] as const
 export type NoteKey = (typeof NOTE_KEYS)[number]
 
@@ -284,6 +285,7 @@ export const NOTE_TEXT: Readonly<Record<NoteKey, string>> = {
   unmatched_charges: 'Hay cargos de IVA o percepciones que no calzan con ninguna comisión.',
   rule_applied: 'Se aplicó una regla del bar.',
   reimport: 'El comprobante anterior se anuló: esta es una carga nueva.',
+  bank_tax_noted: 'El sistema ya anotó el impuesto al cheque al pagar: no se cuenta dos veces.',
 }
 
 /**

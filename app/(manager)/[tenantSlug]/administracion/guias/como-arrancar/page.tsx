@@ -9,7 +9,7 @@ import {
   type OnboardingGuideProblem,
 } from '@/components/administracion/guias/onboarding/onboarding-guide'
 import type { SupplierMessageData } from '@/components/administracion/guias/onboarding/supplier-message'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import {
   AccountingDisabledError,
@@ -28,15 +28,14 @@ import {
 import { RetryButton } from '../../_resumen/retry-button'
 import { Callout } from '../../ajustes/_components/form-bits'
 
-export const metadata = { title: 'Cómo arrancar · Administración' }
+export const metadata = { title: 'Puesta en marcha · Administración' }
 
 /**
- * «Cómo arrancar con Administración» (diseño §5.2): qué se carga una sola
- * vez, qué todos los días, todas las semanas y todos los meses, con dónde
- * (link a la pantalla exacta), qué y cómo. Lo que la plataforma puede ver se
- * marca solo (`acc_report_onboarding`); lo que pasa afuera, con «Ya lo hice»
- * (`markOnboardingStep`). Al pie: lo que sigue siendo a mano, lo que la
- * plataforma hace sola y el link al glosario de la portada (uno solo).
+ * La Puesta en marcha (`/guias/como-arrancar`): la barra de avance y una planilla Estado · Paso ·
+ * [Ir] con lo de una sola vez; abajo, igual, lo de todos los días, semanas y meses. Cada paso abre
+ * su detalle: dónde, qué y cómo. Lo que la plataforma puede ver se marca solo
+ * (`acc_report_onboarding`); lo demás, con «Ya lo hice» (`markOnboardingStep`). Al pie, plegado: lo
+ * que sigue siendo a mano y lo que la plataforma hace sola, y el link al glosario de la guía.
  *
  * Sin el estado de la base (su parte todavía no está), la guía se ve entera
  * sin marcas. La contadora la ve en modo lectura.
@@ -101,14 +100,9 @@ export default async function ComoArrancarPage({
       : { status: 'missing' }
 
   return (
-    <AdmPage width="comfortable">
-      {/* El mismo encabezado que el resto de la guía: «volver» chico arriba y sin eyebrow. */}
-      <AdmHeader
-        back={{ href: `${base}/guias`, label: 'Volver a la guía' }}
-        title="Cómo arrancar con Administración"
-        badge={<ReadOnlyBadge />}
-        description="Qué se carga una sola vez, qué todos los días y qué hace la plataforma sola. Te vamos marcando lo que ya está."
-      />
+    <SimplePage width="narrow">
+      <h1 className="sr-only">Puesta en marcha</h1>
+      <ReadOnlyBadge className="w-fit" />
 
       {canWrite ? null : (
         <Callout tone="info" title="La completan los dueños que cargan">
@@ -132,12 +126,10 @@ export default async function ComoArrancarPage({
         booksStartDate={sas?.booksStartDate ?? null}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <StaysManualCard base={base} />
-        <PlatformDoesCard />
-      </div>
+      <StaysManualCard base={base} />
+      <PlatformDoesCard />
 
       <GlossaryLink base={base} />
-    </AdmPage>
+    </SimplePage>
   )
 }

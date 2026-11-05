@@ -1,35 +1,44 @@
 import {
+  ArrowLeftRight,
   BanknoteArrowDown,
+  BookOpenCheck,
   CalendarCheck,
   CalendarClock,
+  CalendarRange,
   FileClock,
   HandCoins,
   Landmark,
   type LucideIcon,
+  Percent,
   ReceiptText,
   Scale,
   ScrollText,
   ShoppingBasket,
   Undo2,
+  University,
+  UsersRound,
   Wallet,
 } from 'lucide-react'
 import type { RecipeId } from '@/lib/accounting/guides'
 
-/**
- * El ícono de cada receta. Las que entran por el lanzador «¿Qué querés cargar?» llevan el MISMO
- * ícono que su tarjeta de allá: la persona lo reconoce cuando va a cargar.
- */
+/** El ícono de cada receta, en su encabezado. */
 export const RECIPE_ICON: Readonly<Record<RecipeId, LucideIcon>> = {
   cierre: ReceiptText,
   gasto: ShoppingBasket,
   compra: FileClock,
   'sin-factura': ScrollText,
   'pagar-deuda': HandCoins,
+  'plan-semana': CalendarRange,
   'gasto-fijo': CalendarClock,
+  sueldos: UsersRound,
   cobro: BanknoteArrowDown,
   'contar-caja': Scale,
   'mercado-pago': Wallet,
+  banco: University,
   arca: Landmark,
+  impuestos: Percent,
   corregir: Undo2,
+  reimputar: ArrowLeftRight,
+  asiento: BookOpenCheck,
   'fin-de-mes': CalendarCheck,
 }

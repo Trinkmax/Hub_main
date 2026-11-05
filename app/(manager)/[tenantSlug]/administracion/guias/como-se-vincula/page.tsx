@@ -1,8 +1,8 @@
 import { ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { LinksDetail, LinksMap } from '@/components/administracion/guias/uso/links'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { GuideSubHeader } from '@/components/administracion/guias/uso/sub-header'
+import { SimplePage } from '@/components/administracion/planilla'
 import { GUIDE_PATHS } from '@/lib/accounting/guides'
 import { requireGuideAccess } from '../_lib/guide-access'
 
@@ -25,13 +25,11 @@ export default async function GuiaVinculosPage({
   const { base } = await requireGuideAccess(tenantSlug, GUIDE_PATHS.links)
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={{ href: `${base}${GUIDE_PATHS.home}`, label: 'Volver a la guía' }}
-        title="Cómo se vincula cada cosa"
-        badge={<ReadOnlyBadge />}
-        description="Vincular es decirle a la plataforma que dos cosas van juntas: esta plata pagó esta factura, este gasto es el alquiler del mes."
-      />
+    <SimplePage width="narrow">
+      <GuideSubHeader base={base} title="Cómo se vincula cada cosa" />
+      <p className="text-sm text-muted-foreground text-pretty">
+        Vincular es decirle a la plataforma que dos cosas van juntas: esta plata pagó esta factura.
+      </p>
 
       <LinksMap />
       <LinksDetail base={base} />
@@ -46,6 +44,6 @@ export default async function GuiaVinculosPage({
           <ArrowRight aria-hidden className="size-3.5" />
         </Link>
       </p>
-    </AdmPage>
+    </SimplePage>
   )
 }

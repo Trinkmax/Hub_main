@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
-import type { PaperId, StationId } from '@/lib/accounting/guides'
+import type { PaperId } from '@/lib/accounting/guides'
 import { cn } from '@/lib/utils'
 
 /**
- * Los dibujos de la guía, hechos a mano en SVG (server-safe): las cinco estaciones del mapa y
- * los papeles de «Con factura y sin factura». Todos con el mismo trazo (2 px, puntas redondas)
- * para que se lean como una sola mano. Son decorativos: lo que enseñan está escrito al lado.
+ * Los dibujos de la guía, hechos a mano en SVG (server-safe): los papeles de «Con factura y sin
+ * factura» y la unión de «Cómo se vincula». Todos con el mismo trazo (2 px, puntas redondas) para
+ * que se lean como una sola mano. Son decorativos: lo que enseñan está escrito al lado.
  */
 
 function Sketch({
@@ -30,76 +30,6 @@ function Sketch({
     >
       {children}
     </svg>
-  )
-}
-
-/*
- * Los del mapa van sobre el panel verde: tiza crema (`currentColor`) y un detalle dorado por
- * dibujo. Lo dorado que pisa otro trazo se rellena con el verde del panel para taparlo.
- */
-const GOLD = 'stroke-adm-gold'
-const GOLD_OVER = 'fill-adm-hero stroke-adm-gold'
-
-const STATION_ART: Readonly<Record<StationId, ReactNode>> = {
-  // Vendés: el ticket del cierre y la moneda que entra.
-  vender: (
-    <>
-      <path d="M14 8h28v42l-4.7-3.2-4.6 3.2-4.7-3.2-4.7 3.2-4.6-3.2L14 50z" />
-      <path d="M21 18h14M21 25h14M21 32h8" />
-      <circle cx="46" cy="42" r="11" className={GOLD_OVER} />
-      <path
-        d="M46 35.5v13M49.6 39.2c-.8-1-2.1-1.6-3.6-1.6-2 0-3.5 1-3.5 2.4 0 3.2 7.1 1.6 7.1 4.8 0 1.4-1.5 2.4-3.6 2.4-1.5 0-2.8-.6-3.6-1.6"
-        className={GOLD}
-      />
-    </>
-  ),
-  // Comprás y gastás: el cajón con las botellas que llegaron.
-  comprar: (
-    <>
-      <path d="M18 34V24c0-2 2-3 2-5v-7h4v7c0 2 2 3 2 5v10" />
-      <path d="M38 34v-8c0-2 2-3 2-5v-5h4v5c0 2 2 3 2 5v8" className={GOLD} />
-      <path d="M9 34h46l-3 20H12z" />
-      <path d="M10.4 43h43.2" />
-    </>
-  ),
-  // Pagás: el billete y la plata que sale.
-  pagar: (
-    <>
-      <rect x="7" y="27" width="40" height="25" rx="3" />
-      <circle cx="27" cy="39.5" r="5.5" />
-      <path d="M14.5 39.5h.01M39.5 39.5h.01" strokeWidth={3} />
-      <path d="M41 22l14-11.5M45 10h11v11" className={GOLD} />
-    </>
-  ),
-  // Controlás la plata: las monedas contadas, con su tilde.
-  controlar: (
-    <>
-      <ellipse cx="25" cy="25" rx="15" ry="6" />
-      <path d="M10 25v8.5c0 3.3 6.7 6 15 6s15-2.7 15-6V25" />
-      <path d="M10 33.5V42c0 3.3 6.7 6 15 6s15-2.7 15-6v-8.5" />
-      <path d="M10 42v8.5c0 3.3 6.7 6 15 6s15-2.7 15-6V42" />
-      <circle cx="47" cy="17" r="10" className={GOLD_OVER} />
-      <path d="M42.5 17.3l3.2 3.2 6-6.6" className={GOLD} />
-    </>
-  ),
-  // Fin de mes: el almanaque y lo que sale para la contadora.
-  'fin-de-mes': (
-    <>
-      <rect x="8" y="13" width="38" height="38" rx="4" />
-      <path d="M8 24h38M18 8v9M36 8v9" />
-      <path d="M16 32h4M25 32h4M34 32h4M16 41h4M25 41h4" />
-      <path d="M34 49.5l23-9.5-9.5 21-3.8-8.3z" className={GOLD_OVER} />
-      <path d="M43.7 52.7l5.5-5.9" className={GOLD} />
-    </>
-  ),
-}
-
-/** El dibujo de una estación del mapa. Pensado para ir sobre el panel verde. */
-export function StationArt({ id, className }: { id: StationId; className?: string }) {
-  return (
-    <Sketch viewBox="0 0 64 64" className={cn('size-14 text-adm-hero-fg', className)}>
-      {STATION_ART[id]}
-    </Sketch>
   )
 }
 

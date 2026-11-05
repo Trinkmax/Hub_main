@@ -61,6 +61,10 @@ export function FileDropZone({
       }}
       onDrop={(event) => {
         event.preventDefault()
+        // La ranura se queda con el archivo: el arrastre de toda la pantalla (`GlobalDrop`) no se
+        // entera del `drop`, así que se le avisa que terminó para que saque su cartel.
+        event.stopPropagation()
+        window.dispatchEvent(new DragEvent('dragleave', { dataTransfer: event.dataTransfer }))
         setDragging(false)
         take(event.dataTransfer.files)
       }}

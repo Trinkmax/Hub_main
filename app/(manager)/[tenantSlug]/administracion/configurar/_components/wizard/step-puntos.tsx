@@ -13,12 +13,11 @@ import { InvoiceNumber } from '../../../ajustes/_components/invoice-number'
 import type { WizardSalesPoint, WizardState } from '../../_lib/wizard'
 
 /**
- * Paso 4 de la puesta en marcha · «¿Con qué número facturás?».
+ * «¿Ya facturás?», plegado y opcional adentro de «Revisá y arrancá».
  *
  * El dibujo de la factura con su número señalado y, al lado, un renglón por
  * punto de venta (número, nombre y a qué parte del cierre del día va). Si el
- * bar todavía no factura, se sigue sin cargar ninguno: todo queda como venta
- * sin factura, registrado igual.
+ * bar todavía no factura, no se carga ninguno y no pasa nada.
  *
  * Mismo estado (`WizardState.salesPoints`): los renglones en blanco no viajan.
  */
