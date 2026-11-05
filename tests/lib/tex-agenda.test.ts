@@ -1008,16 +1008,15 @@ describe('los datos de contacto no viajan', () => {
     expect(data).toMatchObject({ cobrado: '$ 80.000', personas_pagas: 4, cuantas: 2 })
   })
 
-  it('el tique de una reserva nueva lo muestra enmascarado', () => {
+  it('el tique de una reserva nueva lo muestra entero: lo ve solo quien lo pidió, y lo tiene que revisar', () => {
     const draft = okDraft(
       newReservationDraft(
         newReservationInput.parse({ nombre: 'Ana García', personas: 4, telefono: PHONE_LOCAL }),
         newFacts(),
       ),
     )
-    expectNoContact(draft.ticket)
-    expect(JSON.stringify(draft.ticket)).toContain('…4567')
-    // Lo que recibe la acción, sí, y como lo guarda el formulario.
+    expect(JSON.stringify(draft.ticket)).toContain('+54 9 351 123-4567')
+    // Lo que recibe la acción, y como lo guarda el formulario.
     expect(draft.payload.values.guest_phone).toBe(PHONE)
   })
 
@@ -1036,7 +1035,7 @@ describe('los datos de contacto no viajan', () => {
     expect(createSalonReservationSchema.parse(draft.payload.values).guest_phone).toBe(PHONE)
   })
 
-  it('el tique de un cambio lo muestra enmascarado', () => {
+  it('el tique de un cambio también', () => {
     const draft = okDraft(
       changeReservationDraft(
         reservation({ guest_phone: null }),
@@ -1044,7 +1043,7 @@ describe('los datos de contacto no viajan', () => {
         changeFacts(),
       ),
     )
-    expectNoContact(draft.ticket)
+    expect(JSON.stringify(draft.ticket)).toContain('+54 9 351 123-4567')
     expect(draft.payload.patch.guest_phone).toBe(PHONE)
   })
 
@@ -1287,7 +1286,7 @@ describe('preparar una reserva', () => {
   it('con teléfono nuevo, el tique dice que crea la ficha', () => {
     const { ticket } = okDraft(draftOf({ telefono: PHONE_LOCAL }))
     expect(ticket.rows.find((r) => r.label === 'Cliente')?.value).toBe(
-      '…4567 · se le crea la ficha',
+      '+54 9 351 123-4567 · se le crea la ficha',
     )
   })
 

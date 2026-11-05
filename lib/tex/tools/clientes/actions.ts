@@ -16,7 +16,7 @@ import {
   updateCustomerSchema,
 } from '@/lib/customers/schemas'
 import { listActiveMenu, type MenuItem } from '@/lib/menu/queries'
-import { tryNormalizePhone } from '@/lib/phone'
+import { formatPhoneForDisplay, tryNormalizePhone } from '@/lib/phone'
 import { awardPointsByAmount } from '@/lib/points/actions'
 import { calculatePoints, validateRedeem } from '@/lib/points/engine'
 import { listCustomerLedger, listRewards, listRules, listTiers } from '@/lib/points/queries'
@@ -62,7 +62,6 @@ import {
   customerName,
   isRealBirthdate,
   isUuid,
-  maskEmail,
   nameKey,
   OWNER_OR_CASHIER,
   phoneTail,
@@ -280,8 +279,9 @@ export const clientesActionTools = [
             title: 'Nuevo cliente',
             subtitle: `${values.first_name} ${values.last_name}`,
             rows: rowsOf([
-              ['Teléfono', phoneTail(values.phone)],
-              ['Mail', maskEmail(values.email)],
+              // El tique lo ve solo quien lo pidió, y tiene que poder revisar lo que se va a guardar.
+              ['Teléfono', formatPhoneForDisplay(values.phone)],
+              ['Mail', values.email ?? null],
               ['Nacimiento', dayText(values.birthdate)],
               ['Acepta promos', values.opt_in_marketing ? 'Sí' : 'No'],
               ['No contactar', input.no_contactar ? 'Sí' : null],
@@ -351,9 +351,11 @@ export const clientesActionTools = [
         ['Apellido', change.last_name],
         [
           'Teléfono',
-          change.phone ? `${phoneTail(change.phone)} (antes ${phoneTail(current.phone)})` : null,
+          change.phone
+            ? `${formatPhoneForDisplay(change.phone)} (antes ${phoneTail(current.phone)})`
+            : null,
         ],
-        ['Mail', change.email === undefined ? null : (maskEmail(change.email) ?? 'Sin mail')],
+        ['Mail', change.email === undefined ? null : (change.email ?? 'Sin mail')],
         [
           'Nacimiento',
           change.birthdate === undefined ? null : (dayText(change.birthdate) ?? 'Sin fecha'),

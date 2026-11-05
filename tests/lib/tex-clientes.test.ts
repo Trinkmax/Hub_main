@@ -930,7 +930,7 @@ describe('los datos personales no salen', () => {
     expect(message).toContain('ese teléfono')
   })
 
-  it('el tique muestra el teléfono y el mail enmascarados', async () => {
+  it('el tique muestra el teléfono y el mail enteros: lo ve solo quien lo pidió, y los tiene que revisar', async () => {
     const prepared = asPrepared(
       await run('preparar_cliente', {
         nombre: 'Pedro',
@@ -939,11 +939,8 @@ describe('los datos personales no salen', () => {
         mail: 'pedro.sosa@correo.test',
       }),
     )
-    expect(rowValue(prepared, 'Teléfono')).toBe('…1234')
-    expect(rowValue(prepared, 'Mail')).toBe('p…@correo.test')
-    const ticket = JSON.stringify(prepared.ticket)
-    expect(ticket).not.toContain('6661234')
-    expect(ticket).not.toContain('pedro.sosa')
+    expect(rowValue(prepared, 'Teléfono')).toBe('+54 9 351 666-1234')
+    expect(rowValue(prepared, 'Mail')).toBe('pedro.sosa@correo.test')
   })
 
   it('lo que le vuelve a Tex al confirmar tampoco los trae', async () => {

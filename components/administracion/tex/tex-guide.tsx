@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { usePathname } from 'next/navigation'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { findTexTarget } from './tex-point'
 import { useTex } from './tex-provider'
@@ -48,10 +48,48 @@ export function texPerch(
   }
 }
 
+const BUBBLE_WIDTH_PX = 320
+/** Lo que suele medir el globito: alcanza para decidir si entra abajo. */
+const BUBBLE_ROOM_PX = 170
+
+/**
+ * Dónde va el globito: nunca arriba de lo que se señala, que es lo que la persona tiene que ver. Abajo si
+ * entra; si no, arriba (anclado por abajo, así mida lo que mida no se va de lugar). Puro.
+ */
+export function texBubbleSpot(
+  box: Box,
+  perch: { x: number; y: number },
+  viewport: { width: number; height: number },
+  size: { width: number; height: number },
+  pad = 6,
+): { left: number; top: number | null; bottom: number | null } {
+  const gap = 8
+  const width = Math.min(BUBBLE_WIDTH_PX, viewport.width - 32)
+  const left = Math.max(12, Math.min(perch.x - 40, viewport.width - width - 12))
+  const lowest = Math.max(perch.y + size.height, box.top + box.height + pad)
+  if (lowest + gap + BUBBLE_ROOM_PX <= viewport.height) {
+    return { left, top: lowest + gap, bottom: null }
+  }
+  const highest = Math.min(perch.y, box.top - pad)
+  if (highest - gap - BUBBLE_ROOM_PX >= 0) {
+    return { left, top: null, bottom: viewport.height - highest + gap }
+  }
+  // Lo señalado ocupa casi toda la pantalla: va al pie.
+  return { left, top: null, bottom: 12 }
+}
+
 /**
  * Tex va hasta lo que quiere mostrar: salta por la pantalla, se para al lado, lo marca y dice lo que
  * tenga que decir. La pantalla sigue andando: la marca no bloquea los clics.
  */
+function bubbleStyle(spot: ReturnType<typeof texBubbleSpot>): CSSProperties {
+  return {
+    left: spot.left,
+    ...(spot.top === null ? {} : { top: spot.top }),
+    ...(spot.bottom === null ? {} : { bottom: spot.bottom }),
+  }
+}
+
 export function TexGuide() {
   const { pointing, guide, clearPoint, guideNext, guideClose, mood, talking } = useTex()
   const pathname = usePathname()
@@ -206,15 +244,9 @@ export function TexGuide() {
           animate={{ opacity: 1, y: 0 }}
           className="tex-bubble-note fixed z-40 grid w-[min(20rem,calc(100vw-2rem))] gap-2 px-3.5 py-3 text-sm leading-snug text-pretty"
           style={
-            perch
-              ? {
-                  left: Math.min(Math.max(12, perch.x - 40), viewport.width - 332),
-                  top:
-                    perch.y + 96 + 150 < viewport.height
-                      ? perch.y + 96
-                      : Math.max(12, perch.y - 150),
-                }
-              : { right: 24, bottom: 120 }
+            box && perch
+              ? bubbleStyle(texBubbleSpot(box, perch, viewport, spriteSize, pad))
+              : { right: 16, bottom: 120 }
           }
         >
           {guide ? (

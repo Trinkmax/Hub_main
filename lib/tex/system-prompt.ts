@@ -123,7 +123,11 @@ export function screenHash(screen: { path: string; text: string } | null): strin
 }
 
 /** Quién habla, para que Tex sepa con quién está y qué puede hacer. */
-export function whoIsTalking(role: string, canWriteAccounting: boolean): string {
+export function whoIsTalking(
+  role: string,
+  canWriteAccounting: boolean,
+  canReadAccounting = canWriteAccounting,
+): string {
   switch (role) {
     case 'accountant':
       return 'la contadora (reimputa y hace asientos; no carga compras, pagos ni ventas)'
@@ -132,8 +136,8 @@ export function whoIsTalking(role: string, canWriteAccounting: boolean): string 
     case 'host':
       return 'la anfitriona (reservas, calendario y el tablero de la noche)'
     default:
-      return canWriteAccounting
-        ? 'un dueño, con acceso de carga en Administración'
-        : 'un dueño, que en Administración solo puede mirar o no tiene acceso'
+      if (canWriteAccounting) return 'un dueño, con acceso de carga en Administración'
+      if (canReadAccounting) return 'un dueño, que en Administración solo puede mirar'
+      return 'un dueño sin acceso a Administración: si pide compras, pagos, caja, ventas o libros, decile que le falta ese acceso y que se lo pida a quien administra los accesos'
   }
 }

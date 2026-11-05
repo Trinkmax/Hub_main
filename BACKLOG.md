@@ -1557,24 +1557,16 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **El formulario del evento mueve la fecha sin mirar las reservas.** `moveScheduledEvent` (arrastrar) frena si hay activas;
   `upsertScheduledEvent` (la ficha) no, y no hay nada que lleve las reservas a la fecha nueva. Tex pasa por `moveScheduledEvent`.
 - **`scheduled-event-form` toma `event_date` por defecto de `new Date().toISOString()`:** entre las 21 y las 24 de Córdoba abre en el día siguiente.
-- **Las pantallas del área no leen los parámetros de Tex:** `/reservas?day=`, `/operativo?date=`, `/eventos/programados?month=&day=`,
-  `/mis-numeros` y comisiones `?from=&to=`, `/estadisticas/senas?month=`. Por eso Tex lleva a la ficha de lo que cambió, y no al día.
 
 ## Tex en Clientes y Club: lo que se vio de paso (05/11/2026)
 
-- **La contadora puede leer clientes por `acc_tex_actions`.** `atxa_readers_select` deja leer todas las acciones del bar a
-  quien lee Administración, y esa política se suma a la nueva. El tique trae nombres de clientes y el `payload` de un alta o
-  una edición trae el teléfono y el mail enteros (el ejecutor los necesita), aunque `customers_no_accountant` la deja afuera
-  de la tabla de clientes. Hoy ninguna pantalla lo muestra: haría falta consultarlo a mano con su sesión. Arreglo: acotar esa
-  política a lo de Administración o a quien lo cargó, y vaciar el `payload` al decidir el tique.
 - **`phoneField` no normaliza lo que arranca con `+`** (`lib/customers/schemas.ts`): si es válido lo deja tal cual, con espacios
   y guiones, y así se guardaría sin matchear con nadie. El formulario manda E.164 y no se nota; Tex lo normaliza antes.
 - **Canje con nivel insuficiente:** `redeem_reward` tira `tier_locked` y `humanizeRpcError` no lo conoce, así que el cajero lee
   «No pudimos completar la acción». Tex lo frena antes en el tique.
 - **Ficha › Puntos muestra códigos:** `describeReason` deja pasar `qr_award`, `welcome_bonus` y `event_attendance` tal cual.
-- **Buscador de clientes:** «Juan Pérez» no encuentra a nadie (busca la frase entera en el nombre o en el apellido), «Perez» no
-  encuentra a «Pérez», y un paréntesis rompe el `or` (solo saca `%` y `,`). Tex busca palabra por palabra sin acentos. Además, el
-  filtro por etiqueta de `listCustomers` corre después de paginar: en una base grande da páginas cortas con un total que no cierra.
+- **El filtro por etiqueta de `listCustomers` corre después de paginar:** en una base grande da páginas cortas con un total que no
+  cierra. (El buscador ya encuentra «Juan Pérez» y «Perez»: `lib/customers/search-query.ts`.)
 - **Dos reglas por monto activas se tratan distinto:** Cerrar mesa suma las dos (`calculatePoints`) y Acreditar usa una sola, la de
   mayor prioridad. Nada frena crear la segunda desde Club. Tex pausa la anterior en el mismo tique.
 
@@ -1585,7 +1577,8 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   15 minutos: quien termina y sigue cumpliendo vuelve a entrar. Con un flow de un solo mensaje, un cumpleañero lo recibiría
   cada 15 minutos todo el día, y un inactivo, sin fin. `event_starting` igual, dentro de su hora. Se leyó en el código y en
   las funciones de producción; hoy no pega porque el único flow está apagado y nunca corrió. Arreglo: no volver a enrolar a
-  quien ya terminó en el período. El tique de Tex lo avisa; la pantalla, no.
+  quien ya terminó en el período. **Hay que arreglarlo antes de prender una.** Tex no las prende (`flowRepeatsProblem`); la pantalla
+  no avisa nada.
 - **El conteo de una audiencia no se recalcula solo y Nueva difusión lo muestra como si fuera de hoy.** `customer_count_cached`
   solo cambia al guardar la audiencia (`recalcAudience` y `refreshAudienceCount` no los llama nadie), no descuenta a los que no
   aceptan promos y el formulario dice «Hoy son N» y «Se lo vas a mandar a N». En producción las dos audiencias dicen 5 y hoy le

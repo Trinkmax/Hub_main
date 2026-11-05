@@ -89,6 +89,7 @@ import {
   ORIGIN_OF_WORD,
   ORIGIN_TEXT,
   ORIGIN_WORDS,
+  phoneForTicket,
   realDay,
   SEGMENT_OF_WORD,
   SERVICE_WORDS,
@@ -456,7 +457,7 @@ export function newReservationDraft(
       customer
         ? `Ya es cliente${customer.phone ? ` (${maskPhone(customer.phone)})` : ''}`
         : phone
-          ? `${maskPhone(phone)} · se le crea la ficha`
+          ? `${phoneForTicket(phone)} · se le crea la ficha`
           : null,
     ),
     ...row('Instagram', input.instagram ? 'Cargado' : null),
@@ -765,7 +766,7 @@ export function changeReservationDraft(
   }
   if (input.telefono) {
     patch.guest_phone = normalizedPhone(input.telefono)
-    rows.push({ label: 'Teléfono', value: maskPhone(input.telefono) ?? 'Cargado' })
+    rows.push({ label: 'Teléfono', value: phoneForTicket(input.telefono) })
   }
   if (input.instagram !== undefined) {
     patch.guest_instagram = input.instagram || null

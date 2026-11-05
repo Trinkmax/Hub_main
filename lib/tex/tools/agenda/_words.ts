@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import type { AccSimpleState } from '@/lib/accounting/action-state'
 import { isRealIsoDay } from '@/lib/dates'
-import { tryNormalizePhone } from '@/lib/phone'
+import { formatPhoneForDisplay, tryNormalizePhone } from '@/lib/phone'
 import type { ServiceAlert } from '@/lib/salon/alerts'
 import { salonStatusEnum } from '@/lib/salon/schemas'
 import type { ConfigurableSegmentKey, FloorZone, SegmentKey } from '@/lib/salon/segments'
@@ -198,6 +198,11 @@ export function maskPhone(phone: string | null | undefined): string | null {
  */
 export function normalizedPhone(raw: string): string {
   return tryNormalizePhone(raw) ?? raw.trim()
+}
+
+/** En el tique, que lo ve solo quien lo pidió, va entero: tiene que poder revisar lo que se va a guardar. */
+export function phoneForTicket(raw: string): string {
+  return formatPhoneForDisplay(normalizedPhone(raw))
 }
 
 const MAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g

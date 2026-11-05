@@ -1,6 +1,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import type { ListFilters } from './schemas'
+import { nameFilter, parseCustomerQuery } from './search-query'
 
 export type CustomerListRow = {
   id: string
@@ -40,17 +41,10 @@ export async function listCustomers(opts: {
     .order('created_at', { ascending: false })
 
   if (filters.q) {
-    const q = filters.q
-    const isDigits = /^[\d+\s\-()]+$/.test(q)
-    if (isDigits) {
-      // Match parcial sobre phone
-      const digits = q.replace(/\D/g, '')
-      query = query.ilike('phone', `%${digits}%`)
-    } else {
-      // Texto: trigram en first/last name
-      const safe = q.replace(/[%,]/g, '')
-      query = query.or(`first_name.ilike.%${safe}%,last_name.ilike.%${safe}%`)
-    }
+    // Palabra por palabra y sin acentos: «Juan Perez» encuentra a Juan Pérez.
+    const { names, phone } = parseCustomerQuery(filters.q)
+    for (const name of names) query = query.or(nameFilter(name))
+    if (phone) query = query.ilike('phone', `%${phone}%`)
   }
 
   if (filters.since === '30d') {

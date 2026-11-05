@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { texSuggestions } from '@/components/administracion/tex/suggestions'
 import { spriteRects, TEX_FACES } from '@/components/administracion/tex/tex-face'
-import { texPerch } from '@/components/administracion/tex/tex-guide'
+import { texBubbleSpot, texPerch } from '@/components/administracion/tex/tex-guide'
 import { parseTexBlocks, safeTexHref } from '@/components/administracion/tex/tex-markdown'
 import { normalizeTexText, rankTexMatch } from '@/components/administracion/tex/tex-point'
 import {
@@ -275,6 +275,8 @@ describe('lo que sabe Tex', () => {
     expect(whoIsTalking('editor', false)).toContain('carta')
     expect(whoIsTalking('host', false)).toContain('reservas')
     expect(whoIsTalking('owner', false)).toContain('dueño')
+    expect(whoIsTalking('owner', false, true)).toContain('solo puede mirar')
+    expect(whoIsTalking('owner', false, false)).toContain('le falta ese acceso')
   })
 })
 
@@ -365,6 +367,40 @@ describe('lo que dice Tex: un lector chico y seguro', () => {
     expect(safeTexHref('/hub/clientes/abc', 'hub')).toBe('/hub/clientes/abc')
     expect(safeTexHref('/hub', 'hub')).toBe('/hub')
     expect(safeTexHref('javascript:alert(1)', 'hub')).toBeNull()
+  })
+})
+
+describe('el globito de lo que Tex señala', () => {
+  const phone = { width: 390, height: 844 }
+  const size = { width: 110, height: 88 }
+  const spot = (box: { left: number; top: number; width: number; height: number }, v = phone) =>
+    texBubbleSpot(box, texPerch(box, v, size), v, size)
+
+  it('no tapa lo señalado: un título a lo ancho arriba de todo deja el globito abajo', () => {
+    const box = { left: 16, top: 100, width: 358, height: 30 }
+    const { top } = spot(box)
+    expect(top).toBeGreaterThanOrEqual(box.top + box.height)
+  })
+
+  it('con lo señalado abajo de todo va arriba, anclado por abajo', () => {
+    const box = { left: 250, top: 770, width: 120, height: 50 }
+    const placed = spot(box)
+    expect(placed.top).toBeNull()
+    expect(phone.height - (placed.bottom as number)).toBeLessThanOrEqual(box.top)
+  })
+
+  it('en un celular chico no se va de la pantalla', () => {
+    const small = { width: 320, height: 568 }
+    for (const left of [0, 100, 300]) {
+      const placed = spot({ left, top: 200, width: 20, height: 20 }, small)
+      expect(placed.left).toBeGreaterThanOrEqual(12)
+      expect(placed.left + Math.min(320, small.width - 32)).toBeLessThanOrEqual(small.width)
+    }
+  })
+
+  it('si lo señalado ocupa casi toda la pantalla, va al pie', () => {
+    const placed = spot({ left: 0, top: 40, width: 390, height: 780 })
+    expect(placed).toMatchObject({ top: null, bottom: 12 })
   })
 })
 
