@@ -35,7 +35,7 @@ import { isPhoneScreen } from './use-phone'
 
 /**
  * El estado de Tex en el navegador: la charla, cómo está de ánimo y qué está señalando. Vive en el
- * marco de Administración, así la charla sigue cuando la persona cambia de pantalla.
+ * marco del panel de gestión, así la charla sigue cuando la persona cambia de pantalla.
  */
 
 export type TexPointing = { text: string; note: string | null; id: number }

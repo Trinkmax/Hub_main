@@ -1,6 +1,5 @@
 'use client'
 
-import { format } from 'date-fns'
 import {
   Check,
   CheckCheck,
@@ -21,6 +20,7 @@ import {
   renderSentTemplate,
   type TemplateLite,
 } from '@/lib/bandeja/template-view'
+import { timeInCordoba } from '@/lib/dates'
 import { markConversationRead } from '@/lib/meta/actions'
 import { createClient, realtimeAuthReady } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
@@ -426,7 +426,7 @@ export function MessageThread({
                       )}
                     >
                       <span className="tabular-nums">
-                        {format(new Date(m.sent_at ?? m.created_at), 'HH:mm')}
+                        {timeInCordoba(m.sent_at ?? m.created_at)}
                       </span>
                       {outbound ? <StatusTicks status={m.status} /> : null}
                     </span>

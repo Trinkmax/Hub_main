@@ -2,7 +2,7 @@
 
 export const TEX_OPEN_EVENT = 'tex:open'
 
-/** ¿Está Tex en esta pantalla? Solo existe en Administración, y solo con la clave de la API. */
+/** ¿Está Tex en esta pantalla? Existe en todo el panel de gestión, y solo con la clave de la API. */
 export function texAvailable(): boolean {
   return typeof document !== 'undefined' && document.documentElement.dataset.tex !== undefined
 }

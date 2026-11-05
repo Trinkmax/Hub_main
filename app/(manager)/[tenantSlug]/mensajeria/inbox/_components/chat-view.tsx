@@ -2,6 +2,7 @@ import { getConversation, listMessages } from '@/lib/bandeja/queries'
 import type { TemplateLite } from '@/lib/bandeja/template-view'
 import { getTagsForConversationIds, listConversationTags } from '@/lib/conversation-tags/queries'
 import { getCustomerById } from '@/lib/customers/queries'
+import { isoDayInCordoba, timeInCordoba } from '@/lib/dates'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { listTiers } from '@/lib/points/queries'
 import { progressToNext, type TierProgress } from '@/lib/points/tiers'
@@ -81,8 +82,9 @@ export async function ChatView({
   let replyUntil: string | null = null
   if (insideWindow && lastInboundMs > 0) {
     const expiry = new Date(lastInboundMs + 24 * 3600 * 1000)
-    const hora = expiry.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-    const sameDay = expiry.toDateString() === new Date().toDateString()
+    // En el reloj del bar: el servidor corre en UTC y daría tres horas de más.
+    const hora = timeInCordoba(expiry)
+    const sameDay = isoDayInCordoba(expiry) === isoDayInCordoba(new Date())
     replyUntil = sameDay ? `las ${hora}` : `mañana a las ${hora}`
   }
   const assignedTags = tagsMap.get(conversationId) ?? []

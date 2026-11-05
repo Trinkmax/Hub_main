@@ -6,12 +6,13 @@ import {
   formatRelativeDays,
 } from '@/lib/bandeja/format'
 
-// Sábado 18/07/2026 15:00 local como "ahora" fijo
-const NOW = new Date(2026, 6, 18, 15, 0, 0)
-
+/** Una hora en el reloj del bar (Córdoba, UTC-3 todo el año), sea cual sea la zona de quien corre la prueba. */
 function local(y: number, m: number, d: number, h = 12, min = 30): string {
-  return new Date(y, m - 1, d, h, min).toISOString()
+  return new Date(Date.UTC(y, m - 1, d, h + 3, min)).toISOString()
 }
+
+// Sábado 18/07/2026 15:00 en el bar como "ahora" fijo
+const NOW = new Date(local(2026, 7, 18, 15, 0))
 
 describe('formatListTimestamp', () => {
   it('hoy → HH:mm', () => {
@@ -49,6 +50,19 @@ describe('formatDaySeparator', () => {
 
   it('más viejo → fecha completa en es', () => {
     expect(formatDaySeparator(local(2026, 6, 2), NOW)).toBe('2 de junio de 2026')
+  })
+})
+
+describe('el reloj del bar, aunque el servidor corra en UTC', () => {
+  it('a las 22 del bar ya es mañana en UTC: sigue siendo hoy', () => {
+    const lateNow = new Date(local(2026, 7, 18, 23, 0))
+    expect(formatListTimestamp(local(2026, 7, 18, 22, 0), lateNow)).toBe('22:00')
+    expect(formatDaySeparator(local(2026, 7, 18, 22, 0), lateNow)).toBe('Hoy')
+    expect(dayKey(local(2026, 7, 18, 22, 0))).toBe('2026-07-18')
+  })
+
+  it('las 14:10 del bar no salen como 17:10', () => {
+    expect(formatListTimestamp('2026-07-18T17:10:00.000Z', NOW)).toBe('14:10')
   })
 })
 
