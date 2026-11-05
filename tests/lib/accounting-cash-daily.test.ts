@@ -246,7 +246,7 @@ describe('buildCashDailyViews: lo que elige el selector', () => {
     expect(all?.series.points.map((p) => p.balanceCents)).toEqual([300_000, 350_000, 350_000])
     // Los $ 1.000 que pasaron de la caja al banco no entraron ni salieron.
     expect(all?.series).toMatchObject({ upCents: 50_000, downCents: 0, closingCents: 350_000 })
-    expect(all?.note).toContain('Mover plata de una caja a otra no cuenta')
+    expect(all?.note).toContain('Transferir de una cuenta a otra no cuenta')
     expect(all?.note).toContain('tarjetas de la empresa van aparte')
   })
 
@@ -262,7 +262,7 @@ describe('buildCashDailyViews: lo que elige el selector', () => {
       { today: '2026-10-12' },
     )
     expect(without[0]?.note).toBe(
-      'Mover plata de una caja a otra no cuenta como entrada ni como salida.',
+      'Transferir de una cuenta a otra no cuenta como entrada ni como salida.',
     )
   })
 

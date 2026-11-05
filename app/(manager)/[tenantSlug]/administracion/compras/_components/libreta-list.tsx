@@ -1,47 +1,40 @@
-import { FilePlus2 } from 'lucide-react'
+import { CornerDownRight } from 'lucide-react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
-import { Amount } from '@/components/administracion/amount'
-import { plural } from '@/components/administracion/format'
+import { StatusPill } from '@/components/administracion/kit'
 import {
-  categoryShortName,
-  LedgerGroup,
-  LedgerList,
-  LedgerRail,
-  LedgerRow,
-  PillLink,
-  StatusPill,
-} from '@/components/administracion/kit'
+  PHONE_FIT,
+  PHONE_HIDDEN,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+  PTotalRow,
+  ROW_ACTION,
+} from '@/components/administracion/planilla'
 import { ActionButton } from '@/components/administracion/quick-actions'
-import { Button } from '@/components/ui/button'
+import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
-import { formatDayMonth } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import {
   type LibretaEntry,
   type LibretaView,
-  ledgerRail,
   supplierDisplayName,
   supplierShortName,
 } from '../_lib/libreta'
 import { comprasHref, newPurchaseHref, supplierHref } from '../_lib/links'
 import { SUPPLIER_FILTERS, type SupplierFilterValue, supplierRowActions } from '../_lib/suppliers'
-import { BulkSuppliersDialog } from './bulk-suppliers-dialog'
-import { DebtBar } from './debt-bar'
-import { ExportButton } from './export-button'
 import { LiveSearch } from './list-filters'
-import { SupplierAccountButton } from './supplier-account-picker'
+import { NoAmount, ROW_ACTIONS_CELL, ROW_BUTTON, ROW_LINK, SheetControls } from './planilla-bits'
+import { Segment, type SegmentItem } from './segment'
 import { SupplierRowMenu } from './supplier-row-menu'
+import { SuppliersMenu } from './suppliers-menu'
 
 /**
- * La barra de la libreta: el buscador (busca mientras se escribe), los filtros
- * como píldoras con su contador (la elegida, rellena en tinta) y, calladas a la
- * derecha, «Agregar de una lista» y «Exportar saldos» (en el celular, debajo de
- * la hoja: no pueden demorar al primer proveedor).
- *
- * Los filtros viven en la URL (`?filtro=`): cada píldora es un link, así la
- * lista se comparte y «atrás» funciona. El contador de cada una sale de la
- * misma lectura que la lista (`libretaView`): nunca dicen distinto.
+ * Arriba de la planilla: la búsqueda (busca mientras se escribe), el filtro y el «⋯» con lo de cada
+ * tanto. El filtro vive en la URL (`?filtro=`) y cada contador sale de la misma lectura que la lista
+ * (`libretaView`): nunca dicen distinto. «Sin categoría» no se ofrece: se llega por «Clasificar
+ * proveedores» y, si está elegido, se ve.
  */
 export function LibretaToolbar({
   tenantSlug,
@@ -63,352 +56,232 @@ export function LibretaToolbar({
   exportHref: string
   exportFileName: string
 }) {
+  const items: SegmentItem[] = SUPPLIER_FILTERS.filter(
+    (f) => !f.unclassifiedOnly || f.value === filter,
+  ).map((f) => ({
+    key: f.value,
+    label: f.label,
+    href: comprasHref(tenantSlug, 'proveedores', {
+      filtro: f.value === 'todos' ? null : f.value,
+      vista: f.unclassifiedOnly ? 'lista' : null,
+      q: q || null,
+    }),
+    active: f.value === filter,
+    count: f.value === 'todos' ? undefined : counts[f.value],
+  }))
+
   return (
-    // Sin lugar para una fila (celular, tablet) la barra se desarma (`contents`): el buscador y
-    // los filtros quedan arriba de la hoja y lo de cada tanto («Agregar de una lista»,
-    // «Exportar saldos») baja al final de la pantalla. Quien la monta es una columna `flex`.
-    <div className="space-y-3 max-lg:contents">
-      <div className="flex flex-col gap-3 max-lg:contents lg:flex-row lg:items-center">
-        <LiveSearch
-          placeholder="Buscar un proveedor o un CUIT"
-          className="w-full lg:max-w-sm lg:flex-1"
+    <SheetControls>
+      <LiveSearch placeholder="Buscar un proveedor o un CUIT" className="w-full sm:w-64" />
+      <Segment label="Qué proveedores ver" items={items} />
+      <div className="ml-auto flex items-center gap-2">
+        <ReadOnlyBadge />
+        <SuppliersMenu
+          tenantSlug={tenantSlug}
+          canWrite={canWrite}
+          existingNames={existingNames}
+          classifyHref={comprasHref(tenantSlug, 'proveedores', { filtro: 'sin-clasificar' })}
+          unclassified={counts['sin-clasificar']}
+          exportHref={exportHref}
+          exportFileName={exportFileName}
         />
-        <div className="flex flex-wrap items-center gap-1 max-lg:order-last lg:ml-auto">
-          {canWrite ? (
-            <BulkSuppliersDialog
-              tenantSlug={tenantSlug}
-              existingNames={existingNames}
-              variant="ghost"
-              className="h-11 gap-2 text-muted-foreground hover:text-foreground md:h-9"
-            />
-          ) : null}
-          <ExportButton
-            href={exportHref}
-            fileName={exportFileName}
-            label="Exportar saldos"
-            variant="ghost"
-            className="h-11 text-muted-foreground hover:text-foreground md:h-9"
-          />
-        </div>
       </div>
-      <nav aria-label="Qué proveedores ver" className="max-lg:-mt-2">
-        {/* En el celular la fila desliza, con desvanecido a la derecha: se nota que sigue. */}
-        <ul className="-mx-4 flex items-center gap-1.5 overflow-x-auto px-4 py-1 [scrollbar-width:none] max-sm:pr-10 max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
-          {SUPPLIER_FILTERS.map((f) => (
-            <li key={f.value} className="shrink-0">
-              <PillLink
-                href={comprasHref(tenantSlug, 'proveedores', {
-                  filtro: f.value === 'todos' ? null : f.value,
-                  q: q || null,
-                })}
-                scroll={false}
-                active={f.value === filter}
-                // Sin pastilla cuando es cero: un «0» al lado de cada filtro es ruido.
-                count={counts[f.value] > 0 ? counts[f.value] : undefined}
-                className="h-11 md:pointer-fine:h-9"
-              >
-                {f.label}
-              </PillLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </div>
+    </SheetControls>
   )
 }
 
-/** La línea gris de un renglón: su categoría (o el botón para elegirla) y la última compra. */
-function RowMeta({
-  entry,
-  canPick,
-  compact = false,
-}: {
-  entry: LibretaEntry
-  /** Se le puede elegir la categoría desde acá (quien carga, con el plan leído). */
-  canPick: boolean
-  compact?: boolean
-}) {
-  const { row, info, state } = entry
-  const bits: ReactNode[] = []
-  if (row.partyKind !== 'supplier') {
-    bits.push(
-      <StatusPill key="kind" tone="muted">
-        {PARTY_KIND_LABELS[row.partyKind] ?? 'Otro'}
-      </StatusPill>,
-    )
-  }
-  if (!row.active) {
-    bits.push(
-      <StatusPill key="off" tone="muted">
-        Inactivo
-      </StatusPill>,
-    )
-  }
-  if (state === 'classified' && info?.defaultAccountName) {
-    bits.push(
-      <span key="cat" className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary/60" />
-        <span className="truncate" title={info.defaultAccountName}>
-          {categoryShortName(info.defaultAccountName)}
-        </span>
-      </span>,
-    )
-  } else if (state === 'unclassified') {
-    bits.push(
-      canPick ? (
-        <SupplierAccountButton
-          key="cat"
-          partyId={row.partyId}
-          supplierName={supplierShortName(row)}
-          hasAccount={false}
-        />
-      ) : (
-        <span key="cat">Sin categoría</span>
-      ),
-    )
-  }
-  if (row.lastIncreaseDate) {
-    bits.push(
-      <span key="last" className="whitespace-nowrap tabular-nums">
-        última compra {formatDayMonth(row.lastIncreaseDate)}
-      </span>,
-    )
-  }
-  if (bits.length === 0) return null
-  return (
-    <span
-      className={
-        compact
-          ? 'flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs'
-          : 'flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]'
-      }
-    >
-      {bits}
-    </span>
-  )
+/** Plata en una columna: la raya si no hay nada. */
+function Money({ cents, className }: { cents: number; className?: string }) {
+  if (cents === 0) return <NoAmount />
+  return <span className={className}>{formatCentsShort(cents)}</span>
 }
 
 /**
- * La libreta: UNA hoja con el margen de cuaderno. A la izquierda de la raya,
- * desde cuándo o para cuándo («vencido hace 12 días»); en el medio, quién, en
- * qué le comprás y su deuda dibujada; a la derecha, cuánto le debés y la acción
- * del momento, [Pagar].
+ * La planilla de proveedores: Proveedor · Vencido · Esta semana · Saldo y, al pasar, [Pagar] y el ⋯.
+ * Toda la fila lleva a su cuenta corriente. Saldo es lo que se le debe (la misma suma que «Le debés»
+ * de arriba); lo que hay a favor no se resta hasta que se usa en un pago: se dice en su fila.
  *
- * Tres grupos: «Les debés» (lo más vencido arriba), «Tenés a favor» y «Sin
- * deuda» (renglones angostos; los que no entran, detrás de «Ver los N que
- * faltan»). La lista no se reordena al tocar nada.
- *
- * La contadora ve los mismos renglones sin [Pagar], sin ⋯, sin «Elegir
- * categoría» y sin «Cargarle una compra»: la página se lo pasa con
- * `canWrite={false}` y con `pickable` vacío.
- *
- * Sin renglones no dibuja nada: el vacío lo decide quien la monta.
+ * La contadora ve las mismas filas, sin [Pagar] y sin ⋯. Sin filas no dibuja nada: el vacío lo decide
+ * quien la monta.
  */
 export function LibretaList({
   tenantSlug,
   view,
-  today,
   canWrite,
   pickable,
   backHref,
 }: {
   tenantSlug: string
   view: LibretaView
-  today: string
   canWrite: boolean
-  /** A quiénes se les puede elegir la categoría desde el renglón. */
+  /** A quiénes se les puede elegir la categoría desde el ⋯ de la fila. */
   pickable: ReadonlySet<string>
-  /** A dónde vuelve «Cargarle una compra» al guardar: a esta lista, como estaba. */
+  /** A dónde vuelve «Compra» al guardar: a esta lista, como estaba. */
   backHref: string
 }) {
   if (view.shown.length === 0) return null
 
-  const menuOf = (entry: LibretaEntry): ReactNode => {
-    if (!canWrite) return undefined
-    const { row, state } = entry
-    const actions = supplierRowActions(row)
+  const row = (entry: LibretaEntry) => {
+    const { row: party, state } = entry
+    const name = supplierShortName(party)
+    const full = supplierDisplayName(party)
+    const owes = party.debtCents > 0
+    const actions = supplierRowActions(party)
     return (
-      <SupplierRowMenu
-        partyId={row.partyId}
-        name={supplierShortName(row)}
-        buyHref={
-          actions.canBuy
-            ? newPurchaseHref(tenantSlug, { proveedor: row.partyId, volver: backHref })
-            : null
-        }
-        canPay={actions.canPay}
-        hasDebt={row.debtCents > 0}
-        account={pickable.has(row.partyId) ? (state === 'unclassified' ? 'pick' : 'change') : null}
-        libretaHref={supplierHref(tenantSlug, row.partyId)}
-      />
-    )
-  }
-
-  const fullRow = (entry: LibretaEntry) => {
-    const { row } = entry
-    const rail = ledgerRail(row, today)
-    const owes = row.debtCents > 0
-    const later = Math.max(0, row.debtCents - row.overdueCents - row.dueSoonCents)
-    const partlyOverdue = row.overdueCents > 0 && row.overdueCents < row.debtCents
-    return (
-      <LedgerRow
-        key={row.partyId}
-        rail={rail ? <LedgerRail {...rail} /> : undefined}
-        title={supplierDisplayName(row)}
-        href={supplierHref(tenantSlug, row.partyId)}
-        muted={!row.active}
-        meta={<RowMeta entry={entry} canPick={canWrite && pickable.has(row.partyId)} />}
-        bar={
-          owes ? (
-            <DebtBar
-              overdueCents={row.overdueCents}
-              soonCents={row.dueSoonCents}
-              laterCents={later}
-              maxCents={view.maxDebtCents}
-            />
-          ) : undefined
-        }
-        amount={
-          <>
-            <span className="block text-[11px] font-normal text-muted-foreground">
-              {owes ? 'Le debés' : 'Tenés a favor'}
+      <PRow
+        key={party.partyId}
+        className={cn('relative', !party.active && 'text-muted-foreground')}
+      >
+        <PTd className="max-w-[24rem] max-sm:max-w-44">
+          <span className="flex min-w-0 items-center gap-2">
+            <Link
+              href={supplierHref(tenantSlug, party.partyId)}
+              title={full}
+              className={cn(ROW_LINK, 'min-w-0 truncate')}
+            >
+              {full}
+            </Link>
+            {party.partyKind !== 'supplier' ? (
+              <StatusPill tone="muted" className="h-5">
+                {PARTY_KIND_LABELS[party.partyKind] ?? 'Otro'}
+              </StatusPill>
+            ) : null}
+            {party.active ? null : (
+              <StatusPill tone="muted" className="h-5">
+                Inactivo
+              </StatusPill>
+            )}
+          </span>
+        </PTd>
+        <PTd align="right" className={PHONE_HIDDEN}>
+          <Money cents={party.overdueCents} className="text-destructive" />
+        </PTd>
+        <PTd align="right" className={PHONE_HIDDEN}>
+          <Money cents={party.dueSoonCents} />
+        </PTd>
+        {/* En el celular no está la columna Vencido: el saldo vencido se dice con el color. */}
+        <PTd
+          align="right"
+          className={cn('font-semibold', party.overdueCents > 0 && 'max-sm:text-destructive')}
+        >
+          {owes ? (
+            formatCentsShort(party.debtCents)
+          ) : party.creditCents > 0 ? (
+            <span className="font-normal text-success">
+              A favor {formatCentsShort(party.creditCents)}
             </span>
-            <Amount
-              cents={owes ? row.debtCents : row.creditCents}
-              decimals={0}
-              className="text-base"
-            />
-          </>
-        }
-        amountNote={
-          owes && (partlyOverdue || row.creditCents > 0) ? (
-            <>
-              {partlyOverdue ? (
-                <span className="block whitespace-nowrap text-destructive">
-                  {formatCentsShort(row.overdueCents)} vencido
-                </span>
+          ) : (
+            <NoAmount />
+          )}
+          {owes && party.creditCents > 0 ? (
+            <span className="block text-xs font-normal text-success">
+              {formatCentsShort(party.creditCents)} a favor
+            </span>
+          ) : null}
+        </PTd>
+        {canWrite ? (
+          <PTd className={ROW_ACTIONS_CELL}>
+            <span className={cn('inline-flex items-center justify-end gap-0.5', ROW_ACTION)}>
+              {owes ? (
+                <ActionButton
+                  action="pagar"
+                  params={{ proveedor: party.partyId }}
+                  variant="outline"
+                  size="sm"
+                  className={ROW_BUTTON}
+                  aria-label={`Pagarle a ${name}`}
+                >
+                  Pagar
+                </ActionButton>
               ) : null}
-              {row.creditCents > 0 ? (
-                <span className="block whitespace-nowrap">
-                  {formatCentsShort(row.creditCents)} a favor
-                </span>
-              ) : null}
-            </>
-          ) : undefined
-        }
-        action={
-          canWrite && owes ? (
-            <ActionButton
-              action="pagar"
-              params={{ proveedor: row.partyId }}
-              variant="outline"
-              className="h-11 rounded-full px-5 md:h-9"
-              aria-label={`Pagarle a ${supplierShortName(row)}`}
-            >
-              Pagar
-            </ActionButton>
-          ) : undefined
-        }
-        menu={menuOf(entry)}
-      />
+              <SupplierRowMenu
+                partyId={party.partyId}
+                name={name}
+                buyHref={
+                  actions.canBuy
+                    ? newPurchaseHref(tenantSlug, { proveedor: party.partyId, volver: backHref })
+                    : null
+                }
+                paidHref={
+                  actions.canBuy
+                    ? newPurchaseHref(tenantSlug, {
+                        modo: 'pago',
+                        proveedor: party.partyId,
+                        volver: backHref,
+                      })
+                    : null
+                }
+                canPay={actions.canPay}
+                hasDebt={owes}
+                account={
+                  pickable.has(party.partyId)
+                    ? state === 'unclassified'
+                      ? 'pick'
+                      : 'change'
+                    : null
+                }
+                libretaHref={supplierHref(tenantSlug, party.partyId)}
+              />
+            </span>
+          </PTd>
+        ) : null}
+      </PRow>
     )
   }
-
-  const denseRow = (entry: LibretaEntry) => {
-    const { row } = entry
-    const actions = supplierRowActions(row)
-    const name = supplierShortName(row)
-    return (
-      <LedgerRow
-        key={row.partyId}
-        dense
-        title={supplierDisplayName(row)}
-        href={supplierHref(tenantSlug, row.partyId)}
-        muted={!row.active}
-        meta={<RowMeta entry={entry} canPick={canWrite && pickable.has(row.partyId)} compact />}
-        action={
-          canWrite && actions.canBuy ? (
-            <Button
-              asChild
-              variant="ghost"
-              className="h-11 gap-2 rounded-full px-3 text-muted-foreground hover:text-foreground max-sm:w-11 max-sm:px-0 md:h-9"
-            >
-              <Link
-                href={newPurchaseHref(tenantSlug, { proveedor: row.partyId, volver: backHref })}
-                aria-label={`Cargarle una compra a ${name}`}
-              >
-                <FilePlus2 aria-hidden className="size-4" />
-                {/* En el celular va solo el ícono: el nombre necesita el ancho. */}
-                <span aria-hidden className="max-sm:hidden">
-                  Cargarle una compra
-                </span>
-              </Link>
-            </Button>
-          ) : undefined
-        }
-        menu={menuOf(entry)}
-      />
-    )
-  }
-
-  const debtCents = view.debt.reduce((sum, e) => sum + e.row.debtCents, 0)
-  const creditOnlyCents = view.credit.reduce((sum, e) => sum + e.row.creditCents, 0)
-  const settledCount = view.settled.length + view.settledMore.length
 
   return (
-    <LedgerList
-      aria-label="Proveedores"
-      footer={
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p>
-            {/* Sin deuda entre los que se ven no se escribe un «$ 0»: se dice. */}
-            {view.totals.debtCents > 0 ? (
-              <>
-                Total: le debés{' '}
-                <strong className="font-semibold whitespace-nowrap text-foreground tabular-nums">
-                  {formatCentsShort(view.totals.debtCents)}
-                </strong>
-              </>
-            ) : (
-              'A estos no les debés nada'
-            )}
-            {view.totals.creditCents > 0 ? (
-              <span className="whitespace-nowrap">
-                {' '}
-                · a favor {formatCentsShort(view.totals.creditCents)}
+    <PTable label="Proveedores" minWidth={canWrite ? 620 : 520} className={PHONE_FIT}>
+      <thead>
+        <tr>
+          <PTh>Proveedor</PTh>
+          <PTh align="right" className={PHONE_HIDDEN}>
+            Vencido
+          </PTh>
+          <PTh align="right" className={PHONE_HIDDEN}>
+            Esta semana
+          </PTh>
+          <PTh align="right">Saldo</PTh>
+          {canWrite ? (
+            <PTh>
+              <span className="sr-only">Acciones</span>
+            </PTh>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>{view.shown.map(row)}</tbody>
+      <tfoot>
+        <PTotalRow>
+          <PTd>
+            Total
+            {view.shown.length > 1 ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums max-sm:hidden">
+                {view.shown.length} proveedores
               </span>
             ) : null}
-          </p>
-          <p className="text-xs">
-            Mostrando {plural(view.shown.length, 'proveedor', 'proveedores')}
-          </p>
-        </div>
-      }
+          </PTd>
+          <PTd align="right" className={PHONE_HIDDEN}>
+            {formatCentsShort(view.totals.overdueCents)}
+          </PTd>
+          <PTd align="right" className={PHONE_HIDDEN}>
+            {formatCentsShort(view.totals.dueSoonCents)}
+          </PTd>
+          <PTd align="right">{formatCentsShort(view.totals.debtCents)}</PTd>
+          {canWrite ? <PTd /> : null}
+        </PTotalRow>
+      </tfoot>
+    </PTable>
+  )
+}
+
+/** La salida de la lista filtrada por «Sin categoría» hacia el mazo de fichas. */
+export function ClassifyHint({ tenantSlug }: { tenantSlug: string }) {
+  return (
+    <Link
+      href={comprasHref(tenantSlug, 'proveedores', { filtro: 'sin-clasificar' })}
+      className="inline-flex min-h-10 items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
     >
-      <LedgerGroup title="Les debés" count={view.debt.length} aside={formatCentsShort(debtCents)}>
-        {view.debt.map(fullRow)}
-      </LedgerGroup>
-      <LedgerGroup
-        title="Tenés a favor"
-        count={view.credit.length}
-        aside={formatCentsShort(creditOnlyCents)}
-      >
-        {view.credit.map(fullRow)}
-      </LedgerGroup>
-      <LedgerGroup
-        title="Sin deuda"
-        count={settledCount}
-        more={
-          view.settledMore.length > 0
-            ? {
-                label: `Ver los ${view.settledMore.length} que faltan`,
-                children: view.settledMore.map(denseRow),
-              }
-            : undefined
-        }
-      >
-        {view.settled.map(denseRow)}
-      </LedgerGroup>
-    </LedgerList>
+      <CornerDownRight aria-hidden className="size-3.5" />
+      Clasificarlos de a uno
+    </Link>
   )
 }

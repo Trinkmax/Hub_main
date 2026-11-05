@@ -9,7 +9,6 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
 } from 'react'
@@ -18,7 +17,7 @@ import { useAccounting } from '@/components/administracion/accounting-provider'
 import { cn } from '@/lib/utils'
 import {
   LAUNCHER_DESCRIPTION,
-  LAUNCHER_GROUPS,
+  LAUNCHER_DROP_HINT,
   LAUNCHER_ITEMS,
   LAUNCHER_TITLE,
   type LauncherItem,
@@ -80,86 +79,61 @@ function Opening({ className }: { className?: string }) {
   )
 }
 
-/**
- * Lo de todos los días: una tarjeta grande, con el ícono relleno de marca y el título en la
- * tipografía de los títulos. Son dos, lado a lado también en el celular (ahí el texto va debajo
- * del ícono).
- */
-function FeatureDoor(props: DoorProps) {
+/** Una de las cuatro de todos los días: un renglón grande, con su número de teclado en la compu. */
+function MainDoor(props: DoorProps) {
   const { item, state } = props
-  const Icon = item.icon
   return (
     <Door
       {...props}
       className={cn(
-        'group card-hairline press-lift grid h-full w-full grid-cols-[auto_1fr] content-start items-center gap-x-3 gap-y-3 rounded-2xl border bg-card p-3.5 text-left shadow-xs hover:border-primary/30 hover:shadow-md sm:grid-cols-[auto_1fr_auto] sm:content-center sm:gap-x-3.5 sm:p-4',
-        FOCUS,
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs sm:size-12"
-      >
-        <Icon className="size-[22px]" />
-      </span>
-      <span className="justify-self-end text-muted-foreground sm:order-last">
-        {state === 'busy' ? (
-          <Opening className="text-foreground" />
-        ) : (
-          <ArrowRight
-            aria-hidden="true"
-            className="size-4 transition-[translate,color] duration-(--duration-fast) ease-(--ease-out) group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none"
-          />
-        )}
-      </span>
-      <span className="col-span-2 min-w-0 sm:col-span-1">
-        <span className="block font-serif text-lg leading-tight font-semibold tracking-tight text-balance">
-          {item.title}
-        </span>
-        <span className="mt-1 block text-[13px] leading-snug text-pretty text-muted-foreground">
-          {item.hint}
-        </span>
-      </span>
-    </Door>
-  )
-}
-
-/** Lo de cada tanto: un renglón compacto (ícono chico, título, ejemplo en chico), sin flecha. */
-function CompactDoor(props: DoorProps) {
-  const { item, state } = props
-  const Icon = item.icon
-  return (
-    <Door
-      {...props}
-      className={cn(
-        'group flex min-h-13 w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-[background-color,opacity] hover:bg-card motion-reduce:transition-none',
+        'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-accent/70 motion-reduce:transition-none',
         FOCUS,
         'focus-visible:ring-inset',
       )}
     >
-      <span
-        aria-hidden="true"
-        className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-card text-foreground/80 transition-colors group-hover:border-primary/30 group-hover:text-foreground motion-reduce:transition-none"
-      >
-        <Icon className="size-[18px]" />
-      </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] leading-snug font-medium text-pretty">{item.title}</span>
+        <span className="block text-[15px] leading-snug font-semibold">{item.title}</span>
         <span className="block text-[13px] leading-snug text-pretty text-muted-foreground">
           {item.hint}
         </span>
       </span>
-      {state === 'busy' ? <Opening /> : null}
+      {state === 'busy' ? (
+        <Opening className="text-foreground" />
+      ) : item.shortcut ? (
+        <kbd className="hidden rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted-foreground lg:block">
+          {item.shortcut}
+        </kbd>
+      ) : (
+        <ArrowRight
+          aria-hidden="true"
+          className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+        />
+      )}
     </Door>
   )
 }
 
-const GROUP_LABEL = 'px-1.5 pb-1.5 text-xs font-medium text-muted-foreground'
+/** Lo de cada tanto: una píldora chica. */
+function ChipDoor(props: DoorProps) {
+  const { item, state } = props
+  return (
+    <Door
+      {...props}
+      className={cn(
+        'inline-flex min-h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[13px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground motion-reduce:transition-none',
+        FOCUS,
+      )}
+    >
+      {item.title}
+      {state === 'busy' ? <Opening className="size-3.5" /> : null}
+    </Door>
+  )
+}
 
 /**
- * Las ocho puertas del lanzador, en dos grupos: arriba las dos de todos los días, grandes;
- * abajo las seis de cada tanto, en una bandeja de renglones compactos. Sin el diálogo alrededor,
- * para poder mirarlas en un test.
+ * Las puertas del lanzador: cuatro renglones de todos los días (la Compra primero: «es lo que más
+ * usamos») y una fila chica con lo de cada tanto. Sin el diálogo alrededor, para poder mirarlas en
+ * un test.
  *
  * `pending` es la clave de la que se está abriendo: esa muestra el giro y las demás se apagan,
  * así nadie toca dos veces mientras llega la hoja.
@@ -174,7 +148,6 @@ export function LauncherDoors({
   pending: string | null
   onPick: DoorPick
 }) {
-  const id = useId()
   const { daily, sometimes } = launcherGroups()
   const opening = LAUNCHER_ITEMS.find((item) => item.key === pending)
   const door = (item: LauncherItem): DoorProps => ({
@@ -184,32 +157,21 @@ export function LauncherDoors({
     onPick,
   })
   return (
-    <div className="space-y-3.5 sm:space-y-4">
-      <section aria-labelledby={`${id}-daily`}>
-        <h3 id={`${id}-daily`} className={GROUP_LABEL}>
-          {LAUNCHER_GROUPS.daily}
-        </h3>
-        <ul className="grid grid-cols-2 gap-2 sm:gap-2.5">
-          {daily.map((item) => (
-            <li key={item.key} className="flex">
-              <FeatureDoor {...door(item)} />
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section aria-labelledby={`${id}-sometimes`}>
-        <h3 id={`${id}-sometimes`} className={GROUP_LABEL}>
-          {LAUNCHER_GROUPS.sometimes}
-        </h3>
-        {/* Una bandeja, no seis tarjetas: adentro los renglones se separan con aire. */}
-        <ul className="grid gap-0.5 rounded-2xl bg-secondary/50 p-1.5 sm:grid-cols-2">
-          {sometimes.map((item) => (
-            <li key={item.key} className={cn('flex', item.wide && 'sm:col-span-2')}>
-              <CompactDoor {...door(item)} />
-            </li>
-          ))}
-        </ul>
-      </section>
+    <div className="space-y-3">
+      <ul className="grid gap-0.5">
+        {daily.map((item) => (
+          <li key={item.key}>
+            <MainDoor {...door(item)} />
+          </li>
+        ))}
+      </ul>
+      <ul aria-label="Cada tanto" className="flex flex-wrap gap-1.5 border-t border-border/70 pt-3">
+        {sometimes.map((item) => (
+          <li key={item.key}>
+            <ChipDoor {...door(item)} />
+          </li>
+        ))}
+      </ul>
       <p role="status" className="sr-only">
         {opening ? `Abriendo «${opening.title}»…` : ''}
       </p>
@@ -323,6 +285,20 @@ export function Launcher({
     [pending, openAction, base, pathname, onOpenChange],
   )
 
+  // Los números abren las cuatro principales: quien carga todos los días no suelta el teclado.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const item = LAUNCHER_ITEMS.find((i) => i.shortcut === event.key)
+      if (!item) return
+      const element = document.querySelector<HTMLElement>(`[data-launcher-item="${item.key}"]`)
+      element?.click()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
   if (readOnly) return null
 
   return (
@@ -336,23 +312,12 @@ export function Launcher({
         onOpenChange={onOpenChange}
         title={LAUNCHER_TITLE}
         description={LAUNCHER_DESCRIPTION}
-        size="lg"
+        size="md"
         onCloseAutoFocus={(event) => {
           // La hoja ya tiene el foco: no se lo saca para devolvérselo al botón.
           if (handedOff.current) event.preventDefault()
         }}
-        footer={
-          <p>
-            ¿No sabés dónde va?{' '}
-            <Link
-              href={`${base}/guias`}
-              onClick={() => onOpenChange(false)}
-              className="rounded-sm font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              Mirá la guía
-            </Link>
-          </p>
-        }
+        footer={<p>{LAUNCHER_DROP_HINT}</p>}
       >
         <LauncherDoors base={base} pending={pending} onPick={pick} />
       </NavDialog>
@@ -397,7 +362,7 @@ export function LauncherButton({
         aria-expanded={open}
         onClick={() => setOpen(true)}
         className={cn(
-          'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-xs transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100',
+          'inline-flex h-8.5 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-xs transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
           className,
         )}

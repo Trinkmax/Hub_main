@@ -101,7 +101,7 @@ describe('CashMovePanel', () => {
     expect(html).toContain(
       'Empezó en $ 3.000 y hoy hay $ 3.500. En el período entró $ 500 y salió $ 0.',
     )
-    expect(html).toContain('Mover plata de una caja a otra no cuenta como entrada ni como salida.')
+    expect(html).toContain('Transferir de una cuenta a otra no cuenta como entrada ni como salida.')
   })
 
   it('dice qué es cada dibujo con palabras, no solo con color', () => {
@@ -186,9 +186,9 @@ describe('CashMovePanel', () => {
   })
 })
 
-describe('Cajas y bancos mientras carga', () => {
-  // El lomo de las tarjetas de la billetera y las barras por categoría de «Entró y salió».
-  const WALLET = 'absolute inset-x-0 top-0 h-1.5'
+describe('Caja mientras carga', () => {
+  // La fila del total de la tabla de cuentas y las barras por categoría de «Entró y salió».
+  const ACCOUNTS = 'border-t-[1.5px]'
   const FLOW = 'h-2.5 w-2/3'
 
   function loading(query: string): string {
@@ -196,17 +196,17 @@ describe('Cajas y bancos mientras carga', () => {
     return renderToString(createElement(CajasLoading))
   }
 
-  it('«Lo que hay» carga con la forma de la billetera', () => {
+  it('la tabla de cuentas carga con su forma', () => {
     for (const query of ['', 'periodo=este-mes', 'tab=otra']) {
       const html = loading(query)
-      expect(html).toContain(WALLET)
+      expect(html).toContain(ACCOUNTS)
       expect(html).not.toContain(FLOW)
     }
   })
 
-  it('«Entró y salió» (?tab=flujo) carga con SU forma, no con la de la billetera', () => {
+  it('«Entró y salió» (?tab=flujo) carga con SU forma, no con la de la tabla', () => {
     const html = loading('tab=flujo')
     expect(html).toContain(FLOW)
-    expect(html).not.toContain(WALLET)
+    expect(html).not.toContain(ACCOUNTS)
   })
 })

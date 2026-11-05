@@ -85,6 +85,7 @@ import {
   isVatComputable,
   VOUCHER_CATALOG,
   voucherDisplay,
+  voucherNumberRequired,
 } from '@/lib/accounting/voucher-types'
 
 export type PurchaseBuildInput = Omit<PurchaseInput, 'clientRef' | 'previewHash'>
@@ -173,7 +174,10 @@ export function composePurchase(
   if (partyKey && !party) fatal.push(postingError('party_not_found', 'partyId'))
 
   const info = VOUCHER_CATALOG[input.voucherType]
-  if (info.numbered && (input.pointOfSale === null || input.number === null)) {
+  if (
+    voucherNumberRequired(input.voucherType) &&
+    (input.pointOfSale === null || input.number === null)
+  ) {
     fatal.push(postingError('voucher_number_required', 'number'))
   }
   if (input.amountMode === 'total' && input.total === null) {

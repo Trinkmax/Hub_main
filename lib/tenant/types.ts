@@ -91,6 +91,7 @@ export const RESERVED_SLUGS = new Set([
   'onboarding',
   'api',
   'capture',
+  'subir', // la foto del comprobante por QR (/subir/[token])
   'admin',
   'm',
   'print',

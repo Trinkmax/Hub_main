@@ -10,10 +10,10 @@
  * y los ZIP con contraseña, dañados o con varios archivos.
  *
  * `detectTableSource` mira los títulos: Mis Comprobantes (Recibidos o Emitidos)
- * y Portal IVA por las reglas de §9.3; Liquidaciones de Mercado Pago (y el
- * reporte equivocado, «Todas las transacciones»); un extracto bancario por los
- * sinónimos de `banco.md` §3.2. Si nada calza, `unknown` (el importador del
- * banco igual puede pedir el mapeo de columnas).
+ * y Portal IVA por las reglas de §9.3; Liquidaciones de Mercado Pago (y los
+ * reportes equivocados, «Todas las transacciones» y Cobros); un extracto
+ * bancario por los sinónimos de `banco.md` §3.2. Si nada calza, `unknown` (el
+ * importador del banco igual puede pedir el mapeo de columnas).
  */
 
 import { BANK_HEADER_RULES, isBankHeader } from './bank/statement'
@@ -21,7 +21,12 @@ import { decodeText, sniffContainer } from './bytes'
 import { parseCsv, sniffDelimiter } from './csv'
 import { findHeaderRow, isMcHeader, MC_HEADER_RULES } from './headers'
 import { looksLikeHtmlTable, readHtmlTable } from './html-table'
-import { isMpReleaseHeader, isMpSettlementHeader, MP_HEADER_RULES } from './mercadopago/release'
+import {
+  isMpCollectionHeader,
+  isMpReleaseHeader,
+  isMpSettlementHeader,
+  MP_HEADER_RULES,
+} from './mercadopago/release'
 import {
   type Cell,
   type Delimiter,
@@ -229,6 +234,15 @@ export async function openTable(input: OpenTableInput): Promise<OpenTableResult>
   }
 }
 
+/**
+ * ¿El nombre es el del reporte de Cobros de Mercado Pago? «collection-20261029001539-137f.csv» y la
+ * carpeta «Reporte_de_ventas_<fecha>.zip» (lo que bajó el bar en la reunión del 29/10/2026).
+ */
+export function isMpCollectionFileName(name: string | null | undefined): boolean {
+  const base = (name ?? '').trim().split(/[\\/]/).pop() ?? ''
+  return /^(collection[-_ ]|reporte[-_ ]de[-_ ]ventas)/i.test(base)
+}
+
 /** Qué archivo es, por sus títulos (y, de respaldo, por el nombre o el título del Excel). */
 export function detectTableSource(
   rows: readonly (readonly Cell[])[],
@@ -257,6 +271,8 @@ export function detectTableSource(
   }
   if (findHeaderRow(rows, MP_HEADER_RULES, isMpReleaseHeader, 15)) return 'mp_release'
   if (rows.slice(0, 15).some((r) => isMpSettlementHeader(r))) return 'mp_settlement'
+  if (rows.slice(0, 15).some((r) => isMpCollectionHeader(r))) return 'mp_collection'
+  if (isMpCollectionFileName(fileName)) return 'mp_collection'
   if (findHeaderRow(rows, BANK_HEADER_RULES, isBankHeader, 40)) return 'bank'
   return 'unknown'
 }
@@ -274,8 +290,18 @@ export type DetectResult = {
  * Devuelve también la tabla abierta para que el parser no lo lea dos veces.
  */
 export async function detectSource(input: OpenTableInput): Promise<DetectResult> {
+  // El nombre del archivo de afuera también cuenta: la carpeta se llama «Reporte_de_ventas_…» aunque
+  // lo de adentro se llame de otra forma, o aunque no se pueda abrir (varios archivos adentro).
+  const named = isMpCollectionFileName(input.fileName)
   const opened = await openTable(input)
-  if (!opened.ok) return { source: 'unknown', table: null, issue: opened.issue }
+  if (!opened.ok) {
+    return { source: named ? 'mp_collection' : 'unknown', table: null, issue: opened.issue }
+  }
   const name = opened.table.entryName ?? input.fileName ?? null
-  return { source: detectTableSource(opened.table.rows, name), table: opened.table, issue: null }
+  const source = detectTableSource(opened.table.rows, name)
+  return {
+    source: named && (source === 'unknown' || source === 'bank') ? 'mp_collection' : source,
+    table: opened.table,
+    issue: null,
+  }
 }

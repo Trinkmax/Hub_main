@@ -46,6 +46,7 @@ import type {
   CashMovementInput,
   TransferInput,
 } from '@/lib/accounting/schemas'
+import { chargesBankTax, percentOfCents } from '@/lib/accounting/taxes'
 import type {
   Cents,
   FiscalAmountKey,
@@ -335,6 +336,93 @@ export function buildBankExpense(
     fiscalVouchers,
   })
   return finalize(bundleOf(meta, [doc]), ctx, meta, { errors, warnings })
+}
+
+// ─── Impuesto a los débitos y créditos, automático (reunión del 29/10/2026) ──
+
+/** Marca en `notes` del gasto bancario que genera el sistema: el importador del banco no lo vuelve a proponer. */
+export const AUTO_BANK_TAX_NOTE = 'Impuesto al cheque calculado por el sistema'
+
+/**
+ * Suma a una propuesta ya armada su impuesto a los débitos y créditos: un `bank_expense` con lo que salió de la
+ * cuenta que lo cobra. Vale para un pago, una compra pagada, un gasto y un movimiento de caja. Lo demás pasa igual.
+ * Si salió plata de más de una cuenta que cobra, se calcula sobre la que puso más: es un bundle por comprobante.
+ */
+export function withBankTax(
+  result: PostingResult,
+  ctx: PostingContext,
+  meta: BuildMeta,
+): PostingResult {
+  if (!result.ok) return result
+  const settings = ctx.settings.taxSettings
+  if (!settings?.auto || settings.bankTaxBp <= 0) return result
+  const { bundle } = result
+  const kinds = bundle.documents.map((d) => d.kind)
+  const eligible =
+    kinds.join() === 'purchase,payment' ||
+    (kinds.length === 1 &&
+      (kinds[0] === 'payment' || kinds[0] === 'expense' || kinds[0] === 'cash_movement'))
+  if (!eligible) return result
+
+  const out = new Map<string, number>()
+  for (const doc of bundle.documents) {
+    for (const line of doc.lines) {
+      if (line.role !== 'treasury' || line.side !== 'credit' || !line.treasuryAccountId) continue
+      const treasury = ctx.treasuries.get(line.treasuryAccountId)
+      if (!treasury || !chargesBankTax(treasury)) continue
+      out.set(treasury.id, (out.get(treasury.id) ?? 0) + line.amountCents)
+    }
+  }
+  const [top] = [...out.entries()].sort((a, b) => b[1] - a[1])
+  if (!top) return result
+  const treasury = ctx.treasuries.get(top[0])
+  const cents = percentOfCents(top[1], settings.bankTaxBp)
+  if (!treasury || cents <= 0) return result
+
+  const last = bundle.documents[bundle.documents.length - 1]
+  const date = last?.accountingDate ?? ctx.today
+  const part = splitBankTax(cents, ctx.settings.bankTaxDebitComputableBp)
+  const lines = new DocLineBuilder()
+  lines.add({
+    role: 'other_tax',
+    accountId: ctx.sys.bank_tax_credit.id,
+    side: 'debit',
+    amountCents: part.computable,
+    taxKind: 'ley_25413_debito',
+    memo: `${TAX_KIND_LABELS.ley_25413_debito} (computable en Ganancias)`,
+  })
+  lines.add({
+    role: 'other_tax',
+    accountId: ctx.sys.bank_tax_expense.id,
+    side: 'debit',
+    amountCents: part.expense,
+    taxKind: 'ley_25413_debito',
+    memo: TAX_KIND_LABELS.ley_25413_debito,
+  })
+  lines.add({
+    role: 'treasury',
+    accountId: treasury.accountId,
+    side: 'credit',
+    amountCents: cents,
+    treasuryAccountId: treasury.id,
+    memo: treasury.name,
+  })
+  const doc = proposedDocument({
+    ref: `d${bundle.documents.length + 1}`,
+    kind: 'bank_expense',
+    issueDate: date,
+    accountingDate: date,
+    description: descriptionFor('bank_expense', 'Impuesto al cheque', treasury.name),
+    notes: AUTO_BANK_TAX_NOTE,
+    totalCents: cents,
+    lines: lines.build().lines,
+  })
+  return finalize(
+    bundleOf(meta, [...bundle.documents, doc], bundle.allocations, bundle.newParties),
+    ctx,
+    meta,
+    { warnings: result.warnings },
+  )
 }
 
 // ─── Otro ingreso o egreso (E.5.12) ──────────────────────────────────────────

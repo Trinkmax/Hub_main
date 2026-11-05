@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CollectionsView } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/collections-view'
 import { InvoicesView } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/invoices-view'
 import {
   MonthBody,
@@ -13,8 +14,7 @@ import { NetView } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_com
 import { NightSheet } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/night-sheet'
 import { ReceivablesList } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/receivables-list'
 import { ReceivablesView } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/receivables-view'
-import { VentasViews } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_components/ventas-views'
-import { cashTitle } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/almanac'
+import { cashTitle } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/planilla'
 import { OpenItems } from '@/app/(manager)/[tenantSlug]/administracion/ventas/clientes/[id]/_components/open-items'
 import { PartyData } from '@/app/(manager)/[tenantSlug]/administracion/ventas/clientes/[id]/_components/party-data'
 import ClientePage from '@/app/(manager)/[tenantSlug]/administracion/ventas/clientes/[id]/page'
@@ -24,7 +24,11 @@ import {
   PayerChoices,
   SettlementTicket,
 } from '@/components/administracion/acciones/cobrar-piezas'
-import { buildProjection, type ProjectionSourceDay } from '@/lib/accounting/projection'
+import {
+  buildProjection,
+  type ProjectionSourceDay,
+  type TargetOfDay,
+} from '@/lib/accounting/projection'
 import type { DailyCloseCalendar } from '@/lib/accounting/queries/documents'
 import type {
   OpenItemRow,
@@ -36,11 +40,11 @@ import { eachIsoDay } from '@/lib/dates'
 
 /**
  * Ventas ya dibujada: lo que la pantalla le promete a cada uno. Las cuentas y
- * las oraciones tienen sus tests en `administracion-ventas-vista`, `-noche` y
- * `-cobrar`; acá se cuida lo que solo se ve armado: que los textos que
- * pidieron los socios sigan ahí, que la contadora no reciba NINGÚN botón de
- * carga, que un mes vacío no muestre «$ 0» y que ningún texto diga lo que no
- * se dice.
+ * las oraciones tienen sus tests en `administracion-ventas-vista`, `-tipo-dia`,
+ * `-copiar-mes`, `-noche` y `-cobrar`; acá se cuida lo que solo se ve armado: que
+ * las columnas que pidieron los socios sigan ahí, que la contadora no reciba
+ * NINGÚN botón de carga, que un mes vacío no muestre «$ 0» y que ningún texto diga
+ * lo que no se dice.
  */
 
 const ui = vi.hoisted(() => ({ readOnly: false }))
@@ -73,6 +77,19 @@ vi.mock('next/navigation', () => ({
 vi.mock('next/link', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   useLinkStatus: () => ({ pending: false }),
+}))
+// Lo plegado y las hojas se dibujan con un portal, que en el servidor no existe: acá van en el lugar.
+vi.mock('@/components/ui/popover', () => ({
+  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}))
+vi.mock('@/components/ui/sheet', () => ({
+  Sheet: ({ children }: { children: ReactNode }) => <div data-sheet="">{children}</div>,
+  SheetContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SheetHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SheetTitle: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+  SheetDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 }))
 // El contexto lo monta el layout de la sección junto con las hojas (que acá no hacen falta).
 vi.mock('@/components/administracion/accounting-provider', () => ({
@@ -142,6 +159,7 @@ afterEach(() => {
   db.summary = []
   db.points = []
   db.arca = { state: 'on' }
+  db.documents = { rows: [], nextCursor: null, totalRows: 0, truncated: false }
 })
 
 const TODAY = '2026-10-13'
@@ -170,7 +188,8 @@ type MonthInput = {
   targetCents?: number | null
   booksStartDate?: string
   canWrite?: boolean
-  recentCloses?: number
+  /** Los objetivos del mes pasado, para «Copiar». */
+  previousTargets?: TargetOfDay[]
 }
 
 function rowsOf(input: MonthInput): ProjectionSourceDay[] {
@@ -275,17 +294,6 @@ const PARTIES: PartyListRow[] = [
 function monthData(input: MonthInput = {}): MonthData {
   const booksStartDate = input.booksStartDate ?? '2026-10-01'
   const rows = rowsOf(input)
-  const list: PartyList = {
-    rows: PARTIES,
-    totals: {
-      debtCents: 293_615_080,
-      overdueCents: 187_995_440,
-      dueSoonCents: 0,
-      creditCents: 0,
-      count: 2,
-    },
-    asOf: TODAY,
-  }
   const canWrite = input.canWrite ?? true
   return {
     calendar: ok(calendarOf(rows, booksStartDate)),
@@ -295,16 +303,19 @@ function monthData(input: MonthInput = {}): MonthData {
     treasuries: canWrite
       ? ok([{ id: 'caja', name: 'Caja', kind: 'cash' as const, active: true }])
       : null,
-    parties: ok(list),
-    boxes: ok([]),
+    previousTargets: canWrite ? ok(input.previousTargets ?? []) : null,
     catalog: null,
-    recentCloses: ok(input.recentCloses ?? (rows.some((r) => r.closes > 0) ? 1 : 0)),
   }
 }
 
 async function renderMonth(
   input: MonthInput = {},
-  over: { focus?: 'proyeccion' | 'caja' | null; requestedDay?: string | null } = {},
+  over: {
+    focus?: 'proyeccion' | 'caja' | null
+    requestedDay?: string | null
+    detail?: boolean
+    today?: string
+  } = {},
 ): Promise<string> {
   const canWrite = input.canWrite ?? true
   ui.readOnly = !canWrite
@@ -314,104 +325,292 @@ async function renderMonth(
       tenantId: 'tenant',
       tenantSlug: 'hub',
       base: BASE,
-      today: TODAY,
+      today: over.today ?? TODAY,
+      serviceDay: over.today ?? TODAY,
       range: { month: '2026-10', from: '2026-10-01', to: '2026-10-31' },
       monthParam: null,
       requestedDay: over.requestedDay ?? null,
       focus: over.focus ?? null,
+      initialDetail: over.detail ?? over.focus != null,
       canWrite,
     }),
   )
 }
 
-// ─── «El mes» ────────────────────────────────────────────────────────────────
+/** Las columnas que pidieron los socios el 12/10 y las de ventas contra caja: «nada de eso se pierde». */
+const DETAIL_COLUMNS = [
+  'Venta bar',
+  'Delivery',
+  'Comisión delivery',
+  'Comisiones posnet',
+  'Venta real',
+  'Venta neta',
+  'Objetivo acumulado',
+  'Venta acumulada',
+  'Entró a caja',
+  'Diferencia',
+  'Evento y nota',
+]
 
-describe('«El mes» con cierres y objetivos', () => {
-  it('conserva las palabras que pidieron los socios y los dos bloques con su nombre', async () => {
+/** El HTML de un renglón de la tabla: el que tiene la celda de ese día. */
+function rowOf(markup: string, day: string): string {
+  const rows = markup.split('<tr').filter((row) => text(`<tr${row}`).startsWith(day))
+  const [row] = rows
+  if (!row) throw new Error(`sin renglón para ${day}`)
+  return row
+}
+
+// ─── La planilla del mes ─────────────────────────────────────────────────────
+
+describe('la planilla del mes', () => {
+  it('los tres números de arriba y las columnas, sin el almanaque ni el héroe', async () => {
     const markup = await renderMonth({ targetCents: 150_000_000 })
     const read = text(markup)
-    expect(read).toContain('Vas vendiendo en octubre')
+    for (const label of ['Objetivo del mes', 'Vendido', 'Falta vender']) {
+      expect(read).toContain(label)
+    }
+    for (const column of ['Día', 'Tipo', 'Objetivo', 'Cumpl.']) expect(read).toContain(column)
     expect(read).toContain('Objetivo a hoy')
-    expect(read).toContain('Te falta vender')
-    expect(read).toContain('Proyección')
-    expect(read).toContain('Ventas contra caja')
-    expect(read).toContain('Noche por noche')
-    // La planilla de los socios y «Cargar una lista» siguen existiendo.
-    expect(read).toContain('Ver la planilla día por día')
-    expect(read).toContain('Cargar una lista')
+    // Lo que había antes ya no está: ni la hoja verde, ni el almanaque, ni el ticket al costado.
+    expect(markup).not.toContain('adm-hero')
+    for (const gone of ['Noche por noche', 'Vas vendiendo', 'Armar el objetivo', 'almanaque']) {
+      expect(read).not.toContain(gone)
+    }
   })
 
-  it('antes de cargar el cierre de anoche, la hoja verde y «Proyección» dicen por qué «a hoy» da abajo', async () => {
-    // Cierres hasta el 11; hoy es el 13 y falta el del 12, que «a hoy» ya cuenta.
-    const read = text(await renderMonth({ targetCents: 100_000_000 }))
-    expect(read).toContain('Cuenta el lun 12/10, que todavía no tiene cierre.')
-    expect(read).toContain('Con lo cargado hasta el dom 11/10')
-    expect(read).toContain('Falta el cierre del lun 12/10: el objetivo a hoy ya cuenta esa noche')
-  })
-
-  it('con la planilla abierta, «Proyección» va a todo el ancho, fuera de la columna del almanaque', async () => {
-    const markup = await renderMonth({ targetCents: 150_000_000 }, { focus: 'proyeccion' })
-    const column = markup.indexOf('xl:row-start-2')
-    const block = markup.indexOf('id="proyeccion"')
-    // Va después de la grilla de dos columnas (y de la columna de abajo del almanaque).
-    expect(column).toBeGreaterThan(-1)
-    expect(block).toBeGreaterThan(column)
-    expect(markup.slice(column, block)).toContain('id="caja"')
-  })
-
-  it('la suma de los casilleros es el número de arriba: la venta neta de cada noche', async () => {
+  it('un renglón por día: el día corto, su tipo y el objetivo que se escribe', async () => {
     const markup = await renderMonth({ targetCents: 150_000_000 })
-    // 11 noches de $ 955.000 netos (900 + 100 − 20 − 25 mil).
-    expect(markup).toContain('$ 955.000')
-    expect(markup).toContain('10.505.000')
+    expect(markup.split('aria-label="Objetivo del ').length - 1).toBe(31)
+    const row = rowOf(markup, 'lu 05')
+    expect(row).toContain('aria-label="Objetivo del lunes 05/10"')
+    expect(row).toContain('value="1.500.000"')
+    expect(text(`<tr${row}`)).toContain('Normal')
   })
 
-  it('el cierre que falta se carga en un toque: desde la hoja verde y desde su casillero', async () => {
+  it('el cumplimiento va en verde o en rojo, con su número', async () => {
+    const low = rowOf(await renderMonth({ targetCents: 150_000_000 }), 'lu 05')
+    // $ 955.000 netos contra $ 1.500.000.
+    expect(text(`<tr${low}`)).toContain('$ 955.000')
+    expect(text(`<tr${low}`)).toContain('64 %')
+    expect(low).toContain('text-destructive')
+    const high = rowOf(await renderMonth({ targetCents: 90_000_000 }), 'lu 05')
+    expect(text(`<tr${high}`)).toContain('106 %')
+    expect(high).toContain('text-success')
+  })
+
+  it('un día sin cierre no es un cero ni un 0 %', async () => {
     const markup = await renderMonth({ targetCents: 150_000_000 })
-    // El día va escrito dos veces y se ve una sola: corto en el celular, entero en la compu.
-    expect(text(markup)).toContain('Cargar el cierre del lun 12/10 lunes 12/10')
-    // El botón de la hoja verde y el casillero del 12 llevan al mismo lugar.
-    expect(
-      markup.split(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`).length - 1,
-    ).toBeGreaterThanOrEqual(2)
-    expect(markup).toContain(
-      'aria-label="Lunes 12 de octubre: falta el cierre. Abre la carga de ese día."',
+    const row = text(`<tr${rowOf(markup, 'lu 12')}`)
+    expect(row).not.toContain('$ 0')
+    expect(row).not.toContain('0 %')
+    expect(row).toContain('Cargar cierre')
+  })
+
+  it('«Ver cierre» abre la noche; «Cargar cierre» lleva a cargarlo', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    const loaded = rowOf(markup, 'lu 05')
+    expect(loaded).toContain(`href="${BASE}/ventas?dia=2026-10-05"`)
+    expect(text(`<tr${loaded}`)).toContain('Ver cierre')
+    const missing = rowOf(markup, 'lu 12')
+    expect(missing).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`)
+    expect(text(`<tr${rowOf(markup, 'ma 13')}`)).toContain('Cargar cierre')
+    // Lo que todavía no llegó no tiene nada que hacer.
+    expect(text(`<tr${rowOf(markup, 'ma 20')}`)).not.toMatch(/Cargar cierre|Ver cierre/)
+  })
+
+  it('una sola acción llena: el cierre que toca es el primero que falta', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    expect(rowOf(markup, 'lu 12')).toContain('bg-primary')
+    // El de hoy también falta, pero va en contorno.
+    expect(rowOf(markup, 'ma 13')).not.toContain('bg-primary ')
+  })
+
+  it('hoy lleva la raya a la izquierda, y solo hoy', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    expect(markup.split('shadow-[inset_3px_0_0_var(--color-primary)]').length - 1).toBe(1)
+    expect(rowOf(markup, 'ma 13')).toContain('shadow-[inset_3px_0_0_var(--color-primary)]')
+    expect(text(`<tr${rowOf(markup, 'ma 13')}`)).toContain('(hoy)')
+  })
+
+  it('el total lleva la doble raya', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    expect(markup).toContain('adm-double-rule')
+    // 31 días de $ 1.500.000 y 11 noches de $ 955.000.
+    expect(markup).toContain('$ 46.500.000')
+    expect(markup).toContain('$ 10.505.000')
+  })
+
+  it('el evento del calendario va chiquito debajo del día', async () => {
+    const markup = await renderMonth()
+    expect(rowOf(markup, 'sá 17')).toContain('Noche de tacos')
+    expect(rowOf(markup, 'sá 17')).toContain('<small')
+  })
+
+  it('debajo, la regla del tipo y lo que se hace con la planilla', async () => {
+    const read = text(await renderMonth({ targetCents: 150_000_000 }))
+    expect(read).toContain('Fuerte: 20 % arriba del promedio. Flojo: 20 % abajo.')
+    expect(read).toContain('Pegar una lista')
+    expect(read).toContain('Ver detalle')
+  })
+
+  it('«Copiar» se ofrece si el mes pasado tiene de dónde', async () => {
+    const previousTargets = [{ day: '2026-09-07', targetCents: 100_000_000 }]
+    expect(text(await renderMonth({ targetCents: 150_000_000, previousTargets }))).toContain(
+      'Copiar septiembre',
     )
+    expect(text(await renderMonth({ targetCents: 150_000_000 }))).not.toContain('Copiar')
   })
 
-  it('elegir una noche es un `?dia=`; por defecto se muestra la última cargada', async () => {
-    const markup = await renderMonth()
-    expect(markup).toContain(`href="${BASE}/ventas?dia=2026-10-05"`)
-    expect(text(markup)).toContain('Domingo 11 de octubre')
-    expect(text(markup)).toContain('Vendido esa noche')
-    const other = await renderMonth({}, { requestedDay: '2026-10-05' })
-    expect(text(other)).toContain('Lunes 5 de octubre')
+  it('el «⋯» lleva a Facturas y a Cobros, y exporta el subdiario', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    expect(markup).toContain(`href="${BASE}/ventas?tab=facturas"`)
+    expect(markup).toContain(`href="${BASE}/ventas?tab=cobros"`)
+    expect(text(markup)).toContain('Exportar subdiario de ventas')
   })
 
-  it('los eventos del calendario marcan su día', async () => {
-    const markup = await renderMonth()
-    expect(markup).toContain('Noche de tacos')
-    expect(text(markup)).toContain('hay un evento')
+  it('se puede ir al mes que viene a cargar el objetivo', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 })
+    // La flecha llega a lo que viene: no queda trabada en el mes de hoy.
+    const next = markup.match(/<button[^>]*aria-label="Mes siguiente: Noviembre 2026"[^>]*>/)?.[0]
+    expect(next).toBeDefined()
+    expect(next).not.toMatch(/ disabled=""/)
   })
 
-  it('con ?tab=proyeccion y ?tab=caja el bloque pedido viene abierto', async () => {
-    const closed = await renderMonth({ targetCents: 150_000_000 })
-    expect(closed).not.toContain('<details open=""')
-    const projection = await renderMonth({ targetCents: 150_000_000 }, { focus: 'proyeccion' })
-    expect(projection.split('<details open=""').length - 1).toBe(1)
-    const cash = await renderMonth({ targetCents: 150_000_000 }, { focus: 'caja' })
-    expect(cash.split('<details open=""').length - 1).toBe(1)
+  it('un cierre que falta del mes pasado no tiene renglón acá: se dice arriba', async () => {
+    const data = monthData({ targetCents: 150_000_000 })
+    const calendar = calendarOf(rowsOf({ targetCents: 150_000_000 }), '2026-09-01')
+    ui.readOnly = false
+    const markup = html(
+      await MonthBody({
+        data: { ...data, calendar: ok({ ...calendar, firstMissingDate: '2026-09-29' }) },
+        tenantId: 'tenant',
+        tenantSlug: 'hub',
+        base: BASE,
+        today: TODAY,
+        serviceDay: TODAY,
+        range: { month: '2026-10', from: '2026-10-01', to: '2026-10-31' },
+        monthParam: null,
+        requestedDay: null,
+        focus: null,
+        initialDetail: false,
+        canWrite: true,
+      }),
+    )
+    expect(text(markup)).toContain('Falta el cierre del mar 29/09')
+    expect(markup).toContain(`href="${BASE}/ventas/cierre?fecha=2026-09-29"`)
   })
 })
 
-describe('«El mes» sin objetivos', () => {
-  it('enseña los tres caminos para poner el objetivo, con «Cargar una lista» primero', async () => {
-    const read = text(await renderMonth())
-    expect(read).toContain('Octubre todavía no tiene objetivo')
-    expect(read).toContain('Poné el objetivo de octubre y mirá si llegás')
-    expect(read).toContain('Cargar una lista')
-    expect(read).toContain('Armar el objetivo')
-    expect(read).toContain('Mes que viene')
+describe('«Ver detalle»', () => {
+  it('se esconde por defecto: nada de eso está en la tabla', async () => {
+    const read = text(await renderMonth({ targetCents: 150_000_000 }))
+    for (const column of DETAIL_COLUMNS) expect(read, column).not.toContain(column)
+    expect(read).not.toContain('Ventas contra caja')
+  })
+
+  it('suma las columnas de los socios y las de ventas contra caja: nada se pierde', async () => {
+    const read = text(await renderMonth({ targetCents: 150_000_000 }, { detail: true }))
+    for (const column of DETAIL_COLUMNS) expect(read, column).toContain(column)
+    expect(read).toContain('Ventas contra caja')
+    expect(read).toContain('Todavía no anotaste lo que entró ninguna noche')
+    expect(read).toContain('A 11 días con cierre les falta cargar lo que entró.')
+    expect(read).toContain('Lo que descontaron de verdad está en «Lo que llegó».')
+  })
+
+  it('los números de cada columna son los de su planilla', async () => {
+    const row = text(
+      `<tr${rowOf(await renderMonth({ targetCents: 150_000_000 }, { detail: true }), 'lu 05')}`,
+    )
+    // Venta bar $ 900.000 · Delivery $ 100.000 · Comisión delivery $ 25.000 · Posnet $ 20.000 ·
+    // Venta real $ 880.000 · Venta neta $ 955.000 · Acumulados de cinco días.
+    for (const value of [
+      '$ 900.000',
+      '$ 100.000',
+      '$ 25.000',
+      '$ 20.000',
+      '$ 880.000',
+      '$ 955.000',
+      '$ 7.500.000',
+      '$ 4.775.000',
+    ]) {
+      expect(row, value).toContain(value)
+    }
+  })
+
+  it('«Entró a caja» se carga con su diálogo de siempre, y la diferencia dice qué falta', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 }, { detail: true })
+    const row = rowOf(markup, 'lu 05')
+    expect(row).toContain('aria-label="Cargar lo que entró el lunes 05/10"')
+    expect(text(`<tr${row}`)).toContain('Falta cargar')
+    // Lo que todavía no llegó no se puede comparar.
+    expect(rowOf(markup, 'ma 20')).not.toContain('lo que entró')
+  })
+
+  it('la nota del día se sigue escribiendo', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 }, { detail: true })
+    expect(rowOf(markup, 'ma 20')).toContain('aria-label="Agregar una nota al martes 20/10"')
+  })
+
+  it('los links de siempre abren la planilla con el detalle', async () => {
+    for (const focus of ['proyeccion', 'caja'] as const) {
+      const read = text(await renderMonth({ targetCents: 150_000_000 }, { focus }))
+      expect(read, focus).toContain('Entró a caja')
+    }
+  })
+})
+
+describe('la noche se abre al tocar «Ver cierre»', () => {
+  it('sin `?dia=` no hay hoja abierta', async () => {
+    expect(await renderMonth()).not.toContain('data-sheet')
+  })
+
+  it('con `?dia=` de una noche con cierre, la hoja trae esa noche', async () => {
+    const read = text(await renderMonth({}, { requestedDay: '2026-10-05' }))
+    expect(read).toContain('La noche del lunes 05/10')
+    expect(read).toContain('Lunes 5 de octubre')
+    expect(read).toContain('Vendido esa noche')
+    expect(read).toContain('Ventas contra caja')
+  })
+
+  it('un día sin cierre no abre nada', async () => {
+    expect(await renderMonth({}, { requestedDay: '2026-10-12' })).not.toContain('data-sheet')
+    expect(await renderMonth({}, { requestedDay: 'cualquiera' })).not.toContain('data-sheet')
+  })
+})
+
+describe('un mes sin objetivos', () => {
+  const previousTargets = [
+    { day: '2026-09-07', targetCents: 100_000_000 },
+    { day: '2026-09-14', targetCents: 100_000_000 },
+  ]
+
+  it('la misma tabla con las celdas vacías y «Copiar» el mes pasado', async () => {
+    const markup = await renderMonth({ closedBefore: '2026-10-01', previousTargets })
+    const read = text(markup)
+    expect(read).toContain('Octubre todavía no tiene objetivos.')
+    expect(read).toContain('Copiar septiembre')
+    expect(markup.split('aria-label="Objetivo del ').length - 1).toBe(31)
+    expect(rowOf(markup, 'lu 05')).toContain('value=""')
+    expect(read).toContain('Sin objetivo')
+  })
+
+  it('«Copiar» es la acción llena; los cierres quedan en contorno', async () => {
+    const markup = await renderMonth({ closedBefore: '2026-10-01', previousTargets })
+    expect(rowOf(markup, 'ma 13')).not.toContain('bg-primary ')
+  })
+
+  it('sin nada que copiar, ofrece pegar la lista', async () => {
+    const read = text(await renderMonth({ closedBefore: '2026-10-01' }))
+    expect(read).toContain('Escribilos día por día o pegá la columna de tu Excel.')
+    expect(read).not.toContain('Copiar')
+    expect(read).toContain('Pegar una lista')
+  })
+
+  it('no dice «$ 0» ni «objetivo $ 0»: un objetivo que falta no es un cero', async () => {
+    for (const detail of [false, true]) {
+      const markup = await renderMonth({ closedBefore: '2026-10-01' }, { detail })
+      expect(markup).not.toMatch(/\$ 0(?![\d.,])/)
+    }
   })
 })
 
@@ -419,36 +618,25 @@ describe('el bar recién arrancado (así está HUB)', () => {
   const input = { closedBefore: '2026-10-01', booksStartDate: '2026-10-12' }
 
   it('no muestra «$ 0» por ningún lado', async () => {
+    expect(await renderMonth(input)).not.toMatch(/\$ 0(?![\d.,])/)
+  })
+
+  it('la fecha de arranque manda en los cierres: el objetivo se carga en cualquier día', async () => {
     const markup = await renderMonth(input)
-    expect(markup).not.toMatch(/\$ 0(?![\d.,])/)
+    expect(text(markup)).toContain('Los cierres arrancan el 12/10.')
+    // Antes del arranque no se carga el cierre, pero el objetivo sí se escribe.
+    const before = rowOf(markup, 'lu 05')
+    expect(before).not.toContain('/ventas/cierre')
+    expect(before).toContain('aria-label="Objetivo del lunes 05/10"')
+    // Desde el arranque, el que falta y el de hoy.
+    expect(rowOf(markup, 'lu 12')).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`)
+    expect(rowOf(markup, 'ma 13')).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-13"`)
   })
 
-  it('dice qué falta con palabras y lleva al primer cierre', async () => {
-    const markup = await renderMonth(input)
-    const read = text(markup)
-    expect(read).toContain('Todavía no hay ventas cargadas en octubre')
-    expect(read).toContain('Cargar el cierre del lun 12/10 lunes 12/10')
-    expect(read).toContain('Así se llenan las ventas, a mano')
-    expect(read).toContain('El ticket de cada noche')
-    expect(read).toContain('Ejemplo')
-    expect(read).toContain('Llevás la cuenta desde el 12/10')
-    // El almanaque se dibuja igual: el 12 falta y el 13 es hoy.
-    expect(read).toContain('falta')
-    expect(read).toContain('hoy')
-  })
-
-  it('los bloques vacíos se reemplazan por los tres pasos, salvo el que pide la URL', async () => {
-    const plain = text(await renderMonth(input))
-    expect(plain).not.toContain('Ver noche por noche')
-    expect(plain).not.toContain('Poné el objetivo de octubre y mirá si llegás')
-    const asked = text(await renderMonth(input, { focus: 'proyeccion' }))
-    expect(asked).toContain('Poné el objetivo de octubre y mirá si llegás')
-  })
-
-  it('un bar con cierres el mes pasado no es «recién arrancado»', async () => {
-    const read = text(await renderMonth({ closedBefore: '2026-10-01', recentCloses: 1 }))
-    expect(read).not.toContain('Así se llenan las ventas')
-    expect(read).toContain('Ventas contra caja')
+  it('un mes que empezó entero no dice desde cuándo', async () => {
+    expect(text(await renderMonth({ targetCents: 150_000_000 }))).not.toContain(
+      'Los cierres arrancan',
+    )
   })
 })
 
@@ -458,58 +646,59 @@ const WRITE_WORDS = [
   'Ya entró',
   'Me entró plata',
   'Contar Mercado Pago',
-  'Cargar una lista',
-  'Armar el objetivo',
-  'Armar de nuevo',
-  'Mes que viene',
+  'Pegar una lista',
+  'Copiar',
   'Anotar lo que entró',
   'Cambiar lo que entró',
   'Cargar otro turno',
+  'Cargar cierre',
   'Cargar el cierre',
-  'Cargar el primero',
-  'Poner el objetivo',
-  'Ir al cierre',
   'Agregar nota',
 ]
 
 describe('la contadora (solo lectura) no ve ningún botón de carga', () => {
-  it('«El mes»: ni un link a cargar un cierre, ni celdas que se editan', async () => {
-    for (const focus of [null, 'proyeccion', 'caja'] as const) {
-      const markup = await renderMonth({ targetCents: 150_000_000, canWrite: false }, { focus })
+  it('la planilla: ni un link a cargar un cierre, ni celdas que se escriben', async () => {
+    for (const over of [{}, { focus: 'proyeccion' as const }, { focus: 'caja' as const }]) {
+      const markup = await renderMonth({ targetCents: 150_000_000, canWrite: false }, over)
       expect(markup).not.toContain('/ventas/cierre')
+      // Una celda que se escribe es un campo con su nombre.
+      expect(markup).not.toContain('aria-label="Objetivo del')
       const read = text(markup)
       for (const word of WRITE_WORDS) expect(read).not.toContain(word)
-      // Un botón de lápiz es una celda que se edita.
       expect(markup).not.toContain('Cargar el objetivo del')
       expect(markup).not.toContain('. Cambiar')
     }
   })
 
-  it('ve lo mismo, con sus tablas y sus exportes abiertos', async () => {
-    const markup = await renderMonth({ targetCents: 150_000_000, canWrite: false })
+  it('ve los mismos números y su detalle, sin el calendario del bar', async () => {
+    const markup = await renderMonth(
+      { targetCents: 150_000_000, canWrite: false },
+      { detail: true },
+    )
     const read = text(markup)
-    expect(read).toContain('Vas vendiendo en octubre')
-    expect(read).toContain('Para la contadora')
+    expect(read).toContain('Objetivo del mes')
+    expect(read).toContain('$ 1.500.000')
+    expect(read).toContain('Sin cargar')
+    expect(read).toContain('Todavía no se anotó lo que entró ninguna noche')
+    expect(read).toContain('Ver cierre')
     expect(read).toContain('Exportar subdiario de ventas')
-    // «Para la contadora», la planilla y la tabla de ventas contra caja.
-    expect(markup.split('<details open=""').length - 1).toBe(3)
     // No lee el calendario del bar: sin eventos.
     expect(markup).not.toContain('Noche de tacos')
   })
 
-  it('el bar sin cierres: los tres pasos sin botones, y a quién le toca', async () => {
-    const markup = await renderMonth({
-      closedBefore: '2026-10-01',
-      booksStartDate: '2026-10-12',
-      canWrite: false,
-    })
+  it('el mes sin objetivos se lo dice, sin ofrecerle nada', async () => {
+    const markup = await renderMonth({ canWrite: false })
+    expect(text(markup)).toContain('Octubre todavía no tiene objetivos.')
+    expect(text(markup)).not.toContain('Escribilos')
     expect(markup).not.toContain('/ventas/cierre')
-    const read = text(markup)
-    for (const word of WRITE_WORDS) expect(read).not.toContain(word)
-    expect(read).toContain('Cuando los dueños carguen los cierres del día')
   })
 
-  it('«Plata por cobrar»: los mismos renglones, sin «Ya entró» ni «Contar»', () => {
+  it('un día sin cierre le dice que no lo tiene', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000, canWrite: false })
+    expect(text(`<tr${rowOf(markup, 'lu 12')}`)).toContain('Sin cierre')
+  })
+
+  it('«Por cobrar»: los mismos renglones, sin «Ya entró» ni «Contar»', () => {
     const wallets = new Map([['mp', { treasuryId: 'caja-mp', name: 'Mercado Pago' }]])
     const list = (canWrite: boolean) => {
       ui.readOnly = !canWrite
@@ -527,8 +716,13 @@ describe('la contadora (solo lectura) no ve ningún botón de carga', () => {
     expect(text(owner)).toContain('Ya entró')
     expect(text(owner)).toContain('Contar Mercado Pago')
     // Lo de Mercado Pago no figura como atrasado.
-    expect(text(owner)).toContain('Ya está en tu Mercado Pago: contala para anotarlo')
-    expect(text(owner)).toContain('días tarde')
+    expect(text(owner)).toContain('Falta contarla')
+    expect(owner.split('Atrasado').length - 1).toBe(1)
+    expect(text(owner)).toContain('6 días tarde')
+    // El nombre lleva a la ficha, y el total lleva la doble raya.
+    expect(owner).toContain(`href="${BASE}/ventas/clientes/posnet"`)
+    expect(owner).toContain('adm-double-rule')
+    expect(text(owner)).toContain('$ 2.936.151')
     const reader = list(false)
     expect(text(reader)).toContain('Tarjetas de crédito (Posnet)')
     expect(text(reader)).not.toContain('Ya entró')
@@ -589,7 +783,7 @@ describe('la contadora (solo lectura) no ve ningún botón de carga', () => {
     expect(reader).not.toContain('<button')
   })
 
-  it('la noche elegida: ve el objetivo y lo que entró, sin poder cambiarlos', () => {
+  it('la noche abierta: ve el objetivo y lo que entró, sin poder cambiarlos', () => {
     ui.readOnly = true
     const projection = buildProjection(rowsOf({ targetCents: 150_000_000 }), { serviceDay: TODAY })
     const day = projection.days.find((d) => d.day === '2026-10-10')
@@ -599,9 +793,7 @@ describe('la contadora (solo lectura) no ve ningún botón de carga', () => {
         base={BASE}
         today={TODAY}
         day="2026-10-10"
-        state="loaded"
         monthName="octubre"
-        monthState="current"
         projectionDay={day ?? null}
         closes={[{ id: 'cierre', seq: 1, shift: null, totalCents: 100_000_000 }]}
         events={[]}
@@ -681,7 +873,7 @@ describe('la contadora no escribe: las vistas que leen por su cuenta', () => {
     canWrite,
   })
 
-  it('«Plata por cobrar» con deuda: «Me entró plata» solo para quien carga', async () => {
+  it('«Por cobrar» con deuda: «Me entró plata» solo para quien carga', async () => {
     const view = async (canWrite: boolean) => {
       as(canWrite)
       db.parties = {
@@ -700,19 +892,47 @@ describe('la contadora no escribe: las vistas que leen por su cuenta', () => {
       return html(await ReceivablesView(shared(canWrite)))
     }
     const owner = text(await view(true))
-    expect(owner).toContain('Plata por cobrar')
+    expect(owner).toContain('Te tienen que depositar')
+    expect(owner).toContain('Atrasado')
     expect(owner).toContain('Me entró plata')
     expect(owner).toContain('Ya entró')
     expect(owner).toContain('Contar Mercado Pago')
     expect(owner).toContain('Cambiar los plazos')
+    for (const column of ['Quién', 'Llega', 'A cobrar']) expect(owner).toContain(column)
+    // Lo que no se usa todos los días queda plegado.
+    expect(owner).toContain('Cuándo llega, día por día')
+    expect(owner).toContain('¿Cuándo te paga cada medio?')
     const reader = await view(false)
-    expect(text(reader)).toContain('Plata por cobrar')
+    expect(text(reader)).toContain('Te tienen que depositar')
     expect(text(reader)).toContain('Tarjetas de crédito (Posnet)')
     expectNoWriteControls(reader)
     expect(text(reader)).not.toContain('Cambiar los plazos')
   })
 
-  it('«Plata por cobrar» en el bar recién arrancado: sin «$ 0» y sin botones para quien mira', async () => {
+  it('«Por cobrar» no tiene héroe: los números de arriba y la tabla', async () => {
+    as(true)
+    db.parties = {
+      rows: PARTIES,
+      totals: {
+        debtCents: 293_615_080,
+        overdueCents: 187_995_440,
+        dueSoonCents: 0,
+        creditCents: 0,
+        count: 2,
+      },
+      asOf: TODAY,
+    } satisfies PartyList
+    db.treasuries = [MP_BOX]
+    const markup = html(await ReceivablesView(shared(true)))
+    expect(markup).not.toContain('adm-hero')
+    expect(markup).toContain('aria-label="Totales"')
+    expect(markup).toContain('$ 2.936.151')
+    // Lo de Mercado Pago va en su número, no sumado a lo atrasado.
+    expect(text(markup)).toContain('En Mercado Pago, falta contarla')
+    expect(markup).toContain('$ 1.479.954')
+  })
+
+  it('«Por cobrar» en el bar recién arrancado: sin «$ 0» y sin botones para quien mira', async () => {
     const view = async (canWrite: boolean) => {
       as(canWrite)
       db.parties = {
@@ -737,44 +957,141 @@ describe('la contadora no escribe: las vistas que leen por su cuenta', () => {
     expect(text(reader)).not.toContain('Cambiar los plazos')
   })
 
-  it('«Lo que llegó» sin cobros: «Me entró plata» solo para quien carga', async () => {
+  it('«Lo que llegó» sin nada: una oración, y «Me entró plata» solo para quien carga', async () => {
     const view = async (canWrite: boolean) => {
       as(canWrite)
-      return html(await NetView({ ...shared(canWrite), focus: null }))
+      return html(await NetView(shared(canWrite)))
     }
     const owner = text(await view(true))
     expect(owner).toContain('Todavía no hay ventas ni cobros en octubre')
     expect(owner).toContain('Me entró plata')
     const reader = await view(false)
-    expect(text(reader)).toContain('No hay cobros en octubre')
-    expect(text(reader)).toContain('Exportar subdiario de cobranzas')
+    expect(text(reader)).toContain('Todavía no hay ventas ni cobros en octubre')
     expectNoWriteControls(reader)
-    expect(reader).not.toContain('<button type="button"')
   })
+
+  const NET_ROW = {
+    methodId: 'credito',
+    methodName: 'Crédito',
+    channel: 'salon',
+    soldCents: 75_251_600,
+    commissionCents: 0,
+    commissionVatCents: 0,
+    withholdingsCents: 0,
+    otherChargesCents: 0,
+    unexplainedCents: 0,
+    creditedCents: 0,
+    pendingCents: 75_251_600,
+    discountBp: null,
+  }
 
   it('«Lo que llegó» cuando todavía no llegó nada: sin «$ 0» como número grande', async () => {
     as(true)
-    db.net = [
-      {
-        methodId: 'credito',
-        methodName: 'Crédito',
-        channel: 'salon',
-        soldCents: 75_251_600,
-        commissionCents: 0,
-        commissionVatCents: 0,
-        withholdingsCents: 0,
-        otherChargesCents: 0,
-        unexplainedCents: 0,
-        creditedCents: 0,
-        pendingCents: 75_251_600,
-        discountBp: null,
-      },
-    ]
-    const read = text(html(await NetView({ ...shared(true), focus: null })))
-    expect(read).toContain('Todavía no te liquidaron nada en octubre')
+    db.net = [NET_ROW]
+    const markup = html(await NetView(shared(true)))
+    const read = text(markup)
     expect(read).toContain('Sigue en camino')
-    expect(read).not.toContain('Te llegó en octubre')
-    expect(read).not.toContain('Te descontaron $ 0')
+    expect(read).toContain('$ 752.516')
+    expect(markup).not.toMatch(/\$ 0(?![\d.,])/)
+  })
+
+  it('«Lo que llegó»: los números de arriba y un renglón por medio, sin héroes', async () => {
+    as(true)
+    db.net = [
+      { ...NET_ROW, commissionCents: 2_000_000, creditedCents: 50_000_000, discountBp: 385 },
+    ]
+    const markup = html(await NetView(shared(true)))
+    const read = text(markup)
+    for (const label of ['Te llegó', 'Te descontaron', 'Sigue en camino']) {
+      expect(read).toContain(label)
+    }
+    for (const column of ['Medio', 'Vendido', 'Comisión', 'En camino', 'Descuento']) {
+      expect(read).toContain(column)
+    }
+    expect(read).not.toContain('Retenciones')
+    expect(read).toContain('3,85 %')
+    expect(markup).toContain('adm-double-rule')
+    expect(markup).not.toContain('adm-hero')
+    // A los cobros se llega desde el pie, con el mismo período.
+    expect(markup).toContain(`${BASE}/ventas?tab=cobros&amp;mes=2026-10`)
+    expect(read).toContain('Exportar')
+  })
+
+  it('«Cobros» sin nada: lo dice según quién mira', async () => {
+    const view = async (canWrite: boolean) => {
+      as(canWrite)
+      return html(await CollectionsView(shared(canWrite)))
+    }
+    const owner = text(await view(true))
+    expect(owner).toContain('No hay cobros en')
+    expect(owner).toContain('Me entró plata')
+    const reader = await view(false)
+    expect(text(reader)).toContain('los dueños lo anotan')
+    expect(text(reader)).toContain('Exportar subdiario de cobranzas')
+    expectNoWriteControls(reader)
+  })
+
+  it('«Cobros»: quién, a dónde entró, cuánto entró y cuánto descontaron, con su total', async () => {
+    as(true)
+    db.documents = {
+      rows: [
+        {
+          id: 'doc-1',
+          kind: 'collection',
+          title: 'Cobro',
+          partyName: 'Tarjetas de crédito (Posnet)',
+          accountingDate: '2026-10-08',
+          totalCents: 191_546_500,
+          status: 'posted',
+          means: [{ label: 'Banco Nación', amountCents: 178_800_000 }],
+        },
+        {
+          id: 'doc-2',
+          kind: 'collection',
+          title: 'Cobro',
+          partyName: 'Rappi',
+          accountingDate: '2026-10-09',
+          totalCents: 10_000_000,
+          status: 'voided',
+          means: [{ label: 'Banco Nación', amountCents: 10_000_000 }],
+        },
+      ],
+      nextCursor: null,
+      totalRows: 2,
+      truncated: false,
+    }
+    const markup = html(await CollectionsView(shared(true)))
+    const read = text(markup)
+    for (const value of ['Banco Nación', '$ 1.788.000', '$ 127.465', 'Anulado', 'Jue 08/10']) {
+      expect(read, value).toContain(value)
+    }
+    expect(markup).toContain(`href="${BASE}/comprobantes/doc-1"`)
+    expect(markup).toContain('adm-double-rule')
+  })
+
+  it('«Cobros» con más de una página no suma lo que se ve: no sería el total', async () => {
+    as(true)
+    db.documents = {
+      rows: [
+        {
+          id: 'doc-1',
+          kind: 'collection',
+          title: 'Cobro',
+          partyName: 'Rappi',
+          accountingDate: '2026-10-08',
+          totalCents: 100_000,
+          status: 'posted',
+          means: [{ label: 'Banco', amountCents: 100_000 }],
+        },
+      ],
+      nextCursor: 'siguiente',
+      totalRows: 1,
+      truncated: false,
+    }
+    const markup = html(await CollectionsView(shared(true)))
+    expect(markup).not.toContain('adm-double-rule')
+    expect(markup).not.toContain('aria-label="Totales"')
+    expect(text(markup)).toContain('Ver los siguientes')
   })
 
   it('«Facturas»: los accesos de carga (cierre, puntos de venta, factura con ARCA) solo para quien carga', async () => {
@@ -791,10 +1108,41 @@ describe('la contadora no escribe: las vistas que leen por su cuenta', () => {
     const reader = await view(false)
     expect(text(reader)).toContain('¿Cómo se factura acá?')
     expect(text(reader)).toContain('Exportar ventas sin factura')
-    // «Para la contadora» viene abierto.
-    expect(reader).toContain('<details open=""')
+    expect(text(reader)).toContain('Exportar subdiario de ventas')
     expectNoWriteControls(reader)
     expect(text(reader)).not.toContain('Hacer una factura con ARCA')
+  })
+
+  it('«Facturas»: lo vendido, con factura y sin factura, por canal y con su doble raya', async () => {
+    as(true)
+    db.points = [{ number: 3 }]
+    db.summary = [
+      {
+        month: '2026-10-01',
+        channel: 'salon',
+        soldCents: 710_128_800,
+        invoicedNetCents: 429_780_000,
+        vatCents: 90_253_800,
+        uninvoicedCents: 190_095_000,
+      },
+    ]
+    const markup = html(await InvoicesView(shared(true)))
+    const read = text(markup)
+    for (const label of ['Total vendido', 'Con factura', 'Sin factura', 'Por canal']) {
+      expect(read, label).toContain(label)
+    }
+    expect(read).toContain('$ 7.101.288,00')
+    expect(markup).toContain('adm-double-rule')
+    // Las dos partes quedan en los libros: ninguna se oculta.
+    expect(read).toContain('Las dos partes quedan registradas en los libros.')
+    expect(markup).not.toContain('adm-hero')
+  })
+
+  it('«Facturas» sin ventas no dice «$ 0»', async () => {
+    as(true)
+    const markup = html(await InvoicesView(shared(true)))
+    expect(text(markup)).toContain('Todavía no hay ventas en')
+    expect(markup).not.toMatch(/\$ 0(?![\d.,])/)
   })
 
   const PARTY: PartyDetail = {
@@ -883,71 +1231,10 @@ describe('la contadora no escribe: las vistas que leen por su cuenta', () => {
     expect(reader).not.toContain('/ajustes')
   })
 
-  it('«El mes» sin objetivos y con cierres: ni «Cargar una lista» ni «Armar el objetivo»', async () => {
-    for (const focus of [null, 'proyeccion'] as const) {
-      const markup = await renderMonth({ canWrite: false }, { focus })
-      expectNoWriteControls(markup)
-      expect(text(markup)).toContain('Este mes no tiene objetivos cargados.')
-    }
-  })
-
-  it('la noche de hoy: «Cargar el cierre de hoy» solo para quien carga', () => {
-    const night = (canWrite: boolean) => {
-      ui.readOnly = !canWrite
-      return html(
-        <NightSheet
-          tenantId="tenant"
-          base={BASE}
-          today={TODAY}
-          day={TODAY}
-          state="today"
-          monthName="octubre"
-          monthState="current"
-          projectionDay={null}
-          closes={[]}
-          events={[]}
-          counts={{}}
-          treasuries={[]}
-          canWrite={canWrite}
-        />,
-      )
-    }
-    expect(night(true)).toContain(`href="${BASE}/ventas/cierre?fecha=${TODAY}"`)
-    const reader = night(false)
-    expect(text(reader)).toContain('En curso')
-    expectNoWriteControls(reader)
-    expect(reader).not.toContain('<button')
-  })
-
   it('a quien solo mira no se le dice «anotaste»', () => {
     const none = { comparedDays: 0, diffCents: 0 }
     expect(cashTitle(none)).toBe('Todavía no anotaste lo que entró ninguna noche')
     expect(cashTitle(none, { reader: true })).toBe('Todavía no se anotó lo que entró ninguna noche')
-  })
-})
-
-describe('la planilla de un mes sin objetivo', () => {
-  it('no dice «objetivo $ 0»: un objetivo que falta no es un cero', async () => {
-    const read = text(await renderMonth({}, { focus: 'proyeccion' }))
-    expect(read).toContain('Ver la planilla día por día')
-    expect(read).not.toMatch(/objetivo \$ 0(?![\d.,])/i)
-  })
-})
-
-// ─── Las vistas ──────────────────────────────────────────────────────────────
-
-describe('la fila de vistas', () => {
-  it('cuatro vistas, la elegida marcada, con los links de siempre', () => {
-    const markup = html(<VentasViews base={BASE} view="cobrar" month="2026-09" />)
-    expect(markup).toContain('aria-label="Vistas de Ventas"')
-    for (const label of ['El mes', 'Plata por cobrar', 'Lo que llegó', 'Facturas']) {
-      expect(markup).toContain(label)
-    }
-    expect(markup).toContain(`href="${BASE}/ventas?mes=2026-09"`)
-    expect(markup).toContain(`href="${BASE}/ventas?tab=clientes"`)
-    expect(markup).toContain(`href="${BASE}/ventas?tab=neto-por-medio&amp;mes=2026-09"`)
-    expect(markup).toContain(`href="${BASE}/ventas?tab=facturas&amp;mes=2026-09"`)
-    expect(markup.split('aria-current="page"').length - 1).toBe(1)
   })
 })
 
@@ -1097,6 +1384,7 @@ describe('un solo libro: lo que ningún texto de Ventas dice', () => {
   it('en la pantalla ya dibujada', async () => {
     const pages = [
       await renderMonth({ targetCents: 150_000_000 }),
+      await renderMonth({ targetCents: 150_000_000 }, { detail: true }),
       await renderMonth({ closedBefore: '2026-10-01', booksStartDate: '2026-10-12' }),
       await renderMonth({ targetCents: 150_000_000, canWrite: false }),
     ]

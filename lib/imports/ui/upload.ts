@@ -29,6 +29,7 @@ import { detectSource, IMPORT_MAX_FILE_BYTES, type OpenedTable } from '@/lib/imp
 import { type MpParseResult, parseReleaseReport } from '@/lib/imports/mercadopago/release'
 import type { ImportBatchMeta } from '@/lib/imports/server/types'
 import {
+  type Cell,
   type DetectedSource,
   IMPORT_ISSUE_TEXT,
   type ImportIssue,
@@ -44,7 +45,8 @@ import { count, formatCount } from './progress'
 
 export type OpenedFile =
   | { ok: true; table: OpenedTable; detected: DetectedSource }
-  | { ok: false; message: string }
+  /** `detected`: no se pudo abrir, pero por el nombre ya se sabe qué es. */
+  | { ok: false; message: string; detected?: DetectedSource }
 
 /** Abre el archivo y dice qué parece ser. Nunca tira por un archivo roto. */
 export async function openImportFile(input: {
@@ -61,6 +63,9 @@ export async function openImportFile(input: {
     ...(input.inflateRaw ? { inflateRaw: input.inflateRaw } : {}),
   })
   if (!result.table) {
+    if (result.source === 'mp_collection') {
+      return { ok: false, message: IMPORT_ISSUE_TEXT.mp_collection, detected: result.source }
+    }
     return {
       ok: false,
       message: result.issue ? issueText(result.issue) : IMPORT_ISSUE_TEXT.file_not_table,
@@ -76,17 +81,77 @@ const DETECTED_HOME: Readonly<Partial<Record<DetectedSource, UiImportSource>>> =
   bank: 'bank_statement',
 }
 
+/**
+ * El importador de lo que se reconoció, aunque ese archivo no se pueda importar (Emitidos, el reporte
+ * de Cobros): allá se explica qué bajar. `null`: no se sabe de dónde es.
+ */
+export function detectedSourceHome(detected: DetectedSource): UiImportSource | null {
+  switch (detected) {
+    case 'arca_recibidos':
+    case 'arca_emitidos':
+    case 'portal_iva_compras':
+      return 'arca_recibidos'
+    case 'mp_release':
+    case 'mp_settlement':
+    case 'mp_collection':
+      return 'mp_release'
+    case 'bank':
+      return 'bank_statement'
+    default:
+      return null
+  }
+}
+
 export type WrongPlace = {
   message: string
   /** El importador correcto, si lo hay (la pantalla ofrece el link). */
   goTo: UiImportSource | null
+  /** El archivo que sirve se baja de otra forma: la pantalla muestra ahí mismo cómo. */
+  howTo?: true
+  /** No se reconoció: lo que trae el archivo y lo que esperábamos, en vez de solo un error. */
+  columns?: { found: string[]; expected: readonly string[] }
+}
+
+/** Lo que tiene que traer cada archivo para reconocerlo (`isMcHeader`, `isMpReleaseHeader`). */
+const EXPECTED_COLUMNS: Readonly<Partial<Record<UiImportSource, readonly string[]>>> = {
+  arca_recibidos: ['Fecha de Emisión', 'Tipo de Comprobante', 'Punto de Venta', 'Imp. Total'],
+  mp_release: ['DATE', 'RECORD_TYPE', 'DESCRIPTION', 'NET_CREDIT_AMOUNT', 'NET_DEBIT_AMOUNT'],
+}
+
+/** Los títulos que se muestran, como mucho. */
+const MAX_SHOWN_COLUMNS = 12
+
+/**
+ * Las columnas que trae un archivo que no se reconoció: de las primeras filas, la que tiene más
+ * celdas con letras (a igualdad, la primera), que es la de los títulos.
+ */
+export function fileColumns(rows: readonly (readonly Cell[])[]): string[] {
+  let best: string[] = []
+  for (const row of rows.slice(0, 30)) {
+    const titles = row
+      .map((c) => (c === null ? '' : String(c).trim()))
+      .filter((c) => /\p{L}/u.test(c))
+      .map((c) => (c.length > 40 ? `${c.slice(0, 39)}…` : c))
+    if (titles.length > best.length) best = titles
+  }
+  return best.slice(0, MAX_SHOWN_COLUMNS)
 }
 
 /**
  * Si el archivo es de otro lado, por qué y adónde ir. `null` si sirve acá (o si
- * no se reconoce y el banco igual puede pedir las columnas).
+ * no se reconoce y el banco igual puede pedir las columnas). `rows`: las filas del
+ * archivo, para mostrar qué columnas trae uno que no se reconoció.
  */
-export function wrongPlace(expected: UiImportSource, detected: DetectedSource): WrongPlace | null {
+export function wrongPlace(
+  expected: UiImportSource,
+  detected: DetectedSource,
+  rows?: readonly (readonly Cell[])[],
+): WrongPlace | null {
+  if (detected === 'mp_collection') {
+    return expected === 'mp_release'
+      ? { message: IMPORT_ISSUE_TEXT.mp_collection, goTo: null, howTo: true }
+      : { message: IMPORT_ISSUE_TEXT.mp_collection, goTo: 'mp_release' }
+  }
   if (detected === 'arca_emitidos') {
     return {
       message:
@@ -102,20 +167,23 @@ export function wrongPlace(expected: UiImportSource, detected: DetectedSource): 
     }
   }
   if (detected === 'mp_settlement') {
-    return {
-      message: IMPORT_ISSUE_TEXT.mp_settlement,
-      goTo: expected === 'mp_release' ? null : 'mp_release',
-    }
+    return expected === 'mp_release'
+      ? { message: IMPORT_ISSUE_TEXT.mp_settlement, goTo: null, howTo: true }
+      : { message: IMPORT_ISSUE_TEXT.mp_settlement, goTo: 'mp_release' }
   }
   const home = DETECTED_HOME[detected] ?? null
   if (home === null) {
     if (expected === 'bank_statement') return null
+    const found = rows ? fileColumns(rows) : []
+    const columns = EXPECTED_COLUMNS[expected]
     return {
       message:
         expected === 'arca_recibidos'
           ? 'No reconocemos este archivo. Subí el ZIP de «Mis Comprobantes › Recibidos» tal cual lo bajaste de ARCA, sin abrirlo con Excel.'
           : 'No reconocemos este archivo. Subí el CSV del reporte de «Liquidaciones» de Mercado Pago, sin abrirlo con Excel.',
       goTo: null,
+      howTo: true,
+      ...(found.length > 0 && columns ? { columns: { found, expected: columns } } : {}),
     }
   }
   if (home === expected) return null

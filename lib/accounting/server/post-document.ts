@@ -266,7 +266,9 @@ export async function runPostDocument(
   const op = `post.${form}`
   try {
     if (typeof slug !== 'string' || slug === '') return forbiddenState()
-    const auth = await authorizeAccounting(slug, 'write')
+    // La contadora graba asientos manuales (reunión del 29/10/2026); todo lo demás es de los dueños con acceso.
+    // La base lo vuelve a decidir en `acc_post_bundle` (`private.acc_assert_poster`).
+    const auth = await authorizeAccounting(slug, form === 'manual_entry' ? 'read' : 'write')
     if (!auth.ok) return auth.state
 
     const parsed = parseDocumentForm(form, raw)

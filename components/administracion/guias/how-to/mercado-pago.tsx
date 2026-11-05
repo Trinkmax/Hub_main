@@ -58,6 +58,7 @@ export function HowToMercadoPago({
         >
           En Mercado Pago andá a{' '}
           <b>Informes y facturación › Reportes de ventas y extractos de cuenta › Liquidaciones</b>.
+          El de Cobros no sirve: no trae lo que te descontaron.
         </HowToStep>
         <HowToStep n={2}>
           Tocá <b>«Crear reporte»</b> y elegí las fechas: hasta <b>60 días</b> por reporte. Lo más
@@ -68,8 +69,8 @@ export function HowToMercadoPago({
           Excel).
         </HowToStep>
         <HowToStep n={4}>
-          Arrastrá el .csv a la pantalla de importar. Si un día ya estaba subido, no se carga dos
-          veces.
+          Arrastrá el .csv a cualquier pantalla de Administración. Si un día ya estaba subido, no se
+          carga dos veces.
         </HowToStep>
       </ol>
       <HowToNote icon={<Mail className="size-4" />} title="Solo la primera vez">

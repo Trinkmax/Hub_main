@@ -1,5 +1,5 @@
 import 'server-only'
-import type { ProjectionSourceDay } from '@/lib/accounting/projection'
+import type { ProjectionSourceDay, TargetOfDay } from '@/lib/accounting/projection'
 import { TREASURY_KINDS, type TreasuryKind } from '@/lib/accounting/types'
 import { eventTitle } from '@/lib/salon/events-report'
 import {
@@ -55,6 +55,34 @@ export async function getSalesProjection(
     p_to: to,
   })
   return raw.map(parseProjectionRow).filter((row): row is ProjectionSourceDay => row !== null)
+}
+
+/**
+ * Solo los objetivos de un rango, sin el reporte: lo que necesita «Copiar el mes pasado». Vienen los días que
+ * tienen objetivo (una fila puede guardar solo la nota: esa no).
+ */
+export async function listSalesTargets(
+  tenantId: string,
+  range: { from: string; to: string },
+): Promise<TargetOfDay[]> {
+  const { from, to } = requireRange(range.from, range.to)
+  const supabase = await readerClient()
+  const { data, error } = await supabase
+    .from('acc_sales_targets')
+    .select('day, target_cents')
+    .eq('tenant_id', tenantId)
+    .gte('day', from)
+    .lte('day', to)
+    .not('target_cents', 'is', null)
+    .order('day', { ascending: true })
+    .limit(100)
+  if (error) throw queryError('acc_sales_targets', error)
+  const out: TargetOfDay[] = []
+  for (const row of ((data ?? []) as unknown[]).filter(isRecord)) {
+    const day = dayOrNull(row.day)
+    if (day) out.push({ day, targetCents: centsOrNull(row.target_cents) })
+  }
+  return out
 }
 
 // ─── Lo que entró en cada caja ───────────────────────────────────────────────

@@ -1,33 +1,30 @@
-import { ArrowRight, CalendarCheck, CircleAlert, FilePenLine, TriangleAlert } from 'lucide-react'
+import { ChevronDown, CircleAlert, FilePenLine, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Amount } from '@/components/administracion/amount'
-import { CloseStrip } from '@/components/administracion/charts/close-strip'
-import { MonthStrip } from '@/components/administracion/charts/month-strip'
-import { compactCents } from '@/components/administracion/charts/scale'
 import { EntryPreview } from '@/components/administracion/entry-preview'
-import { plural } from '@/components/administracion/format'
+import { OpenFoldFromHash } from '@/components/administracion/guias/uso/open-fold-from-hash'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import {
-  AdmHeader,
-  AdmPage,
-  EmptyTeach,
-  Panel,
-  PanelLink,
-  StepCard,
-} from '@/components/administracion/kit'
-import { LauncherButton } from '@/components/administracion/nav/launcher'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+  Planilla,
+  PlanillaFoot,
+  PlanillaTitle,
+  SimplePage,
+} from '@/components/administracion/planilla'
 import { Button } from '@/components/ui/button'
+import { trialAnomalies } from '@/lib/accounting/anomalies'
 import { tryLoadPostingContext } from '@/lib/accounting/context'
 import { buildIvaSettlement } from '@/lib/accounting/posting/iva-settlement'
 import {
   type FiscalYearRow,
   getAccessOverview,
   getAccountingSettings,
+  getAccountSystemKeys,
   getCloseChecklist,
   getDailyCloseCalendar,
-  getIvaPosition,
+  getMonthPackage,
+  getPayrollMonthStatus,
+  getTrialBalance,
   listFiscalYears,
   listPeriodEvents,
   type PeriodRow,
@@ -37,24 +34,18 @@ import {
 import { getAppUrl } from '@/lib/app-url'
 import {
   addMonthsToYearMonth,
-  formatDate,
   formatIsoDay,
   formatMonthLabel,
   monthOf,
   todayInCordoba,
 } from '@/lib/dates'
+import { type BookCounts, BookIndex } from '../_components/book-index'
+import { ExportAllButton } from '../_components/export-button'
+import { MonthPicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
 import { ivaExpectedFrom } from '../_lib/iva'
-import { ivaHero } from '../_lib/iva-story'
-import {
-  earlierOpenMonth,
-  focusMonth,
-  monthNoun,
-  monthPeriods,
-  monthStripModel,
-  monthTitle,
-} from '../_lib/months'
-import { downloadablePackage, packageFiles } from '../_lib/package'
+import { earlierOpenMonth, focusMonth, monthNoun, monthPeriods } from '../_lib/months'
+import { countText, downloadablePackage, packageCountText, packageFiles } from '../_lib/package'
 import { requireBooksAccess } from '../_lib/page-access'
 import {
   bookHref,
@@ -68,50 +59,42 @@ import {
   CloseMonthButton,
   ReopenMonthMenu,
 } from './_components/close-actions'
-import { CloseStepBody } from './_components/close-step'
-import { coverLine, MonthCover, type MonthCoverData } from './_components/month-cover'
-import { ReviewStep } from './_components/review-step'
+import { CloseList } from './_components/close-list'
+import { OpenFoldLink } from './_components/open-fold-link'
 import { type SendAudience, SendStepBody } from './_components/send-step'
+import { closeLines } from './_lib/close-lines'
 import { type FiscalYearClosePreview, fiscalYearClosePreview } from './_lib/fiscal-year-close'
-import {
-  closeHeadline,
-  closeReview,
-  closeStripDays,
-  closeWaitText,
-  firstReviewAction,
-  ivaClosePlan,
-  stepStates,
-} from './_lib/review'
+import { closeHeadline, closeReview, ivaClosePlan } from './_lib/review'
 
-export const metadata = { title: 'Fin de mes' }
+export const metadata = { title: 'Cierre de mes' }
 
-/** `clientRef` de relleno para la vista previa del asiento del IVA (no se guarda). */
-const PREVIEW_CLIENT_REF = '00000000-0000-4000-8000-000000000000'
-
-/** Cuánto dura el «sellazo» del papel después de cerrar. */
-const JUST_CLOSED_MS = 90_000
+const TITLE = 'font-serif text-2xl font-semibold tracking-tight'
 
 function yearLabel(year: FiscalYearRow): string {
   return `${formatIsoDay(year.startDate)} al ${formatIsoDay(year.endDate)}`
 }
 
+/** La oración del IVA que toma el cierre, entera. */
+function planText(plan: ReturnType<typeof ivaClosePlan>): string | null {
+  if (!plan.text) return null
+  return `${plan.text.lead}${plan.text.amount ?? ''}${plan.text.tail}`
+}
+
 /**
- * «Fin de mes»: el mes que se sella. A la izquierda, tres pasos a la vista que
- * se tildan solos (revisar los avisos · cerrar el mes · mandarle los libros a
- * la contadora); a la derecha, el papel del mes, que recibe el sello «CERRADO».
- * Es el espejo mensual del cierre del día: mismo gesto, otra escala.
+ * Cierre de mes: el checklist antes de sellar el mes, sin carátula. Arriba, el título con el mes y los
+ * dos botones («Descargar los libros» y «Cerrar octubre»); después, una fila por cosa para mirar, con
+ * su link. Debajo, lo que no se usa todos los días: mandarle los libros a la contadora, archivo por
+ * archivo y todos los meses con su historial.
  *
- * - `?mes=yyyy-MM` deja MIRAR cualquier mes del ejercicio; cerrar, solo el que
- *   la base permite (el próximo abierto, en orden).
- * - Un solo botón primario: la primera acción del paso que toca.
- * - La contadora ve todo, sin un solo botón de carga: ni cerrar, ni reabrir, ni
- *   las acciones de los avisos. Descargar sí (descargar no es cargar).
+ * - `?mes=yyyy-MM` deja MIRAR cualquier mes del ejercicio; cerrar, solo el que la base permite (el
+ *   próximo abierto, en orden).
+ * - La contadora ve todo, sin botones de carga: ni cerrar, ni reabrir, ni las acciones de los avisos.
+ *   Descargar sí (descargar no es cargar).
  *
- * La lógica del cierre no cambió: `CloseMonthButton` recibe lo mismo de siempre
- * (`warningKeys`, y del IVA `expected`, la frase del diálogo y si se puede
- * apagar).
+ * La lógica del cierre no cambió: `CloseMonthButton` recibe lo mismo de siempre (`warningKeys`, y del
+ * IVA `expected`, la frase del diálogo y si se puede apagar).
  */
-export default async function FinDeMesPage({
+export default async function CierreDeMesPage({
   params,
   searchParams,
 }: {
@@ -132,14 +115,13 @@ export default async function FinDeMesPage({
     settleQuery(getAccountingSettings(tenantId)),
   ])
   const settings = settingsResult.ok ? settingsResult.data : null
-  const badge = <ReadOnlyBadge className="ml-0" />
 
   if (!yearsResult.ok) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader back={{ href: books, label: 'Libros' }} title="Fin de mes" badge={badge} />
+      <SimplePage width="narrow">
+        <h1 className={TITLE}>Cierre de mes</h1>
         <QueryErrorBlock code={yearsResult.code} message={yearsResult.message} />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -149,16 +131,17 @@ export default async function FinDeMesPage({
 
   if (months.length === 0) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader back={{ href: books, label: 'Libros' }} title="Fin de mes" badge={badge} />
-        <EmptyTeach
-          icon={CalendarCheck}
-          title="Todavía no hay meses en los libros"
-          action={canWrite ? <LauncherButton /> : undefined}
-        >
-          Aparecen solos cuando cargás el primer gasto o el primer cierre del día.
-        </EmptyTeach>
-      </AdmPage>
+      <SimplePage width="narrow">
+        <h1 className={TITLE}>Cierre de mes</h1>
+        <Planilla>
+          <div className="grid gap-1 px-3 py-6 text-center text-sm text-pretty">
+            <p className="font-medium">Todavía no hay meses en los libros</p>
+            <p className="text-muted-foreground">
+              Aparecen solos cuando cargás el primer gasto o el primer cierre del día.
+            </p>
+          </div>
+        </Planilla>
+      </SimplePage>
     )
   }
 
@@ -177,21 +160,34 @@ export default async function FinDeMesPage({
   const lastClosed = [...months].reverse().find((p) => p.status === 'closed') ?? null
   const closed = period?.status === 'closed'
   const isOwner = access.role === 'owner'
+  const minMonth = settings ? monthOf(settings.booksStartDate) : null
 
-  const [checklistResult, calendarResult, closedIvaResult, verify, events, loaded, overview, url] =
-    await Promise.all([
-      period && !closed ? settleQuery(getCloseChecklist(tenantId, period.month)) : null,
-      period ? settleQuery(getDailyCloseCalendar(tenantId, month.month)) : null,
-      period && closed ? settleQuery(getIvaPosition(tenantId, month.month)) : null,
-      settleQuery(verifyClosedPeriods(tenantId)),
-      settleQuery(listPeriodEvents(tenantId, { limit: 30 })),
-      canWrite ? tryLoadPostingContext(tenantId) : null,
-      // `get_tenant_members` es de dueños: solo se pide para uno, y solo con el mes cerrado.
-      period && closed && canWrite && isOwner
-        ? settleQuery(getAccessOverview(tenantId, { includeMembers: true }))
-        : null,
-      period && closed ? getAppUrl() : null,
-    ])
+  const [
+    checklistResult,
+    calendarResult,
+    trial,
+    systemKeys,
+    payroll,
+    verify,
+    events,
+    loaded,
+    overview,
+    url,
+  ] = await Promise.all([
+    period && !closed ? settleQuery(getCloseChecklist(tenantId, period.month)) : null,
+    period && !closed ? settleQuery(getDailyCloseCalendar(tenantId, month.month)) : null,
+    period ? settleQuery(getTrialBalance(tenantId, { from: month.from, to: month.to })) : null,
+    settleQuery(getAccountSystemKeys(tenantId)),
+    period && !closed ? settleQuery(getPayrollMonthStatus(tenantId, month.month)) : null,
+    settleQuery(verifyClosedPeriods(tenantId)),
+    settleQuery(listPeriodEvents(tenantId, { limit: 30 })),
+    canWrite ? tryLoadPostingContext(tenantId) : null,
+    // `get_tenant_members` es de dueños: solo se pide para uno, y solo con el mes cerrado.
+    period && closed && canWrite && isOwner
+      ? settleQuery(getAccessOverview(tenantId, { includeMembers: true }))
+      : null,
+    period && closed ? getAppUrl() : null,
+  ])
   const ctx = loaded?.ok ? loaded.ctx : null
   const changed = new Set(verify.ok ? verify.data.filter((v) => !v.ok).map((v) => v.periodId) : [])
   const changedMonths = months.filter((p) => changed.has(p.id))
@@ -212,33 +208,19 @@ export default async function FinDeMesPage({
       ? await fiscalYearClosePreview(tenantId, fyCandidate, ctx)
       : null
 
-  const strip = year ? (
-    <nav aria-label="Meses del ejercicio">
-      <MonthStrip
-        months={monthStripModel(year.periods, {
-          today,
-          selected: resolved.ok ? month.month : null,
-          hrefFor: (m) => bookHref(path, { mes: m }),
-          alertIds: changed,
-        })}
-      />
-    </nav>
-  ) : null
-  // La ayuda va en el encabezado, a la altura de la oración del mes (no suelta al lado de la tira).
-  const howLink = (
-    // En el celular baja a su renglón: se le recorta el aire de más (el link mide 44 px de alto).
-    <PanelLink
-      href={`${base}/guias/dia-a-dia#receta-fin-de-mes`}
-      className="text-muted-foreground max-sm:-mt-2 max-sm:-mb-3"
-    >
-      ¿Cómo es el fin de mes?
-    </PanelLink>
+  const picker = (
+    <MonthPicker
+      month={month.month}
+      today={today}
+      minMonth={minMonth}
+      className="justify-self-start"
+    />
   )
   const changedAlert =
     changedMonths.length > 0 ? (
       <div
         role="alert"
-        className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+        className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
       >
         <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
         <p className="text-pretty font-medium">
@@ -247,6 +229,19 @@ export default async function FinDeMesPage({
         </p>
       </div>
     ) : null
+  const allMonths = (open: boolean) => (
+    <AllMonths
+      years={years}
+      events={events.ok ? events.data : []}
+      tenantSlug={tenantSlug}
+      path={path}
+      today={today}
+      canWrite={canWrite}
+      lastClosedId={lastClosed?.id ?? null}
+      changed={changed}
+      open={open}
+    />
+  )
 
   // ── Un mes sin libros (anterior al arranque, que no empezó, o un `?mes=` roto) ──
   if (!period) {
@@ -255,50 +250,32 @@ export default async function FinDeMesPage({
     const backTo =
       target !== month.month && months.some((p) => monthOf(p.month) === target) ? target : null
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader
-          back={{ href: books, label: 'Libros' }}
-          title="Fin de mes"
-          badge={badge}
-          description={
-            <span className="font-medium text-foreground">
+      <SimplePage width="narrow">
+        <h1 className={TITLE}>Cierre de mes</h1>
+        {picker}
+        {!resolved.ok ? <PeriodError message={resolved.message} hint={null} /> : null}
+        {changedAlert}
+        <Planilla>
+          <div className="grid justify-items-center gap-3 px-3 py-6 text-center text-sm">
+            <p className="font-medium text-pretty">
               {availability === 'ok'
                 ? `${month.label} no tiene libros todavía.`
                 : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate)}
-            </span>
-          }
-          actions={
-            backTo ? (
-              <Button asChild className="h-12 w-full gap-2 px-5 text-base sm:w-auto">
-                <Link href={bookHref(path, { mes: backTo })}>
-                  Ir a {monthNoun(backTo)}
-                  <ArrowRight className="size-4" aria-hidden />
-                </Link>
+            </p>
+            {backTo ? (
+              <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
+                <Link href={bookHref(path, { mes: backTo })}>Ir a {monthNoun(backTo)}</Link>
               </Button>
-            ) : undefined
-          }
-        />
-        {!resolved.ok ? <PeriodError message={resolved.message} hint={null} /> : null}
-        {changedAlert}
-        {strip}
-        <AllMonths
-          years={years}
-          events={events.ok ? events.data : []}
-          tenantSlug={tenantSlug}
-          path={path}
-          today={today}
-          canWrite={canWrite}
-          lastClosedId={lastClosed?.id ?? null}
-          changed={changed}
-          open
-        />
-      </AdmPage>
+            ) : null}
+          </div>
+        </Planilla>
+        {allMonths(true)}
+      </SimplePage>
     )
   }
 
   // ── El mes elegido ──
   const noun = monthNoun(month.month)
-  const name = monthTitle(month.month)
   const nextNoun = monthNoun(addMonthsToYearMonth(month.month, 1))
   const finished = period.endsOn < today
   const earlier = earlierOpenMonth(allPeriods, month.month)
@@ -329,145 +306,67 @@ export default async function FinDeMesPage({
     path,
   })
   const canClose = Boolean(checklist?.canClose)
-  const [reviewState, closeState, sendState] = checklist
-    ? stepStates({ closed, canClose, hasWork: review?.hasWork ?? false })
-    : closed
-      ? stepStates({ closed: true, canClose: false, hasWork: false })
-      : (['current', 'todo', 'todo'] as const)
-  const primaryAction =
-    canWrite && review && reviewState === 'current' ? firstReviewAction(review) : null
+  const canReopen =
+    canWrite && closed && period.id === lastClosed?.id && year !== null && year.status === 'open'
 
   // El IVA que toma el cierre: las mismas ramas de siempre, con otras palabras.
   const iva = checklist?.iva ?? null
   const plan = ivaClosePlan(iva, month.month)
+  const ivaHref = bookHref(`${books}/posicion-iva`, { mes: month.month })
   const built =
     plan.settles && !plan.voidsOnly && iva && ctx
-      ? buildIvaSettlement({ month: period.month, figures: iva.figures }, ctx, {
-          clientRef: PREVIEW_CLIENT_REF,
-        })
+      ? buildIvaSettlement(
+          { month: period.month, figures: iva.figures },
+          ctx,
+          // La vista previa no se guarda: no hace falta una referencia de verdad.
+          { clientRef: '00000000-0000-4000-8000-000000000000' },
+        )
       : null
   const ivaPreview = built?.ok && built.preview.length > 0 ? built.preview : null
+  const plainPlan = planText(plan)
 
-  // El papel del mes.
-  const position = closed ? (closedIvaResult?.ok ? closedIvaResult.data : null) : iva
-  const hero = position ? ivaHero(position, month.month) : null
-  const registered = settings?.ivaCondition === 'responsable_inscripto'
-  const cover: MonthCoverData = {
+  const anomalies = trial?.ok
+    ? trialAnomalies(trial.data.rows, systemKeys.ok ? systemKeys.data : new Map())
+    : null
+  const lines = closeLines({
     month: month.month,
-    closed,
-    closedAt: period.closedAt,
-    soldCents: calendar && calendar.loadedDays > 0 ? calendar.soldCents : null,
-    daysText: calendar
-      ? `${calendar.loadedDays} de ${calendar.loadedDays + calendar.missingDays}`
+    base,
+    trial: trial?.ok
+      ? { balanced: trial.data.balanced, differenceCents: trial.data.differenceCents }
       : null,
-    ivaText: hero && hero.cents !== null ? hero.short : null,
-    ivaApplies: position ? position.applies : registered,
-    justClosed:
-      closed && period.closedAt !== null
-        ? Date.now() - Date.parse(period.closedAt) < JUST_CLOSED_MS
-        : false,
-  }
-  const mobileLine = coverLine(cover, {
-    sold: cover.soldCents !== null ? compactCents(cover.soldCents) : null,
-    iva:
-      hero && hero.cents !== null
-        ? `${compactCents(hero.cents)} ${hero.kind === 'in_favor' ? 'a favor' : 'a pagar'}`
-        : null,
+    oddAccounts: anomalies ? anomalies.size : null,
+    review,
+    payroll: payroll?.ok ? payroll.data : null,
+    iva: plainPlan ? { text: plainPlan, href: ivaHref } : null,
+    closed,
   })
 
-  // «Cómo queda en los libros»: los totales, la numeración y el asiento del IVA.
-  const entriesCount = closed ? period.entriesCount : (checklist?.entriesCount ?? null)
-  const debitTotal = closed ? period.debitTotalCents : (checklist?.debitTotalCents ?? null)
-  const creditTotal = closed ? period.debitTotalCents : (checklist?.creditTotalCents ?? debitTotal)
-  const numberFrom = closed ? period.numberFrom : (checklist?.numberFrom ?? null)
-  const numberTo = closed ? period.numberTo : (checklist?.numberTo ?? null)
-  const coverBooks: ReactNode =
-    entriesCount !== null ? (
-      <>
-        <p>
-          {plural(entriesCount, 'asiento', 'asientos')}
-          {debitTotal !== null ? (
-            <>
-              {' · Debe '}
-              <Amount cents={debitTotal} />
-              {' · Haber '}
-              <Amount cents={creditTotal ?? debitTotal} />
-            </>
-          ) : null}
-        </p>
-        {numberFrom !== null && numberTo !== null ? (
-          <p className="text-muted-foreground text-pretty">
-            Los asientos de {noun} {closed ? 'quedaron' : 'van a quedar'} numerados del {numberFrom}{' '}
-            al {numberTo}.
-          </p>
-        ) : null}
-        {ivaPreview ? <EntryPreview entries={ivaPreview} label="Ver el asiento del IVA" /> : null}
-        {closed && period.ivaSettlementDocumentId ? (
-          <PanelLink href={`${base}/comprobantes/${period.ivaSettlementDocumentId}`}>
-            Ver cómo quedó anotado el IVA
-            <ArrowRight className="size-3.5" aria-hidden />
-          </PanelLink>
-        ) : null}
-      </>
-    ) : null
-
-  // Paso 1.
-  const reviewSummary = closed
-    ? 'Mes cerrado: no queda nada para revisar.'
-    : !review
-      ? null
-      : !finished
-        ? canWrite
-          ? `Lo que cargues con fecha de ${noun} entra en este mes.`
-          : `Lo que los dueños carguen con fecha de ${noun} entra en este mes.`
-        : review.hasWork
-          ? 'Lo que dice «Aviso» no frena el cierre; lo que dice «Falta», sí.'
-          : 'No hay avisos.'
-
-  // Paso 2.
-  const canReopen =
-    canWrite && closed && period.id === lastClosed?.id && year !== null && year.status === 'open'
-  const closedLine = `Cerrado${period.closedAt ? ` el ${formatDate(period.closedAt)}` : ''}${
-    period.closedByName ? ` por ${period.closedByName}` : ''
-  }.`
-  const closeSummary = closed
-    ? closedLine
-    : !canWrite
-      ? 'Abierto: lo cierran los dueños.'
-      : canClose
-        ? `Deja ${noun} fijo: después no se puede cargar ni cambiar nada con esa fecha. Si hiciera falta, se reabre.`
-        : closeWaitText({
-            month: month.month,
-            period,
-            today,
-            earlierOpen: earlierMonth,
-            openingPending: checklist?.blockers.some((b) => b.key === 'opening_pending') ?? false,
-            blockersCount: review?.blockersCount ?? 0,
-          })
-
-  // Paso 3.
+  // Lo que se baja.
   const files = packageFiles(tenantSlug, month, today)
   const hasCuit = !settings || Boolean(settings.cuit)
   const downloadable = downloadablePackage(files, hasCuit)
-  const audience: SendAudience = !canWrite
-    ? { kind: 'reader' }
-    : isOwner && overview?.ok
+  const missing = files.length - downloadable.length
+  const audience: SendAudience =
+    isOwner && overview?.ok
       ? {
           kind: 'owner',
           accountants: overview.data.accountants.map((a) => a.name),
           canInvite: access.accounting.admin,
         }
       : { kind: 'writer' }
-  const monthBooksHref = `${bookHref(books, { mes: month.month })}#paquete-del-mes`
+  // Las cuentas de cada archivo son catorce lecturas: solo para quien vino a buscar los archivos.
+  const counts: Promise<BookCounts> | null = canWrite
+    ? null
+    : settleQuery(getMonthPackage(tenantId, month.month)).then((pkg) =>
+        pkg.ok ? new Map(pkg.data.files.map((f) => [f.libro, countText(f)])) : null,
+      )
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={{ href: bookHref(books, { mes: month.month }), label: 'Libros' }}
-        title="Fin de mes"
-        badge={badge}
-        description={
-          <>
+    <SimplePage width="narrow">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid min-w-0 flex-1 basis-72 gap-1">
+          <h1 className={TITLE}>Cierre de {noun}</h1>
+          <p className="text-sm text-muted-foreground text-pretty">
             <span className="font-medium text-foreground">{headline.lead}</span>
             {headline.rest ? ` ${headline.rest}` : null}
             {headline.link ? (
@@ -475,140 +374,107 @@ export default async function FinDeMesPage({
                 {' '}
                 <Link
                   href={headline.link.href}
-                  className="font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {headline.link.label}
                 </Link>
               </>
             ) : null}
-          </>
-        }
-        actions={howLink}
-      />
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {downloadable.length > 0 ? (
+            <ExportAllButton
+              label="Descargar los libros"
+              count={packageCountText(files.length, downloadable.length)}
+              variant="outline"
+              className="h-11 md:pointer-fine:h-9"
+              files={downloadable.map((f) => ({
+                href: f.href,
+                fileName: f.fileName,
+                title: f.title,
+              }))}
+            />
+          ) : null}
+          {canWrite && canClose && checklist ? (
+            <CloseMonthButton
+              tenantSlug={tenantSlug}
+              month={period.month}
+              monthNoun={noun}
+              nextMonthNoun={nextNoun}
+              warningKeys={checklist.warningKeys}
+              iva={
+                plan.settles && iva
+                  ? {
+                      expected: ivaExpectedFrom(iva),
+                      summary: plan.summary,
+                      // Con un IVA viejo anotado no se puede cerrar sin reemplazarlo.
+                      optional: !plan.replaces,
+                    }
+                  : null
+              }
+            />
+          ) : null}
+          {canReopen ? (
+            <ReopenMonthMenu tenantSlug={tenantSlug} month={period.month} monthNoun={noun} />
+          ) : null}
+        </div>
+      </div>
 
+      {picker}
       {!resolved.ok ? <PeriodError message={resolved.message} hint={null} /> : null}
       {changedAlert}
-      {strip}
+      {checklistResult && !checklistResult.ok ? (
+        <QueryErrorBlock code={checklistResult.code} message={checklistResult.message} />
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
-        <div className="order-2 min-w-0 space-y-4 lg:order-1 lg:col-span-7">
-          <StepCard
-            open
-            n={1}
-            id="paso-1"
-            state={reviewState}
-            title={canWrite ? 'Revisá los avisos' : 'Lo que falta revisar'}
-            summary={reviewSummary}
-          >
-            {closed ? null : checklistResult && !checklistResult.ok ? (
-              <QueryErrorBlock code={checklistResult.code} message={checklistResult.message} />
-            ) : review ? (
-              <ReviewStep
-                review={review}
-                primaryAction={primaryAction}
-                strip={
-                  calendar ? (
-                    <CloseStrip
-                      days={closeStripDays(calendar, canWrite ? base : null)}
-                      showLegend={false}
-                      foldFuture
-                    />
-                  ) : null
-                }
-              />
-            ) : null}
-          </StepCard>
+      <Planilla>
+        <CloseList lines={lines} label={`Lo que hay que mirar antes de cerrar ${noun}`} />
+        {review && review.info.length > 0 ? (
+          <ul className="grid gap-1 border-t border-border/70 px-3 py-2 text-sm">
+            {review.info.map((text) => (
+              <li key={text} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <StatusPill tone="info">Para la contadora</StatusPill>
+                <span className="min-w-0 flex-1 basis-56 text-muted-foreground text-pretty">
+                  {text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <PlanillaFoot className="justify-start gap-x-4 text-sm">
+          <FootLink href={bookHref(`${books}/historia`, { mes: month.month })}>Historia</FootLink>
+          <FootLink href={bookHref(`${books}/subdiarios`, { mes: month.month })}>
+            Subdiarios
+          </FootLink>
+          <OpenFoldLink target="archivos" className={FOOT_LINK}>
+            Archivo por archivo
+          </OpenFoldLink>
+          {!closed ? (
+            <span className="text-xs text-muted-foreground">
+              Lo que se descarga hoy puede cambiar hasta que cierres.
+            </span>
+          ) : null}
+          {missing > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              Se descargan {downloadable.length} de {files.length}: los {missing} de IVA necesitan
+              la CUIT del bar.{' '}
+              {canWrite ? (
+                <FootLink href={`${base}/ajustes?tab=sas`}>Cargarla</FootLink>
+              ) : (
+                'Pedísela a los dueños.'
+              )}
+            </span>
+          ) : null}
+        </PlanillaFoot>
+      </Planilla>
 
-          <StepCard
-            open
-            n={2}
-            id="paso-2"
-            state={closeState}
-            title={canWrite ? `Cerrá ${noun}` : 'El cierre'}
-            summary={closeSummary}
-            action={
-              canReopen ? (
-                <ReopenMonthMenu tenantSlug={tenantSlug} month={period.month} monthNoun={noun} />
-              ) : undefined
-            }
-          >
-            {canWrite && canClose && checklist ? (
-              <CloseStepBody
-                plan={plan}
-                position={iva}
-                ivaHref={bookHref(`${books}/posicion-iva`, { mes: month.month })}
-              >
-                <CloseMonthButton
-                  tenantSlug={tenantSlug}
-                  month={period.month}
-                  monthNoun={noun}
-                  nextMonthNoun={nextNoun}
-                  warningKeys={checklist.warningKeys}
-                  emphasis={closeState === 'current' ? 'primary' : 'quiet'}
-                  iva={
-                    plan.settles && iva
-                      ? {
-                          expected: ivaExpectedFrom(iva),
-                          summary: plan.summary,
-                          // Con un IVA viejo anotado no se puede cerrar sin reemplazarlo.
-                          optional: !plan.replaces,
-                        }
-                      : null
-                  }
-                />
-              </CloseStepBody>
-            ) : null}
-          </StepCard>
-
-          <StepCard
-            open
-            n={3}
-            id="paso-3"
-            state={sendState}
-            title={canWrite ? 'Mandale los libros a tu contadora' : 'Los libros'}
-            summary={
-              closed
-                ? `${name} ya está cerrado: los números no cambian más.`
-                : 'Cuando el mes esté cerrado.'
-            }
-          >
-            {closed ? (
-              <SendStepBody
-                month={month.month}
-                audience={audience}
-                link={`${url ?? ''}${bookHref(books, { mes: month.month })}`}
-                inviteHref={`/${tenantSlug}/configuracion/equipo?rol=accountant`}
-                files={files}
-                downloadable={downloadable}
-                cuitHref={`${base}/ajustes?tab=sas`}
-                indexHref={monthBooksHref}
-                receiptsHref={`${base}/compras?tab=comprobantes`}
-                primary={sendState === 'current'}
-              />
-            ) : (
-              <PanelLink
-                href={monthBooksHref}
-                className="max-w-full text-left whitespace-normal text-pretty text-muted-foreground"
-              >
-                <span>Descargar igual lo que hay hasta hoy (puede cambiar)</span>
-                <ArrowRight className="size-3.5 shrink-0" aria-hidden />
-              </PanelLink>
-            )}
-          </StepCard>
-        </div>
-
-        <aside
-          aria-label={`El mes de ${noun}`}
-          className="order-1 min-w-0 lg:sticky lg:top-20 lg:order-2 lg:col-span-5"
-        >
-          <MonthCover
-            data={cover}
-            mobileLine={mobileLine}
-            books={coverBooks}
-            booksOpen={!canWrite}
-          />
-        </aside>
-      </div>
+      {ivaPreview ? <EntryPreview entries={ivaPreview} label="Ver el asiento del IVA" /> : null}
+      {closed && period.ivaSettlementDocumentId ? (
+        <FootLink href={`${base}/comprobantes/${period.ivaSettlementDocumentId}`}>
+          Ver cómo quedó anotado el IVA
+        </FootLink>
+      ) : null}
 
       {canWrite && fyCandidate ? (
         <FiscalYearPanel
@@ -620,20 +486,76 @@ export default async function FinDeMesPage({
         />
       ) : null}
 
-      <AllMonths
-        years={years}
-        events={events.ok ? events.data : []}
-        tenantSlug={tenantSlug}
-        path={path}
-        today={today}
-        canWrite={canWrite}
-        lastClosedId={lastClosed?.id ?? null}
-        changed={changed}
-        open={!canWrite}
-      />
+      {canWrite && closed ? (
+        <Fold title="Mandarle los libros a tu contadora" open>
+          <SendStepBody
+            month={month.month}
+            audience={audience}
+            link={`${url ?? ''}${bookHref(books, { mes: month.month })}`}
+            inviteHref={`/${tenantSlug}/configuracion/equipo?rol=accountant`}
+            fileCount={files.length}
+            indexFold="archivos"
+            receiptsHref={`${base}/compras?tab=comprobantes`}
+          />
+        </Fold>
+      ) : null}
 
-      <QuickActionsBar />
-    </AdmPage>
+      <OpenFoldFromHash />
+      <Fold id="archivos" title="Archivo por archivo" open={!canWrite}>
+        <BookIndex
+          tenantSlug={tenantSlug}
+          booksPath={books}
+          month={month}
+          today={today}
+          hasCuit={hasCuit}
+          counts={counts}
+          openAll={!canWrite}
+        />
+      </Fold>
+
+      {allMonths(!canWrite)}
+    </SimplePage>
+  )
+}
+
+const FOOT_LINK =
+  'w-fit rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:py-2.5'
+
+function FootLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className={FOOT_LINK}>
+      {children}
+    </Link>
+  )
+}
+
+/** Lo que no se mira todos los días: plegado, en su hoja. */
+function Fold({
+  id,
+  title,
+  open = false,
+  children,
+}: {
+  id?: string
+  title: string
+  open?: boolean
+  children: ReactNode
+}) {
+  return (
+    <details
+      id={id}
+      open={open}
+      className="group/fold scroll-mt-24 overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronDown
+          aria-hidden
+          className="size-4 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-(--duration-fast) group-open/fold:rotate-0 motion-reduce:transition-none"
+        />
+        {title}
+      </summary>
+      <div className="border-t border-border/60 px-3 py-3">{children}</div>
+    </details>
   )
 }
 
@@ -652,11 +574,10 @@ function FiscalYearPanel({
 }) {
   const label = year.endDate.slice(0, 4)
   return (
-    <Panel
-      title={`Cerrar el ejercicio ${label}`}
-      description={`${yearLabel(year)} · todos sus meses están cerrados.`}
-    >
-      <div className="space-y-4 text-sm">
+    <Planilla>
+      <PlanillaTitle title={`Cerrar el ejercicio ${label}`} />
+      <div className="space-y-4 px-3 py-3 text-sm">
+        <p className="text-muted-foreground">{yearLabel(year)} · todos sus meses están cerrados.</p>
         {previousOpen ? (
           <p className="flex items-start gap-2 text-pretty">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
@@ -673,7 +594,7 @@ function FiscalYearPanel({
           </p>
         ) : (
           <>
-            <p className="font-serif text-xl font-semibold tracking-tight">
+            <p className="text-base font-semibold tabular-nums">
               Resultado del ejercicio: <Amount cents={Math.abs(preview.resultCents)} />
               {preview.resultCents > 0
                 ? ' (positivo)'
@@ -689,7 +610,7 @@ function FiscalYearPanel({
                   ejercicio» (amortizaciones, existencias, reclasificaciones).
                 </p>
               ) : (
-                <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
+                <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
                   {preview.adjustments.map((e) => (
                     <li
                       key={e.entryId}
@@ -706,7 +627,12 @@ function FiscalYearPanel({
                   ))}
                 </ul>
               )}
-              <Button asChild variant="outline" size="sm" className="h-11 gap-2 md:h-8">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-11 gap-2 md:pointer-fine:h-8"
+              >
                 <Link href={`${base}/libros/asiento-manual?tipo=ajuste-cierre`}>
                   <FilePenLine className="size-3.5" aria-hidden />
                   Cargar un ajuste de cierre
@@ -727,6 +653,6 @@ function FiscalYearPanel({
           </>
         )}
       </div>
-    </Panel>
+    </Planilla>
   )
 }

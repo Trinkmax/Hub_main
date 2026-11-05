@@ -297,7 +297,7 @@ export type CashDailyView = {
   note: string | null
 }
 
-const TRANSFERS_NOTE = 'Mover plata de una caja a otra no cuenta como entrada ni como salida.'
+const TRANSFERS_NOTE = 'Transferir de una cuenta a otra no cuenta como entrada ni como salida.'
 const CARD_NOTE = 'Es una deuda: sube con los consumos y baja con los pagos.'
 
 /**

@@ -291,7 +291,7 @@ describe('textos de la proyección', () => {
   })
 })
 
-describe('«Cargar una lista» de objetivos', () => {
+describe('«Pegar una lista» de objetivos', () => {
   it('un monto por renglón desde el día 1; un renglón vacío deja ese día sin objetivo', () => {
     const r = parseTargetsList('1.200.000\n1.200.000\n\n2.500.000,50\n', '2026-10')
     expect(r.items).toEqual([

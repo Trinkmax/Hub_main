@@ -11,6 +11,7 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
 import type { AccountingAuthorized } from '@/lib/accounting/access'
+import { AUTO_BANK_TAX_NOTE } from '@/lib/accounting/posting/treasury'
 import { mcNaturalKey } from '@/lib/imports/arca/mis-comprobantes'
 import { bankNaturalKey } from '@/lib/imports/bank/statement'
 import { estimateJsonbSize } from '@/lib/imports/server/proposals/common'
@@ -20,7 +21,7 @@ import {
   compactIssues,
   createImportBatchFor,
   ISSUES_MAX_BYTES,
-  loadManualBankExpenses,
+  loadBankExpenseFacts,
   loadManualMpDays,
   loadPostedTransfers,
   parseBatchCounts,
@@ -440,12 +441,40 @@ describe('contra lo cargado a mano (lecturas)', () => {
       doc(21, 'bank_expense', '2026-10-07', 110_500),
     )
     db.table('acc_document_lines').push(line(20, bank, 'credit'), line(21, wallet, 'credit'))
-    const set = await loadManualBankExpenses(db.client() as never, KIT_TENANT, {
+    const facts = await loadBankExpenseFacts(db.client() as never, KIT_TENANT, {
       treasuryId: bank,
       from: '2026-10-01',
       to: '2026-10-31',
     })
-    expect([...set]).toEqual(['2026-10-06:8556000'])
+    expect([...facts.manual]).toEqual(['2026-10-06:8556000'])
+    expect([...facts.autoTax]).toEqual([])
+  })
+
+  it('el impuesto al cheque que se anotó solo va aparte, sumado por día y cuenta', async () => {
+    const auto = (id: number, date: string, total: number) => ({
+      ...doc(id, 'bank_expense', date, total),
+      notes: AUTO_BANK_TAX_NOTE,
+    })
+    db.table('acc_documents').push(
+      auto(30, '2026-10-06', 3_000),
+      auto(31, '2026-10-06', 1_200),
+      auto(32, '2026-10-07', 500),
+      doc(33, 'bank_expense', '2026-10-08', 9_000),
+    )
+    db.table('acc_document_lines').push(
+      line(30, bank, 'credit'),
+      line(31, bank, 'credit'),
+      line(32, wallet, 'credit'),
+      line(33, bank, 'credit'),
+    )
+    const facts = await loadBankExpenseFacts(db.client() as never, KIT_TENANT, {
+      treasuryId: bank,
+      from: '2026-10-01',
+      to: '2026-10-31',
+    })
+    expect([...facts.autoTax]).toEqual([['2026-10-06', 4_200]])
+    // Lo anotado solo no es «lo mismo cargado a mano»: de ahí queda afuera.
+    expect([...facts.manual]).toEqual(['2026-10-08:9000'])
   })
 })
 

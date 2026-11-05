@@ -2037,12 +2037,13 @@ describe('puesta en marcha', () => {
       'treasuries',
       'sales_methods',
       'platforms',
-      'sales_points',
+      'taxes',
       'access',
       'chart_review',
       'arca',
       'arca_first_import',
       'recurring',
+      'payroll',
       'mp_connect',
       'suppliers_message',
     ])
@@ -2052,9 +2053,9 @@ describe('puesta en marcha', () => {
     // «N de M» es el de la guía: sus ítems de una sola vez, la sección adonde lleva «Ver todo».
     // Los pasos que no son de la guía (primer cierre, primer gasto, categorías y montos) no se
     // cuentan: si no, el Resumen decía «9 de 16» y la guía «6 de 12».
-    expect(guide.state.sections.day1).toEqual({ done: 2, total: 12 })
+    expect(guide.state.sections.day1).toEqual({ done: 2, total: 13 })
     expect({ done: strip.done, total: strip.total }).toEqual(guide.state.sections.day1)
-    expect(strip.title).toBe('Puesta en marcha · 2 de 12')
+    expect(strip.title).toBe('Puesta en marcha · 2 de 13')
     expect(strip.complete).toBe(false)
     expect(strip.guideHref).toBe(`${BASE}/guias/como-arrancar#arranque-day1`)
 
@@ -2131,14 +2132,14 @@ describe('puesta en marcha', () => {
             pendingReview: 0,
           },
         },
-        manual: ['platforms', 'chart_review', 'suppliers_message'],
+        manual: ['platforms', 'taxes', 'payroll', 'chart_review', 'suppliers_message'],
       }),
       recurring: DEMO_FIXED,
       suppliers: { total: 11, withoutCategory: 0 },
       canWrite: true,
     })
     expect(strip.steps.filter((s) => !s.optional).every((s) => s.done)).toBe(true)
-    expect(strip).toMatchObject({ complete: true, next: [], done: 12, total: 12 })
+    expect(strip).toMatchObject({ complete: true, next: [], done: 13, total: 13 })
   })
 
   it('lo que no es de la guía no se cuenta, pero se sigue pidiendo y no deja ir la franja', () => {
@@ -2154,14 +2155,14 @@ describe('puesta en marcha', () => {
             pendingReview: 0,
           },
         },
-        manual: ['platforms', 'chart_review', 'suppliers_message'],
+        manual: ['platforms', 'taxes', 'payroll', 'chart_review', 'suppliers_message'],
       }),
       recurring: DEMO_FIXED,
       suppliers: { total: 11, withoutCategory: 4 },
       canWrite: true,
     })
-    // La guía está completa: 12 de 12, igual que su sección.
-    expect(strip.title).toBe('Puesta en marcha · 12 de 12')
+    // La guía está completa: 13 de 13, igual que su sección.
+    expect(strip.title).toBe('Puesta en marcha · 13 de 13')
     // Pero faltan las categorías de cuatro proveedores: la franja sigue y lo ofrece.
     expect(strip.complete).toBe(false)
     expect(strip.next.map((s) => s.id)).toEqual(['suppliers_category'])

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import type { OnboardingSheet } from '@/lib/accounting/onboarding'
 
 /**
- * Abre una hoja de acción rápida («Nuevo gasto», «Ajustar saldo»…) sobre la
+ * Abre una hoja de acción rápida («Entró plata», «Contar la caja»…) sobre la
  * misma guía, como `ActionButton`. No se muestra en modo lectura ni fuera de
  * Administración (sin el provider no hay hojas).
  */

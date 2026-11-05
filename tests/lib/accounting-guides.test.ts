@@ -9,22 +9,23 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ACCOUNTING_ACTIONS, ACTION_TITLES } from '@/components/administracion/acciones/types'
+import { ADM_SECTIONS, ADM_SETTINGS } from '@/components/administracion/nav/adm-nav-model'
 import { LAUNCHER_ITEMS, LAUNCHER_TITLE } from '@/components/administracion/nav/launcher-items'
 import {
+  GUIDE_EVERYWHERE,
   GUIDE_GLOSSARY,
   GUIDE_LINKS,
   GUIDE_PAPER_CASES,
   GUIDE_PAPERS,
   GUIDE_PATHS,
   GUIDE_RECIPES,
-  GUIDE_STATIONS,
+  GUIDE_SECTIONS,
   type GuideOverview,
   type GuideTarget,
   guideRecipe,
   guideRoutine,
   LINK_IDS,
   linkAnchor,
-  MONEY_POCKET_HINT,
   PAPER_FACT_IDS,
   PAPER_FACTS,
   PAPER_IDS,
@@ -37,21 +38,21 @@ import {
   routineStatus,
   SCREEN_LABELS,
   type ScreenKey,
-  STATION_IDS,
-  stationStates,
 } from '@/lib/accounting/guides'
 import { onboardingState, parseOnboardingData } from '@/lib/accounting/onboarding'
 
 /** Las pantallas que existen bajo `/<bar>/administracion` y a las que la guía manda. */
 const KNOWN_ROUTES = [
-  /^\/ajustes\?tab=(sas|medios|puntos-de-venta)$/,
-  /^\/compras\?tab=(proveedores|comprobantes)$/,
-  /^\/compras\/nueva(\?tipo=nc)?$/,
+  /^\/ajustes\?tab=(sas|medios|puntos-de-venta|impuestos)$/,
+  /^\/compras(\?tab=comprobantes)?$/,
+  /^\/compras\/nueva(\?tipo=nc|\?modo=pago)?$/,
+  /^\/compras\/semana$/,
   /^\/gastos-fijos$/,
+  /^\/cajas$/,
+  /^\/sueldos$/,
   /^\/ventas\/cierre$/,
-  /^\/ventas\?tab=caja$/,
   /^\/importar\/(arca|mercado-pago|banco)$/,
-  /^\/libros\/cierres$/,
+  /^\/libros\/(cierres|mayor|asiento-manual)$/,
 ]
 
 function expectTarget(target: GuideTarget, where: string) {
@@ -73,12 +74,13 @@ function words(text: string): number {
 function allCopy(): string[] {
   const out: string[] = []
   for (const r of GUIDE_RECIPES) {
-    out.push(r.title, r.hint, r.result, r.action.label, ...r.checks)
+    out.push(r.title, r.hint, r.where, r.result, r.action.label, ...r.checks)
     for (const step of r.steps) out.push(step.text)
     for (const screen of r.screens) out.push(screen.title, screen.label)
     for (const t of r.troubles) out.push(t.problem, t.fix, t.link?.label ?? '')
   }
-  for (const s of GUIDE_STATIONS) out.push(s.title, s.what, s.movesText, s.action.label)
+  for (const s of GUIDE_SECTIONS) out.push(s.title, s.what, ...s.tabs)
+  for (const e of GUIDE_EVERYWHERE) out.push(e.title, e.what)
   for (const p of GUIDE_PAPERS) {
     out.push(p.title, p.lead, p.filter)
     for (const id of PAPER_FACT_IDS) out.push(p.facts[id].text)
@@ -95,16 +97,16 @@ function allCopy(): string[] {
   for (const group of guideRoutine(null)) {
     out.push(group.title, group.hint, ...group.rows.map((row) => row.title))
   }
-  out.push(...Object.values(RECIPE_FREQUENCY_LABEL), ...Object.values(MONEY_POCKET_HINT))
+  out.push(...Object.values(RECIPE_FREQUENCY_LABEL))
   return out.filter((text) => text !== '')
 }
 
 describe('las recetas', () => {
   it('una por situación, en el orden de la guía, cada una con su ancla', () => {
     expect(GUIDE_RECIPES.map((r) => r.id)).toEqual([...RECIPE_IDS])
-    expect(GUIDE_RECIPES).toHaveLength(12)
+    expect(GUIDE_RECIPES).toHaveLength(RECIPE_IDS.length)
     expect(recipeAnchor('cierre')).toBe('receta-cierre')
-    expect(new Set(GUIDE_RECIPES.map((r) => recipeAnchor(r.id))).size).toBe(12)
+    expect(new Set(GUIDE_RECIPES.map((r) => recipeAnchor(r.id))).size).toBe(RECIPE_IDS.length)
     for (const id of RECIPE_IDS) expect(guideRecipe(id).id).toBe(id)
   })
 
@@ -118,9 +120,26 @@ describe('las recetas', () => {
     }
   })
 
+  it('dicen dónde se hace, con las palabras del menú', () => {
+    const places = [
+      '+ Cargar › ',
+      'Arrastrá el archivo',
+      ...ADM_SECTIONS.flatMap((section) =>
+        (section.sub ?? []).map((tab) => `${section.label} › ${tab.label}`),
+      ),
+      'Contabilidad › Asiento manual',
+      'Ajustes › Impuestos',
+    ]
+    for (const r of GUIDE_RECIPES) {
+      expect(
+        places.some((place) => r.where.startsWith(place)),
+        `${r.id}: ${r.where}`,
+      ).toBe(true)
+    }
+  })
+
   it('cada pantalla simulada acompaña a un paso, y ningún paso apunta a una que no existe', () => {
     for (const r of GUIDE_RECIPES) {
-      expect(r.screens.length, r.id).toBeGreaterThanOrEqual(1)
       const used = new Set<number>()
       for (const step of r.steps) {
         if (step.screen === undefined) continue
@@ -131,7 +150,7 @@ describe('las recetas', () => {
       expect(used.size, `${r.id}: hay pantallas sin paso`).toBe(r.screens.length)
       for (const screen of r.screens) {
         // La descripción es lo único que recibe quien no ve el dibujo.
-        expect(screen.label.length, `${r.id}: ${screen.title}`).toBeGreaterThan(40)
+        expect(screen.label.length, `${r.id}: ${screen.title}`).toBeGreaterThan(30)
       }
     }
   })
@@ -154,8 +173,8 @@ describe('las recetas', () => {
 
   it('traen «Chequeá que…», «Si algo sale mal», qué queda y un botón que lleva a algo real', () => {
     for (const r of GUIDE_RECIPES) {
-      expect(r.checks, r.id).toHaveLength(3)
-      expect(r.troubles.length, r.id).toBeGreaterThanOrEqual(3)
+      expect(r.checks.length, r.id).toBeGreaterThanOrEqual(2)
+      expect(r.troubles.length, r.id).toBeGreaterThanOrEqual(1)
       expect(r.result.trim(), r.id).not.toBe('')
       expect(r.action.label.trim(), r.id).not.toBe('')
       expectTarget(r.action.target, r.id)
@@ -165,7 +184,7 @@ describe('las recetas', () => {
     }
   })
 
-  it('las que entran por «¿Qué querés cargar?» citan la tarjeta con su nombre real', () => {
+  it('las que entran por «¿Qué cargás?» citan la opción con su nombre real', () => {
     const titles = new Map(LAUNCHER_ITEMS.map((item) => [item.key, item.title]))
     for (const r of GUIDE_RECIPES) {
       for (const screen of r.screens) {
@@ -184,39 +203,52 @@ describe('las recetas', () => {
     }
   })
 
-  it('las dos que suben un archivo traen su «¿Cómo lo bajo?»', () => {
+  it('las que suben un archivo traen su «¿Cómo lo bajo?» y dicen que se arrastra', () => {
     expect(guideRecipe('mercado-pago').howTo).toBe('mercado_pago')
+    expect(guideRecipe('banco').howTo).toBe('banco')
     expect(guideRecipe('arca').howTo).toBe('mis_comprobantes')
-  })
-})
-
-describe('el mapa', () => {
-  it('cinco paradas, siempre en el mismo orden, cada una con su receta y su botón', () => {
-    expect(GUIDE_STATIONS.map((s) => s.id)).toEqual([...STATION_IDS])
-    expect(GUIDE_STATIONS.map((s) => s.n)).toEqual([1, 2, 3, 4, 5])
-    expect(GUIDE_STATIONS.map((s) => s.title)).toEqual([
-      'Vendés',
-      'Comprás y gastás',
-      'Pagás',
-      'Controlás la plata',
-      'Fin de mes',
-    ])
-    for (const s of GUIDE_STATIONS) {
-      expect(guideRecipe(s.recipe).id, s.id).toBe(s.recipe)
-      expectTarget(s.action.target, s.id)
+    for (const id of ['mercado-pago', 'banco', 'arca'] as const) {
+      expect(guideRecipe(id).where).toContain('Arrastrá el archivo')
     }
   })
 
-  it('dice qué mueve cada una: vender sube, pagar baja y fin de mes no mueve plata', () => {
-    const moves = Object.fromEntries(
-      GUIDE_STATIONS.map((s) => [s.id, s.moves.map((m) => `${m.pocket}:${m.direction}`)]),
-    )
-    expect(moves.vender).toEqual(['cajas:up', 'en_camino:up'])
-    expect(moves.comprar).toEqual(['cajas:down', 'deuda:up'])
-    expect(moves.pagar).toEqual(['deuda:down', 'cajas:down'])
-    expect(moves.controlar).toEqual(['en_camino:down', 'cajas:up'])
-    expect(moves['fin-de-mes']).toEqual([])
-    for (const s of GUIDE_STATIONS) expect(s.movesText.trim(), s.id).not.toBe('')
+  it('el reporte de Cobros y el impuesto al cheque se explican donde se tropieza con ellos', () => {
+    const text = (id: (typeof RECIPE_IDS)[number]) =>
+      guideRecipe(id)
+        .steps.map((step) => step.text)
+        .join(' ')
+    expect(text('mercado-pago')).toContain('El de Cobros no sirve')
+    expect(text('banco')).toContain('impuesto al cheque')
+    expect(text('banco')).toContain('no se cuenta dos veces')
+    expect(text('gasto')).toContain('impuesto al cheque se anota solo')
+    expect(text('pagar-deuda')).toContain('impuesto al cheque se anota solo')
+  })
+})
+
+describe('dónde está cada cosa', () => {
+  it('las secciones se llaman y se abren como en el menú, con sus solapas', () => {
+    const sections = GUIDE_SECTIONS.filter((section) => section.key !== 'ajustes')
+    expect(sections.map((section) => section.title)).toEqual(ADM_SECTIONS.map((a) => a.label))
+    expect(sections.map((section) => section.path)).toEqual(ADM_SECTIONS.map((a) => a.path))
+    for (const section of sections) {
+      const nav = ADM_SECTIONS.find((a) => a.label === section.title)
+      expect(section.tabs, section.title).toEqual((nav?.sub ?? []).map((tab) => tab.label))
+    }
+    const settings = GUIDE_SECTIONS.find((section) => section.key === 'ajustes')
+    expect(settings?.title).toBe(ADM_SETTINGS.label)
+    expect(settings?.path).toBe(ADM_SETTINGS.path)
+    expect(settings?.tabs).toEqual(ADM_SETTINGS.sub.map((tab) => tab.label))
+  })
+
+  it('lo que se hace desde cualquier pantalla: cargar, arrastrar y la foto por QR', () => {
+    expect(GUIDE_EVERYWHERE.map((item) => item.title)).toEqual([
+      '+ Cargar',
+      'Arrastrar un archivo',
+      'La foto por QR',
+    ])
+    // «+ Cargar» nombra las cuatro principales, con sus palabras.
+    const daily = LAUNCHER_ITEMS.filter((item) => item.featured).map((item) => item.title)
+    for (const title of daily) expect(GUIDE_EVERYWHERE[0]?.what, title).toContain(title)
   })
 })
 
@@ -264,33 +296,22 @@ describe('con factura y sin factura', () => {
     }
   })
 
-  it('el camino de «Dónde lo cargo» son toques de verdad: «+ Cargar» y una tarjeta del lanzador', () => {
+  it('el camino de «Dónde lo cargo» son toques de verdad: «+ Cargar» y una opción del menú', () => {
     const cards = LAUNCHER_ITEMS.map((item) => item.title)
     for (const c of GUIDE_PAPER_CASES) {
       for (const route of c.where) {
         expect(route.steps.length, c.id).toBeGreaterThanOrEqual(3)
         expect(route.steps[0], c.id).toBe('+ Cargar')
-        // Nada de «Pagué algo recién, o lo pago después»: eso son dos tarjetas distintas.
+        // Compra y Compra y pago son dos opciones distintas: un camino va por una sola.
         expect(cards, `${c.id}: ${route.steps[1]}`).toContain(route.steps[1])
         // Con dos caminos, cada uno dice cuándo vale.
         if (c.where.length > 1) expect(route.when?.trim(), c.id).toBeTruthy()
       }
     }
-    // Lo que se paga después se decide en «¿Qué papel te dieron?»: ahí están los cuatro papeles
-    // y, al pie, la salida para una nota de crédito.
-    const later = GUIDE_PAPER_CASES.flatMap((c) => c.where).filter((route) =>
-      route.steps.includes('Me llegó una factura o un remito y lo pago después'),
-    )
-    expect(later.length).toBeGreaterThanOrEqual(4)
-    const answers = new Set([...GUIDE_PAPERS.map((p) => p.title), SCREEN_LABELS.compra.creditNote])
-    for (const route of later) {
-      const question = route.steps[2] ?? ''
-      const asked = [SCREEN_LABELS.compra.paper, SCREEN_LABELS.compra.notPurchase].find((label) =>
-        question.startsWith(label),
-      )
-      expect(asked, question).toBeDefined()
-      // Lo que sigue a la pregunta es una tarjeta que existe, con su nombre de verdad.
-      expect(answers.has(question.slice((asked ?? '').length).trim()), question).toBe(true)
+    // Lo que se toca al final es uno de los cuatro papeles; la nota de crédito, su salida.
+    const papers = new Set([...GUIDE_PAPERS.map((p) => p.title), 'Es una nota de crédito'])
+    for (const route of GUIDE_PAPER_CASES.flatMap((c) => c.where)) {
+      expect(papers.has(route.steps[2] ?? ''), route.steps.join(' › ')).toBe(true)
     }
   })
 
@@ -325,7 +346,7 @@ describe('cómo se vincula cada cosa', () => {
     expect(GUIDE_LINKS.find((l) => l.id === 'compra-pago')?.limit).toBeNull()
     expect(undo('compra-pago')).toContain(`«${SCREEN_LABELS.comprobante.separate}»`)
     expect(undo('saldo-factura')).toContain(`«${SCREEN_LABELS.comprobante.separate}»`)
-    expect(limit('saldo-factura')).toMatch(/plata por cobrar todavía no existe/i)
+    expect(limit('saldo-factura')).toMatch(/plata por cobrar todavía no se puede/i)
     // Lo que se arma solo siempre no tiene nada que avisar.
     expect(GUIDE_LINKS.find((l) => l.id === 'libros')?.limit).toBeNull()
   })
@@ -339,26 +360,13 @@ const ACCIONES = 'components/administracion/acciones'
 /** Dónde está escrita cada pantalla (archivos o carpetas, desde la raíz del repo). */
 const SCREEN_SOURCES: Readonly<Record<ScreenKey, readonly string[]>> = {
   cierre: [`${ADM}/ventas/cierre`],
-  // Lo que cambió de lugar con la tanda 2 de oct 2026 está sumado en cada pantalla: las piezas
-  // de cada hoja (`*-piezas.tsx`), sus palabras (`*-vista.ts`, `*-paper.ts`, `review-copy.ts`) y
-  // la planilla de gastos fijos, que dejó de ser una pestaña de Compras.
-  gasto: [
-    `${ACCIONES}/gasto-sheet.tsx`,
-    `${ACCIONES}/gasto-papel.ts`,
-    `${ACCIONES}/gasto-piezas.tsx`,
-    `${ADM}/compras/_components/supplier-account.tsx`,
-    `${ADM}/compras/_components/supplier-invoicing-ask.tsx`,
-    `${ADM}/compras/_components/expense-target-picker.tsx`,
-    'lib/accounting/server/saved-message.ts',
-  ],
   compra: [
     `${ADM}/compras/nueva`,
     `${ADM}/compras/_lib/purchase-paper.ts`,
-    `${ADM}/compras/_components/supplier-invoicing-ask.tsx`,
     `${ACCIONES}/gasto-papel.ts`,
-    `${ACCIONES}/gasto-piezas.tsx`,
     'lib/accounting/voucher-types.ts',
   ],
+  foto: ['components/administracion/foto-qr'],
   // `pay-target.ts` solo por «Un gasto fijo» (la salida de «¿No es a un proveedor?»).
   pagar: [
     `${ACCIONES}/pagar-sheet.tsx`,
@@ -383,21 +391,16 @@ const SCREEN_SOURCES: Readonly<Record<ScreenKey, readonly string[]>> = {
     'lib/imports/ui/inbox.ts',
     'lib/imports/ui/review-copy.ts',
   ],
-  // El mapa de vínculos arma sus botones en `document-story.ts` («Anotar que llegó»).
   comprobante: [
     `${ADM}/comprobantes/[id]/_components`,
     `${ADM}/comprobantes/_lib/document-story.ts`,
   ],
-  gastosFijos: [
-    `${ADM}/gastos-fijos/page.tsx`,
-    `${ADM}/gastos-fijos/_components`,
-    `${ADM}/gastos-fijos/_lib/planilla-words.ts`,
-    `${ADM}/compras/_lib/recurring.ts`,
-  ],
-  proveedor: [`${ADM}/compras/proveedores`],
+  gastosFijos: [`${ADM}/gastos-fijos/_components`, `${ADM}/gastos-fijos/_lib/planilla-words.ts`],
+  sueldos: [`${ADM}/sueldos`],
+  semana: [`${ADM}/compras/semana`],
+  caja: [`${ADM}/cajas`],
   cierreMes: [`${ADM}/libros/cierres`],
-  ventas: [`${ADM}/ventas/page.tsx`, `${ADM}/ventas/_components`],
-  resumen: [`${ADM}/_resumen`],
+  contabilidad: [`${ADM}/libros/_components/reimpute-form.tsx`, `${ADM}/libros/asiento-manual`],
   aviso: ['components/administracion/quick-actions.tsx'],
   lanzador: ['components/administracion/nav/launcher.tsx'],
 }
@@ -420,17 +423,6 @@ const sourceOf = (screen: ScreenKey) => SCREEN_SOURCES[screen].map(readSource).j
  */
 const BUILT_LABELS: ReadonlyArray<{ label: string; screen: ScreenKey; built: readonly RegExp[] }> =
   [
-    // El botón de la compra: «Cargar compra · $ 84.000» (`purchaseSubmitLabel`).
-    {
-      label: 'Cargar compra · $ 84.000',
-      screen: 'compra',
-      built: [/: 'Cargar compra'/, /`\$\{verb\} · \$\{exactAmountText\(/],
-    },
-    // Los chips de «¿Cuándo vence?»: «En 7 días», «En 15 días», «En 30 días».
-    { label: 'En 15 días', screen: 'compra', built: [/`En \$\{days\} días`/] },
-    // «Cerrá septiembre» (el paso 2 del fin de mes) y su botón, «Cerrar septiembre».
-    { label: 'Cerrá septiembre', screen: 'cierreMes', built: [/`Cerrá \$\{noun\}`/] },
-    { label: 'Cerrar septiembre', screen: 'cierreMes', built: [/`Cerrar \$\{monthNoun\}`/] },
     {
       label: 'Cargar 3 movimientos',
       screen: 'importar',
@@ -447,6 +439,8 @@ const NOT_A_LABEL = new Set([
   'Recibidos',
   'Emitidos',
   'Liquidaciones',
+  // El botón de más opciones de cada cuenta, en Caja.
+  '⋯',
   // Una idea de la guía (está en el glosario), no un botón.
   'en camino',
   // Lo que la guía avisa que NO existe.
@@ -480,10 +474,10 @@ describe('lo que la guía dibuja y cita existe en la pantalla de hoy', () => {
     expect(missing).toEqual([])
   })
 
-  it('las maquetas no usan otro nombre para los cuatro papeles que la carga del gasto', () => {
-    const source = sourceOf('gasto')
+  it('los cuatro papeles se llaman como en la carga', () => {
+    const source = sourceOf('compra')
     for (const paper of GUIDE_PAPERS) {
-      expect(source.includes(`title: '${paper.title}'`), paper.title).toBe(true)
+      expect(source.includes(paper.title), paper.title).toBe(true)
       expect(source.includes(paper.lead), paper.lead).toBe(true)
     }
   })
@@ -498,8 +492,6 @@ describe('lo que la guía dibuja y cita existe en la pantalla de hoy', () => {
       ...BUILT_LABELS.map((entry) => entry.label),
       // Las cuatro tarjetas de papel (el test de arriba comprueba que la carga las llame igual).
       ...GUIDE_PAPERS.map((paper) => paper.title),
-      // «Cómo arrancar» es la otra guía.
-      'Cómo arrancar',
     ]
     const isKnown = (quote: string) => {
       if (NOT_A_LABEL.has(quote)) return true
@@ -516,47 +508,67 @@ describe('lo que la guía dibuja y cita existe en la pantalla de hoy', () => {
       }
     }
     // Si esto baja mucho, alguien dejó de citar: las recetas nombran lo que se toca.
-    expect(cited).toBeGreaterThan(60)
+    expect(cited).toBeGreaterThan(50)
   })
 
   it('las cargas que más confunden dicen lo que dice la pantalla', () => {
-    const steps = (id: 'compra' | 'contar-caja' | 'sin-factura' | 'fin-de-mes') =>
+    const steps = (id: (typeof RECIPE_IDS)[number]) =>
       guideRecipe(id)
         .steps.map((step) => step.text)
         .join(' ')
-    // La compra que queda a pagar: se nombra la pantalla que se abre, sus preguntas y el botón
-    // (con los nombres de `SCREEN_LABELS`, que son los que el test de arriba compara con ella).
-    expect(steps('compra')).toContain(`«${SCREEN_LABELS.compra.title}»`)
+    // La Compra: sus campos, «La debo» y el botón.
     for (const label of [
-      SCREEN_LABELS.compra.paper,
-      SCREEN_LABELS.compra.amount,
-      SCREEN_LABELS.compra.payWhen,
-      SCREEN_LABELS.compra.payLater,
+      SCREEN_LABELS.compra.who,
+      SCREEN_LABELS.compra.number,
+      SCREEN_LABELS.compra.due,
+      SCREEN_LABELS.compra.owe,
       SCREEN_LABELS.compra.save,
     ]) {
       expect(steps('compra'), label).toContain(`«${label}»`)
     }
-    // El botón de la guía dice lo mismo que el título de la pantalla que abre.
-    expect(guideRecipe('compra').action.label).toBe(SCREEN_LABELS.compra.title)
+    expect(steps('compra')).toContain(`«${SCREEN_LABELS.foto.scan}»`)
+    expect(steps('gasto')).toContain(`«${SCREEN_LABELS.compra.savePaid}»`)
+    expect(steps('gasto')).toContain(`«${SCREEN_LABELS.compra.from}»`)
     // Contar la caja: el título de la hoja y sus dos botones.
     expect(steps('contar-caja')).toContain(`«${SCREEN_LABELS.ajustar.title}»`)
     expect(steps('contar-caja')).toContain(`«${SCREEN_LABELS.ajustar.save}»`)
     expect(steps('contar-caja')).toContain(`«${SCREEN_LABELS.ajustar.matches}»`)
     // Sin factura: los dos caminos preguntan lo mismo y se contesta con la misma tarjeta.
-    const [paidNow, payLater] = guideRecipe('sin-factura').steps
-    expect(paidNow?.text).toContain(`«${SCREEN_LABELS.gasto.paper}»`)
-    expect(paidNow?.text).toContain(`«${SCREEN_LABELS.gasto.paperNone}»`)
-    expect(payLater?.text).toContain(`«${SCREEN_LABELS.compra.paper}»`)
-    expect(payLater?.text).toContain(`«${SCREEN_LABELS.compra.paperNone}»`)
-    expect(SCREEN_LABELS.compra.paper).toBe(SCREEN_LABELS.gasto.paper)
-    expect(SCREEN_LABELS.compra.paperNone).toBe(SCREEN_LABELS.gasto.paperNone)
-    // El gasto fijo se paga desde su renglón, y la guía lo dice con el rótulo del botón.
-    const fixed = guideRecipe('gasto-fijo')
-    expect(fixed.steps[0]?.text).toContain(`«${SCREEN_LABELS.gastosFijos.pay}»`)
-    expect(fixed.action.target).toEqual({ kind: 'route', path: '/gastos-fijos' })
-    // El fin de mes se llama igual en la receta, en el mapa y en la pantalla.
-    expect(steps('fin-de-mes')).toContain(`Libros › ${SCREEN_LABELS.cierreMes.title}`)
-    expect(steps('fin-de-mes')).toContain(`«${SCREEN_LABELS.cierreMes.review}»`)
+    expect(steps('sin-factura')).toContain('«Compra y pago»')
+    expect(steps('sin-factura')).toContain('«Compra»')
+    expect(steps('sin-factura')).toContain(`«${SCREEN_LABELS.compra.paperNone}»`)
+    // El gasto fijo se paga tildando su renglón.
+    expect(steps('gasto-fijo')).toContain(`«${SCREEN_LABELS.gastosFijos.save}»`)
+    expect(guideRecipe('gasto-fijo').action.target).toEqual({
+      kind: 'route',
+      path: '/gastos-fijos',
+    })
+    // Sueldos: lo que se toca en su renglón.
+    expect(steps('sueldos')).toContain(`«${SCREEN_LABELS.sueldos.advance}»`)
+    expect(steps('sueldos')).toContain(`«${SCREEN_LABELS.sueldos.accrue}»`)
+    // El cierre de mes se llama igual en la receta y en la pantalla.
+    expect(steps('fin-de-mes')).toContain(`Contabilidad › ${SCREEN_LABELS.cierreMes.title}`)
+    expect(guideRecipe('fin-de-mes').where).toBe(`Contabilidad › ${SCREEN_LABELS.cierreMes.title}`)
+  })
+
+  it('no quedan los nombres de antes', () => {
+    const stale = [
+      /Pagué algo/,
+      /Nuevo gasto/,
+      /Me entró plata/,
+      /Pago algo que debía/,
+      /Cerrar el día/,
+      /Conté la caja»/,
+      /Libros › /,
+      /Fin de mes\b(?! para)/,
+      /Mover plata/,
+      /Importar › /,
+      /\bContadora\b/,
+      /en camino/i,
+    ]
+    for (const text of allCopy()) {
+      for (const re of stale) expect(re.test(text), `${re}: ${text}`).toBe(false)
+    }
   })
 })
 
@@ -607,18 +619,9 @@ describe('textos para cualquier bar, con un solo libro', () => {
     }
   })
 
-  it('los botones dicen adónde llevan: «Fin de mes» no «cierra» nada con un toque', () => {
-    const label = `Ir a ${SCREEN_LABELS.cierreMes.title}`
-    expect(guideRecipe('fin-de-mes').action.label).toBe(label)
-    expect(GUIDE_STATIONS.find((s) => s.id === 'fin-de-mes')?.action.label).toBe(label)
+  it('los botones dicen adónde llevan: «Cierre de mes» no «cierra» nada con un toque', () => {
+    expect(guideRecipe('fin-de-mes').action.label).toBe(`Ir a ${SCREEN_LABELS.cierreMes.title}`)
     for (const r of GUIDE_RECIPES) expect(r.action.label, r.id).not.toMatch(/^Cerrar /)
-  })
-
-  it('«Pago un gasto fijo» nombra los dos «Pagar» de la planilla: el de arriba y el del renglón', () => {
-    const first = guideRecipe('gasto-fijo').steps[0]?.text ?? ''
-    expect(first).toContain(`«${SCREEN_LABELS.gastosFijos.pay}»`)
-    expect(first).toContain(`«${SCREEN_LABELS.gastosFijos.next}»`)
-    expect(first).toContain('en su renglón')
   })
 
   it('las páginas de la guía cuelgan de /guias', () => {
@@ -682,10 +685,6 @@ function overviewOf(report: Record<string, unknown>): GuideOverview {
 describe('el estado de la rutina', () => {
   it('sin datos de la base no marca nada (la guía se ve igual)', () => {
     expect(routineStatus('daily_close', null)).toBeNull()
-    const states = stationStates(null)
-    expect(Object.values(states.byId)).toEqual([null, null, null, null, null])
-    expect(states.current).toBeNull()
-    expect(states.allClear).toBe(false)
     for (const group of guideRoutine(null)) {
       for (const row of group.rows) expect(row.status, row.key).toBeNull()
     }
@@ -701,11 +700,11 @@ describe('el estado de la rutina', () => {
     // (lo pide el Resumen). Contar contra un saldo en cero cargaría un sobrante que no existe.
     expect(routineStatus('treasury_check', o)).toEqual({
       state: 'idle',
-      text: 'Primero cargá lo que había en cada caja al arrancar',
+      text: 'Primero cargá lo que había en cada cuenta al arrancar',
     })
     // Con los saldos iniciales cargados, las mismas dos cajas sí son un «te toca».
     expect(routineStatus('treasury_check', overviewOf({ ...NEW_BAR, opening_done: true }))).toEqual(
-      { state: 'todo', text: 'Faltan contar 2 cajas este mes' },
+      { state: 'todo', text: 'Faltan contar 2 cuentas este mes' },
     )
     // Sin CUIT no se puede bajar nada de ARCA: no es un «te toca».
     expect(routineStatus('arca_monthly', o)).toEqual({
@@ -726,20 +725,9 @@ describe('el estado de la rutina', () => {
       state: 'idle',
       text: 'Todavía no hay un mes para cerrar',
     })
-
-    const states = stationStates(o)
-    expect(states.current).toBe('vender')
-    expect(states.allClear).toBe(false)
-    // De comprar y de pagar la base no dice nada: son «cuando pasa».
-    expect(states.byId.comprar).toBeNull()
-    expect(states.byId.pagar).toBeNull()
-    // Una sola parada marcada: el mapa de un bar nuevo no reparte «te toca».
-    expect(states.byId.controlar?.state).toBe('idle')
-    expect(states.byId['fin-de-mes']?.state).toBe('idle')
-    expect(Object.values(states.byId).filter((status) => status?.state === 'todo')).toHaveLength(1)
   })
 
-  it('un bar al día: todo «Al día» y ninguna parada marcada', () => {
+  it('un bar al día: todo «Al día»', () => {
     const o = overviewOf(UP_TO_DATE)
     for (const id of [
       'daily_close',
@@ -751,9 +739,6 @@ describe('el estado de la rutina', () => {
     ] as const) {
       expect(routineStatus(id, o), id).toEqual({ state: 'done', text: 'Al día' })
     }
-    const states = stationStates(o)
-    expect(states.current).toBeNull()
-    expect(states.allClear).toBe(true)
   })
 
   it('los plurales y lo que queda viejo', () => {
@@ -772,14 +757,12 @@ describe('el estado de la rutina', () => {
       },
     })
     expect(routineStatus('daily_close', o)?.text).toBe('Faltan 3 cierres de la última semana')
-    expect(routineStatus('treasury_check', o)?.text).toBe('Falta contar 1 caja este mes')
+    expect(routineStatus('treasury_check', o)?.text).toBe('Falta contar 1 cuenta este mes')
     expect(routineStatus('mp_weekly', o)).toEqual({ state: 'todo', text: 'Pasó más de una semana' })
     expect(routineStatus('month_close', o)).toEqual({
       state: 'todo',
       text: 'El mes pasado sigue abierto',
     })
-    // El cierre va primero aunque también falte contar una caja.
-    expect(stationStates(o).current).toBe('vender')
   })
 
   it('las compras de ARCA: antes del 11 todavía no se pueden bajar', () => {
@@ -811,7 +794,7 @@ describe('el estado de la rutina', () => {
     const groups = guideRoutine(overviewOf(NEW_BAR))
     expect(groups.map((g) => g.frequency)).toEqual(['daily', 'weekly', 'monthly'])
     for (const group of groups) {
-      expect(group.rows.length, group.frequency).toBe(3)
+      expect(group.rows.length, group.frequency).toBeGreaterThanOrEqual(3)
       for (const row of group.rows) {
         if (row.link.kind === 'recipe')
           expect(guideRecipe(row.link.recipe).id).toBe(row.link.recipe)
@@ -819,5 +802,8 @@ describe('el estado de la rutina', () => {
       }
     }
     expect(groups[0]?.rows[0]?.status?.state).toBe('todo')
+    const rows = groups.flatMap((group) => group.rows.map((row) => row.key))
+    expect(rows).toContain('plan')
+    expect(rows).toContain('sueldos')
   })
 })

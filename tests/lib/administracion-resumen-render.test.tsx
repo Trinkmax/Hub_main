@@ -1,38 +1,50 @@
 // @vitest-environment node
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AttentionRows } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/attention-rows'
 import { HeroBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/hero-block'
 import type { HomeData } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/home-data'
-import { IvaBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/iva-block'
-import { MonthBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/month-block'
-import { NoticesBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/notices-block'
-import { PayablesBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/payables-block'
-import { attentionView } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/summary-copy'
-import { TodayBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/today-block'
-import { gastosFijosFillHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
-import { buildSetup, buildToday } from '@/lib/accounting/home'
+import {
+  heroAccounts,
+  heroNumbers,
+  paraHoyRows,
+} from '@/app/(manager)/[tenantSlug]/administracion/_resumen/para-hoy'
+import { ParaHoyBlock } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/para-hoy-block'
+import { ResumenSkeleton } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/skeletons'
+import { headerDateLine } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/summary-copy'
+import ResumenLoading from '@/app/(manager)/[tenantSlug]/administracion/loading'
+import ResumenPage from '@/app/(manager)/[tenantSlug]/administracion/page'
+import { requireAccountingAccess } from '@/lib/accounting/access'
+import { buildSetup, buildToday, type SetupStrip, type TodayItem } from '@/lib/accounting/home'
+import type { PayrollTotals } from '@/lib/accounting/payroll'
 import { buildProjection } from '@/lib/accounting/projection'
-import { parseIvaPosition } from '@/lib/accounting/queries/books'
 import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
 import type { AccountingSettings } from '@/lib/accounting/queries/settings'
 import type { AccSummary, SummaryAttentionItem } from '@/lib/accounting/queries/summary'
+import type { WeekPlanTotals } from '@/lib/accounting/week-plan'
 import { eachIsoDay } from '@/lib/dates'
 
 /**
- * El Resumen («la plata hoy») ya dibujado: lo que la pantalla le promete a
- * cada uno. Las cuentas y las frases tienen sus tests en `accounting-home`;
- * acá se cuida lo que solo se ve armado: que un dato que falta no salga como
- * «$ 0», que la contadora no reciba ningún botón de carga y que un mismo
- * aviso no aparezca en dos bloques.
+ * El Resumen ya dibujado: un panel verde y una planilla «Para hoy». Las cuentas tienen sus tests en
+ * `accounting-home`; acá se cuida lo que la pantalla promete: un dato que falta no sale como «$ 0»,
+ * hay un solo botón relleno, nunca más de cinco renglones, y la contadora no pasa por acá.
  */
 
-const ui = vi.hoisted(() => ({ readOnly: false }))
+const ui = vi.hoisted(() => ({
+  readOnly: false,
+  loaded: null as unknown,
+  redirect: vi.fn((to: string) => {
+    throw new Error(`NEXT_REDIRECT ${to}`)
+  }),
+}))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion',
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
+  redirect: ui.redirect,
+  notFound: () => {
+    throw new Error('NEXT_NOT_FOUND')
+  },
 }))
 // El contexto lo monta el layout de la sección junto con las hojas (que acá no hacen falta).
 vi.mock('@/components/administracion/accounting-provider', () => ({
@@ -45,27 +57,28 @@ vi.mock('@/components/administracion/accounting-provider', () => ({
     closeAction: () => {},
   }),
 }))
-// La acción de «Este mes no se paga» es del servidor: para dibujar los renglones no hace falta.
-vi.mock('@/lib/accounting/actions/master', () => ({ skipRecurringDue: vi.fn() }))
-// La franja del IVA pide el detalle del mes por su cuenta: acá se lo da cada test.
-const iva = vi.hoisted(() => ({ position: null as unknown }))
-vi.mock('@/lib/accounting/queries', async (original) => ({
+vi.mock('@/lib/accounting/access', async (original) => ({
   ...(await original<Record<string, unknown>>()),
-  getIvaPosition: async () => {
-    if (!iva.position) throw new Error('sin posición de IVA')
-    return iva.position
+  requireAccountingAccess: vi.fn(),
+}))
+vi.mock('@/app/(manager)/[tenantSlug]/administracion/_resumen/home-data', () => ({
+  loadHome: (input: unknown) => {
+    ui.loaded = input
+    return {}
   },
 }))
 
 afterEach(() => {
   ui.readOnly = false
-  iva.position = null
+  ui.loaded = null
+  ui.redirect.mockClear()
 })
 
 const TODAY = '2026-10-13'
 const BASE = '/hub/administracion'
 /** El espacio duro que `lib/money` pone entre el «$» y el número. */
 const NB = String.fromCharCode(160)
+const money = (text: string) => text.replaceAll('$ ', `$${NB}`)
 
 const ok = <T,>(data: T) => Promise.resolve({ ok: true as const, data })
 const failed = Promise.resolve({
@@ -166,6 +179,7 @@ function untouchedSummary(): AccSummary {
     })),
     availableCents: 0,
     pendingWalletCents: 0,
+    payables: { totalCents: 0, overdueCents: 0, dueWeekCents: 0, partiesRed: 0 },
     attention: [],
     firstSteps: { ...base.firstSteps, firstDailyClose: false },
   })
@@ -178,6 +192,13 @@ const SETTINGS = {
   booksStartDate: '2026-09-01',
   openingStatus: 'posted',
   hasDocuments: true,
+} as AccountingSettings
+
+const PENDING_SETTINGS = {
+  ...SETTINGS,
+  booksStartDate: '2026-10-12',
+  openingStatus: 'pending',
+  cuit: null,
 } as AccountingSettings
 
 function fixed(over: Partial<RecurringExpenseRow>): RecurringExpenseRow {
@@ -215,28 +236,34 @@ function fixed(over: Partial<RecurringExpenseRow>): RecurringExpenseRow {
   }
 }
 
-function homeData(
-  input: {
-    summary?: AccSummary | null
-    settings?: AccountingSettings
-    recurring?: RecurringExpenseRow[]
-    integration?: IntegrationAttentionItem[]
-    canWrite?: boolean
-    /** Los cierres cargados llegan hasta el día anterior a este (por defecto, falta el de ayer). */
-    closedBefore?: string
-  } = {},
-): HomeData {
-  const canWrite = input.canWrite ?? true
-  const summary = input.summary === undefined ? summaryOf() : input.summary
-  const settings = input.settings ?? SETTINGS
-  const recurring = input.recurring ?? [fixed({})]
-  const integration = input.integration ?? []
-  const closedBefore = input.closedBefore ?? '2026-10-12'
+const PAYROLL = (owedCents: number): PayrollTotals => ({
+  count: owedCents > 0 ? 2 : 0,
+  salaryCents: owedCents,
+  advancesCents: 0,
+  paidCents: 0,
+  balanceCents: owedCents,
+  owedCents,
+})
+
+const PLAN = (over: Partial<WeekPlanTotals> = {}): WeekPlanTotals => ({
+  debtCents: 0,
+  overdueCents: 0,
+  purchasedCents: 0,
+  budgetCents: 0,
+  paidCents: 0,
+  remainingCents: 0,
+  overCents: 0,
+  percent: 0,
+  ...over,
+})
+
+function projectionOf(opts: { closedBefore?: string; targetCents?: number | null } = {}) {
+  const closedBefore = opts.closedBefore ?? '2026-10-12'
   // Una fila por día, como manda la base: cargados hasta el 11, falta el de ayer (12/10).
-  const projection = buildProjection(
+  return buildProjection(
     eachIsoDay('2026-10-01', '2026-10-31').map((day) => ({
       day,
-      targetCents: null,
+      targetCents: opts.targetCents ?? null,
       note: null,
       closes: day < closedBefore ? 1 : 0,
       salonCents: day < closedBefore ? 90_000_000 : 0,
@@ -249,6 +276,35 @@ function homeData(
     })),
     { serviceDay: TODAY },
   )
+}
+
+function homeData(
+  input: {
+    summary?: AccSummary | null
+    settings?: AccountingSettings
+    recurring?: RecurringExpenseRow[] | null
+    integration?: IntegrationAttentionItem[] | null
+    payroll?: PayrollTotals | null
+    weekPlan?: WeekPlanTotals | null
+    canWrite?: boolean
+    closedBefore?: string
+    targetCents?: number | null
+  } = {},
+): HomeData {
+  const canWrite = input.canWrite ?? true
+  const summary = input.summary === undefined ? summaryOf() : input.summary
+  const settings = input.settings ?? SETTINGS
+  const recurring = input.recurring === undefined ? [fixed({})] : input.recurring
+  const integration = input.integration === undefined ? [] : input.integration
+  const payroll = input.payroll === undefined ? PAYROLL(15_000_000) : input.payroll
+  const weekPlan =
+    input.weekPlan === undefined
+      ? PLAN({ debtCents: 69_600_000, budgetCents: 30_000_000, paidCents: 12_500_000 })
+      : input.weekPlan
+  const projection = projectionOf({
+    closedBefore: input.closedBefore,
+    targetCents: input.targetCents,
+  })
   return {
     base: BASE,
     tenantId: 'tenant',
@@ -259,25 +315,12 @@ function homeData(
     summary: summary ? ok(summary) : failed,
     settings: ok(settings),
     projection: ok(projection),
-    cash: ok({
-      from: '2026-09-14',
-      to: TODAY,
-      total: {
-        treasuryId: null,
-        name: '',
-        kind: null,
-        active: true,
-        openingCents: 180_000_000,
-        closingCents: summary?.availableCents ?? 0,
-        days: [],
-      },
-      accounts: [],
-    }),
-    recurring: ok(recurring),
+    recurring: recurring ? ok(recurring) : failed,
     payments: ok(new Map()),
-    spending: failed,
+    payroll: payroll ? ok(payroll) : failed,
+    weekPlan: weekPlan ? ok(weekPlan) : failed,
     onboarding: ok(null),
-    integration: canWrite ? ok(integration) : null,
+    integration: canWrite ? (integration ? ok(integration) : failed) : null,
     agenda: Promise.resolve({
       today: buildToday({
         summary,
@@ -295,64 +338,148 @@ function homeData(
   }
 }
 
-describe('Resumen · el héroe «la plata hoy»', () => {
-  it('con plata: el número, una píldora por caja que lleva a sus movimientos y los 30 días', async () => {
-    const html = renderToStaticMarkup(await HeroBlock({ data: homeData(), tone: 'bosque' }))
-    expect(html).toContain('Plata disponible hoy')
-    expect(html).toContain('2.144.757')
-    expect(html).toContain(`href="${BASE}/cajas/caja"`)
-    expect(html).toContain(`href="${BASE}/cajas/mp"`)
-    expect(html).toContain(`Hace 30 días había $${NB}1.800.000`)
+/** El HTML con los importes legibles (sin el espacio duro) y sin los comentarios de React. */
+const clean = (markup: string) => markup.replaceAll(NB, ' ').replaceAll('<!-- -->', '')
+const hero = async (data: HomeData) => clean(renderToStaticMarkup(await HeroBlock({ data })))
+const paraHoy = async (data: HomeData) => clean(renderToStaticMarkup(await ParaHoyBlock({ data })))
+
+describe('el título', () => {
+  it('es la fecha, con la mayúscula solo al principio', () => {
+    expect(headerDateLine('2026-11-04')).toBe('Miércoles 4 de noviembre')
+    expect(headerDateLine('2026-10-13')).toBe('Martes 13 de octubre')
+    expect(headerDateLine('no es una fecha')).toBe('')
+  })
+})
+
+describe('quién ve el Resumen', () => {
+  const page = () => ResumenPage({ params: Promise.resolve({ tenantSlug: 'hub' }) })
+  const access = (role: string) =>
+    vi.mocked(requireAccountingAccess).mockResolvedValue({
+      role,
+      tenant: { id: 'tenant' },
+      accounting: { write: role === 'owner' },
+    } as never)
+
+  it('la contadora entra directo a Sumas y saldos, sin pedir ninguna lectura', async () => {
+    access('accountant')
+    await expect(page()).rejects.toThrow('NEXT_REDIRECT')
+    expect(ui.redirect).toHaveBeenCalledWith(`${BASE}/libros/sumas-y-saldos`)
+    expect(ui.loaded).toBeNull()
   })
 
-  it('el color de cada caja sale de su tipo, y el porcentaje va como texto, sin pastilla', async () => {
-    const html = renderToStaticMarkup(await HeroBlock({ data: homeData(), tone: 'bosque' }))
-    // Efectivo y billetera: cada uno su tono, en la barra y en la leyenda.
-    expect(html).toContain('bg-(--adm-k-cash-1)')
-    expect(html).toContain('bg-(--adm-k-wallet-1)')
-    // Ya no por su lugar en la lista (el banco en tercer lugar pintaba el héroe de ciruela).
-    expect(html).not.toContain('bg-adm-s3')
-    // El porcentaje al lado del importe, como texto: nada de dos números en cajitas.
-    expect(html).toContain(`· 18${NB}%`)
-    expect(html).toContain(`· 82${NB}%`)
-    expect(html).not.toContain('font-mono')
-    // En angosto, un renglón por caja con su plata a la vista (no una fila que se corta).
-    expect(html.match(/min-h-10/g)?.length).toBe(2)
+  it('un dueño se queda acá', async () => {
+    access('owner')
+    await page()
+    expect(ui.redirect).not.toHaveBeenCalled()
+    expect(ui.loaded).toMatchObject({ tenantId: 'tenant', tenantSlug: 'hub', canWrite: true })
+  })
+
+  it('un dueño que solo lee también: no se confunde con la contadora', async () => {
+    vi.mocked(requireAccountingAccess).mockResolvedValue({
+      role: 'owner',
+      tenant: { id: 'tenant' },
+      accounting: { write: false },
+    } as never)
+    await page()
+    expect(ui.redirect).not.toHaveBeenCalled()
+    expect(ui.loaded).toMatchObject({ canWrite: false })
+  })
+})
+
+describe('el panel verde', () => {
+  it('Plata hoy, las cuentas que llevan a sus movimientos y tres números que llevan a su pantalla', async () => {
+    const html = await hero(homeData())
+    expect(html).toContain('Plata hoy')
+    expect(html).toContain('$ 2.144.757')
+    expect(html).toContain(`href="${BASE}/cajas/caja"`)
+    expect(html).toContain(`href="${BASE}/cajas/mp"`)
+    expect(html).toContain('$ 394.757')
+    expect(html).toContain('$ 1.750.000')
+    // Lo que se debe, con lo vencido.
+    expect(html).toContain('Le debés a proveedores')
+    expect(html).toContain('$ 696.000')
+    expect(html).toContain('$ 604.000 vencido')
+    expect(html).toContain(`href="${BASE}/compras"`)
+    // Fijos y sueldos juntos: $ 600.000 + $ 150.000.
+    expect(html).toContain('Falta de fijos y sueldos')
+    expect(html).toContain('$ 750.000')
+    expect(html).toContain('$ 600.000 de fijos')
+    expect(html).toContain(`href="${BASE}/gastos-fijos"`)
+    // Lo vendido en el mes: once cierres de $ 900.000.
+    expect(html).toContain('Vendiste en octubre')
+    expect(html).toContain('$ 9.900.000')
+    expect(html).toContain('Sin objetivo')
+    expect(html).toContain(`href="${BASE}/ventas"`)
+    expect(html).toContain('adm-hero')
+  })
+
+  it('con objetivo lo dice debajo de lo vendido', async () => {
+    const html = await hero(homeData({ targetCents: 100_000_000 }))
+    expect(html).toContain('Objetivo $ 31.000.000')
+  })
+
+  it('los números van en la letra de los datos, no en Fraunces', async () => {
+    const html = await hero(homeData())
+    expect(html).not.toContain('font-serif')
+    expect(html).toContain('tabular-nums')
+  })
+
+  it('ya no están el dibujo de 30 días, la barra por caja ni la oración larga', async () => {
+    const html = await hero(homeData())
+    expect(html).not.toContain('Hace 30 días')
+    expect(html).not.toContain('Repartida en')
+    expect(html).not.toContain('Plata disponible hoy')
+    expect(html).not.toContain('en camino')
   })
 
   it('sin saldos iniciales y sin movimientos no muestra «$ 0»: dice que todavía no sabe', async () => {
-    const data = homeData({
-      summary: untouchedSummary(),
-      settings: { ...SETTINGS, openingStatus: 'pending' },
-    })
-    const html = renderToStaticMarkup(await HeroBlock({ data, tone: 'bosque' }))
+    const html = await hero(homeData({ summary: untouchedSummary(), settings: PENDING_SETTINGS }))
     expect(html).toContain('Todavía no sé cuánta plata hay')
     expect(html).toContain('Cargar lo que había')
     expect(html).toContain(`href="${BASE}/configurar"`)
-    expect(html).not.toContain('Plata disponible hoy')
-    expect(html).not.toContain(`$${NB}0`)
-    // Las cajas del bar esperan su monto: enseñan qué va a aparecer.
+    expect(html).not.toContain('$ 0<')
+    // Las cuentas esperan su monto: enseñan qué va a aparecer.
     expect(html).toContain('Mercado Pago')
     expect(html).toContain('¿cuánto hay?')
+    // Lo que se debe tampoco se afirma: entra con los saldos iniciales.
+    expect(html).toContain('Entra con los saldos iniciales')
+    expect(html).toContain('Sin dato')
   })
 
-  it('la contadora ve el mismo estado sin el botón de carga', async () => {
+  it('quien solo lee ve el mismo estado sin el botón de carga', async () => {
     ui.readOnly = true
-    const data = homeData({
-      summary: untouchedSummary(),
-      settings: { ...SETTINGS, openingStatus: 'pending' },
-      canWrite: false,
-    })
-    const html = renderToStaticMarkup(await HeroBlock({ data, tone: 'bosque' }))
+    const html = await hero(
+      homeData({ summary: untouchedSummary(), settings: PENDING_SETTINGS, canWrite: false }),
+    )
     expect(html).toContain('Todavía no sé cuánta plata hay')
     expect(html).not.toContain('Cargar lo que había')
     expect(html).not.toContain('/configurar')
   })
 
-  it('si el resumen no cargó lo dice ahí, con «Reintentar», sin tirar la pantalla', async () => {
-    const html = renderToStaticMarkup(
-      await HeroBlock({ data: homeData({ summary: null }), tone: 'bosque' }),
+  it('un descubierto se dice con palabras, nunca con un menos', async () => {
+    const base = summaryOf()
+    const html = await hero(
+      homeData({
+        summary: summaryOf({
+          availableCents: -1_200_000,
+          pendingWalletCents: 0,
+          treasuries: [
+            {
+              ...(base.treasuries[0] as AccSummary['treasuries'][number]),
+              balanceCents: -1_200_000,
+            },
+          ],
+        }),
+      }),
     )
+    expect(html).toContain('Hoy estás en descubierto por')
+    expect(html).toContain('descubierto $ 12.000')
+    expect(html).not.toContain('Plata hoy')
+    expect(html).not.toMatch(/[−-]\s?\$/)
+  })
+
+  it('si el resumen no cargó lo dice ahí, con «Reintentar», sin tirar la pantalla', async () => {
+    const html = await hero(homeData({ summary: null }))
     expect(html).toContain('No pudimos cargar el resumen.')
     expect(html).toContain('Sin conexión')
     expect(html).toContain('Reintentar')
@@ -365,268 +492,445 @@ describe('Resumen · el héroe «la plata hoy»', () => {
       code: 'error' as const,
       message: 'Tardó demasiado. Probá de nuevo en un rato o con un período más corto.',
     })
-    const html = renderToStaticMarkup(await HeroBlock({ data, tone: 'bosque' }))
+    const html = await hero(data)
     expect(html).toContain('Tardó demasiado. Probá de nuevo en un rato.')
     expect(html).not.toContain('período')
   })
 })
 
-describe('Resumen · «Hoy te toca»', () => {
-  const render = async (data: HomeData, collapsed = false) =>
-    renderToStaticMarkup(
-      await TodayBlock({ data, setupCookie: 'hub_acc_pasos_hub', setupCollapsed: collapsed }),
-    )
-
-  it('el dueño ve las tarjetas con una acción cada una', async () => {
-    const html = await render(homeData())
-    expect(html).toContain('Hoy te toca')
-    expect(html).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`)
-    expect(html).toContain('Cargar un gasto')
-    expect(html).toContain('Pagar')
-    // Con todo configurado no hay franja de puesta en marcha.
-    expect(html).not.toContain('Puesta en marcha')
-  })
-
-  it('la contadora ve el estado de cada cosa y ningún botón de carga', async () => {
-    ui.readOnly = true
-    const html = await render(homeData({ canWrite: false }))
-    expect(html).toContain('El día a día del bar')
-    expect(html).toContain('Pagos que vencen')
-    expect(html).not.toContain('<button')
-    expect(html).not.toContain('/ventas/cierre')
-    expect(html).not.toContain('Cargar un gasto')
-  })
-
-  it('con la puesta en marcha incompleta, debajo va su franja con lo que sigue y «Ver todo»', async () => {
-    const data = homeData({
-      summary: untouchedSummary(),
-      settings: { ...SETTINGS, openingStatus: 'pending', cuit: null },
-      recurring: [fixed({ amountCents: null })],
-    })
-    const html = await render(data)
-    expect(html).toMatch(/Puesta en marcha · \d+ de \d+/)
-    // «Ver todo» baja a la sección de la puesta en marcha de la guía, con el mismo «N de M».
-    expect(html).toContain(`href="${BASE}/guias/como-arrancar#arranque-day1"`)
-    // Primero lo de hoy, después la puesta en marcha: la primera acción no queda tapada.
-    expect(html.indexOf('Puesta en marcha')).toBeGreaterThan(html.indexOf('Cargar un gasto'))
-    // Lo que sigue es lo que la pantalla todavía no ofrece: los saldos iniciales los pide el
-    // héroe y el primer cierre es la tarjeta ①, así que acá no se repiten.
-    expect(html).toContain('Sigue:')
-    expect(html).toContain('Completá los datos de la SAS')
-    expect(html).toContain('Poneles monto a los gastos fijos')
-    expect(html).not.toContain('Cargá lo que había en cada caja al arrancar')
-    expect(html).not.toContain('Cargá tu primer cierre del día')
-    expect(html).not.toContain('Cargar saldos iniciales')
-    // El avance es una barra continua (no una rayita por paso).
-    expect(html).toMatch(/aria-label="\d+ de \d+ pasos hechos"/)
-    // En un renglón sigue estando, con su avance, lo que sigue y cómo ver los próximos.
-    const collapsed = await render(data, true)
-    expect(collapsed).toMatch(/Puesta en marcha · \d+ de \d+/)
-    expect(collapsed).toContain('Completá los datos de la SAS')
-    expect(collapsed).toContain('Mostrar los próximos 2')
-  })
-
-  it('si el resumen no cargó, la franja no afirma un avance ni cuántas cosas esperan', async () => {
-    const html = await render(
-      homeData({ summary: null, settings: { ...SETTINGS, openingStatus: 'pending', cuit: null } }),
-    )
-    expect(html).toContain('Puesta en marcha')
-    expect(html).not.toMatch(/Puesta en marcha · \d+ de \d+/)
-    expect(html).not.toContain('pasos hechos')
-    expect(html).not.toMatch(/Hay \d+ cosas? esperando/)
-    expect(html).toContain('Puede faltar algo: no cargó el resumen.')
-  })
-})
-
-describe('Resumen · «Lo que tenés que pagar»', () => {
-  const render = async (data: HomeData) => renderToStaticMarkup(await PayablesBlock({ data }))
-
-  it('la deuda en tres tramos, los que hay que pagar con su botón y los gastos fijos del mes', async () => {
-    const html = await render(homeData())
-    // Un bloque, un número: el título afirma sin importe y lo vencido va en la oración.
-    expect(html).toContain('Tenés pagos vencidos con 2 proveedores')
-    expect(html).not.toContain(`Tenés $${NB}`)
-    expect(html).toContain(`$${NB}604.000 ya venció.`)
-    expect(html).toContain(`$${NB}696.000`)
-    expect(html).toContain('Le debés a proveedores')
-    expect(html).toContain('Vence esta semana')
-    expect(html).toContain('Más adelante')
-    expect(html).toContain('0003-00001100')
-    // Un vencido y nada más: no hay mezcla que distinguir, así que tampoco hay píldora.
-    expect(html).not.toContain('data-tone="late"')
-    expect(html).toContain('Te falta de gasto fijo')
-    expect(html).toContain(`href="${BASE}/gastos-fijos"`)
-  })
-
-  it('los gastos fijos que tocan, con sus tres acciones al lado del número', async () => {
-    const recurring = [
-      fixed({ id: 'luz', name: 'Luz', nextDueDate: '2026-10-28', daysToDue: 15 }),
-      fixed({
-        id: 'internet',
-        name: 'Internet',
-        amountCents: 3_500_000,
-        nextDueDate: '2026-10-15',
-        daysToDue: 2,
-      }),
-      fixed({
-        id: 'alquiler',
-        name: 'Alquiler del local',
-        amountCents: 85_000_000,
-        nextDueDate: '2026-10-10',
-        daysToDue: -3,
-      }),
-    ]
-    const html = await render(homeData({ recurring }))
-    const part = html.slice(html.indexOf('Gastos fijos del mes'))
-    // Los que entraron en su aviso, del más atrasado al que vence más lejos; la luz (28/10)
-    // todavía no toca.
-    expect(part).toContain('Alquiler del local')
-    expect(part.indexOf('Alquiler del local')).toBeLessThan(part.indexOf('Internet'))
-    expect(part).not.toContain('>Luz<')
-    // El que ya pasó su día dice «venció», y en rojo; el otro, «vence». Sin «todavía sin
-    // pagar»: debajo de «Te falta de gasto fijo» todos lo están.
-    expect(part).toContain('venció el 10/10')
-    expect(part).toContain('vence el 15/10')
-    expect(part).not.toContain('todavía sin pagar')
-    expect(part).toContain('Vencido')
-    expect(part).toContain('Por vencer')
-    // Con varios, un «Pagar» por renglón (como los proveedores): abre el gasto con el gasto fijo.
-    expect(part.split('>Pagar<').length - 1).toBe(2)
-    expect(part).not.toContain('Lo pago después')
-
-    // Uno solo: las tres acciones del aviso.
-    const one = await render(homeData({ recurring: [recurring[2] as RecurringExpenseRow] }))
-    const onePart = one.slice(one.indexOf('Gastos fijos del mes'))
-    expect(onePart.split('>Pagar<').length - 1).toBe(1)
-    expect(onePart).toContain(`href="${BASE}/compras/nueva?gasto-fijo=alquiler"`)
-    expect(onePart).toContain('Este mes no se paga')
-
-    // La contadora ve qué toca, sin ningún botón.
-    ui.readOnly = true
-    const reader = await render(homeData({ recurring, canWrite: false }))
-    const readerPart = reader.slice(reader.indexOf('Gastos fijos del mes'))
-    expect(readerPart).toContain('Alquiler del local')
-    expect(readerPart).not.toContain('>Pagar<')
-    expect(readerPart).not.toContain('Lo pago después')
-    expect(readerPart).not.toContain('Este mes no se paga')
-  })
-
-  it('lo que no entra en los renglones suma con lo que dice el título', async () => {
-    // 9 proveedores con algo vencido y la lista de avisos topeada: 3 renglones y «6 más».
-    const overdue = Array.from({ length: 5 }, (_, i) =>
-      attention({
-        kind: 'payable_overdue',
-        label: `Proveedor ${i + 1} · 2 comprobantes`,
-        amountCents: 10_000_000,
-        days: 40 - i,
-        partyId: `p${i + 1}`,
-      }),
-    )
-    const html = await render(
-      homeData({
-        summary: summaryOf({
-          attention: overdue,
-          payables: {
-            totalCents: 69_600_000,
-            overdueCents: 60_400_000,
-            dueWeekCents: 0,
-            partiesRed: 9,
-          },
-        }),
-      }),
-    )
-    expect(html).toContain('Tenés pagos vencidos con 9 proveedores')
-    expect(html.match(/>Pagar</g)?.length).toBe(3)
-    expect(html).toContain('Y 6 más')
-    // Todos vencidos: la píldora «Vencido» no se repite en cada renglón (el texto ya lo dice).
-    expect(html).not.toContain('data-tone="late"')
-    expect(html).toContain('venció hace 40 días')
-  })
-
-  it('gastos fijos sin monto: pide completarlos en vez de mostrar «$ 0»', async () => {
-    const recurring = Array.from({ length: 31 }, (_, i) =>
-      fixed({
-        id: `fijo-${i}`,
-        amountCents: null,
-        nextDueDate: '2026-11-10',
-        daysToDue: 28,
-        monthStatus: 'upcoming',
-      }),
-    )
-    const html = await render(homeData({ recurring }))
-    expect(html).toContain('31 gastos fijos sin monto')
-    expect(html).toContain('Completar los montos')
-    // Va a «Completar la planilla» (todos de corrido), no a la planilla del mes.
-    expect(gastosFijosFillHref('hub')).toBe(`${BASE}/gastos-fijos/completar`)
-    expect(html).toMatch(
-      new RegExp(`href="${BASE}/gastos-fijos/completar"[^>]*>(?:<[^>]+>)*Completar los montos`),
-    )
-    expect(html).not.toContain('Te falta de gasto fijo')
-    expect(html).not.toContain(`$${NB}0<`)
-    // La contadora ve que faltan los montos, sin el link para completarlos.
-    ui.readOnly = true
-    const reader = await render(homeData({ recurring, canWrite: false }))
-    expect(reader).toContain('31 gastos fijos sin monto')
-    expect(reader).not.toContain('Completar los montos')
-    expect(reader).not.toContain('/gastos-fijos/completar')
-  })
-
-  it('la contadora ve los mismos renglones sin «Pagar»', async () => {
-    ui.readOnly = true
-    const html = await render(homeData({ canWrite: false }))
-    expect(html).toContain('0003-00001100')
-    expect(html).not.toContain('<button')
-  })
-})
-
-/**
- * El bar recién arrancado (así está el bar real): libros desde ayer, saldos iniciales sin
- * cargar, ningún cierre. Cada bloque tiene que enseñar qué va a aparecer, sin un cero ni un
- * «nada pendiente» que nadie afirmó.
- */
-describe('Resumen · el bar recién arrancado', () => {
-  const NEW_SETTINGS = {
-    ...SETTINGS,
-    booksStartDate: '2026-10-12',
-    openingStatus: 'pending',
-    cuit: null,
-  } as AccountingSettings
-  const noDebt = (over: Partial<AccSummary> = {}) => ({
-    ...untouchedSummary(),
-    payables: { totalCents: 0, overdueCents: 0, dueWeekCents: 0, partiesRed: 0 },
+describe('las cuentas al lado de la plata', () => {
+  const treasury = (over: Partial<AccSummary['treasuries'][number]>) => ({
+    id: 't',
+    name: 'Caja',
+    kind: 'cash' as const,
+    accountCode: null,
+    balanceCents: 0,
+    pendingWalletCents: 0,
+    lastCheckedOn: null,
+    lastMovementDate: null,
     ...over,
   })
 
-  it('«Lo que tenés que pagar» no afirma «no le debés nada · $ 0» sin saldos iniciales', async () => {
-    const data = homeData({ summary: noDebt(), settings: NEW_SETTINGS, closedBefore: '2026-10-01' })
-    const html = renderToStaticMarkup(await PayablesBlock({ data }))
-    expect(html).toContain('Todavía no sé cuánto debés')
-    expect(html).toContain('entra con los saldos iniciales')
-    expect(html).toContain('aparece acá, con su vencimiento')
-    expect(html).not.toContain('No le debés nada')
-    expect(html).not.toContain('Le debés a proveedores')
-    // Ningún importe en cero a la vista (el medidor de gastos fijos lleva el suyo en su nombre).
-    expect(html).not.toContain(`$${NB}0<`)
-    // Y la tarjeta de «Hoy te toca» tampoco lo da por hecho.
-    const today = renderToStaticMarkup(
-      await TodayBlock({ data, setupCookie: 'hub_acc_pasos_hub', setupCollapsed: true }),
+  it('un cero de una cuenta es un dato; la tarjeta sin deuda no se nombra', () => {
+    const { accounts, more } = heroAccounts(
+      {
+        treasuries: [
+          treasury({ id: 'a', name: 'Caja', balanceCents: 0 }),
+          treasury({ id: 'b', name: 'Banco', kind: 'bank', balanceCents: -1_200_000 }),
+          treasury({ id: 'c', name: 'Visa', kind: 'credit_card', balanceCents: -8_000_000 }),
+          treasury({ id: 'd', name: 'Master', kind: 'credit_card', balanceCents: 0 }),
+        ],
+      },
+      BASE,
     )
-    expect(today).toContain('Todavía no cargaste lo que debés: entra con los saldos iniciales.')
-    expect(today).not.toContain('No le debés nada')
-    expect(today).not.toContain('Hecho: </span>Pagos que vencen')
+    expect(accounts.map((a) => [a.name, a.text, a.href])).toEqual([
+      ['Caja', money('$ 0'), `${BASE}/cajas/a`],
+      ['Banco', money('descubierto $ 12.000'), `${BASE}/cajas/b`],
+      ['Visa', money('debe $ 80.000'), `${BASE}/cajas/c`],
+    ])
+    expect(more).toBe(0)
   })
 
-  it('con algo cargado muestra la deuda y avisa que falta lo de antes de arrancar', async () => {
-    const data = homeData({ settings: NEW_SETTINGS, closedBefore: '2026-10-01' })
-    const html = renderToStaticMarkup(await PayablesBlock({ data }))
-    expect(html).toContain('Tenés pagos vencidos con 2 proveedores')
-    expect(html).toContain('lo que debías de antes entra con los saldos iniciales')
-    // Con los saldos iniciales cargados la aclaración no va.
-    const settled = renderToStaticMarkup(await PayablesBlock({ data: homeData() }))
-    expect(settled).not.toContain('saldos iniciales')
+  it('con muchas, las primeras seis y «y N más»', () => {
+    const { accounts, more } = heroAccounts(
+      {
+        treasuries: Array.from({ length: 8 }, (_, i) =>
+          treasury({ id: `t${i}`, name: `Cuenta ${i}` }),
+        ),
+      },
+      BASE,
+    )
+    expect(accounts).toHaveLength(6)
+    expect(more).toBe(2)
+  })
+})
+
+describe('los tres números', () => {
+  const numbers = (over: Partial<Parameters<typeof heroNumbers>[0]> = {}) =>
+    heroNumbers({
+      base: BASE,
+      today: TODAY,
+      summary: summaryOf(),
+      openingPending: false,
+      recurring: [fixed({})],
+      payments: new Map(),
+      payroll: PAYROLL(15_000_000),
+      projection: projectionOf(),
+      ...over,
+    })
+  const number = (key: string, over: Partial<Parameters<typeof heroNumbers>[0]> = {}) => {
+    const found = numbers(over).find((n) => n.key === key)
+    if (!found) throw new Error(`falta ${key}`)
+    return found
+  }
+
+  it('son tres, en este orden', () => {
+    expect(numbers().map((n) => n.label)).toEqual([
+      'Le debés a proveedores',
+      'Falta de fijos y sueldos',
+      'Vendiste en octubre',
+    ])
   })
 
-  it('no ofrece bajar de ARCA las compras de un mes anterior a los libros, ni en «Avisos»', async () => {
+  describe('Le debés a proveedores', () => {
+    const payables = (over: Partial<NonNullable<AccSummary['payables']>>) => ({
+      summary: summaryOf({
+        payables: {
+          totalCents: 0,
+          overdueCents: 0,
+          dueWeekCents: 0,
+          partiesRed: 0,
+          ...over,
+        },
+      }),
+    })
+
+    it('con lo vencido; si no hay, lo que vence esta semana', () => {
+      expect(number('debt').hint).toBe(money('$ 604.000 vencido'))
+      expect(number('debt', payables({ totalCents: 500, dueWeekCents: 200 })).hint).toBe(
+        money('$ 2 vence esta semana'),
+      )
+      expect(number('debt', payables({ totalCents: 500 })).hint).toBe('Nada vencido')
+    })
+
+    it('sin deuda es un cero de verdad', () => {
+      expect(number('debt', payables({}))).toMatchObject({ cents: 0, hint: 'Nada pendiente' })
+    })
+
+    it('sin saldos iniciales y sin deuda, un cero no es un dato', () => {
+      expect(number('debt', { ...payables({}), openingPending: true })).toMatchObject({
+        cents: null,
+        hint: 'Entra con los saldos iniciales',
+      })
+    })
+
+    it('si la base todavía no lo calcula, «—»', () => {
+      expect(number('debt', { summary: summaryOf({ payables: null }) })).toMatchObject({
+        cents: null,
+        hint: null,
+      })
+      expect(number('debt', { summary: null }).cents).toBeNull()
+    })
+  })
+
+  describe('Falta de fijos y sueldos', () => {
+    it('suma lo que falta de cada uno', () => {
+      expect(number('fixed')).toMatchObject({
+        cents: 75_000_000,
+        hint: money('$ 600.000 de fijos'),
+      })
+    })
+
+    it('solo sueldos', () => {
+      expect(number('fixed', { recurring: [] })).toMatchObject({
+        cents: 15_000_000,
+        hint: money('$ 150.000 de sueldos'),
+      })
+    })
+
+    it('lo vencido de los fijos se dice antes', () => {
+      expect(
+        number('fixed', {
+          recurring: [fixed({ nextDueDate: '2026-10-10', daysToDue: -3 })],
+        }),
+      ).toMatchObject({ cents: 75_000_000, hint: money('$ 600.000 de fijos vencido') })
+    })
+
+    it('si no se pudieron leer los sueldos, un número a medias no pasa por entero', () => {
+      expect(number('fixed', { payroll: null })).toMatchObject({
+        cents: 60_000_000,
+        hint: 'Sin contar los sueldos',
+      })
+    })
+
+    it('si no se pudieron leer los fijos, tampoco', () => {
+      expect(number('fixed', { recurring: null })).toMatchObject({
+        cents: 15_000_000,
+        hint: 'Sin contar los fijos',
+      })
+    })
+
+    it('si no se pudo leer ninguno, «—»', () => {
+      expect(number('fixed', { recurring: null, payroll: null })).toMatchObject({
+        cents: null,
+        hint: null,
+      })
+    })
+
+    it('gastos fijos sin monto: pide completarlos en vez de mostrar «$ 0»', () => {
+      const recurring = Array.from({ length: 31 }, (_, i) =>
+        fixed({ id: `fijo-${i}`, amountCents: null, monthStatus: 'upcoming', daysToDue: 28 }),
+      )
+      expect(number('fixed', { recurring, payroll: PAYROLL(0) })).toMatchObject({
+        cents: null,
+        hint: '31 sin monto',
+      })
+      // Con sueldos, el número es de los sueldos, y sigue avisando.
+      expect(number('fixed', { recurring })).toMatchObject({
+        cents: 15_000_000,
+        hint: '31 sin monto',
+      })
+    })
+
+    it('nada cargado todavía no es «$ 0»', () => {
+      expect(number('fixed', { recurring: [], payroll: PAYROLL(0) })).toMatchObject({
+        cents: null,
+        hint: 'Todavía sin cargar',
+      })
+    })
+
+    it('con los sueldos ya pagados y nada más, también es un cero de verdad', () => {
+      const payroll = { ...PAYROLL(0), salaryCents: 100, paidCents: 100 }
+      expect(number('fixed', { recurring: [], payroll })).toMatchObject({
+        cents: 0,
+        hint: 'Al día',
+      })
+    })
+
+    it('todo pagado sí es un cero de verdad', () => {
+      const recurring = [fixed({ monthStatus: 'upcoming', nextDueDate: '2026-11-20' })]
+      expect(number('fixed', { recurring, payroll: PAYROLL(0) })).toMatchObject({
+        cents: 0,
+        hint: 'Al día',
+      })
+    })
+  })
+
+  describe('Vendiste', () => {
+    it('lo vendido y el objetivo', () => {
+      expect(
+        number('sold', { projection: projectionOf({ targetCents: 100_000_000 }) }),
+      ).toMatchObject({
+        cents: 990_000_000,
+        hint: money('Objetivo $ 31.000.000'),
+      })
+      expect(number('sold').hint).toBe('Sin objetivo')
+    })
+
+    it('un mes sin ningún cierre no vendió cero', () => {
+      expect(
+        number('sold', { projection: projectionOf({ closedBefore: '2026-10-01' }) }),
+      ).toMatchObject({
+        cents: null,
+        hint: 'Todavía sin cierres',
+      })
+    })
+
+    it('si no se pudo leer, «—»', () => {
+      expect(number('sold', { projection: null })).toMatchObject({ cents: null, hint: null })
+    })
+  })
+})
+
+describe('«Para hoy»', () => {
+  const CLOSE: TodayItem = {
+    id: 'daily_close',
+    title: 'El cierre de ayer',
+    status: 'Falta el del lunes 12/10.',
+    tone: 'warn',
+    done: false,
+    action: {
+      kind: 'href',
+      href: `${BASE}/ventas/cierre?fecha=2026-10-12`,
+      label: 'Cargar el cierre del lunes 12/10',
+    },
+    covers: [],
+  }
+  const SETUP = (done: number, total: number): SetupStrip => ({
+    title: `Puesta en marcha · ${done} de ${total}`,
+    done,
+    total,
+    complete: done >= total,
+    steps: [],
+    next: [],
+    guideHref: `${BASE}/guias/como-arrancar#arranque-day1`,
+  })
+  const rows = (over: Partial<Parameters<typeof paraHoyRows>[0]> = {}) =>
+    paraHoyRows({
+      items: [CLOSE],
+      setup: SETUP(5, 5),
+      setupCountKnown: true,
+      summary: summaryOf({ attention: [] }),
+      recurring: [],
+      weekPlan: null,
+      integration: [],
+      booksStartDate: '2026-09-01',
+      today: TODAY,
+      base: BASE,
+      ...over,
+    })
+  const only = (key: string, over: Partial<Parameters<typeof paraHoyRows>[0]> = {}) =>
+    rows(over).find((row) => row.key === key) ?? null
+
+  describe('el cierre', () => {
+    it('«Falta el cierre de ayer», con su día y «Cargar»', () => {
+      expect(only('close')).toMatchObject({
+        title: 'Falta el cierre de ayer',
+        detail: 'lunes 12/10',
+        action: { kind: 'href', href: `${BASE}/ventas/cierre?fecha=2026-10-12`, label: 'Cargar' },
+      })
+    })
+
+    it('varios: cuántos y por cuál empezar', () => {
+      const items: TodayItem[] = [
+        {
+          ...CLOSE,
+          title: 'Los cierres del día',
+          status: 'Faltan 3: empezá por el 01/10.',
+          action: {
+            kind: 'href',
+            href: `${BASE}/ventas/cierre?fecha=2026-10-01`,
+            label: 'Cargar el del jueves 01/10',
+          },
+        },
+      ]
+      expect(only('close', { items })).toMatchObject({
+        title: 'Faltan cierres del día',
+        detail: 'Faltan 3: empezá por el 01/10',
+      })
+    })
+
+    it('uno que no es el de ayer', () => {
+      const items: TodayItem[] = [
+        {
+          ...CLOSE,
+          title: 'El cierre del día',
+          status: 'Falta el del viernes 09/10.',
+          action: {
+            kind: 'href',
+            href: `${BASE}/ventas/cierre?fecha=2026-10-09`,
+            label: 'Cargar el cierre del viernes 09/10',
+          },
+        },
+      ]
+      expect(only('close', { items })).toMatchObject({
+        title: 'Falta un cierre del día',
+        detail: 'viernes 09/10',
+      })
+    })
+
+    it('hecho, o sin nada que cargar todavía, no va', () => {
+      expect(only('close', { items: [{ ...CLOSE, done: true, action: null }] })).toBeNull()
+      expect(only('close', { items: [{ ...CLOSE, action: null }] })).toBeNull()
+      expect(only('close', { items: [] })).toBeNull()
+    })
+
+    it('si no se pudo saber, lo ofrece sin afirmar que falta', () => {
+      const items: TodayItem[] = [
+        { ...CLOSE, tone: 'muted', status: 'Lo que se vendió y cómo te pagaron.' },
+      ]
+      expect(only('close', { items })).toMatchObject({
+        title: 'El cierre de ayer',
+        detail: 'Lo que se vendió y cómo te pagaron.',
+      })
+    })
+  })
+
+  describe('el Plan de la semana', () => {
+    it('llevás X de Y, y lleva a su planilla', () => {
+      expect(
+        only('plan', { weekPlan: PLAN({ budgetCents: 30_000_000, paidCents: 12_500_000 }) }),
+      ).toMatchObject({
+        title: 'Plan de la semana',
+        detail: money('llevás $ 125.000 de $ 300.000'),
+        action: { kind: 'href', href: `${BASE}/compras/semana`, label: 'Abrir' },
+      })
+    })
+
+    it('sin presupuesto y con deuda, todavía sin armar', () => {
+      expect(only('plan', { weekPlan: PLAN({ debtCents: 100 }) })?.detail).toBe('todavía sin armar')
+    })
+
+    it('sin nada que pagar no hay renglón; tampoco si no se pudo leer', () => {
+      expect(only('plan', { weekPlan: PLAN() })).toBeNull()
+      expect(only('plan', { weekPlan: null })).toBeNull()
+    })
+  })
+
+  describe('lo vencido más urgente', () => {
+    const overdue = (over: Partial<SummaryAttentionItem>) =>
+      attention({ kind: 'payable_overdue', label: 'Coca-Cola', amountCents: 12_500_000, ...over })
+    const summary = (items: SummaryAttentionItem[], partiesRed = items.length) =>
+      summaryOf({
+        attention: items,
+        payables: {
+          totalCents: 100,
+          overdueCents: 100,
+          dueWeekCents: 0,
+          partiesRed,
+        },
+      })
+
+    it('el comprobante con más días, con su «Pagar» a ese proveedor', () => {
+      const row = only('overdue', {
+        summary: summary([
+          overdue({ label: 'Hielo', days: 2, partyId: 'p2' }),
+          overdue({ days: 6, partyId: 'p1' }),
+        ]),
+      })
+      expect(row).toMatchObject({
+        title: 'Coca-Cola',
+        detail: money('$ 125.000 · vencido hace 6 días · y 1 más'),
+        late: true,
+        action: { kind: 'sheet', sheet: 'pagar', params: { proveedor: 'p1' }, label: 'Pagar' },
+      })
+    })
+
+    it('un gasto fijo más atrasado le gana, y «Pagar» abre el gasto con ese gasto fijo', () => {
+      const row = only('overdue', {
+        summary: summary([overdue({ days: 2, partyId: 'p1' })]),
+        recurring: [fixed({ id: 'sistema', name: 'Sistema de caja', daysToDue: -5 })],
+      })
+      expect(row).toMatchObject({
+        title: 'Sistema de caja',
+        detail: money('$ 600.000 · vencido hace 5 días · y 1 más'),
+        action: {
+          kind: 'sheet',
+          sheet: 'gasto',
+          params: { 'gasto-fijo': 'sistema' },
+          label: 'Pagar',
+        },
+      })
+    })
+
+    it('un gasto fijo sin monto lo dice', () => {
+      const row = only('overdue', {
+        summary: summary([]),
+        recurring: [fixed({ id: 'luz', name: 'Luz', amountCents: null, daysToDue: -1 })],
+      })
+      expect(row?.detail).toBe('sin monto · vencido hace 1 día')
+    })
+
+    it('la lista de avisos viene topeada: los que quedan salen del total', () => {
+      const row = only('overdue', { summary: summary([overdue({ days: 6, partyId: 'p1' })], 9) })
+      expect(row?.detail).toBe(money('$ 125.000 · vencido hace 6 días · y 8 más'))
+    })
+
+    it('sin proveedor en el aviso, lleva a la lista', () => {
+      const row = only('overdue', { summary: summary([overdue({ days: 6 })]) })
+      expect(row?.action).toEqual({ kind: 'href', href: `${BASE}/compras`, label: 'Ver' })
+    })
+
+    it('lo que vence y todavía no venció no va acá', () => {
+      expect(
+        only('overdue', {
+          summary: summary([attention({ kind: 'payable_due_week', label: 'Hielo', days: 2 })]),
+          recurring: [fixed({ daysToDue: 2 })],
+        }),
+      ).toBeNull()
+    })
+  })
+
+  describe('ARCA y los archivos', () => {
+    const VOUCHERS: IntegrationAttentionItem = {
+      kind: 'arca_vouchers',
+      tone: 'danger',
+      label: 'Hay 3 facturas de ARCA para verificar o cargar en los libros.',
+      href: '/ventas/nueva-factura',
+      actionLabel: 'Ver',
+      count: 3,
+      date: null,
+    }
     const MC: IntegrationAttentionItem = {
       kind: 'mc_prev_month',
       tone: 'info',
@@ -636,183 +940,174 @@ describe('Resumen · el bar recién arrancado', () => {
       count: null,
       date: null,
     }
-    const data = homeData({
-      summary: noDebt(),
-      settings: NEW_SETTINGS,
-      integration: [MC],
-      closedBefore: '2026-10-01',
+
+    it('un solo renglón, el más urgente, con su botón a la pantalla que lo resuelve', () => {
+      expect(only('integration', { integration: [VOUCHERS, MC] })).toMatchObject({
+        title: 'Hay 3 facturas de ARCA para verificar o cargar en los libros',
+        detail: 'y 1 más',
+        action: { kind: 'href', href: `${BASE}/ventas/nueva-factura`, label: 'Ver' },
+      })
     })
-    const today = renderToStaticMarkup(
-      await TodayBlock({ data, setupCookie: 'hub_acc_pasos_hub', setupCollapsed: true }),
-    )
-    expect(today).not.toContain('ARCA')
-    expect(today).not.toContain('septiembre')
-    expect(await NoticesBlock({ data })).toBeNull()
-    // Con los libros de antes, la tarjeta sigue estando.
-    const older = homeData({ integration: [MC] })
-    expect(
-      renderToStaticMarkup(
-        await TodayBlock({ data: older, setupCookie: 'hub_acc_pasos_hub', setupCollapsed: true }),
-      ),
-    ).toContain('Bajar las compras de ARCA')
+
+    it('no pide bajar de ARCA un mes de antes de los libros', () => {
+      expect(only('integration', { integration: [MC], booksStartDate: '2026-10-12' })).toBeNull()
+      expect(only('integration', { integration: [MC] })).not.toBeNull()
+    })
+
+    it('si no se pudo revisar, no se calla: se reintenta', () => {
+      expect(only('integration', { integration: null })).toMatchObject({
+        title: 'No pudimos revisar ARCA ni los archivos',
+        action: null,
+        retry: true,
+      })
+    })
+
+    it('sin nada, no hay renglón', () => {
+      expect(only('integration', { integration: [] })).toBeNull()
+    })
   })
 
-  it('el almanaque dice desde cuándo se lleva la cuenta (los días de antes van sin casillero)', async () => {
-    const data = homeData({ summary: noDebt(), settings: NEW_SETTINGS, closedBefore: '2026-10-01' })
-    const html = renderToStaticMarkup(await MonthBlock({ data }))
-    expect(html).toContain('Todavía no hay ventas cargadas en octubre')
-    expect(html).toContain('Falta 1 cierre')
-    expect(html).toContain('Llevás la cuenta desde el 12/10: los días de antes no se cargan.')
-    expect(html).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`)
-    // Con los libros de un mes anterior no hay nada que aclarar.
-    expect(renderToStaticMarkup(await MonthBlock({ data: homeData() }))).not.toContain(
-      'Llevás la cuenta desde',
-    )
-  })
-
-  it('la franja del IVA sin nada con factura no dice «no hay nada que pagar»', async () => {
-    const position = (creditCents: number) =>
-      parseIvaPosition(
-        {
-          month: '2026-10-01',
-          status: 'open',
-          mode: 'on_close',
-          debit_fiscal: { by_rate: {}, total_cents: 0 },
-          credit_fiscal: { by_rate: {}, total_cents: creditCents },
-          to_pay_cents: 0,
-          in_favor_cents: creditCents,
-          perceptions_cents: 0,
-          withholdings_cents: 0,
-          technical_balance_prev_cents: 0,
-          free_balance_prev_cents: 0,
+  describe('la puesta en marcha', () => {
+    it('te faltan N pasos, y lleva a la guía', () => {
+      expect(only('setup', { setup: SETUP(8, 11) })).toMatchObject({
+        title: 'Puesta en marcha',
+        detail: 'te faltan 3 pasos',
+        action: {
+          kind: 'href',
+          href: `${BASE}/guias/como-arrancar#arranque-day1`,
+          label: 'Seguir',
         },
-        '2026-10-01',
-      )
-    const ivaMonth = (inFavorCents: number) => ({
-      month: '2026-10-01',
-      toPayCents: 0,
-      inFavorCents,
-      provisional: true,
+      })
+      expect(only('setup', { setup: SETUP(10, 11) })?.detail).toBe('te falta 1 paso')
     })
 
-    iva.position = position(0)
-    const empty = renderToStaticMarkup(
-      await IvaBlock({
-        data: homeData({ summary: noDebt({ ivaMonth: ivaMonth(0) }), settings: NEW_SETTINGS }),
-      }),
-    )
-    expect(empty).toContain('IVA de octubre: todavía no hay nada cargado con factura.')
-    expect(empty).not.toContain('no hay nada que pagar')
-    expect(empty).not.toContain('Estimado')
-    expect(empty).not.toContain('¿Cómo se calcula?')
-    expect(empty).not.toContain(`$${NB}0`)
+    it('completa, ya no está', () => {
+      expect(only('setup', { setup: SETUP(11, 11) })).toBeNull()
+    })
 
-    // Con una compra con Factura A ya hay un número, y se dice que es estimado.
-    iva.position = position(1_255_800)
-    const some = renderToStaticMarkup(
-      await IvaBlock({
-        data: homeData({
-          summary: noDebt({ ivaMonth: ivaMonth(1_255_800) }),
-          settings: NEW_SETTINGS,
+    it('si no se sabe el avance no afirma un número, pero sigue estando', () => {
+      expect(only('setup', { setup: SETUP(1, 2), setupCountKnown: false })).toMatchObject({
+        title: 'Puesta en marcha',
+        detail: null,
+      })
+      expect(only('setup', { setup: SETUP(2, 2), setupCountKnown: false })).toBeNull()
+    })
+  })
+
+  it('nunca más de cinco renglones, en el orden del día', () => {
+    const all = rows({
+      setup: SETUP(8, 11),
+      summary: summaryOf(),
+      recurring: [fixed({ daysToDue: -2 })],
+      weekPlan: PLAN({ budgetCents: 100 }),
+      integration: [
+        {
+          kind: 'import_review',
+          tone: 'warning',
+          label: 'Compras de ARCA para revisar y cargar.',
+          href: '/importar',
+          actionLabel: 'Revisar',
+          count: 1,
+          date: null,
+        },
+      ],
+    })
+    expect(all.map((row) => row.key)).toEqual(['close', 'plan', 'overdue', 'integration', 'setup'])
+  })
+
+  describe('ya dibujado', () => {
+    it('una planilla con sus botones: uno solo relleno, el primero', async () => {
+      const html = await paraHoy(
+        homeData({
+          summary: summaryOf({ attention: summaryOf().attention.slice(0, 1) }),
+          integration: [
+            {
+              kind: 'arca_vouchers',
+              tone: 'danger',
+              label: 'Hay 3 facturas de ARCA para verificar o cargar en los libros.',
+              href: '/ventas/nueva-factura',
+              actionLabel: 'Ver',
+              count: 3,
+              date: null,
+            },
+          ],
         }),
-      }),
-    )
-    expect(some).toContain(`IVA de octubre: a favor $${NB}12.558`)
-    expect(some).toContain('Estimado')
+      )
+      expect(html).toContain('>Para hoy<')
+      expect(html).toContain('Falta el cierre de ayer')
+      expect(html).toContain('lunes 12/10')
+      expect(html).toContain(`href="${BASE}/ventas/cierre?fecha=2026-10-12"`)
+      expect(html).toContain('Plan de la semana')
+      expect(html).toContain('llevás $ 125.000 de $ 300.000')
+      expect(html).toContain('Coca-Cola · Factura A 0003-00001100')
+      expect(html).toContain('vencido hace')
+      expect(html).toContain('facturas de ARCA')
+      // Máximo una acción primaria por pantalla.
+      expect(html.match(/bg-primary text-primary-foreground/g)).toHaveLength(1)
+    })
+
+    it('lo que ya no está: el calendario, las tarjetas numeradas, el IVA ni «Hoy te toca»', async () => {
+      const html = await paraHoy(homeData())
+      expect(html).not.toContain('Hoy te toca')
+      expect(html).not.toContain('Cargar un gasto')
+      expect(html).not.toContain('IVA de')
+      expect(html).not.toContain('Avisos')
+    })
+
+    it('con el paso que destraba en el panel de arriba, acá ninguno va relleno', async () => {
+      const html = await paraHoy(
+        homeData({ summary: untouchedSummary(), settings: PENDING_SETTINGS }),
+      )
+      expect(html).toContain('Cargar')
+      expect(html).not.toContain('bg-primary text-primary-foreground')
+    })
+
+    it('la puesta en marcha está mientras falte algo', async () => {
+      const html = await paraHoy(
+        homeData({ summary: untouchedSummary(), settings: PENDING_SETTINGS }),
+      )
+      expect(html).toContain('Puesta en marcha')
+      expect(html).toMatch(/te faltan? \d+ paso/)
+      expect(html).toContain(`href="${BASE}/guias/como-arrancar#arranque-day1"`)
+    })
+
+    it('con todo al día, una oración adentro de la misma planilla', async () => {
+      const html = await paraHoy(
+        homeData({
+          summary: summaryOf({ attention: [] }),
+          recurring: [],
+          weekPlan: PLAN(),
+          closedBefore: TODAY,
+        }),
+      )
+      expect(html).toContain('>Para hoy<')
+      expect(html).toContain('Está todo al día.')
+      expect(html).not.toContain('<table')
+    })
+
+    it('si la revisión de ARCA falló, ofrece reintentar', async () => {
+      const html = await paraHoy(homeData({ integration: null }))
+      expect(html).toContain('No pudimos revisar ARCA ni los archivos')
+      expect(html).toContain('Reintentar')
+    })
+
+    it('quien solo lee ve lo mismo, sin ningún botón', async () => {
+      ui.readOnly = true
+      const html = await paraHoy(homeData({ canWrite: false }))
+      expect(html).toContain('Plan de la semana')
+      expect(html).not.toContain('<button')
+      expect(html).not.toContain('/ventas/cierre')
+    })
   })
 })
 
-describe('Resumen · «Avisos»', () => {
-  const MP_REVIEW: IntegrationAttentionItem = {
-    kind: 'import_review',
-    tone: 'warning',
-    label: 'Hay 12 movimientos de Mercado Pago para revisar.',
-    href: '/importar/lote-1',
-    actionLabel: 'Revisar',
-    count: 12,
-    date: null,
-  }
-  const ARCA_CERT: IntegrationAttentionItem = {
-    kind: 'arca_cert_expiring',
-    tone: 'warning',
-    label: 'El certificado de ARCA vence el 28/10.',
-    href: '/ajustes/arca#renovar',
-    actionLabel: 'Renovar',
-    count: null,
-    date: '2026-10-28',
-  }
-
-  it('no repite lo que ya dicen «pagar» y las tarjetas de «Hoy te toca»', async () => {
-    const data = homeData({ integration: [MP_REVIEW, ARCA_CERT] })
-    const html = renderToStaticMarkup(await NoticesBlock({ data }))
-    expect(html).toContain('Hay 2 avisos')
-    // Lo propio de «Avisos»: contar la caja y el certificado.
-    expect(html).toContain('¿Coincide Caja?')
-    expect(html).toContain('Contar la caja')
-    expect(html).toContain('El certificado de ARCA vence el 28/10.')
-    // La factura vencida está en «pagar»; el cierre y lo importado, en sus tarjetas.
-    expect(html).not.toContain('Coca-Cola')
-    expect(html).not.toContain('cierre')
-    expect(html).not.toContain('Mercado Pago para revisar')
-  })
-
-  it('sin avisos el bloque no se dibuja', async () => {
-    const data = homeData({ summary: summaryOf({ attention: [] }) })
-    expect(await NoticesBlock({ data })).toBeNull()
-  })
-
-  it('un gasto fijo que vence: «Pagar» abre el gasto con ese gasto fijo ya puesto', () => {
-    const FIXED_ID = '11111111-1111-4111-8111-111111111111'
-    const view = attentionView(
-      attention({
-        kind: 'recurring_due',
-        refId: FIXED_ID,
-        label: 'Alquiler',
-        amountCents: 85_000_000,
-        date: '2026-10-15',
-      }),
-      TODAY,
-      BASE,
-      0,
-    )
-    expect(view.text).toBe('Alquiler · vence el 15/10 · todavía sin pagar')
-    expect(view.tone).toBe('warning')
-    // Uno que ya pasó su día: «venció», con el tono de lo vencido.
-    const late = attentionView(
-      attention({ kind: 'recurring_due', refId: FIXED_ID, label: 'Alquiler', date: '2026-10-10' }),
-      TODAY,
-      BASE,
-      0,
-    )
-    expect(late).toMatchObject({
-      text: 'Alquiler · venció el 10/10 · todavía sin pagar',
-      tone: 'danger',
-    })
-    // Lo mismo que «Pagar» en su renglón de la planilla: `?accion=gasto&gasto-fijo=`.
-    expect(view.actions).toEqual([
-      { type: 'sheet', label: 'Pagar', action: 'gasto', params: { 'gasto-fijo': FIXED_ID } },
-      {
-        type: 'link',
-        label: 'Lo pago después',
-        href: `${BASE}/compras/nueva?gasto-fijo=${FIXED_ID}`,
-      },
-      { type: 'skip', label: 'Este mes no se paga', recurringId: FIXED_ID, dueDate: '2026-10-15' },
-    ])
-
-    const words = { danger: 'Vencido', warning: 'Por vencer', info: 'Aviso' }
-    const owner = renderToStaticMarkup(<AttentionRows views={[view]} words={words} />)
-    expect(owner).toContain('>Pagar<')
-    expect(owner).toContain('Este mes no se paga')
-    expect(owner).toContain(`href="${BASE}/compras/nueva?gasto-fijo=${FIXED_ID}"`)
-
-    // La contadora lee el mismo renglón, sin ninguno de los tres controles.
-    ui.readOnly = true
-    const reader = renderToStaticMarkup(<AttentionRows views={[view]} words={words} />)
-    expect(reader).toContain('Alquiler')
-    expect(reader).not.toContain('<button')
-    expect(reader).not.toContain('>Pagar<')
-    expect(reader).not.toContain('Lo pago después')
-    expect(reader).not.toContain('Este mes no se paga')
-    expect(reader).not.toContain('/compras/nueva')
+describe('mientras carga', () => {
+  it('la fecha, el panel verde y la planilla, con su forma', () => {
+    const skeleton = renderToStaticMarkup(<ResumenSkeleton />)
+    expect(skeleton).toContain('adm-hero')
+    expect(skeleton).toContain('Cargando el resumen')
+    const loading = renderToStaticMarkup(<ResumenLoading />)
+    expect(loading).toContain('adm-hero')
+    expect(loading).toContain('adm-rise')
   })
 })

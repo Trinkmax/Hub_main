@@ -49,9 +49,9 @@ async function defaultDisplayName(access: TenantAccess): Promise<string> {
 
 /**
  * La puesta en marcha (H.3). Las tres ramas de siempre, con el mismo riel de
- * seis pasos: antes de configurar, el asistente (pasos 1 a 5), solo para el
+ * cinco pasos: antes de configurar, el asistente (pasos 1 a 4), solo para el
  * dueño que puede hacerla; ya configurada y con los saldos iniciales
- * pendientes, el paso 6; y ya resuelto, «Listo». No hay parámetros de URL:
+ * pendientes, el paso 5; y ya resuelto, «Listo». No hay parámetros de URL:
  * todo link a `/configurar` cae en lo que toca. Ninguna página confía solo en
  * el layout: acá se vuelve a mirar el acceso.
  */
@@ -136,7 +136,7 @@ export default async function ConfigurarPage({
     )
   }
 
-  // ─── Paso 6: saldos iniciales ──────────────────────────────────────────────
+  // ─── Paso 5: saldos iniciales ──────────────────────────────────────────────
   const catalog = await loadPostingCatalog(access.tenant.id)
   const ctx = buildPostingContext(catalog)
   const treasuries = catalog.treasuries

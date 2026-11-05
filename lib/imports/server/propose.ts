@@ -84,8 +84,8 @@ import { buildMpDrafts, type MpSettings, mpTaxRulesFrom } from './proposals/mp'
 import {
   type BatchRow,
   chunks,
+  loadBankExpenseFacts,
   loadBatch,
-  loadManualBankExpenses,
   loadManualMpDays,
   loadPostedTransfers,
   matchPurchases,
@@ -709,12 +709,16 @@ export async function rebuildBatch(
       const days = items.map((s) => s.item.businessDate).sort()
       const from = days[0] ?? null
       const to = days[days.length - 1] ?? null
+      // La Ley 25.413 de un retiro va por su día de liberación, que puede caer afuera del rango.
+      const taxDays = items.flatMap((s) => [s.item.businessDate, s.item.releaseDate]).sort()
+      const taxFrom = taxDays[0] ?? null
+      const taxTo = taxDays[taxDays.length - 1] ?? null
       const methodParties = Object.values(settings.channelMethods)
         .map((id) => (id ? catalog.methods.get(id)?.partyId : null))
         .filter((id): id is string => typeof id === 'string')
       const partyIds = [...new Set([settings.partyId, ...methodParties])]
-      const [manualDays, postedTransfers] =
-        from && to
+      const [manualDays, postedTransfers, walletExpenses] =
+        from && to && taxFrom && taxTo
           ? await Promise.all([
               loadManualMpDays(supabase, tenantId, {
                 partyIds,
@@ -727,8 +731,13 @@ export async function rebuildBatch(
                 from,
                 to,
               }),
+              loadBankExpenseFacts(supabase, tenantId, {
+                treasuryId: settings.treasuryId,
+                from: taxFrom,
+                to: taxTo,
+              }),
             ])
-          : [new Set<string>(), []]
+          : [new Set<string>(), [], null]
       for (const id of partyIds) openItemsOf.push({ partyId: id })
       for (const d of allDecisions) if (d.party_id) openItemsOf.push({ partyId: d.party_id })
       build = (pool) =>
@@ -739,6 +748,7 @@ export async function rebuildBatch(
           settings,
           pool,
           manualDays,
+          autoBankTax: walletExpenses?.autoTax,
           postedTransfers,
           taxRules,
           decisions: decisionsOf,
@@ -759,17 +769,17 @@ export async function rebuildBatch(
       const to = days[days.length - 1]
       const conn = await loadMpConnection(supabase, tenantId)
       const mpSettings = mpSettingsFor(conn, catalog, null)
-      const [manualExpenses, postedTransfers] =
+      const [bankExpenses, postedTransfers] =
         from && to
           ? await Promise.all([
-              loadManualBankExpenses(supabase, tenantId, { treasuryId, from, to }),
+              loadBankExpenseFacts(supabase, tenantId, { treasuryId, from, to }),
               loadPostedTransfers(supabase, tenantId, {
                 treasuryIds: [treasuryId],
                 from,
                 to,
               }),
             ])
-          : [new Set<string>(), []]
+          : [null, []]
       for (const r of rules) {
         if (r.action.kind === 'payment' || r.action.kind === 'collection') {
           openItemsOf.push({ partyId: r.action.partyId })
@@ -784,7 +794,8 @@ export async function rebuildBatch(
           catalog,
           rules,
           pool,
-          manualExpenses,
+          manualExpenses: bankExpenses?.manual ?? new Set<string>(),
+          autoBankTax: bankExpenses?.autoTax,
           postedTransfers,
           mpTreasuryId: mpSettings?.treasuryId ?? null,
           decisions: decisionsOf,

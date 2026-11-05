@@ -6,15 +6,12 @@ import {
   exportHref,
   MONTH_PACKAGE_BOOKS,
 } from '@/lib/accounting/queries/labels'
-import { formatDate, formatMonthLabel, minIsoDay } from '@/lib/dates'
+import { minIsoDay } from '@/lib/dates'
 
 /**
- * El «Paquete del mes» (F.15), puro: los 15 archivos que se le mandan a la
- * contadora, con el período que pide cada uno y su link de descarga. Lo usan
- * `/libros` (el índice y «Descargar el paquete del mes») y «Fin de mes» (el
- * paso 3), para que los dos bajen EXACTAMENTE lo mismo.
- *
- * Antes vivía suelto en `libros/page.tsx`; se movió sin cambiar un parámetro.
+ * Los libros del mes (F.15), puro: los 15 archivos que se le mandan a la
+ * contadora, con el período que pide cada uno y su link de descarga. Lo usa
+ * el Cierre de mes («Descargar los libros» y «Archivo por archivo»).
  */
 
 export type PackageMonth = { month: string; from: string; to: string }
@@ -92,25 +89,6 @@ export function downloadablePackage(
 export function packageCountText(total: number, downloadable: number): string {
   if (downloadable >= total) return plural(total, 'archivo', 'archivos')
   return `${downloadable} de ${total}`
-}
-
-/** «Septiembre 2026 · cerrado el 05/10/2026 por Franco» · «Octubre 2026 · mes abierto…». */
-export function packageStatusLine(
-  month: string,
-  pkg: {
-    status: 'open' | 'closed' | 'missing'
-    closedAt: string | null
-    closedByName: string | null
-  },
-): string {
-  const label = formatMonthLabel(month)
-  if (pkg.status === 'open') {
-    return `${label} · mes abierto: los números pueden cambiar hasta que se cierre`
-  }
-  if (pkg.status !== 'closed') return label
-  const when = pkg.closedAt ? ` el ${formatDate(pkg.closedAt)}` : ''
-  const who = pkg.closedByName ? ` por ${pkg.closedByName}` : ''
-  return `${label} · cerrado${when}${who}`
 }
 
 type CountUnit = 'asientos' | 'cuentas' | 'comprobantes' | 'filas' | 'proveedores' | 'clientes'

@@ -28,7 +28,6 @@ import {
   cobrosSummary,
   errorsOfScreen,
   firstErrorScreen,
-  puntosSummary,
   REVIEW_SCREEN,
   readWizardDraft,
   sasSummary,
@@ -56,7 +55,7 @@ function draftKey(slug: string): string {
 }
 
 /**
- * La puesta en marcha de un bar nuevo: bienvenida y cinco pasos chicos → UN
+ * La puesta en marcha de un bar nuevo: bienvenida y cuatro pasos chicos → UN
  * solo guardado (`bootstrapAccounting`). Antes eran dos pantallas, y la
  * segunda juntaba cajas, cobros y puntos de venta (unas treinta decisiones,
  * con los porcentajes plegados); ahí fue el Enter del 12/10 que cerró la
@@ -91,7 +90,7 @@ export function SetupWizard({
     () => initialWizardState({ tenantName, displayName: defaultDisplayName, today }),
     [tenantName, defaultDisplayName, today],
   )
-  /** 0 = la bienvenida; 1 a 5 = el paso abierto. */
+  /** 0 = la bienvenida; 1 a 4 = el paso abierto. */
   const [screen, setScreen] = useState<0 | WizardScreen>(0)
   /** El último paso que ya se resolvió (lo que queda tildado al volver atrás). */
   const [doneUpTo, setDoneUpTo] = useState(0)
@@ -278,7 +277,7 @@ export function SetupWizard({
       if (result.ok) {
         clearDraft()
         toast.success(result.message)
-        // La página pasa sola a los saldos iniciales (el paso 6).
+        // La página pasa sola a los saldos iniciales (el paso 5).
         setSaved(true)
         router.refresh()
         return
@@ -335,9 +334,11 @@ export function SetupWizard({
     1: sasSummary(state),
     2: cajasSummary(state),
     3: cobrosSummary(state),
-    4: puntosSummary(state),
   }
   const locked = pending || saved
+  const pointsWithError = Object.keys(errors).some(
+    (field) => field === 'salesPoints' || field.startsWith('salesPoint.'),
+  )
   const change = (n: WizardScreen) => (
     <Button
       type="button"
@@ -354,33 +355,15 @@ export function SetupWizard({
       <span className="sr-only"> {WIZARD_QUESTIONS[n]}</span>
     </Button>
   )
-  const next = (n: 1 | 2 | 3 | 4) => (
+  const next = (n: 1 | 2 | 3) => (
     <>
-      {/* El aviso del servidor al guardar, cuando el error cae en este paso (del 2 al 4). */}
+      {/* El aviso del servidor al guardar, cuando el error cae en este paso (el 2 o el 3). */}
       {banner && banner.tone === 'error' && n !== 1 ? (
         <Callout tone="error" className="mt-5">
           {banner.message}
         </Callout>
       ) : null}
-      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        {n === 4 ? (
-          <button
-            type="button"
-            className={TEXT_LINK}
-            onClick={() => {
-              // Sin renglones no viaja ningún punto de venta: se sigue al resumen.
-              setState((s) => ({ ...s, salesPoints: [] }))
-              setErrors({})
-              setBanner(null)
-              setDoneUpTo((d) => Math.max(d, 4))
-              setScreen(REVIEW_SCREEN)
-            }}
-          >
-            Todavía no facturamos: seguir sin cargar ninguno
-          </button>
-        ) : (
-          <span />
-        )}
+      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-end">
         {/* `type="button"`: «Seguir» nunca envía el formulario. */}
         <Button type="button" className="h-12 gap-2 px-6 text-base" onClick={goNext}>
           {WIZARD_NEXT_LABEL[n]}
@@ -420,7 +403,7 @@ export function SetupWizard({
           ref={formRef}
           onSubmit={save}
           // La puesta en marcha se guarda con el botón del último paso, nunca con un Enter
-          // suelto en un campo: vale para los cinco pasos.
+          // suelto en un campo: vale para los cuatro pasos.
           onKeyDown={(event) => {
             const el = event.target
             if (
@@ -504,26 +487,6 @@ export function SetupWizard({
             n={4}
             title={WIZARD_QUESTIONS[4]}
             state={stateOf(4)}
-            summary={summaries[4]}
-            action={stateOf(4) === 'done' ? change(4) : undefined}
-            keepMounted={false}
-          >
-            <StepPuntos
-              state={state}
-              errors={errors}
-              updatePoint={updatePoint}
-              removePoint={removePoint}
-              addPoint={addPoint}
-              clearError={clearError}
-            />
-            {next(4)}
-          </StepCard>
-
-          <StepCard
-            id="paso-5"
-            n={5}
-            title={WIZARD_QUESTIONS[5]}
-            state={stateOf(5)}
             keepMounted={false}
           >
             <StepReview
@@ -534,6 +497,27 @@ export function SetupWizard({
               formError={err('form')}
               continueHref={`${base}/configurar`}
             />
+            {/* Opcional y plegado: hasta que el bar facture desde el sistema, no hace falta. */}
+            <details
+              open={pointsWithError || undefined}
+              className="group/puntos mt-5 border-t border-border/60 pt-3"
+            >
+              <summary
+                className={`${TEXT_LINK} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}
+              >
+                ¿Ya facturás? Cargá tu punto de venta (es opcional)
+              </summary>
+              <div className="pt-4">
+                <StepPuntos
+                  state={state}
+                  errors={errors}
+                  updatePoint={updatePoint}
+                  removePoint={removePoint}
+                  addPoint={addPoint}
+                  clearError={clearError}
+                />
+              </div>
+            </details>
           </StepCard>
         </form>
       </div>

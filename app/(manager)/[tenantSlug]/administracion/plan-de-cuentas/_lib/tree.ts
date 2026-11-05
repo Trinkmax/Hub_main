@@ -159,6 +159,8 @@ export type ChartFilter = {
   type: ChartTypeFilter
   /** Grupos desplegados (no cuenta mientras se busca). */
   expanded: ReadonlySet<string>
+  /** «Plan simple»: solo estas cuentas, con su camino siempre abierto (`simplePlanIds`). */
+  only?: ReadonlySet<string>
 }
 
 export type ChartVisibleRow = ChartAccount & {
@@ -190,10 +192,11 @@ function statusOk(account: ChartAccount, status: ChartStatusFilter): boolean {
  */
 export function chartView(index: ChartIndex, filter: ChartFilter): ChartView {
   const query = normalizeCodeQuery(filter.query.trim())
-  const autoOpen = query !== '' || filter.status === 'inactive'
+  const autoOpen = query !== '' || filter.status === 'inactive' || filter.only !== undefined
   const passes = (a: ChartAccount) =>
     statusOk(a, filter.status) &&
     (filter.type === 'all' || a.type === filter.type) &&
+    (filter.only === undefined || filter.only.has(a.id)) &&
     (query === '' || rankAccount(a, query) >= 0)
 
   // De abajo hacia arriba: un grupo es relevante si cumple o si algo de adentro cumple.
@@ -224,6 +227,25 @@ export function chartView(index: ChartIndex, filter: ChartFilter): ChartView {
     })
   }
   return { rows, matches: matches.size, autoOpen }
+}
+
+/**
+ * «Plan simple» (Silvia, min. 8: «pueden usar uno básico, uno simple»): el plan del bar sin las 200
+ * cuentas que nunca se tocan. Quedan las que tuvieron movimiento o tienen saldo y las de caja, con los
+ * grupos que las contienen: crece a medida que se usa. Es solo una forma de mirarlo: no toca ningún
+ * dato y «Todas» sigue ahí. Las desactivadas no entran, salvo que tengan saldo.
+ */
+export function simplePlanIds(index: ChartIndex, moved: ReadonlySet<string>): Set<string> {
+  const ids = new Set<string>()
+  for (const account of index.ordered) {
+    if (!account.postable) continue
+    const hasBalance = account.balanceCents !== null && account.balanceCents !== 0
+    const useful = moved.has(account.id) || hasBalance || (account.active && account.isTreasury)
+    if (!useful) continue
+    ids.add(account.id)
+    for (const ancestor of index.ancestors.get(account.id) ?? []) ids.add(ancestor)
+  }
+  return ids
 }
 
 /** Los grupos que tienen algo adentro (para desplegar todo). */

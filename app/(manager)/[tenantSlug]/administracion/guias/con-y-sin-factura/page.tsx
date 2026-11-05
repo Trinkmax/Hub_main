@@ -6,8 +6,8 @@ import {
   PapersCompare,
   SalesInvoicing,
 } from '@/components/administracion/guias/uso/papers'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { GuideSubHeader } from '@/components/administracion/guias/uso/sub-header'
+import { SimplePage } from '@/components/administracion/planilla'
 import { GUIDE_PATHS } from '@/lib/accounting/guides'
 import { requireGuideAccess } from '../_lib/guide-access'
 
@@ -30,13 +30,8 @@ export default async function GuiaFacturaPage({
   const { base } = await requireGuideAccess(tenantSlug, GUIDE_PATHS.invoice)
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={{ href: `${base}${GUIDE_PATHS.home}`, label: 'Volver a la guía' }}
-        title="Con factura y sin factura"
-        badge={<ReadOnlyBadge />}
-        description="Qué cambia según el papel que te dieron, dónde se carga cada caso y cómo se cuenta en las ventas."
-      />
+    <SimplePage width="narrow">
+      <GuideSubHeader base={base} title="Con factura y sin factura" />
 
       <PapersCompare />
       <OneBook base={base} />
@@ -53,6 +48,6 @@ export default async function GuiaFacturaPage({
           <ArrowRight aria-hidden className="size-3.5" />
         </Link>
       </p>
-    </AdmPage>
+    </SimplePage>
   )
 }

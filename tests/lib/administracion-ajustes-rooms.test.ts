@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  OWNER_ROOMS,
   otherRooms,
   ROOM_KEYS,
   ROOMS,
@@ -12,20 +11,21 @@ import {
 
 /**
  * Las habitaciones de Ajustes. Unos cien textos de la app mandan a «Ajustes › …» con un
- * `?tab=`: las nueve claves de siempre tienen que seguir cayendo en lo que nombran. Lo único que
- * cambia es que `participes` abre «Medios de cobro» y que, sin clave, se ve la portada.
+ * `?tab=`: las claves de siempre tienen que seguir cayendo en lo que nombran. `participes` abre
+ * «Medios de cobro» y, sin clave, se ve la portada.
  */
 
 const BASE = '/hub/administracion'
 
 describe('las claves de ?tab=', () => {
-  it('son las nueve de siempre, ni una más ni una menos', () => {
+  it('son las nueve de siempre y la de Impuestos', () => {
     expect([...TAB_VALUES].sort()).toEqual(
       [
         'accesos',
         'arca',
         'cajas',
         'ejercicio',
+        'impuestos',
         'integridad',
         'medios',
         'participes',
@@ -44,6 +44,7 @@ describe('las claves de ?tab=', () => {
     expect(roomOfTab('cajas')).toBe('cajas')
     expect(roomOfTab('puntos-de-venta')).toBe('puntos-de-venta')
     expect(roomOfTab('integridad')).toBe('integridad')
+    expect(roomOfTab('impuestos')).toBe('impuestos')
   })
 
   it('«participes» (la pestaña «Plataformas» de antes) abre Medios de cobro', () => {
@@ -67,17 +68,15 @@ describe('las claves de ?tab=', () => {
 })
 
 describe('las habitaciones', () => {
-  it('son ocho: las seis del dueño (con su objeto en la portada) y las dos de la contadora', () => {
-    expect(ROOM_KEYS).toHaveLength(8)
-    expect([...OWNER_ROOMS]).toEqual([
-      'accesos',
+  it('son nueve, en el orden de la portada', () => {
+    expect([...ROOM_KEYS]).toEqual([
+      'sas',
       'cajas',
       'medios',
-      'sas',
-      'puntos-de-venta',
+      'impuestos',
+      'accesos',
       'arca',
-    ])
-    expect(ROOM_KEYS.filter((k) => ROOMS[k].audience === 'accountant')).toEqual([
+      'puntos-de-venta',
       'ejercicio',
       'integridad',
     ])
@@ -85,15 +84,23 @@ describe('las habitaciones', () => {
 
   it('se llaman como las nombra el resto de la app', () => {
     expect(ROOM_KEYS.map((k) => ROOMS[k].title)).toEqual([
-      'Accesos',
+      'Datos de la SAS',
       'Cajas y cuentas',
       'Medios de cobro',
-      'Datos de la SAS',
-      'Puntos de venta',
+      'Impuestos',
+      'Accesos',
       'ARCA',
+      'Puntos de venta',
       'Ejercicio',
       'Integridad',
     ])
+  })
+
+  it('en la portada, «Cajas y cuentas» es «Cuentas»; las demás, igual', () => {
+    expect(ROOMS.cajas.shortTitle).toBe('Cuentas')
+    for (const key of ROOM_KEYS) {
+      if (key !== 'cajas') expect(ROOMS[key].shortTitle).toBeUndefined()
+    }
   })
 
   it('cada una tiene su oración, y la clave de cada una vuelve a ella', () => {
@@ -139,13 +146,14 @@ describe('los links', () => {
     )
   })
 
-  it('«Otros ajustes»: las otras siete, en el orden de la portada', () => {
+  it('«Otros ajustes»: las otras ocho, en el orden de la portada', () => {
     expect(otherRooms('medios')).toEqual([
-      'accesos',
-      'cajas',
       'sas',
-      'puntos-de-venta',
+      'cajas',
+      'impuestos',
+      'accesos',
       'arca',
+      'puntos-de-venta',
       'ejercicio',
       'integridad',
     ])

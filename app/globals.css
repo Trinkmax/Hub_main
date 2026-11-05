@@ -1249,3 +1249,70 @@
   --adm-hatch-missing: color-mix(in oklch, var(--warning) 15%, transparent);
 }
 /* ── fin del bloque del Resumen ─────────────────────────────────────────── */
+
+/* ── Administración simple (nov 2026): lo que se mueve y la doble raya contable ── */
+@keyframes adm-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes adm-thud {
+  0% { opacity: 0; transform: scale(2.4) rotate(-14deg); }
+  60% { opacity: 1; transform: scale(0.92) rotate(-3deg); }
+  100% { transform: scale(1) rotate(-3deg); }
+}
+@keyframes adm-land {
+  from { opacity: 0; transform: translateY(-26px) rotate(-5deg) scale(0.92); }
+  to { opacity: 1; transform: rotate(-0.8deg); }
+}
+@keyframes adm-scan { from { top: -34%; } to { top: 100%; } }
+@keyframes adm-flash {
+  0% { background-color: var(--card); }
+  25% { background-color: color-mix(in oklch, var(--adm-gold) 55%, var(--card)); }
+  100% { background-color: var(--card); }
+}
+@keyframes adm-breathe { 50% { box-shadow: 0 0 0 5px color-mix(in oklch, var(--primary) 12%, transparent); } }
+@keyframes adm-drop-pulse { 50% { border-color: var(--adm-gold); } }
+.adm-rise { animation: adm-rise 0.32s var(--ease-out) both; }
+.adm-thud { animation: adm-thud 0.42s cubic-bezier(0.3, 1.25, 0.4, 1) both; }
+.adm-land { animation: adm-land 0.55s cubic-bezier(0.3, 1.25, 0.4, 1) both; }
+.adm-flash { animation: adm-flash 1s var(--ease-out) both; animation-delay: var(--adm-flash-delay, 0ms); }
+.adm-breathe { animation: adm-breathe 2.6s ease-in-out infinite; }
+.adm-drop-pulse { animation: adm-drop-pulse 1.6s ease-in-out infinite; }
+.adm-scan::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  height: 34%;
+  background: linear-gradient(to bottom, transparent, oklch(0.75 0.15 160 / 0.42));
+  border-bottom: 2px solid oklch(0.62 0.16 160);
+  animation: adm-scan 1.05s ease-in-out;
+}
+/* El total de una planilla: la doble raya de los libros. */
+.adm-double-rule > td,
+.adm-double-rule > th {
+  position: relative;
+  padding-bottom: 0.7rem;
+  border-top: 1.5px solid var(--foreground);
+  background-color: var(--secondary);
+  font-weight: 600;
+}
+.adm-double-rule > td::after,
+.adm-double-rule > th::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 3px;
+  height: 3px;
+  border-top: 1px solid var(--foreground);
+  border-bottom: 1px solid var(--foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm-rise, .adm-thud, .adm-land, .adm-flash, .adm-breathe, .adm-drop-pulse, .adm-scan::after { animation: none; }
+}
+/* Un <select> nativo con la misma flecha que los del kit (el teclado y el celular siguen andando igual). */
+.adm-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.6rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+  padding-right: 2rem;
+}
+/* ── fin de Administración simple ── */

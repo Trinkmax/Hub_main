@@ -60,19 +60,15 @@ import {
 } from '@/components/administracion/guias/how-to'
 import { BankImport } from '@/components/administracion/importar/bank-import'
 import { ArcaRulesCard, BankRulesCard } from '@/components/administracion/importar/bank-rules-card'
-import { ImportHistory } from '@/components/administracion/importar/import-history'
 import { ImportUploader } from '@/components/administracion/importar/import-uploader'
 import {
   HistoryEmpty,
-  HistoryList,
   type HistoryRow,
+  HistoryTable,
   historyCounts,
 } from '@/components/administracion/importar/inbox/history-list'
-import { HowItWorks } from '@/components/administracion/importar/inbox/how-it-works'
-import { AgendaLine, NextUp } from '@/components/administracion/importar/inbox/next-up'
-import { ImportTray } from '@/components/administracion/importar/inbox/tray'
+import { ImportSourcesTable } from '@/components/administracion/importar/inbox/source-table'
 import { MpSettingsCard } from '@/components/administracion/importar/mp-settings-card'
-import { StillManual } from '@/components/administracion/importar/page-bits'
 import { BalanceCheck } from '@/components/administracion/importar/review/balance-check'
 import { MoreOptions } from '@/components/administracion/importar/review/more-options'
 import { MpInsights } from '@/components/administracion/importar/review/mp-insights'
@@ -102,7 +98,7 @@ import { UploadProgress } from '@/components/administracion/importar/upload/uplo
 import { WantRange } from '@/components/administracion/importar/upload/want-range'
 import type { ImportBatchCounts, ImportNeed } from '@/lib/imports/server/types'
 import { filterCounts } from '@/lib/imports/ui/filters'
-import { buildInbox, type InboxBatch } from '@/lib/imports/ui/inbox'
+import { buildInbox, type InboxBatch, importSourceRows } from '@/lib/imports/ui/inbox'
 import { SUMMARY_KIND_TEXT } from '@/lib/imports/ui/labels'
 import { mpCut, mpDays } from '@/lib/imports/ui/mp-insights'
 import { reviewHero, reviewTally } from '@/lib/imports/ui/review-copy'
@@ -200,106 +196,75 @@ const HISTORY: HistoryRow[] = [
   },
 ]
 
-describe('la bandeja', () => {
-  const bandeja = (canWrite: boolean) => {
+describe('la tabla de «Importar»', () => {
+  const tabla = (canWrite: boolean) => {
     const inbox = inboxOf(canWrite)
     return html(
       <>
-        {canWrite && inbox.next ? <NextUp next={inbox.next} /> : null}
-        {inbox.trays.map((tray) => (
-          <ImportTray key={tray.source} tray={tray} />
-        ))}
-        <HistoryList slug="bar" rows={HISTORY} today="2026-10-13" />
+        <ImportSourcesTable
+          rows={importSourceRows(inbox, 'bar')}
+          photoHref={canWrite ? '/bar/administracion/compras/nueva' : null}
+        />
+        <HistoryTable slug="bar" rows={HISTORY} today="2026-10-13" />
       </>,
     )
   }
 
-  it('el dueño ve lo que toca, con UN botón principal, y las tres bandejas', () => {
-    const out = bandeja(true)
-    expect(out).toContain('Te toca')
-    expect(out).toContain('Las compras de septiembre tienen 3 comprobantes con una pregunta.')
-    expect(out).toContain('Seguir revisando')
+  it('el dueño ve Origen · Qué archivo · Última vez · Subir, y lo que quedó esperando', () => {
+    const out = tabla(true)
+    for (const head of ['Origen', 'Qué archivo', 'Última vez']) {
+      expect(out).toContain(`>${head}</th>`)
+    }
+    for (const text of [
+      'El ZIP de Mis Comprobantes › Recibidos',
+      'El CSV de Liquidaciones',
+      'Los movimientos en CSV, TXT o Excel',
+      'Abre Compra con el comprobante',
+      '¿Cómo se baja?',
+    ]) {
+      expect(out).toContain(text)
+    }
     expect(out).toMatch(UPLOAD_LINK)
-    expect(out).toContain('¿Cómo se baja?')
-    for (const name of ['ARCA', 'Mercado Pago', 'Banco']) expect(out).toContain(`>${name}</h2>`)
+    expect(out).toContain('href="/bar/administracion/compras/nueva"')
+    // La hoja que espera lleva a su archivo, con las palabras de siempre.
+    expect(out).toContain(`href="/bar/administracion/importar/${ID(1)}"`)
+    expect(out).toContain('3 con una pregunta')
+    expect(out).toContain('Sin el CUIT del bar no puedo chequear que el archivo sea tuyo.')
   })
 
-  it('«Te toca» y la hoja ya llevan a ese archivo: la bandeja no suma una tercera puerta', () => {
-    const inbox = inboxOf(true)
-    const arca = html(<ImportTray tray={inbox.trays[0] as (typeof inbox.trays)[number]} wide />)
-    // El botón de la bandeja ofrece subir otro; a la revisión se entra por la hoja.
-    expect(arca).toContain('Subir otro archivo')
-    expect(arca).not.toContain('Seguir revisando')
-    expect(
-      arca.match(new RegExp(`href="/bar/administracion/importar/${ID(1)}"`, 'g')),
-    ).toHaveLength(2)
-    // El rótulo del botón puede ocupar dos renglones: nunca se sale de la tarjeta.
-    expect(arca).toContain('whitespace-normal')
-    // Y la hoja que espera baja su píldora a otro renglón antes que aplastar el texto.
-    expect(arca).toMatch(/class="[^"]*flex-wrap[^"]*bg-adm-paper/)
+  it('una cuenta sin cargar dice qué falta y lleva a agregarla, sin «¿Cómo se baja?»', () => {
+    const rows = importSourceRows(inboxOf(true), 'bar')
+    const bank = rows.find((r) => r.source === 'bank_statement')
+    if (!bank) throw new Error('falta el banco')
+    const out = html(<ImportSourcesTable rows={[bank]} photoHref={null} />)
+    expect(out).toContain('Primero decime cuál es tu cuenta del banco.')
+    expect(out).toContain('Agregar la cuenta')
+    expect(out).not.toContain('¿Cómo se baja?')
   })
 
-  it('la contadora ve las bandejas y el historial, sin un solo botón ni link para subir', () => {
-    const out = bandeja(false)
+  it('la contadora ve la tabla y el historial, sin un solo botón ni link para subir', () => {
+    const out = tabla(false)
     expect(out).not.toContain('<button')
     expect(out).not.toMatch(UPLOAD_LINK)
     expect(out).not.toMatch(WRITE_WORDS)
     expect(out).not.toContain('¿Cómo se baja?')
-    expect(out).not.toContain('Te toca')
-    // Lo que sí ve: lo que falta, la tira, las hojas que esperan y cada archivo.
+    expect(out).not.toContain('Foto o PDF')
+    // Lo que sí ve: lo que falta, lo que espera y cada archivo.
     expect(out).toContain('Al día')
     expect(out).toContain('Sin subir')
     expect(out).toContain('Para revisar')
     expect(out).toContain(`href="/bar/administracion/importar/${ID(1)}"`)
   })
 
-  it('cada bandeja tiene su forma: al día, nunca usada y trabada', () => {
-    const inbox = inboxOf(true)
-    const [arca, mp, bank] = inbox.trays.map((tray) => html(<ImportTray tray={tray} />))
-    // ARCA: el héroe, la tira de meses y la hoja que espera adentro de la bandeja.
-    expect(arca).toContain('Al día')
-    expect(arca).toContain('Octubre se baja desde el 11/11.')
-    expect(arca).toContain('aria-label="Archivos que esperan"')
-    expect(arca).toContain('3 con una pregunta')
-    expect(arca).toContain('Sin el CUIT del bar no puedo chequear que el archivo sea tuyo.')
-    // Mercado Pago: lo que falta en grande, con su unidad pegada (nunca dos números sueltos).
-    expect(mp).toMatch(/>4<\/span><span[^>]*>días<\/span>/)
-    expect(mp).toContain('role="img"')
-    // Banco sin cuenta: trabada, con el botón que la destraba.
-    expect(bank).toContain('border-dashed')
-    expect(bank).toContain('Primero decime cuál es tu cuenta del banco.')
-    expect(bank).toContain('Agregar la cuenta')
-    expect(bank).not.toContain('¿Cómo se baja?')
-  })
-
-  it('la bandeja que nunca se usó enseña qué va a llegar', () => {
-    const inbox = buildInbox({
-      today: '2026-10-13',
-      batches: [],
-      treasuries: [{ id: 'w', name: 'Mercado Pago', kind: 'wallet' }],
-      booksStartDate: '2026-10-12',
-      hasCuit: true,
-      canWrite: true,
-      slug: 'bar',
-    })
-    const mp = html(<ImportTray tray={inbox.trays[1] as (typeof inbox.trays)[number]} />)
-    expect(mp).toContain('Todavía no subiste nada')
-    expect(mp).toContain('Subir el primer reporte')
-    expect(mp).not.toContain('$ 0')
-    const top = html(<HowItWorks startNote={inbox.startNote} agenda={inbox.agenda} />)
-    expect(top).toContain('Bajalo de allá')
-    expect(top).toContain('Subilo acá')
-    expect(top).toContain('Revisá y cargá')
-    expect(top).toContain('Tus números arrancan el 12/10: todavía no hay nada atrasado.')
-    expect(html(<AgendaLine agenda={inbox.agenda} />)).toContain('Estás al día.')
-  })
-
   it('el historial dice en qué quedó cada archivo, en palabras', () => {
-    const out = html(<HistoryList slug="bar" rows={HISTORY} today="2026-10-13" />)
+    const out = html(<HistoryTable slug="bar" rows={HISTORY} today="2026-10-13" />)
+    for (const head of ['Subido', 'Origen', 'Período', 'Qué pasó', 'Estado']) {
+      expect(out).toContain(`>${head}</th>`)
+    }
     expect(out).toContain('Septiembre')
-    expect(out).toContain('lo subió Luz')
-    // Lo que espera se dice como en la hoja de la bandeja («3 con una pregunta»), y cada
-    // tramo va entero en su renglón (no se parte en «2 / no van»).
+    expect(out).toContain('Luz')
+    // Lo que espera se dice como en la hoja que espera («3 con una pregunta»), y cada tramo va
+    // entero (no se parte en «2 / no van»).
     expect(historyCounts(HISTORY[0] as HistoryRow).replaceAll(NB, ' ')).toBe(
       '18 cargados · 3 con una pregunta · 2 no se cargan',
     )
@@ -310,60 +275,25 @@ describe('la bandeja', () => {
     // Con una pregunta sin contestar el archivo está «Para revisar», igual que su hoja.
     expect(out).toContain('Para revisar')
     expect(out).not.toContain('A medio cargar')
-    // En una hoja angosta el estado baja a su renglón al pie; con lugar, va a la derecha.
-    expect(out).toContain('@[28rem]/ledger:hidden')
-    expect(out).toContain('@[28rem]/ledger:inline-flex')
     // El archivo «eterno»: todo descartado ya no figura «Para revisar».
     expect(out).toContain('Nada para cargar')
     expect(out).toContain('ARCA · automática')
     expect(out).toContain('08/10 – 10/10')
     // El nombre largo del archivo se corta con «…» y queda entero en el `title`.
-    expect(out).toContain('class="block truncate"')
-  })
-
-  it('la tabla de la contadora lleva los títulos en castellano', () => {
-    const out = html(
-      <ImportHistory
-        slug="bar"
-        rows={HISTORY}
-        today="2026-10-13"
-        olderHref={null}
-        newestHref={null}
-      />,
-    )
-    for (const head of [
-      'Subido',
-      'Origen',
-      'Período',
-      'Renglones del archivo',
-      'Cargados',
-      'Pendientes',
-      'Estado',
-    ]) {
-      expect(out).toContain(`>${head}</th>`)
-    }
+    expect(out).toContain('title="comprobantes_recibidos_septiembre_2026')
+    expect(out).toContain('truncate')
     expect(out).not.toMatch(/>Filas<|>Repetidas</)
     expect(out).not.toContain('<button')
+  })
+
+  it('sin archivos: una oración, adentro de la misma hoja', () => {
     expect(html(<HistoryEmpty newestHref={null} reader />)).toContain(
       'Todavía no se subió ningún archivo',
     )
     expect(html(<HistoryEmpty newestHref={null} />)).toContain('Todavía no subiste ningún archivo')
-  })
-
-  it('«lo que no viene en ningún archivo» usa el nombre que cada destino tiene en su pantalla', () => {
-    const out = html(<StillManual slug="bar" />)
-    for (const label of [
-      'Cerrar el día',
-      'Pagué algo recién',
-      'Me entró plata',
-      'Cargar una compra que debo',
-      'Sueldos del mes',
-    ]) {
-      expect(out).toContain(label)
-    }
-    expect(out).toContain('href="/bar/administracion/libros/asiento-manual?tipo=sueldos"')
-    expect(out).toContain('Queda registrado igual.')
-    expect(out).not.toMatch(/en negro|en blanco|afuera/i)
+    const end = html(<HistoryEmpty newestHref="/x" />)
+    expect(end).toContain('No hay archivos más viejos.')
+    expect(end).toContain('Ver los más nuevos')
   })
 
   it('los esqueletos tienen la forma de cada pantalla', () => {

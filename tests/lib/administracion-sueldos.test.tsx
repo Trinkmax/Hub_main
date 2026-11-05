@@ -29,7 +29,7 @@ import { prepare } from './accounting-fixtures'
 /**
  * «Sueldos del mes» es otra cara del asiento manual, no otro formulario: tiene
  * que mandar EXACTAMENTE lo mismo que el camino de antes («Armar las líneas» +
- * «Guardar asiento»). Acá el camino viejo está escrito a mano, tal cual era, y
+ * «Grabar asiento»). Acá el camino viejo está escrito a mano, tal cual era, y
  * se compara contra lo que arma el nuevo: los mismos valores y el mismo hash de
  * la vista previa (lo que la base compara al guardar).
  */
@@ -79,7 +79,7 @@ type LegacyState = { description: string; lines: InitialLine[] }
 
 /**
  * EL CAMINO DE ANTES, copiado: el botón «Armar las líneas» de la plantilla
- * (`PayrollTemplate.apply` + `onApply`) y después lo que mandaba «Guardar
+ * (`PayrollTemplate.apply` + `onApply`) y después lo que mandaba «Grabar
  * asiento» (`values` del formulario).
  */
 function legacyPath(inputs: PayrollInputs, date: string, ctx: PostingContext) {
@@ -118,7 +118,7 @@ function legacyPath(inputs: PayrollInputs, date: string, ctx: PostingContext) {
     // El concepto estaba vacío: se completaba solo.
     description: `Sueldos de ${formatMonthYear(date)}`,
   }
-  // «Guardar asiento»
+  // «Grabar asiento»
   return {
     ok: true as const,
     values: {
@@ -161,7 +161,7 @@ const NUMBERS: PayrollInputs = {
   withheld: 76_500_000,
 }
 
-describe('«Guardar los sueldos» manda lo mismo que «Armar las líneas» + «Guardar asiento»', () => {
+describe('«Guardar los sueldos» manda lo mismo que «Armar las líneas» + «Grabar asiento»', () => {
   const cases: Array<[string, PayrollInputs, string]> = [
     ['sin vencimientos', NUMBERS, '2026-10-31'],
     [
@@ -343,17 +343,39 @@ describe('las dos caras del formulario (primer paint)', () => {
     }
     // El concepto viene completo y la fecha es la de hoy, como antes.
     expect(html).toContain('value="Sueldos de octubre de 2026"')
-    expect(html).not.toContain('Guardar asiento')
-    expect(html).not.toContain('Agregar línea')
+    expect(html).not.toContain('Grabar asiento')
+    expect(html).not.toContain('Otro renglón')
     expect(html).not.toContain('Armar las líneas')
   })
 
-  it('sin `?tipo=`: la grilla de siempre, con su botón', () => {
+  it('sin `?tipo=`: la grilla clásica, con su botón apagado hasta que cuadre', () => {
     const html = render('adjustment')
     expect(html).toContain('Asiento manual')
-    expect(html).toContain('Tipo de asiento')
-    expect(html).toContain('Agregar línea')
-    expect(html).toContain('Guardar asiento')
+    for (const text of ['Modelo', 'Tipo de asiento', 'Fecha', 'Concepto', 'Respaldo']) {
+      expect(html, text).toContain(text)
+    }
+    expect(html).toContain('Cuenta (código o nombre)')
+    expect(html).toContain('Otro renglón')
+    expect(html).toContain('Cargá los importes')
     expect(html).not.toContain('Guardar los sueldos')
+    // «El sistema no te debe permitir grabar» (Silvia): apagado de entrada.
+    const button = html.match(/<button[^>]*type="submit"[^>]*>/)?.[0] ?? ''
+    expect(button).toContain('disabled')
+    expect(html).toContain('Grabar asiento')
+  })
+
+  it('los modelos están en el selector, con los sueldos entre ellos', () => {
+    const html = render('adjustment')
+    for (const name of [
+      'Sin modelo',
+      'Préstamo recibido',
+      'Cuota de préstamo con intereses',
+      'Aporte de socios',
+      'Retiro de socios',
+      'Amortización del mes',
+      'Sueldos del mes',
+    ]) {
+      expect(html, name).toContain(`>${name}</option>`)
+    }
   })
 })

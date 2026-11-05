@@ -18,6 +18,7 @@
 
 import type { AccErrorKey } from './errors'
 import type { SystemAccountKey } from './system-keys'
+import type { TaxSettings } from './taxes'
 
 // ─── Escalares ───────────────────────────────────────────────────────────────
 
@@ -283,6 +284,8 @@ export type PartyRates = {
 
 export type PartyRef = {
   id: string
+  /** `rentas`, `municipalidad`, `personal`…: los partícipes que trae el sistema. */
+  systemKey?: string | null
   kind: PartyKind
   name: string
   tradeName: string | null
@@ -311,6 +314,8 @@ export type TreasuryRef = {
    */
   balanceCents: Cents
   active: boolean
+  /** ¿Al salir plata se calcula el impuesto a los débitos y créditos? `null`: según el tipo (`chargesBankTax`). */
+  chargesBankTax?: boolean | null
 }
 
 export type SalesMethodRef = {
@@ -346,6 +351,8 @@ export type PostingSettings = {
   bankTaxCreditComputableBp: number
   bankTaxDebitComputableBp: number
   uninvoicedSalesMode: 'separate_accounts' | 'single_account'
+  /** Los impuestos que se calculan solos (`acc_settings.tax_settings`). Sin dato, no se calcula nada. */
+  taxSettings?: TaxSettings
   ivaDueDay: number
   /**
    * Día de vencimiento de la DDJJ de IIBB (`acc_settings.iibb_due_day`). No

@@ -12,11 +12,7 @@ import {
 import { AccessPanel } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/access-panel'
 import { IntegrityPanel } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/integrity-panel'
 import { MethodsPanel } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/methods-panel'
-import { AccountantDrawer } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/portada/accountant-drawer'
-import {
-  SetupNext,
-  SetupPills,
-} from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/portada/setup-next'
+import { PortadaList } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/portada/portada-list'
 import { SalesPointsPanel } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/sales-points-panel'
 import {
   PeriodSettingsForm,
@@ -39,7 +35,6 @@ import {
 import type { SystemPartyRow } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_lib/payloads'
 import { initialsOf, PersonChip } from '@/components/administracion/puerta/person-chip'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
-import type { SetupStep } from '@/lib/accounting/home'
 import type { AccessOverview, AccessPersonRow } from '@/lib/accounting/queries/access'
 import type { FiscalYearRow, PeriodRow } from '@/lib/accounting/queries/periods'
 import type {
@@ -903,7 +898,7 @@ describe('los meses del ejercicio', () => {
     expect(periodState(aj, '2026-10-13')).toBe('open')
   })
 
-  it('la tira, con «Ver como tabla» y el link a «Libros › Fin de mes»', () => {
+  it('la tira, con «Ver como tabla» y el link a «Contabilidad › Cierre de mes»', () => {
     const out = html(
       createElement(FiscalYearsList, {
         years: [year],
@@ -920,7 +915,7 @@ describe('los meses del ejercicio', () => {
     expect(out).toContain('Ajustes de cierre 2026')
     expect(out).toContain('En curso')
     expect(out).toContain('Ver como tabla')
-    expect(out).toContain('Libros › Fin de mes')
+    expect(out).toContain('Contabilidad › Cierre de mes')
     expect(out).not.toContain('Cierres de mes')
     expect(out).toContain('href="/hub/administracion/libros/cierres?mes=2026-10"')
   })
@@ -936,95 +931,72 @@ describe('los meses del ejercicio', () => {
 })
 
 describe('la portada', () => {
-  const step = (over: Partial<SetupStep>): SetupStep => ({
-    id: 'opening',
-    title: 'Cargá lo que había en cada caja al arrancar',
-    detail:
-      'Los saldos iniciales: cuánta plata hay y cuánto se debe. Sin eso, todo arranca en cero.',
-    done: false,
-    optional: false,
-    action: { kind: 'href', href: '/hub/administracion/configurar', label: 'Cargar lo que había' },
-    ...over,
-  })
-  const sas = step({
-    id: 'sas_data',
-    title: 'Completá los datos de la SAS',
-    detail: 'Falta la CUIT.',
-    action: { kind: 'href', href: '/hub/administracion/ajustes?tab=sas', label: 'Completar' },
-  })
-
-  it('quien carga: el paso que falta, en grande, con UN botón y lo que sigue', () => {
-    const out = html(
-      createElement(SetupNext, {
-        view: { kind: 'urgent', step: step({}), after: [sas] },
-        guideHref: '/hub/administracion/guias/como-arrancar',
+  const GUIDE = '/hub/administracion/guias/como-arrancar#arranque-day1'
+  const ROWS = [
+    {
+      room: 'sas',
+      title: 'Datos de la SAS',
+      href: '/hub/administracion/ajustes?tab=sas',
+      sentence: 'Bar de Prueba SAS',
+      sentenceTitle: 'Bar de Prueba SAS',
+      pill: { tone: 'warn', text: 'Falta la CUIT' },
+    },
+    {
+      room: 'impuestos',
+      title: 'Impuestos',
+      href: '/hub/administracion/ajustes?tab=impuestos',
+      sentence: 'Ingresos Brutos 3 %.',
+      pill: { tone: 'ok', text: 'Se calculan solos' },
+    },
+    {
+      room: 'ejercicio',
+      title: 'Ejercicio',
+      href: '/hub/administracion/ajustes?tab=ejercicio',
+      sentence: 'Los meses del año contable.',
+      pill: null,
+    },
+  ] as const
+  const list = (setup: { done: number; total: number } | null = { done: 7, total: 11 }) =>
+    html(
+      createElement(PortadaList, {
+        rows: ROWS.map((row) => ({ ...row })),
+        setup,
+        guideHref: GUIDE,
       }),
     )
+
+  it('«Puesta en marcha: N de M» arriba, que lleva a la guía', () => {
+    const out = list()
+    expect(out).toContain('Puesta en marcha: 7 de 11')
+    expect(out).toContain(`href="${GUIDE}"`)
+    expect(out).toContain('aria-label="7 de 11 pasos hechos"')
+  })
+
+  it('si la guía no cargó no afirma un avance, y sigue llevando a ella', () => {
+    const out = list(null)
     expect(out).toContain('Puesta en marcha')
-    expect(out).toContain('Cargá lo que había en cada caja al arrancar')
-    expect(out).toContain('Cargar lo que había')
-    expect(out).toContain('href="/hub/administracion/configurar"')
-    expect(out).toContain('Después:')
-    // En fila, el paso va por el nombre de su lugar (el de su tarjeta), con el mismo link.
-    expect(out).toMatch(/href="\/hub\/administracion\/ajustes\?tab=sas"[^>]*>Datos de la SAS</)
-    expect(out).not.toContain('Completá los datos de la SAS')
-    expect(out).toContain('Ver todo lo que falta')
-    // No repite el «N de M» del Resumen.
     expect(out).not.toMatch(/\d+ de \d+/)
+    expect(out).toContain(`href="${GUIDE}"`)
   })
 
-  it('lo que puede esperar es una línea; con todo hecho, lo dice', () => {
-    const later = html(
-      createElement(SetupNext, {
-        view: { kind: 'later', steps: [sas], more: 2 },
-        guideHref: '/g',
-      }),
-    )
-    expect(later).toContain('Para completar cuando puedas:')
-    expect(later).toMatch(/href="\/hub\/administracion\/ajustes\?tab=sas"[^>]*>Datos de la SAS</)
-    expect(later).toContain('y 2 más')
-    expect(later).toContain('Ver todo')
-    const done = html(createElement(SetupNext, { view: { kind: 'complete' }, guideHref: '/g' }))
-    expect(done).toContain('La puesta en marcha está completa.')
-  })
-
-  it('la contadora: lo que falta en dos píldoras, sin ningún botón ni link', () => {
-    const out = html(
-      createElement(SetupPills, {
-        steps: [
-          step({ title: 'Faltan los saldos iniciales', action: null }),
-          step({ id: 'sas_data', title: 'Falta el CUIT de la SAS', action: null }),
-          step({ id: 'x', title: 'Otro', action: null }),
-        ],
-      }),
-    )
-    expect(out).toContain('Faltan los saldos iniciales')
-    expect(out).toContain('Falta el CUIT de la SAS')
-    expect(out).not.toContain('Otro')
-    expect(buttons(out)).toBe(0)
-    expect(links(out)).toBe(0)
-    expect(html(createElement('div', null, createElement(SetupPills, { steps: [] })))).toBe(
-      '<div></div>',
-    )
-  })
-
-  it('el cajón de la contadora: para el dueño va callado; para ella es «Tu zona»', () => {
-    const owner = html(
-      createElement(AccountantDrawer, { base: '/hub/administracion', mine: false }),
-    )
-    expect(owner).toContain('Para la contadora')
-    expect(owner).toContain('Si no te los pidió, no hace falta tocar nada.')
-    const mine = html(createElement(AccountantDrawer, { base: '/hub/administracion', mine: true }))
-    expect(mine).toContain('Tu zona')
-    for (const out of [owner, mine]) {
-      expect(out).toContain('href="/hub/administracion/ajustes?tab=ejercicio"')
-      expect(out).toContain('href="/hub/administracion/ajustes?tab=ejercicio#reglas"')
-      expect(out).toContain('href="/hub/administracion/ajustes?tab=participes#cuit"')
-      expect(out).toContain('href="/hub/administracion/ajustes?tab=integridad"')
-      expect(out).toContain('href="/hub/administracion/ajustes?tab=arca#homologacion"')
-      // Son links: acá no se guarda nada.
-      expect(buttons(out)).toBe(0)
+  it('una fila por habitación: su nombre, su oración, su estado y su link', () => {
+    const out = list()
+    for (const row of ROWS) {
+      expect(out).toContain(row.title)
+      expect(out).toContain(row.sentence)
+      expect(out).toContain(`href="${row.href}"`)
     }
+    expect(out).toContain('Falta la CUIT')
+    expect(out).toContain('Se calculan solos')
+  })
+
+  it('son links: acá no se guarda nada, y ya no hay tarjetas ni cajón', () => {
+    const out = list()
+    expect(buttons(out)).toBe(0)
+    expect(links(out)).toBe(ROWS.length + 1)
+    expect(out).not.toContain('Para la contadora')
+    expect(out).not.toContain('Tu zona')
+    expect(out).not.toContain('Lo que se arma una vez')
   })
 })
 

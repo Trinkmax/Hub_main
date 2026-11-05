@@ -54,7 +54,9 @@ import {
 } from '@/lib/accounting/posting/common'
 import type { SalesCloseInput } from '@/lib/accounting/schemas'
 import { salesAccountKey } from '@/lib/accounting/system-keys'
+import { closeTaxes } from '@/lib/accounting/taxes'
 import type {
+  AccountRef,
   Cents,
   Channel,
   FiscalAmountKey,
@@ -253,6 +255,58 @@ export function summarizeSalesClose(
 }
 
 /** Cierre de ventas del día (E.5.6: E8, E8b), con acreditaciones en el acto opcionales. */
+/**
+ * Los renglones de los impuestos que devenga el cierre, en el mismo asiento: así se anulan y se corrigen con él.
+ * Sin el partícipe del sistema (un plan viejo sin Rentas) ese impuesto no se calcula: nunca frena un cierre.
+ */
+function addCloseTaxLines(
+  lines: DocLineBuilder,
+  summaries: readonly ChannelSummary[],
+  ctx: PostingContext,
+): void {
+  const { iibbCents, municipalCents } = closeTaxes(
+    {
+      invoicedNetCents: sumCents(summaries.map((s) => s.invoicedNetCents)),
+      uninvoicedCents: sumCents(summaries.map((s) => s.uninvoicedCents)),
+    },
+    ctx.settings.taxSettings,
+  )
+  const accrue = (
+    cents: Cents,
+    partyKey: string,
+    expense: AccountRef | undefined,
+    payable: AccountRef | undefined,
+    memo: string,
+  ) => {
+    if (cents <= 0 || !expense || !payable) return
+    const party = [...ctx.parties.values()].find((p) => p.systemKey === partyKey)
+    if (!party) return
+    lines.add({ role: 'manual', accountId: expense.id, side: 'debit', amountCents: cents, memo })
+    lines.add({
+      role: 'manual',
+      accountId: payable.id,
+      side: 'credit',
+      amountCents: cents,
+      partyRef: { id: party.id },
+      memo,
+    })
+  }
+  accrue(
+    iibbCents,
+    'rentas',
+    ctx.sys.iibb_expense,
+    ctx.sys.iibb_payable,
+    'Ingresos Brutos del cierre',
+  )
+  accrue(
+    municipalCents,
+    'municipalidad',
+    ctx.sys.municipal_tax_expense,
+    ctx.sys.municipal_payable,
+    'Comercio e Industria del cierre',
+  )
+}
+
 export function buildSalesClose(
   input: SalesCloseBuildInput,
   ctx: PostingContext,
@@ -469,6 +523,9 @@ export function buildSalesClose(
       'credit',
     )
   }
+
+  // ── Ingresos Brutos y Comercio e Industria: «ese número se debería crear solo» (reunión del 29/10/2026) ──
+  addCloseTaxLines(lines, summaries, ctx)
 
   // ── Facturado de más: se confirma con un motivo (factura de una venta de otro día) ──
   const acks = ackList(input.warningsAck)

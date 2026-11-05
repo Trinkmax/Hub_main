@@ -1,6 +1,6 @@
 import { ChevronRight, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
-import { ChartFrame } from '@/components/administracion/charts/chart-frame'
+import { Amount } from '@/components/administracion/amount'
 import {
   ChartMark,
   dayTitle,
@@ -19,17 +19,28 @@ import {
   stepLinePath,
   valueY,
 } from '@/components/administracion/charts/scale'
-import { Panel, PanelError } from '@/components/administracion/kit'
-import { StatementTable } from '@/components/administracion/statement-table'
+import {
+  Planilla,
+  PlanillaBar,
+  PlanillaFoot,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+  PTotalRow,
+} from '@/components/administracion/planilla'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { exportHref, getPartyStatement, settleQuery } from '@/lib/accounting/queries'
-import { formatDayMonth } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
+import { formatDayMonth, formatIsoDay } from '@/lib/dates'
+import { formatCents, formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { ExportButton } from '../../../_components/export-button'
 import { PeriodChips } from '../../../_components/period-chips'
+import { ROW_LINK, SheetEmpty, SheetError } from '../../../_components/planilla-bits'
+import { BarSkeleton, SheetSkeleton } from '../../../_components/planilla-skeleton'
 import { periodLead } from '../../../_lib/libreta'
-import { firstParam } from '../../../_lib/links'
+import { firstParam, newPurchaseHref } from '../../../_lib/links'
 import { periodPhrase, resolveListPeriod } from '../../../_lib/period'
 import { toStatementView } from '../../../_lib/statement'
 import {
@@ -38,43 +49,22 @@ import {
   supplierLedger,
   trimFlatStart,
 } from '../../../_lib/supplier-ledger'
-import { LedgerLines } from './ledger-lines'
 
 /** Movimientos por página (la base corta en 500; 200 se leen cómodos). */
 const STATEMENT_PAGE = 200
 
-/** Con menos movimientos que estos, la escalera no dice nada que la lista no diga. */
+/** Con menos movimientos que estos, la escalera no dice nada que la tabla no diga. */
 const MIN_STEPS = 3
 
-const TITLE = 'Su libreta'
+const BUTTON = 'h-10 gap-1.5 md:pointer-fine:h-8'
 
-/** Mientras llega la libreta: los chips de período y unos renglones. */
+/** Mientras llega la cuenta: el período y unas filas. */
 export function StatementSkeleton() {
   return (
-    <Panel title={TITLE}>
-      <div className="space-y-4" aria-busy="true">
-        <span className="sr-only">Cargando su libreta…</span>
-        <div className="flex flex-wrap gap-1.5">
-          {/* Los cuatro chips de período: la clave es el período, no el ancho (dos miden lo mismo). */}
-          {[
-            { key: 'ultimos-90', width: 'w-36' },
-            { key: 'este-mes', width: 'w-24' },
-            { key: 'mes-pasado', width: 'w-28' },
-            { key: 'este-anio', width: 'w-24' },
-          ].map((chip) => (
-            <Skeleton key={chip.key} className={`h-11 rounded-full md:h-9 ${chip.width}`} />
-          ))}
-        </div>
-        <Skeleton className="h-6 w-80 max-w-full" />
-        {['a', 'b', 'c', 'd'].map((k) => (
-          <div key={k} className="flex items-center gap-4">
-            <Skeleton className="h-3.5 w-10" />
-            <Skeleton className="h-3.5 flex-1" />
-            <Skeleton className="h-3.5 w-24" />
-          </div>
-        ))}
-      </div>
-    </Panel>
+    <>
+      <BarSkeleton widths={['w-96']} />
+      <SheetSkeleton rows={6} columns={3} />
+    </>
   )
 }
 
@@ -82,15 +72,15 @@ export function StatementSkeleton() {
 const MAX_DAY_LABELS = 6
 
 /**
- * La escalera de «Le debés»: sube cuando te deja algo y baja cuando le pagás.
+ * La escalera de «Le debés»: sube cuando te deja algo y baja cuando le pagás. Va plegada debajo de la
+ * tabla, que tiene los mismos números.
  *
  * Está armada acá, con las piezas de la familia de gráficos (`Plot`, `XTicks`,
- * `ChartMark`, `ChartTip` y la geometría de `scale`), porque esta libreta
+ * `ChartMark`, `ChartTip` y la geometría de `scale`), porque esta cuenta
  * necesita dos cosas que `BalanceArea` no hace: un eje con el MES en cada marca
  * («16/07», no «16»: 90 días cruzan cuatro meses) y no rotular el punto más
  * bajo, que acá casi siempre es «$ 0» y no dice nada. Mismo dibujo: escalonada,
- * lavado al 10 %, 2 px, una sola etiqueta (hoy). Los mismos números están en los
- * renglones de abajo y en «Ver como tabla».
+ * lavado al 10 %, 2 px, una sola etiqueta (hoy).
  */
 function DebtStairs({
   points,
@@ -218,17 +208,13 @@ function DebtStairs({
 }
 
 /**
- * «Su libreta»: lo que te dejó, lo que le pagaste y lo que le debés, movimiento
- * por movimiento, con el saldo corrido que calcula la base.
+ * La cuenta corriente: Fecha · Comprobante · Vence · Debe · Haber · Saldo, con el saldo corrido que
+ * calcula la base y la doble raya en el total. En un proveedor, Haber es lo que te dejó (aumenta la
+ * deuda) y Debe lo que le pagaste. Toda la fila lleva al comprobante. El saldo a favor se dice con
+ * palabras, nunca con un menos pelado.
  *
- * El dueño la ve como libreta: un título que afirma («En los últimos 90 días le
- * bajaste la deuda en $ X»), la escalera de la deuda (sube cuando te deja, baja
- * cuando le pagás) y los renglones con sus tres columnas. La contadora arranca
- * en la tabla de siempre (`StatementTable`: Fecha · Comprobante · Vence · Pagos
- * · Facturas · Saldo); cualquiera de los dos cambia con «Ver como tabla».
- *
- * Período por URL (`?periodo=`, 90 días por defecto), paginado (`?despues=`) y
- * exporte CSV del período: como siempre.
+ * Período por URL (`?periodo=`, 90 días por defecto), paginado (`?despues=`) y exporte CSV del
+ * período: como siempre. Debajo, plegada, la escalera de la deuda.
  */
 export async function StatementTab({
   tenantId,
@@ -245,12 +231,12 @@ export async function StatementTab({
   tenantSlug: string
   partyId: string
   partyName: string
-  /** La hoja (`/compras/proveedores/[id]`). */
+  /** Su cuenta corriente (`/compras/proveedores/[id]`). */
   baseHref: string
   sp: Readonly<Record<string, string | string[] | undefined>>
   today: string
   canWrite: boolean
-  /** Lo que hoy tiene a favor sin usar (de la tapa): la libreta ya lo restó y lo aclara. */
+  /** Lo que hoy tiene a favor sin usar: el saldo de la tabla ya lo restó y se aclara. */
   unusedCreditCents: number
 }) {
   const period = resolveListPeriod(sp, {
@@ -277,9 +263,9 @@ export async function StatementTab({
     return `${baseHref}${query ? `?${query}` : ''}`
   }
 
-  const toolbar = (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+  const bar = (
+    <>
+      <PlanillaBar>
         <PeriodChips
           chips={period.chips}
           active={period.active}
@@ -297,13 +283,14 @@ export async function StatementTab({
           fileName={`estado-de-cuenta-${period.from}-${period.to}.csv`}
           label="Exportar este período"
           variant="ghost"
-          className="h-11 self-start text-muted-foreground hover:text-foreground md:h-9 xl:self-auto"
+          size="sm"
+          className="ml-auto h-10 text-muted-foreground hover:text-foreground md:pointer-fine:h-8"
         />
-      </div>
+      </PlanillaBar>
       {period.error ? (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+          className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm"
         >
           <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
           <p className="text-warning-text">
@@ -311,11 +298,18 @@ export async function StatementTab({
           </p>
         </div>
       ) : null}
-    </div>
+    </>
   )
 
   if (!outcome.ok) {
-    return <PanelError title={TITLE} message={outcome.message} />
+    return (
+      <>
+        {bar}
+        <Planilla>
+          <SheetError message={outcome.message} />
+        </Planilla>
+      </>
+    )
   }
 
   const page = outcome.data
@@ -338,18 +332,40 @@ export async function StatementTab({
     unusedCreditCents,
   })
   const lineCount = ledger.lines.length
-  const lead = periodLead(period)
-  // La escalera y el título que afirma solo valen con el período entero a la vista.
+
+  // Sin movimientos: una oración, adentro de la hoja. En el período de entrada (casi todos los
+  // proveedores el primer día) «probá con otro» no lleva a nada: se dice qué va a aparecer.
+  if (lineCount === 0 && !after) {
+    const firstDay = period.param === null
+    return (
+      <>
+        {bar}
+        <Planilla>
+          <SheetEmpty
+            action={
+              firstDay && canWrite ? (
+                <Button asChild variant="outline" size="sm" className={BUTTON}>
+                  <Link
+                    href={newPurchaseHref(tenantSlug, { proveedor: partyId, volver: baseHref })}
+                  >
+                    Cargar una compra
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          >
+            No hubo movimientos {periodLead(period, { lower: true })}.{' '}
+            {firstDay
+              ? 'Cuando le cargues una compra o un pago, queda acá.'
+              : 'Probá con otro período.'}
+          </SheetEmpty>
+        </Planilla>
+      </>
+    )
+  }
+
+  // La escalera solo vale con el período entero a la vista.
   const whole = !after && !hasMore
-  const title = whole
-    ? (ledgerTrendTitle({
-        lead,
-        openingCents: page.openingCents ?? 0,
-        closingCents: ledger.closing?.balanceCents ?? null,
-        movements: lineCount,
-      }) ?? `Sus movimientos, ${periodPhrase(period)}`)
-    : `Sus movimientos, ${periodPhrase(period)}`
-  // Sin la raya plana del principio: el eje arranca unos días antes del primer movimiento.
   const points =
     whole && lineCount >= MIN_STEPS
       ? trimFlatStart(
@@ -363,96 +379,142 @@ export async function StatementTab({
       : []
   const drawable = points.length > 1 && points.some((p) => p.cents > 0)
   const todayIndex = points.findIndex((p) => p.date === today)
-  const footnote = hasMore
-    ? `Ves ${lineCount} de ${page.totalRows} movimientos. El saldo de cada renglón ya cuenta los anteriores.`
-    : after
-      ? 'Estás viendo los últimos movimientos del período.'
-      : null
-
-  // Sin movimientos: una sola frase. Ni el título que la repite ni «Ver como tabla»
-  // para una tabla vacía (es el estado de casi todos los proveedores el primer día).
-  if (lineCount === 0 && !after) {
-    return (
-      <Panel title={TITLE} description="Lo que te dejó, lo que le pagaste y lo que le debés.">
-        <div className="space-y-5">
-          {toolbar}
-          <p className="rounded-xl bg-secondary/50 px-4 py-5 text-sm text-muted-foreground text-pretty">
-            No hubo movimientos {periodLead(period, { lower: true })}.{' '}
-            {/* En el período de entrada (casi todos los proveedores el primer día) «probá con
-                otro» no lleva a nada: se dice qué va a aparecer. */}
-            {period.param === null
-              ? 'Cuando le cargues una compra o un pago, queda anotado acá.'
-              : 'Probá con otro período.'}
-          </p>
-        </div>
-      </Panel>
-    )
-  }
+  const trend = ledgerTrendTitle({
+    lead: periodLead(period),
+    openingCents: page.openingCents ?? 0,
+    closingCents: ledger.closing?.balanceCents ?? null,
+    movements: lineCount,
+  })
+  // dd/MM si todo el período es del mismo año.
+  const dateOf = period.from.slice(0, 4) === period.to.slice(0, 4) ? formatDayMonth : formatIsoDay
 
   return (
-    <Panel title={TITLE} description="Lo que te dejó, lo que le pagaste y lo que le debés.">
-      <div className="space-y-5">
-        {toolbar}
-        <ChartFrame
-          title={title}
-          // La contadora arranca en la tabla densa: para ella es el producto.
-          defaultView={canWrite ? 'chart' : 'table'}
-          chart={
-            lineCount === 0 ? (
-              <p className="rounded-xl bg-secondary/50 px-4 py-5 text-sm text-muted-foreground text-pretty">
-                No hay más movimientos {periodLead(period, { lower: true })}.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {drawable ? (
-                  <DebtStairs
-                    points={points}
-                    todayIndex={todayIndex}
-                    ariaLabel={`Lo que le debés a ${partyName}, día por día`}
-                  />
-                ) : null}
-                <LedgerLines tenantSlug={tenantSlug} ledger={ledger} />
-              </div>
-            )
-          }
-          table={
-            <StatementTable
-              rows={view.rows}
-              caption={`Estado de cuenta de ${partyName}, ${period.label.toLowerCase()}`}
-              balanceMode="payable"
-              opening={view.opening}
-              columnLabels={{ debit: 'Pagos', credit: 'Facturas' }}
-              showDue
-              today={today}
-              totals={view.totals}
-              closing={view.closing}
-              emptyText={`No hubo facturas ni pagos en ${periodPhrase(period)}.`}
-            />
-          }
-          footer={footnote}
-        />
-        {hasMore || after ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {after ? (
-              <Button asChild variant="outline" className="h-11 rounded-full px-5 md:h-9">
-                <Link href={linkWith({})} scroll={false}>
-                  Volver al principio
-                </Link>
-              </Button>
-            ) : (
-              <span />
-            )}
-            {hasMore && page.nextCursor ? (
-              <Button asChild variant="outline" className="h-11 gap-1.5 rounded-full px-5 md:h-9">
-                <Link href={linkWith({ despues: page.nextCursor })} scroll={false}>
-                  Ver los movimientos siguientes
-                  <ChevronRight className="size-3.5" aria-hidden />
-                </Link>
-              </Button>
+    <>
+      {bar}
+      <Planilla>
+        <PTable label={`Cuenta corriente de ${partyName}, ${period.label}`} minWidth={680}>
+          <thead>
+            <tr>
+              <PTh>Fecha</PTh>
+              <PTh>Comprobante</PTh>
+              <PTh>Vence</PTh>
+              <PTh align="right">Debe</PTh>
+              <PTh align="right">Haber</PTh>
+              <PTh align="right">Saldo</PTh>
+            </tr>
+          </thead>
+          <tbody>
+            {view.opening ? (
+              <PRow className="text-muted-foreground">
+                <PTd colSpan={5}>{view.opening.label}</PTd>
+                <PTd align="right">
+                  <Amount cents={view.opening.balanceCents} balance="payable" words="contrary" />
+                </PTd>
+              </PRow>
             ) : null}
-          </div>
+            {view.rows.map((row) => {
+              const due = row.dueDate ?? null
+              const late = due !== null && !row.settled && due < today
+              return (
+                <PRow key={row.id} className={cn(row.href && 'relative')}>
+                  <PTd className="whitespace-nowrap text-muted-foreground">{dateOf(row.date)}</PTd>
+                  <PTd>
+                    {row.href ? (
+                      <Link href={row.href} className={ROW_LINK}>
+                        <VoucherText text={row.voucher} />
+                      </Link>
+                    ) : (
+                      <VoucherText text={row.voucher} />
+                    )}
+                    {row.detail ? (
+                      <span className="ml-1.5 text-[11px] text-muted-foreground">{row.detail}</span>
+                    ) : null}
+                  </PTd>
+                  <PTd
+                    className={cn(
+                      'whitespace-nowrap',
+                      late ? 'text-destructive' : 'text-muted-foreground',
+                    )}
+                  >
+                    {due ? dateOf(due) : null}
+                  </PTd>
+                  <PTd align="right">{row.debitCents ? formatCents(row.debitCents) : null}</PTd>
+                  <PTd align="right">{row.creditCents ? formatCents(row.creditCents) : null}</PTd>
+                  <PTd align="right">
+                    <Amount cents={row.balanceCents} balance="payable" words="contrary" />
+                  </PTd>
+                </PRow>
+              )
+            })}
+          </tbody>
+          {view.totals && view.closing ? (
+            <tfoot>
+              <PTotalRow>
+                <PTd colSpan={3}>
+                  Saldo
+                  {unusedCreditCents > 0 ? (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      ya restado {formatCentsShort(unusedCreditCents)} a favor
+                    </span>
+                  ) : null}
+                </PTd>
+                <PTd align="right">{formatCents(view.totals.debitCents)}</PTd>
+                <PTd align="right">{formatCents(view.totals.creditCents)}</PTd>
+                <PTd align="right">
+                  <Amount cents={view.closing.balanceCents} balance="payable" words="contrary" />
+                </PTd>
+              </PTotalRow>
+            </tfoot>
+          ) : null}
+        </PTable>
+
+        {hasMore || after ? (
+          <PlanillaFoot className="text-xs text-muted-foreground">
+            <p>
+              {hasMore
+                ? `Ves ${lineCount} de ${page.totalRows} movimientos. El saldo de cada fila ya cuenta los anteriores.`
+                : 'Estás viendo los últimos movimientos del período.'}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {after ? (
+                <Button asChild variant="outline" size="sm" className={BUTTON}>
+                  <Link href={linkWith({})} scroll={false}>
+                    Volver al principio
+                  </Link>
+                </Button>
+              ) : null}
+              {hasMore && page.nextCursor ? (
+                <Button asChild variant="outline" size="sm" className={BUTTON}>
+                  <Link href={linkWith({ despues: page.nextCursor })} scroll={false}>
+                    Ver los siguientes
+                    <ChevronRight className="size-3.5" aria-hidden />
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+          </PlanillaFoot>
         ) : null}
-      </div>
-    </Panel>
+
+        {drawable ? (
+          <details className="group border-t border-border/70">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:pointer-fine:min-h-0 [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                aria-hidden
+                className="size-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              />
+              Ver cómo fue la deuda
+            </summary>
+            <div className="space-y-2 px-3 pb-3">
+              {trend ? <p className="text-sm font-medium text-pretty">{trend}</p> : null}
+              <DebtStairs
+                points={points}
+                todayIndex={todayIndex}
+                ariaLabel={`Lo que le debés a ${partyName}, día por día`}
+              />
+            </div>
+          </details>
+        ) : null}
+      </Planilla>
+    </>
   )
 }

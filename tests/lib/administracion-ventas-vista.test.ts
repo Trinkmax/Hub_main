@@ -1,29 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import {
-  almanacCells,
-  cellAmount,
-  cellMillions,
-  cellShort,
-  defaultDay,
-  keepPercent,
-  longDayTitle,
-  nightPaceText,
-  staleNote,
-  staleSentence,
-  staleTarget,
-} from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/almanac'
-import {
-  receivableMeta,
-  receivableRail,
+  receivableArrival,
   receivableTranches,
   walletBoxes,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/incoming'
 import {
+  cashCheckText,
+  cashPending,
+  closeHref,
+  compliancePercent,
+  dayCell,
+  dayExtra,
+  longDay,
+  longDayTitle,
+  nextCloseDay,
+  nightPaceText,
+  openNight,
+  planillaHref,
+  planillaTotals,
+  rowAction,
+} from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/planilla'
+import {
+  detailParam,
+  parseDetail,
   parseTab,
+  periodWords,
   tabHref,
   VENTAS_TABS,
+  VIEW_TITLES,
   ventasView,
-  viewHref,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/ventas-view'
 import { monthDays } from '@/lib/accounting/home'
 import { buildProjection, type ProjectionSourceDay } from '@/lib/accounting/projection'
@@ -31,11 +36,10 @@ import type { PartyListRow } from '@/lib/accounting/queries/parties'
 import { eachIsoDay } from '@/lib/dates'
 
 /**
- * Ventas pasó de siete pestañas a cuatro vistas y un almanaque. Acá se fija
- * lo que no puede romperse sin que nadie lo note: que los siete `?tab=` de
- * siempre sigan abriendo lo suyo, qué dice cada casillero según su estado (un
- * día sin cargar nunca es un cero), qué noche se muestra al lado y que lo de
- * Mercado Pago no figure como plata atrasada.
+ * Ventas: tres solapas y dos pantallas detrás del «⋯». Acá se fija lo que no puede romperse sin que
+ * nadie lo note: que los siete `?tab=` de siempre sigan abriendo lo suyo, qué se puede hacer desde
+ * cada renglón de la planilla (un día sin cargar nunca es un cero), los tres números de arriba y que
+ * lo de Mercado Pago no figure como plata atrasada.
  */
 
 const BASE = '/hub/administracion'
@@ -44,13 +48,13 @@ const NB = String.fromCharCode(160)
 const TODAY = '2026-10-13'
 
 describe('los siete ?tab= de siempre siguen valiendo', () => {
-  it('cada pestaña lleva a su vista y trae su bloque', () => {
+  it('cada pestaña lleva a su vista y dice qué trae abierto', () => {
     expect(ventasView('cierres')).toEqual({ view: 'mes', focus: null })
     expect(ventasView('proyeccion')).toEqual({ view: 'mes', focus: 'proyeccion' })
     expect(ventasView('caja')).toEqual({ view: 'mes', focus: 'caja' })
     expect(ventasView('clientes')).toEqual({ view: 'cobrar', focus: null })
     expect(ventasView('neto-por-medio')).toEqual({ view: 'llego', focus: null })
-    expect(ventasView('cobros')).toEqual({ view: 'llego', focus: 'cobros' })
+    expect(ventasView('cobros')).toEqual({ view: 'cobros', focus: null })
     expect(ventasView('facturas')).toEqual({ view: 'facturas', focus: null })
   })
 
@@ -66,32 +70,67 @@ describe('los siete ?tab= de siempre siguen valiendo', () => {
     ])
   })
 
-  it('lo que no es una pestaña cae en «El mes»', () => {
+  it('lo que no es una pestaña cae en la planilla', () => {
     expect(parseTab(null)).toBe('cierres')
     expect(parseTab('')).toBe('cierres')
     expect(parseTab('cualquiera')).toBe('cierres')
     expect(parseTab('cobros')).toBe('cobros')
   })
 
-  it('los links son los de siempre: «El mes» va sin ?tab=', () => {
+  it('los links son los de siempre: la planilla va sin ?tab=', () => {
     expect(tabHref(BASE, 'cierres')).toBe(`${BASE}/ventas`)
     expect(tabHref(BASE, 'proyeccion')).toBe(`${BASE}/ventas?tab=proyeccion`)
     expect(tabHref(BASE, 'clientes', { filtro: 'atrasados' })).toBe(
       `${BASE}/ventas?tab=clientes&filtro=atrasados`,
     )
+    expect(tabHref(BASE, 'facturas', { mes: null })).toBe(`${BASE}/ventas?tab=facturas`)
   })
 
-  it('el mes elegido se conserva entre las vistas que miran un mes, y solo ahí', () => {
-    expect(viewHref(BASE, 'mes', '2026-09')).toBe(`${BASE}/ventas?mes=2026-09`)
-    expect(viewHref(BASE, 'llego', '2026-09')).toBe(`${BASE}/ventas?tab=neto-por-medio&mes=2026-09`)
-    expect(viewHref(BASE, 'facturas', '2026-09')).toBe(`${BASE}/ventas?tab=facturas&mes=2026-09`)
-    expect(viewHref(BASE, 'cobrar', '2026-09')).toBe(`${BASE}/ventas?tab=clientes`)
-    // Sin mes en la URL no se inventa uno.
-    expect(viewHref(BASE, 'llego')).toBe(`${BASE}/ventas?tab=neto-por-medio`)
+  it('cada vista tiene su nombre para lectores: lo que se ve es la solapa', () => {
+    expect(VIEW_TITLES).toEqual({
+      mes: 'Planilla del mes',
+      cobrar: 'Por cobrar',
+      llego: 'Lo que llegó',
+      cobros: 'Cobros',
+      facturas: 'Facturas',
+    })
+  })
+
+  it('el período se dice de corrido', () => {
+    const month = { kind: 'month', month: '2026-10', from: '', to: '', label: '' } as const
+    expect(periodWords(month)).toBe('en octubre')
+    expect(periodWords({ ...month, kind: 'range', month: null })).toBe('en ese período')
   })
 })
 
-// ─── El almanaque ────────────────────────────────────────────────────────────
+describe('«Ver detalle»: se esconde por defecto', () => {
+  it('la planilla abre sin el detalle; los dos links viejos, con él', () => {
+    expect(parseDetail(null, null)).toBe(false)
+    expect(parseDetail(null, 'proyeccion')).toBe(true)
+    expect(parseDetail(null, 'caja')).toBe(true)
+  })
+
+  it('el interruptor manda sobre el link', () => {
+    expect(parseDetail('1', null)).toBe(true)
+    expect(parseDetail('0', 'caja')).toBe(false)
+    expect(parseDetail('otra cosa', null)).toBe(false)
+  })
+
+  it('el parámetro solo va si cambia lo que abre esa URL', () => {
+    expect(detailParam(false, null)).toBeNull()
+    expect(detailParam(true, null)).toBe('1')
+    expect(detailParam(true, 'caja')).toBeNull()
+    expect(detailParam(false, 'caja')).toBe('0')
+    // Ida y vuelta: siempre vuelve a lo mismo.
+    for (const focus of [null, 'proyeccion', 'caja'] as const) {
+      for (const detail of [true, false]) {
+        expect(parseDetail(detailParam(detail, focus), focus)).toBe(detail)
+      }
+    }
+  })
+})
+
+// ─── La planilla ─────────────────────────────────────────────────────────────
 
 function source(
   over: (day: string) => Partial<ProjectionSourceDay> = () => ({}),
@@ -112,252 +151,203 @@ function source(
   }))
 }
 
-function almanac(
-  rows: ProjectionSourceDay[],
-  opts: {
-    booksStartDate?: string | null
-    canWrite?: boolean
-    selected?: string | null
-    events?: Record<string, string[]> | null
-    month?: string | null
-  } = {},
-) {
-  const projection = buildProjection(rows, { serviceDay: TODAY })
-  const days = monthDays(projection, { booksStartDate: opts.booksStartDate ?? '2026-10-01' })
-  const cells = almanacCells({
-    days: days.days,
-    projection: projection.days,
-    events: opts.events === undefined ? {} : opts.events,
-    base: BASE,
-    month: opts.month ?? null,
-    canWrite: opts.canWrite ?? true,
-    selected: opts.selected ?? null,
+describe('cada renglón de la planilla', () => {
+  it('el día se escribe corto: «lu 02»', () => {
+    expect(dayCell('2026-11-02')).toBe('lu 02')
+    expect(dayCell('2026-11-07')).toBe('sá 07')
+    expect(dayCell('2026-11-08')).toBe('do 08')
+    expect(dayCell('2026-13-40')).toBe('')
+    expect(longDay('2026-11-02')).toBe('lunes 02/11')
   })
-  const cell = (date: string) => {
-    const found = cells.find((c) => c.date === date)
-    if (!found) throw new Error(`sin celda para ${date}`)
-    return found
+
+  it('debajo del día, el evento y la nota', () => {
+    expect(dayExtra(['Noche de tacos'], '2x1 burger')).toBe('Noche de tacos · 2x1 burger')
+    expect(dayExtra([], '2x1 burger')).toBe('2x1 burger')
+    expect(dayExtra(['Noche de tacos'], null)).toBe('Noche de tacos')
+    expect(dayExtra([], null)).toBeNull()
+  })
+
+  it('«Ver cierre» si lo tiene; «Cargar cierre» si ya llegó y falta; antes del arranque, nada', () => {
+    expect(rowAction('loaded', true)).toBe('view')
+    expect(rowAction('missing', true)).toBe('load')
+    expect(rowAction('today', true)).toBe('load')
+    expect(rowAction('future', true)).toBe('none')
+    expect(rowAction('before', true)).toBe('none')
+    expect(rowAction(undefined, true)).toBe('none')
+  })
+
+  it('quien solo mira ve el cierre, pero no carga nada', () => {
+    expect(rowAction('loaded', false)).toBe('view')
+    expect(rowAction('missing', false)).toBe('none')
+    expect(rowAction('today', false)).toBe('none')
+  })
+
+  it('el cierre que toca es el primero que falta; si no falta ninguno, el de hoy', () => {
+    const days = [{ day: '01' }, { day: '02' }, { day: '03' }]
+    expect(nextCloseDay(days, { '01': 'loaded', '02': 'missing', '03': 'today' })).toBe('02')
+    expect(nextCloseDay(days, { '01': 'loaded', '02': 'loaded', '03': 'today' })).toBe('03')
+    expect(nextCloseDay(days, { '01': 'loaded', '02': 'loaded', '03': 'future' })).toBeNull()
+  })
+
+  it('el cumplimiento es el número: el verde o el rojo lo pone la pantalla', () => {
+    expect(
+      compliancePercent({ kind: 'value', percent: 84, side: 'below', gapPercent: 16 }),
+    ).toEqual({ text: `84${NB}%`, good: false })
+    expect(compliancePercent({ kind: 'value', percent: 100, side: 'on', gapPercent: 0 })).toEqual({
+      text: `100${NB}%`,
+      good: true,
+    })
+    expect(
+      compliancePercent({ kind: 'value', percent: 120, side: 'above', gapPercent: 20 }),
+    ).toEqual({ text: `120${NB}%`, good: true })
+    // Un día sin cierre o sin objetivo no es 0 %.
+    expect(compliancePercent({ kind: 'no_close' })).toBeNull()
+    expect(compliancePercent({ kind: 'no_target' })).toBeNull()
+    expect(compliancePercent({ kind: 'future' })).toBeNull()
+  })
+
+  it('la diferencia de caja va en palabras, nunca con un menos pelado', () => {
+    expect(cashCheckText({ kind: 'compared', diffCents: -100_000 })).toBe(`Faltan $${NB}1.000`)
+    expect(cashCheckText({ kind: 'compared', diffCents: 0 })).toBe('Coincide')
+    expect(cashCheckText({ kind: 'missing_count' })).toBe('Falta cargar')
+    expect(cashCheckText({ kind: 'missing_close' })).toBe('Falta el cierre')
+    expect(cashCheckText({ kind: 'none' })).toBeNull()
+  })
+
+  it('lo que falta para comparar se dice por motivo', () => {
+    expect(cashPending({ missingCountDays: 0, missingCloseDays: 0 })).toEqual([])
+    expect(cashPending({ missingCountDays: 1, missingCloseDays: 2 })).toEqual([
+      'A 1 día con cierre le falta cargar lo que entró.',
+      'A 2 días con lo que entró les falta el cierre.',
+    ])
+  })
+})
+
+describe('los links de la planilla', () => {
+  const link = { base: BASE, tab: null, month: null, detail: null }
+
+  it('abrir una noche es un `?dia=`; cerrarla, la misma URL sin él', () => {
+    expect(planillaHref(link, '2026-10-05')).toBe(`${BASE}/ventas?dia=2026-10-05`)
+    expect(planillaHref(link, null)).toBe(`${BASE}/ventas`)
+  })
+
+  it('conserva el mes, el detalle y la pestaña por la que se entró', () => {
+    expect(planillaHref({ ...link, month: '2026-09', detail: '1' }, '2026-09-05')).toBe(
+      `${BASE}/ventas?mes=2026-09&detalle=1&dia=2026-09-05`,
+    )
+    expect(planillaHref({ ...link, tab: 'caja', detail: '0' }, null)).toBe(
+      `${BASE}/ventas?tab=caja&detalle=0`,
+    )
+  })
+
+  it('el cierre de un día', () => {
+    expect(closeHref(BASE, '2026-10-05')).toBe(`${BASE}/ventas/cierre?fecha=2026-10-05`)
+  })
+})
+
+describe('openNight: qué noche se abre', () => {
+  const days = [
+    { date: '2026-10-10', state: 'loaded' as const },
+    { date: '2026-10-12', state: 'missing' as const },
+    { date: '2026-10-13', state: 'today' as const },
+    { date: '2026-10-14', state: 'future' as const },
+  ]
+
+  it('sin pedir nada no se abre ninguna: la planilla es la pantalla', () => {
+    expect(openNight(null, days)).toBeNull()
+  })
+
+  it('la pedida, si tiene su cierre', () => {
+    expect(openNight('2026-10-10', days)).toBe('2026-10-10')
+  })
+
+  it('un día sin cierre, de otro mes o roto no abre nada', () => {
+    for (const requested of [
+      '2026-10-12',
+      '2026-10-13',
+      '2026-10-14',
+      '2026-09-30',
+      'cualquiera',
+    ]) {
+      expect(openNight(requested, days)).toBeNull()
+    }
+  })
+})
+
+describe('planillaTotals: los tres números de arriba', () => {
+  const totals = (rows: ProjectionSourceDay[]) => {
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    return planillaTotals(projection.summary, {
+      hasCloses: projection.days.some((d) => d.hasClose),
+    })
   }
-  return { cells, cell, days }
-}
+  const closed = (day: string) => day < '2026-10-05'
 
-describe('almanacCells: qué dice cada casillero', () => {
-  it('el mes vacío de un bar que arrancó a mitad de mes: antes, falta, hoy y por venir', () => {
-    const { cells, cell } = almanac(source(), { booksStartDate: '2026-10-12' })
-    expect(cells).toHaveLength(31)
-    expect(cell('2026-10-05').state).toBe('before')
-    expect(cell('2026-10-12').state).toBe('missing')
-    expect(cell('2026-10-13').state).toBe('today')
-    expect(cell('2026-10-20').state).toBe('future')
-    // Lo anterior al arranque no se toca ni dice nada.
-    expect(cell('2026-10-05').href).toBeUndefined()
-    expect(cell('2026-10-05').value ?? null).toBeNull()
+  it('un mes sin objetivos ni cierres no dice «$ 0» por ningún lado', () => {
+    const [target, sold, remaining] = totals(source())
+    expect(target).toMatchObject({ label: 'Objetivo del mes', cents: null })
+    expect(sold).toMatchObject({ label: 'Vendido', cents: null })
+    expect(remaining).toMatchObject({ label: 'Falta vender', cents: null })
   })
 
-  it('un día sin cargar nunca es un cero: no se llena ni dice «$ 0»', () => {
-    const { cells } = almanac(source(), { booksStartDate: '2026-10-01' })
-    for (const cell of cells) {
-      expect(cell.fill ?? null).toBeNull()
-      expect(`${cell.value ?? ''} ${cell.valueShort ?? ''} ${cell.label}`).not.toMatch(/\$\s?0\b/)
-    }
-    expect(cells.filter((c) => c.state === 'missing').every((c) => c.value === 'falta')).toBe(true)
-  })
-
-  it('tocar un día que falta lo carga en un toque; a quien solo mira no lo lleva a ningún lado', () => {
-    const owner = almanac(source(), { canWrite: true }).cell('2026-10-08')
-    expect(owner.href).toBe(`${BASE}/ventas/cierre?fecha=2026-10-08`)
-    expect(owner.label).toBe('Jueves 8 de octubre: falta el cierre. Abre la carga de ese día.')
-    const reader = almanac(source(), { canWrite: false }).cell('2026-10-08')
-    expect(reader.href).toBeUndefined()
-    expect(reader.label).toBe('Jueves 8 de octubre: falta el cierre.')
-  })
-
-  it('una noche cargada: la venta neta, su cumplimiento, su relleno y la raya del objetivo', () => {
-    const rows = source((day) =>
-      day === '2026-10-07'
-        ? {
-            closes: 1,
-            salonCents: 120_074_600,
-            salonCommissionCents: 6_271_700,
-            targetCents: 123_700_000,
-          }
-        : day === '2026-10-09'
-          ? { closes: 1, salonCents: 200_000_000, targetCents: 150_000_000 }
-          : {},
-    )
-    const { cell } = almanac(rows, { events: { '2026-10-07': ['Noche de tacos'] } })
-    const night = cell('2026-10-07')
-    expect(night.state).toBe('loaded')
-    expect(night.value).toBe(`$${NB}1.138.029`)
-    expect(night.valueShort).toBe(`1,1${NB}M`)
-    expect(night.badge).toEqual({ text: '92 %', tone: 'warn', glyph: 'down' })
-    expect(night.dot).toBe(true)
-    expect(night.note).toBe('Noche de tacos')
-    expect(night.label).toBe(
-      `Miércoles 7 de octubre: $${NB}1.138.029, sin las comisiones estimadas. 92 % del objetivo. Noche de tacos.`,
-    )
-    // Elegir una noche es un `?dia=`: no la abre en otra pantalla.
-    expect(night.href).toBe(`${BASE}/ventas?dia=2026-10-07`)
-    // Misma escala para el relleno y la raya: el tope es la venta más alta del mes.
-    expect(night.fill).toBeCloseTo(113_802_900 / 200_000_000, 5)
-    expect(night.marker).toBeCloseTo(123_700_000 / 200_000_000, 5)
-    // La noche que pasó su objetivo se llena por encima de su raya.
-    const best = cell('2026-10-09')
-    expect(best.badge).toEqual({ text: '133 %', tone: 'ok', glyph: 'up' })
-    expect(best.fill).toBe(1)
-    expect((best.fill ?? 0) > (best.marker ?? 1)).toBe(true)
-  })
-
-  it('una noche chica igual se ve: el relleno mínimo es 6 %', () => {
-    const rows = source((day) =>
-      day === '2026-10-02'
-        ? { closes: 1, salonCents: 100_000 }
-        : day === '2026-10-03'
-          ? { closes: 1, salonCents: 900_000_000 }
-          : {},
-    )
-    expect(almanac(rows).cell('2026-10-02').fill).toBe(0.06)
-  })
-
-  it('una noche cargada en cero dice su cero, pero no se llena', () => {
-    const rows = source((day) => (day === '2026-10-02' ? { closes: 1 } : {}))
-    const cell = almanac(rows).cell('2026-10-02')
-    expect(cell.state).toBe('loaded')
-    expect(cell.value).toBe(`$${NB}0`)
-    expect(cell.fill ?? null).toBeNull()
-  })
-
-  it('hoy y los días por venir muestran su objetivo, si lo tienen', () => {
-    const rows = source((day) => (day >= '2026-10-13' ? { targetCents: 150_000_000 } : {}))
-    const { cell } = almanac(rows, { month: '2026-10' })
-    expect(cell('2026-10-13').caption).toBe(`obj. $${NB}1,5${NB}M`)
-    expect(cell('2026-10-13').value).toBe('hoy')
-    expect(cell('2026-10-20').caption).toBe(`obj. $${NB}1,5${NB}M`)
-    // Con un mes en la URL, se conserva al elegir el día.
-    expect(cell('2026-10-20').href).toBe(`${BASE}/ventas?mes=2026-10&dia=2026-10-20`)
-  })
-
-  it('la raya del objetivo va solo en las noches cargadas: nunca sobre «hoy», lo que viene ni lo que falta', () => {
-    const rows = source((day) =>
-      day === '2026-10-09'
-        ? { closes: 1, salonCents: 200_000_000, targetCents: 150_000_000 }
-        : { targetCents: 150_000_000 },
-    )
-    const { cell } = almanac(rows)
-    expect(cell('2026-10-09').marker).toBeCloseTo(150_000_000 / 200_000_000, 5)
-    // Falta el cierre, hoy y un día que viene: el objetivo se dice con palabras (o nada), sin raya.
-    for (const date of ['2026-10-08', '2026-10-13', '2026-10-20']) {
-      expect(cell(date).marker ?? null).toBeNull()
-    }
-    expect(cell('2026-10-20').caption).toBe(`obj. $${NB}1,5${NB}M`)
-  })
-
-  it('quien no lee el calendario no ve los eventos, pero sí las notas', () => {
-    const rows = source((day) => (day === '2026-10-20' ? { note: '2x1 burger' } : {}))
-    const { cell } = almanac(rows, { events: null })
-    expect(cell('2026-10-20').dot).toBe(true)
-    expect(cell('2026-10-20').note).toBe('2x1 burger')
-    expect(cell('2026-10-21').dot).toBe(false)
-  })
-
-  it('marca la noche elegida, y solo esa', () => {
-    const { cells } = almanac(source(), { selected: '2026-10-20' })
-    expect(cells.filter((c) => c.selected).map((c) => c.date)).toEqual(['2026-10-20'])
-  })
-})
-
-describe('cellAmount y cellShort: el importe entra en el casillero', () => {
-  it('hasta $ 9.999.999 va entero; desde $ 10 M, abreviado', () => {
-    expect(cellAmount(113_802_900)).toBe(`$${NB}1.138.029`)
-    expect(cellAmount(999_999_900)).toBe(`$${NB}9.999.999`)
-    expect(cellAmount(1_000_000_000)).toBe(`$${NB}10${NB}M`)
-    expect(cellAmount(1_240_000_000)).toBe(`$${NB}12,4${NB}M`)
-  })
-
-  it('nueve cifras no desbordan: siete caracteres como mucho en el celular', () => {
-    expect(cellAmount(12_345_678_900)).toBe(`$${NB}123,5${NB}M`)
-    expect(cellShort(12_345_678_900)).toBe(`123,5${NB}M`)
-    expect(cellShort(12_345_678_900).length).toBeLessThanOrEqual(7)
-    expect(cellShort(113_802_900)).toBe(`1,1${NB}M`)
-  })
-
-  it('en el celular, debajo del millón va en miles, como lo dice el dueño: «806 mil», no «0,8 M»', () => {
-    expect(cellShort(80_579_400)).toBe(`806${NB}mil`)
-    expect(cellShort(71_631_600)).toBe(`716${NB}mil`)
-    expect(cellShort(10_000_000)).toBe(`100${NB}mil`)
-    expect(cellShort(8_500_000)).toBe(`85${NB}mil`)
-    // Desde $ 999.500 ya es «1 M».
-    expect(cellShort(99_999_999)).toBe(`1${NB}M`)
-    // Tres cifras y su unidad: siete caracteres como mucho.
-    for (const cents of [10_000_000, 55_500_000, 99_940_000]) {
-      expect(cellShort(cents).length).toBeLessThanOrEqual(7)
-    }
-  })
-
-  it('el almanaque chico del asistente sigue en millones: su casillero mide 30 px', () => {
-    expect(cellMillions(80_579_400)).toBe(`0,8${NB}M`)
-    expect(cellMillions(10_000_000)).toBe(`0,1${NB}M`)
-    expect(cellMillions(97_000_000)).toBe(`1${NB}M`)
-    expect(cellMillions(113_802_900)).toBe(`1,1${NB}M`)
-    expect(cellMillions(8_500_000)).toBe(`85${NB}mil`)
-    for (const cents of [10_000_000, 55_500_000, 99_999_999]) {
-      expect(cellMillions(cents).length).toBeLessThanOrEqual(5)
-    }
-  })
-
-  it('cero y lo que no es un número', () => {
-    expect(cellAmount(0)).toBe(`$${NB}0`)
-    expect(cellShort(0)).toBe('0')
-    expect(cellAmount(Number.NaN)).toBe('')
-    expect(cellShort(Number.POSITIVE_INFINITY)).toBe('')
-  })
-})
-
-describe('«A hoy» contra lo cargado: cuando hoy todavía falta el cierre de anoche', () => {
-  /** Octubre con objetivo de $ 1.000.000 por noche y cierres hasta el `closedBefore` (sin incluirlo). */
-  function month(closedBefore: string, salonCents: number) {
+  it('objetivo del mes, lo vendido (la venta neta) y lo que falta', () => {
     const rows = source((day) => ({
       targetCents: 100_000_000,
-      ...(day < closedBefore ? { closes: 1, salonCents } : {}),
+      ...(closed(day)
+        ? { closes: 1, salonCents: 100_000_000, salonCommissionCents: 5_000_000 }
+        : {}),
     }))
-    return buildProjection(rows, { serviceDay: TODAY })
-  }
+    const [target, sold, remaining] = totals(rows)
+    expect(target).toMatchObject({ cents: 3_100_000_000 })
+    expect(sold).toMatchObject({ cents: 380_000_000, tone: 'ok' })
+    expect(remaining).toMatchObject({ label: 'Falta vender', cents: 2_720_000_000 })
+  })
 
-  it('con lo cargado vas arriba, pero «a hoy» cuenta una noche sin cierre y te da abajo', () => {
-    // Cierres del 1 al 11 de $ 1.040.000; falta el del 12. A hoy (el 12) se cuentan 12 objetivos.
-    const projection = month('2026-10-12', 104_000_000)
-    expect(projection.summary.pace).toMatchObject({ side: 'below', gapPercent: 5 })
-    const stale = staleTarget(projection)
-    expect(stale).toMatchObject({
-      lastLoaded: '2026-10-11',
-      missing: ['2026-10-12'],
-      loadedPace: { side: 'above', gapPercent: 4 },
+  it('debajo del objetivo del mes, el objetivo a hoy: el mismo número que pidieron los socios', () => {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(closed(day) ? { closes: 1, salonCents: 100_000_000 } : {}),
+    }))
+    // Hasta el 12 (hoy es el 13 y todavía no tiene cierre): 12 días de $ 1.000.000.
+    expect(totals(rows)[0]?.hint).toBe(`Objetivo a hoy $${NB}12.000.000`)
+  })
+
+  it('un mes terminado habla en pasado y no tiene «a hoy»', () => {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(closed(day) ? { closes: 1, salonCents: 100_000_000 } : {}),
+    }))
+    const projection = buildProjection(rows, { serviceDay: '2026-11-04' })
+    const [target, , remaining] = planillaTotals(projection.summary, { hasCloses: true })
+    expect(target?.hint).toBeUndefined()
+    expect(remaining?.label).toBe('Faltó vender')
+  })
+
+  it('pasado el objetivo, el tercer número dice por cuánto', () => {
+    const rows = source((day) => ({
+      targetCents: day === '2026-10-01' ? 100_000_000 : null,
+      ...(day === '2026-10-01' ? { closes: 1, salonCents: 150_000_000 } : {}),
+    }))
+    expect(totals(rows)[2]).toMatchObject({
+      label: 'Arriba del objetivo',
+      cents: 50_000_000,
+      tone: 'ok',
     })
-    if (!stale) throw new Error('sin puente')
-    expect(staleSentence(stale)).toBe(
-      `Con lo cargado hasta el dom 11/10 vas 4${NB}% arriba. Falta el cierre del lun 12/10: el objetivo a hoy ya cuenta esa noche, por eso te da 5${NB}% abajo.`,
+  })
+
+  it('la suma de los renglones es el número de arriba', () => {
+    const rows = source((day) =>
+      closed(day) ? { closes: 1, salonCents: 90_000_000, deliveryCents: 10_000_000 } : {},
     )
-    expect(staleNote(stale)).toBe('Cuenta el lun 12/10, que todavía no tiene cierre.')
-  })
-
-  it('con varias noches sin cierre, las cuenta', () => {
-    const stale = staleTarget(month('2026-10-07', 104_000_000))
-    expect(stale?.missing).toHaveLength(6)
-    if (!stale) throw new Error('sin puente')
-    expect(staleSentence(stale)).toContain('Faltan 6 cierres, desde el mié 07/10')
-    expect(staleSentence(stale)).toContain('ya cuenta esas noches')
-    expect(staleNote(stale)).toBe('Cuenta 6 noches que todavía no tienen cierre.')
-  })
-
-  it('con todo cargado hasta ayer no hay nada que explicar', () => {
-    expect(staleTarget(month('2026-10-13', 104_000_000))).toBeNull()
-    // Sin objetivos, tampoco.
-    const rows = source((day) => (day < '2026-10-12' ? { closes: 1, salonCents: 100 } : {}))
-    expect(staleTarget(buildProjection(rows, { serviceDay: TODAY }))).toBeNull()
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const sum = projection.days.reduce((total, d) => total + (d.hasClose ? d.netCents : 0), 0)
+    expect(projection.summary.soldCents).toBe(sum)
+    const days = monthDays(projection, { booksStartDate: '2026-10-01' })
+    expect(days.days.filter((d) => d.state === 'loaded')).toHaveLength(4)
   })
 })
 
-describe('la pastilla de la noche y el «%» pegado a su número', () => {
+describe('la noche', () => {
   it('la pastilla dice una sola cosa', () => {
     expect(nightPaceText({ kind: 'value', percent: 84, side: 'below', gapPercent: 16 })).toBe(
       `16${NB}% abajo del objetivo`,
@@ -370,58 +360,7 @@ describe('la pastilla de la noche y el «%» pegado a su número', () => {
     )
   })
 
-  it('«vas 4 %» no se parte: el espacio antes del «%» es duro', () => {
-    expect(keepPercent('Hasta el lun 12/10: vas 4 % abajo.')).toBe(
-      `Hasta el lun 12/10: vas 4${NB}% abajo.`,
-    )
-    expect(keepPercent('Sin porcentaje.')).toBe('Sin porcentaje.')
-  })
-})
-
-describe('defaultDay: qué noche se muestra al lado', () => {
-  const days = [
-    { date: '2026-10-10', state: 'loaded' as const },
-    { date: '2026-10-11', state: 'loaded' as const },
-    { date: '2026-10-12', state: 'missing' as const },
-    { date: '2026-10-13', state: 'today' as const },
-    { date: '2026-10-14', state: 'future' as const },
-  ]
-
-  it('sin pedir nada, la última noche cargada', () => {
-    expect(defaultDay({ requested: null, days })).toBe('2026-10-11')
-  })
-
-  it('el día pedido, si se puede elegir (cargado, hoy o por venir)', () => {
-    expect(defaultDay({ requested: '2026-10-10', days })).toBe('2026-10-10')
-    expect(defaultDay({ requested: '2026-10-13', days })).toBe('2026-10-13')
-    expect(defaultDay({ requested: '2026-10-14', days })).toBe('2026-10-14')
-  })
-
-  it('un día que falta, de otro mes o roto se ignora', () => {
-    expect(defaultDay({ requested: '2026-10-12', days })).toBe('2026-10-11')
-    expect(defaultDay({ requested: '2026-09-30', days })).toBe('2026-10-11')
-    expect(defaultDay({ requested: 'cualquiera', days })).toBe('2026-10-11')
-  })
-
-  it('un mes sin ninguna noche no elige nada; uno que no empezó abre en su día 1', () => {
-    expect(
-      defaultDay({ requested: null, days: [{ date: '2026-10-12', state: 'missing' }] }),
-    ).toBeNull()
-    expect(defaultDay({ requested: null, days: [] })).toBeNull()
-    expect(
-      defaultDay({
-        requested: null,
-        days: [
-          { date: '2026-11-01', state: 'future' },
-          { date: '2026-11-02', state: 'future' },
-        ],
-      }),
-    ).toBe('2026-11-01')
-  })
-})
-
-describe('longDayTitle', () => {
-  it('«Miércoles 7 de octubre»', () => {
+  it('el título: «Miércoles 7 de octubre»', () => {
     expect(longDayTitle('2026-10-07')).toBe('Miércoles 7 de octubre')
     expect(longDayTitle('2026-13-40')).toBe('')
   })
@@ -509,14 +448,11 @@ describe('Mercado Pago va aparte, no como plata atrasada', () => {
   it('su renglón dice que falta contarla, no cuántos días lleva tarde', () => {
     const mp = rows[1]
     if (!mp) throw new Error('falta la fila')
-    expect(receivableRail(mp, { today: TODAY, wallet: true })).toEqual({
+    expect(receivableArrival(mp, { today: TODAY, wallet: true })).toEqual({
       kind: 'wallet',
-      unit: 'sin contar',
-      tone: 'muted',
+      text: 'Falta contarla',
+      note: null,
     })
-    expect(receivableMeta(mp, { today: TODAY, walletName: 'Mercado Pago' })).toBe(
-      'Ya está en tu Mercado Pago: contala para anotarlo',
-    )
   })
 
   it('los tramos nunca suman más que la deuda, aunque la base traiga de más', () => {

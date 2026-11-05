@@ -7,8 +7,8 @@ import {
   methodsWithoutCommission,
   methodsWithPartyOff,
   type PartyFacts,
+  portadaRows,
   sasMissingFields,
-  TILE_ORDER,
   TILE_UNKNOWN,
   type TileState,
   type TreasuryFacts,
@@ -18,13 +18,15 @@ import {
   tileMethods,
   tileSalesPoints,
   tileSas,
+  tileTaxes,
   tileTreasuries,
 } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_lib/portada'
+import type { TaxSettings } from '@/lib/accounting/taxes'
 import type { PartyRates } from '@/lib/accounting/types'
 
 /**
- * La portada de Ajustes: qué dice cada uno de los seis objetos. El caso de base es HUB tal como
- * está hoy (recién arrancado, casi vacío): es lo primero que van a ver los socios.
+ * La portada de Ajustes: qué dice la fila de cada habitación. El caso de base es HUB tal como está
+ * hoy (recién arrancado, casi vacío): es lo primero que van a ver los socios.
  */
 
 const NO_RATES: PartyRates = {
@@ -440,8 +442,83 @@ describe('el vocabulario', () => {
       expect(text).not.toMatch(/\d\s+\d/)
     }
   })
+})
 
-  it('la portada tiene seis objetos, en su orden', () => {
-    expect(TILE_ORDER).toEqual(['accesos', 'cajas', 'medios', 'sas', 'puntos-de-venta', 'arca'])
+describe('Impuestos', () => {
+  const SETTINGS = { auto: true, iibbBp: 300, municipalBp: 70, bankTaxBp: 60, base: 'invoiced_net' }
+
+  it('los tres porcentajes en una oración, y si se calculan solos', () => {
+    const tile = tileTaxes(SETTINGS as TaxSettings)
+    expect(tile.sentence).toBe(
+      'Ingresos Brutos 3 %, Comercio e Industria 0,7 %, débitos y créditos 0,6 %.',
+    )
+    expect(tile.pill).toEqual({ tone: 'ok', text: 'Se calculan solos' })
+    expect(tileTaxes({ ...(SETTINGS as TaxSettings), auto: false }).pill).toEqual({
+      tone: 'muted',
+      text: 'No se calculan solos',
+    })
+  })
+
+  it('un dato que no cargó no es cero', () => {
+    expect(tileTaxes(null)).toEqual(TILE_UNKNOWN)
+    expect(tileTaxes(undefined)).toEqual(TILE_UNKNOWN)
+  })
+})
+
+describe('la lista de la portada', () => {
+  const BASE = '/hub/administracion'
+  const rows = (over: Partial<Parameters<typeof portadaRows>[0]> = {}) =>
+    portadaRows({
+      base: BASE,
+      catalog: null,
+      onboarding: undefined,
+      access: null,
+      showMembers: true,
+      ...over,
+    })
+
+  it('una fila por habitación, en su orden y con su link', () => {
+    expect(rows().map((r) => r.title)).toEqual([
+      'Datos de la SAS',
+      'Cuentas',
+      'Medios de cobro',
+      'Impuestos',
+      'Accesos',
+      'ARCA',
+      'Puntos de venta',
+      'Ejercicio',
+      'Integridad',
+    ])
+    expect(rows().find((r) => r.room === 'impuestos')?.href).toBe(`${BASE}/ajustes?tab=impuestos`)
+    expect(rows().find((r) => r.room === 'cajas')?.href).toBe(`${BASE}/ajustes?tab=cajas`)
+  })
+
+  it('una lectura que falló no tira la lista: esa fila lo dice y sigue llevando a su habitación', () => {
+    for (const row of rows()) {
+      if (row.room === 'ejercicio' || row.room === 'integridad') continue
+      expect(row.sentence, row.room).toBe('—')
+      expect(row.pill, row.room).toEqual(TILE_UNKNOWN.pill)
+      expect(row.href, row.room).toContain('/ajustes?tab=')
+    }
+  })
+
+  it('Ejercicio e Integridad no tienen un estado que contar: dicen para qué son', () => {
+    const ejercicio = rows().find((r) => r.room === 'ejercicio')
+    expect(ejercicio?.pill).toBeNull()
+    expect(ejercicio?.sentence).toContain('Los meses del año contable')
+    expect(rows().find((r) => r.room === 'integridad')?.pill).toBeNull()
+  })
+
+  it('con el estado de ARCA de su habitación, la fila dice lo mismo que ella', () => {
+    const row = rows({ arcaState: 'connected' }).find((r) => r.room === 'arca')
+    expect(row?.pill).toEqual({ tone: 'ok', text: 'Conectado' })
+  })
+
+  it('la contadora no ve la lista de socios: se cuenta a quienes entran', () => {
+    const access = people(3, 1, 2)
+    const owner = rows({ access }).find((r) => r.room === 'accesos')
+    expect(owner?.sentence).toBe('3 de 5 socios entran a Administración.')
+    const reader = rows({ access, showMembers: false }).find((r) => r.room === 'accesos')
+    expect(reader?.sentence).toBe('3 personas entran.')
   })
 })

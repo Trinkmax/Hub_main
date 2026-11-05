@@ -20,6 +20,10 @@
  * **Contra lo cargado a mano:** un gasto bancario del mismo día, la misma
  * cuenta y el mismo total ya cargado a mano → «Ya está cargado».
  *
+ * **Contra lo que anotó el sistema:** el impuesto al cheque que se calculó solo al
+ * pagar (`AUTO_BANK_TAX_NOTE`) se resta del de Ley 25.413 sobre débitos de ese día
+ * y esa cuenta: lo que queda se propone; si no queda nada, «Ya está cargado».
+ *
  * Puro.
  */
 
@@ -49,6 +53,7 @@ import {
   type ProposalDraft,
   partyByCuit,
   partyLabel,
+  remainingBankTax,
   type StagedItem,
   systemAccountId,
   systemParty,
@@ -261,6 +266,8 @@ export type BankDraftInput = {
   readonly pool: OpenItemPool
   /** Gastos bancarios cargados a mano en esta cuenta: `<día>:<total>`. */
   readonly manualExpenses: ReadonlySet<string>
+  /** Impuesto al cheque que el sistema ya anotó al pagar, en esta cuenta, por día (centavos). */
+  readonly autoBankTax?: ReadonlyMap<IsoDate, number>
   readonly postedTransfers: readonly PostedTransfer[]
   /** La billetera de Mercado Pago (para los créditos «desde Mercado Pago»). */
   readonly mpTreasuryId: string | null
@@ -873,6 +880,11 @@ function expenseDraft(
     else if (base !== undefined && amountAt(base) > 0) leyCredit += abs(c)
     else leyDebit += abs(c)
   }
+  // Lo que el sistema ya anotó al pagar no se vuelve a contar.
+  const taxLeft = remainingBankTax(leyDebit, input.autoBankTax?.get(day) ?? 0)
+  leyDebit = taxLeft.remainingCents
+  const taxNoted = taxLeft.notedCents
+  if (taxNoted > 0) notes.push('bank_tax_noted')
 
   const bankFees = systemAccountId(catalog, 'bank_fees')
   const interestAccount = systemAccountId(catalog, 'interest_expense')
@@ -907,6 +919,7 @@ function expenseDraft(
         vat_perception_cents: perc,
         ley25413_credit_cents: leyCredit,
         ley25413_debit_cents: leyDebit,
+        ley25413_noted_cents: taxNoted,
         sircreb_cents: sircreb,
         interest_cents: interest,
         other_cents: others.reduce((a, o) => a + o.amountCents, 0),
@@ -916,6 +929,23 @@ function expenseDraft(
     input.decisions(key),
   )
   const itemIds = list.map((c) => c.s.id)
+  // Todo el gasto del día era el impuesto que ya estaba: no hay nada para proponer. La hoja muestra
+  // lo que traía el extracto, para que se vea qué se salteó.
+  if (total === 0 && taxNoted > 0) {
+    return {
+      key,
+      form: 'bank_expense',
+      values: null,
+      itemIds,
+      needs: [],
+      summary: {
+        ...summary,
+        total_cents: taxNoted,
+        detail: { ...summary.detail, ley25413_debit_cents: taxNoted },
+      },
+      skip: { reason: 'already_loaded', date: day },
+    }
+  }
   if (input.manualExpenses.has(`${day}:${total}`)) {
     return {
       key,

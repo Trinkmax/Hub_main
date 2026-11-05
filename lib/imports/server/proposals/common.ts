@@ -337,6 +337,30 @@ function firstField(fieldErrors: Record<string, string> | undefined): string | n
 }
 
 /**
+ * El contexto del motor para lo que viene de un archivo: el extracto ya trae su renglón de Ley 25.413
+ * y el reporte de Mercado Pago, su detalle. Si el motor calculara el impuesto al cheque de un pago
+ * importado (`withBankTax`), quedaría dos veces. El armado y el guardado tienen que usar el mismo: la
+ * vista previa y lo que se graba se comparan por su hash.
+ */
+export function importPostingContext(ctx: PostingContext): PostingContext {
+  const tax = ctx.settings.taxSettings
+  if (!tax?.auto) return ctx
+  return { ...ctx, settings: { ...ctx.settings, taxSettings: { ...tax, auto: false } } }
+}
+
+/**
+ * Cuánto del impuesto al cheque de un día queda para proponer, una vez descontado lo que el sistema
+ * ya anotó al pagar (`AUTO_BANK_TAX_NOTE`). Nunca da negativo: el banco puede redondear distinto.
+ */
+export function remainingBankTax(
+  debitCents: number,
+  autoCents: number,
+): { remainingCents: number; notedCents: number } {
+  const noted = Math.min(Math.max(0, autoCents), Math.max(0, debitCents))
+  return { remainingCents: debitCents - noted, notedCents: noted }
+}
+
+/**
  * Pasa el borrador por el mismo camino que la acción de guardar
  * (`previewDocumentForm`): zod del formulario → `build*` → vista previa → hash.
  *
@@ -377,7 +401,7 @@ export function evaluateDraft(
     const res = previewDocumentForm(
       draft.form,
       { ...draft.values, warningsAck: [...opts.warningsAck] },
-      ctx,
+      importPostingContext(ctx),
       { firstOpenDate: opts.firstOpenDate },
     )
     if (!res.ok) {

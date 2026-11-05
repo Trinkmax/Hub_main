@@ -1,52 +1,43 @@
-import { ArrowRight, CalendarRange, ChevronDown, CircleAlert, Percent } from 'lucide-react'
+import { ChevronDown, CircleAlert } from 'lucide-react'
 import Link from 'next/link'
-import { type ReactNode, Suspense, useId } from 'react'
+import { type ReactNode, Suspense } from 'react'
 import { Amount } from '@/components/administracion/amount'
-import { ChartFrame } from '@/components/administracion/charts/chart-frame'
-import { ChartSilhouette, ChartTable } from '@/components/administracion/charts/chart-parts'
-import { compactCents, pct } from '@/components/administracion/charts/scale'
-import { SplitBar } from '@/components/administracion/charts/split-bar'
+import { PanelLink } from '@/components/administracion/kit/panel-states'
 import {
-  AdmHeader,
-  AdmPage,
-  EmptyTeach,
-  HeroPanel,
-  MoneyHero,
-  Panel,
-  PanelLink,
-  StatusPill,
-} from '@/components/administracion/kit'
+  Planilla,
+  PlanillaFoot,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+} from '@/components/administracion/planilla'
+import { Stamp } from '@/components/administracion/planilla/stamp'
+import { Totalizer, type TotalizerItem } from '@/components/administracion/planilla/totalizer'
 import { ActionButton } from '@/components/administracion/quick-actions'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   exportHref,
   getDocument,
+  getIvaBookTotals,
   getIvaPosition,
   getSalesSummary,
+  type IvaBookTotals,
   type IvaPosition,
+  type QueryOutcome,
   settleQuery,
   vatRateLabel,
 } from '@/lib/accounting/queries'
 import { formatDate, formatIsoDay, monthOf, todayInCordoba } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { PERIOD_ROW } from '../_components/book-page'
-import { BookSwitcher } from '../_components/book-switcher'
-import { ExportButton, ExportMenuButton } from '../_components/export-button'
+import { BookExport, BookPage, SLIDING_SHEET } from '../_components/book-page'
+import { IvaTabs } from '../_components/iva-tabs'
 import { MonthPicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
 import { loadBookContext } from '../_lib/book-context'
-import { ivaExpectedFrom, rateRows } from '../_lib/iva'
-import {
-  ivaCoverBar,
-  ivaHero,
-  ivaNothingLoaded,
-  ivaOneSidedSentence,
-  ivaTrendRows,
-  ivaTrendTitle,
-} from '../_lib/iva-story'
+import { ivaExpectedFrom, ivaSummary, rateRows } from '../_lib/iva'
+import { ivaHero, ivaNothingLoaded, ivaTrendRows } from '../_lib/iva-story'
 import { monthNoun, monthPeriods, monthTitle } from '../_lib/months'
 import { requireBooksAccess } from '../_lib/page-access'
 import {
@@ -57,22 +48,16 @@ import {
 } from '../_lib/periods'
 import { RegisterSettlementButton } from './_components/register-settlement'
 
-export const metadata = { title: 'Posición de IVA' }
+export const metadata = { title: 'IVA' }
 
-/** Cuántos meses entran en «El IVA mes a mes». */
+/** Cuántos meses entran en «Mes a mes». */
 const TREND_MONTHS = 6
 
 /**
- * «El IVA del mes»: la cuenta del IVA contada para un socio. Arriba, el número
- * con su oración y, al lado, la acción del momento («Pagar a ARCA», «Ir al fin
- * de mes»); después, de dónde sale (una barra: lo que cobraste, lo que ya
- * tenías cubierto y lo que falta), lo que va sin factura y cómo viene mes a
- * mes. Al final, plegado para el dueño y abierto para la contadora, el control
- * contra los libros.
- *
- * Para la contadora es la «Posición de IVA» de siempre: ve la cascada completa
- * («Ver como tabla» abierta de entrada), la conciliación y exporta. Los números
- * salen de la misma posición que el exporte (pantalla = CSV).
+ * La solapa IVA: Débito · Crédito · Retenciones · A pagar, los dos libros con «Ver» y «Excel», y lo
+ * que se hace con el IVA del mes (pagarlo, anotarlo, ir al cierre). Abajo, plegado, lo que no se usa
+ * todos los días: la cuenta completa, la conciliación con el mayor y cómo viene mes a mes. Para la
+ * contadora van abiertos: vino a eso. Los números salen de la misma posición que el exporte.
  */
 export default async function PosicionIvaPage({
   params,
@@ -96,9 +81,13 @@ export default async function PosicionIvaPage({
   const ctx = await loadBookContext(tenantId, today)
   const availability = monthAvailability(month.month, today, ctx.settings?.booksStartDate)
   const load = resolved.ok && availability === 'ok'
-  const [position, sales] = await Promise.all([
+  const [position, sales, purchasesBook, salesBook] = await Promise.all([
     load ? settleQuery(getIvaPosition(tenantId, month.month)) : null,
     load ? settleQuery(getSalesSummary(tenantId, { from: month.from, to: month.to })) : null,
+    load
+      ? settleQuery(getIvaBookTotals(tenantId, { book: 'purchases', month: month.month }))
+      : null,
+    load ? settleQuery(getIvaBookTotals(tenantId, { book: 'sales', month: month.month })) : null,
   ])
   const p = position?.ok ? position.data : null
 
@@ -117,146 +106,127 @@ export default async function PosicionIvaPage({
   const name = monthTitle(month.month)
   const hero = p ? ivaHero(p, month.month) : null
   const nothing = Boolean(p?.applies && p.isZero && ivaNothingLoaded(p))
-  // Los meses con libros hasta hoy, para «El IVA mes a mes».
+  // Los meses con libros hasta hoy, para «Mes a mes».
   const trendMonths = monthPeriods(ctx.years.flatMap((y) => y.periods))
     .filter((period) => period.startsOn <= today)
     .map((period) => monthOf(period.month))
     .slice(-TREND_MONTHS)
 
-  const exportItem =
-    hasCuit && availability === 'ok'
-      ? {
-          href: exportHref(tenantSlug, 'posicion-iva', { mes: month.month }),
-          fileName: `administracion-${tenantSlug}-posicion-iva-${month.month}.csv`,
-        }
-      : null
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={{ href: bookHref(books, { mes: month.month }), label: 'Libros' }}
-        title={`El IVA de ${noun}`}
-        // En el celular el lugar de «Exportar» queda vacío (8 + 16 px): se descuenta del margen.
-        className={exportItem ? 'max-sm:mb-2' : undefined}
-        description="Posición de IVA · es una estimación: la declaración la presenta tu contadora."
-        badge={
-          <>
-            <ReadOnlyBadge className="ml-0" />
-            {p ? (
-              <StatusPill tone={p.status === 'open' ? 'info' : 'ok'}>
-                {p.status === 'open'
-                  ? 'Mes abierto: puede cambiar'
-                  : `Cerrado${p.closedAt ? ` el ${formatDate(p.closedAt)}` : ''}`}
-              </StatusPill>
-            ) : null}
-            {/* En el celular «Exportar» es un ícono en esta línea, como en los demás libros. */}
-            {exportItem ? (
-              <span className="ml-auto flex shrink-0 items-center sm:hidden">
-                <ExportMenuButton items={[exportItem]} />
-              </span>
-            ) : null}
-          </>
-        }
-        actions={
-          exportItem ? (
-            <div className="contents max-sm:hidden">
-              <ExportButton href={exportItem.href} fileName={exportItem.fileName} />
-            </div>
-          ) : null
-        }
-      />
-
-      {/* La fila «entre libros» es herramienta de la contadora: al dueño no se le suma. */}
-      {canWrite ? null : (
-        <BookSwitcher
-          booksPath={books}
-          active="posicion-iva"
-          period={{ kind: 'month', month: month.month, from: month.from, to: month.to }}
-        />
-      )}
-      <MonthPicker
-        month={month.month}
-        today={today}
-        minMonth={ctx.minMonth}
-        className={PERIOD_ROW}
-      />
-
+    <BookPage
+      title={`El IVA de ${noun}`}
+      toolbar={
+        <>
+          <IvaTabs booksPath={books} month={month.month} active="posicion-iva" />
+          <MonthPicker month={month.month} today={today} minMonth={ctx.minMonth} />
+        </>
+      }
+      aside={
+        p ? (
+          p.status === 'open' ? (
+            <Stamp tone="warn">Mes abierto</Stamp>
+          ) : (
+            <Stamp>Cerrado{p.closedAt ? ` · ${formatDate(p.closedAt)}` : ''}</Stamp>
+          )
+        ) : null
+      }
+      exports={
+        hasCuit && availability === 'ok'
+          ? [
+              {
+                href: exportHref(tenantSlug, 'posicion-iva', { mes: month.month }),
+                fileName: `administracion-${tenantSlug}-posicion-iva-${month.month}.csv`,
+              },
+            ]
+          : undefined
+      }
+    >
       {!resolved.ok ? <PeriodError message={resolved.message} /> : null}
       {availability !== 'ok' ? (
-        <EmptyTeach
-          icon={CalendarRange}
-          title={monthAvailabilityMessage(availability, month.month, ctx.settings?.booksStartDate)}
-        >
-          Elegí otro mes con las flechas de arriba.
-        </EmptyTeach>
+        <Planilla>
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {monthAvailabilityMessage(availability, month.month, ctx.settings?.booksStartDate)}{' '}
+            Elegí otro mes con las flechas de arriba.
+          </p>
+        </Planilla>
       ) : null}
       {position && !position.ok ? (
         <QueryErrorBlock code={position.code} message={position.message} />
       ) : null}
 
       {p && hero && !p.applies ? (
-        <EmptyTeach icon={Percent} title={hero.kind === 'not_registered' ? hero.title : ''}>
-          {hero.kind === 'not_registered' ? hero.sentence : null}
-        </EmptyTeach>
+        <Planilla>
+          <div className="grid gap-1 px-3 py-6 text-center text-sm text-pretty">
+            <p className="font-medium">{hero.kind === 'not_registered' ? hero.title : ''}</p>
+            <p className="text-muted-foreground">
+              {hero.kind === 'not_registered' ? hero.sentence : null}
+            </p>
+          </div>
+        </Planilla>
       ) : null}
 
       {p?.applies && nothing && p.status === 'open' ? (
-        <EmptyTeach
-          icon={Percent}
-          title={`${name} todavía no tiene IVA`}
-          illustration={<ChartSilhouette kind="split" />}
-          action={
-            canWrite ? (
-              <Button asChild className="h-11">
-                <Link href={`${base}/ventas/cierre`}>Cargar el cierre del día</Link>
-              </Button>
-            ) : undefined
-          }
-          secondary={
-            canWrite ? (
-              <PanelLink href={`${base}/compras/nueva`}>Cargar una compra que debo</PanelLink>
-            ) : undefined
-          }
-        >
-          Aparece solo: suma cuando cargás ventas con factura en el cierre del día y resta cuando
-          cargás compras con Factura A. Lo que va sin factura queda registrado igual y no mueve esta
-          cuenta.
-        </EmptyTeach>
+        <Planilla>
+          <div className="grid justify-items-center gap-3 px-3 py-6 text-center text-sm">
+            <div className="grid max-w-prose gap-1 text-pretty">
+              <p className="font-medium">{name} todavía no tiene IVA</p>
+              <p className="text-muted-foreground">
+                Suma cuando cargás ventas con factura en el cierre del día y resta cuando cargás
+                compras con Factura A. Lo que va sin factura queda registrado igual y no mueve esta
+                cuenta.
+              </p>
+            </div>
+            {canWrite ? (
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+                <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
+                  <Link href={`${base}/ventas/cierre`}>Cargar el cierre del día</Link>
+                </Button>
+                <PanelLink href={`${base}/compras/nueva`}>Cargar una compra que debo</PanelLink>
+              </div>
+            ) : null}
+          </div>
+        </Planilla>
       ) : null}
 
       {p?.applies && hero && !(nothing && p.status === 'open') ? (
         <>
-          <HeroPanel tone="crema" className="grid gap-6 lg:grid-cols-12 lg:items-center">
-            <div className="space-y-3 lg:col-span-7">
-              {hero.cents !== null ? (
-                <MoneyHero
-                  size="xl"
-                  animate
-                  cents={hero.cents}
-                  label={hero.label}
-                  sentence={hero.sentence}
+          <Totalizer items={positionTotals(p)} />
+
+          <Planilla className={SLIDING_SHEET}>
+            <PTable minWidth={560} label={`Los libros de IVA de ${noun}`}>
+              <thead>
+                <tr>
+                  <PTh>Libro</PTh>
+                  <PTh align="right">Comprobantes</PTh>
+                  <PTh align="right">Neto</PTh>
+                  <PTh align="right">IVA</PTh>
+                  <PTh>
+                    <span className="sr-only">Acciones</span>
+                  </PTh>
+                </tr>
+              </thead>
+              <tbody>
+                <BookRow
+                  name="IVA Compras"
+                  slug="iva-compras"
+                  book={purchasesBook}
+                  books={books}
+                  month={month.month}
+                  tenantSlug={tenantSlug}
+                  hasCuit={hasCuit}
                 />
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    IVA de {noun}
-                  </p>
-                  <p className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance sm:text-3xl">
-                    {hero.title}
-                  </p>
-                </div>
-              )}
-              <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-sm text-muted-foreground">
-                {p.status === 'open' ? (
-                  <>
-                    <StatusPill tone="info">Estimado</StatusPill>
-                    Lo confirma la contadora.
-                  </>
-                ) : (
-                  <StatusPill tone="muted">Mes cerrado</StatusPill>
-                )}
-              </p>
-            </div>
-            <div className="border-t border-border/60 pt-5 lg:col-span-5 lg:border-l lg:border-t-0 lg:pt-0 lg:pl-6">
+                <BookRow
+                  name="IVA Ventas"
+                  slug="iva-ventas"
+                  book={salesBook}
+                  books={books}
+                  month={month.month}
+                  tenantSlug={tenantSlug}
+                  hasCuit={hasCuit}
+                />
+              </tbody>
+            </PTable>
+            <PlanillaFoot>
               <MomentAction
                 position={p}
                 base={base}
@@ -265,48 +235,36 @@ export default async function PosicionIvaPage({
                 month={month.month}
                 payLineId={payLine?.id ?? null}
               />
-            </div>
-          </HeroPanel>
-
-          <HowItAdds
-            position={p}
-            month={month.month}
-            base={base}
-            asTable={!canWrite}
-            sales={sales?.ok ? sales.data : null}
-          />
+            </PlanillaFoot>
+          </Planilla>
 
           {p.pendingDocumentationCents > 0 ? (
-            <div className="card-hairline flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:p-5">
-              <p className="flex min-w-0 flex-wrap items-start gap-x-2.5 gap-y-1.5 text-sm text-pretty">
-                <StatusPill tone="info">Aviso</StatusPill>
-                <span className="min-w-0 flex-1 basis-64">
-                  Te descontaron{' '}
-                  <span className="font-semibold tabular-nums">
-                    {formatCentsShort(p.pendingDocumentationCents)}
-                  </span>{' '}
-                  de IVA en comisiones y falta la factura de la tarjeta o de la app. Se suma a tu
-                  favor cuando la cargás.
-                </span>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+              <p className="min-w-0 flex-1 basis-64 text-pretty">
+                Te descontaron{' '}
+                <span className="font-semibold tabular-nums">
+                  {formatCentsShort(p.pendingDocumentationCents)}
+                </span>{' '}
+                de IVA en comisiones y falta la factura de la tarjeta o de la app. Se suma a tu
+                favor cuando la cargás.
               </p>
               {canWrite ? (
-                <Button asChild variant="outline" className="h-11 shrink-0 md:pointer-fine:h-9">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="h-11 shrink-0 md:pointer-fine:h-8"
+                >
                   <Link href={`${base}/compras/nueva`}>Cargar la factura</Link>
                 </Button>
               ) : null}
             </div>
           ) : null}
 
-          {trendMonths.length >= 2 ? (
-            <Suspense fallback={<TrendSkeleton />}>
-              <Trend tenantId={tenantId} months={trendMonths} path={path} selected={month.month} />
-            </Suspense>
-          ) : null}
-
           {!p.reconciliation.fullyExplained ? (
             <div
               role="alert"
-              className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+              className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
               <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
               <p className="text-pretty">
@@ -317,20 +275,153 @@ export default async function PosicionIvaPage({
             </div>
           ) : null}
 
-          <Reconciliation position={p} base={base} open={!canWrite} />
+          <Fold title="La cuenta completa" open={!canWrite}>
+            <Cascade position={p} month={month.month} />
+          </Fold>
+
+          <Fold
+            title="Conciliación con los libros"
+            open={!canWrite}
+            aside={
+              p.reconciliation.matches ? (
+                <Stamp>Coinciden</Stamp>
+              ) : (
+                <Stamp tone="warn">Hay diferencias</Stamp>
+              )
+            }
+          >
+            <Reconciliation position={p} base={base} />
+          </Fold>
+
+          <Fold title="Lo que va sin factura">
+            <WithoutInvoice noun={noun} sales={sales?.ok ? sales.data : null} base={base} />
+          </Fold>
+
+          {trendMonths.length >= 2 ? (
+            <Fold title="Mes a mes">
+              <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                <Trend
+                  tenantId={tenantId}
+                  months={trendMonths}
+                  path={path}
+                  selected={month.month}
+                />
+              </Suspense>
+            </Fold>
+          ) : null}
         </>
       ) : null}
-    </AdmPage>
+    </BookPage>
+  )
+}
+
+// ─── Los totales ─────────────────────────────────────────────────────────────
+
+/**
+ * Débito · Crédito · Retenciones · A pagar. Lo que el número no dice (lo que venía a favor, las
+ * percepciones) va abajo, en gris: sin eso, la resta a la vista no da.
+ */
+function positionTotals(p: IvaPosition): TotalizerItem[] {
+  const estimate = p.status === 'open' ? ' (estimado)' : ''
+  const carried = p.technicalBalancePrevCents + p.freeBalancePrevCents
+  const hint = carried !== 0 ? `Con ${formatCentsShort(carried)} del mes anterior` : undefined
+  return [
+    { label: 'Débito fiscal', cents: p.debitFiscal.totalCents },
+    { label: 'Crédito fiscal', cents: p.creditFiscal.totalCents },
+    {
+      label: 'Retenciones',
+      cents: p.withholdingsCents + p.perceptionsCents,
+      hint: p.perceptionsCents !== 0 ? 'Con las percepciones' : undefined,
+    },
+    p.inFavorCents > 0 && p.toPayCents === 0
+      ? { label: `A favor${estimate}`, cents: p.inFavorCents, tone: 'ok', hint }
+      : { label: `A pagar${estimate}`, cents: p.toPayCents, tone: 'warn', hint },
+  ]
+}
+
+/** Un libro: cuántos comprobantes, su neto y su IVA, y a un toque verlo o bajarlo. */
+function BookRow({
+  name,
+  slug,
+  book,
+  books,
+  month,
+  tenantSlug,
+  hasCuit,
+}: {
+  name: string
+  slug: 'iva-compras' | 'iva-ventas'
+  book: QueryOutcome<IvaBookTotals> | null
+  books: string
+  month: string
+  tenantSlug: string
+  hasCuit: boolean
+}) {
+  const totals = book?.ok ? book.data : null
+  const summary = totals ? ivaSummary(totals.amounts) : null
+  return (
+    <PRow>
+      <PTd className="font-medium">{name}</PTd>
+      <PTd align="right">{totals?.count ?? '—'}</PTd>
+      <PTd align="right">{summary ? <Amount cents={summary.netCents} decimals={0} /> : '—'}</PTd>
+      <PTd align="right">{summary ? <Amount cents={summary.vatCents} decimals={0} /> : '—'}</PTd>
+      <PTd align="right">
+        <span className="inline-flex items-center gap-1.5">
+          <Button asChild variant="outline" size="sm" className="h-11 md:pointer-fine:h-8">
+            <Link href={bookHref(`${books}/${slug}`, { mes: month })} aria-label={`Ver ${name}`}>
+              Ver
+            </Link>
+          </Button>
+          {hasCuit ? (
+            <BookExport
+              item={{
+                href: exportHref(tenantSlug, slug, { mes: month }),
+                fileName: `administracion-${tenantSlug}-${slug}-${month}.csv`,
+              }}
+            />
+          ) : null}
+        </span>
+      </PTd>
+    </PRow>
+  )
+}
+
+/** Lo que no se mira todos los días: plegado, adentro de su hoja. */
+function Fold({
+  title,
+  open = false,
+  aside,
+  children,
+}: {
+  title: string
+  open?: boolean
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <details
+      open={open}
+      className="group/fold overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 px-3 py-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronDown
+          aria-hidden
+          className="size-4 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-(--duration-fast) group-open/fold:rotate-0 motion-reduce:transition-none"
+        />
+        {title}
+        {aside ? <span className="ml-auto">{aside}</span> : null}
+      </summary>
+      <div className="border-t border-border/60 px-3 py-3">{children}</div>
+    </details>
   )
 }
 
 // ─── La acción del momento ───────────────────────────────────────────────────
 
 /**
- * Qué se puede hacer AHORA con el IVA de este mes. Son las mismas ramas de
- * siempre (mes cerrado o abierto · se anota al cerrar o a mano · al día o
- * viejo), una por una; cambian las palabras y que el botón va al lado del
- * número. La contadora no ve ningún botón.
+ * Qué se puede hacer AHORA con el IVA de este mes. Son las mismas ramas de siempre (mes cerrado o
+ * abierto · se anota al cerrar o a mano · al día o viejo), una por una. La contadora no ve ningún
+ * botón.
  */
 function MomentAction({
   position: p,
@@ -352,7 +443,6 @@ function MomentAction({
   const docLink = p.settlementDocumentId ? (
     <PanelLink href={`${base}/comprobantes/${p.settlementDocumentId}`}>
       {canWrite ? 'Ver cómo quedó anotado' : 'Ver la liquidación'}
-      <ArrowRight className="size-3.5" aria-hidden />
     </PanelLink>
   ) : null
 
@@ -371,7 +461,7 @@ function MomentAction({
         <ActionButton
           action="pagar"
           params={{ partida: payLineId }}
-          className="h-12 w-full px-5 text-base sm:w-auto"
+          className="h-11 md:pointer-fine:h-8"
         >
           Pagar a ARCA
         </ActionButton>
@@ -416,10 +506,9 @@ function MomentAction({
     text = 'Queda anotado solo cuando cerrás el mes.'
     if (canWrite) {
       primary = (
-        <Button asChild variant="outline" className="h-12 w-full gap-2 px-5 text-base sm:w-auto">
+        <Button asChild variant="outline" size="sm" className="h-11 md:pointer-fine:h-8">
           <Link href={bookHref(`${base}/libros/cierres`, { mes: month })}>
-            Ir al fin de mes
-            <ArrowRight className="size-4" aria-hidden />
+            Ir al cierre del mes
           </Link>
         </Button>
       )
@@ -429,18 +518,19 @@ function MomentAction({
   }
 
   return (
-    <div className="flex flex-col items-start gap-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        Qué hacer ahora
-      </p>
-      <p className="text-sm leading-relaxed text-pretty">{text}</p>
-      {primary}
-      {link}
-    </div>
+    <>
+      <p className="min-w-0 flex-1 basis-56 text-sm text-pretty">{text}</p>
+      {link || primary ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {link}
+          {primary}
+        </div>
+      ) : null}
+    </>
   )
 }
 
-// ─── «¿Cómo se calcula?» ─────────────────────────────────────────────────────
+// ─── La cuenta completa ──────────────────────────────────────────────────────
 
 type CascadeRow = {
   key: string
@@ -548,7 +638,7 @@ function Cascade({ position: p, month }: { position: IvaPosition; month: string 
   } else {
     result = (
       <tr>
-        <td colSpan={3} className="px-1 py-4 text-sm font-medium">
+        <td colSpan={3} className="px-1 py-3 text-sm font-medium">
           Sin IVA para pagar ni a favor.
         </td>
       </tr>
@@ -558,9 +648,10 @@ function Cascade({ position: p, month }: { position: IvaPosition; month: string 
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground text-pretty">
-        Primero el saldo técnico, después los pagos a cuenta y la libre disponibilidad (art. 24).
+        Primero el saldo técnico, después los pagos a cuenta y la libre disponibilidad (art. 24). Es
+        una estimación: la declaración la presenta la contadora.
       </p>
-      <table className="w-full max-w-2xl text-sm">
+      <table className="w-full max-w-2xl text-sm tabular-nums">
         <caption className="sr-only">Posición de IVA de {monthNoun(month)}</caption>
         <tbody>
           {rows.map((row) => (
@@ -568,21 +659,21 @@ function Cascade({ position: p, month }: { position: IvaPosition; month: string 
               key={row.key}
               className={cn(row.strong && 'border-t border-border/60 first:border-t-0')}
             >
-              <td
-                aria-hidden
-                className="w-6 py-2 pl-1 text-center text-muted-foreground tabular-nums"
-              >
+              <td aria-hidden className="w-6 py-1.5 pl-1 text-center text-muted-foreground">
                 {row.op ?? ''}
               </td>
               <td
-                className={cn('py-2 pr-3', row.sub ? 'pl-4 text-muted-foreground' : 'font-medium')}
+                className={cn(
+                  'py-1.5 pr-3',
+                  row.sub ? 'pl-4 text-muted-foreground' : 'font-medium',
+                )}
               >
                 {row.opText ? <span className="sr-only">{row.opText} </span> : null}
                 {row.label}
               </td>
               <td
                 className={cn(
-                  'py-2 pr-1 text-right',
+                  'py-1.5 pr-1 text-right',
                   row.sub ? 'text-muted-foreground' : 'font-medium',
                 )}
               >
@@ -591,7 +682,7 @@ function Cascade({ position: p, month }: { position: IvaPosition; month: string 
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t-[3px] border-double border-border">{result}</tfoot>
+        <tfoot className="adm-double-rule">{result}</tfoot>
       </table>
     </div>
   )
@@ -600,142 +691,17 @@ function Cascade({ position: p, month }: { position: IvaPosition; month: string 
 function ResultRow({ label, cents, hint }: { label: string; cents: number; hint?: string }) {
   return (
     <tr>
-      {/* Arriba y con el alto de línea del título: el «=» va con «A favor», no entre las dos líneas. */}
-      <td
-        aria-hidden
-        className="w-6 py-4 pl-1 text-center align-top leading-7 text-muted-foreground"
-      >
+      <td aria-hidden className="w-6 py-2.5 pl-1 text-center align-top text-muted-foreground">
         =
       </td>
-      <td className="py-4 pr-3 align-top">
-        <span className="block font-serif text-xl font-semibold leading-7 tracking-tight">
-          {label}
-        </span>
+      <td className="py-2.5 pr-3 align-top">
+        <span className="block font-semibold">{label}</span>
         {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}
       </td>
-      <td className="py-4 pr-1 text-right align-top">
-        <Amount cents={cents} className="font-serif text-2xl font-semibold tracking-tight" />
+      <td className="py-2.5 pr-1 text-right align-top">
+        <Amount cents={cents} className="font-semibold" />
       </td>
     </tr>
-  )
-}
-
-/**
- * De dónde sale el número: la barra para el dueño y la cascada para la
- * contadora, con «Ver como tabla» para pasar de una a otra. Si la barra no se
- * puede dibujar sin mentir (la cuenta simple no cierra, o un lado es cero), va
- * directo la cascada con una oración que lo dice.
- */
-function HowItAdds({
-  position: p,
-  month,
-  base,
-  asTable,
-  sales,
-}: {
-  position: IvaPosition
-  month: string
-  base: string
-  asTable: boolean
-  sales: ReadonlyArray<{ soldCents: number; uninvoicedCents: number }> | null
-}) {
-  const withoutId = useId()
-  const bar = ivaCoverBar(p)
-  const oneSided = ivaOneSidedSentence(p, month)
-  const cascade = <Cascade position={p} month={month} />
-  const noun = monthNoun(month)
-
-  const sold = sales ? sales.reduce((sum, r) => sum + r.soldCents, 0) : 0
-  const uninvoiced = sales ? sales.reduce((sum, r) => sum + r.uninvoicedCents, 0) : 0
-  const invoiced = sold - uninvoiced
-  const salesSentence =
-    sales && sold > 0 ? (
-      <>
-        {/* «Contando las facturas cargadas aparte»: por eso este total puede ser mayor que el
-            «Vendido en los cierres del día» del papel de Fin de mes. */}
-        En {noun} vendiste <Money cents={sold} />, contando las facturas cargadas aparte:{' '}
-        {uninvoiced <= 0 ? (
-          'todo con factura.'
-        ) : invoiced <= 0 ? (
-          'todo sin factura.'
-        ) : (
-          <>
-            <Money cents={invoiced} /> con factura y <Money cents={uninvoiced} /> sin factura.
-          </>
-        )}{' '}
-        Lo que va sin factura queda registrado igual en los libros y no suma IVA a esta cuenta.
-      </>
-    ) : null
-
-  return (
-    <Panel>
-      {/* Compu: la cuenta a la izquierda y «Lo que va sin factura» al lado (la leyenda y la
-          cascada no pasan de media pantalla: abajo dejaban la mitad derecha vacía). Celular: una
-          debajo de la otra, separadas por una raya. */}
-      <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-7">
-          {bar ? (
-            <ChartFrame
-              headingLevel="h2"
-              title={bar.title}
-              sentence={bar.sentence}
-              defaultView={asTable ? 'table' : 'chart'}
-              chart={
-                <SplitBar
-                  segments={bar.segments}
-                  height={16}
-                  totalLabel={bar.totalLabel}
-                  ariaLabel={`${bar.title}. ${bar.sentence}`}
-                />
-              }
-              table={cascade}
-              footer="En los libros: lo que cobraste de IVA es el débito fiscal; lo de tus compras con Factura A, el crédito fiscal."
-            />
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <h2 className="font-serif text-lg font-semibold leading-snug tracking-tight">
-                  ¿Cómo se calcula?
-                </h2>
-                {oneSided ? (
-                  <p className="max-w-prose text-sm text-muted-foreground text-pretty">
-                    {oneSided}
-                  </p>
-                ) : null}
-              </div>
-              {cascade}
-            </div>
-          )}
-        </div>
-
-        <section
-          aria-labelledby={withoutId}
-          className="min-w-0 border-t border-border/60 pt-4 lg:col-span-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8"
-        >
-          <h3 id={withoutId} className="text-sm font-semibold leading-snug">
-            Lo que va sin factura
-          </h3>
-          <div className="mt-2 max-w-prose space-y-2 text-sm leading-relaxed text-muted-foreground text-pretty">
-            {salesSentence ? <p>{salesSentence}</p> : null}
-            <p>
-              De tus compras, solo las de Factura A restan IVA. Las de Factura B o C, los tiques y
-              lo que va sin factura quedan registrados igual, sin IVA para recuperar.
-            </p>
-            <p>Cómo se trata cada cosa lo define tu contadora.</p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-            <PanelLink href={`${base}/ventas?tab=facturas`}>
-              Ver las ventas con y sin factura
-              <ArrowRight className="size-3.5" aria-hidden />
-            </PanelLink>
-            <PanelLink href={`${base}/guias/con-y-sin-factura`}>
-              Guía: con factura y sin factura
-              <ArrowRight className="size-3.5" aria-hidden />
-            </PanelLink>
-          </div>
-        </section>
-      </div>
-    </Panel>
   )
 }
 
@@ -747,29 +713,54 @@ function Money({ cents }: { cents: number }) {
   )
 }
 
-// ─── «El IVA mes a mes» ──────────────────────────────────────────────────────
+// ─── Lo que va sin factura ───────────────────────────────────────────────────
 
-function TrendSkeleton() {
+function WithoutInvoice({
+  noun,
+  sales,
+  base,
+}: {
+  noun: string
+  sales: ReadonlyArray<{ soldCents: number; uninvoicedCents: number }> | null
+  base: string
+}) {
+  const sold = sales ? sales.reduce((sum, r) => sum + r.soldCents, 0) : 0
+  const uninvoiced = sales ? sales.reduce((sum, r) => sum + r.uninvoicedCents, 0) : 0
+  const invoiced = sold - uninvoiced
   return (
-    <div className="card-hairline space-y-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5">
-      <Skeleton className="h-6 w-96 max-w-full" />
-      {['a', 'b'].map((k) => (
-        <div key={k} className="flex items-center gap-3">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-2.5 flex-1" />
-          <Skeleton className="h-4 w-32" />
-        </div>
-      ))}
+    <div className="max-w-prose space-y-2 text-sm leading-relaxed text-muted-foreground text-pretty">
+      {sold > 0 ? (
+        <p>
+          En {noun} vendiste <Money cents={sold} />, contando las facturas cargadas aparte:{' '}
+          {uninvoiced <= 0 ? (
+            'todo con factura.'
+          ) : invoiced <= 0 ? (
+            'todo sin factura.'
+          ) : (
+            <>
+              <Money cents={invoiced} /> con factura y <Money cents={uninvoiced} /> sin factura.
+            </>
+          )}{' '}
+          Lo que va sin factura queda registrado igual en los libros y no suma IVA a esta cuenta.
+        </p>
+      ) : null}
+      <p>
+        De tus compras, solo las de Factura A restan IVA. Las de Factura B o C, los tiques y lo que
+        va sin factura quedan registrados igual, sin IVA para recuperar.
+      </p>
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
+        <PanelLink href={`${base}/ventas?tab=facturas`}>Ver las ventas con y sin factura</PanelLink>
+        <PanelLink href={`${base}/guias/con-y-sin-factura`}>
+          Guía: con factura y sin factura
+        </PanelLink>
+      </div>
     </div>
   )
 }
 
-/**
- * «¿Este número es normal?»: un renglón por mes, en orden, con una barra del
- * largo de lo que hay que pagar. Un mes a favor va sin barra y lo dice con
- * palabras. No lleva porcentajes: comparar un mes contra la suma de seis no
- * dice nada. Tocar un mes abre su cuenta.
- */
+// ─── Mes a mes ───────────────────────────────────────────────────────────────
+
+/** Un renglón por mes, en orden. Tocar un mes abre su cuenta. */
 async function Trend({
   tenantId,
   months,
@@ -788,90 +779,44 @@ async function Trend({
     }),
   )
   const rows = ivaTrendRows(positions)
-  const title = ivaTrendTitle(rows, compactCents)
-  if (rows.length < 2 || !title) return null
-  const max = Math.max(...rows.map((r) => r.toPayCents))
-
+  if (rows.length === 0) return null
   return (
-    <Panel>
-      <ChartFrame
-        headingLevel="h2"
-        title={title}
-        sentence="El IVA mes a mes: lo que hubo que pagar en cada uno."
-        chart={
-          <ul className="-mx-2">
-            {rows.map((row) => (
-              <li key={row.month}>
-                <Link
-                  href={bookHref(path, { mes: row.month })}
-                  aria-current={row.month === selected ? 'true' : undefined}
-                  className={cn(
-                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-lg px-2 py-2 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto]',
-                    row.month === selected && 'bg-secondary/50',
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{row.label}</span>
-                    <span className="block text-xs text-muted-foreground">{row.stateWord}</span>
-                  </span>
-                  <span className="text-right text-sm font-medium whitespace-nowrap tabular-nums sm:order-3">
-                    {row.text}
-                  </span>
-                  <span
-                    aria-hidden
-                    className="relative col-span-2 block h-2.5 sm:order-2 sm:col-span-1"
-                  >
-                    {row.toPayCents > 0 && max > 0 ? (
-                      <span
-                        className="rail-grow absolute inset-y-0 left-0 block min-w-[2px] rounded-r-[4px] bg-adm-s2"
-                        style={{ width: `${pct(row.toPayCents, max)}%` }}
-                      />
-                    ) : (
-                      <span className="absolute inset-x-0 top-1/2 block border-t border-dashed border-border" />
-                    )}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        }
-        table={
-          <ChartTable
-            caption="El IVA mes a mes"
-            columns={[
-              { key: 'mes', label: 'Mes' },
-              { key: 'ventas', label: 'IVA de tus ventas', align: 'right' },
-              { key: 'compras', label: 'IVA de tus compras', align: 'right' },
-              { key: 'resultado', label: 'A pagar o a favor', align: 'right' },
-            ]}
-            rows={rows.map((row) => ({
-              key: row.month,
-              cells: [
-                `${row.label} (${row.stateWord})`,
-                formatCentsShort(row.debitCents),
-                formatCentsShort(row.creditCents),
-                row.text,
-              ],
-            }))}
-          />
-        }
-      />
-    </Panel>
+    <PTable minWidth={520} label="El IVA mes a mes">
+      <thead>
+        <tr>
+          <PTh>Mes</PTh>
+          <PTh align="right">Débito fiscal</PTh>
+          <PTh align="right">Crédito fiscal</PTh>
+          <PTh align="right">A pagar o a favor</PTh>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <PRow key={row.month} className={row.month === selected ? 'bg-secondary/50' : undefined}>
+            <PTd>
+              <Link
+                href={bookHref(path, { mes: row.month })}
+                aria-current={row.month === selected ? 'true' : undefined}
+                className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:inline-block pointer-coarse:py-1.5"
+              >
+                {row.label}
+              </Link>
+              <span className="ml-1.5 text-xs text-muted-foreground">{row.stateWord}</span>
+            </PTd>
+            <PTd align="right">{formatCentsShort(row.debitCents)}</PTd>
+            <PTd align="right">{formatCentsShort(row.creditCents)}</PTd>
+            <PTd align="right">{row.text}</PTd>
+          </PRow>
+        ))}
+      </tbody>
+    </PTable>
   )
 }
 
-// ─── «Para la contadora» ─────────────────────────────────────────────────────
+// ─── La conciliación ─────────────────────────────────────────────────────────
 
-/** La conciliación de los libros IVA contra el mayor: plegada para el dueño, abierta para ella. */
-function Reconciliation({
-  position: p,
-  base,
-  open,
-}: {
-  position: IvaPosition
-  base: string
-  open: boolean
-}) {
+/** Los libros IVA contra el mayor. */
+function Reconciliation({ position: p, base }: { position: IvaPosition; base: string }) {
   const r = p.reconciliation
   const rows = [
     {
@@ -890,100 +835,86 @@ function Reconciliation({
     },
   ]
   return (
-    <details open={open} className="group/rec card-hairline rounded-2xl border bg-card shadow-xs">
-      <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5 [&::-webkit-details-marker]:hidden">
-        <ChevronDown
-          aria-hidden
-          className="size-4 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-(--duration-fast) group-open/rec:rotate-0 motion-reduce:transition-none"
-        />
-        <h2 className="font-serif text-lg font-semibold leading-snug tracking-tight">
-          Para la contadora
-        </h2>
-        <span className="text-sm text-muted-foreground">Conciliación con los libros</span>
-        <span className="ml-auto">
-          {r.matches ? (
-            <StatusPill tone="ok">Coinciden</StatusPill>
-          ) : (
-            <StatusPill tone="warn">Hay diferencias</StatusPill>
-          )}
-        </span>
-      </summary>
-      <div className="px-4 pb-5 sm:px-5">
-        <p className="text-xs text-muted-foreground">
-          Lo que dicen los libros IVA contra lo que quedó en el mayor.
-        </p>
-        <div className="mt-2 divide-y divide-border/60">
+    <div className="space-y-3">
+      <PTable minWidth={520} label="Lo que dicen los libros IVA contra lo que quedó en el mayor">
+        <thead>
+          <tr>
+            <PTh>Cuenta</PTh>
+            <PTh>Libro</PTh>
+            <PTh align="right">Importe</PTh>
+            <PTh align="right">Mayor</PTh>
+          </tr>
+        </thead>
+        <tbody>
           {rows.map((row) => (
-            <div key={row.key} className="grid gap-1 py-3 text-sm sm:grid-cols-3 sm:items-center">
-              <span className="font-medium">{row.label}</span>
-              <span className="flex justify-between gap-2 sm:block sm:text-right">
-                <span className="text-xs text-muted-foreground sm:block">{row.bookLabel}</span>
+            <PRow key={row.key}>
+              <PTd className="font-medium">{row.label}</PTd>
+              <PTd className="text-muted-foreground">{row.bookLabel}</PTd>
+              <PTd align="right">
                 <Amount cents={row.book} />
-              </span>
-              <span className="flex justify-between gap-2 sm:block sm:text-right">
-                <span className="text-xs text-muted-foreground sm:block">Mayor</span>
+              </PTd>
+              <PTd align="right">
                 <Amount cents={row.journal} />
-              </span>
-            </div>
+              </PTd>
+            </PRow>
           ))}
+        </tbody>
+      </PTable>
+      {r.differences.length > 0 ? (
+        <div>
+          <p className="mb-1 text-sm font-medium">Asientos que movieron IVA sin comprobante</p>
+          <ul className="divide-y divide-border/60 text-sm">
+            {r.differences.map((d, i) => (
+              <li
+                key={`${d.entryId ?? d.documentId ?? 'dif'}-${i.toString()}`}
+                className="flex flex-col gap-1 py-1.5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span className="min-w-0">
+                  {d.entryId ? (
+                    <Link
+                      href={`${base}/asientos/${d.entryId}`}
+                      className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {d.label || 'Asiento'}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{d.label || 'Asiento'}</span>
+                  )}
+                  {d.entryDate ? (
+                    <span className="ml-2 text-xs tabular-nums text-muted-foreground">
+                      {formatIsoDay(d.entryDate)}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="flex shrink-0 gap-4 text-xs text-muted-foreground">
+                  {d.vatCreditCents !== 0 ? (
+                    <span>
+                      Crédito <Amount cents={d.vatCreditCents} className="text-foreground" />
+                    </span>
+                  ) : null}
+                  {d.vatDebitCents !== 0 ? (
+                    <span>
+                      Débito <Amount cents={d.vatDebitCents} className="text-foreground" />
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {r.differencesCount > r.differences.length ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Y {r.differencesCount - r.differences.length} asientos más: están en el libro diario.
+            </p>
+          ) : null}
         </div>
-        {r.differences.length > 0 ? (
-          <div className="border-t border-border/60 pt-4">
-            <p className="mb-2 text-sm font-medium">Asientos que movieron IVA sin comprobante</p>
-            <ul className="divide-y divide-border/60 text-sm">
-              {r.differences.map((d, i) => (
-                <li
-                  key={`${d.entryId ?? d.documentId ?? 'dif'}-${i.toString()}`}
-                  className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <span className="min-w-0">
-                    {d.entryId ? (
-                      <Link
-                        href={`${base}/asientos/${d.entryId}`}
-                        className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {d.label || 'Asiento'}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">{d.label || 'Asiento'}</span>
-                    )}
-                    {d.entryDate ? (
-                      <span className="ml-2 text-xs tabular-nums text-muted-foreground">
-                        {formatIsoDay(d.entryDate)}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex shrink-0 gap-4 text-xs text-muted-foreground">
-                    {d.vatCreditCents !== 0 ? (
-                      <span>
-                        Crédito <Amount cents={d.vatCreditCents} className="text-foreground" />
-                      </span>
-                    ) : null}
-                    {d.vatDebitCents !== 0 ? (
-                      <span>
-                        Débito <Amount cents={d.vatDebitCents} className="text-foreground" />
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {r.differencesCount > r.differences.length ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Y {r.differencesCount - r.differences.length} asientos más: están en el libro
-                diario.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <p className="mt-3 text-xs text-muted-foreground text-pretty">
-          {r.matches
-            ? 'Los libros de IVA dicen lo mismo que el mayor.'
-            : r.fullyExplained
-              ? 'La diferencia la explican los asientos que movieron IVA sin un comprobante.'
-              : 'Parte de la diferencia no la explica ningún asiento.'}
-        </p>
-      </div>
-    </details>
+      ) : null}
+      <p className="text-xs text-muted-foreground text-pretty">
+        {r.matches
+          ? 'Los libros de IVA dicen lo mismo que el mayor.'
+          : r.fullyExplained
+            ? 'La diferencia la explican los asientos que movieron IVA sin un comprobante.'
+            : 'Parte de la diferencia no la explica ningún asiento.'}
+      </p>
+    </div>
   )
 }

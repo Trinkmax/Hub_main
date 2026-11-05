@@ -86,67 +86,64 @@ function text(html: string): string {
 }
 
 describe('la guía con el estado del bar', () => {
-  it('el avance, lo próximo y el estado de cada ítem en palabras', () => {
-    const t = text(render())
-    expect(t).toContain('Tu avance')
+  it('la barra de avance y el estado de cada paso en palabras, en una planilla', () => {
+    const html = render()
+    const t = text(html)
     // Un solo número: el de la puesta en marcha (lo de una sola vez), como la franja del Resumen.
-    expect(t).toContain('de 12 listos')
-    expect(t).not.toContain('de 19 listos')
-    expect(t).toContain('Lo próximo que te conviene hacer')
+    expect(t).toContain('de 13 listos')
+    expect(html).toContain('role="progressbar"')
+    for (const head of ['Estado', 'Paso']) expect(html).toContain(`>${head}</th>`)
     // Faltan los datos de la SAS: es lo primero.
     expect(t).toContain('Falta el número de Ingresos Brutos.')
-    expect(t).toMatch(/Datos de la SAS Lo próximo/)
-    expect(t).toMatch(/Medios de cobro Listo/)
-    expect(t).toMatch(/Apps de delivery, tarjetas y Mercado Pago Marcado por vos/)
-    expect(t).toMatch(/Puntos de venta Falta/)
-    expect(t).toMatch(/Gastos chicos Para saber/)
+    expect(t).toMatch(/Lo próximo Datos de la SAS/)
+    expect(t).toMatch(/Listo Medios de cobro/)
+    expect(t).toMatch(/Marcado por vos Comisiones de apps, tarjetas y Mercado Pago/)
+    expect(t).toMatch(/Para saber Gastos chicos/)
   })
 
-  it('cada sección con su ancla y su avance', () => {
+  it('los pasos que pidieron: impuestos y sueldos sí; puntos de venta, no', () => {
+    const t = text(render())
+    expect(t).toContain('Impuestos: Ingresos Brutos, Comercio e Industria, débitos y créditos')
+    expect(t).toContain('Empleados y sueldos')
+    expect(t).toContain('Ya los revisé')
+    expect(t).not.toContain('Puntos de venta')
+  })
+
+  it('cada sección con su ancla; el avance es el de la puesta en marcha', () => {
     const html = render()
     for (const section of ['day1', 'daily', 'weekly', 'monthly']) {
       expect(html).toContain(`id="arranque-${section}"`)
     }
     // Día 1: los medios de cobro (los vio la base) y las plataformas (marcadas a mano); el
     // opcional (Mercado Pago) no cuenta.
-    expect(text(html)).toContain('2 de 12 listos')
-    expect(text(html)).not.toContain('3 de 19 listos')
-    expect(html).toContain('href="#arranque-sas_data"')
+    expect(text(html)).toContain('2 de 13 listos')
   })
 
-  it('dónde: links a la pantalla exacta del bar', () => {
+  it('[Ir] lleva a la pantalla exacta del bar', () => {
     const html = render()
-    expect(html).toContain('href="/bar-demo/administracion/ajustes?tab=sas"')
-    expect(html).toContain('href="/bar-demo/administracion/configurar"')
-    expect(html).toContain('href="/bar-demo/administracion/importar/arca"')
-    expect(html).toContain('href="/bar-demo/administracion/ajustes/arca"')
+    for (const path of [
+      'ajustes?tab=sas',
+      'ajustes?tab=impuestos',
+      'configurar',
+      'importar/arca',
+      'ajustes/arca',
+      'sueldos',
+      'libros/cierres',
+    ]) {
+      expect(html).toContain(`href="/bar-demo/administracion/${path}"`)
+    }
+    // Dice adónde va para quien no ve la fila: el botón visible es «Ir».
+    expect(html).toContain('aria-label="Completar los datos"')
+    expect(text(html)).toContain('Ir')
   })
 
-  it('cómo: los pasos están en la página, plegados salvo el próximo', () => {
+  it('el detalle está en la página, plegado: se abre al tocar el paso', () => {
     const html = render()
     expect(text(html)).toContain('Bajá la constancia de inscripción')
-    expect(html.match(/aria-expanded="true"/g)).toHaveLength(1)
+    expect(html).not.toMatch(/aria-expanded="true"/)
+    expect(html).toMatch(/<tr id="arranque-sas_data" hidden=""/)
     // La mini guía del archivo (con sus maquetas) se arma recién al abrir el paso.
     expect(html).not.toContain('data-como-lo-bajo')
-  })
-
-  it('el paso próximo que es subir un archivo trae abierto su «¿Cómo lo bajo?»', () => {
-    const html = render({
-      data: data({
-        sas_missing: [],
-        bank_with_cbu: true,
-        wallet_with_cvu: true,
-        sales_points: 2,
-        opening_done: true,
-        partner_granted: true,
-        accountant_added: true,
-        arca: { status: 'connected', cert_not_after: '2028-10-01T00:00:00Z' },
-        manual: ['platforms', 'chart_review'],
-      }),
-    })
-    expect(text(html)).toMatch(/Proveedores y compras del mes pasado Lo próximo/)
-    expect(html).toContain('data-como-lo-bajo="mis_comprobantes"')
-    expect(html.match(/data-como-lo-bajo=/g)).toHaveLength(1)
   })
 
   it('quien carga: «Ya lo hice», «Tené a mano» y el mensaje para los proveedores', () => {
@@ -164,10 +161,9 @@ describe('la guía con el estado del bar', () => {
 })
 
 describe('sin el estado de la base', () => {
-  it('la guía entera, sin marcas ni «Ya lo hice», y por dónde arrancar', () => {
+  it('la lista entera, sin marcas ni «Ya lo hice»', () => {
     const t = text(render({ data: null, problem: { kind: 'unavailable' } }))
     expect(t).toContain('Todavía no podemos marcar tu avance solos')
-    expect(t).toContain('Por dónde arrancar')
     expect(t).toContain('Datos de la SAS')
     expect(t).toContain('Cerrar el mes con la contadora')
     expect(t).not.toContain('Ya lo revisamos')
@@ -175,7 +171,7 @@ describe('sin el estado de la base', () => {
     expect(t).not.toContain('Listo')
   })
 
-  it('si falló la lectura, lo dice y la guía se sigue viendo', () => {
+  it('si falló la lectura, lo dice y la lista se sigue viendo', () => {
     const t = text(
       render({ data: null, problem: { kind: 'error', message: 'No pudimos cargar esto.' } }),
     )
@@ -186,12 +182,11 @@ describe('sin el estado de la base', () => {
 
 describe('la contadora (solo lectura)', () => {
   it('ve el avance y los pasos, sin botones de carga ni marcas', () => {
-    const t = text(render({ canWrite: false }))
-    expect(t).toContain('Lo próximo que les toca a los dueños')
+    const html = render({ canWrite: false })
+    const t = text(html)
     expect(t).toContain('Bajá la constancia de inscripción')
     expect(t).toContain(MESSAGE)
     for (const label of [
-      'Completar los datos',
       'Ya lo revisamos',
       'Desmarcar',
       'Copiar el mensaje',
@@ -200,6 +195,7 @@ describe('la contadora (solo lectura)', () => {
     ]) {
       expect(t).not.toContain(label)
     }
+    expect(html).not.toContain('aria-label="Completar los datos"')
   })
 })
 

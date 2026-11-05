@@ -1,23 +1,16 @@
-import { Panel, PanelSection } from '@/components/administracion/kit'
+import { Planilla, PlanillaFoot, PlanillaTitle } from '@/components/administracion/planilla'
 import type { PartyPosition } from '@/lib/accounting/queries/parties'
+import { formatCentsShort } from '@/lib/money'
+import { agingMath } from '../../../_lib/supplier-ledger'
 import { ApplyCreditButton } from './apply-credit-button'
 import { CreditItems, DebtItems } from './open-items'
 
 /**
- * «Lo que le debés»: lo accionable de la hoja de un proveedor, lo primero que
- * se ve debajo de la tapa (antes estaba en la segunda pestaña, «Pendientes»).
- * Una compra sin pagar por renglón, con su vencimiento en el margen y [Pagar].
+ * «Lo que le debés»: todo lo que está sin pagar, sea del período que sea, con su [Pagar]. Debajo, «A
+ * tu favor»: lo que se descuenta solo en el próximo pago, con [Usarlo ahora].
  *
- * Debajo, en el mismo panel, «A tu favor»: lo que se descuenta solo en el
- * próximo pago, con [Usarlo ahora] (reemplaza al aviso azul de arriba).
- *
- * Sin deuda NO se dibuja el panel: la tapa ya dice «No le debés nada» y trae
- * [Cargarle una compra] (y «Dejarle plata a cuenta» en su ⋯); repetirlo acá
- * eran tres «nada» apilados y dos botones principales iguales. Si no le debés
- * pero tenés algo a favor, el panel es solo eso: «A tu favor».
- *
- * Una compra sin factura se debe igual: suma acá, tiene su vencimiento y se
- * paga igual que las demás.
+ * Sin deuda ni nada a favor no se dibuja: el totalizador ya lo dice. Una compra sin factura se debe
+ * igual: suma acá, tiene su vencimiento y se paga igual que las demás.
  */
 export function PendingTab({
   tenantSlug,
@@ -37,47 +30,50 @@ export function PendingTab({
 }) {
   const debts = position.debtItems
   const credits = position.creditItems
-  const creditNote =
-    'Una nota de crédito o plata que le adelantaste. Se descuenta sola en el próximo pago.'
+  if (debts.length === 0 && credits.length === 0) return null
 
-  if (debts.length === 0) {
-    if (credits.length === 0) return null
-    return (
-      <Panel id="le-debes" title="A tu favor" description={creditNote}>
-        <CreditItems tenantSlug={tenantSlug} items={credits} />
-      </Panel>
-    )
-  }
+  // Los tramos de antigüedad que tienen algo (el total ya está en la tabla).
+  const tranches = agingMath(position.aging).filter((row) => !row.total)
 
   return (
-    <Panel
-      id="le-debes"
-      title="Lo que le debés"
-      description={
-        debts.length === 1
-          ? 'Una compra sin pagar.'
-          : `${debts.length} compras sin pagar, la que vence antes primero.`
-      }
-    >
-      <DebtItems
-        tenantSlug={tenantSlug}
-        partyId={partyId}
-        items={debts}
-        totalCents={position.debtCents}
-        today={today}
-        canWrite={canWrite}
-      />
-
-      {credits.length > 0 ? (
-        <PanelSection
-          title="A tu favor"
-          description={creditNote}
-          action={<ApplyCreditButton pairs={pairs} />}
-          className="mt-5"
-        >
-          <CreditItems tenantSlug={tenantSlug} items={credits} />
-        </PanelSection>
+    <section id="le-debes" className="grid gap-3.5">
+      {debts.length > 0 ? (
+        <Planilla>
+          <PlanillaTitle title="Lo que le debés" />
+          <DebtItems
+            tenantSlug={tenantSlug}
+            partyId={partyId}
+            items={debts}
+            totalCents={position.debtCents}
+            today={today}
+            canWrite={canWrite}
+          />
+          {tranches.length > 1 ? (
+            <PlanillaFoot className="justify-start gap-x-4 text-xs text-muted-foreground">
+              {tranches.map((row) => (
+                <span key={row.label} className="whitespace-nowrap">
+                  {row.label}:{' '}
+                  <span className="font-medium text-foreground tabular-nums">
+                    {formatCentsShort(row.cents)}
+                  </span>
+                </span>
+              ))}
+            </PlanillaFoot>
+          ) : null}
+        </Planilla>
       ) : null}
-    </Panel>
+      {credits.length > 0 ? (
+        <Planilla>
+          <PlanillaTitle
+            title="A tu favor"
+            actions={debts.length > 0 ? <ApplyCreditButton pairs={pairs} /> : undefined}
+          />
+          <CreditItems tenantSlug={tenantSlug} items={credits} />
+          <PlanillaFoot className="text-xs text-muted-foreground">
+            Una nota de crédito o plata que le adelantaste. Se descuenta sola en el próximo pago.
+          </PlanillaFoot>
+        </Planilla>
+      ) : null}
+    </section>
   )
 }

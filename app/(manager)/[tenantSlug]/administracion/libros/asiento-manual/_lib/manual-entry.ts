@@ -16,7 +16,11 @@ export type InitialLine = {
   memo: string
 }
 
-export type EntryLine = InitialLine & { key: string }
+export type EntryLine = InitialLine & {
+  key: string
+  /** De qué lado va, si lo dijo un modelo: Enter salta directo a esa celda. */
+  hintSide?: 'debit' | 'credit'
+}
 
 export type LineField = 'accountId' | 'debitCents' | 'creditCents' | 'partyId' | 'dueDate' | 'memo'
 
@@ -53,6 +57,25 @@ export function entryTotals(lines: readonly InitialLine[]): { debit: bigint; cre
   return { debit, credit }
 }
 
+export type BalanceState =
+  /** Todavía no hay importes. */
+  | { state: 'empty'; text: string }
+  /** «Falta $ 12,40 en el Haber.» */
+  | { state: 'gap'; text: string }
+  /** Debe = Haber: recién ahí se puede grabar. */
+  | { state: 'balanced'; text: string }
+
+/** El mensaje en vivo al pie de la grilla. */
+export function balanceState(debit: bigint, credit: bigint): BalanceState {
+  if (debit === 0n && credit === 0n) return { state: 'empty', text: 'Cargá los importes' }
+  if (debit === credit) return { state: 'balanced', text: 'Debe = Haber' }
+  const gap = debit > credit ? debit - credit : credit - debit
+  return {
+    state: 'gap',
+    text: `Falta ${formatCents(gap)} en el ${debit > credit ? 'Haber' : 'Debe'}`,
+  }
+}
+
 /** «El asiento no cuadra: falta $ 12,40 en el Haber.» (`null` si cuadra). */
 export function balanceMessage(debit: bigint, credit: bigint): string | null {
   if (debit === credit) return null
@@ -64,7 +87,7 @@ export type EntryCheck =
   | { ok: true }
   | {
       ok: false
-      /** Por línea (`<key>.<campo>`), `date`, `description` y `lines` (el cuadre o pocas líneas). */
+      /** Por línea (`<key>.<campo>`), `date`, `description`, `backing` y `lines` (el cuadre). */
       errors: Record<string, string>
       /** El primero, para el aviso de arriba de los botones. */
       message: string
@@ -77,6 +100,8 @@ export function validateEntry(input: {
   lines: readonly EntryLine[]
   date: string | null
   description: string
+  /** El respaldo del asiento: «nada sin respaldo». Sin este dato (los sueldos paso a paso), no se pide. */
+  backing?: string
   requiresParty: (accountId: string | null) => boolean
 }): EntryCheck {
   const errors: Record<string, string> = {}
@@ -89,6 +114,9 @@ export function validateEntry(input: {
 
   if (!input.date) put('date', 'Elegí una fecha.')
   if (!input.description.trim()) put('description', 'Escribí el concepto del asiento.')
+  if (input.backing !== undefined && !input.backing.trim()) {
+    put('backing', 'Anotá el respaldo: el contrato, el resumen o el n.º del papel.')
+  }
 
   const content = input.lines.filter(hasContent)
   for (const line of content) {

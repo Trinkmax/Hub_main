@@ -1206,6 +1206,74 @@ export function buildInbox(input: InboxInput): Inbox {
   }
 }
 
+// ─── La tabla de «Importar» ──────────────────────────────────────────────────
+
+/** Qué archivo va en cada origen (la columna «Qué archivo»). */
+export const IMPORT_SOURCE_FILE: Readonly<Record<UiImportSource, string>> = {
+  arca_recibidos: 'El ZIP de Mis Comprobantes › Recibidos',
+  mp_release: 'El CSV de Liquidaciones',
+  bank_statement: 'Los movimientos en CSV, TXT o Excel',
+}
+
+export type ImportSourceRow = {
+  source: UiImportSource
+  name: string
+  file: string
+  /** «El 08/10 subiste septiembre». `null`: nunca se subió nada. */
+  last: string | null
+  /** Lo que falta traer, en pocas palabras. `due`: ya toca. `null`: no hay nada para decir. */
+  status: { text: string; due: boolean } | null
+  /** Qué está traído y qué falta, día por día o mes por mes (plegado debajo de la tabla). */
+  strip: InboxTray['strip']
+  /** Lo que quedó esperando: cada hoja lleva a su archivo. */
+  waiting: InboxSheet[]
+  waitingMore: number
+  waitingMoreHref: string
+  notes: InboxNote[]
+  /** «Subir», o lo que falta antes de poder subir. `null` para quien solo lee. */
+  action: InboxAction | null
+  /** «¿Cómo se baja?». `null` para quien solo lee. */
+  howHref: string | null
+}
+
+/** Lo que falta traer de una bandeja, en una línea de la tabla. */
+function trayStatus(tray: InboxTray): ImportSourceRow['status'] {
+  if (tray.blocked) return { text: tray.blocked, due: false }
+  if (!tray.hero) return null
+  if (tray.hero.upToDate) return { text: tray.hero.value, due: false }
+  const unit = tray.hero.unit ? ` ${tray.hero.unit}` : ''
+  const value = `${tray.hero.value}${unit}`
+  return {
+    text: tray.hero.label ? `${tray.hero.label}: ${value}` : value,
+    due: tray.hero.due,
+  }
+}
+
+/** Las filas de la tabla de «Importar»: lo mismo que decían las bandejas, en un renglón. */
+export function importSourceRows(inbox: Pick<Inbox, 'trays'>, slug: string): ImportSourceRow[] {
+  return inbox.trays.map((tray) => ({
+    source: tray.source,
+    name: tray.name,
+    file: IMPORT_SOURCE_FILE[tray.source],
+    last: tray.last
+      ? capitalizeFirst(tray.last.replace(/^Última vez: /, '').replace(/\.$/, ''))
+      : null,
+    status: trayStatus(tray),
+    strip: tray.strip,
+    waiting: tray.waiting,
+    waitingMore: tray.waitingMore,
+    waitingMoreHref: tray.waitingMoreHref,
+    notes: tray.notes,
+    action:
+      tray.state === 'blocked'
+        ? tray.action
+        : tray.action
+          ? { label: 'Subir', href: importSourceHref(slug, tray.source) }
+          : null,
+    howHref: tray.howHref,
+  }))
+}
+
 // ─── Qué fechas pedir (paso 1 de cada subida) ────────────────────────────────
 
 export type WantedRange = {

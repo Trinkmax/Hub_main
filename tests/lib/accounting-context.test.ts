@@ -14,6 +14,7 @@ import {
 } from '@/lib/accounting/context'
 import { buildOpening } from '@/lib/accounting/posting'
 import { SYSTEM_ACCOUNT_KEYS } from '@/lib/accounting/system-keys'
+import { DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
 import { fixedUuid } from './accounting-core-context'
 
 // La forma de `acc_posting_context` (migración #8): `to_jsonb` de cada fila, en
@@ -235,6 +236,7 @@ describe('buildPostingContext', () => {
     expect(ctx.treasuries.get(ids.treasuryId)?.balanceCents).toBe(1_500_000)
     expect(ctx.salesPoints.get(3)?.label).toBe('Salón')
     expect(ctx.settings).toEqual({
+      taxSettings: DEFAULT_TAX_SETTINGS,
       ivaCondition: 'responsable_inscripto',
       booksStartDate: '2026-10-01',
       vatToleranceCents: 1,

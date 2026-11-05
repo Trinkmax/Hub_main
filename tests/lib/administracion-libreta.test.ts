@@ -1,52 +1,48 @@
-import { createElement, type ReactElement } from 'react'
+import { createElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { prerender } from 'react-dom/static'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ComprasDoor } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/compras-door'
-import { DebtBar } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/debt-bar'
 import {
   DocumentRows,
   PaymentRows,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/document-rows'
 import { DocumentsTab } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/documents-tab'
-import { LibretaHero } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/libreta-hero'
 import {
   LibretaList,
   LibretaToolbar,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/libreta-list'
+import { SupplierAccountProvider } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-account-picker'
 import {
   type SorterItem,
   SupplierSorter,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-sorter'
 import {
   type LibretaData,
-  SETTLED_PREVIEW_UNSORTED,
   SuppliersBody,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/suppliers-tab'
-import { UnclassifiedStrip } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/unclassified-strip'
 import {
-  dateRail,
   documentRowState,
+  documentsTotal,
   dueRail,
   type LibretaInfo,
   ledgerRail,
-  libretaSentence,
+  libretaGroupTotals,
+  libretaTotalizerItems,
   libretaView,
   paymentAppliedText,
   paymentMeansText,
-  paymentsHeadline,
   periodLead,
-  SETTLED_PREVIEW,
+  railText,
   supplierDisplayName,
   supplierShortName,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/libreta'
 import {
   countClassifiable,
   countUnclassified,
+  isTaxOrPayroll,
   isVisibleSupplier,
   SUPPLIER_FILTERS,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/suppliers'
-import { payablesTranches } from '@/lib/accounting/home'
 import type { DocumentListRow } from '@/lib/accounting/queries/documents'
 import {
   matchesPartyFilter,
@@ -55,19 +51,18 @@ import {
 } from '@/lib/accounting/queries/parties'
 
 /**
- * La libreta de proveedores («Compras y pagos»): qué renglones se ven, qué
- * dice el margen de cada uno y cómo se lee el estado de un comprobante. Y lo
- * que la pantalla le promete a cada uno ya dibujada: que un dato que falta no
- * salga como «$ 0» y que la contadora no reciba ningún botón de carga.
+ * La libreta de proveedores («Compras y pagos»): qué filas se ven, qué suma el
+ * totalizador y cómo se lee el estado de un comprobante. Y lo que la pantalla le
+ * promete a cada uno ya dibujada: que un dato que falta no salga como «$ 0» y
+ * que la contadora no reciba ningún botón de carga.
  */
 
 const ui = vi.hoisted(() => ({ readOnly: false }))
-// Las dos lecturas de Comprobantes y Pagos: acá se contestan a mano (sin base).
-const reads = vi.hoisted(() => ({ listDocuments: vi.fn(), getMonthSpending: vi.fn() }))
+// La lectura de Comprobantes y Pagos: acá se contesta a mano (sin base).
+const reads = vi.hoisted(() => ({ listDocuments: vi.fn() }))
 vi.mock('@/lib/accounting/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/accounting/queries')>()),
   listDocuments: reads.listDocuments,
-  getMonthSpending: reads.getMonthSpending,
 }))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/compras',
@@ -91,11 +86,23 @@ vi.mock('@/lib/accounting/actions/master', () => ({
   saveParty: vi.fn(),
   createPartiesBulk: vi.fn(),
 }))
+// Los «⋯» se dibujan abiertos: lo que importa es qué ofrecen a cada uno.
+vi.mock('@/components/ui/dropdown-menu', () => {
+  const Pass = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
+  const Item = ({ children, disabled }: { children?: ReactNode; disabled?: boolean }) =>
+    createElement('div', { 'data-menu-item': '', 'aria-disabled': disabled }, children)
+  return {
+    DropdownMenu: Pass,
+    DropdownMenuContent: Pass,
+    DropdownMenuItem: Item,
+    DropdownMenuSeparator: () => null,
+    DropdownMenuTrigger: Pass,
+  }
+})
 
 afterEach(() => {
   ui.readOnly = false
   reads.listDocuments.mockReset()
-  reads.getMonthSpending.mockReset()
 })
 
 const TODAY = '2026-10-13'
@@ -211,8 +218,8 @@ function sample() {
   return { rows, classes, late, soon, favor, arca, rest }
 }
 
-describe('libretaView: los grupos y su orden', () => {
-  it('«Les debés» primero (lo más vencido arriba), después «a favor» y al final los sin deuda', () => {
+describe('libretaView: las filas y su orden', () => {
+  it('primero los que deben (lo más vencido arriba), después «a favor» y al final los sin deuda', () => {
     const s = sample()
     const view = libretaView({
       rows: s.rows,
@@ -225,14 +232,15 @@ describe('libretaView: los grupos y su orden', () => {
     expect(view.credit.map((e) => e.row.partyName)).toEqual(['Hielo Cristal'])
     // ARCA es del sistema y no tiene saldo: no ensucia la libreta.
     expect(view.shown.some((e) => e.row.partyName === 'ARCA')).toBe(false)
-    expect(view.settled).toHaveLength(SETTLED_PREVIEW)
-    expect(view.settledMore).toHaveLength(20 - SETTLED_PREVIEW)
+    // Los sin deuda no se pliegan: es una planilla, con su búsqueda y su filtro.
+    expect(view.settled).toHaveLength(20)
+    expect(view.shown).toHaveLength(23)
     expect(view.settled.map((e) => e.row.partyName)).toEqual(
       [...view.settled.map((e) => e.row.partyName)].sort((a, b) => a.localeCompare(b, 'es')),
     )
   })
 
-  it('el pie suma lo que se ve y la barrita mide contra la deuda más grande', () => {
+  it('la fila del total suma lo que se ve', () => {
     const s = sample()
     const view = libretaView({
       rows: s.rows,
@@ -244,12 +252,12 @@ describe('libretaView: los grupos y su orden', () => {
     expect(view.totals).toEqual({
       debtCents: 19_235_800,
       overdueCents: 12_000_000,
+      dueSoonCents: 7_235_800,
       creditCents: 6_550_000,
     })
-    expect(view.maxDebtCents).toBe(12_000_000)
   })
 
-  it('con búsqueda u otro filtro no se pliega nada', () => {
+  it('la búsqueda y «Sin categoría» dejan solo lo que se pidió', () => {
     const s = sample()
     const searched = libretaView({
       rows: s.rows,
@@ -259,7 +267,7 @@ describe('libretaView: los grupos y su orden', () => {
       match: MATCH,
     })
     expect(searched.settled).toHaveLength(20)
-    expect(searched.settledMore).toHaveLength(0)
+    expect(searched.debt).toHaveLength(0)
     const unclassified = libretaView({
       rows: s.rows,
       classes: s.classes,
@@ -267,13 +275,12 @@ describe('libretaView: los grupos y su orden', () => {
       q: '',
       match: MATCH,
     })
-    expect(unclassified.settledMore).toHaveLength(0)
     // Barracuda ya tiene categoría: no está entre los que faltan.
     expect(unclassified.shown.some((e) => e.row.partyName === 'Barracuda Bebidas')).toBe(false)
     expect(unclassified.shown).toHaveLength(22)
   })
 
-  it('cada píldora cuenta lo mismo que filtra `listParties` (más la regla de los organismos)', () => {
+  it('cada filtro cuenta lo mismo que filtra `listParties` (más la regla de los organismos)', () => {
     const s = sample()
     for (const q of ['', 'don', '30711']) {
       const view = libretaView({
@@ -289,7 +296,8 @@ describe('libretaView: los grupos y su orden', () => {
           (r) =>
             matchesPartyFilter(r, f.filter) &&
             matchesPartyQuery(r, q) &&
-            isVisibleSupplier(r, f.filter),
+            isVisibleSupplier(r, f.filter) &&
+            (f.filter === 'taxes_payroll' || !isTaxOrPayroll(r)),
         ).length
         expect(view.counts[f.value], `${f.value} · «${q}»`).toBe(expected)
         const filtered = libretaView({
@@ -316,6 +324,35 @@ describe('libretaView: los grupos y su orden', () => {
     expect(view.shown.map((e) => e.row.partyName)).toEqual(['ARCA'])
   })
 
+  it('un impuesto o los sueldos con deuda no entran en los filtros de proveedores', () => {
+    const s = sample()
+    const rentas = row({
+      partyName: 'Rentas',
+      partyKind: 'tax_agency',
+      systemKey: 'rentas',
+      debtCents: 900_000,
+      overdueCents: 900_000,
+    })
+    const personal = row({
+      partyName: 'Personal',
+      partyKind: 'payroll',
+      systemKey: 'personal',
+      debtCents: 40_000_000,
+    })
+    const sindicato = row({ partyName: 'Sindicato', partyKind: 'other', systemKey: 'sindicato' })
+    const rows = [...s.rows, rentas, personal, sindicato]
+    const names = (filter: 'todos' | 'con-deuda' | 'vencidos' | 'impuestos') =>
+      libretaView({ rows, classes: s.classes, filter, q: '', match: MATCH }).shown.map(
+        (e) => e.row.partyName,
+      )
+    for (const filter of ['todos', 'con-deuda', 'vencidos'] as const) {
+      expect(names(filter), filter).not.toContain('Rentas')
+      expect(names(filter), filter).not.toContain('Personal')
+      expect(names(filter), filter).not.toContain('Sindicato')
+    }
+    expect(names('impuestos')).toEqual(['Rentas', 'Personal', 'ARCA', 'Sindicato'])
+  })
+
   it('sin las fichas la libreta se arma igual, sin categoría', () => {
     const s = sample()
     const view = libretaView({ rows: s.rows, classes: null, filter: 'todos', q: '', match: MATCH })
@@ -327,8 +364,7 @@ describe('libretaView: los grupos y su orden', () => {
   it('vacío no es cero: sin proveedores no hay renglones ni totales inventados', () => {
     const view = libretaView({ rows: [], classes: new Map(), filter: 'todos', q: '', match: MATCH })
     expect(view.shown).toEqual([])
-    expect(view.totals).toEqual({ debtCents: 0, overdueCents: 0, creditCents: 0 })
-    expect(view.maxDebtCents).toBe(0)
+    expect(view.totals).toEqual({ debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0 })
   })
 
   it('cuenta a quiénes se les puede elegir categoría (los organismos no)', () => {
@@ -347,7 +383,7 @@ describe('libretaView: los grupos y su orden', () => {
   })
 })
 
-describe('el margen: desde cuándo o para cuándo, nunca un importe', () => {
+describe('el vencimiento en palabras: desde cuándo o para cuándo, nunca un importe', () => {
   const base = {
     debtCents: 0,
     creditCents: 0,
@@ -449,40 +485,83 @@ describe('el margen: desde cuándo o para cuándo, nunca un importe', () => {
     })
   })
 
-  it('la fecha de un comprobante: el mes arriba y el día grande', () => {
-    expect(dateRail('2026-10-08')).toEqual({ label: 'oct', value: '08' })
-    expect(dateRail('2026-01-31')).toEqual({ label: 'ene', value: '31' })
+  it('en una celda se dice en una línea', () => {
+    expect(railText(dueRail('2026-10-01', TODAY))).toBe('vencido hace 12 días')
+    expect(railText(dueRail('2026-10-18', TODAY))).toBe('vence en 5 días')
+    expect(railText(dueRail(TODAY, TODAY))).toBe('vence hoy')
+    expect(railText(dueRail('2026-11-20', TODAY))).toBe('vence el 20/11')
+    expect(railText(dueRail(null, TODAY))).toBe('sin fecha')
   })
 })
 
-describe('la oración del héroe: la misma urgencia que dice el Resumen', () => {
-  const tranches = (total: number, overdue: number, week: number) => {
-    const t = payablesTranches({
-      totalCents: total,
-      overdueCents: overdue,
-      dueWeekCents: week,
-      partiesRed: overdue > 0 ? 2 : 0,
+describe('el totalizador de arriba: Le debés · Vencido · Vence esta semana', () => {
+  const plainTexts = (items: ReadonlyArray<{ hint?: ReactNode }>) =>
+    items.map((item) => (typeof item.hint === 'string' ? item.hint.replaceAll(NB, ' ') : item.hint))
+
+  it('suma los proveedores; los impuestos y sueldos, solo en su filtro', () => {
+    const late = row({ debtCents: 1_000, overdueCents: 400, dueSoonCents: 100, creditCents: 50 })
+    const rentas = row({
+      partyKind: 'tax_agency',
+      systemKey: 'rentas',
+      debtCents: 700,
+      overdueCents: 700,
     })
-    if (!t) throw new Error('sin tramos')
-    return t
-  }
-
-  it('con algo vencido', () => {
-    const t = tranches(19_235_800, 12_000_000, 7_235_800)
-    expect(libretaSentence(2, t).replaceAll(NB, ' ')).toBe(
-      `A 2 proveedores. ${t.sentence}`.replaceAll(NB, ' '),
-    )
-    expect(libretaSentence(2, t)).toContain('ya venció')
+    const personal = row({ partyKind: 'payroll', systemKey: 'personal', debtCents: 9_000 })
+    const rows = [late, rentas, personal]
+    expect(libretaGroupTotals(rows, 'todos')).toEqual({
+      debtCents: 1_000,
+      overdueCents: 400,
+      dueSoonCents: 100,
+      creditCents: 50,
+    })
+    // Los otros filtros miran la misma foto: no achican lo que se debe.
+    expect(libretaGroupTotals(rows, 'vencidos')).toEqual(libretaGroupTotals(rows, 'todos'))
+    expect(libretaGroupTotals(rows, 'impuestos')).toEqual({
+      debtCents: 9_700,
+      overdueCents: 700,
+      dueSoonCents: 0,
+      creditCents: 0,
+    })
   })
 
-  it('uno solo, y nada vence esta semana', () => {
-    expect(libretaSentence(1, tranches(5_000_000, 0, 0))).toBe(
-      'A 1 proveedor. Nada vence esta semana.',
-    )
+  it('dice lo que se debe, con su tono solo si hay algo', () => {
+    const items = libretaTotalizerItems({
+      debtCents: 19_235_800,
+      overdueCents: 12_000_000,
+      dueSoonCents: 7_235_800,
+      creditCents: 6_550_000,
+    })
+    expect(items.map((i) => i.label)).toEqual(['Le debés', 'Vencido', 'Vence esta semana'])
+    expect(items.map((i) => i.cents)).toEqual([19_235_800, 12_000_000, 7_235_800])
+    expect(items.map((i) => i.tone)).toEqual([undefined, 'bad', 'warn'])
+    // Lo que hay a favor va aparte: no se resta.
+    expect(plainTexts(items)[0]).toBe('$ 65.500 a favor')
+
+    const calm = libretaTotalizerItems({
+      debtCents: 100,
+      overdueCents: 0,
+      dueSoonCents: 0,
+      creditCents: 0,
+    })
+    expect(calm.map((i) => i.tone)).toEqual([undefined, 'default', 'default'])
   })
 
-  it('sin deuda no hay oración (el vacío lo dice el título)', () => {
-    expect(libretaSentence(0, tranches(0, 0, 0))).toBe('')
+  it('sin los saldos iniciales y sin deuda cargada no es «$ 0»: todavía no se sabe', () => {
+    const items = libretaTotalizerItems(
+      { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0 },
+      { openingPending: true },
+    )
+    expect(items.map((i) => i.cents)).toEqual([null, null, null])
+    expect(items[0]?.hint).toBe('Faltan los saldos iniciales')
+  })
+
+  it('sin los saldos iniciales y con deuda (HUB): el número, y que es lo cargado hasta ahora', () => {
+    const items = libretaTotalizerItems(
+      { debtCents: 19_235_800, overdueCents: 19_235_800, dueSoonCents: 0, creditCents: 0 },
+      { openingPending: true },
+    )
+    expect(items[0]?.cents).toBe(19_235_800)
+    expect(items[0]?.hint).toBe('Lo cargado hasta ahora')
   })
 })
 
@@ -524,6 +603,7 @@ describe('el período, dicho en palabras', () => {
 
 function doc(patch: Partial<DocumentListRow> = {}): DocumentListRow {
   return {
+    attachmentCount: 0,
     id: '00000000-0000-4000-8000-0000000000d1',
     seq: 12,
     kind: 'purchase',
@@ -633,160 +713,40 @@ describe('documentRowState: el estado de un comprobante con palabras de dueño',
   })
 })
 
-describe('pagos: la línea de arriba y lo que se lee de cada uno', () => {
-  const pay = (cents: number, status: 'posted' | 'voided' = 'posted') => ({
-    totalCents: cents,
-    status,
+describe('la fila del total y lo que se lee de cada pago', () => {
+  const line = (
+    cents: number,
+    status: 'posted' | 'voided' = 'posted',
+    kind: DocumentListRow['kind'] = 'purchase',
+  ) => ({ totalCents: cents, status, kind })
+
+  it('suma lo que se ve, sin los anulados', () => {
+    expect(documentsTotal([line(100), line(250), line(900, 'voided')])).toBe(350)
+    expect(documentsTotal([])).toBe(0)
   })
 
-  it('suma lo que se ve, sin los anulados, solo si entra todo en la página', () => {
-    expect(
-      paymentsHeadline({
-        rows: [pay(100), pay(250), pay(900, 'voided')],
-        totalRows: 3,
-        searching: false,
-      }),
-    ).toEqual({ count: 2, cents: 350 })
+  it('una nota de crédito resta', () => {
+    expect(documentsTotal([line(1_000), line(300, 'posted', 'purchase_credit_note')])).toBe(700)
+    expect(documentsTotal([line(300, 'voided', 'purchase_credit_note')])).toBe(0)
   })
 
-  it('con más páginas o buscando no dice un total a medias', () => {
-    expect(paymentsHeadline({ rows: [pay(100)], totalRows: 128, searching: false })).toBeNull()
-    expect(paymentsHeadline({ rows: [pay(100)], totalRows: 1, searching: true })).toBeNull()
-    expect(paymentsHeadline({ rows: [], totalRows: 0, searching: false })).toBeNull()
-    expect(
-      paymentsHeadline({ rows: [pay(100, 'voided')], totalRows: 1, searching: false }),
-    ).toBeNull()
-  })
-
-  it('con qué y qué pagó', () => {
-    expect(paymentMeansText([{ label: 'Caja' }])).toBe('con Caja')
-    expect(paymentMeansText([{ label: 'Caja' }, { label: 'Mercado Pago' }])).toBe('con 2 medios')
+  it('de dónde salió y qué pagó', () => {
+    expect(paymentMeansText([{ label: 'Caja' }])).toBe('Caja')
+    expect(paymentMeansText([{ label: 'Caja' }, { label: 'Mercado Pago' }])).toBe('2 medios')
     expect(paymentMeansText([])).toBeNull()
     expect(paymentMeansText(null)).toBeNull()
     expect(paymentAppliedText([{ label: 'Factura A 0003-00001100' }])).toBe(
-      'pagó Factura A 0003-00001100',
+      'Factura A 0003-00001100',
     )
     expect(paymentAppliedText([{ label: 'Factura A 1' }, { label: 'x' }, { label: 'y' }])).toBe(
-      'pagó Factura A 1 (+2)',
+      'Factura A 1 (+2)',
     )
-    expect(paymentAppliedText([])).toBe('quedó a cuenta')
+    expect(paymentAppliedText([])).toBe('A cuenta')
     expect(paymentAppliedText(null)).toBeNull()
   })
 })
 
 // ─── Lo que se ve armado ─────────────────────────────────────────────────────
-
-describe('el héroe «Le debés a proveedores»', () => {
-  it('con deuda: el número, a cuántos y los tres tramos con su palabra', () => {
-    const out = text(
-      html(
-        createElement(LibretaHero, {
-          tenantSlug: SLUG,
-          totals: {
-            debtCents: 19_235_800,
-            overdueCents: 12_000_000,
-            dueSoonCents: 7_235_800,
-            creditCents: 6_550_000,
-            count: 24,
-          },
-          debtors: 2,
-          overdueParties: 1,
-          hasSuppliers: true,
-        }),
-      ),
-    )
-    expect(out).toContain('Le debés a proveedores')
-    expect(out).toContain('192.358')
-    expect(out).toContain('A 2 proveedores.')
-    for (const word of ['Vencido', 'Vence esta semana', 'Más adelante']) expect(out).toContain(word)
-    expect(out).toContain('$ 65.500 a favor')
-    expect(out).toContain('¿Cómo se calcula?')
-  })
-
-  it('sin deuda no muestra «$ 0»: dice que no le debés nada a nadie', () => {
-    const out = text(
-      html(
-        createElement(LibretaHero, {
-          tenantSlug: SLUG,
-          totals: { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0, count: 5 },
-          debtors: 0,
-          overdueParties: 0,
-          hasSuppliers: true,
-        }),
-      ),
-    )
-    expect(out).toContain('No le debés nada a nadie')
-    expect(out).not.toContain('$ 0')
-  })
-
-  it('sin los saldos iniciales y sin deuda cargada no dice «nada»: dice que todavía no sabe', () => {
-    const out = text(
-      html(
-        createElement(LibretaHero, {
-          tenantSlug: SLUG,
-          totals: { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0, count: 79 },
-          debtors: 0,
-          overdueParties: 0,
-          hasSuppliers: true,
-          openingPending: true,
-        }),
-      ),
-    )
-    expect(out).toContain('Todavía no sé cuánto debés')
-    expect(out).toContain('saldos iniciales')
-    expect(out).not.toContain('No le debés nada')
-    expect(out).not.toContain('$ 0')
-  })
-
-  it('sin los saldos iniciales y con deuda (HUB): el número y que es lo cargado hasta ahora', () => {
-    const out = text(
-      html(
-        createElement(LibretaHero, {
-          tenantSlug: SLUG,
-          totals: {
-            debtCents: 19_235_800,
-            overdueCents: 19_235_800,
-            dueSoonCents: 0,
-            creditCents: 0,
-            count: 79,
-          },
-          debtors: 2,
-          overdueParties: 2,
-          hasSuppliers: true,
-          openingPending: true,
-          canWrite: true,
-        }),
-      ),
-    )
-    expect(out).toContain('192.358')
-    expect(out).toContain('Pagar lo vencido')
-    expect(out).toContain('Es lo que cargaste hasta ahora')
-  })
-})
-
-describe('la deuda dibujada en cada renglón', () => {
-  it('es un adorno: lo mismo está escrito al lado', () => {
-    const out = html(
-      createElement(DebtBar, {
-        overdueCents: 100,
-        soonCents: 50,
-        laterCents: 50,
-        maxCents: 400,
-      }),
-    )
-    expect(out).toContain('aria-hidden="true"')
-    expect(out).not.toContain('tabindex')
-    expect(out).toContain('bg-destructive')
-    expect(out).toContain('bg-warning')
-    expect(out).toContain('bg-adm-neutral')
-  })
-
-  it('sin deuda no dibuja nada', () => {
-    expect(
-      html(createElement(DebtBar, { overdueCents: 0, soonCents: 0, laterCents: 0, maxCents: 0 })),
-    ).toBe('')
-  })
-})
 
 function listProps(canWrite: boolean) {
   const s = sample()
@@ -800,27 +760,65 @@ function listProps(canWrite: boolean) {
   return {
     tenantSlug: SLUG,
     view,
-    today: TODAY,
     canWrite,
     pickable: canWrite ? new Set(view.shown.map((e) => e.row.partyId)) : new Set<string>(),
     backHref: '/hub/administracion/compras',
   }
 }
 
-describe('la libreta dibujada', () => {
-  it('quien carga ve [Pagar], «Elegir categoría» y «Cargarle una compra»', () => {
+describe('la planilla de proveedores dibujada', () => {
+  it('quien carga ve Proveedor · Vencido · Esta semana · Saldo, [Pagar] y el ⋯', () => {
     const out = html(createElement(LibretaList, listProps(true)))
     const read = text(out)
-    expect(read).toContain('Les debés')
-    expect(read).toContain('Tenés a favor')
-    expect(read).toContain('Sin deuda')
-    expect(read).toContain('vencido hace 1 día')
-    expect(read).toContain('vence en 5 días')
-    expect(read).toContain('Bebidas con alcohol')
+    for (const head of ['Proveedor', 'Vencido', 'Esta semana', 'Saldo']) {
+      expect(read).toContain(head)
+    }
+    expect(read).toContain('Barracuda Bebidas')
     expect(read).toContain('Pagar')
-    expect(read).toContain('Ver los 8 que faltan')
-    expect(out).toContain('Cargarle una compra a Proveedor sin deuda 00')
-    expect(read).toContain('Total: le debés $ 192.358')
+    expect(read).toContain('A favor $ 60.500')
+    expect(read).toContain('$ 5.000 a favor')
+    expect(read).toContain('Compra y pago')
+    expect(read).toContain('Ver su cuenta corriente')
+    // Sale el margen «vencido hace…» y las barritas: la plata ya está en sus columnas.
+    expect(read).not.toContain('vencido hace')
+    expect(read).toContain('Total')
+    expect(read).toContain('$ 192.358')
+    expect(out).toContain('adm-double-rule')
+  })
+
+  it('«Elegir categoría» sigue en el ⋯ de la fila, para quien carga', () => {
+    const props = listProps(true)
+    const read = text(
+      html(
+        createElement(SupplierAccountProvider, {
+          tenantSlug: SLUG,
+          accounts: [],
+          categories: { options: [], featured: [], pinned: [] },
+          rows: [],
+          // biome-ignore lint/correctness/noChildrenProp: en un .ts no hay JSX y el tipo lo pide en las props
+          children: createElement(LibretaList, props),
+        }),
+      ),
+    )
+    // Barracuda ya tiene: se cambia. El resto, se elige.
+    expect(read).toContain('Cambiar la categoría')
+    expect(read).toContain('Elegir categoría')
+  })
+
+  it('toda la fila lleva a su cuenta corriente, y las acciones van por encima', () => {
+    const props = listProps(true)
+    const out = html(createElement(LibretaList, props))
+    const first = props.view.shown[0]?.row.partyId
+    expect(out).toContain(`/hub/administracion/compras/proveedores/${first}`)
+    expect(out).toContain('after:absolute')
+    expect(out).toContain('z-10')
+  })
+
+  it('la compra del ⋯ vuelve a esta lista y «Compra y pago» va con su modo', () => {
+    const out = html(createElement(LibretaList, listProps(true)))
+    expect(out).toContain('compras/nueva?proveedor=')
+    expect(out).toContain('compras/nueva?modo=pago')
+    expect(out).toContain('volver=%2Fhub%2Fadministracion%2Fcompras')
   })
 
   it('la contadora no recibe ningún botón de carga', () => {
@@ -828,12 +826,12 @@ describe('la libreta dibujada', () => {
     const out = html(createElement(LibretaList, listProps(false)))
     const read = text(out)
     expect(read).toContain('Barracuda Bebidas')
-    expect(read).toContain('Sin categoría')
     expect(out).not.toContain('<button')
     expect(out).not.toContain('compras/nueva')
     expect(read).not.toContain('Pagar')
     expect(read).not.toContain('Elegir categoría')
-    expect(read).not.toContain('Cargarle una compra')
+    expect(read).not.toContain('Compra')
+    expect(out).not.toContain('Acciones')
   })
 
   it('un nombre de 60 caracteres queda entero en el `title` y el importe no se parte', () => {
@@ -861,37 +859,14 @@ describe('la libreta dibujada', () => {
     expect(text(out)).toContain('$ 999.999.999')
     expect(out).toContain('whitespace-nowrap')
   })
-})
 
-describe('la franja de los que no tienen categoría y la puerta de carga', () => {
-  it('la franja dice cuántos faltan de cuántos y lleva a clasificarlos', () => {
-    const out = html(createElement(UnclassifiedStrip, { tenantSlug: SLUG, pending: 76, total: 79 }))
-    expect(text(out)).toContain('76 de 79 proveedores no tienen categoría')
-    expect(out).toContain('filtro=sin-clasificar')
-    expect(text(out)).toContain('Clasificarlos ahora')
-  })
-
-  it('sin pendientes no se dibuja', () => {
-    expect(
-      html(createElement(UnclassifiedStrip, { tenantSlug: SLUG, pending: 0, total: 79 })),
-    ).toBe('')
-  })
-
-  it('la puerta son las tres tarjetas del lanzador', () => {
-    const out = text(html(createElement(ComprasDoor, { tenantSlug: SLUG })))
-    expect(out).toContain('¿Qué querés cargar?')
-    expect(out).toContain('Pagué algo recién')
-    expect(out).toContain('Me llegó una factura o un remito y lo pago después')
-    expect(out).toContain('Pago algo que debía')
-  })
-
-  it('la contadora no ve la puerta', () => {
-    ui.readOnly = true
-    expect(html(createElement(ComprasDoor, { tenantSlug: SLUG }))).toBe('')
+  it('sin filas no dibuja nada: el vacío lo decide quien la monta', () => {
+    const view = libretaView({ rows: [], classes: new Map(), filter: 'todos', q: '', match: MATCH })
+    expect(html(createElement(LibretaList, { ...listProps(true), view }))).toBe('')
   })
 })
 
-describe('los comprobantes como renglones', () => {
+describe('los comprobantes como planilla', () => {
   const rows = [
     doc(),
     doc({
@@ -908,32 +883,102 @@ describe('los comprobantes como renglones', () => {
     }),
   ]
 
-  it('quien carga ve el estado en palabras, «Sin factura» y [Pagarle]', () => {
+  it('quien carga ve Fecha · Comprobante · Proveedor · Importe · Estado, y [Pagarle]', () => {
     const out = html(
       createElement(DocumentRows, { tenantSlug: SLUG, rows, today: TODAY, canWrite: true }),
     )
     const read = text(out)
+    for (const head of ['Fecha', 'Comprobante', 'Proveedor', 'Importe', 'Estado']) {
+      expect(read).toContain(head)
+    }
+    expect(read).toContain('08/10')
     expect(read).toContain('Barracuda Bebidas')
     expect(read).toContain('Vencida hace 3 días')
     expect(read).toContain('Sin factura')
     expect(read).toContain('Anulado')
     expect(read).toContain('Pagarle')
     expect(out).toContain('/hub/administracion/comprobantes/00000000-0000-4000-8000-0000000000d1')
-    // El mismo día no repite la fecha en el margen: se agrupan solos.
-    expect(out.split('>08<').length - 1).toBe(1)
-    expect(out.split('>07<').length - 1).toBe(1)
+    // Lo anulado no suma: son dos de $ 120.000.
+    expect(read).toContain('Total $ 240.000')
+    expect(out).toContain('adm-double-rule')
   })
 
-  it('la contadora no ve [Pagarle]', () => {
+  it('si la lista sigue en otra página, el total lo dice', () => {
+    const read = text(
+      html(
+        createElement(DocumentRows, {
+          tenantSlug: SLUG,
+          rows,
+          today: TODAY,
+          canWrite: true,
+          totalLabel: 'Total de esta página',
+        }),
+      ),
+    )
+    expect(read).toContain('Total de esta página $ 240.000')
+  })
+
+  it('una nota de crédito resta, con su signo', () => {
+    const read = text(
+      html(
+        createElement(DocumentRows, {
+          tenantSlug: SLUG,
+          rows: [
+            doc(),
+            doc({
+              id: '00000000-0000-4000-8000-0000000000d4',
+              kind: 'purchase_credit_note',
+              title: 'Nota de crédito A 0003-00000015',
+              totalCents: 2_000_000,
+              openCents: 2_000_000,
+              paymentStatus: 'none',
+            }),
+          ],
+          today: TODAY,
+          canWrite: true,
+        }),
+      ),
+    )
+    expect(read).toContain('−$ 20.000')
+    expect(read).toContain('Total $ 100.000')
+    expect(read).toContain('A tu favor, sin usar')
+  })
+
+  it('la contadora no ve [Pagarle]; con el detalle, sí la imputación y el vencimiento', () => {
     ui.readOnly = true
     const out = html(
-      createElement(DocumentRows, { tenantSlug: SLUG, rows, today: TODAY, canWrite: false }),
+      createElement(DocumentRows, {
+        tenantSlug: SLUG,
+        rows,
+        today: TODAY,
+        canWrite: false,
+        detail: true,
+      }),
     )
-    expect(text(out)).not.toContain('Pagarle')
+    const read = text(out)
+    expect(read).not.toContain('Pagarle')
     expect(out).not.toContain('<button')
+    for (const head of ['Imputación', 'Falta', 'Vence']) expect(read).toContain(head)
+    expect(read).toContain('Compras: bebidas con alcohol')
+    expect(read).toContain('#12')
   })
 
-  it('los pagos: a quién, con qué y qué pagó', () => {
+  it('las fechas llevan el año solo si la lista cruza de año', () => {
+    const read = text(
+      html(
+        createElement(DocumentRows, {
+          tenantSlug: SLUG,
+          rows: [doc(), doc({ accountingDate: '2025-12-30', issueDate: '2025-12-30' })],
+          today: TODAY,
+          canWrite: false,
+        }),
+      ),
+    )
+    expect(read).toContain('08/10/2026')
+    expect(read).toContain('30/12/2025')
+  })
+
+  it('los pagos: a quién, de dónde salió y qué pagó', () => {
     const out = text(
       html(
         createElement(PaymentRows, {
@@ -953,11 +998,10 @@ describe('los comprobantes como renglones', () => {
         }),
       ),
     )
-    // El nombre es el título del renglón (no se corta detrás de «Le pagaste a…»).
     expect(out).toContain('Barracuda Bebidas')
-    expect(out).not.toContain('Le pagaste a')
-    expect(out).toContain('con Mercado Pago')
-    expect(out).toContain('quedó a cuenta')
+    expect(out).toContain('Salió de')
+    expect(out).toContain('Mercado Pago')
+    expect(out).toContain('A cuenta')
     expect(out).toContain('$ 380.000')
   })
 })
@@ -986,21 +1030,15 @@ describe('un solo libro: ninguna palabra sugiere que algo queda afuera', () => {
 
 // ─── La contadora no escribe: lo que faltaba probar dibujado ─────────────────
 
-describe('la barra de la libreta', () => {
-  const toolbar = (canWrite: boolean) => {
+describe('arriba de la planilla: la búsqueda, el filtro y el ⋯', () => {
+  const toolbar = (canWrite: boolean, filter: 'todos' | 'sin-clasificar' = 'todos') => {
     const s = sample()
-    const view = libretaView({
-      rows: s.rows,
-      classes: s.classes,
-      filter: 'todos',
-      q: '',
-      match: MATCH,
-    })
+    const view = libretaView({ rows: s.rows, classes: s.classes, filter, q: '', match: MATCH })
     return html(
       createElement(LibretaToolbar, {
         tenantSlug: SLUG,
         counts: view.counts,
-        filter: 'todos',
+        filter,
         q: '',
         canWrite,
         existingNames: [],
@@ -1010,101 +1048,161 @@ describe('la barra de la libreta', () => {
     )
   }
 
-  it('quien carga puede agregar proveedores de una lista', () => {
-    const read = text(toolbar(true))
-    expect(read).toContain('Agregar de una lista')
-    expect(read).toContain('Exportar saldos')
-    expect(read).toContain('Sin categoría')
+  it('el filtro es Todos · Con deuda · Vencidos · A favor · Impuestos y sueldos', () => {
+    const out = toolbar(true)
+    const read = text(out)
+    for (const label of ['Todos', 'Con deuda', 'Vencidos', 'A favor', 'Impuestos y sueldos']) {
+      expect(read).toContain(label)
+    }
+    expect(read).not.toContain('Sin categoría')
+    expect(out).toContain('filtro=impuestos')
+    expect(out).toContain('aria-current="true"')
   })
 
-  it('la contadora busca, filtra y exporta, pero no agrega a nadie', () => {
+  it('quien carga tiene en el ⋯ la lista, clasificar y exportar', () => {
+    const out = toolbar(true)
+    const read = text(out)
+    expect(read).toContain('Agregar de una lista')
+    expect(read).toContain('Clasificar proveedores')
+    expect(read).toContain('Exportar saldos')
+    // El mazo de fichas, con cuántos faltan.
+    expect(out).toContain('filtro=sin-clasificar')
+    expect(read).toContain('22')
+  })
+
+  it('«Sin categoría» se ve solo si está elegido, y su lista sigue siendo una lista', () => {
+    const out = toolbar(true, 'sin-clasificar')
+    expect(text(out)).toContain('Sin categoría')
+    expect(out).toContain('filtro=sin-clasificar&amp;vista=lista')
+  })
+
+  it('la contadora busca, filtra y exporta, pero no agrega ni clasifica', () => {
     ui.readOnly = true
     const read = text(toolbar(false))
     expect(read).not.toContain('Agregar de una lista')
+    expect(read).not.toContain('Clasificar proveedores')
     expect(read).toContain('Exportar saldos')
     expect(read).toContain('Con deuda')
+    expect(read).toContain('Solo lectura')
   })
 })
 
-describe('la pestaña «Proveedores» entera, para la contadora', () => {
-  const body = async (data: LibretaData, canWrite: boolean) =>
+describe('la pantalla de proveedores entera', () => {
+  const body = async (data: LibretaData, canWrite: boolean, sp = {}) =>
     html(
       await SuppliersBody({
         data: Promise.resolve(data),
         tenantSlug: SLUG,
-        sp: {},
+        sp,
         today: TODAY,
         canWrite,
       }),
     )
   const totals = { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0, count: 0 }
-
-  it('con proveedores: ni la franja de categorías, ni «Agregar de una lista», ni un botón de carga', async () => {
-    const s = sample()
-    const data: LibretaData = {
-      list: { ok: true, data: { rows: s.rows, totals, asOf: TODAY } },
-      classes: { ok: true, data: s.classes },
+  const withRows = (rows: readonly PartyListRow[], classes: Map<string, LibretaInfo>) =>
+    ({
+      list: { ok: true, data: { rows: [...rows], totals, asOf: TODAY } },
+      classes: { ok: true, data: classes },
       plan: null,
       settings: { ok: true, data: null },
-    }
-    // Quien carga sí ve la franja: es la misma pestaña con el permiso puesto.
-    expect(text(await body(data, true))).toContain('proveedores no tienen categoría')
+    }) as unknown as LibretaData
 
+  it('el totalizador y la planilla, sin héroe, ni puerta, ni franja', async () => {
+    const s = sample()
+    const read = text(await body(withRows(s.rows, s.classes), true))
+    for (const label of ['Le debés', 'Vencido', 'Vence esta semana']) {
+      expect(read).toContain(label)
+    }
+    expect(read).toContain('Barracuda Bebidas')
+    expect(read).not.toContain('¿Qué querés cargar?')
+    expect(read).not.toContain('Le debés a proveedores')
+    expect(read).not.toContain('no tienen categoría')
+    expect(read).not.toContain('¿Cómo se calcula?')
+  })
+
+  it('un impuesto con deuda no suma en «Le debés»: se ve con su filtro', async () => {
+    const s = sample()
+    const rentas = row({
+      partyName: 'Rentas',
+      partyKind: 'tax_agency',
+      systemKey: 'rentas',
+      debtCents: 90_000_000,
+      overdueCents: 90_000_000,
+    })
+    const rows = [...s.rows, rentas]
+    const all = text(await body(withRows(rows, s.classes), true))
+    expect(all).not.toContain('Rentas')
+    expect(all).not.toContain('900.000')
+    const taxes = text(await body(withRows(rows, s.classes), true, { filtro: 'impuestos' }))
+    expect(taxes).toContain('Rentas')
+    expect(taxes).toContain('$ 900.000')
+  })
+
+  it('la contadora: ni «Agregar de una lista», ni un botón de carga', async () => {
     ui.readOnly = true
-    const out = await body(data, false)
+    const s = sample()
+    const out = await body(withRows(s.rows, s.classes), false)
     const read = text(out)
     expect(read).toContain('Barracuda Bebidas')
-    expect(read).not.toContain('no tienen categoría')
-    expect(read).not.toContain('Clasificarlos ahora')
     expect(read).not.toContain('Agregar de una lista')
     expect(read).not.toContain('Elegir categoría')
     expect(read).not.toContain('Pagar')
     expect(out).not.toContain('compras/nueva')
   })
 
-  it('con casi todos sin categoría asoman pocos «sin deuda» (el resto, plegado)', async () => {
-    const s = sample()
-    const data: LibretaData = {
-      list: { ok: true, data: { rows: s.rows, totals, asOf: TODAY } },
-      classes: { ok: true, data: s.classes },
-      plan: null,
-      settings: { ok: true, data: null },
-    }
-    const all = libretaView({
-      rows: s.rows,
-      classes: s.classes,
-      filter: 'todos',
-      q: '',
-      match: MATCH,
-    })
-    const settled = all.settled.length + all.settledMore.length
-    expect(settled).toBeGreaterThan(SETTLED_PREVIEW_UNSORTED)
+  it('el bar sin proveedores: una oración y el primer paso, sin botones para ella', async () => {
+    const data = withRows([], new Map())
     const owner = text(await body(data, true))
-    expect(owner).toContain(`Ver los ${settled - SETTLED_PREVIEW_UNSORTED} que faltan`)
-    // La contadora no clasifica: ve el pliegue de siempre.
-    ui.readOnly = true
-    const read = text(await body(data, false))
-    expect(read).toContain(`Ver los ${settled - SETTLED_PREVIEW} que faltan`)
-  })
-
-  it('el bar sin proveedores: el vacío enseña, sin botones para ella', async () => {
-    const data: LibretaData = {
-      list: { ok: true, data: { rows: [], totals, asOf: TODAY } },
-      classes: { ok: true, data: new Map() },
-      plan: null,
-      settings: { ok: true, data: null },
-    }
-    const owner = text(await body(data, true))
-    expect(owner).toContain('Acá va tu libreta de proveedores')
-    expect(owner).toContain('Cargar una compra que debo')
+    expect(owner).toContain('Todavía no hay proveedores')
+    expect(owner).toContain('Cargar una compra')
     expect(owner).toContain('Pegar la lista de mis proveedores')
 
     ui.readOnly = true
     const out = await body(data, false)
-    expect(text(out)).toContain('Acá va tu libreta de proveedores')
+    expect(text(out)).toContain('Todavía no hay proveedores')
     expect(out).not.toContain('<button')
     expect(out).not.toContain('compras/nueva')
     expect(text(out)).not.toContain('Pegar la lista')
+  })
+
+  it('si no se pudieron leer los saldos, lo dice y deja reintentar', async () => {
+    const out = text(
+      await body(
+        {
+          list: { ok: false, code: 'error', message: 'No pudimos cargar esto.' },
+          classes: { ok: true, data: new Map() },
+          plan: null,
+          settings: { ok: true, data: null },
+        },
+        true,
+      ),
+    )
+    expect(out).toContain('No pudimos cargar esto.')
+    expect(out).toContain('Reintentar')
+    expect(out).not.toContain('$ 0')
+  })
+
+  it('un bar con deuda de impuestos y sin proveedores: el primer paso, con el filtro a mano', async () => {
+    const rentas = row({
+      partyName: 'Rentas',
+      partyKind: 'tax_agency',
+      systemKey: 'rentas',
+      debtCents: 900_000,
+    })
+    const out = text(await body(withRows([rentas], new Map()), true))
+    expect(out).toContain('Todavía no hay proveedores')
+    expect(out).toContain('Impuestos y sueldos')
+    expect(out).not.toContain('Nadie en esta vista')
+    const taxes = text(await body(withRows([rentas], new Map()), true, { filtro: 'impuestos' }))
+    expect(taxes).toContain('Rentas')
+    expect(taxes).toContain('$ 9.000')
+  })
+
+  it('una búsqueda sin resultados lo dice adentro de la hoja, con la salida', async () => {
+    const s = sample()
+    const read = text(await body(withRows(s.rows, s.classes), true, { q: 'zzz' }))
+    expect(read).toContain('Nadie con «zzz» en esta vista.')
+    expect(read).toContain('Ver todos')
   })
 })
 
@@ -1163,7 +1261,7 @@ describe('«Clasificar proveedores»: cada toque guarda', () => {
   })
 })
 
-describe('Comprobantes y Pagos vacíos: el botón del paso siguiente es solo de quien carga', () => {
+describe('Comprobantes y Pagos: el botón del paso siguiente es solo de quien carga', () => {
   const tab = (mode: 'comprobantes' | 'pagos', canWrite: boolean) =>
     htmlAsync(
       createElement(DocumentsTab, {
@@ -1182,30 +1280,46 @@ describe('Comprobantes y Pagos vacíos: el botón del paso siguiente es solo de 
       totalRows: 0,
       truncated: false,
     })
-    reads.getMonthSpending.mockResolvedValue({
-      from: '2026-10-01',
-      to: '2026-10-31',
-      categories: [],
-      vouchers: [],
-      totalCents: 0,
-      documents: 0,
-      truncated: false,
-    })
   }
 
-  it('quien carga: «Cargar una compra que debo», «Pagué algo recién» y «Pago algo que debía»', async () => {
+  it('quien carga, sin nada: «Cargar una compra», «Compra y pago» y «Cargar un pago»', async () => {
     empty()
     const docs = text(await tab('comprobantes', true))
     expect(docs).toContain('Todavía no cargaste nada en octubre')
-    expect(docs).toContain('Cargar una compra que debo')
-    expect(docs).toContain('Pagué algo recién')
+    expect(docs).toContain('Cargar una compra')
+    expect(docs).toContain('Compra y pago')
     // El filtro con / sin factura está aunque no haya nada que sumar.
+    expect(docs).toContain('Todos')
     expect(docs).toContain('Con factura')
     expect(docs).toContain('Sin factura')
     expect(docs).not.toContain('$ 0')
     const pays = text(await tab('pagos', true))
     expect(pays).toContain('No hay pagos en octubre')
-    expect(pays).toContain('Pago algo que debía')
+    expect(pays).toContain('Cargar un pago')
+  })
+
+  it('el segmento Compras · Pagos reemplaza a la solapa, y conserva el período', async () => {
+    empty()
+    const out = await htmlAsync(
+      createElement(DocumentsTab, {
+        mode: 'comprobantes',
+        tenantId: 't-1',
+        tenantSlug: SLUG,
+        sp: { periodo: '2026-09' },
+        today: TODAY,
+        canWrite: true,
+      }),
+    )
+    expect(text(out)).toContain('Compras')
+    expect(text(out)).toContain('Pagos')
+    expect(out).toContain('tab=comprobantes&amp;ver=pagos&amp;periodo=2026-09')
+    expect(out).toContain('tab=comprobantes&amp;periodo=2026-09')
+    // El exporte que ya existía sigue ahí.
+    expect(text(out)).toContain('Exportar')
+    // Y en Pagos no hay filtro de factura ni de estado.
+    const pays = text(await tab('pagos', true))
+    expect(pays).not.toContain('Con factura')
+    expect(pays).not.toContain('Falta pagar')
   })
 
   it('la contadora ve el mismo vacío sin ningún botón de carga', async () => {
@@ -1213,15 +1327,15 @@ describe('Comprobantes y Pagos vacíos: el botón del paso siguiente es solo de 
     empty()
     const docs = await tab('comprobantes', false)
     expect(text(docs)).toContain('Todavía no cargaste nada en octubre')
-    expect(text(docs)).not.toContain('Cargar una compra que debo')
-    expect(text(docs)).not.toContain('Pagué algo recién')
+    expect(text(docs)).not.toContain('Cargar una compra')
+    expect(text(docs)).not.toContain('Compra y pago')
     expect(docs).not.toContain('compras/nueva')
     const pays = await tab('pagos', false)
     expect(text(pays)).toContain('No hay pagos en octubre')
-    expect(text(pays)).not.toContain('Pago algo que debía')
+    expect(text(pays)).not.toContain('Cargar un pago')
   })
 
-  it('con comprobantes: ella ve la tabla, sin [Pagarle] ni «Ver como tabla»', async () => {
+  it('con comprobantes: ella ve la imputación, sin [Pagarle] ni la opción de ocultarla', async () => {
     ui.readOnly = true
     empty()
     reads.listDocuments.mockResolvedValue({
@@ -1235,11 +1349,11 @@ describe('Comprobantes y Pagos vacíos: el botón del paso siguiente es solo de 
     expect(out).toContain('<table')
     expect(read).toContain('Imputación')
     expect(read).not.toContain('Pagarle')
-    expect(read).not.toContain('Ver como tabla')
-    expect(read).not.toContain('Ver como libreta')
+    expect(read).not.toContain('Ver imputación y vencimientos')
+    expect(read).not.toContain('Ocultar imputación')
   })
 
-  it('con comprobantes: quien carga ve los renglones con [Pagarle] y puede pasar a la tabla', async () => {
+  it('con comprobantes: quien carga ve [Pagarle] y puede pedir la imputación', async () => {
     empty()
     reads.listDocuments.mockResolvedValue({
       rows: [doc()],
@@ -1247,9 +1361,33 @@ describe('Comprobantes y Pagos vacíos: el botón del paso siguiente es solo de 
       totalRows: 1,
       truncated: false,
     })
-    const read = text(await tab('comprobantes', true))
+    const out = await tab('comprobantes', true)
+    const read = text(out)
     expect(read).toContain('Barracuda Bebidas')
     expect(read).toContain('Pagarle')
-    expect(read).toContain('Ver como tabla')
+    expect(read).not.toContain('Imputación')
+    expect(read).toContain('Ver imputación y vencimientos')
+    expect(out).toContain('vista=tabla')
+  })
+
+  it('con más páginas el total lo dice: no es el del período', async () => {
+    empty()
+    reads.listDocuments.mockResolvedValue({
+      rows: [doc()],
+      nextCursor: 'x',
+      totalRows: 120,
+      truncated: false,
+    })
+    const read = text(await tab('comprobantes', true))
+    expect(read).toContain('Total de esta página')
+    expect(read).toContain('Página 1 de 3')
+  })
+
+  it('si la lista no se pudo leer, lo dice adentro de la hoja', async () => {
+    empty()
+    reads.listDocuments.mockRejectedValue(new Error('boom'))
+    const read = text(await tab('comprobantes', true))
+    expect(read).toContain('No pudimos cargar esto')
+    expect(read).toContain('Reintentar')
   })
 })

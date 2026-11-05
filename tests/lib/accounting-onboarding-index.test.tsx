@@ -16,9 +16,9 @@ vi.mock('@/components/administracion/guias/onboarding/how-to-slot', () => ({
 }))
 
 import {
-  ArcaGuideCard,
+  ArcaGuideRow,
   DownloadGuides,
-  OnboardingGuideCard,
+  OnboardingGuideRow,
 } from '@/components/administracion/guias/onboarding/guides-index'
 import { onboardingState, parseOnboardingData } from '@/lib/accounting/onboarding'
 import type { ArcaConnectionView, ArcaOverview } from '@/lib/arca/views'
@@ -81,45 +81,36 @@ function arca(
   }
 }
 
-describe('«Cómo arrancar»', () => {
+describe('la Puesta en marcha, en su fila', () => {
   it('con el estado: el avance y lo próximo', () => {
     const state = stateOf()
-    const t = text(
-      renderToString(
-        createElement(OnboardingGuideCard, {
-          href: '/bar-demo/administracion/guias/como-arrancar',
-          outcome: { ok: true, data: { state } },
-          canWrite: true,
-        }),
-      ),
-    )
-    // El número es el de la puesta en marcha; la rutina no se suma (no hay un segundo «N de M»).
-    expect(t).toContain(`${state.sections.day1.done}`)
-    expect(t).toContain(`${state.sections.day1.total}`)
-    expect(t).not.toContain(`${state.done} de ${state.total} listos`)
-    expect(t).toContain('Lo próximo: Apps de delivery, tarjetas y Mercado Pago')
-    expect(t).toContain('Seguir con la guía')
-  })
-
-  it('sin el estado de la base, o si falló la lectura: lo dice y la guía se abre igual', () => {
-    const pending = renderToString(
-      createElement(OnboardingGuideCard, {
-        href: '/x',
-        outcome: { ok: true, data: null },
-        canWrite: true,
+    const html = renderToString(
+      createElement(OnboardingGuideRow, {
+        href: '/bar-demo/administracion/guias/como-arrancar',
+        outcome: { ok: true, data: { state } },
       }),
     )
+    const t = text(html)
+    // El número es el de la puesta en marcha; la rutina no se suma (no hay un segundo «N de M»).
+    expect(t).toContain(`${state.sections.day1.done} de ${state.sections.day1.total} listos`)
+    expect(t).not.toContain(`${state.done} de ${state.total} listos`)
+    expect(t).toContain('Lo próximo: Comisiones de apps, tarjetas y Mercado Pago')
+    expect(html).toContain('href="/bar-demo/administracion/guias/como-arrancar"')
+  })
+
+  it('sin el estado de la base, o si falló la lectura: lo dice y se abre igual', () => {
+    const pending = renderToString(
+      createElement(OnboardingGuideRow, { href: '/x', outcome: { ok: true, data: null } }),
+    )
     expect(text(pending)).toContain('Todavía no marca tu avance sola')
-    expect(text(pending)).toContain('Abrir la guía')
     const failed = renderToString(
-      createElement(OnboardingGuideCard, {
+      createElement(OnboardingGuideRow, {
         href: '/x',
         outcome: { ok: false, message: 'No pudimos cargar esto.' },
-        canWrite: false,
       }),
     )
     expect(text(failed)).toContain('No pudimos ver tu avance')
-    expect(text(failed)).toContain('Ver la guía')
+    expect(failed).toContain('href="/x"')
   })
 })
 
@@ -127,7 +118,7 @@ describe('«Conectar ARCA»', () => {
   it('a medio hacer: cuántos pasos van y el que toca', () => {
     const t = text(
       renderToString(
-        createElement(ArcaGuideCard, {
+        createElement(ArcaGuideRow, {
           href: '/bar-demo/administracion/ajustes/arca',
           outcome: {
             ok: true,
@@ -140,19 +131,17 @@ describe('«Conectar ARCA»', () => {
               },
             ),
           },
-          canWrite: true,
         }),
       ),
     )
     expect(t).toContain('4 de 9 pasos hechos')
     expect(t).toContain('Te toca: Creá el certificado en ARCA y bajalo')
-    expect(t).toContain('Seguir conectando')
   })
 
   it('con error en la última prueba, lo dice en palabras', () => {
     const t = text(
       renderToString(
-        createElement(ArcaGuideCard, {
+        createElement(ArcaGuideRow, {
           href: '/x',
           outcome: {
             ok: true,
@@ -171,7 +160,6 @@ describe('«Conectar ARCA»', () => {
               { done: 7, total: 9, next: 's7_wsfe' },
             ),
           },
-          canWrite: true,
         }),
       ),
     )
@@ -181,7 +169,7 @@ describe('«Conectar ARCA»', () => {
   it('conectado: el punto de venta y hasta cuándo vale el certificado', () => {
     const t = text(
       renderToString(
-        createElement(ArcaGuideCard, {
+        createElement(ArcaGuideRow, {
           href: '/x',
           outcome: {
             ok: true,
@@ -202,28 +190,24 @@ describe('«Conectar ARCA»', () => {
               { done: 9, total: 9, next: null },
             ),
           },
-          canWrite: true,
         }),
       ),
     )
-    expect(t).toContain('Conectado')
-    expect(t).toContain('ARCA ya está conectado con el punto de venta 5.')
+    expect(t).toContain('Ya está conectado con el punto de venta 5.')
     expect(t).toContain('El certificado vence el 10/09/2028.')
-    expect(t).toContain('Ver la guía')
   })
 
   it('si no se pudo leer, la tarjeta lo dice y la guía se abre igual', () => {
     const t = text(
       renderToString(
-        createElement(ArcaGuideCard, {
+        createElement(ArcaGuideRow, {
           href: '/x',
           outcome: { ok: false, message: 'No pudimos cargar esto.' },
-          canWrite: true,
         }),
       ),
     )
     expect(t).toContain('No pudimos ver cómo va la conexión')
-    expect(t).toContain('Empezar a conectar')
+    expect(t).toContain('Se abre igual')
   })
 })
 

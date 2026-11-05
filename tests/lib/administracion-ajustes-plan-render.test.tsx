@@ -94,15 +94,20 @@ describe('plan de cuentas: saldos', () => {
     ])
     // Cero: «0,00» + la «D» invisible (solo ocupa su lugar; los lectores no la leen).
     expect(html).toMatch(/0,00<span aria-hidden="true" class="invisible ml-1">D<\/span>/)
-    // Los dos son grupos y los dos dicen su saldo en la línea del celular.
-    expect(html.match(/Saldo /g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    // Los dos son grupos y los dos dicen su saldo. La columna no se esconde en el celular: la tabla
+    // se desliza adentro de su contenedor, sin perder nada.
+    const rows = (html.match(/<tr[\s>].*?<\/tr>/g) ?? []).filter((row) => row.includes('<td'))
+    expect(rows.find((row) => row.includes('ACTIVO'))).toContain('10.000,00')
+    expect(rows.find((row) => row.includes('PASIVO'))).toContain('0,00')
+    for (const row of rows) expect(row).not.toMatch(/<td[^>]*\bhidden\b/)
   })
 })
 
 describe('puesta en marcha', () => {
   // Antes eran cuatro pasos («Datos», «Cajas», «Saldos», «Listo») y el segundo escondía tres
-  // temas. Ahora el riel dice los seis, con el nombre que cada lugar tiene en Ajustes.
-  it('el riel dice los seis pasos por su nombre, y en el celular «Paso N de 6»', async () => {
+  // temas. Ahora el riel dice los cinco, con el nombre que cada lugar tiene en Ajustes. Los puntos
+  // de venta dejaron de ser un paso: hasta que el bar facture, no se piden.
+  it('el riel dice los cinco pasos por su nombre, y en el celular «Paso N de 5»', async () => {
     const { SetupRail } = await import(`${CONFIGURAR}/_components/setup-rail`)
     const html = renderToString(
       createElement(SetupRail, { current: 2, summaries: { 1: 'Bar de Prueba SAS' } }),
@@ -111,7 +116,6 @@ describe('puesta en marcha', () => {
       'Datos de la SAS',
       'Cajas y cuentas',
       'Medios de cobro',
-      'Puntos de venta',
       'Revisá y arrancá',
       'Saldos iniciales',
     ]) {
@@ -120,7 +124,8 @@ describe('puesta en marcha', () => {
     expect(html).toContain('aria-label="Pasos de la puesta en marcha"')
     // El paso que toca se marca para lectores, y uno solo.
     expect((html.match(/aria-current="step"/g) ?? []).length).toBe(1)
-    expect(html).toContain('Paso 2 de 6')
+    expect(html).not.toContain('Puntos de venta')
+    expect(html).toContain('Paso 2 de 5')
     // Lo ya cargado se lee debajo del paso resuelto.
     expect(html).toContain('Bar de Prueba SAS')
     expect(html).toContain('Después: sumar a tus socios y conectar ARCA, cuando quieras.')
@@ -130,12 +135,12 @@ describe('puesta en marcha', () => {
     const { setupRailItems, OPENING_RAIL_STEP } = await import(`${CONFIGURAR}/_lib/wizard-steps`)
     const states = (current: number | 'done', doneUpTo?: number) =>
       (setupRailItems(current, {}, doneUpTo) as { state: string }[]).map((s) => s.state)
-    expect(states(1)).toEqual(['current', 'todo', 'todo', 'todo', 'todo', 'todo'])
-    // Con el bar ya configurado toca el sexto: los cinco anteriores, tildados.
-    expect(states(OPENING_RAIL_STEP)).toEqual(['done', 'done', 'done', 'done', 'done', 'current'])
-    expect(states('done')).toEqual(['done', 'done', 'done', 'done', 'done', 'done'])
+    expect(states(1)).toEqual(['current', 'todo', 'todo', 'todo', 'todo'])
+    // Con el bar ya configurado toca el quinto: los cuatro anteriores, tildados.
+    expect(states(OPENING_RAIL_STEP)).toEqual(['done', 'done', 'done', 'done', 'current'])
+    expect(states('done')).toEqual(['done', 'done', 'done', 'done', 'done'])
     // Volver atrás a cambiar un paso no destilda lo que ya se resolvió.
-    expect(states(2, 4)).toEqual(['done', 'current', 'done', 'done', 'todo', 'todo'])
+    expect(states(2, 3)).toEqual(['done', 'current', 'done', 'todo', 'todo'])
   })
 
   it('ya configurada: lo dice y manda a Ajustes', async () => {

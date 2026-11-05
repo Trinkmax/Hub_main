@@ -9,7 +9,9 @@
  * palabras.
  */
 
-import { formatCentsShort } from '@/lib/money'
+import { bankTaxOf, bpLabel, chargesBankTax } from '@/lib/accounting/taxes'
+import type { PostingContext } from '@/lib/accounting/types'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import type { PaymentPlan } from './payment-plan'
 
 type DebtLike = { lineId: string; openCents: number; dueDate: string | null }
@@ -68,6 +70,44 @@ export function payHeadline(input: {
   const where = input.count === 1 ? 'en 1 compra' : `en ${input.count} compras`
   const debt = `Le debés ${formatCentsShort(input.debtCents)} ${where}`
   return credit ? `${debt} y tenés ${credit} a favor.` : `${debt}.`
+}
+
+// ─── Lo que se anota solo y el plan de la semana ─────────────────────────────
+
+/**
+ * El impuesto al cheque que va a anotar el motor con este pago, para decirlo antes de guardar. Es la
+ * misma regla de `withBankTax`: si sale plata de más de una cuenta que lo cobra, se calcula sobre la
+ * que puso más. `null`: no corresponde.
+ */
+export function paymentBankTax(
+  methods: ReadonlyArray<{ treasuryAccountId: string; amountCents: number }>,
+  ctx: Pick<PostingContext, 'treasuries' | 'settings'>,
+): { cents: number; bp: number } | null {
+  const settings = ctx.settings.taxSettings
+  if (!settings) return null
+  const out = new Map<string, number>()
+  for (const method of methods) {
+    const treasury = ctx.treasuries.get(method.treasuryAccountId)
+    if (!treasury || !chargesBankTax(treasury)) continue
+    out.set(treasury.id, (out.get(treasury.id) ?? 0) + method.amountCents)
+  }
+  const [top] = [...out.entries()].sort((a, b) => b[1] - a[1])
+  if (!top) return null
+  const cents = bankTaxOf(top[1], ctx.treasuries.get(top[0]), settings)
+  return cents > 0 ? { cents, bp: settings.bankTaxBp } : null
+}
+
+/** «Impuesto al cheque 0,6 %: $ 3.699,60, se anota solo.» */
+export function bankTaxNote(tax: { cents: number; bp: number }): string {
+  return `Impuesto al cheque ${bpLabel(tax.bp)}: ${formatCents(tax.cents)}, se anota solo.`
+}
+
+/** «Presupuesto de la semana $ 450.000, ya pagaste $ 410.000.» Sin presupuesto, nada. */
+export function weekBudgetNote(
+  plan: { budgetCents: number; paidCents: number } | null,
+): string | null {
+  if (!plan || plan.budgetCents <= 0) return null
+  return `Presupuesto de la semana ${formatCentsShort(plan.budgetCents)}, ya pagaste ${formatCentsShort(plan.paidCents)}.`
 }
 
 // ─── Cómo queda después del pago ─────────────────────────────────────────────

@@ -4,26 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IvaBookScreen } from '@/app/(manager)/[tenantSlug]/administracion/libros/_components/iva-book'
 import AsientoManualPage from '@/app/(manager)/[tenantSlug]/administracion/libros/asiento-manual/page'
 import { AllMonths } from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_components/all-months-table'
-import {
-  coverLine,
-  MonthCover,
-} from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_components/month-cover'
 import { sendMessage } from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_components/send-step'
-import FinDeMesPage from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/page'
+import CierreDeMesPage from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/page'
 import DiarioPage from '@/app/(manager)/[tenantSlug]/administracion/libros/diario/page'
 import LibrosPage from '@/app/(manager)/[tenantSlug]/administracion/libros/page'
 import PosicionIvaPage from '@/app/(manager)/[tenantSlug]/administracion/libros/posicion-iva/page'
 import type { FiscalYearRow, PeriodRow } from '@/lib/accounting/queries'
+import { FISCAL_AMOUNT_KEYS } from '@/lib/accounting/types'
 import { eachIsoDay } from '@/lib/dates'
+import { prepare } from './accounting-fixtures'
 
 /**
- * «Fin de mes» ya dibujado, con la base simulada: lo que la pantalla le promete
+ * El Cierre de mes ya dibujado, con la base simulada: lo que la pantalla le promete
  * a cada uno. Las cuentas y las frases tienen sus tests en
  * `administracion-fin-de-mes`; acá se cuida lo que solo se ve armado:
  *
- * - la contadora no recibe NINGÚN botón de carga (ni cerrar, ni reabrir, ni las
- *   acciones de los avisos): solo descargas;
- * - con el mes cerrado, el paso que toca es mandarle los libros;
+ * - la contadora no recibe NINGÚN botón de carga del mes (ni cerrar, ni reabrir, ni
+ *   las acciones de los avisos): descarga, y hace sus asientos;
+ * - con el mes cerrado, lo que sigue es mandarle los libros;
  * - sin la CUIT se dice que se bajan 10 de 15;
  * - «Sumar a la contadora» sale solo para quien administra los accesos.
  */
@@ -43,12 +41,24 @@ const db = vi.hoisted(() => ({
   accountants: [] as Array<{ userId: string; name: string }>,
   /** El comprobante del IVA anotado (para «Pagar a ARCA»). */
   document: null as unknown,
+  /** El balance del mes: `null` = no se pudo leer. */
+  trial: null as unknown,
+  payroll: { employees: 0, accrued: false } as unknown,
+  /** El contexto de los asientos: sin esto, no se arma ni el formulario del asiento manual. */
+  context: null as unknown,
+  catalog: null as unknown,
 }))
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/libros/cierres',
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
+  redirect: (url: string) => {
+    throw new Error(`REDIRECT:${url}`)
+  },
+  notFound: () => {
+    throw new Error('NOT_FOUND')
+  },
 }))
 vi.mock('@/components/administracion/accounting-provider', () => {
   const value = () => ({
@@ -88,10 +98,16 @@ vi.mock('@/app/(manager)/[tenantSlug]/administracion/libros/_lib/page-access', (
 }))
 // Sin contexto de asientos no se arma la vista previa del IVA ni el cierre del ejercicio.
 vi.mock('@/lib/accounting/context', () => ({
-  tryLoadPostingContext: async () => ({
-    ok: false,
-    state: { ok: false, code: 'error', message: 'sin contexto' },
-  }),
+  tryLoadPostingContext: async () =>
+    db.context
+      ? { ok: true, ctx: db.context }
+      : { ok: false, state: { ok: false, code: 'error', message: 'sin contexto' } },
+  loadPostingCatalog: async () => db.catalog,
+}))
+// Las acciones del panel del asiento son del servidor: para dibujar alcanza con que existan.
+vi.mock('@/lib/accounting/actions/reimpute', () => ({ reimputeLine: vi.fn() }))
+vi.mock('@/app/(manager)/[tenantSlug]/administracion/libros/_lib/entry-panel-actions', () => ({
+  loadEntryPanel: vi.fn(),
 }))
 vi.mock('@/lib/app-url', () => ({ getAppUrl: async () => 'https://app.hub.test' }))
 vi.mock('@/lib/accounting/server/document-context', () => ({
@@ -101,6 +117,8 @@ vi.mock('@/lib/accounting/server/document-context', () => ({
 vi.mock('@/lib/accounting/actions/documents', () => ({
   postManualEntry: vi.fn(),
   undoDocument: vi.fn(),
+  voidDocument: vi.fn(),
+  reverseDocument: vi.fn(),
 }))
 vi.mock('@/lib/accounting/actions/parties', () => ({ createParty: vi.fn(), saveParty: vi.fn() }))
 vi.mock('@/lib/accounting/queries', async (original) => ({
@@ -135,8 +153,17 @@ vi.mock('@/lib/accounting/queries', async (original) => ({
   getJournal: async () => ({ rows: [], totalRows: 0, nextCursor: null }),
   getJournalSummary: async () => ({ entries: 0, debitCents: 0, creditCents: 0, balanced: true }),
   getIvaBook: async () => ({ rows: [], totalRows: 0, nextCursor: null }),
-  getIvaBookTotals: async () => ({ amounts: {} }),
+  getIvaBookTotals: async () => ({
+    amounts: Object.fromEntries(FISCAL_AMOUNT_KEYS.map((key) => [key, 0])),
+    count: 0,
+  }),
   getPeriodByMonth: async () => null,
+  getTrialBalance: async () => {
+    if (!db.trial) throw new Error('sin balance')
+    return db.trial
+  },
+  getAccountSystemKeys: async () => new Map(),
+  getPayrollMonthStatus: async () => db.payroll,
 }))
 
 const TODAY = '2026-10-13'
@@ -159,6 +186,10 @@ afterEach(() => {
   db.changed = []
   db.accountants = []
   db.document = null
+  db.trial = null
+  db.payroll = { employees: 0, accrued: false }
+  db.context = null
+  db.catalog = null
 })
 
 function period(ym: string, over: Partial<PeriodRow> = {}): PeriodRow {
@@ -300,8 +331,41 @@ const NOT_RECONCILED = {
   count: 2,
 }
 
+/** Un balance que cuadra; `odd` suma una pérdida con saldo acreedor. */
+function trial({ odd = false }: { odd?: boolean } = {}) {
+  const rows = odd
+    ? [
+        {
+          accountId: 'a-agua',
+          code: '4.2.01.03.024',
+          name: 'Agua',
+          level: 5,
+          accountType: 'expense',
+          normalSide: 'debit',
+          postable: true,
+          active: true,
+          isVirtual: false,
+          openingDebitCents: 0,
+          openingCreditCents: 0,
+          periodDebitCents: 0,
+          periodCreditCents: 100_00,
+          closingDebitCents: 0,
+          closingCreditCents: 100_00,
+        },
+      ]
+    : []
+  return {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    rows,
+    totals: {},
+    balanced: true,
+    differenceCents: 0,
+  }
+}
+
 async function page(searchParams: Record<string, string> = {}): Promise<string> {
-  const node = await FinDeMesPage({
+  const node = await CierreDeMesPage({
     params: Promise.resolve({ tenantSlug: 'hub' }),
     searchParams: Promise.resolve(searchParams),
   })
@@ -318,12 +382,6 @@ function buttons(html: string): string[] {
   )
 }
 
-/** El estado de un paso (`done` · `current` · `todo`). */
-function stepState(html: string, id: string): string | null {
-  const tag = html.match(new RegExp(`<section[^>]*id="${id}"[^>]*>`))?.[0] ?? ''
-  return tag.match(/data-state="([a-z]+)"/)?.[1] ?? null
-}
-
 function demoSeptemberOpen() {
   db.years = [fiscalYear([period('2026-09'), period('2026-10'), period('2026-11')])]
   db.settings = settings()
@@ -332,6 +390,7 @@ function demoSeptemberOpen() {
     warnings: [NOT_RECONCILED],
     warningKeys: ['treasuries_not_reconciled'],
   })
+  db.trial = trial()
 }
 
 function demoSeptemberClosed() {
@@ -351,70 +410,77 @@ function demoSeptemberClosed() {
     perceptionsCents: 0,
     withholdingsCents: 0,
   }
+  db.trial = trial()
 }
 
-describe('Fin de mes · quien cierra el mes', () => {
-  it('mes que terminó con un aviso: el título afirma, el paso 1 es el que toca y la acción se abre encima', async () => {
+describe('Cierre de mes · quien cierra el mes', () => {
+  it('mes que terminó con un aviso: el título afirma, el checklist dice qué mirar y la acción se abre encima', async () => {
     demoSeptemberOpen()
     const html = await page()
-    expect(html).toContain('Fin de mes')
+    expect(html).toContain('Cierre de septiembre')
     expect(html).toContain('Septiembre se puede cerrar.')
     expect(html).toContain('Queda 1 aviso para mirar: no frena el cierre.')
-    expect([
-      stepState(html, 'paso-1'),
-      stepState(html, 'paso-2'),
-      stepState(html, 'paso-3'),
-    ]).toEqual(['current', 'todo', 'todo'])
-    // Los cuatro renglones, siempre en el mismo orden.
-    const order = ['Cierres del día', 'Compras y gastos', 'La plata', 'Los papeles del bar'].map(
-      (title) => html.indexOf(`>${title}<`),
-    )
+    // El checklist, siempre en el mismo orden: primero que cuadre, después lo de cada día.
+    const order = [
+      'Debe = Haber',
+      'Los 30 días de septiembre tienen su cierre.',
+      'No hay gastos fijos de septiembre sin cargar ni tiques sin comercio.',
+      'Hay cajas sin contar en septiembre',
+      'La CUIT y lo que había al arrancar están cargados.',
+    ].map((text) => html.indexOf(text))
     expect(order.every((at) => at > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
-    expect(html).toContain('Los 30 días de septiembre tienen su cierre.')
-    expect(html).toContain('Hay cajas sin contar en septiembre')
     const all = buttons(html)
     expect(all).toContain('Contar Caja')
     expect(all).toContain('Contar Banco Nación')
     expect(all).toContain('Cerrar septiembre')
+    expect(all.some((b) => b.startsWith('Descargar los libros'))).toBe(true)
+    // Sin planilla de Sueldos en uso, el sistema no lo sabe: queda el recordatorio.
     expect(html).toContain('Cargar los sueldos')
-    // Mes abierto: los libros se mandan después, pero se pueden bajar igual.
-    expect(html).toContain('Cuando el mes esté cerrado.')
-    expect(html).toContain('Descargar igual lo que hay hasta hoy (puede cambiar)')
-    // El papel del mes, sin sello todavía.
-    expect(html).toContain('Acá va el sello cuando lo cierres')
-    expect(html).toContain('30 de 30')
-    expect(html).toContain('76 asientos')
-    expect(html).toContain('van a quedar numerados del 1 al 76')
+    // Lo de abajo: la historia, los subdiarios y archivo por archivo.
+    expect(html).toContain('/hub/administracion/libros/historia?mes=2026-09')
+    expect(html).toContain('/hub/administracion/libros/subdiarios?mes=2026-09')
+    expect(html).toContain('Archivo por archivo')
+    expect(html).toContain('Lo que se descarga hoy puede cambiar hasta que cierres.')
+    // Sin la carátula grande ni los tres pasos.
+    expect(html).not.toContain('Acá va el sello cuando lo cierres')
+    expect(html).not.toContain('id="paso-1"')
   })
 
-  it('sin avisos: el paso que toca es cerrar', async () => {
+  it('las cuentas con saldo al revés y los sueldos sin devengar van en el checklist', async () => {
+    demoSeptemberOpen()
+    db.trial = trial({ odd: true })
+    db.payroll = { employees: 4, accrued: false }
+    const html = (await page()).replaceAll('&amp;', '&')
+    expect(html).toContain('1 cuenta con saldo al revés')
+    expect(html).toContain('/hub/administracion/libros/sumas-y-saldos?mes=2026-09&raro=1')
+    expect(html).toContain('Falta devengar sueldos de septiembre')
+    expect(html).toContain('/hub/administracion/sueldos?mes=2026-09')
+    expect(html).not.toContain('Cargar los sueldos')
+  })
+
+  it('si el balance no se pudo leer, no afirma que cuadra', async () => {
+    demoSeptemberOpen()
+    db.trial = null
+    expect(await page()).not.toContain('Debe = Haber')
+  })
+
+  it('sin avisos: se puede cerrar y lo dice', async () => {
     demoSeptemberOpen()
     db.checklist = checklist()
     const html = await page()
     expect(html).toContain('Septiembre está listo para cerrar.')
-    expect([
-      stepState(html, 'paso-1'),
-      stepState(html, 'paso-2'),
-      stepState(html, 'paso-3'),
-    ]).toEqual(['done', 'current', 'todo'])
+    expect(buttons(html)).toContain('Cerrar septiembre')
     expect(html).toContain('Ninguna caja con movimientos quedó sin contar ni en negativo.')
   })
 
-  it('mes cerrado: el paso que toca es mandarle los libros, y el papel lleva el sello', async () => {
+  it('mes cerrado: lo que sigue es mandarle los libros', async () => {
     demoSeptemberClosed()
     db.accountants = [{ userId: 'u-ana', name: 'Ana' }]
     const html = await page({ mes: '2026-09' })
     expect(html).toContain('Septiembre está cerrado.')
     expect(html).toContain('Lo cerró Franco el 05/10/2026.')
-    expect([
-      stepState(html, 'paso-1'),
-      stepState(html, 'paso-2'),
-      stepState(html, 'paso-3'),
-    ]).toEqual(['done', 'done', 'current'])
     expect(html).toContain('Mes cerrado: no queda nada para revisar.')
-    expect(html).toContain('Cerrado · 05/10/2026')
-    expect(html).toContain('$ 4.117.062 a pagar')
     // «Que entre ella» va primero, con el mensaje listo para pegar.
     expect(html).toContain('Que entre ella')
     expect(html).toContain('ya tiene usuario de solo lectura')
@@ -423,9 +489,10 @@ describe('Fin de mes · quien cierra el mes', () => {
       'Ya cerramos septiembre de 2026. Los libros están acá (entrás con tu usuario): https://app.hub.test/hub/administracion/libros?mes=2026-09',
     )
     expect(html.indexOf('Que entre ella')).toBeLessThan(html.indexOf('O mandarle los archivos'))
-    expect(buttons(html).some((b) => b.startsWith('Descargar el paquete de septiembre'))).toBe(true)
+    expect(buttons(html).some((b) => b.startsWith('Descargar los libros'))).toBe(true)
     expect(html).toContain('15 archivos')
-    // El último mes cerrado se puede reabrir, desde su paso.
+    expect(buttons(html)).not.toContain('Cerrar septiembre')
+    // El último mes cerrado se puede reabrir.
     expect(html).toContain('Más opciones de septiembre')
     expect(html).toContain('Los libros llevan todo, con factura y sin factura.')
   })
@@ -461,7 +528,7 @@ describe('Fin de mes · quien cierra el mes', () => {
     expect(buttons(html)).toContain('Copiar el link de septiembre')
   })
 
-  it('el bar recién arrancado (como HUB): dice qué falta y enseña el primer paso', async () => {
+  it('el bar recién arrancado (como HUB): dice qué falta y cómo seguir', async () => {
     db.years = [
       fiscalYear(
         [period('2026-10', { startsOn: '2026-10-12' }), period('2026-11'), period('2026-12')],
@@ -470,6 +537,7 @@ describe('Fin de mes · quien cierra el mes', () => {
     ]
     db.settings = settings({ cuit: null, openingStatus: 'pending', booksStartDate: '2026-10-12' })
     db.calendar = calendar('2026-10', { from: '2026-10-12', loaded: [] })
+    db.trial = trial()
     db.checklist = checklist({
       month: '2026-10-01',
       periodId: 'p-2026-10',
@@ -507,12 +575,12 @@ describe('Fin de mes · quien cierra el mes', () => {
       entriesCount: 2,
     })
     const html = await page()
+    expect(html).toContain('Cierre de octubre')
     expect(html).toContain('Octubre todavía no terminó.')
     expect(html).toContain(
       'Se puede cerrar desde el 01/11/2026, y antes falta 1 cosa: decir cuánta plata había al arrancar.',
     )
-    // La base calla, el almanaque no: sin cierres NO es «Sin avisos».
-    expect(html).toContain('Sin cierres')
+    // La base calla, el almanaque no: sin cierres NO es «Listo».
     expect(html).toContain('Todavía no hay ningún cierre del día en octubre')
     expect(html).toContain('Cargar el del lunes 12/10')
     expect(html).toContain('/hub/administracion/ventas/cierre?fecha=2026-10-12')
@@ -521,22 +589,18 @@ describe('Fin de mes · quien cierra el mes', () => {
     expect(html).toContain('Falta la CUIT del bar')
     // No se puede cerrar todavía: no hay botón de cierre.
     expect(buttons(html)).not.toContain('Cerrar octubre')
-    expect(html).toContain('Se puede desde el 01/11/2026.')
-    // El papel: sin ventas inventadas.
-    expect(html).toContain('sin cierres cargados')
-    expect(html).toContain('0 de 1')
     expect(html).not.toMatch(/\$ 0\b/)
   })
 
-  it('un mes que cambió después de cerrarse se avisa arriba y en su pestaña', async () => {
+  it('un mes que cambió después de cerrarse se avisa arriba y en la tabla', async () => {
     demoSeptemberClosed()
     db.changed = ['p-2026-09']
     const html = await page({ mes: '2026-09' })
     expect(html).toContain('Septiembre 2026 cambió después de cerrarse: avisanos.')
-    expect(html).toContain('con un aviso')
+    expect(html).toContain('Cambió después de cerrarse: avisanos.')
   })
 
-  it('sin ejercicios: enseña cómo aparecen los meses', async () => {
+  it('sin ejercicios: dice cómo aparecen los meses', async () => {
     db.years = []
     db.settings = settings()
     const html = await page()
@@ -550,12 +614,13 @@ describe('Fin de mes · quien cierra el mes', () => {
     demoSeptemberOpen()
     const html = await page({ mes: '2026-11' })
     expect(html).toContain('Noviembre 2026 todavía no empezó.')
-    expect(html).not.toContain('Revisá los avisos')
+    expect(buttons(html)).not.toContain('Cerrar noviembre')
+    expect(html).not.toContain('Debe = Haber')
   })
 })
 
-describe('Fin de mes · la contadora (solo lectura)', () => {
-  it('mes abierto: ve los avisos y ningún botón', async () => {
+describe('Cierre de mes · la contadora', () => {
+  it('mes abierto: ve los avisos y nada que cierre o cargue', async () => {
     demoSeptemberOpen()
     ui.readOnly = true
     ui.role = 'editor'
@@ -563,14 +628,14 @@ describe('Fin de mes · la contadora (solo lectura)', () => {
     const html = await page()
     expect(html).toContain('Septiembre sigue abierto: lo cierran los dueños.')
     expect(html).toContain('Tiene 1 aviso.')
-    expect(html).toContain('Lo que falta revisar')
-    expect(html).toContain('El cierre')
-    expect(html).toContain('Abierto: lo cierran los dueños.')
     expect(html).toContain('Hay cajas sin contar en septiembre')
     expect(html).toContain('Sin contar: Caja, Banco Nación.')
     expect(html).toContain('Lo cargan los dueños.')
-    // Ni un botón: ni cerrar, ni contar, ni pagar, ni sueldos.
-    expect(buttons(html)).toEqual([])
+    // Elige el mes y descarga: ni cerrar, ni contar, ni pagar, ni sueldos.
+    expect(buttons(html).filter(Boolean)).toEqual([
+      expect.stringMatching(/^Descargar los libros/),
+      'Septiembre 2026',
+    ])
     for (const text of [
       'Cerrar septiembre',
       'Contar Caja',
@@ -581,7 +646,7 @@ describe('Fin de mes · la contadora (solo lectura)', () => {
     ]) {
       expect(html, text).not.toContain(text)
     }
-    // Tampoco links de carga: ni al cierre del día ni al asiento manual.
+    // Tampoco links de carga: ni al cierre del día ni a la puesta en marcha.
     expect(html).not.toContain('/ventas/cierre')
     expect(html).not.toContain('/asiento-manual')
     expect(html).not.toContain('/configurar')
@@ -594,17 +659,17 @@ describe('Fin de mes · la contadora (solo lectura)', () => {
     ui.admin = false
     const html = await page({ mes: '2026-09' })
     expect(html).toContain('Septiembre está cerrado.')
-    expect(html).toContain('Los libros')
-    const all = buttons(html)
-    expect(all).toHaveLength(1)
-    expect(all[0]).toMatch(/^Descargar el paquete de septiembre/)
-    expect(html).toContain('Ver archivo por archivo')
+    expect(buttons(html).filter(Boolean)).toEqual([
+      expect.stringMatching(/^Descargar los libros/),
+      'Septiembre 2026',
+    ])
+    expect(html).toContain('Archivo por archivo')
     expect(html).not.toContain('Que entre ella')
     expect(html).not.toContain('Más opciones de septiembre')
     expect(html).not.toContain('Copiar')
   })
 
-  it('el almanaque no lleva a cargar ningún día', async () => {
+  it('los cierres que faltan no llevan a cargar ningún día', async () => {
     demoSeptemberOpen()
     db.calendar = calendar('2026-09', { loaded: eachIsoDay('2026-09-01', '2026-09-20') })
     ui.readOnly = true
@@ -614,7 +679,7 @@ describe('Fin de mes · la contadora (solo lectura)', () => {
   })
 })
 
-describe('Fin de mes · el cierre del ejercicio', () => {
+describe('Cierre de mes · el cierre del ejercicio', () => {
   function allClosed() {
     db.years = [
       fiscalYear([
@@ -624,6 +689,7 @@ describe('Fin de mes · el cierre del ejercicio', () => {
     ]
     db.settings = settings()
     db.calendar = calendar('2026-09', { loaded: eachIsoDay('2026-09-01', '2026-09-30') })
+    db.trial = trial()
   }
 
   it('con todos los meses cerrados, quien carga ve «Cerrar el ejercicio» fuera de lo plegado', async () => {
@@ -650,9 +716,10 @@ describe('Fin de mes · el cierre del ejercicio', () => {
  * Las demás pantallas del área que dibujan algo que escribe: cada control va
  * detrás de `canWrite` (o de `ActionButton`, que no se dibuja en solo lectura).
  * Se prueba de a pares: con el dueño el control ESTÁ (si no, el «no está» de la
- * contadora no probaría nada) y con la contadora no.
+ * contadora no probaría nada) y con la contadora no. La excepción, a propósito,
+ * es el asiento manual: la contadora «reimputa y hace asientos».
  */
-describe('Libros · la contadora no ve nada que cargue', () => {
+describe('Libros · lo que ve cada uno', () => {
   const PARAMS = { tenantSlug: 'hub' }
 
   async function render(
@@ -719,61 +786,35 @@ describe('Libros · la contadora no ve nada que cargue', () => {
     }
   }
 
-  it('/libros: el dueño tiene el botón del mes y lo que se carga a mano', async () => {
-    demoSeptemberOpen()
-    const html = await render(LibrosPage)
-    expect(html).toContain('Septiembre terminó y falta cerrarlo')
-    expect(html).toContain('Revisar y cerrar septiembre')
-    expect(html).toContain('/hub/administracion/libros/cierres?mes=2026-09')
-    expect(html).toContain('Se carga a mano')
-    expect(html).toContain('/hub/administracion/libros/asiento-manual?tipo=sueldos')
-    expect(html).toContain('Descargar el paquete del mes')
-    expect(html).not.toContain('Solo lectura')
+  it('/libros lleva a Sumas y saldos, con lo que traía el link', async () => {
+    await expect(render(LibrosPage)).rejects.toThrow(
+      'REDIRECT:/hub/administracion/libros/sumas-y-saldos',
+    )
+    await expect(render(LibrosPage, { mes: '2026-09', nivel: '3' })).rejects.toThrow(
+      'REDIRECT:/hub/administracion/libros/sumas-y-saldos?mes=2026-09&nivel=3',
+    )
   })
 
-  it('/libros: la contadora ve el mes y descarga; ni botón del mes, ni sueldos, ni asiento manual', async () => {
+  it('La solapa IVA: los totales, los dos libros con Ver y Excel, y el segmento', async () => {
     demoSeptemberOpen()
-    db.settings = settings({ cuit: null })
-    asReader()
-    const html = await render(LibrosPage, { mes: '2026-09' })
-    expect(html).toContain('Solo lectura')
-    expect(html).toContain('Septiembre terminó y falta cerrarlo')
-    expect(html).toContain('Sigue abierto: lo cierran los dueños.')
-    expect(html).toContain('Ver qué le falta para cerrarse')
-    // Descargar no es cargar.
-    expect(buttons(html).some((b) => b.startsWith('Descargar el paquete del mes'))).toBe(true)
+    db.position = ivaPosition()
+    const html = (await render(PosicionIvaPage, { mes: '2026-09' })).replaceAll('&amp;', '&')
     for (const text of [
-      'Revisar y cerrar',
-      'Se carga a mano',
-      'Sueldos del mes',
-      '/asiento-manual',
-      // Sin la CUIT: se le dice a quién pedírsela, no se la manda a Ajustes.
-      'Cargarla',
-      '/ajustes?tab=sas',
+      'Débito fiscal',
+      'Crédito fiscal',
+      'Retenciones',
+      'A pagar (estimado)',
+      'IVA Compras',
+      'IVA Ventas',
+      'Posición',
     ]) {
-      expect(html, text).not.toContain(text)
+      expect(html, text).toContain(text)
     }
-    expect(html).toContain('Pedísela a los dueños.')
-  })
-
-  it('/libros sin nada cargado: el vacío enseña, y el botón de cargar es solo del dueño', async () => {
-    demoSeptemberOpen()
-    db.settings = settings({ hasDocuments: false })
-    const owner = await render(LibrosPage)
-    expect(owner).toContain('Los libros se arman solos')
-    expect(owner).toContain('Vos no escribís nada en los libros.')
-    // Sin nada cargado, el dueño no ve el índice vacío ni un paquete vacío para descargar.
-    expect(owner).not.toContain('Descargar el paquete del mes')
-    expect(owner).not.toContain('id="paquete-del-mes"')
-
-    asReader()
-    const reader = await render(LibrosPage, { mes: '2026-09' })
-    expect(reader).toContain('Los libros se arman solos')
-    expect(reader).toContain('Cuando los dueños carguen gastos, ventas y pagos')
-    expect(reader).not.toContain('Vos no escribís nada en los libros.')
-    // La contadora sí: el índice es su herramienta. Y ningún botón de cargar.
-    expect(reader).toContain('Descargar el paquete del mes')
-    expect(buttons(reader).some((b) => b.includes('Cargar'))).toBe(false)
+    expect(html).toContain('/hub/administracion/libros/iva-compras?mes=2026-09')
+    expect(html).toContain('/hub/administracion/libros/iva-ventas?mes=2026-09')
+    expect(html).toContain('La cuenta completa')
+    expect(html).toContain('Conciliación con los libros')
+    expect(buttons(html).filter((b) => b === 'Excel').length).toBeGreaterThanOrEqual(2)
   })
 
   it('El IVA del mes, cerrado y con deuda: «Pagar a ARCA» es solo de quien carga', async () => {
@@ -810,18 +851,18 @@ describe('Libros · la contadora no ve nada que cargue', () => {
     for (const text of ['Pagar a ARCA', 'Cargar la factura', '/compras/nueva', 'accion=pagar']) {
       expect(reader, text).not.toContain(text)
     }
-    // Lo único que se toca: exportar y ver como tabla o como gráfico.
+    // Lo único que se toca: exportar.
     for (const label of buttons(reader)) {
       expect(label).not.toMatch(/pagar|cargar|anotar|registrar|anular|cerrar/i)
     }
   })
 
-  it('El IVA del mes, abierto: «Ir al fin de mes» o anotarlo a mano, solo para quien carga', async () => {
+  it('El IVA del mes, abierto: «Ir al cierre del mes» o anotarlo a mano, solo para quien carga', async () => {
     demoSeptemberOpen()
     db.position = ivaPosition()
     const onClose = await render(PosicionIvaPage, { mes: '2026-09' })
     expect(onClose).toContain('Queda anotado solo cuando cerrás el mes.')
-    expect(onClose).toContain('Ir al fin de mes')
+    expect(onClose).toContain('Ir al cierre del mes')
     expect(onClose).toContain('/hub/administracion/libros/cierres?mes=2026-09')
 
     db.position = ivaPosition({ mode: 'manual' })
@@ -836,7 +877,7 @@ describe('Libros · la contadora no ve nada que cargue', () => {
     db.position = ivaPosition()
     const readerOnClose = await render(PosicionIvaPage, { mes: '2026-09' })
     expect(readerOnClose).toContain('Queda anotado solo cuando cerrás el mes.')
-    expect(readerOnClose).not.toContain('Ir al fin de mes')
+    expect(readerOnClose).not.toContain('Ir al cierre del mes')
     expect(readerOnClose).not.toContain('/libros/cierres')
   })
 
@@ -912,59 +953,38 @@ describe('Libros · la contadora no ve nada que cargue', () => {
     expect(reader).not.toContain('/ventas/cierre')
   })
 
-  it('Sueldos del mes y Asiento manual: la contadora ve a dónde ir a mirar, no el formulario', async () => {
-    asReader()
-    for (const tipo of ['sueldos', 'ajuste']) {
-      const html = await render(AsientoManualPage, { tipo })
-      expect(html).toContain(tipo === 'sueldos' ? 'Sueldos del mes' : 'Asiento manual')
-      expect(html).toContain('Esta pantalla es para cargar asientos.')
-      expect(html).toContain('Ir al libro diario')
-      expect(buttons(html)).toEqual([])
-      expect(html).not.toContain('<form')
-      expect(html).not.toContain('<input')
+  it('Asiento manual: la contadora entra al formulario, sin aviso de solo lectura', async () => {
+    const { ctx } = prepare()
+    db.context = ctx
+    db.catalog = {
+      accounts: [...ctx.accounts.values()].map((a) => ({
+        ...a,
+        parentId: null,
+        level: 5,
+        manualSelectable: true,
+        sort: 0,
+      })),
+      parties: [],
     }
+    db.years = [fiscalYear([period('2026-09'), period('2026-10')])]
+    asReader()
+    const html = await render(AsientoManualPage)
+    expect(html).toContain('Asiento manual')
+    expect(html).toContain('<form')
+    expect(html).toContain('Grabar asiento')
+    expect(html).toContain('Respaldo')
+    expect(html).not.toContain('Esta pantalla es para cargar asientos.')
+    expect(html).not.toContain('Ir al libro diario')
+    expect(html).not.toContain('Solo lectura')
+
+    const payroll = await render(AsientoManualPage, { tipo: 'sueldos' })
+    expect(payroll).toContain('Sueldos del mes')
+    expect(payroll).toContain('Si ya devengaste en Sueldos, cargá solo las cargas sociales.')
+    expect(payroll).toContain('Guardar los sueldos')
   })
 })
 
-describe('Fin de mes · piezas sueltas', () => {
-  it('el papel del mes: con y sin cierres, abierto y cerrado', () => {
-    const open = renderToStaticMarkup(
-      <MonthCover
-        data={{
-          month: '2026-10',
-          closed: false,
-          closedAt: null,
-          soldCents: null,
-          daysText: '0 de 1',
-          ivaText: '$ 21.000 a favor',
-          ivaApplies: true,
-        }}
-        mobileLine="Octubre 2026 · Abierto"
-      />,
-    )
-    expect(open).toContain('Octubre 2026')
-    expect(open).toContain('sin cierres cargados')
-    expect(open).toContain('estimado')
-    expect(open).toContain('Acá va el sello cuando lo cierres')
-    expect(open).toContain(
-      'Lo vendido no es lo que te quedó: faltan las compras, los gastos y los impuestos.',
-    )
-
-    const line = coverLine(
-      {
-        month: '2026-09',
-        closed: true,
-        closedAt: '2026-10-05T15:00:00Z',
-        soldCents: 3_140_934_800,
-        daysText: '30 de 30',
-        ivaText: '$ 4.117.062 a pagar',
-        ivaApplies: true,
-      },
-      { sold: '$ 31,4 M', iva: '$ 4,1 M a pagar' },
-    )
-    expect(line).toBe('Septiembre 2026 · Cerrado · Vendido $ 31,4 M · IVA $ 4,1 M a pagar')
-  })
-
+describe('Cierre de mes · piezas sueltas', () => {
   it('el mensaje para la contadora', () => {
     expect(sendMessage('2026-09', 'https://x/hub/administracion/libros?mes=2026-09')).toBe(
       'Ya cerramos septiembre de 2026. Los libros están acá (entrás con tu usuario): https://x/hub/administracion/libros?mes=2026-09',

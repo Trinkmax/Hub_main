@@ -1,44 +1,39 @@
 import { type ReactNode, Suspense } from 'react'
 import { PeriodError } from '@/components/administracion/cajas-ventas/block-error'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
-import { MonthStepper, RangeFilter } from '@/components/administracion/cajas-ventas/period-filters'
+import { MonthStepper } from '@/components/administracion/cajas-ventas/period-filters'
 import {
   firstParam,
   type PageSearchParams,
   resolveMonth,
 } from '@/components/administracion/cajas-ventas/periods'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { PlanillaBar, SimplePage } from '@/components/administracion/planilla'
 import { monthOf, serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
+import { CollectionsView } from './_components/collections-view'
 import { InvoicesView } from './_components/invoices-view'
-import { loadMonth, MonthAsideSlot, MonthBody } from './_components/month-view'
+import { loadMonth, MonthBody } from './_components/month-view'
 import { NetView } from './_components/net-view'
 import { ReceivablesView } from './_components/receivables-view'
 import {
+  CollectionsSkeleton,
   InvoicesSkeleton,
   MonthSkeleton,
   NetSkeleton,
   ReceivablesSkeleton,
 } from './_components/skeletons'
-import { rangeOrError, VentasViews } from './_components/ventas-views'
-import { parseTab, tabHref, VIEW_COPY, ventasView } from './_lib/ventas-view'
+import { parseDetail, parseTab, tabHref, VIEW_TITLES, ventasView } from './_lib/ventas-view'
 
 export const metadata = { title: 'Ventas' }
 
 /**
- * Ventas: «el almanaque del mes». Cuatro vistas en una sola página servidor:
- * «El mes» (el almanaque, con «Proyección» y «Ventas contra caja» como
- * bloques), «Plata por cobrar», «Lo que llegó» y «Facturas».
+ * Ventas: la planilla del mes, «Por cobrar» y «Lo que llegó» (las solapas las dibuja `AdmNav`), y
+ * «Facturas» y «Cobros», a las que se llega desde el «⋯» de la planilla.
  *
- * Los siete `?tab=` de siempre siguen valiendo tal cual (los citan el Resumen,
- * la guía, Libros, los comprobantes y ⌘K): `ventasView` dice a qué vista lleva
- * cada uno y qué bloque trae a la vista. No se renombra ni se redirige nada.
+ * Los siete `?tab=` de siempre siguen valiendo tal cual (los citan el Resumen, la guía, Libros, los
+ * comprobantes y ⌘K): `ventasView` dice a qué vista lleva cada uno. No se renombra ni se redirige
+ * nada.
  *
- * El encabezado y la fila de vistas salen al instante; cada vista pide lo suyo
- * y va en su `Suspense`, con un esqueleto de su forma. La acción de cada vista
- * va al lado de su dato (no hay botones en el encabezado): «＋ Cargar» ya está
- * en la barra de la sección y en el flotante del celular.
+ * Cada vista pide lo suyo y va en su `Suspense`, con un esqueleto de su forma.
  */
 export default async function VentasPage({
   params,
@@ -55,18 +50,20 @@ export default async function VentasPage({
   const tenantId = access.tenant.id
   const today = todayInCordoba()
   const { view, focus } = ventasView(tab)
-  // El `?mes=` de la URL se conserva entre las vistas que miran un mes.
-  const monthParam = firstParam(sp.mes)
   const shared = { tenantId, tenantSlug, base, today, sp, canWrite }
 
-  let aside: ReactNode = null
   let body: ReactNode
-
   if (view === 'mes') {
     const month = resolveMonth(sp, today)
     if (!month.ok) {
-      aside = <MonthStepper month={monthOf(today)} today={today} />
-      body = <PeriodError message={month.message} />
+      body = (
+        <>
+          <PlanillaBar>
+            <MonthStepper month={monthOf(today)} today={today} />
+          </PlanillaBar>
+          <PeriodError message={month.message} />
+        </>
+      )
     } else {
       const serviceDay = serviceDayInCordoba()
       const range = { month: month.month, from: month.from, to: month.to }
@@ -74,13 +71,11 @@ export default async function VentasPage({
         tenantId,
         range,
         serviceDay,
-        isCurrentMonth: month.month === monthOf(serviceDay),
         canWrite,
         // La contadora no lee el calendario del bar (está aislada de todo lo que no es
-        // Administración): para ella el almanaque va sin los eventos.
+        // Administración): para ella la planilla va sin los eventos.
         canReadCalendar: access.role !== 'accountant',
       })
-      aside = <MonthAsideSlot calendar={data.calendar} month={month.month} today={today} />
       body = (
         <Suspense fallback={<MonthSkeleton />}>
           <MonthBody
@@ -89,10 +84,12 @@ export default async function VentasPage({
             tenantSlug={tenantSlug}
             base={base}
             today={today}
+            serviceDay={serviceDay}
             range={range}
-            monthParam={monthParam}
+            monthParam={firstParam(sp.mes)}
             requestedDay={firstParam(sp.dia)}
             focus={focus}
+            initialDetail={parseDetail(firstParam(sp.detalle), focus)}
             canWrite={canWrite}
           />
         </Suspense>
@@ -104,33 +101,30 @@ export default async function VentasPage({
         <ReceivablesView {...shared} />
       </Suspense>
     )
+  } else if (view === 'llego') {
+    body = (
+      <Suspense fallback={<NetSkeleton />}>
+        <NetView {...shared} />
+      </Suspense>
+    )
+  } else if (view === 'cobros') {
+    body = (
+      <Suspense fallback={<CollectionsSkeleton />}>
+        <CollectionsView {...shared} />
+      </Suspense>
+    )
   } else {
-    const { picker } = rangeOrError(sp, today)
-    aside = <RangeFilter range={picker} today={today} />
-    body =
-      view === 'llego' ? (
-        <Suspense fallback={<NetSkeleton />}>
-          <NetView {...shared} focus={focus} />
-        </Suspense>
-      ) : (
-        <Suspense fallback={<InvoicesSkeleton />}>
-          <InvoicesView {...shared} />
-        </Suspense>
-      )
+    body = (
+      <Suspense fallback={<InvoicesSkeleton />}>
+        <InvoicesView {...shared} />
+      </Suspense>
+    )
   }
 
   return (
-    <AdmPage>
-      <AdmHeader
-        title="Ventas"
-        badge={<ReadOnlyBadge />}
-        // En el celular la bajada no se muestra (como en el Cierre del día): el título y las
-        // vistas ya dicen dónde estás, y el primer dato sube 50 px.
-        description={<span className="max-sm:hidden">{VIEW_COPY[view].description}</span>}
-      />
-      <VentasViews base={base} view={view} month={monthParam} aside={aside} />
+    <SimplePage>
+      <h1 className="sr-only">{VIEW_TITLES[view]}</h1>
       {body}
-      <QuickActionsBar />
-    </AdmPage>
+    </SimplePage>
   )
 }

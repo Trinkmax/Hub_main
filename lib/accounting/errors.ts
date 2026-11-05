@@ -910,6 +910,14 @@ export const ACC_ERRORS = {
     message: 'Un comprobante lleva hasta 5 archivos. Quitá uno para sumar otro.',
   },
 
+  // ─── Reimputar (`acc_reimpute_line`) ──────────────────────────────────────
+  line_not_reimputable: {
+    code: 'conflict',
+    message:
+      'Este renglón no se puede reimputar: solo cambian los renglones de imputación, sin proveedor ni caja.',
+  },
+  account_unchanged: { code: 'invalid', message: 'El renglón ya está en esa cuenta.' },
+
   // ─── Por SQLSTATE (sin clave propia en la RPC) ────────────────────────────
   in_use: {
     code: 'conflict',
@@ -1317,6 +1325,27 @@ export function mapAccError(
   if (sqlState === '40001' || sqlState === '40P01') return failure('retry', vars)
 
   return { ok: false, code: 'error', message: ACC_GENERIC_ERROR }
+}
+
+/**
+ * Las claves que `acc_reimpute_line` comparte con la carga de comprobantes, dichas para quien está
+ * reimputando: «cargalo con fecha de un mes abierto» acá no ayuda, y `line_account_invalid` no es un
+ * error de programación cuando la cuenta la eligió una persona.
+ */
+const REIMPUTE_MESSAGES: Readonly<Partial<Record<AccErrorKey, string>>> = {
+  period_closed: 'Este mes está cerrado. Reabrilo o hacé un asiento de ajuste.',
+  line_account_invalid:
+    'Esa cuenta no sirve para reimputar: tiene que ser imputable y estar activa, sin caja ni partícipe.',
+  document_voided: 'Este comprobante está anulado: ya no se puede reimputar.',
+}
+
+/** Error de `acc_reimpute_line` → estado de la acción. */
+export function mapReimputeError(error: PgLikeError | null | undefined): AccFailureState {
+  const state = mapAccError(error)
+  const key = state.detail?.key
+  const message = isAccErrorKey(key) ? REIMPUTE_MESSAGES[key] : undefined
+  if (!message) return state
+  return { ok: false, code: 'conflict', message, detail: { ...state.detail, bug: false } }
 }
 
 /**

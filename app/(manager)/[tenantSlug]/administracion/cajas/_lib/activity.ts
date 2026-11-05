@@ -35,6 +35,7 @@ import {
   weekdayName,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import type { AccountMovement } from './wallet-view'
 
 export type ActivityIcon =
   | 'sale'
@@ -185,6 +186,33 @@ export function movementFromTreasuryRow(
   }
 }
 
+/**
+ * Las filas del subdiario de UNA cuenta como renglones de su panel lateral: en palabras y con lo
+ * más nuevo arriba (la base las manda del más viejo al más nuevo). El «saldo anterior» no es un
+ * movimiento.
+ */
+export function accountMovements(
+  rows: readonly SubledgerLike[],
+  kind: TreasuryKind,
+): AccountMovement[] {
+  const movements: AccountMovement[] = []
+  rows.forEach((row, index) => {
+    const movement = movementFromSubledger(row, index)
+    if (!movement) return
+    const words = activityFromMovement(movement, { view: 'one', kindOf: () => kind })
+    movements.push({
+      key: words.key,
+      date: words.date,
+      title: words.title,
+      sub: words.sub,
+      inCents: Math.max(0, movement.inCents),
+      outCents: Math.max(0, movement.outCents),
+      path: words.path,
+    })
+  })
+  return movements.reverse()
+}
+
 const SEP = ' · '
 
 function parts(description: string | null): string[] {
@@ -306,6 +334,8 @@ export function activityFromMovement(
       return row(p[1] ?? sub, sub, 'transfer')
     }
     case 'bank_expense':
+      // El que anota solo el sistema al pagar (`withBankTax`) se llama por su nombre.
+      if (head === 'Impuesto al cheque') return row(head, 'Se anotó solo con el pago', 'bank')
       return row('Gastos del banco', 'Comisiones e impuestos', 'bank')
     case 'cash_movement': {
       if (head === 'Otro ingreso' || head === 'Otro egreso') {

@@ -1,21 +1,19 @@
-import { CalendarRange, Receipt, ReceiptText } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment } from 'react'
 import { Amount } from '@/components/administracion/amount'
-import { plural } from '@/components/administracion/format'
-import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
 import { PanelLink } from '@/components/administracion/kit/panel-states'
-import { StatusPill } from '@/components/administracion/kit/status-pill'
-import { Button } from '@/components/ui/button'
 import {
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
+  Planilla,
+  PlanillaFoot,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+  PTotalRow,
+} from '@/components/administracion/planilla'
+import { Stamp } from '@/components/administracion/planilla/stamp'
+import { Totalizer } from '@/components/administracion/planilla/totalizer'
+import { Button } from '@/components/ui/button'
 import {
   CHANNEL_LABELS,
   exportHref,
@@ -45,8 +43,9 @@ import {
   monthAvailabilityMessage,
   resolveBookMonth,
 } from '../_lib/periods'
-import { BookPage, PERIOD_ROW, WideBookHint } from './book-page'
-import { BookTotals } from './book-totals'
+import { BookPage, SLIDING_SHEET } from './book-page'
+import { ClickableBody } from './clickable-body'
+import { IvaTabs } from './iva-tabs'
 import { KeysetPagination } from './keyset-pagination'
 import { MonthPicker } from './period-picker'
 import { PeriodError, QueryErrorBlock } from './report-error'
@@ -73,11 +72,10 @@ const COPY = {
 } as const
 
 /**
- * Libro IVA compras o ventas del mes (H.12, F.4/F.5): los totales en una banda
- * (no en tarjetas: es un renglón de control), la tabla ancha (solo las columnas
- * con algo en el mes; las notas de crédito y las anulaciones en negativo) y los
- * exportes del libro y de las alícuotas. Lo llaman las dos páginas; valida el
- * acceso igual que cualquier página.
+ * Libro IVA compras o ventas del mes (H.12, F.4/F.5): el totalizador, la planilla (solo las columnas
+ * con algo en el mes; las notas de crédito y las anulaciones en negativo) y los exportes del libro y
+ * de las alícuotas. Un segmento chico pasa a la Posición y al otro libro. Lo llaman las dos páginas;
+ * valida el acceso igual que cualquier página.
  *
  * A estos libros entra solo lo que tiene factura. Lo que va sin factura queda
  * registrado igual, en el Libro diario y en los subdiarios: el vacío y el
@@ -141,53 +139,40 @@ export async function IvaBookScreen({
 
   return (
     <BookPage
-      backHref={bookHref(`${base}/libros`, { mes: month.month })}
       title={copy.title}
-      description={`${month.label}${
-        page?.ok ? ` · ${plural(totalRows, 'comprobante', 'comprobantes')}` : ''
-      }`}
-      badge={isOpen ? <StatusPill tone="info">Mes abierto: puede cambiar</StatusPill> : null}
+      toolbar={
+        <>
+          <IvaTabs booksPath={`${base}/libros`} month={month.month} active={copy.slug} />
+          <MonthPicker month={month.month} today={today} minMonth={ctx.minMonth} />
+        </>
+      }
+      aside={isOpen ? <Stamp tone="warn">Mes abierto</Stamp> : null}
       exports={
         hasCuit
           ? [
               {
                 href: exportHref(tenantSlug, copy.exportBook, { mes: month.month }),
                 fileName: `${fileBase}-${copy.exportBook}-${month.month}.csv`,
-                label: 'Exportar libro',
               },
               {
                 href: exportHref(tenantSlug, copy.aliquots, { mes: month.month }),
                 fileName: `${fileBase}-${copy.aliquots}-${month.month}.csv`,
-                label: 'Exportar alícuotas',
+                label: 'Alícuotas',
               },
             ]
           : undefined
-      }
-      booksPath={`${base}/libros`}
-      book={copy.slug}
-      period={{ kind: 'month', month: month.month, from: month.from, to: month.to }}
-      toolbar={
-        <MonthPicker
-          month={month.month}
-          today={today}
-          minMonth={ctx.minMonth}
-          className={PERIOD_ROW}
-        />
-      }
-      totals={
-        showBook && totals?.ok ? <IvaTotals book={book} amounts={totals.data.amounts} /> : null
       }
     >
       {!resolved.ok ? <PeriodError message={resolved.message} /> : null}
       {ctx.settings && !hasCuit ? <CuitMissing base={base} canWrite={canWrite} /> : null}
 
       {availability !== 'ok' ? (
-        <EmptyTeach
-          icon={CalendarRange}
-          title={monthAvailabilityMessage(availability, month.month, ctx.settings?.booksStartDate)}
-        >
-          Elegí otro mes con las flechas de arriba.
-        </EmptyTeach>
+        <Planilla>
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {monthAvailabilityMessage(availability, month.month, ctx.settings?.booksStartDate)}{' '}
+            Elegí otro mes con las flechas de arriba.
+          </p>
+        </Planilla>
       ) : null}
 
       {totals && !totals.ok ? (
@@ -202,10 +187,7 @@ export async function IvaBookScreen({
           <EmptyIvaBook book={book} base={base} month={month.month} canWrite={canWrite} />
         ) : (
           <>
-            <WideBookHint>
-              En el celular ves cada comprobante con su total: tocalo para ver el detalle. El libro
-              completo se lee mejor en la compu.
-            </WideBookHint>
+            <IvaTotals book={book} amounts={totals.data.amounts} />
             <IvaTable
               book={book}
               base={base}
@@ -234,22 +216,20 @@ export async function IvaBookScreen({
       ) : null}
 
       {book === 'sales' && uninvoiced !== null && uninvoiced !== 0 ? (
-        <div className="card-hairline flex flex-col gap-2 rounded-2xl border bg-card p-4 text-sm shadow-xs sm:p-5">
-          <p className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 text-pretty">
-            <StatusPill tone="muted">Sin factura</StatusPill>
-            <span className="min-w-0 flex-1 basis-64">
+        <Planilla>
+          <PlanillaFoot className="border-t-0 bg-transparent">
+            <p className="min-w-0 flex-1 basis-64 text-sm text-pretty">
               Ventas de {monthNoun(month.month)} sin factura:{' '}
               <Amount cents={uninvoiced} decimals={0} className="font-semibold" />. Están en el
-              Libro diario y en el subdiario de ventas; a este libro entra solo lo facturado. Cómo
-              se tratan lo define la contadora.
-            </span>
-          </p>
-          <PanelLink
-            href={bookHref(`${base}/libros/subdiarios`, { tipo: 'ventas', mes: month.month })}
-          >
-            Ver todas las ventas del mes
-          </PanelLink>
-        </div>
+              Libro diario y en el subdiario de ventas; a este libro entra solo lo facturado.
+            </p>
+            <PanelLink
+              href={bookHref(`${base}/libros/subdiarios`, { tipo: 'ventas', mes: month.month })}
+            >
+              Ver todas las ventas del mes
+            </PanelLink>
+          </PlanillaFoot>
+        </Planilla>
       ) : null}
     </BookPage>
   )
@@ -257,8 +237,7 @@ export async function IvaBookScreen({
 
 function CuitMissing({ base, canWrite }: { base: string; canWrite: boolean }) {
   return (
-    <p className="card-hairline flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-2xl border bg-card px-4 py-3 text-sm text-pretty shadow-xs">
-      <StatusPill tone="warn">Falta la CUIT</StatusPill>
+    <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-pretty">
       <span className="font-medium">Falta la CUIT del bar para exportar los libros de IVA.</span>
       {canWrite ? (
         <PanelLink href={`${base}/ajustes?tab=sas`}>Cargarla</PanelLink>
@@ -282,54 +261,52 @@ function EmptyIvaBook({
   canWrite: boolean
 }) {
   const noun = monthNoun(month)
-  if (book === 'purchases') {
-    return (
-      <EmptyTeach
-        icon={Receipt}
-        title={`No hay compras con factura en ${noun}`}
-        action={
-          canWrite ? (
-            <Button asChild className="h-11">
-              <Link href={`${base}/compras/nueva`}>Cargar una compra que debo</Link>
-            </Button>
-          ) : undefined
-        }
-        secondary={
-          <PanelLink href={bookHref(`${base}/libros/subdiarios`, { tipo: 'compras', mes: month })}>
-            Ver el subdiario de compras
-          </PanelLink>
-        }
-      >
-        Acá entran las facturas, las notas de crédito y débito y los tiques con CUIT. Lo que
-        compraste sin factura queda registrado igual: está en el Libro diario y en el subdiario de
-        compras.
-      </EmptyTeach>
-    )
-  }
+  const purchases = book === 'purchases'
   return (
-    <EmptyTeach
-      icon={ReceiptText}
-      title={`No hay ventas con factura en ${noun}`}
-      action={
-        canWrite ? (
-          <Button asChild className="h-11">
-            <Link href={`${base}/ventas/cierre`}>Cargar el cierre del día</Link>
-          </Button>
-        ) : undefined
-      }
-      secondary={
-        <PanelLink href={bookHref(`${base}/libros/subdiarios`, { tipo: 'ventas', mes: month })}>
-          Ver el subdiario de ventas
-        </PanelLink>
-      }
-    >
-      Acá entra lo que marcás como facturado en cada cierre del día. Lo demás queda como venta sin
-      factura, en el mismo libro diario.
-    </EmptyTeach>
+    <Planilla>
+      <div className="grid justify-items-center gap-3 px-3 py-6 text-center text-sm">
+        <div className="grid max-w-prose gap-1 text-pretty">
+          <p className="font-medium">
+            {purchases
+              ? `No hay compras con factura en ${noun}`
+              : `No hay ventas con factura en ${noun}`}
+          </p>
+          {purchases ? (
+            <p className="text-muted-foreground">
+              Acá entran las facturas, las notas de crédito y débito y los tiques con CUIT. Lo que
+              compraste sin factura queda registrado igual: está en el Libro diario y en el
+              subdiario de compras.
+            </p>
+          ) : (
+            <p className="text-muted-foreground">
+              Acá entra lo que marcás como facturado en cada cierre del día. Lo demás queda como
+              venta sin factura, en el mismo libro diario.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+          {canWrite ? (
+            <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
+              <Link href={purchases ? `${base}/compras/nueva` : `${base}/ventas/cierre`}>
+                {purchases ? 'Cargar una compra que debo' : 'Cargar el cierre del día'}
+              </Link>
+            </Button>
+          ) : null}
+          <PanelLink
+            href={bookHref(`${base}/libros/subdiarios`, {
+              tipo: purchases ? 'compras' : 'ventas',
+              mes: month,
+            })}
+          >
+            {purchases ? 'Ver el subdiario de compras' : 'Ver el subdiario de ventas'}
+          </PanelLink>
+        </div>
+      </div>
+    </Planilla>
   )
 }
 
-/** Los totales del mes en una banda: neto, IVA, percepciones y total, con su aclaración. */
+/** Los totales del mes: neto, IVA, percepciones y total, con su aclaración. */
 function IvaTotals({
   book,
   amounts,
@@ -339,14 +316,12 @@ function IvaTotals({
 }) {
   const s = ivaSummary(amounts)
   return (
-    <BookTotals
-      label="Totales del mes"
+    <Totalizer
       items={[
-        { key: 'neto', label: 'Neto gravado', value: <Amount cents={s.netCents} /> },
+        { label: 'Neto gravado', cents: s.netCents },
         {
-          key: 'iva',
           label: COPY[book].vat,
-          value: <Amount cents={s.vatCents} />,
+          cents: s.vatCents,
           hint:
             book === 'purchases' && s.computableCents !== s.vatCents ? (
               <>
@@ -354,15 +329,10 @@ function IvaTotals({
               </>
             ) : undefined,
         },
+        { label: 'Percepciones', cents: s.perceptionsCents },
         {
-          key: 'percepciones',
-          label: 'Percepciones',
-          value: <Amount cents={s.perceptionsCents} />,
-        },
-        {
-          key: 'total',
           label: 'Total',
-          value: <Amount cents={s.totalCents} />,
+          cents: s.totalCents,
           hint:
             s.otherCents !== 0 ? (
               <>
@@ -426,125 +396,84 @@ function IvaTable({
 }) {
   const counterparty = COPY[book].counterparty
   return (
-    <>
-      {/* Compu y tablet: el libro ancho, con scroll de costado. */}
-      <DataTableShell className="hidden sm:block">
-        <DataTableScroll>
-          <DataTableRoot>
-            <caption className="sr-only">{caption}</caption>
-            <DataTableHead>
-              <tr>
-                <DataTableHeader className="w-28">Fecha</DataTableHeader>
-                <DataTableHeader>Comprobante</DataTableHeader>
-                <DataTableHeader>{counterparty}</DataTableHeader>
-                {book === 'sales' ? <DataTableHeader>Canal</DataTableHeader> : null}
-                {columns.map((c) => (
-                  <DataTableHeader key={c.key} className="whitespace-nowrap px-3 text-right">
-                    <abbr title={c.label} className="no-underline">
-                      {c.short}
-                    </abbr>
-                  </DataTableHeader>
-                ))}
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {rows.map((row) => (
-                <tr
-                  key={row.voucherId}
-                  className="transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint"
-                >
-                  <DataTableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
-                    {formatIsoDay(row.voucherDate)}
-                  </DataTableCell>
-                  <DataTableCell>
-                    <Link
-                      href={`${base}/comprobantes/${row.documentId}`}
-                      className="whitespace-nowrap rounded-sm font-medium underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {row.voucherLabel}
-                    </Link>
-                    <span className="block whitespace-nowrap font-mono text-xs text-muted-foreground">
-                      {voucherNumberOf(row)}
-                    </span>
-                    {row.isReversal ? (
-                      <span className="text-xs text-muted-foreground">Anulación</span>
-                    ) : null}
-                  </DataTableCell>
-                  <DataTableCell>
-                    <span className="block">{row.counterpartyName || docOf(row)}</span>
-                    {row.counterpartyName && row.counterpartyName !== docOf(row) ? (
-                      <span className="block whitespace-nowrap text-xs text-muted-foreground">
-                        {docOf(row)}
-                      </span>
-                    ) : null}
-                  </DataTableCell>
-                  {book === 'sales' ? (
-                    <DataTableCell className="text-muted-foreground">
-                      {row.channel ? (CHANNEL_LABELS[row.channel] ?? row.channel) : '—'}
-                    </DataTableCell>
-                  ) : null}
-                  {columns.map((c) => (
-                    <DataTableCell
-                      key={c.key}
-                      className={cn('px-3 text-right', c.key === 'total_cents' && 'font-medium')}
-                    >
-                      {row.amounts[c.key] ? (
-                        <Amount cents={row.amounts[c.key]} currency={false} />
-                      ) : null}
-                    </DataTableCell>
-                  ))}
-                </tr>
-              ))}
-            </DataTableBody>
-            <tfoot className="bg-secondary/30 font-semibold">
-              <tr className="border-t border-border">
-                <DataTableCell colSpan={book === 'sales' ? 4 : 3} className="text-xs">
-                  Totales del mes
-                </DataTableCell>
-                {columns.map((c) => (
-                  <DataTableCell key={c.key} className="px-3 text-right">
-                    <Amount cents={totals[c.key]} currency={false} />
-                  </DataTableCell>
-                ))}
-              </tr>
-            </tfoot>
-          </DataTableRoot>
-        </DataTableScroll>
-      </DataTableShell>
-
-      {/* Celular: cada comprobante con su total; tocarlo abre el detalle. */}
-      <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
-        <ul aria-label={caption} className="divide-y divide-border/60">
+    <Planilla className={SLIDING_SHEET}>
+      <PTable minWidth={720} label={caption}>
+        <thead>
+          <tr>
+            <PTh>Fecha</PTh>
+            <PTh>Comprobante</PTh>
+            <PTh>{counterparty}</PTh>
+            {book === 'sales' ? <PTh>Canal</PTh> : null}
+            {columns.map((c) => (
+              <PTh key={c.key} align="right">
+                <abbr title={c.label} className="no-underline">
+                  {c.short}
+                </abbr>
+              </PTh>
+            ))}
+          </tr>
+        </thead>
+        <ClickableBody>
           {rows.map((row) => (
-            <li key={row.voucherId}>
-              <Link
-                href={`${base}/comprobantes/${row.documentId}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <span className="min-w-0 space-y-0.5">
-                  <span className="block text-xs tabular-nums text-muted-foreground">
-                    {formatIsoDay(row.voucherDate)}
-                  </span>
-                  <span className="block truncate text-sm font-medium">{row.voucherLabel}</span>
-                  {/* El rango «0003-00018225 a 0003-00018344» no entra al lado del tipo:
-                      va abajo y, si tampoco entra ahí, sigue en otra línea (no se corta). */}
-                  <span className="block font-mono text-xs text-muted-foreground">
-                    <WrappingVoucherNumber text={voucherNumberOf(row)} />
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {row.counterpartyName || docOf(row)}
-                  </span>
+            <PRow key={row.voucherId} className="cursor-pointer">
+              <PTd className="align-top whitespace-nowrap text-muted-foreground">
+                {formatIsoDay(row.voucherDate)}
+              </PTd>
+              <PTd className="align-top">
+                <Link
+                  href={`${base}/comprobantes/${row.documentId}`}
+                  data-row-action=""
+                  className="whitespace-nowrap rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:inline-block pointer-coarse:py-1"
+                >
+                  {row.voucherLabel}
+                </Link>
+                <span className="block font-mono text-xs text-muted-foreground">
+                  <WrappingVoucherNumber text={voucherNumberOf(row)} />
                 </span>
-                <Amount cents={row.amounts.total_cents} className="shrink-0 text-sm font-medium" />
-              </Link>
-            </li>
+                {row.isReversal ? (
+                  <span className="text-xs text-muted-foreground">Anulación</span>
+                ) : null}
+              </PTd>
+              <PTd className="align-top">
+                <span className="block">{row.counterpartyName || docOf(row)}</span>
+                {row.counterpartyName && row.counterpartyName !== docOf(row) ? (
+                  <span className="block whitespace-nowrap text-xs text-muted-foreground">
+                    {docOf(row)}
+                  </span>
+                ) : null}
+              </PTd>
+              {book === 'sales' ? (
+                <PTd className="align-top text-muted-foreground">
+                  {row.channel ? (CHANNEL_LABELS[row.channel] ?? row.channel) : '—'}
+                </PTd>
+              ) : null}
+              {columns.map((c) => (
+                <PTd
+                  key={c.key}
+                  align="right"
+                  className={cn('align-top', c.key === 'total_cents' && 'font-medium')}
+                >
+                  {row.amounts[c.key] ? (
+                    <Amount cents={row.amounts[c.key]} currency={false} />
+                  ) : null}
+                </PTd>
+              ))}
+            </PRow>
           ))}
-          <li className="flex items-center justify-between gap-3 bg-secondary/30 px-4 py-3 text-sm font-semibold">
-            <span>Total del mes</span>
-            <Amount cents={totals.total_cents} />
-          </li>
-        </ul>
-      </div>
-    </>
+        </ClickableBody>
+        <tfoot>
+          <PTotalRow>
+            <PTd colSpan={book === 'sales' ? 4 : 3} className="font-semibold">
+              Totales del mes
+            </PTd>
+            {columns.map((c) => (
+              <PTd key={c.key} align="right" className="font-semibold">
+                <Amount cents={totals[c.key]} currency={false} />
+              </PTd>
+            ))}
+          </PTotalRow>
+        </tfoot>
+      </PTable>
+    </Planilla>
   )
 }

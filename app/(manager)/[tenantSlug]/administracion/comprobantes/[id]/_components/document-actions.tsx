@@ -63,6 +63,7 @@ export function VoidDocumentButton({
   appliedCents,
   appliedWord = 'pagos o cobros',
   extraNotes = [],
+  onDone,
 }: {
   tenantSlug: string
   documentId: string
@@ -75,6 +76,8 @@ export function VoidDocumentButton({
   appliedWord?: AppliedWord
   /** Otros avisos de la ficha antes de anular (es de un gasto fijo, vino de un archivo). */
   extraNotes?: readonly string[]
+  /** Ya quedó anulado: el panel del asiento se cierra. */
+  onDone?: () => void
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -110,6 +113,7 @@ export function VoidDocumentButton({
           setOpen(false)
           reset()
           toast.success(result.message)
+          onDone?.()
           router.refresh()
           return
         }

@@ -20,7 +20,7 @@ import {
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { GuideDo } from './guide-do'
-import { PaperArt } from './station-art'
+import { PaperArt } from './paper-art'
 
 /**
  * «Con factura y sin factura», en dibujos: los cuatro papeles lado a lado con lo que cambia en

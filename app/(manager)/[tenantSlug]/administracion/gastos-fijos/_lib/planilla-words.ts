@@ -1,11 +1,10 @@
 /**
  * La planilla de gastos fijos, en palabras: los tipos de la hoja y todo lo que
- * se dice de un renglón (su frase de estado, qué se puede hacer con él, sus
- * cuotas), la oración de la cabecera, lo que va en «Lo que sigue», los filtros
- * y los títulos de los dibujos.
+ * se dice de un renglón (su estado, qué se puede hacer con él, sus cuotas) y de
+ * la hoja entera (el totalizador).
  *
  * Puro, sin I/O ni `server-only`: lo usan el server (para armar la pantalla) y
- * las islas cliente (el renglón, «Lo que sigue», «Completar»). La hoja en sí la
+ * las islas cliente (el renglón, la tira de pago, «Completar»). La hoja en sí la
  * arma `planilla.ts`, que corre solo en el server. Lo prueban
  * `administracion-gastos-fijos-planilla.test.ts` y `…-envio.test.ts`.
  *
@@ -13,9 +12,23 @@
  * paquete de 15 claves que mandaba el «Deshacer» de «Saltear».
  */
 
+import {
+  documentHref,
+  gastosFijosFillHref,
+  gastosFijosHref,
+  newPurchaseHref,
+  recurringHref,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
+import {
+  type ExpenseTarget,
+  isInvoiceVoucher,
+  type QuickVoucher,
+  quickVoucherFromType,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import { dueInMonth } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/recurring'
 import type { FixedProgress } from '@/lib/accounting/home'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
+import type { PayrollTotals } from '@/lib/accounting/payroll'
 import type { RecurringExpenseRow, RecurringMonthStatus } from '@/lib/accounting/queries/documents'
 import type {
   RecurringDocument,
@@ -24,14 +37,12 @@ import type {
 } from '@/lib/accounting/recurring-status'
 import { voucherLabel } from '@/lib/accounting/voucher-types'
 import {
-  addMonthsToYearMonth,
   capitalizeFirst,
   daysBetween,
   formatDayMonth,
   formatIsoDay,
   monthName,
   monthOf,
-  weekdayName,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 
@@ -46,45 +57,14 @@ export type SheetItem = {
   doc: RecurringDocument | null
   /** «Este mes» de verdad (contra hoy), aunque se esté mirando el mes que viene. */
   realStatus: RecurringMonthStatus
-  /** El día del que cuelga el renglón (`yyyy-MM-dd`). */
+  /** El día en que vence el renglón (`yyyy-MM-dd`). */
   day: string
 }
 
-/** Los renglones que vencen un mismo día. `place`: de un mes anterior, del mes o de uno posterior. */
-export type SheetGroup = {
-  day: string
+/** Los renglones seguidos de un mismo tramo: de un mes anterior, del mes o de uno posterior. */
+export type SheetStretch = {
   place: 'before' | 'month' | 'ahead'
   items: SheetItem[]
-  /** Lo que falta pagar de ese día (los sin monto no suman). */
-  remainingCents: number
-  /** Lo que había que pagar ese día (los sin monto no suman). */
-  dueCents: number
-}
-
-export type SheetCounts = {
-  todo: number
-  vencido: number
-  porVencer: number
-  /** Vencido + por vencer: lo que queda por pagar de esa hoja. */
-  falta: number
-  pagado: number
-  /** Activos sin monto, venzan cuando venzan. */
-  sinMonto: number
-  enCuotas: number
-}
-
-/** Lo que le falta a un bar para arrancar con la planilla (solo para quien carga). */
-export type SheetSetup = {
-  /** Activos sin monto. */
-  missing: number
-  /** Activos. */
-  total: number
-  /** Activos que quedaron en «Gastos varios». */
-  misc: number
-  /** El día que dicen TODOS (si son cinco o más): los dejó así «Pegar una lista». */
-  sameDay: number | null
-  /** Alguno se pagó alguna vez desde la planilla. */
-  everPaid: boolean
 }
 
 export type Sheet = {
@@ -95,18 +75,13 @@ export type Sheet = {
   today: string
   /** Los renglones del mes, en orden estable (día y nombre). */
   items: SheetItem[]
-  groups: SheetGroup[]
+  stretches: SheetStretch[]
   /** No vencen en ese mes. */
   later: SheetItem[]
   /** En pausa o terminados. */
   off: SheetItem[]
   /** El mismo número del Resumen. */
   progress: FixedProgress
-  counts: SheetCounts
-  /** El que sigue entre los que se pueden pagar, y los dos de después. */
-  next: SheetItem | null
-  afterNext: SheetItem[]
-  setup: SheetSetup | null
   /** Se anuló el último pago y el vencimiento quedó corrido. */
   voided: SheetItem[]
 }
@@ -125,30 +100,16 @@ export function monthTitle(month: string): string {
   return capitalizeFirst(monthWord(month))
 }
 
-/** `'2026-10-15'` → `'jueves 15/10'`. */
-export function weekdayDay(iso: string): string {
-  return `${weekdayName(iso)} ${formatDayMonth(iso)}`
-}
-
-/** `'2026-11-10'` → `'10 de noviembre'`. */
-export function dayOfMonthWords(iso: string): string {
-  return `${Number(iso.slice(8, 10))} de ${monthWord(iso.slice(0, 7))}`
-}
-
 /** Dentro del año de hoy alcanza con día y mes; si no, la fecha entera. */
 function shortDay(iso: string, today: string): string {
   return iso.slice(0, 4) === today.slice(0, 4) ? formatDayMonth(iso) : formatIsoDay(iso)
 }
 
-function countWords(n: number, one: string, many: string): string {
-  return n === 1 ? `1 ${one}` : `${n} ${many}`
-}
-
 // ─── Cuotas ──────────────────────────────────────────────────────────────────
 
 /**
- * Las cuotas en palabras, para ir al lado de los puntitos: «cuota 2 de 6»;
- * sin saber de cuántas, «quedan 3» o «última cuota». `null` = no es en cuotas.
+ * Las cuotas en palabras, debajo del concepto: «cuota 2 de 6»; sin saber de
+ * cuántas, «quedan 3» o «última cuota». `null` = no es en cuotas.
  */
 export function installmentWords(installment: RecurringInstallment | null): string | null {
   if (installment === null) return null
@@ -194,21 +155,7 @@ export function papelLabel(voucherType: string | null | undefined): string | nul
   return voucherLabel(voucherType)
 }
 
-export type InvoiceBucket = 'con' | 'sin' | 'nose'
-
-/** Con factura, sin factura o sin definir: la misma regla del filtro de Comprobantes. */
-export function invoiceBucket(voucherType: string | null | undefined): InvoiceBucket {
-  if (!voucherType) return 'nose'
-  return isNotInvoicedVoucher(voucherType) ? 'sin' : 'con'
-}
-
-export const INVOICE_BUCKET_LABELS: Readonly<Record<InvoiceBucket, string>> = {
-  con: 'Con factura',
-  sin: 'Sin factura',
-  nose: 'Sin definir',
-}
-
-/** La línea gris de abajo del nombre: «Internet · Factura A · Fibertel» (lo que no está, no se escribe). */
+/** Lo que se sabe de un gasto fijo, para el `title` del concepto: «Internet · Factura A · Fibertel». */
 export function rowSubline(row: RecurringExpenseRow): string[] {
   const paper = papelLabel(row.voucherType)
   return [row.accountName, paper === 'Sin factura' ? 'sin factura' : paper, row.partyName].filter(
@@ -216,30 +163,24 @@ export function rowSubline(row: RecurringExpenseRow): string[] {
   )
 }
 
-// ─── La frase de estado ──────────────────────────────────────────────────────
+// ─── El estado ───────────────────────────────────────────────────────────────
 
-export type RowTone = 'ok' | 'warn' | 'late' | 'muted'
+export type RowTone = 'ok' | 'warn' | 'bad' | 'muted'
 
-export type RowWords = {
-  /** Lo corto, para la píldora: «Venció hace 3 días», «Pagado el 08/10», «Sin monto». */
+export type RowStatus = {
+  /** «Pagado», «Vencido», «Por vencer», «Lo debés»… */
   label: string
-  /** Lo que sigue, en gris: «vence el 10/11», «$ 10.000 menos que el monto». */
+  tone: RowTone
+  /** «Pagado» es un sello, no una etiqueta. */
+  stamp: boolean
+  /** La frase entera, para quien no ve el sello: «Pagado el 08/10». */
+  title: string
+  /** Lo que sigue, en gris: «el 08/10», «$ 10.000 menos que el monto». */
   detail: string | null
-  /** La frase entera: «Sin monto · vence el 10/11». */
-  text: string
-  /** `null` = solo una fecha: va en gris, sin píldora. */
-  tone: RowTone | null
   /** Lo que se suma debajo: «Era la última cuota», «Debés $ X de antes». */
   extras: string[]
   /** Pagaste menos que el monto y el comprobante está saldado: lo que pregunta «¿Era eso?». */
   short: { expectedCents: number; paidCents: number } | null
-}
-
-function dueAhead(dueDate: string, today: string): string {
-  const days = daysBetween(today, dueDate)
-  if (days === 0) return 'vence hoy'
-  if (days === 1) return 'vence mañana'
-  return `vence el ${weekdayDay(dueDate)}`
 }
 
 function dueBehind(dueDate: string, today: string): string {
@@ -251,23 +192,24 @@ function dueBehind(dueDate: string, today: string): string {
 
 /**
  * Cómo va un renglón, siempre con palabras (el color acompaña, nunca alcanza).
- * Las claves internas no cambian: esto solo las dice.
+ * El vencimiento ya está en su columna: acá se dice solo lo que esa fecha no dice.
  */
-export function rowWords(item: SheetItem, today: string): RowWords {
+export function rowStatus(item: SheetItem, today: string): RowStatus {
   const { row, line, doc } = item
   const extras: string[] = []
   if (row.ended && line.state !== 'ended') extras.push('Era la última cuota')
   if (line.priorOpenCents > 0) extras.push(`Debés ${pesos(line.priorOpenCents)} de antes`)
   const out = (
     label: string,
-    detail: string | null,
-    tone: RowTone | null,
-    short: RowWords['short'] = null,
-  ): RowWords => ({
+    tone: RowTone,
+    detail: string | null = null,
+    short: RowStatus['short'] = null,
+  ): RowStatus => ({
     label,
-    detail,
-    text: detail ? `${label} · ${detail}` : label,
     tone,
+    stamp: false,
+    title: detail ? `${label} · ${detail}` : label,
+    detail,
     extras,
     short,
   })
@@ -280,11 +222,20 @@ export function rowWords(item: SheetItem, today: string): RowWords {
 
   switch (line.state) {
     case 'paid': {
-      const when = doc ? `Pagado el ${shortDay(doc.accountingDate, today)}` : 'Pagado'
+      const when = doc ? shortDay(doc.accountingDate, today) : null
       // Pagaste de más: se dice la diferencia con su palabra, igual que cuando pagaste de menos
       // (un importe pelado al lado del monto no dice qué es).
       const over = line.dueCents !== null ? paid - line.dueCents : 0
-      return out(when, over > 0 ? `${pesos(over)} más que el monto` : null, 'ok')
+      const parts = [
+        when ? `el ${when}` : null,
+        // Menos de un peso es redondeo (el impuesto del cierre trae centavos): no hay nada que decir.
+        over >= 100 ? `${pesos(over)} más que el monto` : null,
+      ]
+      return {
+        ...out('Pagado', 'ok', parts.filter(Boolean).join(' · ') || null),
+        stamp: true,
+        title: when ? `Pagado el ${when}` : 'Pagado',
+      }
     }
     case 'partial':
     case 'unpaid':
@@ -292,55 +243,48 @@ export function rowWords(item: SheetItem, today: string): RowWords {
       if (settled && remaining > 0) {
         return out(
           `Pagaste ${pesos(paid)}`,
-          `${pesos(remaining)} menos que el monto`,
           'warn',
+          `${pesos(remaining)} menos que el monto`,
           line.dueCents === null ? null : { expectedCents: line.dueCents, paidCents: paid },
         )
       }
       if (owed) {
         if (line.state === 'overdue') {
           const tail = paid > 0 ? ` · pagaste ${pesos(paid)}, falta ${pesos(remaining)}` : ''
-          return out('Lo debés', `${dueBehind(due, today)}${tail}`, 'late')
+          return out('Lo debés', 'bad', `${dueBehind(due, today)}${tail}`)
         }
         if (line.state === 'partial') {
-          return out(`Pagaste ${pesos(paid)}`, `falta ${pesos(remaining)}`, 'warn')
+          return out(`Pagaste ${pesos(paid)}`, 'warn', `falta ${pesos(remaining)}`)
         }
-        return out('Lo debés', `vence el ${shortDay(due, today)}`, 'warn')
+        return out('Lo debés', 'warn', `vence el ${shortDay(due, today)}`)
       }
-      if (line.state === 'overdue') return out(capitalizeFirst(dueBehind(due, today)), null, 'late')
-      // Cerca del vencimiento (los días de aviso de ese gasto) va en ámbar; lejos, es solo una fecha.
+      if (line.state === 'overdue') return out('Vencido', 'bad')
+      // Cerca del vencimiento (los días de aviso de ese gasto) va en ámbar; lejos, en gris.
       const days = daysBetween(today, due)
-      return days <= Math.max(1, row.remindDaysBefore)
-        ? out(capitalizeFirst(dueAhead(due, today)), null, 'warn')
-        : out(`Vence el ${shortDay(due, today)}`, null, null)
+      if (days === 0) return out('Vence hoy', 'warn')
+      if (days === 1) return out('Vence mañana', 'warn')
+      return out('Por vencer', days <= Math.max(1, row.remindDaysBefore) ? 'warn' : 'muted')
     }
     case 'no_amount':
-      return line.pastDue
-        ? out('Sin monto', `venció el ${shortDay(due, today)}`, 'late')
-        : out('Sin monto', `vence el ${shortDay(due, today)}`, 'muted')
+      return out('Sin monto', line.pastDue ? 'bad' : 'muted')
     case 'upcoming':
-      return out(`Vence el ${shortDay(due, today)}`, null, null)
+      return out('Por vencer', 'muted')
     case 'skipped':
-      return out('Este mes no se paga', null, 'muted')
+      return out('Este mes no se paga', 'muted')
     case 'paused':
-      return out('En pausa', null, 'muted')
+      return out('En pausa', 'muted')
     case 'ended':
       return out(
         'Terminó',
-        row.endsOn ? `la última cuota venció el ${shortDay(row.endsOn, today)}` : null,
         'muted',
+        row.endsOn ? `la última cuota venció el ${shortDay(row.endsOn, today)}` : null,
       )
   }
 }
 
-/** El tinte del renglón, como las tarjetas de Operativo. */
-export function rowTint(item: SheetItem): 'ok' | 'warn' | 'late' | null {
-  const { line, doc } = item
-  if (line.state === 'paid') return 'ok'
-  const settledShort = doc !== null && doc.openCents === 0 && (line.remainingCents ?? 0) > 0
-  if (settledShort) return 'warn'
-  if (line.state === 'overdue' || (line.state === 'no_amount' && line.pastDue)) return 'late'
-  return null
+/** La pregunta de quien pagó menos de lo que calculaba: la contesta el «⋯» de la fila. */
+export function askWords(short: NonNullable<RowStatus['short']>): string {
+  return `Calculabas ${pesos(short.expectedCents)}. ¿Era eso?`
 }
 
 /** El casillero: vacío, tildado, a medias o con raya («este mes no se paga»). */
@@ -351,20 +295,59 @@ export function tickState(item: SheetItem): 'empty' | 'done' | 'half' | 'skip' {
   return (line.paidCents ?? 0) > 0 ? 'half' : 'empty'
 }
 
+// ─── Los impuestos que se devengan solos ─────────────────────────────────────
+
+/** La cuenta de un gasto → el partícipe al que se le paga (`null`: el bar no lo tiene activo). */
+export type AutoTaxPlan = Readonly<Record<string, string | null>>
+
+const AUTO_TAX_PARTIES: Readonly<Record<string, string>> = {
+  iibb_expense: 'rentas',
+  municipal_tax_expense: 'municipalidad',
+}
+
+/**
+ * Ingresos Brutos y Comercio e Industria, con los impuestos automáticos prendidos, ya se devengan
+ * en cada cierre del día (D Ingresos Brutos / H IIBB a pagar [Rentas]: `buildSalesClose`). Un gasto
+ * fijo con esas cuentas no puede volver a cargar el gasto al pagarse, porque quedaría dos veces:
+ * pagarlo es cancelarle la deuda al partícipe (`rentas` o `municipalidad`), con la hoja «Pagar».
+ *
+ * Con los impuestos apagados el plan queda vacío y esos gastos fijos se pagan como cualquier otro.
+ */
+export function autoTaxPlan(input: {
+  settings: { auto: boolean } | null | undefined
+  accounts: ReadonlyArray<{ id: string; systemKey: string | null }>
+  parties: ReadonlyArray<{ id: string; systemKey: string | null; active: boolean }>
+}): AutoTaxPlan {
+  if (!input.settings?.auto) return {}
+  const plan: Record<string, string | null> = {}
+  for (const account of input.accounts) {
+    const partyKey = account.systemKey ? AUTO_TAX_PARTIES[account.systemKey] : undefined
+    if (!partyKey) continue
+    plan[account.id] =
+      input.parties.find((party) => party.systemKey === partyKey && party.active)?.id ?? null
+  }
+  return plan
+}
+
 // ─── Qué se puede hacer con un renglón ───────────────────────────────────────
 
-/** Lo que hace «Pagar»: cargar el gasto, pagar la factura que se debe o ir a ella. */
+/** Lo que hace tildar: cargar el gasto, pagarle a alguien o ir a la factura. */
 export type PayAction =
   | { kind: 'gasto'; recurringId: string }
-  | { kind: 'pagar'; partyId: string }
+  | {
+      kind: 'pagar'
+      partyId: string
+      /** El gasto fijo que queda pagado con este pago (Rentas, Municipalidad). */
+      recurringId?: string
+    }
   | { kind: 'document'; documentId: string }
 
 export type RowActions = {
-  /** Lo que hace «Pagar» (y el casillero vacío). `null`: no se ofrece. */
+  /** Lo que hace tildar el casillero. `null`: no se ofrece. */
   pay: PayAction | null
-  /** El botón va a la vista en el renglón (los que todavía no vencen lo tienen adentro). */
+  /** Se paga desde el renglón: vence este mes o ya venció. */
   payInRow: boolean
-  /** Todavía no vence este mes: adentro dice «Pagar por adelantado». */
+  /** Todavía no vence: se paga por adelantado. */
   payAhead: boolean
   /** «Me llegó la factura y la pago después». */
   bill: boolean
@@ -378,7 +361,7 @@ export type RowActions = {
   ask: boolean
   /** Pagaste de más: «Usar $ X de ahora en más». */
   keepPaid: boolean
-  /** Cambiar monto y día en el lugar. */
+  /** Cambiar el monto en la celda y entrar a la ficha. */
   edit: boolean
   remove: boolean
 }
@@ -401,11 +384,14 @@ const NO_ACTIONS: RowActions = {
 /**
  * Qué se le ofrece a quien carga. A la contadora, nada (`canWrite: false`).
  *
- * «Pagar» nunca aparece con el comprobante de este mes ya saldado, aunque la
- * cuenta diga «falta»: otro gasto con el mismo gasto fijo daría por cargado el
- * mes que viene. Ahí va «¿Era eso?».
+ * Tildar nunca paga con el comprobante de este mes ya saldado, aunque la cuenta
+ * diga «falta»: otro gasto con el mismo gasto fijo daría por cargado el mes que
+ * viene. Ahí va «¿Era eso?».
  */
-export function rowActions(item: SheetItem, opts: { canWrite: boolean }): RowActions {
+export function rowActions(
+  item: SheetItem,
+  opts: { canWrite: boolean; autoTax?: AutoTaxPlan | null },
+): RowActions {
   if (!opts.canWrite) return NO_ACTIONS
   const { row, line, doc, realStatus } = item
   const loaded = line.documentId !== null
@@ -413,6 +399,14 @@ export function rowActions(item: SheetItem, opts: { canWrite: boolean }): RowAct
   const settled = doc !== null && doc.openCents === 0
   const paid = line.paidCents ?? 0
   const detailed = row.breakdown.length > 0
+  // Se devenga solo en cada cierre: se le paga al partícipe, nunca como otro gasto (`autoTaxPlan`).
+  const taxParty = opts.autoTax?.[row.accountId]
+  const autoTax = taxParty !== undefined
+  const fresh: PayAction | null = !autoTax
+    ? { kind: 'gasto', recurringId: row.id }
+    : taxParty === null
+      ? null
+      : { kind: 'pagar', partyId: taxParty, recurringId: row.id }
 
   let pay: PayAction | null = null
   let payInRow = false
@@ -423,18 +417,18 @@ export function rowActions(item: SheetItem, opts: { canWrite: boolean }): RowAct
       : { kind: 'document', documentId: doc.id }
     payInRow = true
   } else if (!loaded && row.active && realStatus === 'pending') {
-    pay = { kind: 'gasto', recurringId: row.id }
-    payInRow = true
+    pay = fresh
+    payInRow = fresh !== null
   } else if (!loaded && row.active && realStatus === 'upcoming') {
-    pay = { kind: 'gasto', recurringId: row.id }
-    payAhead = true
+    pay = fresh
+    payAhead = fresh !== null
   }
 
   return {
     pay,
     payInRow,
     payAhead,
-    bill: row.active && realStatus !== 'skipped',
+    bill: !autoTax && row.active && realStatus !== 'skipped',
     skip: row.active && realStatus === 'pending' && !loaded,
     // Devolverlo lo deja activo: vale en uno que sigue activo o en el que se apagó solo por no
     // pagar la última cuota. A uno que alguien puso en pausa no lo reanuda por la ventana.
@@ -450,6 +444,202 @@ export function rowActions(item: SheetItem, opts: { canWrite: boolean }): RowAct
       paid > line.dueCents,
     edit: !row.ended,
     remove: true,
+  }
+}
+
+/** ¿El monto se escribe en su celda? No con comprobante cargado ni con detalle (es la suma). */
+export function amountEditable(item: SheetItem, actions: Pick<RowActions, 'edit'>): boolean {
+  return actions.edit && item.line.documentId === null && item.row.breakdown.length === 0
+}
+
+/** Lo que hace una opción del «⋯» que no es un link. */
+export type RowDo = 'pay' | 'skip' | 'unskip' | 'keep' | 'pause' | 'resume' | 'remove'
+
+export type RowMenuItem = {
+  key: string
+  label: string
+  /** En gris, debajo. */
+  hint?: string
+  /** El grupo: entre uno y otro va una raya. */
+  section: 'pay' | 'edit' | 'state'
+} & ({ href: string; run?: undefined } | { run: RowDo; href?: undefined; cents?: number })
+
+/**
+ * El «⋯» de la fila: todo lo que no es de todos los días y no se pierde. Lo decide esto, sin React,
+ * para que la pantalla no tenga que abrir el menú para saber qué ofrece.
+ */
+export function rowMenu(
+  item: SheetItem,
+  actions: RowActions,
+  ctx: { tenantSlug: string; month: string; isMisc?: boolean },
+): RowMenuItem[] {
+  const { row, line, doc } = item
+  const { tenantSlug, month } = ctx
+  const nextDue = formatDayMonth(row.nextDueDate)
+  const menu: RowMenuItem[] = []
+  const { pay } = actions
+
+  if (actions.payAhead && pay?.kind !== 'document') {
+    menu.push({
+      key: 'pay',
+      section: 'pay',
+      label: 'Pagar por adelantado',
+      hint: `Paga el vencimiento del ${nextDue}.`,
+      run: 'pay',
+    })
+  }
+  if (pay?.kind === 'document') {
+    menu.push({
+      key: 'factura',
+      section: 'pay',
+      label: 'Ver la factura y pagarla',
+      href: documentHref(tenantSlug, pay.documentId),
+    })
+  } else if (doc) {
+    menu.push({
+      key: 'comprobante',
+      section: 'pay',
+      label: 'Ver el comprobante',
+      href: documentHref(tenantSlug, doc.id),
+    })
+  }
+  if (actions.bill) {
+    menu.push({
+      key: 'factura-despues',
+      section: 'pay',
+      label: 'Me llegó la factura y la pago después',
+      hint: `Queda como deuda con el proveedor. Cubre el vencimiento del ${nextDue}.`,
+      href: newPurchaseHref(tenantSlug, {
+        proveedor: row.partyId,
+        gastoFijo: row.id,
+        volver: gastosFijosHref(tenantSlug, { mes: month }),
+      }),
+    })
+  }
+  if (actions.skip) {
+    menu.push({
+      key: 'skip',
+      section: 'pay',
+      label: 'Este mes no se paga',
+      hint: 'Usalo también si ya lo cargaste por otro lado.',
+      run: 'skip',
+    })
+  }
+  if (actions.unskip) {
+    menu.push({ key: 'unskip', section: 'pay', label: 'Sí se paga este mes', run: 'unskip' })
+  }
+  const paid = line.paidCents ?? 0
+  if (actions.ask) {
+    menu.push({
+      key: 'keep',
+      section: 'pay',
+      label: `Sí, dejar ${pesos(paid)}`,
+      hint: 'Pasa a ser el monto de siempre.',
+      run: 'keep',
+      cents: paid,
+    })
+  }
+  if (actions.keepPaid) {
+    menu.push({
+      key: 'keep',
+      section: 'pay',
+      label: `Usar ${pesos(paid)} de ahora en más`,
+      run: 'keep',
+      cents: paid,
+    })
+  }
+
+  menu.push({
+    key: 'ficha',
+    section: 'edit',
+    label: row.breakdown.length > 0 ? 'Editar el detalle' : 'Editar',
+    hint: 'El día, las cuotas, el papel, a quién y con qué.',
+    href: recurringHref(tenantSlug, row.id),
+  })
+  if (row.breakdown.length > 0) {
+    menu.push({
+      key: 'sueldos',
+      section: 'edit',
+      label: 'Contabilidad › Sueldos del mes',
+      hint: 'Los números del mes que te pasa la contadora.',
+      href: `/${tenantSlug}/administracion/libros/asiento-manual?tipo=sueldos`,
+    })
+  }
+  if (ctx.isMisc && actions.edit) {
+    menu.push({
+      key: 'categoria',
+      section: 'edit',
+      label: 'Cambiar de categoría',
+      hint: 'Quedó en «Gastos varios».',
+      href: gastosFijosFillHref(tenantSlug, { ver: 'varios', foco: row.id }),
+    })
+  }
+
+  if (actions.pause) menu.push({ key: 'pause', section: 'state', label: 'Pausar', run: 'pause' })
+  if (actions.resume) {
+    menu.push({ key: 'resume', section: 'state', label: 'Reanudar', run: 'resume' })
+  }
+  if (actions.remove)
+    menu.push({ key: 'remove', section: 'state', label: 'Eliminar', run: 'remove' })
+  return menu
+}
+
+// ─── La tira de pago ─────────────────────────────────────────────────────────
+
+/** «Más opciones»: el formulario entero, con ese gasto fijo elegido, y la vuelta a la planilla. */
+export function morePayOptionsHref(slug: string, recurringId: string, month: string): string {
+  return newPurchaseHref(slug, {
+    modo: 'pago',
+    gastoFijo: recurringId,
+    volver: gastosFijosHref(slug, { mes: month }),
+  })
+}
+
+/**
+ * Lo que la tira no puede resolver sola, en palabras. `null` = se puede cargar. Una factura pide
+ * proveedor y número: el número lo trae el QR de ARCA, y si no se puede leer, eso se completa en «Más
+ * opciones».
+ */
+export function payStripBlock(input: {
+  amountCents: number | null
+  target: Extract<ExpenseTarget, { kind: 'party' | 'account' }> | null
+  voucher: QuickVoucher
+  /** Ya se sabe el punto de venta y el número (los leyó el QR). */
+  hasNumber: boolean
+}): string | null {
+  if (input.amountCents === null || input.amountCents <= 0) {
+    return 'Falta el monto: escribilo en la columna Monto.'
+  }
+  if (input.target === null) return 'Este gasto fijo no tiene proveedor ni categoría que sirvan.'
+  if (input.target.accountId === null) return 'Este gasto fijo no tiene una categoría que sirva.'
+  if (isInvoiceVoucher(input.voucher)) {
+    if (input.target.kind !== 'party') {
+      return input.hasNumber
+        ? 'Una factura pide proveedor.'
+        : 'Una factura pide proveedor y número.'
+    }
+    if (!input.hasNumber) return 'Una factura pide el número.'
+  }
+  return null
+}
+
+/** Lo que el QR de ARCA le completa a la tira. Un comprobante que no se carga no cambia el papel. */
+export function stripFromQr(data: {
+  voucherType: string | null
+  pointOfSale: number
+  number: number
+  totalCents: number | null
+}): {
+  voucher: QuickVoucher | null
+  pointOfSale: number
+  number: number
+  amountCents: number | null
+} {
+  return {
+    voucher: quickVoucherFromType(data.voucherType),
+    pointOfSale: data.pointOfSale,
+    number: data.number,
+    amountCents: data.totalCents !== null && data.totalCents > 0 ? data.totalCents : null,
   }
 }
 
@@ -584,83 +774,6 @@ export function saveFailure(result: {
   return { kind: 'other', message: `No se guardó. ${result.message}`.trim() }
 }
 
-// ─── Filtros (viven en la URL) ───────────────────────────────────────────────
-
-export const SHEET_FILTERS = ['vencido', 'por-vencer', 'pagado', 'sin-monto', 'en-cuotas'] as const
-export type SheetFilter = (typeof SHEET_FILTERS)[number]
-
-export const SHEET_FILTER_LABELS: Readonly<Record<SheetFilter, string>> = {
-  vencido: 'Vencido',
-  'por-vencer': 'Por vencer',
-  pagado: 'Pagado',
-  'sin-monto': 'Sin monto',
-  'en-cuotas': 'En cuotas',
-}
-
-export function parseSheetFilter(raw: string | null | undefined): SheetFilter | null {
-  return (SHEET_FILTERS as readonly string[]).includes(raw ?? '') ? (raw as SheetFilter) : null
-}
-
-export function parseInvoiceBucket(raw: string | null | undefined): InvoiceBucket | null {
-  return raw === 'con' || raw === 'sin' || raw === 'nose' ? raw : null
-}
-
-const isOverdueItem = ({ line }: SheetItem) =>
-  line.state === 'overdue' || (line.state === 'no_amount' && line.pastDue)
-const isDueSoonItem = ({ line }: SheetItem) =>
-  line.state === 'unpaid' ||
-  line.state === 'partial' ||
-  (line.state === 'no_amount' && !line.pastDue)
-
-/** ¿El renglón entra en ese filtro? */
-export function matchesSheetFilter(item: SheetItem, filter: SheetFilter): boolean {
-  switch (filter) {
-    case 'vencido':
-      return isOverdueItem(item)
-    case 'por-vencer':
-      return isDueSoonItem(item)
-    case 'pagado':
-      return item.line.state === 'paid'
-    case 'sin-monto':
-      return item.row.active && !item.row.ended && item.row.amountCents === null
-    case 'en-cuotas':
-      return item.line.installment !== null
-  }
-}
-
-export type SheetQuery = {
-  ver: SheetFilter | null
-  categoria: string | null
-  factura: InvoiceBucket | null
-}
-
-export function matchesSheetQuery(item: SheetItem, query: SheetQuery): boolean {
-  if (query.ver && !matchesSheetFilter(item, query.ver)) return false
-  if (query.categoria && item.row.accountId !== query.categoria) return false
-  if (query.factura && invoiceBucket(item.row.voucherType) !== query.factura) return false
-  return true
-}
-
-export type SheetFilterPill = { key: SheetFilter; label: string; count: number }
-
-/**
- * Las píldoras de filtro que valen la pena: ni las vacías ni las que dejarían
- * la lista igual que «Todo». Si no queda ninguna, no hay barra (un bar con todo
- * por vencer y sin monto no necesita filtrar nada).
- */
-export function sheetFilterPills(sheet: Pick<Sheet, 'items' | 'later'>): SheetFilterPill[] {
-  const pills: SheetFilterPill[] = []
-  for (const key of SHEET_FILTERS) {
-    const inSheet = sheet.items.filter((item) => matchesSheetFilter(item, key)).length
-    const inLater = sheet.later.filter((item) => matchesSheetFilter(item, key)).length
-    const count = inSheet + inLater
-    if (count === 0) continue
-    if (inSheet === sheet.items.length && inLater === 0) continue
-    pills.push({ key, label: SHEET_FILTER_LABELS[key], count })
-  }
-  return pills
-}
-
 // ─── Lo que suma lo que se ve ────────────────────────────────────────────────
 
 export type ShownTotals = {
@@ -674,9 +787,8 @@ export type ShownTotals = {
 }
 
 /**
- * La suma de un grupo de renglones (los que deja un filtro, los de un día): en
- * una planilla, la fila de abajo suma lo que se ve arriba. Misma cuenta que el
- * total del mes: pagado más lo que falta, sin los que no tienen monto.
+ * La suma de un grupo de renglones. Misma cuenta que el total del mes: pagado
+ * más lo que falta, sin los que no tienen monto.
  */
 export function shownTotals(items: readonly SheetItem[]): ShownTotals {
   const totals: ShownTotals = {
@@ -701,11 +813,11 @@ export function shownTotals(items: readonly SheetItem[]): ShownTotals {
 /**
  * Mirando el mes que viene, la hoja trae dos cosas distintas: lo que vence ESE
  * mes y lo que quedó de antes sin pagar (aparece una vez, con su fecha vieja).
- * Nunca se suman bajo el nombre del mes que viene: un «Te falta · noviembre»
+ * Nunca se suman bajo el nombre del mes que viene: un «Total de noviembre»
  * armado con la deuda de octubre es un número con el mes equivocado.
  *
- * En el mes de hoy no se separa nada: lo vencido de antes es parte de «Te
- * falta», como en el Resumen.
+ * En el mes de hoy no se separa nada: lo vencido de antes es parte de «Por
+ * pagar», como en el Resumen.
  */
 export type SheetCarry = {
   /** El mes de hoy (`yyyy-MM`): la hoja donde se pagan. */
@@ -719,9 +831,6 @@ export type SheetCarry = {
   /** Lo que suman esos (pagado, falta y cuántos no tienen monto). */
   ownTotals: ShownTotals
 }
-
-/** Lo que la cabecera dice de lo que quedó de antes: cuántos, cuánto y en qué hoja se pagan. */
-export type SheetCarried = Pick<SheetCarry, 'month' | 'count' | 'cents'>
 
 function isCarried(item: SheetItem, month: string): boolean {
   const { state } = item.line
@@ -745,409 +854,82 @@ export function sheetCarry(
   }
 }
 
-/** Los renglones que cuentan como «de ese mes»: en el que viene, sin lo que quedó de antes. */
-export function ownItems(sheet: Pick<Sheet, 'isCurrent' | 'items' | 'month' | 'today'>) {
-  return sheetCarry(sheet)?.own ?? sheet.items
-}
+// ─── El totalizador ──────────────────────────────────────────────────────────
 
-// ─── La oración de la cabecera ───────────────────────────────────────────────
+/** Lo que aportan los sueldos a la hoja. */
+export type PayrollSums = Pick<
+  PayrollTotals,
+  'count' | 'salaryCents' | 'advancesCents' | 'paidCents' | 'owedCents'
+>
 
-export type SheetSentence =
-  /** La hoja no tiene renglones: no hay número, hay un titular. */
-  | { kind: 'empty'; title: string; text: string; nextMonth: string | null }
-  /** Hay renglones y ninguno suma: nunca «$ 0». */
-  | { kind: 'no_amounts'; title: string; text: string; carried?: SheetCarried }
-  /** Mirando el mes que viene y lo único que hay es lo que quedó de antes: sin número. */
-  | { kind: 'carried'; title: string; text: string; carried: SheetCarried }
-  | {
-      kind: 'number'
-      cents: number
-      text: string
-      /** Todo pago: va la píldora «Al día». */
-      allPaid: boolean
-      /** Vencen este mes y no tienen monto: no suman. */
-      noAmount: number
-      /** Mirando el mes que viene: lo que quedó de antes va aparte del número. */
-      carried?: SheetCarried
-    }
-
-/** Lo próximo que vence fuera de la hoja: «el 10 de noviembre: 31 gastos, $ 2.450.000». */
-function upcomingWords(later: readonly SheetItem[]): { text: string; month: string } | null {
-  const active = later.filter((item) => item.line.state === 'upcoming')
-  const first = active.reduce<string | null>(
-    (min, item) => (min === null || item.day < min ? item.day : min),
-    null,
-  )
-  if (first === null) return null
-  const sameDay = active.filter((item) => item.day === first)
-  const withAmount = sameDay.filter((item) => item.row.amountCents !== null)
-  const total = withAmount.reduce((sum, item) => sum + (item.row.amountCents ?? 0), 0)
-  const count = countWords(sameDay.length, 'gasto', 'gastos')
-  const amount =
-    withAmount.length === 0
-      ? 'todavía sin monto'
-      : withAmount.length === sameDay.length
-        ? pesos(total)
-        : `${pesos(total)} (${countWords(sameDay.length - withAmount.length, 'sin monto', 'sin monto')})`
-  return {
-    text: `Lo próximo es el ${dayOfMonthWords(first)}: ${count}, ${amount}.`,
-    month: monthOf(first),
-  }
+export type SheetTotals = {
+  /** `null`: nada suma todavía. Nunca «$ 0» por un dato que falta. */
+  totalCents: number | null
+  paidCents: number | null
+  pendingCents: number | null
+  overdueCents: number | null
+  /** Lo que suman los sueldos; `null` si no hay ninguno que sumar. */
+  payrollCents: number | null
+  /** Vencen este mes y no tienen monto: no suman. */
+  noAmount: number
 }
 
 /**
- * La cabecera del mes que viene cuando hay cosas que quedaron de antes sin
- * pagar. Tres casos, y en ninguno lo de antes entra al número:
- *
- * - lo único que hay es lo de antes: sin número, «Noviembre todavía no se
- *   armó» (esos renglones pasan a noviembre recién cuando se pagan);
- * - lo del mes no suma (ninguno tiene monto): «Todavía no sé cuánto te falta»;
- * - hay de los dos: el número es lo del mes y lo de antes va al lado, aparte.
+ * Total del mes, Pagado, Por pagar y Vencido: el totalizador que pidió Tomi. Suma los gastos fijos
+ * que vencen en el mes (los mismos del Resumen) y la planilla de Sueldos. Mirando el mes que viene,
+ * lo que quedó de antes no entra al total del mes: su deuda se ve en «Vencido» y en su tramo.
  */
-function carriedSentence(sheet: Sheet, carry: SheetCarry): SheetSentence {
-  const mes = monthWord(sheet.month)
-  const carried: SheetCarried = { month: carry.month, count: carry.count, cents: carry.cents }
-  const own = carry.ownTotals
-  const ownCounted = carry.own.filter((item) => item.line.remainingCents !== null).length
-
-  if (ownCounted === 0 && own.noAmount === 0) {
-    const one = carry.count === 1
-    const sum = carry.cents > 0 ? `: ${one ? '' : 'suman '}${pesos(carry.cents)}` : ''
-    return {
-      kind: 'carried',
-      title: `${monthTitle(sheet.month)} todavía no se armó`,
-      text: one
-        ? `Acá abajo está el que quedó de antes sin pagar${sum}. Cuando lo pagues, vas a ver el de ${mes}.`
-        : `Acá abajo están los ${carry.count} que quedaron de antes sin pagar${sum}. Cuando los pagues, vas a ver los de ${mes}.`,
-      carried,
-    }
-  }
-
-  const apart =
-    carry.count === 1
-      ? 'El que quedó de antes sin pagar va aparte.'
-      : `Los ${carry.count} que quedaron de antes sin pagar van aparte.`
-  if (ownCounted === 0) {
-    return {
-      kind: 'no_amounts',
-      title: 'Todavía no sé cuánto te falta',
-      text: `${
-        own.noAmount === 1
-          ? `Es un solo gasto de ${mes} y no tiene monto.`
-          : `Son ${own.noAmount} gastos de ${mes} y ninguno tiene monto.`
-      } ${apart}`,
-      carried,
-    }
-  }
-  const lead =
-    own.remainingCents === 0
-      ? `Los de ${mes} ya están pagos.`
-      : ownCounted === 1
-        ? `Es un solo gasto de ${mes}.`
-        : `Son ${ownCounted} gastos de ${mes}.`
-  return {
-    kind: 'number',
-    cents: own.remainingCents,
-    text: `${lead} ${apart}`,
-    // Con algo de antes sin pagar no se dice «al día», aunque lo del mes esté pago.
-    allPaid: false,
-    noAmount: own.noAmount,
-    carried,
-  }
-}
-
-/**
- * Qué se dice al lado del número de arriba. El orden importa: primero «no hay
- * renglones», después «ninguno suma» (nunca «$ 0» por un dato que falta) y
- * recién después el número.
- */
-export function sheetSentence(sheet: Sheet): SheetSentence {
-  const { progress, items, month } = sheet
-  const mes = monthWord(month)
-
-  if (items.length === 0) {
-    const upcoming = upcomingWords(sheet.later)
-    const nextMonth = addMonthsToYearMonth(month, 1)
-    return {
-      kind: 'empty',
-      title: `En ${mes} no vence ninguno`,
-      text: upcoming?.text ?? progress.sentence,
-      // El link solo si lo próximo cae en el mes de al lado, que es la otra hoja.
-      nextMonth: sheet.isCurrent && upcoming?.month === nextMonth ? nextMonth : null,
-    }
-  }
-
-  // Mirando el mes que viene con cosas que quedaron de antes: van aparte, nunca en el número.
+export function sheetTotals(
+  sheet: Pick<Sheet, 'isCurrent' | 'items' | 'month' | 'today' | 'progress'>,
+  payroll: PayrollSums | null,
+): SheetTotals {
+  const { progress } = sheet
   const carry = sheetCarry(sheet)
-  if (carry) return carriedSentence(sheet, carry)
-
-  const counted = items.filter((item) => item.line.remainingCents !== null)
-  if (counted.length === 0) {
-    const live = items.filter((item) => item.line.state === 'no_amount')
-    if (live.length === 0) {
-      // Lo único que hay en la hoja son los que se marcaron «este mes no se paga».
-      return {
-        kind: 'empty',
-        title: `En ${mes} no queda ninguno para pagar`,
-        text:
-          items.length === 1
-            ? 'El único de este mes quedó como «este mes no se paga».'
-            : `Los ${items.length} de este mes quedaron como «este mes no se paga».`,
-        nextMonth: sheet.isCurrent ? addMonthsToYearMonth(month, 1) : null,
+  const own = carry
+    ? carry.ownTotals
+    : {
+        totalCents: progress.totalCents,
+        paidCents: progress.paidCents,
+        remainingCents: progress.remainingCents,
+        noAmount: progress.noAmountDue,
       }
-    }
-    const days = [...new Set(live.map((item) => item.day))].sort()
-    const first = days[0]
-    const one = live.length === 1
-    const everyone =
-      progress.missingAmount === progress.activeRows && live.length === progress.activeRows
-    const lead = everyone
-      ? `Tenés ${countWords(live.length, 'gasto fijo y no tiene monto', 'gastos fijos y ninguno tiene monto')}.`
-      : one
-        ? `Es un solo gasto de ${mes} y no tiene monto.`
-        : `Son ${live.length} gastos de ${mes} y ninguno tiene monto.`
-    const when =
-      first === undefined
-        ? ''
-        : days.length === 1
-          ? ` ${one ? 'Vence' : 'Vencen'} el ${dayOfMonthWords(first)}.`
-          : ` El primero vence el ${dayOfMonthWords(first)}.`
-    return { kind: 'no_amounts', title: 'Todavía no sé cuánto te falta', text: `${lead}${when}` }
-  }
-
-  const total = progress.totalCents
-  const lead =
-    counted.length === 1 ? `Es un solo gasto de ${mes}.` : `Son ${counted.length} gastos de ${mes}.`
-  let text: string
-  if (progress.remainingCents === 0) {
-    text = `Pagaste los ${pesos(total)} de gastos fijos de ${mes}.`
-  } else if (progress.paidCents > 0) {
-    text = `Pagaste ${pesos(progress.paidCents)} de ${pesos(total)}. ${
-      progress.pendingRows === 1 ? 'Te falta 1' : `Te faltan ${progress.pendingRows}`
-    }.`
-  } else if (progress.overdueRows > 0) {
-    text = `${lead} ${
-      progress.overdueRows === 1
-        ? `1 ya venció: ${pesos(progress.overdueCents)}`
-        : `${progress.overdueRows} ya vencieron: suman ${pesos(progress.overdueCents)}`
-    }.`
-  } else {
-    const firstDue = counted
-      .filter((item) => (item.line.remainingCents ?? 0) > 0)
-      .reduce<string | null>((min, item) => (min === null || item.day < min ? item.day : min), null)
-    text =
-      firstDue === null
-        ? lead
-        : `${lead} ${counted.length === 1 ? 'Vence' : 'El primero vence'} el ${weekdayDay(firstDue)}.`
-  }
+  const counted = carry
+    ? carry.own.some((item) => item.line.remainingCents !== null)
+    : progress.countedRows > 0
+  const salaries =
+    payroll && (payroll.salaryCents > 0 || payroll.advancesCents > 0 || payroll.paidCents > 0)
+      ? payroll
+      : null
+  // Nada suma todavía: sin «$ 0». Lo que quedó de antes puede estar vencido igual.
+  const nothing = !counted && !salaries
   return {
-    kind: 'number',
-    cents: progress.remainingCents,
-    text,
-    allPaid: progress.remainingCents === 0,
-    noAmount: progress.noAmountDue,
+    totalCents: nothing ? null : own.totalCents + (salaries?.salaryCents ?? 0),
+    paidCents: nothing
+      ? null
+      : own.paidCents + (salaries ? salaries.advancesCents + salaries.paidCents : 0),
+    pendingCents: nothing ? null : own.remainingCents + (salaries?.owedCents ?? 0),
+    overdueCents: nothing && progress.overdueCents === 0 ? null : progress.overdueCents,
+    payrollCents: salaries?.salaryCents ?? null,
+    noAmount: own.noAmount,
   }
 }
 
-// ─── «Lo que sigue» ──────────────────────────────────────────────────────────
-
-export type NextUpView =
-  /** El bar recién arranca: tres pasos numerados. */
-  | { kind: 'setup'; setup: SheetSetup }
-  /** Lo mismo para quien solo mira. */
-  | { kind: 'setup_readonly'; text: string }
-  /** Lo que sigue: un gasto para pagar ahora. */
-  | {
-      kind: 'pay'
-      id: string
-      name: string
-      status: RowWords
-      /** `null` = sin monto: se pone al pagar. */
-      amountCents: number | null
-      action: PayAction
-      /** Ya está la factura cargada: falta pagarla. */
-      billed: boolean
-      after: string | null
-    }
-  /** Mirando el mes que viene: lo primero que vence, sin botón. */
-  | { kind: 'first_due'; when: string; detail: string; daysText: string }
-  | { kind: 'all_paid'; text: string; nextMonth: string | null }
-  /** Lo que queda es por diferencias con el monto. */
-  | { kind: 'review'; text: string }
-  | { kind: 'none' }
-
-function afterWords(items: readonly SheetItem[], more: number): string | null {
-  const first = items[0]
-  if (!first) return null
-  const rest = items.length - 1 + more
-  return rest > 0 ? `Después: ${first.row.name} y ${rest} más.` : `Después: ${first.row.name}.`
-}
-
-/**
- * La acción del momento, una sola por estado. Lo decide la hoja; la isla
- * cliente solo la dibuja y abre la carga.
- */
-export function nextUpView(sheet: Sheet, opts: { canWrite: boolean }): NextUpView {
-  const { progress, items, month } = sheet
-  const mes = monthWord(month)
-
-  if (progress.countedRows === 0 && progress.missingAmount > 0) {
-    if (opts.canWrite && sheet.setup) return { kind: 'setup', setup: sheet.setup }
+/** Cómo va la fila fija de los sueldos: «Falta $ X», «Pagado» o que todavía no hay nada. */
+export function payrollRowStatus(payroll: PayrollSums | null): {
+  label: string
+  tone: RowTone
+  stamp: boolean
+} {
+  if (payroll === null) return { label: 'No se pudo leer', tone: 'bad', stamp: false }
+  if (payroll.salaryCents <= 0) {
     return {
-      kind: 'setup_readonly',
-      text: `${countWords(progress.missingAmount, 'gasto fijo sin monto', 'gastos fijos sin monto')}: todavía no se sabe cuánto falta.`,
+      label: payroll.count === 0 ? 'Sin cargar' : 'Sin sueldos',
+      tone: 'muted',
+      stamp: false,
     }
   }
-  if (items.length === 0) return { kind: 'none' }
-
-  // Mirando el mes que viene y lo único que hay es lo que quedó de antes: ese mes todavía no
-  // tiene «lo que sigue». Se pagan desde la hoja de hoy (la cabecera lleva a ella) o desde su
-  // renglón, que sigue teniendo su «Pagar».
-  if (sheetCarry(sheet)?.own.length === 0) return { kind: 'none' }
-
-  // Mirando el mes que viene: lo primero que vence de ESE mes, sin botón.
-  const ahead = sheet.isCurrent ? undefined : sheet.groups.find((g) => g.place !== 'before')
-  if (ahead) {
-    const days = daysBetween(sheet.today, ahead.day)
-    const count = countWords(ahead.items.length, 'gasto', 'gastos')
-    return {
-      kind: 'first_due',
-      when: capitalizeFirst(`${weekdayName(ahead.day)} ${dayOfMonthWords(ahead.day)}`),
-      detail: ahead.dueCents > 0 ? `${count} · ${pesos(ahead.dueCents)}` : count,
-      daysText: days <= 0 ? 'Vence hoy.' : days === 1 ? 'Falta 1 día.' : `Faltan ${days} días.`,
-    }
+  if (payroll.owedCents > 0) {
+    return { label: `Falta ${pesos(payroll.owedCents)}`, tone: 'muted', stamp: false }
   }
-
-  if (sheet.next) {
-    const actions = rowActions(sheet.next, { canWrite: true })
-    if (actions.pay) {
-      const nextId = sheet.next.row.id
-      const pending = items.filter(
-        (item) => item.row.id !== nextId && rowActions(item, { canWrite: true }).payInRow,
-      ).length
-      const { doc, line, row } = sheet.next
-      return {
-        kind: 'pay',
-        id: row.id,
-        name: row.name,
-        status: rowWords(sheet.next, sheet.today),
-        // De una factura cargada se paga lo que le falta a la factura.
-        amountCents:
-          doc && doc.openCents > 0 ? doc.openCents : (line.remainingCents ?? row.amountCents),
-        action: actions.pay,
-        billed: actions.pay.kind !== 'gasto',
-        after: afterWords(sheet.afterNext, Math.max(0, pending - sheet.afterNext.length)),
-      }
-    }
-  }
-
-  if (progress.countedRows > 0 && progress.remainingCents === 0) {
-    const nextMonth = addMonthsToYearMonth(month, 1)
-    return { kind: 'all_paid', text: `No queda nada por pagar en ${mes}.`, nextMonth }
-  }
-  if (progress.remainingCents > 0) {
-    return {
-      kind: 'review',
-      text:
-        progress.pendingRows === 1
-          ? 'Queda un renglón por revisar: pagaste distinto de lo que calculabas.'
-          : `Quedan ${progress.pendingRows} renglones por revisar: pagaste distinto de lo que calculabas.`,
-    }
-  }
-  return { kind: 'none' }
-}
-
-// ─── Los dibujos ─────────────────────────────────────────────────────────────
-
-export type DueDay = {
-  /** `yyyy-MM-dd`. En la columna que junta lo de otros meses, el primero de sus días. */
-  date: string
-  cents: number
-  count: number
-  overdue: boolean
-  /**
-   * La columna junta todo lo que quedó de meses anteriores (`before`) o lo de
-   * meses siguientes (`after`): va rotulada con palabras («Antes»), porque un
-   * «10» de septiembre adelante del día 1 es un eje que miente.
-   */
-  outside?: 'before' | 'after'
-}
-
-/** Cómo se llama en el eje y en el globito la columna que junta lo de otros meses. */
-export const DUE_OUTSIDE_LABELS: Readonly<Record<NonNullable<DueDay['outside']>, string>> = {
-  before: 'Antes',
-  after: 'Después',
-}
-
-/** «El 15 se te van $ 35.000»; con vencidos, «Tenés $ 880.000 vencidos del 10». */
-export function dueTitle(days: readonly DueDay[]): string {
-  const withMoney = days.filter((d) => d.cents > 0)
-  const overdue = withMoney.filter((d) => d.overdue)
-  if (overdue.length > 0) {
-    const total = overdue.reduce((sum, d) => sum + d.cents, 0)
-    const only = overdue.length === 1 ? overdue[0] : undefined
-    if (!only) return `Tenés ${pesos(total)} vencidos`
-    return only.outside
-      ? `Tenés ${pesos(total)} vencidos de antes`
-      : `Tenés ${pesos(total)} vencidos del ${Number(only.date.slice(8, 10))}`
-  }
-  // El día más cargado es un día del mes: lo de otros meses no tiene «el 15».
-  const busiest = withMoney
-    .filter((d) => !d.outside)
-    .reduce<DueDay | null>((best, d) => (best === null || d.cents > best.cents ? d : best), null)
-  if (!busiest) return 'Este mes no queda nada por vencer'
-  return `El ${Number(busiest.date.slice(8, 10))} se te van ${pesos(busiest.cents)}`
-}
-
-export type CategoryBar = { id: string; name: string; cents: number; count: number }
-
-/** «Lo que más se lleva de lo fijo: Alquiler (93 %)», como el Resumen dice lo de las compras. */
-export function categoryTitle(bars: readonly CategoryBar[]): string {
-  const total = bars.reduce((sum, b) => sum + b.cents, 0)
-  const top = bars.reduce<CategoryBar | null>(
-    (best, b) => (best === null || b.cents > best.cents ? b : best),
-    null,
-  )
-  if (!top || total <= 0) return 'En qué se va lo fijo'
-  return `Lo que más se lleva de lo fijo: ${top.name} (${Math.round((top.cents * 100) / total)} %)`
-}
-
-/** Las categorías que no entran al dibujo, juntas: cuántas son, cuánto suman y cuántos gastos. */
-export type CategoryRest = { categories: number; cents: number; count: number }
-
-/**
- * Las categorías que entran al dibujo: las más grandes y, si hay muchas, el
- * resto junto en un renglón («Otras 7 categorías»). Una docena de barritas de
- * menos del 1 % no compara nada; la tabla las conserva todas.
- */
-export function topCategoryBars(
-  bars: readonly CategoryBar[],
-  max = 6,
-): { top: CategoryBar[]; rest: CategoryRest | null } {
-  // Con una sola de más no vale la pena juntar: «Otras 1 categoría» ocupa lo mismo.
-  if (bars.length <= max + 1) return { top: [...bars], rest: null }
-  const others = bars.slice(max)
-  return {
-    top: bars.slice(0, max),
-    rest: {
-      categories: others.length,
-      cents: others.reduce((sum, bar) => sum + bar.cents, 0),
-      count: others.reduce((sum, bar) => sum + bar.count, 0),
-    },
-  }
-}
-
-export type PaperSplit = {
-  conCents: number
-  sinCents: number
-  noseCents: number
-  /** Algún gasto del mes tiene papel de siempre. */
-  defined: boolean
-}
-
-/** «$ 35.000 de lo fijo van con factura». Un título que cuenta, sin opinar. */
-export function paperTitle(split: PaperSplit): string {
-  if (split.conCents > 0) return `${pesos(split.conCents)} de lo fijo van con factura`
-  if (split.sinCents > 0) return `${pesos(split.sinCents)} de lo fijo van sin factura`
-  return 'Con qué papel pagás lo fijo'
+  return { label: 'Pagado', tone: 'ok', stamp: true }
 }

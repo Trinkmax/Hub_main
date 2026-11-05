@@ -73,6 +73,8 @@ export type DetectedSource =
   | 'portal_iva_compras'
   | 'mp_release'
   | 'mp_settlement'
+  /** El reporte de Cobros de Mercado Pago («collection-….csv», «Reporte_de_ventas_….zip»). */
+  | 'mp_collection'
   | 'bank'
   | 'unknown'
 
@@ -131,6 +133,7 @@ export type ImportIssueCode =
   // Mercado Pago
   | 'mp_no_header'
   | 'mp_settlement'
+  | 'mp_collection'
   | 'mp_bad_date'
   | 'mp_bad_amount'
   | 'mp_row_check'
@@ -241,6 +244,8 @@ export const IMPORT_ISSUE_TEXT: Readonly<Record<ImportIssueCode, string>> = {
   mp_no_header:
     'No encontramos los títulos del reporte de Liquidaciones (DATE, RECORD_TYPE, DESCRIPTION, NET_CREDIT_AMOUNT…). Configurá el reporte con encabezados en inglés.',
   mp_settlement: 'Es el reporte «Todas las transacciones». Acá va el de «Liquidaciones».',
+  mp_collection:
+    'Este es el reporte de Cobros de Mercado Pago. No trae lo que te descontaron. Bajá Liquidaciones y lo cargamos con comisión e impuestos.',
   mp_bad_date: 'La fecha no se entiende.',
   mp_bad_amount: 'Hay un importe que no se entiende.',
   mp_row_check: 'El bruto menos la comisión y los impuestos no da el neto de la fila.',

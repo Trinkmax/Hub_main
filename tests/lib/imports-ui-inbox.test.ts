@@ -15,6 +15,7 @@ import {
   displayBatchStatus,
   type InboxBatch,
   type InboxInput,
+  importSourceRows,
   periodWords,
   rowsBeforeStart,
   STRIP_DAYS,
@@ -433,6 +434,95 @@ describe('el bar de ejemplo al 13/10 (arranca el 01/09)', () => {
 
   it('el banco lleva el nombre de la única cuenta', () => {
     expect(tray(demo(), 'bank_statement').name).toBe('Banco Nación')
+  })
+})
+
+describe('la tabla de «Importar»', () => {
+  const rowsOf = (over: Partial<InboxInput>) => importSourceRows(buildInbox(input(over)), 'bar')
+
+  it('un renglón por origen, con qué archivo es y «Subir»', () => {
+    const rows = rowsOf({ batches: [] })
+    expect(rows.map((r) => [r.source, r.name, r.file])).toEqual([
+      ['arca_recibidos', 'ARCA', 'El ZIP de Mis Comprobantes › Recibidos'],
+      ['mp_release', 'Mercado Pago', 'El CSV de Liquidaciones'],
+      ['bank_statement', 'Banco Nación', 'Los movimientos en CSV, TXT o Excel'],
+    ])
+    for (const row of rows) {
+      expect(row.action).toEqual({
+        label: 'Subir',
+        href: `/bar/administracion/importar/${
+          row.source === 'arca_recibidos'
+            ? 'arca'
+            : row.source === 'mp_release'
+              ? 'mercado-pago'
+              : 'banco'
+        }`,
+      })
+      expect(row.last).toBeNull()
+      expect(row.howHref).toContain('#paso-1')
+    }
+  })
+
+  it('«Última vez» y lo que falta traer, sin el rótulo de la bandeja', () => {
+    const [arca, mp] = rowsOf({
+      batches: [
+        batch({
+          source: 'arca_recibidos',
+          periodFrom: '2026-09-01',
+          periodTo: '2026-09-30',
+          createdAt: '2026-10-11T15:00:00Z',
+          counts: { proposals: 1, posted: 1 },
+        }),
+        batch({
+          source: 'mp_release',
+          periodFrom: '2026-10-01',
+          periodTo: '2026-10-07',
+          createdAt: '2026-10-08T15:00:00Z',
+          counts: { proposals: 1, posted: 1 },
+        }),
+      ],
+    })
+    expect(arca?.last).toBe('El 11/10 subiste septiembre')
+    expect(arca?.status).toEqual({ text: 'Al día', due: false })
+    expect(mp?.last).toMatch(/^El 08\/10 subiste /)
+    expect(mp?.status?.text).toBe('Sin subir: 5 días')
+  })
+
+  it('lo que quedó esperando se ve en su renglón y lleva a su archivo', () => {
+    const waiting = batch({
+      source: 'mp_release',
+      status: 'review',
+      pending: 3,
+      periodFrom: '2026-10-01',
+      periodTo: '2026-10-07',
+      counts: { proposals: 3, needsInput: 3 },
+    })
+    const mp = rowsOf({ batches: [waiting] }).find((r) => r.source === 'mp_release')
+    expect(mp?.waiting.map((s) => s.href)).toEqual([`/bar/administracion/importar/${waiting.id}`])
+    // El botón sigue siendo subir: revisar se hace desde su renglón.
+    expect(mp?.action?.label).toBe('Subir')
+  })
+
+  it('sin la cuenta, dice qué falta y lleva a agregarla', () => {
+    const rows = rowsOf({ batches: [], treasuries: [{ id: 'c1', name: 'Caja', kind: 'cash' }] })
+    const bank = rows.find((r) => r.source === 'bank_statement')
+    expect(bank?.name).toBe('Banco')
+    expect(bank?.status).toEqual({
+      text: 'Primero decime cuál es tu cuenta del banco.',
+      due: false,
+    })
+    expect(bank?.action).toEqual({
+      label: 'Agregar la cuenta',
+      href: '/bar/administracion/ajustes?tab=cajas',
+    })
+  })
+
+  it('la contadora ve lo mismo, sin botones ni «¿Cómo se baja?»', () => {
+    const rows = rowsOf({ batches: [], canWrite: false })
+    for (const row of rows) {
+      expect(row.action).toBeNull()
+      expect(row.howHref).toBeNull()
+    }
   })
 })
 

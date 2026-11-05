@@ -21,6 +21,7 @@ import type {
 } from '@/lib/accounting/context'
 import { buildPrimary, parseDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { SystemAccountKey } from '@/lib/accounting/system-keys'
+import { DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
 import type {
   IvaCondition,
   OpenItemRef,
@@ -34,6 +35,7 @@ import {
   evaluateDraft,
   type ImportCatalog,
   importCatalogFrom,
+  importPostingContext,
   type ProposalDraft,
   type StagedItem,
 } from '@/lib/imports/server/proposals/common'
@@ -172,6 +174,7 @@ export function makeKit(opts: KitOptions = {}): Kit {
     vatToleranceCents: 1,
     bankTaxCreditComputableBp: 3300,
     bankTaxDebitComputableBp: 3300,
+    taxSettings: DEFAULT_TAX_SETTINGS,
     uninvoicedSalesMode: 'separate_accounts',
     closedPeriodVoidIvaMode: 'adjustment_only',
     dueSoonDays: 7,
@@ -333,7 +336,8 @@ export function expectPostable(
   })
   expect(form.ok, `${e.key}: el formulario no pasa zod`).toBe(true)
   if (!form.ok) return
-  const built = buildPrimary(form.value, ctx, o.firstOpenDate ?? null)
+  // Igual que `post.ts`: lo importado ya trae sus impuestos, el motor no calcula otros.
+  const built = buildPrimary(form.value, importPostingContext(ctx), o.firstOpenDate ?? null)
   expect(built.ok, `${e.key}: el motor no lo arma`).toBe(true)
   if (!built.ok) return
   expect(built.hash).toBe(e.previewHash)

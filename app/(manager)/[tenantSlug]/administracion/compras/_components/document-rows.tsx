@@ -1,50 +1,33 @@
-import type { ReactNode } from 'react'
-import { Amount } from '@/components/administracion/amount'
-import { LedgerList, LedgerRail, LedgerRow, StatusPill } from '@/components/administracion/kit'
-import { categoryShortName } from '@/components/administracion/kit/category'
+import Link from 'next/link'
+import { categoryShortName, StatusPill } from '@/components/administracion/kit'
+import { PRow, PTable, PTd, PTh, PTotalRow, ROW_ACTION } from '@/components/administracion/planilla'
 import { ActionButton } from '@/components/administracion/quick-actions'
 import { VoucherText } from '@/components/administracion/voucher-text'
 import { isNotInvoicedVoucher, NOT_INVOICED_BADGE } from '@/lib/accounting/invoiced'
 import type { DocumentListRow } from '@/lib/accounting/queries/documents'
-import { formatDayMonth } from '@/lib/dates'
+import { formatDayMonth, formatIsoDay } from '@/lib/dates'
+import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
   type DocumentRowState,
-  dateRail,
   documentRowState,
+  documentsTotal,
   paymentAppliedText,
   paymentMeansText,
 } from '../_lib/libreta'
 import { documentHref } from '../_lib/links'
+import { NoAmount, ROW_ACTIONS_CELL, ROW_BUTTON, ROW_LINK } from './planilla-bits'
 
-/**
- * El importe de un renglón, en pesos: es una lista del dueño. Los centavos
- * están en la ficha del comprobante y en la tabla de la contadora.
- */
-function RowAmount({ cents, struck }: { cents: number; struck: boolean }) {
-  return <Amount cents={cents} decimals={0} className={cn('text-base', struck && 'line-through')} />
+/** Las fechas de una lista: dd/MM si son todas del mismo año; si no, con el año. */
+function dateWords(rows: readonly DocumentListRow[]): (iso: string) => string {
+  const year = rows[0]?.accountingDate.slice(0, 4)
+  return rows.every((row) => row.accountingDate.slice(0, 4) === year)
+    ? formatDayMonth
+    : formatIsoDay
 }
 
-/** El margen-fecha: el día grande y el mes; vacío si es el mismo día que el renglón de arriba. */
-function dayRail(date: string, previous: string | undefined): ReactNode {
-  if (date === previous) return undefined
-  const rail = dateRail(date)
-  return <LedgerRail label={rail.label} value={rail.value} />
-}
-
-function Bits({ children }: { children: ReactNode }) {
-  return <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">{children}</span>
-}
-
-/**
- * El ancho de [Pagarle] más su separación del importe: lo que se corre el
- * importe de un renglón SIN botón para quedar en columna con los que lo tienen.
- */
-const PAY_BUTTON = 'w-[5.75rem] px-0'
-const PAY_GUTTER = '@[28rem]/ledger:pr-[6.5rem]'
-
-// La tinta de un estado escrito chico: el rojo pelado no llega a AA a 12 px, así que va
-// mezclado con la tinta del tema (la receta de `StatusPill` y del margen de la libreta).
+// La tinta de un estado escrito chico: el rojo pelado no llega a AA a 12 px, así que va mezclado con
+// la tinta del tema (la receta de `StatusPill`).
 const STATE_INK = {
   late: 'text-[color-mix(in_oklch,var(--destructive)_75%,var(--foreground))]',
   warn: 'text-warning-text',
@@ -53,16 +36,15 @@ const STATE_INK = {
 const STATE_DOT = { late: 'bg-destructive', warn: 'bg-warning' } as const
 
 /**
- * El estado de un comprobante, en una línea. Lo que apura va como punto +
- * palabra («● Vencida hace 14 días»): veinte píldoras rojas iguales son ruido y
- * no dejan ver cuál apura. La píldora queda para lo que ya está («Pagada») y
- * para lo que hay a favor. Nunca color solo: siempre con su palabra.
+ * El estado de un comprobante, en una línea. Lo que apura va como punto + palabra («● Vencida hace
+ * 14 días»): veinte píldoras rojas iguales no dejan ver cuál apura. La píldora queda para lo que ya
+ * está («Pagada») y para lo que hay a favor. Nunca color solo: siempre con su palabra.
  */
-function StateLine({ state, className }: { state: DocumentRowState; className?: string }) {
-  if (!state.text) return null
+function StateLine({ state }: { state: DocumentRowState }) {
+  if (!state.text) return <NoAmount />
   if (state.tone === 'ok' || state.tone === 'info') {
     return (
-      <StatusPill tone={state.tone} className={className}>
+      <StatusPill tone={state.tone} className="h-5">
         {state.text}
       </StatusPill>
     )
@@ -70,185 +52,258 @@ function StateLine({ state, className }: { state: DocumentRowState; className?: 
   return (
     <span
       className={cn(
-        'inline-flex min-w-0 items-center gap-1.5 text-xs leading-snug',
+        'inline-flex items-center gap-1.5 text-xs whitespace-nowrap',
         STATE_INK[state.tone],
-        className,
       )}
     >
       {state.tone === 'muted' ? null : (
         <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT[state.tone])} />
       )}
-      <span className="min-w-0 text-pretty">
-        {state.text}
-        {state.note ? <span className="text-muted-foreground"> · {state.note}</span> : null}
-      </span>
+      {state.text}
+      {state.note ? <span className="text-muted-foreground">· {state.note}</span> : null}
     </span>
   )
 }
 
+/** Lo que falta pagar (factura, ND) o aplicar (NC); nada en gastos de contado. */
+function pendingOf(row: DocumentListRow): number | null {
+  if (row.status === 'voided' || row.kind === 'expense') return null
+  return row.openCents !== null && row.openCents > 0 ? row.openCents : null
+}
+
+function dueOf(row: DocumentListRow): string | null {
+  const owes = row.kind === 'purchase' || row.kind === 'purchase_debit_note'
+  return row.status === 'posted' && owes ? row.dueDate : null
+}
+
 /**
- * Los comprobantes de compra como renglones de libreta (lo que ve el dueño; la
- * contadora ve la tabla). En el margen, la fecha; en el medio, A QUIÉN y con
- * qué papel; a la derecha, el total y, al lado, [Pagarle]. El estado va en
- * palabras debajo del total («● Vencida hace 3 días», «Falta pagar · vence el
- * 21/10», «Pagada»); «falta $ X» solo se dice cuando ya se pagó una parte.
+ * Los comprobantes de compra: Fecha · Comprobante · Proveedor · Importe · Estado · Foto. Toda la fila lleva a
+ * su ficha. [Pagarle] aparece al pasar por lo que queda por pagar y abre «Pago» con ese proveedor
+ * (dice «Pagarle» y no «Pagar» a propósito: la hoja tilda lo más urgente de ese proveedor, que puede
+ * no ser este papel).
  *
- * En una hoja angosta (el celular) a la derecha queda SOLO el total, así todos
- * los importes van al lado del nombre, en columna; el estado baja a la línea de
- * [Pagarle] (o debajo del papel, si no hay nada que pagar).
- *
- * Todo el renglón lleva a la ficha del comprobante. [Pagarle] aparece en lo que
- * queda por pagar y solo para quien carga: abre «Pagar» con ese proveedor (dice
- * «Pagarle» y no «Pagar» a propósito: la hoja tilda lo más urgente de ese
- * proveedor, que puede no ser este papel).
+ * Con `detail` (la contadora siempre; quien carga, si lo pide) suma Imputación, Falta y Vence.
  */
 export function DocumentRows({
   tenantSlug,
   rows,
   today,
   canWrite,
-  footer,
+  detail = false,
+  totalLabel = 'Total',
+  caption,
 }: {
   tenantSlug: string
   rows: readonly DocumentListRow[]
   today: string
   canWrite: boolean
-  footer?: ReactNode
+  detail?: boolean
+  /** Lo que dice la fila del total: «Total de esta página» si la lista sigue. */
+  totalLabel?: string
+  caption?: string
 }) {
+  const dateOf = dateWords(rows)
+  // Fecha, Comprobante y Proveedor van antes del importe.
+  const leading = detail ? 4 : 3
   return (
-    <LedgerList aria-label="Comprobantes de compra" footer={footer}>
-      {rows.map((row, index) => {
-        const state = documentRowState(row, today)
-        // «Compras: alimentos» es el nombre del plan; el dueño dice «Alimentos».
-        const category = row.imputation ? categoryShortName(row.imputation) : null
-        // Un gasto sin proveedor no tiene «a quién»: se nombra por en qué se gastó.
-        const who = row.partyName ?? category ?? row.title
-        const pays = canWrite && state.payable && row.partyId !== null
-        // Quien carga: los importes de los renglones sin botón se corren lo que mide el botón.
-        const gutter = canWrite && !pays ? PAY_GUTTER : undefined
-        return (
-          <LedgerRow
-            key={row.id}
-            rail={dayRail(row.accountingDate, rows[index - 1]?.accountingDate)}
-            title={who}
-            href={documentHref(tenantSlug, row.id)}
-            muted={state.voided}
-            // En el celular el nombre cede lugar antes de mandar el importe abajo: el total
-            // queda al lado del nombre en TODOS los renglones, también con siete cifras.
-            className="@max-[28rem]/ledger:[&>div:last-child>div:first-child]:basis-24"
-            meta={
-              <>
-                <Bits>
-                  <span className={cn('min-w-0', state.voided && 'line-through')}>
+    <PTable label={caption ?? 'Comprobantes de compra'} minWidth={detail ? 1040 : 780}>
+      <thead>
+        <tr>
+          <PTh>Fecha</PTh>
+          <PTh>Comprobante</PTh>
+          <PTh>Proveedor</PTh>
+          {detail ? <PTh>Imputación</PTh> : null}
+          <PTh align="right">Importe</PTh>
+          {detail ? <PTh align="right">Falta</PTh> : null}
+          {detail ? <PTh>Vence</PTh> : null}
+          <PTh>Estado</PTh>
+          <PTh>Foto</PTh>
+          {canWrite ? (
+            <PTh>
+              <span className="sr-only">Acciones</span>
+            </PTh>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const state = documentRowState(row, today)
+          const voided = state.voided
+          // «Compras: alimentos» es el nombre del plan; el dueño dice «Alimentos».
+          const category = row.imputation ? categoryShortName(row.imputation) : null
+          // Un gasto sin proveedor no tiene «a quién»: se nombra por en qué se gastó.
+          const who = row.partyName ?? category
+          const pending = pendingOf(row)
+          const due = dueOf(row)
+          const negative = row.kind === 'purchase_credit_note'
+          return (
+            <PRow key={row.id} className={cn('relative', voided && 'text-muted-foreground')}>
+              <PTd className="whitespace-nowrap text-muted-foreground">
+                {dateOf(row.accountingDate)}
+              </PTd>
+              <PTd>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <Link
+                    href={documentHref(tenantSlug, row.id)}
+                    className={cn(ROW_LINK, voided && 'line-through')}
+                  >
                     <VoucherText text={row.title} />
-                  </span>
-                  {category && row.partyName ? (
-                    <span className="min-w-0">en {category}</span>
+                  </Link>
+                  {isNotInvoicedVoucher(row.voucherType) ? (
+                    <StatusPill tone="muted" className="h-5">
+                      {NOT_INVOICED_BADGE}
+                    </StatusPill>
                   ) : null}
-                  {row.issueDate !== row.accountingDate ? (
-                    <span className="whitespace-nowrap tabular-nums">
+                  {detail ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      #{row.seq}
+                      {row.issueDate !== row.accountingDate
+                        ? ` · emitido el ${formatIsoDay(row.issueDate)}`
+                        : ''}
+                    </span>
+                  ) : row.issueDate !== row.accountingDate ? (
+                    <span className="text-[11px] whitespace-nowrap text-muted-foreground">
                       del {formatDayMonth(row.issueDate)}
                     </span>
                   ) : null}
-                  {isNotInvoicedVoucher(row.voucherType) ? (
-                    <StatusPill tone="muted">{NOT_INVOICED_BADGE}</StatusPill>
+                </span>
+              </PTd>
+              <PTd className="max-w-[16rem] truncate">{who ?? <NoAmount />}</PTd>
+              {detail ? (
+                <PTd className="max-w-[14rem] truncate text-muted-foreground">
+                  {row.imputation ?? <NoAmount />}
+                </PTd>
+              ) : null}
+              <PTd align="right" className={cn('font-medium', voided && 'line-through')}>
+                {formatCentsShort(negative ? -row.totalCents : row.totalCents)}
+              </PTd>
+              {detail ? (
+                <PTd align="right">
+                  {pending !== null ? formatCentsShort(pending) : <NoAmount />}
+                </PTd>
+              ) : null}
+              {detail ? (
+                <PTd className="whitespace-nowrap text-muted-foreground">
+                  {due ? formatIsoDay(due) : <NoAmount />}
+                </PTd>
+              ) : null}
+              <PTd>
+                <StateLine state={state} />
+              </PTd>
+              <PTd className="whitespace-nowrap text-xs">
+                {voided ? (
+                  <NoAmount />
+                ) : row.attachmentCount > 0 ? (
+                  <span className="text-muted-foreground">Sí</span>
+                ) : (
+                  <span className="text-warning-text">Falta</span>
+                )}
+              </PTd>
+              {canWrite ? (
+                <PTd className={ROW_ACTIONS_CELL}>
+                  {state.payable && row.partyId ? (
+                    <span className={cn('inline-flex', ROW_ACTION)}>
+                      <ActionButton
+                        action="pagar"
+                        params={{ proveedor: row.partyId }}
+                        variant="outline"
+                        size="sm"
+                        className={ROW_BUTTON}
+                        aria-label={`Pagarle a ${who ?? 'este proveedor'}`}
+                      >
+                        Pagarle
+                      </ActionButton>
+                    </span>
                   ) : null}
-                </Bits>
-                {/* Hoja angosta y sin [Pagarle]: el estado va acá, debajo del papel. */}
-                {state.text && !pays ? (
-                  <span className="mt-1.5 flex @[28rem]/ledger:hidden">
-                    <StateLine state={state} />
-                  </span>
-                ) : null}
-              </>
-            }
-            amount={
-              <span className={cn('block', gutter)}>
-                <RowAmount cents={row.totalCents} struck={state.voided} />
-              </span>
-            }
-            // Hoja ancha: el estado, debajo del total.
-            amountNote={
-              state.text ? (
-                <span className={cn('flex justify-end @max-[28rem]/ledger:hidden', gutter)}>
-                  <StateLine state={state} />
-                </span>
-              ) : undefined
-            }
-            action={
-              pays && row.partyId ? (
-                <ActionButton
-                  action="pagar"
-                  params={{ proveedor: row.partyId }}
-                  variant="outline"
-                  className={cn('h-11 rounded-full md:h-9', PAY_BUTTON)}
-                  aria-label={`Pagarle a ${who}`}
-                >
-                  Pagarle
-                </ActionButton>
-              ) : undefined
-            }
-            // Hoja angosta: el estado comparte la línea con [Pagarle] (estado a la izquierda,
-            // botón contra el borde). En la ancha no se dibuja: ya está debajo del total.
-            menu={
-              pays && state.text ? (
-                <span className="mr-auto flex min-w-0 @[28rem]/ledger:hidden">
-                  <StateLine state={state} />
-                </span>
-              ) : undefined
-            }
-          />
-        )
-      })}
-    </LedgerList>
+                </PTd>
+              ) : null}
+            </PRow>
+          )
+        })}
+      </tbody>
+      <tfoot>
+        <PTotalRow>
+          <PTd colSpan={leading}>{totalLabel}</PTd>
+          <PTd align="right">{formatCentsShort(documentsTotal(rows))}</PTd>
+          <PTd colSpan={(detail ? 4 : 2) + (canWrite ? 1 : 0)} />
+        </PTotalRow>
+      </tfoot>
+    </PTable>
   )
 }
 
 /**
- * Los pagos como renglones: A QUIÉN (su nombre es el título: es lo que
- * identifica el renglón y no se puede cortar detrás de «Le pagaste a…»), con
- * qué y qué pagó (o «quedó a cuenta»). El renglón lleva al comprobante del
- * pago, donde se anula.
+ * Los pagos: Fecha · Proveedor · Salió de · Pagó · Importe. Toda la fila lleva al comprobante del pago,
+ * donde se anula.
  */
 export function PaymentRows({
   tenantSlug,
   rows,
-  footer,
+  totalLabel = 'Total',
+  caption,
 }: {
   tenantSlug: string
   rows: readonly DocumentListRow[]
-  footer?: ReactNode
+  /** Lo que dice la fila del total: «Total de esta página» si la lista sigue. */
+  totalLabel?: string
+  caption?: string
 }) {
+  const dateOf = dateWords(rows)
   return (
-    <LedgerList aria-label="Pagos" footer={footer}>
-      {rows.map((row, index) => {
-        const voided = row.status === 'voided'
-        const means = voided ? null : paymentMeansText(row.means)
-        const applied = voided ? null : paymentAppliedText(row.appliedTo)
-        return (
-          <LedgerRow
-            key={row.id}
-            rail={dayRail(row.accountingDate, rows[index - 1]?.accountingDate)}
-            title={row.partyName ?? 'Sin proveedor'}
-            href={documentHref(tenantSlug, row.id)}
-            muted={voided}
-            meta={
-              means || applied ? (
-                <Bits>
-                  {means ? <span>{means}</span> : null}
-                  {applied ? (
-                    <span className="min-w-0">
-                      <VoucherText text={applied} />
-                    </span>
+    <PTable label={caption ?? 'Pagos'} minWidth={720}>
+      <thead>
+        <tr>
+          <PTh>Fecha</PTh>
+          <PTh>Proveedor</PTh>
+          <PTh>Salió de</PTh>
+          <PTh>Pagó</PTh>
+          <PTh align="right">Importe</PTh>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const voided = row.status === 'voided'
+          const means = voided ? null : paymentMeansText(row.means)
+          const applied = voided ? null : paymentAppliedText(row.appliedTo)
+          return (
+            <PRow key={row.id} className={cn('relative', voided && 'text-muted-foreground')}>
+              <PTd className="whitespace-nowrap text-muted-foreground">
+                {dateOf(row.accountingDate)}
+              </PTd>
+              <PTd>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <Link
+                    href={documentHref(tenantSlug, row.id)}
+                    className={cn(ROW_LINK, voided && 'line-through')}
+                  >
+                    {row.partyName ?? 'Sin proveedor'}
+                  </Link>
+                  {voided ? (
+                    <StatusPill tone="muted" className="h-5">
+                      Anulado
+                    </StatusPill>
                   ) : null}
-                </Bits>
-              ) : undefined
-            }
-            amount={<RowAmount cents={row.totalCents} struck={voided} />}
-            amountNote={voided ? 'Anulado' : undefined}
-          />
-        )
-      })}
-    </LedgerList>
+                </span>
+              </PTd>
+              <PTd className="max-w-[12rem] truncate text-muted-foreground">
+                {means ?? <NoAmount />}
+              </PTd>
+              <PTd className="text-muted-foreground">
+                {applied ? <VoucherText text={applied} /> : <NoAmount />}
+              </PTd>
+              <PTd align="right" className={cn('font-medium', voided && 'line-through')}>
+                {formatCentsShort(row.totalCents)}
+              </PTd>
+            </PRow>
+          )
+        })}
+      </tbody>
+      <tfoot>
+        <PTotalRow>
+          <PTd colSpan={4}>{totalLabel}</PTd>
+          <PTd align="right">{formatCentsShort(documentsTotal(rows))}</PTd>
+        </PTotalRow>
+      </tfoot>
+    </PTable>
   )
 }

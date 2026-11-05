@@ -1,20 +1,19 @@
-import { Scale } from 'lucide-react'
 import Link from 'next/link'
 import { Amount } from '@/components/administracion/amount'
-import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
-import { PillLink } from '@/components/administracion/kit/pill'
-import { Button } from '@/components/ui/button'
 import {
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
+  Planilla,
+  PlanillaFoot,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+  PTotalRow,
+} from '@/components/administracion/planilla'
+import { Stamp } from '@/components/administracion/planilla/stamp'
+import { type Anomaly, trialAnomalies } from '@/lib/accounting/anomalies'
 import {
   exportHref,
+  getAccountSystemKeys,
   getTrialBalance,
   settleQuery,
   type TrialBalance,
@@ -23,33 +22,39 @@ import {
 import { todayInCordoba } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
-import { BalanceSeal, BookTotals } from '../_components/book-totals'
+import { BookPage, SLIDING_SHEET } from '../_components/book-page'
+import { ClickableBody } from '../_components/clickable-body'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
+import { SegLinks } from '../_components/seg'
+import { UrlToggle } from '../_components/url-toggle'
 import { loadBookContext } from '../_lib/book-context'
 import { requireBooksAccess } from '../_lib/page-access'
 import { bookHref, firstParam, periodParams, resolveBookRange } from '../_lib/periods'
 import {
   deepestTrialLevel,
+  hasOpeningBalances,
   isActiveTrialChip,
   isZeroTrialRow,
   netOf,
   parseTrialLevel,
   type TrialLevel,
   trialLevelChips,
+  trialReturnParam,
+  trialRowAnchor,
   visibleTrialRows,
 } from '../_lib/trial'
 
 export const metadata = { title: 'Sumas y saldos' }
 
-/** Las píldoras de filtro: 44 px donde se toca con el dedo, 36 con mouse (como el período). */
-const FILTER_PILL =
-  'h-11 min-w-11 justify-center px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:min-w-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
-
 /** Sangría por nivel (1 a 5 en el plan estándar; un plan más hondo se queda en la última). */
-const INDENT = ['', 'pl-4', 'pl-8', 'pl-12', 'pl-16', 'pl-20'] as const
+const INDENT = ['', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-14'] as const
 
+/**
+ * Sumas y saldos: la tabla clásica, para mirarla «a ojo de auditor» (Silvia, min. 10). Cada cuenta
+ * con su Debe, su Haber y su saldo; los grupos en negrita; los totales con doble raya y el sello. Las
+ * cuentas con el saldo al revés van marcadas, y tocar una fila lleva a su Mayor con el mismo período.
+ */
 export default async function SumasYSaldosPage({
   params,
   searchParams,
@@ -70,119 +75,105 @@ export default async function SumasYSaldosPage({
   if (!shown.ok) throw new Error('período por defecto inválido')
   const level = parseTrialLevel(firstParam(sp.nivel))
   const includeZero = firstParam(sp.todas) === '1'
+  const onlyOdd = firstParam(sp.raro) === '1'
+  const showOpening = firstParam(sp.inicial) === '1'
   const ctx = await loadBookContext(tenantId, today)
 
   // «Antes de la refundición» solo tiene sentido al cierre de un ejercicio ya cerrado.
   const closedYearEnd = ctx.years.some((y) => y.status === 'closed' && y.endDate === shown.to)
   const beforeFyResult = closedYearEnd && firstParam(sp.antes_refundicion) === '1'
 
-  const trial = range.ok
-    ? await settleQuery(
-        getTrialBalance(tenantId, {
-          from: range.from,
-          to: range.to,
-          excludeFyResult: beforeFyResult,
-        }),
-      )
-    : null
+  const [trial, systemKeys] = await Promise.all([
+    range.ok
+      ? settleQuery(
+          getTrialBalance(tenantId, {
+            from: range.from,
+            to: range.to,
+            excludeFyResult: beforeFyResult,
+          }),
+        )
+      : null,
+    // Sin las claves la tabla sale igual: a lo sumo marca Sueldos a pagar de más.
+    settleQuery(getAccountSystemKeys(tenantId)),
+  ])
 
   const period = periodParams(shown)
+  const anomalies = trial?.ok
+    ? trialAnomalies(trial.data.rows, systemKeys.ok ? systemKeys.data : new Map())
+    : new Map<string, Anomaly>()
   const levelChips = trialLevelChips(trial?.ok ? deepestTrialLevel(trial.data.rows) : 5)
-  const keep = {
-    ...period,
+  const filters = {
     nivel: level === 'todo' ? null : String(level),
     todas: includeZero ? '1' : null,
+    raro: onlyOdd ? '1' : null,
+    inicial: showOpening ? '1' : null,
     antes_refundicion: beforeFyResult ? '1' : null,
   }
-  const exportLink = exportHref(tenantSlug, 'sumas-y-saldos', {
-    desde: shown.from,
-    hasta: shown.to,
-    antesRefundicion: beforeFyResult,
-  })
-
-  const withMovement = trial?.ok
-    ? trial.data.rows.filter(
-        (r) =>
-          r.postable && !r.isVirtual && (r.periodDebitCents !== 0 || r.periodCreditCents !== 0),
-      ).length
-    : 0
+  const keep = { ...period, ...filters }
 
   return (
     <BookPage
-      backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
       title="Sumas y saldos"
-      description={`El balance de comprobación · ${shown.label}${beforeFyResult ? ' · antes de la refundición' : ''}`}
-      exports={[
-        {
-          href: exportLink,
-          fileName: `administracion-${tenantSlug}-sumas-y-saldos-${shown.from}_${shown.to}.csv`,
-        },
-      ]}
-      booksPath={`${base}/libros`}
-      book="sumas-y-saldos"
-      period={shown}
       toolbar={
-        <div className="space-y-3">
+        <>
           <RangePicker
-            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}
             minMonth={ctx.minMonth}
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <fieldset className="flex flex-wrap items-center gap-2">
-              <legend className="sr-only">Nivel de detalle</legend>
-              <span aria-hidden className="text-xs font-medium text-muted-foreground">
-                Nivel de detalle
-              </span>
-              {levelChips.map((l) => (
-                <PillLink
-                  key={l.label}
-                  href={bookHref(path, { ...keep, nivel: l.param })}
-                  active={isActiveTrialChip(l, level)}
-                  aria-label={l.aria}
-                  scroll={false}
-                  className={FILTER_PILL}
-                >
-                  {l.label}
-                </PillLink>
-              ))}
-            </fieldset>
-            <span aria-hidden className="mx-1 hidden h-6 w-px bg-border sm:block" />
-            <PillLink
-              href={bookHref(path, { ...keep, todas: includeZero ? null : '1' })}
-              active={includeZero}
-              scroll={false}
-              className={FILTER_PILL}
-            >
-              Mostrar cuentas en cero
-            </PillLink>
-            {closedYearEnd ? (
-              <PillLink
-                href={bookHref(path, { ...keep, antes_refundicion: beforeFyResult ? null : '1' })}
-                active={beforeFyResult}
-                scroll={false}
-                className={FILTER_PILL}
-              >
-                Antes de la refundición
-              </PillLink>
-            ) : null}
-          </div>
-        </div>
+          <UrlToggle param="raro" checked={onlyOdd} disabled={anomalies.size === 0 && !onlyOdd}>
+            Solo lo raro ({anomalies.size})
+          </UrlToggle>
+        </>
       }
-      totals={
-        trial?.ok && withMovement > 0 ? (
-          <BookTotals
-            items={[{ key: 'cuentas', label: 'Cuentas con movimiento', value: withMovement }]}
-            seal={
-              <BalanceSeal
-                balanced={trial.data.balanced}
-                unbalancedText={`No cuadra por ${formatCents(trial.data.differenceCents)}: avisanos`}
-              />
-            }
-          />
+      aside={
+        trial?.ok ? (
+          trial.data.balanced ? (
+            <Stamp>Debe = Haber</Stamp>
+          ) : (
+            <Stamp tone="bad">No cuadra</Stamp>
+          )
         ) : null
+      }
+      exports={[
+        {
+          href: exportHref(tenantSlug, 'sumas-y-saldos', {
+            desde: shown.from,
+            hasta: shown.to,
+            antesRefundicion: beforeFyResult,
+          }),
+          fileName: `administracion-${tenantSlug}-sumas-y-saldos-${shown.from}_${shown.to}.csv`,
+        },
+      ]}
+      below={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex items-center gap-2">
+            <span aria-hidden className="text-xs text-muted-foreground">
+              Nivel
+            </span>
+            <SegLinks
+              label="Nivel de detalle"
+              items={levelChips.map((l) => ({
+                key: l.label,
+                label: l.label,
+                href: bookHref(path, { ...keep, nivel: l.param }),
+                active: isActiveTrialChip(l, level),
+              }))}
+            />
+          </div>
+          <UrlToggle param="inicial" checked={showOpening}>
+            Saldo inicial
+          </UrlToggle>
+          <UrlToggle param="todas" checked={includeZero}>
+            Cuentas en cero
+          </UrlToggle>
+          {closedYearEnd ? (
+            <UrlToggle param="antes_refundicion" checked={beforeFyResult}>
+              Antes de la refundición
+            </UrlToggle>
+          ) : null}
+        </div>
       }
     >
       {!range.ok ? <PeriodError message={range.message} /> : null}
@@ -190,11 +181,20 @@ export default async function SumasYSaldosPage({
       {trial?.ok ? (
         <TrialView
           trial={trial.data}
+          anomalies={anomalies}
           level={level}
           includeZero={includeZero}
-          base={base}
-          periodLink={period}
+          onlyOdd={onlyOdd}
+          showOpening={showOpening}
+          mayorHref={(accountId) =>
+            bookHref(`${base}/libros/mayor`, {
+              ...period,
+              cuenta: accountId,
+              volver: trialReturnParam(filters),
+            })
+          }
           showAllHref={bookHref(path, { ...keep, todas: '1' })}
+          openingHref={bookHref(path, { ...keep, inicial: '1' })}
           label={shown.label}
           nothingLoaded={ctx.settings !== null && !ctx.settings.hasDocuments}
         />
@@ -203,196 +203,149 @@ export default async function SumasYSaldosPage({
   )
 }
 
-/** Un saldo con su lado («1.240.000,00 D»); en cero, una raya. */
-function SideAmount({ debit, credit }: { debit: number; credit: number }) {
-  const net = netOf(debit, credit)
-  if (net === 0) {
-    return (
-      <span className="text-muted-foreground/70">
-        <span aria-hidden>—</span>
-        <span className="sr-only">Sin saldo</span>
-      </span>
-    )
-  }
-  return <Amount cents={net} side currency={false} />
+function Money({ cents }: { cents: number }) {
+  return cents ? <Amount cents={cents} currency={false} /> : null
 }
 
 function TrialView({
   trial,
+  anomalies,
   level,
   includeZero,
-  base,
-  periodLink,
+  onlyOdd,
+  showOpening,
+  mayorHref,
   showAllHref,
+  openingHref,
   label,
   nothingLoaded,
 }: {
   trial: TrialBalance
+  anomalies: ReadonlyMap<string, Anomaly>
   level: TrialLevel
   includeZero: boolean
-  base: string
-  periodLink: Record<string, string | undefined>
+  onlyOdd: boolean
+  showOpening: boolean
+  mayorHref: (accountId: string) => string
   showAllHref: string
+  openingHref: string
   label: string
   nothingLoaded: boolean
 }) {
-  const rows = visibleTrialRows(trial.rows, { level, includeZero })
+  const rows = onlyOdd
+    ? trial.rows.filter((row) => anomalies.has(row.accountId))
+    : visibleTrialRows(trial.rows, { level, includeZero })
   const allZero = trial.rows.every(isZeroTrialRow)
-
-  if (rows.length === 0) {
-    return (
-      <EmptyTeach
-        icon={Scale}
-        title={
-          nothingLoaded
-            ? 'Todavía no hay nada cargado'
-            : `Sin saldos ni movimientos en ${label.toLowerCase()}`
-        }
-        action={
-          allZero && !includeZero ? (
-            <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
-              <Link href={showAllHref} scroll={false}>
-                Ver el plan entero en cero
-              </Link>
-            </Button>
-          ) : undefined
-        }
-      >
-        {allZero
-          ? 'Cuando haya asientos, acá vas a ver el saldo de cada cuenta: lo que había al empezar, lo que se movió y cómo terminó.'
-          : 'Con este nivel no queda ninguna cuenta con saldo. Probá con más detalle.'}
-      </EmptyTeach>
-    )
-  }
-
   const t = trial.totals
-  const seal = (
-    <BalanceSeal
-      balanced={trial.balanced}
-      unbalancedText={`No cuadra por ${formatCents(trial.differenceCents)}: avisanos`}
-    />
-  )
+  const columns = showOpening ? 7 : 6
+
   return (
     <>
-      <WideBookHint>
-        En el celular ves el saldo de cada cuenta. El detalle completo se lee mejor en la compu.
-      </WideBookHint>
-      {/* Compu y tablet: el balance completo. */}
-      <DataTableShell className="hidden sm:block">
-        <DataTableScroll>
-          <DataTableRoot>
-            <caption className="sr-only">{`Sumas y saldos, ${label}`}</caption>
-            <DataTableHead>
+      {trial.balanced ? null : (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+        >
+          El balance no cuadra por {formatCents(trial.differenceCents)}: avisanos.
+        </p>
+      )}
+      <Planilla className={SLIDING_SHEET}>
+        <PTable minWidth={showOpening ? 860 : 720} label={`Sumas y saldos, ${label}`}>
+          <thead>
+            <tr>
+              <PTh>Código</PTh>
+              <PTh>Cuenta</PTh>
+              {showOpening ? <PTh align="right">Saldo inicial</PTh> : null}
+              <PTh align="right">Debe</PTh>
+              <PTh align="right">Haber</PTh>
+              <PTh align="right">Saldo deudor</PTh>
+              <PTh align="right">Saldo acreedor</PTh>
+            </tr>
+          </thead>
+          <ClickableBody>
+            {rows.length === 0 ? (
               <tr>
-                <DataTableHeader className="min-w-56">Cuenta</DataTableHeader>
-                <DataTableHeader className="whitespace-nowrap text-right">
-                  Saldo inicial
-                </DataTableHeader>
-                <DataTableHeader className="text-right">Debe</DataTableHeader>
-                <DataTableHeader className="text-right">Haber</DataTableHeader>
-                <DataTableHeader className="text-right">Saldo</DataTableHeader>
+                <PTd colSpan={columns} className="py-6 text-center text-muted-foreground">
+                  {onlyOdd ? (
+                    `Nada raro en ${label.toLowerCase()}: ninguna cuenta tiene el saldo al revés.`
+                  ) : nothingLoaded ? (
+                    'Todavía no hay nada cargado.'
+                  ) : (
+                    <>
+                      Sin saldos ni movimientos en {label.toLowerCase()}.
+                      {allZero && !includeZero ? (
+                        <>
+                          {' '}
+                          <Link
+                            href={showAllHref}
+                            scroll={false}
+                            className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Ver el plan entero en cero
+                          </Link>
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </PTd>
               </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {rows.map((row) => (
+            ) : (
+              rows.map((row) => (
                 <TrialRow
                   key={row.accountId || row.code}
                   row={row}
-                  base={base}
-                  periodLink={periodLink}
+                  anomaly={anomalies.get(row.accountId) ?? null}
+                  showOpening={showOpening}
+                  href={row.accountId && !row.isVirtual ? mayorHref(row.accountId) : null}
                 />
-              ))}
-            </DataTableBody>
-            <tfoot className="bg-secondary/30 font-semibold">
-              <tr className="border-t border-border align-top">
-                <DataTableCell>
-                  <span className="flex flex-wrap items-center gap-2 text-xs">
-                    Totales
-                    {seal}
-                  </span>
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <SidePair debit={t.openingDebitCents} credit={t.openingCreditCents} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
+              ))
+            )}
+          </ClickableBody>
+          {rows.length > 0 && !onlyOdd ? (
+            <tfoot>
+              <PTotalRow>
+                <PTd colSpan={2} className="font-semibold">
+                  Totales
+                </PTd>
+                {showOpening ? (
+                  <PTd align="right" className="font-semibold">
+                    <SidePair debit={t.openingDebitCents} credit={t.openingCreditCents} />
+                  </PTd>
+                ) : null}
+                <PTd align="right" className="font-semibold">
                   <Amount cents={t.periodDebitCents} currency={false} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
+                </PTd>
+                <PTd align="right" className="font-semibold">
                   <Amount cents={t.periodCreditCents} currency={false} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <SidePair debit={t.closingDebitCents} credit={t.closingCreditCents} />
-                </DataTableCell>
-              </tr>
+                </PTd>
+                <PTd align="right" className="font-semibold">
+                  <Amount cents={t.closingDebitCents} currency={false} />
+                </PTd>
+                <PTd align="right" className="font-semibold">
+                  <Amount cents={t.closingCreditCents} currency={false} />
+                </PTd>
+              </PTotalRow>
             </tfoot>
-          </DataTableRoot>
-        </DataTableScroll>
-      </DataTableShell>
-
-      {/* Celular: cada cuenta con su saldo final; tocarla abre su mayor. */}
-      <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
-        <ul aria-label={`Sumas y saldos, ${label}`} className="divide-y divide-border/60">
-          {rows.map((row) => {
-            const isGroup = !row.postable && !row.isVirtual
-            const body = (
-              <>
-                <span className="min-w-0">
-                  <span className="block font-mono text-[11px] text-muted-foreground">
-                    {row.code}
-                  </span>
-                  <span
-                    className={cn(
-                      'block truncate text-sm',
-                      isGroup && 'font-semibold',
-                      row.isVirtual && 'italic',
-                    )}
-                  >
-                    {row.name}
-                  </span>
-                </span>
-                <span className={cn('shrink-0 text-sm', isGroup && 'font-semibold')}>
-                  <SideAmount debit={row.closingDebitCents} credit={row.closingCreditCents} />
-                </span>
-              </>
-            )
-            return (
-              <li key={row.accountId || row.code}>
-                {row.accountId && !row.isVirtual ? (
-                  <Link
-                    href={bookHref(`${base}/libros/mayor`, {
-                      ...periodLink,
-                      cuenta: row.accountId,
-                    })}
-                    className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  >
-                    {body}
-                  </Link>
-                ) : (
-                  <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
-                    {body}
-                  </div>
-                )}
-              </li>
-            )
-          })}
-          <li className="flex items-center justify-between gap-3 bg-secondary/30 px-4 py-3 text-sm font-semibold">
-            <span className="flex flex-wrap items-center gap-2">
-              Totales
-              {seal}
-            </span>
-          </li>
-        </ul>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Saldo: D = deudor, A = acreedor. Los totales suman las cuentas imputables (los grupos ya son
-        subtotales). Tocá una cuenta para ver su mayor.
-      </p>
+          ) : null}
+        </PTable>
+        {!showOpening && hasOpeningBalances(trial.rows) ? (
+          <PlanillaFoot className="justify-start text-xs text-muted-foreground">
+            <span>El saldo suma lo que cada cuenta traía de antes.</span>
+            <Link
+              href={openingHref}
+              scroll={false}
+              className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:py-2.5"
+            >
+              Ver el saldo inicial
+            </Link>
+          </PlanillaFoot>
+        ) : null}
+      </Planilla>
     </>
   )
 }
 
-/** Los totales de una columna de saldos: deudores y acreedores, que tienen que dar igual. */
+/** Los totales de la columna de saldo inicial: deudores y acreedores, que tienen que dar igual. */
 function SidePair({ debit, credit }: { debit: number; credit: number }) {
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
@@ -416,54 +369,77 @@ function SidePair({ debit, credit }: { debit: number; credit: number }) {
 
 function TrialRow({
   row,
-  base,
-  periodLink,
+  anomaly,
+  showOpening,
+  href,
 }: {
   row: TrialBalanceRow
-  base: string
-  periodLink: Record<string, string | undefined>
+  anomaly: Anomaly | null
+  showOpening: boolean
+  /** Su Mayor; `null` en la línea de resultados anteriores, que no es una cuenta. */
+  href: string | null
 }) {
   const isGroup = !row.postable && !row.isVirtual
   const indent = INDENT[Math.min(Math.max(row.level - 1, 0), INDENT.length - 1)] ?? ''
-  const name = (
-    <span className="flex items-baseline gap-1.5">
-      <span className="font-mono text-[11px] text-muted-foreground">{row.code}</span>
-      <span className={cn(isGroup && 'font-semibold', row.isVirtual && 'italic')}>{row.name}</span>
-      {!row.active ? <span className="text-xs text-muted-foreground">(inactiva)</span> : null}
-    </span>
-  )
+  const strong = isGroup && 'font-semibold'
+  const net = netOf(row.closingDebitCents, row.closingCreditCents)
+  const opening = netOf(row.openingDebitCents, row.openingCreditCents)
   return (
-    <tr className="transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint">
-      <DataTableCell className={cn('py-2', indent)}>
-        {row.accountId && !row.isVirtual ? (
+    <PRow flagged={anomaly !== null} className={href ? 'cursor-pointer' : undefined}>
+      <PTd className="align-top font-mono text-xs whitespace-nowrap text-muted-foreground">
+        {/* A donde vuelve el Mayor: la misma cuenta, no el principio de la tabla. */}
+        <span
+          id={row.accountId ? trialRowAnchor(row.accountId) : undefined}
+          className="scroll-mt-32"
+        >
+          {row.code}
+        </span>
+      </PTd>
+      <PTd className={cn('align-top', indent)}>
+        {href ? (
           <Link
-            href={bookHref(`${base}/libros/mayor`, { ...periodLink, cuenta: row.accountId })}
-            className="rounded-sm underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            href={href}
+            data-row-action=""
+            className={cn(
+              'rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:inline-block pointer-coarse:py-1.5',
+              strong,
+            )}
           >
-            {name}
+            {row.name}
           </Link>
         ) : (
-          name
+          <span className={cn(strong, row.isVirtual && 'italic')}>{row.name}</span>
         )}
+        {!row.active ? (
+          <span className="ml-1 text-xs text-muted-foreground">(inactiva)</span>
+        ) : null}
+        {anomaly ? (
+          <span className="block text-xs font-medium text-destructive">{anomaly.sentence}</span>
+        ) : null}
         {row.isVirtual ? (
-          <span className="block max-w-xs text-xs font-normal not-italic text-muted-foreground">
+          <span className="block max-w-xs text-xs font-normal text-muted-foreground">
             Resultados de ejercicios que todavía no se cerraron. Desaparece cuando se cierra el
             ejercicio anterior.
           </span>
         ) : null}
-      </DataTableCell>
-      <DataTableCell className={cn('py-2 text-right', isGroup && 'font-semibold')}>
-        <SideAmount debit={row.openingDebitCents} credit={row.openingCreditCents} />
-      </DataTableCell>
-      <DataTableCell className={cn('py-2 text-right', isGroup && 'font-semibold')}>
-        {row.periodDebitCents ? <Amount cents={row.periodDebitCents} currency={false} /> : null}
-      </DataTableCell>
-      <DataTableCell className={cn('py-2 text-right', isGroup && 'font-semibold')}>
-        {row.periodCreditCents ? <Amount cents={row.periodCreditCents} currency={false} /> : null}
-      </DataTableCell>
-      <DataTableCell className={cn('py-2 text-right', isGroup && 'font-semibold')}>
-        <SideAmount debit={row.closingDebitCents} credit={row.closingCreditCents} />
-      </DataTableCell>
-    </tr>
+      </PTd>
+      {showOpening ? (
+        <PTd align="right" className={cn('align-top', strong)}>
+          {opening !== 0 ? <Amount cents={opening} side currency={false} /> : null}
+        </PTd>
+      ) : null}
+      <PTd align="right" className={cn('align-top', strong)}>
+        <Money cents={row.periodDebitCents} />
+      </PTd>
+      <PTd align="right" className={cn('align-top', strong)}>
+        <Money cents={row.periodCreditCents} />
+      </PTd>
+      <PTd align="right" className={cn('align-top', strong)}>
+        {net > 0 ? <Amount cents={net} currency={false} /> : null}
+      </PTd>
+      <PTd align="right" className={cn('align-top', strong)}>
+        {net < 0 ? <Amount cents={-net} currency={false} /> : null}
+      </PTd>
+    </PRow>
   )
 }

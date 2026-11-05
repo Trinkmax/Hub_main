@@ -2,39 +2,34 @@
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ACCOUNTING_ACTIONS } from '@/components/administracion/acciones/types'
 import {
+  ADM_SECTIONS,
+  activeAdmSection,
+  activeAdmSub,
   admFabFromFrame,
-  admNavPinned,
   buildAdmNav,
-  MONTH_END_VALUE,
-  NAV_MIN_PEEK,
-  navRestScroll,
 } from '@/components/administracion/nav/adm-nav-model'
 import {
-  LAUNCHER_GROUPS,
+  LAUNCHER_DROP_HINT,
   LAUNCHER_ITEMS,
   LAUNCHER_TITLE,
   launcherGroups,
   launcherHref,
 } from '@/components/administracion/nav/launcher-items'
-import {
-  activeSectionTab,
-  resolveSection,
-  type SectionViewer,
-} from '@/components/shell/section-tabs-config'
+import { resolveSection, type SectionViewer } from '@/components/shell/section-tabs-config'
 import { getTenantFeatures } from '@/lib/platform/features'
 import type { AccountingAccess } from '@/lib/tenant/types'
 
 /**
- * La navegación propia de Administración (rediseño de oct 2026): la barra de píldoras (`AdmNav`),
- * «Más», el lanzador «¿Qué querés cargar?» y el flotante del celular. Acá: qué ve cada uno (los
- * permisos siguen saliendo de `resolveSection`), cuál queda marcada en cada URL, cuándo la barra
- * se pega arriba, y lo que tiene que estar en el primer paint para el teclado y los lectores.
+ * La navegación de Administración (reunión del 29/10/2026, prototipo aprobado el 04/11): seis
+ * palabras arriba, el engranaje y «Cargar», con las solapas de cada sección. Acá: qué ve cada uno
+ * (los permisos siguen saliendo de `resolveSection`), cuál queda marcada en cada URL, y lo que tiene
+ * que estar en el primer paint para el teclado y los lectores.
  */
 
 const nav = vi.hoisted(() => ({
   pathname: '/hub/administracion',
+  search: '',
   accounting: {
     tenantSlug: 'hub',
     today: '2026-10-13',
@@ -47,7 +42,7 @@ const nav = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   usePathname: () => nav.pathname,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(nav.search),
 }))
 // El contexto lo monta el layout de la sección junto con las hojas (que acá no hacen falta).
 vi.mock('@/components/administracion/accounting-provider', () => ({
@@ -55,6 +50,7 @@ vi.mock('@/components/administracion/accounting-provider', () => ({
 }))
 afterEach(() => {
   nav.pathname = '/hub/administracion'
+  nav.search = ''
   nav.accounting = { ...nav.accounting, readOnly: false }
 })
 
@@ -83,93 +79,87 @@ const accountant: SectionViewer = {
 
 const ownerTabs = resolveSection('administracion', 'hub', owner).tabs
 const accountantTabs = resolveSection('administracion', 'hub', accountant).tabs
-const ownerNav = buildAdmNav(ownerTabs, { base: BASE, audience: 'owner' })
+const ownerNav = buildAdmNav(ownerTabs, { base: BASE })
 const accountantNav = buildAdmNav(accountantTabs, { base: BASE, audience: 'accountant' })
 
 const labels = (items: readonly { label: string }[]) => items.map((item) => item.label)
 
-describe('buildAdmNav: qué va en cada lugar de la barra', () => {
-  it('dueño: las cinco de todos los días, en el orden en que se usan', () => {
-    expect(labels(ownerNav.primary)).toEqual([
+describe('buildAdmNav: seis palabras', () => {
+  it('dueño: las seis, en orden, cada una a su pantalla', () => {
+    expect(labels(ownerNav.sections)).toEqual([
       'Resumen',
-      'Ventas',
       'Compras y pagos',
-      'Gastos fijos',
-      'Cajas',
+      'Gastos y sueldos',
+      'Ventas',
+      'Caja',
+      'Contabilidad',
     ])
-    expect(ownerNav.primary.map((item) => item.href)).toEqual([
+    expect(ownerNav.sections.map((section) => section.href)).toEqual([
       BASE,
-      `${BASE}/ventas`,
       `${BASE}/compras`,
       `${BASE}/gastos-fijos`,
+      `${BASE}/ventas`,
       `${BASE}/cajas`,
+      `${BASE}/libros/sumas-y-saldos`,
     ])
-    // La corta, para cuando no hay lugar.
-    expect(ownerNav.primary.find((item) => item.value === 'compras')?.shortLabel).toBe('Compras')
-    // «Fijos» solo no dice qué es: «Gastos fijos» va siempre entero (la fila se desliza igual).
-    expect(
-      ownerNav.primary.find((item) => item.value === 'gastos-fijos')?.shortLabel,
-    ).toBeUndefined()
   })
 
-  it('dueño: Importar callado y «Contadora» con Fin de mes, Libros y Plan de cuentas', () => {
-    expect(labels(ownerNav.quiet)).toEqual(['Importar'])
-    // «Fin de mes» es el primer renglón: es lo que se viene a hacer una vez por mes.
-    expect(labels(ownerNav.books)).toEqual(['Fin de mes', 'Libros', 'Plan de cuentas'])
+  it('las que no entran en el celular llevan su versión corta', () => {
+    const short = (value: string) =>
+      ownerNav.sections.find((section) => section.value === value)?.shortLabel
+    expect(short('compras')).toBe('Compras')
+    expect(short('gastos')).toBe('Gastos')
+    expect(short('caja')).toBeUndefined()
   })
 
-  it('«Más» del celular: Fin de mes primero, Importar, Libros, Plan de cuentas, Guía y Ajustes', () => {
-    expect(labels(ownerNav.more)).toEqual([
-      'Fin de mes',
-      'Importar',
-      'Libros',
-      'Plan de cuentas',
-      'Guía',
-      'Ajustes',
-    ])
-    expect(ownerNav.guide.href).toBe(`${BASE}/guias`)
+  it('Importar y la Guía no están en la fila: viven detrás del engranaje', () => {
+    expect(labels(ownerNav.sections)).not.toContain('Importar')
+    expect(labels(ownerNav.sections)).not.toContain('Guía')
     expect(ownerNav.settings.href).toBe(`${BASE}/ajustes`)
-    // En la hoja cada renglón dice para qué sirve.
-    expect(ownerNav.more.every((item) => Boolean(item.hint))).toBe(true)
-    expect(ownerNav.more.find((item) => item.value === 'libros')?.hint).toBe(
-      'El diario, el IVA y el fin de mes',
-    )
-  })
-
-  it('«Fin de mes»: un ítem propio que apunta a /libros/cierres y cuelga de Libros', () => {
-    expect(ownerNav.monthEnd).toEqual({
-      value: MONTH_END_VALUE,
-      label: 'Fin de mes',
-      href: `${BASE}/libros/cierres`,
-      hint: 'Revisar el mes, cerrarlo y mandarle los libros a tu contadora',
-      nested: true,
-    })
-    expect(MONTH_END_VALUE).toBe('fin-de-mes')
-    // No es una pestaña de la sección (`section-tabs-config.ts` no se tocó): lo arma la barra.
-    expect(ownerTabs.map((tab) => tab.value)).not.toContain(MONTH_END_VALUE)
-    expect(ownerNav.all.filter((item) => item.value === MONTH_END_VALUE)).toHaveLength(1)
-    // Una sola vez en cada lugar: nunca dos renglones que lleven a lo mismo.
-    for (const list of [ownerNav.books, ownerNav.more, accountantNav.primary]) {
-      expect(list.filter((item) => item.href === `${BASE}/libros/cierres`)).toHaveLength(1)
-    }
-    // Las cinco de todos los días no cambian: no es una píldora del dueño.
-    expect(labels(ownerNav.primary)).not.toContain('Fin de mes')
-  })
-
-  it('contadora: Libros, Fin de mes y Plan de cuentas son píldoras directas, sin desplegable', () => {
-    expect(labels(accountantNav.primary)).toEqual([
-      'Resumen',
-      'Ventas',
-      'Compras y pagos',
-      'Gastos fijos',
-      'Cajas',
-      'Libros',
-      'Fin de mes',
-      'Plan de cuentas',
+    expect(labels(ownerNav.settings.sub)).toEqual([
+      'Ajustes',
+      'Puesta en marcha',
+      'Guía',
+      'Importar',
     ])
-    expect(accountantNav.books).toEqual([])
-    // Ya es una píldora: en «Más» no se repite.
-    expect(labels(accountantNav.more)).toEqual(['Importar', 'Guía', 'Ajustes'])
+  })
+
+  it('cada sección tiene sus solapas, y Contabilidad su acción fija', () => {
+    const sub = (value: string) =>
+      labels(ownerNav.sections.find((section) => section.value === value)?.sub ?? [])
+    expect(sub('resumen')).toEqual([])
+    expect(sub('compras')).toEqual(['Proveedores', 'Plan de la semana', 'Comprobantes'])
+    expect(sub('gastos')).toEqual(['Gastos fijos', 'Sueldos'])
+    expect(sub('ventas')).toEqual(['Planilla del mes', 'Por cobrar', 'Lo que llegó'])
+    expect(sub('caja')).toEqual([])
+    expect(sub('contabilidad')).toEqual([
+      'Sumas y saldos',
+      'Mayor',
+      'Libro diario',
+      'IVA',
+      'Plan de cuentas',
+      'Cierre de mes',
+    ])
+    const contabilidad = ownerNav.sections.find((section) => section.value === 'contabilidad')
+    expect(contabilidad?.action).toEqual({
+      label: 'Asiento manual',
+      href: `${BASE}/libros/asiento-manual`,
+    })
+  })
+
+  it('la contadora arranca por Contabilidad y no tiene Resumen', () => {
+    expect(labels(accountantNav.sections)).toEqual([
+      'Contabilidad',
+      'Compras y pagos',
+      'Gastos y sueldos',
+      'Ventas',
+      'Caja',
+    ])
+  })
+
+  it('para la contadora, un comprobante es de Contabilidad; para el dueño, de Compras', () => {
+    expect(activeAdmSection(accountantNav, `${BASE}/comprobantes/c1`)?.value).toBe('contabilidad')
+    expect(activeAdmSection(ownerNav, `${BASE}/comprobantes/c1`)?.value).toBe('compras')
   })
 
   it('los permisos los decide resolveSection: lo que no vino, no aparece', () => {
@@ -177,223 +167,128 @@ describe('buildAdmNav: qué va en cada lugar de la barra', () => {
       ...owner,
       accounting: { ...FULL, read: false, write: false, admin: false },
     }).tabs
-    const model = buildAdmNav(noAccess, { base: BASE, audience: 'owner' })
-    expect(model.quiet).toEqual([])
-    expect(model.books).toEqual([])
-    expect(labels(model.primary)).not.toContain('Ventas')
-    // Sin Libros no hay «Fin de mes»: el permiso es el de la pestaña de la que cuelga.
-    expect(model.monthEnd).toBeNull()
-    expect(labels(model.more)).not.toContain('Fin de mes')
-    expect(model.all.map((item) => item.value)).not.toContain(MONTH_END_VALUE)
+    const model = buildAdmNav(noAccess, { base: BASE })
+    expect(labels(model.sections)).not.toContain('Ventas')
+    expect(labels(model.sections)).not.toContain('Contabilidad')
     // Sin nadie que mire (sin sesión), la sección falla cerrada.
     expect(resolveSection('administracion', 'hub', null).tabs).toEqual([])
+    expect(buildAdmNav([], { base: BASE }).sections).toEqual([])
   })
 
-  it('una pestaña nueva de la sección no se pierde: cae con las calladas y en «Más»', () => {
-    const model = buildAdmNav(
-      [...ownerTabs, { value: 'nueva', label: 'Algo nuevo', href: `${BASE}/nueva` }],
-      { base: BASE, audience: 'owner' },
-    )
-    expect(labels(model.quiet)).toEqual(['Importar', 'Algo nuevo'])
-    expect(labels(model.more)).toContain('Algo nuevo')
-    // Las pestañas + la nueva + Fin de mes, Guía y Ajustes.
-    expect(model.all).toHaveLength(ownerTabs.length + 4)
+  it('cada sección nace de una pestaña que existe', () => {
+    const known = new Set(ownerTabs.map((tab) => tab.value))
+    for (const section of ADM_SECTIONS) expect(known.has(section.tab), section.value).toBe(true)
   })
 })
 
-describe('la marcada según la URL (también Guía y Ajustes, que antes quedaban sin marca)', () => {
-  const active = (path: string) => activeSectionTab(ownerNav.all, path)
+describe('activeAdmSection: la marcada según la URL', () => {
+  const active = (path: string) => activeAdmSection(ownerNav, path)?.value ?? null
 
-  it('las pantallas de la barra y sus fichas', () => {
+  it('las pantallas de la fila y sus fichas', () => {
     expect(active(BASE)).toBe('resumen')
-    expect(active(`${BASE}/ventas/cierre`)).toBe('ventas')
+    expect(active(`${BASE}/`)).toBe('resumen')
     expect(active(`${BASE}/compras/proveedores/p1`)).toBe('compras')
-    // El alta de un gasto fijo vive bajo /compras pero es de «Gastos fijos».
-    expect(active(`${BASE}/compras/gastos-fijos/g1`)).toBe('gastos-fijos')
-    expect(active(`${BASE}/libros/diario`)).toBe('libros')
+    expect(active(`${BASE}/compras/nueva`)).toBe('compras')
+    expect(active(`${BASE}/compras/semana`)).toBe('compras')
+    expect(active(`${BASE}/comprobantes/c1`)).toBe('compras')
+    expect(active(`${BASE}/ventas/cierre`)).toBe('ventas')
+    expect(active(`${BASE}/cajas/c1`)).toBe('caja')
   })
 
-  it('en Fin de mes se marca «Fin de mes» y no «Libros»: gana la ruta más específica', () => {
-    expect(active(`${BASE}/libros/cierres`)).toBe(MONTH_END_VALUE)
-    expect(active(`${BASE}/libros/cierres?mes=2026-09`)).toBe(MONTH_END_VALUE)
-    // El resto de Libros sigue siendo de «Libros».
-    expect(active(`${BASE}/libros`)).toBe('libros')
-    expect(active(`${BASE}/libros?mes=2026-09`)).toBe('libros')
-    expect(active(`${BASE}/libros/posicion-iva`)).toBe('libros')
-    // Para la contadora, igual (ahí son dos píldoras vecinas).
-    expect(activeSectionTab(accountantNav.all, `${BASE}/libros/cierres`)).toBe(MONTH_END_VALUE)
-    expect(activeSectionTab(accountantNav.all, `${BASE}/libros/diario`)).toBe('libros')
+  it('el alta de un gasto fijo vive bajo /compras pero es de Gastos y sueldos', () => {
+    expect(active(`${BASE}/compras/gastos-fijos/g1`)).toBe('gastos')
+    expect(active(`${BASE}/gastos-fijos/completar`)).toBe('gastos')
+    expect(active(`${BASE}/sueldos`)).toBe('gastos')
   })
 
-  it('«Completar la planilla» es de Gastos fijos: la píldora queda marcada', () => {
-    expect(active(`${BASE}/gastos-fijos/completar`)).toBe('gastos-fijos')
-    expect(active(`${BASE}/gastos-fijos?mes=2026-11`)).toBe('gastos-fijos')
+  it('Contabilidad se queda con los libros, los asientos y el plan', () => {
+    expect(active(`${BASE}/libros`)).toBe('contabilidad')
+    expect(active(`${BASE}/libros/mayor`)).toBe('contabilidad')
+    expect(active(`${BASE}/libros/asiento-manual`)).toBe('contabilidad')
+    expect(active(`${BASE}/asientos/a1`)).toBe('contabilidad')
+    expect(active(`${BASE}/plan-de-cuentas`)).toBe('contabilidad')
   })
 
-  it('Ajustes y Guía se marcan, con sus sub-rutas', () => {
+  it('el engranaje se queda con Ajustes, Importar, la Guía y el asistente', () => {
     expect(active(`${BASE}/ajustes`)).toBe('ajustes')
     expect(active(`${BASE}/ajustes/arca`)).toBe('ajustes')
-    expect(active(`${BASE}/guias`)).toBe('guias')
-    expect(active(`${BASE}/guias/como-arrancar`)).toBe('guias')
+    expect(active(`${BASE}/importar/mercado-pago`)).toBe('ajustes')
+    expect(active(`${BASE}/guias/como-arrancar`)).toBe('ajustes')
+    expect(active(`${BASE}/configurar`)).toBe('ajustes')
   })
 
-  it('una ficha suelta (comprobante, asiento) o los saldos iniciales: ninguna', () => {
-    expect(active(`${BASE}/comprobantes/c1`)).toBeNull()
-    expect(active(`${BASE}/asientos/a1`)).toBeNull()
-    expect(active(`${BASE}/configurar`)).toBeNull()
-  })
-})
-
-describe('admNavPinned: pegada arriba solo en las pantallas de la barra', () => {
-  it('el Resumen, las listas, Guía y Ajustes', () => {
-    for (const path of [
-      BASE,
-      `${BASE}/`,
-      `${BASE}/ventas`,
-      `${BASE}/cajas?tab=flujo`,
-      `${BASE}/importar`,
-      `${BASE}/libros`,
-      `${BASE}/libros?mes=2026-09`,
-      `${BASE}/gastos-fijos`,
-      `${BASE}/guias`,
-      `${BASE}/ajustes`,
-    ]) {
-      expect(admNavPinned(ownerNav.all, path), path).toBe(true)
-    }
-  })
-
-  it('Fin de mes tiene su renglón pero es una pantalla de tarea: ahí la barra no se pega', () => {
-    // Su carátula va pegada justo debajo del topbar (`lg:sticky lg:top-20`).
-    for (const nav of [ownerNav, accountantNav]) {
-      expect(admNavPinned(nav.all, `${BASE}/libros/cierres`)).toBe(false)
-      expect(admNavPinned(nav.all, `${BASE}/libros/cierres?mes=2026-09`)).toBe(false)
-    }
-  })
-
-  it('«Completar la planilla» de Gastos fijos tiene su pie propio: la barra no se pega', () => {
-    expect(admNavPinned(ownerNav.all, `${BASE}/gastos-fijos/completar`)).toBe(false)
-  })
-
-  it('en las pantallas de tarea se va con la página (tienen su propio resumen pegado)', () => {
-    for (const path of [
-      `${BASE}/ventas/cierre`,
-      `${BASE}/compras/nueva`,
-      `${BASE}/importar/arca`,
-      `${BASE}/guias/como-arrancar`,
-      `${BASE}/ajustes/arca`,
-      `${BASE}/comprobantes/c1`,
-    ]) {
-      expect(admNavPinned(ownerNav.all, path), path).toBe(false)
-    }
+  it('una ruta de otra sección: ninguna', () => {
+    expect(active('/hub/clientes')).toBeNull()
+    // No confunde el prefijo: /comprasotra no es Compras.
+    expect(active(`${BASE}/comprasotra`)).toBe(null)
   })
 })
 
-describe('navRestScroll: dónde descansa la fila deslizable', () => {
-  // Un celular de 390 px: la fila mide 326 y «Más» le tapa 46 del borde derecho.
-  const pills = [
-    { start: 4, end: 110 }, // Resumen
-    { start: 116, end: 204 }, // Ventas
-    { start: 210, end: 315 }, // Compras
-    { start: 321, end: 442 }, // Gastos fijos
-    { start: 448, end: 530 }, // Cajas
-  ]
-  const row = { pills, width: 326, cover: 46, inset: 4, max: 252 }
-  const rest = (active: number, current = 0) => navRestScroll({ ...row, active, current })
-  /** Lo que se ve de la píldora cortada contra «Más» (0 si no hay ninguna cortada). */
-  const peek = (scroll: number) => {
-    const edge = scroll + row.width - row.cover
-    const cut = pills.find((pill) => pill.start < edge && pill.end > edge + 1)
-    return cut ? edge - cut.start : 0
-  }
+describe('activeAdmSub: la solapa marcada', () => {
+  const sub = (value: string, path: string, search = '') =>
+    activeAdmSub(
+      ownerNav.sections.find((section) => section.value === value) ?? null,
+      `${BASE}${path}`,
+      search,
+    )
 
-  it('si la activa ya se ve entera, la fila no se mueve (no se «centra»)', () => {
-    expect(rest(0)).toBe(0)
-    // Ventas entraba entera: correr la fila le comía el ícono a «Resumen».
-    expect(rest(1)).toBe(0)
-    // Tampoco se mueve si ya la habían deslizado y la activa sigue a la vista.
-    expect(rest(2, 112)).toBe(112)
+  it('la de por defecto y la de `?tab=` comparten ruta', () => {
+    expect(sub('compras', '/compras')).toBe('proveedores')
+    expect(sub('compras', '/compras', 'tab=comprobantes')).toBe('comprobantes')
+    expect(sub('ventas', '/ventas')).toBe('planilla')
+    expect(sub('ventas', '/ventas', 'tab=clientes')).toBe('cobrar')
+    expect(sub('ventas', '/ventas', 'tab=neto-por-medio')).toBe('llego')
   })
 
-  it('si está cortada, va a donde arranca una píldora y la muestra entera', () => {
-    const stops = [0, ...pills.map((pill) => pill.start - row.inset), row.max]
-    for (const active of [2, 3, 4]) {
-      const scroll = rest(active)
-      const pill = pills[active]
-      expect(stops, `parada de la ${active}`).toContain(scroll)
-      expect(pill?.start).toBeGreaterThanOrEqual(scroll + row.inset - 1)
-      expect(pill?.end).toBeLessThanOrEqual(scroll + row.width - row.cover + 1)
-    }
-    // Compras: arranca en «Ventas», la parada más cercana que la deja entera.
-    expect(rest(2)).toBe(112)
+  it('un `?tab=` sin solapa propia sigue marcando la de por defecto', () => {
+    expect(sub('compras', '/compras', 'tab=pagos')).toBe('proveedores')
+    expect(sub('ventas', '/ventas', 'tab=facturas')).toBe('planilla')
   })
 
-  it('nunca deja asomando solo el borde de la siguiente contra «Más»', () => {
-    for (const active of [0, 1, 2, 3, 4]) {
-      const shown = peek(rest(active))
-      expect(shown === 0 || shown >= NAV_MIN_PEEK, `activa ${active}: asoman ${shown} px`).toBe(
-        true,
-      )
-    }
-    // En «Gastos fijos» la parada más cercana (206) dejaba 42 px de «Cajas»: va al final.
-    expect(peek(206)).toBeLessThan(NAV_MIN_PEEK)
-    expect(rest(3)).toBe(252)
+  it('una sub-ruta marca la de su prefijo más largo', () => {
+    expect(sub('compras', '/compras/semana')).toBe('semana')
+    expect(sub('compras', '/compras/proveedores/p1')).toBe('proveedores')
+    expect(sub('gastos', '/compras/gastos-fijos/g1')).toBe('fijos')
+    expect(sub('gastos', '/sueldos')).toBe('sueldos')
+    expect(sub('contabilidad', '/libros/iva-compras')).toBe('iva')
+    expect(sub('contabilidad', '/libros/cierres')).toBe('cierre')
   })
 
-  it('sin nada que deslizar, o sin activa en la fila, no inventa nada', () => {
-    expect(navRestScroll({ ...row, max: 0, active: 4, current: 0 })).toBe(0)
-    expect(navRestScroll({ ...row, active: -1, current: 80 })).toBe(80)
-    // Nunca se pasa de los bordes.
-    expect(navRestScroll({ ...row, active: -1, current: 999 })).toBe(252)
-  })
-
-  it('una píldora más ancha que la ventana: por lo menos desde el principio', () => {
-    const wide = [
-      { start: 4, end: 110 },
-      { start: 116, end: 520 },
-    ]
-    expect(
-      navRestScroll({
-        pills: wide,
-        active: 1,
-        width: 326,
-        cover: 46,
-        inset: 4,
-        current: 0,
-        max: 242,
-      }),
-    ).toBe(112)
+  it('sin sección o sin solapas, ninguna', () => {
+    expect(activeAdmSub(null, BASE, '')).toBeNull()
+    expect(sub('caja', '/cajas')).toBeNull()
+    expect(sub('resumen', '')).toBeNull()
   })
 })
 
 describe('admFabFromFrame: dónde pone el marco el flotante «＋ Cargar»', () => {
-  it('en las pantallas de primer nivel, también Importar, Libros y Plan de cuentas', () => {
+  it('en las planillas de primer nivel', () => {
     for (const path of [
       BASE,
       `${BASE}/`,
       `${BASE}/ventas`,
       `${BASE}/compras?tab=pagos`,
+      `${BASE}/compras/semana`,
       `${BASE}/gastos-fijos`,
+      `${BASE}/sueldos`,
       `${BASE}/cajas`,
-      `${BASE}/importar`,
-      `${BASE}/libros`,
+      `${BASE}/libros/sumas-y-saldos`,
       `${BASE}/plan-de-cuentas`,
     ]) {
       expect(admFabFromFrame(BASE, path), path).toBe(true)
     }
   })
 
-  it('en Ajustes no (termina en «Guardar cambios»), en la Guía tampoco, ni en las de tarea', () => {
+  it('en Ajustes, en la Guía y en las pantallas de tarea, no', () => {
     for (const path of [
       `${BASE}/ajustes`,
-      // La Guía trae en cada parada el botón de su pantalla: el flotante tapaba el que te toca.
       `${BASE}/guias`,
+      `${BASE}/importar`,
       `${BASE}/ventas/cierre`,
       `${BASE}/compras/nueva`,
       `${BASE}/libros/asiento-manual`,
-      // Fin de mes y «Completar la planilla» son sub-rutas: si llevan flotante, lo pone la página.
       `${BASE}/libros/cierres`,
       `${BASE}/gastos-fijos/completar`,
-      `${BASE}/guias/dia-a-dia`,
       `${BASE}/configurar`,
       '/hub/clientes',
     ]) {
@@ -402,123 +297,98 @@ describe('admFabFromFrame: dónde pone el marco el flotante «＋ Cargar»', () 
   })
 })
 
-describe('lanzador «¿Qué querés cargar?»: se entra por la situación', () => {
-  it('las ocho tarjetas, en orden, con su ejemplo', () => {
-    expect(LAUNCHER_TITLE).toBe('¿Qué querés cargar?')
-    expect(LAUNCHER_ITEMS.map((item) => [item.title, item.hint])).toEqual([
-      ['Cerrar el día', 'Lo que se vendió y cómo te pagaron'],
-      ['Pagué algo recién', 'El hielo, la verdulería, un flete'],
-      ['Me llegó una factura o un remito y lo pago después', 'Queda como deuda con el proveedor'],
-      ['Pago algo que debía', 'A un proveedor o un gasto fijo'],
-      ['Me entró plata', 'Una tarjeta, una app de delivery o un cliente'],
-      ['Pasé plata de un lado a otro', 'De la caja al banco, pagar la tarjeta'],
-      ['Conté la caja', 'Para ver si coincide con el sistema'],
-      ['Otra cosa', 'Un socio puso o sacó plata'],
+describe('el lanzador «¿Qué cargás?»: con las palabras del bar', () => {
+  it('la Compra primero; el orden que tienen educado al equipo', () => {
+    expect(LAUNCHER_TITLE).toBe('¿Qué cargás?')
+    expect(LAUNCHER_DROP_HINT).toContain('arrastrar')
+    const { daily, sometimes } = launcherGroups()
+    expect(daily.map((item) => item.title)).toEqual([
+      'Compra',
+      'Compra y pago',
+      'Pago',
+      'Cierre del día',
+    ])
+    expect(sometimes.map((item) => item.title)).toEqual([
+      'Adelanto o sueldo',
+      'Entró plata',
+      'Socio puso o sacó',
+      'Gasto del banco',
+      'Contar la caja',
     ])
   })
 
-  it('cada una abre la hoja o la pantalla que ya existía (el contrato ?accion= no cambia)', () => {
+  it('las cuatro principales se abren con su número, en orden', () => {
+    const { daily } = launcherGroups()
+    expect(daily.map((item) => item.shortcut)).toEqual(['1', '2', '3', '4'])
+    expect(launcherGroups().sometimes.every((item) => !item.shortcut)).toBe(true)
+  })
+
+  it('cada una abre su hoja o su pantalla', () => {
     const opens = LAUNCHER_ITEMS.map((item) =>
       item.target.kind === 'sheet' ? `hoja:${item.target.action}` : launcherHref(BASE, item.target),
     )
     expect(opens).toEqual([
-      `${BASE}/ventas/cierre`,
-      'hoja:gasto',
       `${BASE}/compras/nueva`,
+      `${BASE}/compras/nueva?modo=pago`,
       'hoja:pagar',
+      `${BASE}/ventas/cierre`,
+      `${BASE}/sueldos`,
       'hoja:cobrar',
-      'hoja:mover',
-      'hoja:ajustar',
       'hoja:movimiento',
+      `${BASE}/cajas/gasto-bancario`,
+      'hoja:ajustar',
     ])
-    // Las seis hojas tienen su tarjeta: nada de lo que se cargaba quedó sin puerta.
-    const sheets = LAUNCHER_ITEMS.flatMap((item) =>
-      item.target.kind === 'sheet' ? item.target.action : [],
-    )
-    expect([...sheets].sort()).toEqual([...ACCOUNTING_ACTIONS].sort())
     expect(new Set(LAUNCHER_ITEMS.map((item) => item.key)).size).toBe(LAUNCHER_ITEMS.length)
   })
 
-  it('jerarquía: lo de todos los días arriba y grande; el resto, renglones compactos', () => {
-    const { daily, sometimes } = launcherGroups()
-    expect(LAUNCHER_GROUPS).toEqual({ daily: 'Todos los días', sometimes: 'Cada tanto' })
-    expect(daily.map((item) => item.key)).toEqual(['cierre', 'gasto'])
-    expect(sometimes.map((item) => item.key)).toEqual([
-      'compra',
-      'pagar',
-      'cobrar',
-      'mover',
-      'ajustar',
-      'movimiento',
-    ])
-    // Entre los dos grupos están las ocho, en el orden de siempre.
-    expect([...daily, ...sometimes]).toEqual([...LAUNCHER_ITEMS])
-    // De punta a punta: el título largo y el cajón de sastre del final. El resto, de a dos.
-    expect(sometimes.filter((item) => item.wide).map((item) => item.key)).toEqual([
-      'compra',
-      'movimiento',
-    ])
-  })
-
-  it('un solo libro: ningún texto habla de ganancia ni de «en negro / en blanco»', () => {
-    const text = LAUNCHER_ITEMS.map((item) => `${item.title} ${item.hint}`)
+  it('«Mover plata» salió del frente; un solo libro: nada de ganancia ni «en negro»', () => {
+    const text = LAUNCHER_ITEMS.map((item) => `${item.title} ${item.hint ?? ''}`)
       .join(' ')
       .toLowerCase()
-    for (const banned of ['ganancia', 'ganaste', 'en negro', 'en blanco', 'afuera']) {
+    for (const banned of ['mover', 'ganancia', 'ganaste', 'en negro', 'en blanco', 'afuera']) {
       expect(text).not.toContain(banned)
     }
   })
 })
 
-describe('LauncherDoors: las ocho puertas en el primer paint', () => {
+describe('LauncherDoors: las puertas en el primer paint', () => {
   async function render(pending: string | null = null) {
     const { LauncherDoors } = await import('@/components/administracion/nav/launcher')
     return renderToString(createElement(LauncherDoors, { base: BASE, pending, onPick: () => {} }))
   }
   const doors = (html: string) => html.match(/<(?:a|button)\b[^>]*data-launcher-item[^>]*>/g) ?? []
 
-  it('dos grupos con su rótulo y las ocho puertas, cada una link o botón según a dónde lleva', async () => {
+  it('están todas, en orden, cada una link o botón según a dónde lleva', async () => {
     const html = await render()
-    expect(html).toContain('Todos los días')
-    expect(html).toContain('Cada tanto')
-    expect(html.indexOf('Todos los días')).toBeLessThan(html.indexOf('Cada tanto'))
     const all = doors(html)
-    expect(all).toHaveLength(LAUNCHER_ITEMS.length)
     expect(all.map((tag) => tag.match(/data-launcher-item="([^"]+)"/)?.[1])).toEqual(
       LAUNCHER_ITEMS.map((item) => item.key),
     )
     // Las que abren pantalla son links; las que abren una hoja, botones.
     const links = all.filter((tag) => tag.startsWith('<a'))
-    expect(links).toHaveLength(2)
-    expect(links[0]).toContain(`href="${BASE}/ventas/cierre"`)
-    expect(links[1]).toContain(`href="${BASE}/compras/nueva"`)
+    expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
+      `${BASE}/compras/nueva`,
+      `${BASE}/compras/nueva?modo=pago`,
+      `${BASE}/ventas/cierre`,
+      `${BASE}/sueldos`,
+      `${BASE}/cajas/gasto-bancario`,
+    ])
     for (const tag of all) {
       expect(tag).toContain('focus-visible:ring-2')
-      expect(tag).toContain('focus-visible:ring-ring')
       expect(tag).not.toContain('aria-busy')
     }
-    for (const item of LAUNCHER_ITEMS) {
-      expect(html).toContain(item.title)
-      expect(html).toContain(item.hint)
-    }
-  })
-
-  it('las dos de todos los días van con el ícono relleno de marca; las demás, no', async () => {
-    const html = await render()
-    expect(html.match(/bg-primary text-primary-foreground/g) ?? []).toHaveLength(2)
-    expect(html.indexOf('bg-primary')).toBeLessThan(html.indexOf('Cada tanto'))
   })
 
   it('al elegir una: esa queda «abriendo», las demás se apagan y se avisa al lector', async () => {
-    const html = await render('gasto')
+    const html = await render('compra-y-pago')
     const all = doors(html)
     const busy = all.filter((tag) => tag.includes('aria-busy="true"'))
     expect(busy).toHaveLength(1)
-    expect(busy[0]).toContain('data-launcher-item="gasto"')
+    expect(busy[0]).toContain('data-launcher-item="compra-y-pago"')
     const waiting = all.filter((tag) => tag.includes('aria-disabled="true"'))
     expect(waiting).toHaveLength(LAUNCHER_ITEMS.length - 1)
     for (const tag of waiting) expect(tag).toContain('pointer-events-none')
-    expect(html).toMatch(/role="status"[^>]*>Abriendo «Pagué algo recién»…/)
+    expect(html).toMatch(/role="status"[^>]*>Abriendo «Compra y pago»…/)
   })
 })
 
@@ -528,7 +398,7 @@ function anchors(html: string): string[] {
 }
 
 describe('AdmNav en el primer paint', () => {
-  async function render(audience: 'owner' | 'accountant') {
+  async function render(audience: 'owner' | 'accountant' = 'owner') {
     const { AdmNav } = await import('@/components/administracion/nav/adm-nav')
     return renderToString(
       createElement(AdmNav, {
@@ -538,176 +408,72 @@ describe('AdmNav en el primer paint', () => {
       }),
     )
   }
+  const current = (html: string) => anchors(html).filter((a) => a.includes('aria-current="page"'))
 
-  it('dueño en Ventas: nav con nombre, una sola marcada, Guía, Ajustes y «Cargar»', async () => {
+  it('dueño en Ventas: nav con nombre, una sola sección marcada, engranaje y «Cargar»', async () => {
     nav.pathname = `${BASE}/ventas`
-    const html = await render('owner')
+    const html = await render()
     expect(html).toContain('<nav aria-label="Secciones de Administración"')
-    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain(`href="${BASE}/ventas"`)
+    // La sección y su solapa.
+    expect(current(html).map((a) => a.match(/href="([^"]+)"/)?.[1])).toEqual([
+      `${BASE}/ventas`,
+      `${BASE}/ventas`,
+    ])
     expect(html).toContain('Compras y pagos')
-    expect(html).toContain('Contadora')
-    expect(html).toMatch(new RegExp(`<a[^>]*aria-label="Guía"[^>]*href="${BASE}/guias"`))
     expect(html).toMatch(new RegExp(`<a[^>]*aria-label="Ajustes"[^>]*href="${BASE}/ajustes"`))
     expect(html).toContain('Cargar')
-    expect(html).toContain('Más')
   })
 
-  it('en Ajustes y en Guías la barra marca dónde estás', async () => {
+  it('siempre pegada bajo el topbar: una planilla larga no te hace perder el menú', async () => {
+    for (const path of [`${BASE}/cajas`, `${BASE}/ventas/cierre`, `${BASE}/compras/nueva`]) {
+      nav.pathname = path
+      expect(await render(), path).toContain('sticky top-14')
+    }
+  })
+
+  it('en Ajustes marca el engranaje y muestra sus solapas', async () => {
     nav.pathname = `${BASE}/ajustes`
-    let current = anchors(await render('owner')).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain('aria-label="Ajustes"')
-
-    nav.pathname = `${BASE}/guias/como-arrancar`
-    current = anchors(await render('owner')).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain('aria-label="Guía"')
+    const html = await render()
+    const [gear] = current(html)
+    expect(gear).toContain('aria-label="Ajustes"')
+    expect(html).toContain('Puesta en marcha')
+    expect(html).toContain(`href="${BASE}/importar"`)
   })
 
-  it('en la ficha de un comprobante sale igual, sin ninguna marcada', async () => {
-    nav.pathname = `${BASE}/comprobantes/c1`
-    const html = await render('owner')
-    expect(html).toContain('<nav aria-label="Secciones de Administración"')
-    expect(html).not.toContain('aria-current')
+  it('las solapas de la sección: una marcada, y la acción de Contabilidad', async () => {
+    nav.pathname = `${BASE}/libros/mayor`
+    const html = await render()
+    expect(current(html).map((a) => a.match(/href="([^"]+)"/)?.[1])).toEqual([
+      `${BASE}/libros/sumas-y-saldos`,
+      `${BASE}/libros/mayor`,
+    ])
+    expect(html).toContain('Asiento manual')
+    expect(html).toContain('aria-label="Contabilidad"')
   })
 
-  it('contadora: Libros y Plan de cuentas a la vista, sin «Contadora ▾» ni «Cargar»', async () => {
+  it('contadora: arranca por Contabilidad, sin Resumen ni «Cargar»', async () => {
     nav.accounting = { ...nav.accounting, readOnly: true }
-    nav.pathname = `${BASE}/libros`
+    nav.pathname = `${BASE}/libros/sumas-y-saldos`
     const html = await render('accountant')
-    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain(`href="${BASE}/libros"`)
-    expect(html).toContain(`href="${BASE}/plan-de-cuentas"`)
-    expect(html).not.toContain('Contadora')
+    expect(html).not.toContain('Resumen')
     expect(html).not.toContain('Cargar')
+    expect(html.indexOf('Contabilidad')).toBeLessThan(html.indexOf('Compras y pagos'))
   })
 
-  it('pegada bajo el topbar en las pantallas de la barra; en las de tarea, no', async () => {
-    nav.pathname = `${BASE}/cajas`
-    expect(await render('owner')).toContain('sticky top-14')
-    nav.pathname = `${BASE}/ventas/cierre`
-    expect(await render('owner')).not.toContain('sticky top-14')
-  })
-
-  it('dueño en Fin de mes: «Contadora ▾» y «Más» quedan marcadas; la barra no se pega', async () => {
-    nav.pathname = `${BASE}/libros/cierres`
-    const html = await render('owner')
-    const buttons = html.match(/<button\b[^>]*>/g) ?? []
-    const books = buttons.find((b) => b.includes('data-nav-current'))
-    // Rellena, como cualquier píldora activa (el renglón «Fin de mes» está adentro del desplegable).
-    expect(books).toContain('bg-primary')
-    expect(html).toMatch(/<button[^>]*data-nav-current[^>]*>Contadora/)
-    const more = buttons.find((b) => b.includes('data-nav-more'))
-    expect(more).toContain('bg-primary')
-    // Ninguna de las cinco de todos los días queda marcada, ni «Libros» por arrastre.
-    expect(html).not.toContain('aria-current')
-    expect(html).not.toContain('sticky top-14')
-    // En Libros a secas pasa lo mismo de siempre.
-    nav.pathname = `${BASE}/libros`
-    const libros = await render('owner')
-    expect(libros).toMatch(/<button[^>]*data-nav-current[^>]*>Contadora/)
-    expect(libros).toContain('sticky top-14')
-  })
-
-  it('contadora en Fin de mes: su píldora queda marcada y «Libros», al lado, no', async () => {
-    nav.accounting = { ...nav.accounting, readOnly: true }
-    nav.pathname = `${BASE}/libros/cierres`
-    const html = await render('accountant')
-    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain(`href="${BASE}/libros/cierres"`)
-    const libros = anchors(html).find((a) => a.includes(`href="${BASE}/libros"`))
-    expect(libros).toBeDefined()
-    expect(libros).not.toContain('aria-current')
-    // Vecinas, en ese orden, y cada una con su ícono.
-    expect(html.indexOf(`href="${BASE}/libros"`)).toBeLessThan(
-      html.indexOf(`href="${BASE}/libros/cierres"`),
-    )
-    expect(html.indexOf(`href="${BASE}/libros/cierres"`)).toBeLessThan(
-      html.indexOf(`href="${BASE}/plan-de-cuentas"`),
-    )
-    expect(html).toMatch(
-      new RegExp(`<a[^>]*href="${BASE}/libros/cierres"[^>]*><svg[^>]*lucide-calendar-check`),
-    )
-    expect(html).toContain('Fin de mes')
-    expect(html).not.toContain('Contadora')
-    expect(html).not.toContain('Cargar')
-  })
-
-  it('contadora: en la compu sus ocho píldoras van sin ícono, para que entren; las del dueño no cambian', async () => {
-    /** Los `<svg>` de las píldoras de la fila (links directos de la barra, con su ícono adentro). */
-    const pillIcons = (html: string) =>
-      (
-        html.match(
-          /<a\b[^>]*data-nav-current[^>]*><svg[^>]*>|<a\b[^>]*href="[^"]*"[^>]*><svg[^>]*>/g,
-        ) ?? []
-      )
-        .filter((tag) => !tag.includes('aria-label='))
-        .map((tag) => tag.slice(tag.indexOf('<svg')))
-
-    nav.accounting = { ...nav.accounting, readOnly: true }
-    nav.pathname = `${BASE}/libros`
-    const accountantIcons = pillIcons(await render('accountant'))
-    // Resumen, Ventas, Compras, Gastos fijos, Cajas, Libros, Fin de mes y Plan de cuentas.
-    expect(accountantIcons).toHaveLength(8)
-    // El ícono sigue en el celular y la tablet (ahí la fila se desliza); en la compu se va.
-    for (const icon of accountantIcons) expect(icon).toContain('lg:hidden')
-
-    nav.accounting = { ...nav.accounting, readOnly: false }
-    const ownerIcons = pillIcons(await render('owner'))
-    expect(ownerIcons).toHaveLength(5)
-    for (const icon of ownerIcons) expect(icon).not.toContain('lg:hidden')
-  })
-
-  it('en «Completar la planilla» de Gastos fijos: la píldora marcada y la barra sin pegar', async () => {
-    nav.pathname = `${BASE}/gastos-fijos/completar`
-    const html = await render('owner')
-    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
-    expect(current).toHaveLength(1)
-    expect(current[0]).toContain(`href="${BASE}/gastos-fijos"`)
-    expect(html).not.toContain('sticky top-14')
-  })
-
-  it('foco visible, sin barra de scroll, y alineada con las páginas angostas', async () => {
-    const html = await render('owner')
+  it('foco visible y sin barra de scroll', async () => {
+    const html = await render()
     for (const a of anchors(html)) {
       expect(a).toContain('focus-visible:ring-2')
       expect(a).toContain('focus-visible:ring-ring')
     }
     expect(html).toContain('overflow-x-auto')
     expect(html).toContain('[scrollbar-width:none]')
-    // El mismo contenedor que las páginas de 7xl y el corrimiento de las angostas.
     expect(html).toContain('max-w-7xl')
-    expect(html).toContain('.max-w-3xl')
-    expect(html).toContain('ms-[max(0px,calc((100%_-_80rem)/2))]')
-  })
-
-  it('Importar y «Contadora ▾» van en la fila solo cuando entran enteros; si no, «Más»', async () => {
-    nav.pathname = `${BASE}/compras`
-    const html = await render('owner')
-    const importar = anchors(html).find((a) => a.includes(`href="${BASE}/importar"`))
-    // Por ancho de la barra (del contenedor), no de la ventana.
-    expect(importar).toContain('hidden')
-    expect(importar).toContain('lg:@[63.75rem]:inline-flex')
-    const buttons = html.match(/<button\b[^>]*>/g) ?? []
-    const more = buttons.find((b) => b.includes('data-nav-more'))
-    expect(more).toContain('aria-haspopup="dialog"')
-    expect(more).toContain('aria-label="Más de Administración"')
-    // «Más» y lo que reemplaza nunca se ven a la vez.
-    expect(html).toMatch(
-      /<span class="[^"]*lg:@\[63\.75rem\]:hidden[^"]*"><button[^>]*data-nav-more/,
-    )
-    // La fila pasa por debajo de «Más» y descansa donde arranca una píldora.
-    expect(html).toContain('snap-x')
-    expect(html).toContain('-ml-9')
   })
 
   it('sin pestañas (sección sin resolver) no dibuja nada', async () => {
     const { AdmNav } = await import('@/components/administracion/nav/adm-nav')
-    const html = renderToString(createElement(AdmNav, { label: 'X', tabs: [], audience: 'owner' }))
+    const html = renderToString(createElement(AdmNav, { label: 'X', tabs: [] }))
     expect(html).toBe('')
   })
 })
@@ -737,8 +503,6 @@ describe('el flotante «＋ Cargar» del celular', () => {
     expect(buttons[0]).toContain('ring-background')
     // La palabra sigue en el botón aunque se achique al bajar: es su nombre.
     expect(html).toContain('Cargar')
-    // Ya no es la barra de tres botones.
-    expect(html).not.toContain('Cierre del día')
     expect(html).not.toContain('<nav')
   })
 
@@ -746,8 +510,8 @@ describe('el flotante «＋ Cargar» del celular', () => {
     expect(await renderFab()).toMatch(/<div aria-hidden="true" class="h-24 lg:hidden"><\/div>/)
   })
 
-  it('lo pone el marco en las pantallas de primer nivel; en Ajustes y en las de tarea, no', async () => {
-    for (const path of [BASE, `${BASE}/importar`, `${BASE}/libros`, `${BASE}/plan-de-cuentas`]) {
+  it('lo pone el marco en las planillas; en Ajustes y en las de tarea, no', async () => {
+    for (const path of [BASE, `${BASE}/compras/semana`, `${BASE}/plan-de-cuentas`]) {
       nav.pathname = path
       expect((await renderFab()).match(/<button\b/g) ?? [], path).toHaveLength(1)
     }
@@ -773,10 +537,6 @@ describe('el flotante «＋ Cargar» del celular', () => {
     expect(html.match(/<button\b/g) ?? []).toHaveLength(1)
     expect(html).toContain('fixed')
     expect(html).toContain('h-24 lg:hidden')
-    // Fin de mes está en la barra pero es una sub-ruta: el flotante lo pone su página, una vez.
-    nav.pathname = `${BASE}/libros/cierres`
-    expect(await renderFab()).toBe('')
-    expect((await renderBar()).match(/<button\b/g) ?? []).toHaveLength(1)
   })
 
   it('la contadora no lo ve, lo ponga quien lo ponga', async () => {

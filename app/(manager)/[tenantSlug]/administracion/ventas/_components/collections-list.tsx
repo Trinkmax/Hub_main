@@ -1,76 +1,85 @@
-import { Amount } from '@/components/administracion/amount'
-import { LedgerList, LedgerRail, LedgerRow, StatusPill } from '@/components/administracion/kit'
+import Link from 'next/link'
+import { StatusPill } from '@/components/administracion/kit'
+import { PRow, PTable, PTd, PTh, PTotalRow } from '@/components/administracion/planilla'
 import type { DocumentListRow } from '@/lib/accounting/queries/documents'
-import { MONTH_NAMES_SHORT, WEEKDAY_NAMES_SHORT, weekdayOf } from '@/lib/dates'
+import { formatDayLabel } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
-import { joinNames } from '../_lib/almanac'
+import { cn } from '@/lib/utils'
+import { collectionAmounts } from '../_lib/net-view'
 
-/** El margen de un renglón con fecha: el mes arriba, el día grande, el día de la semana abajo. */
-export function DateRail({ date }: { date: string }) {
-  return (
-    <LedgerRail
-      label={MONTH_NAMES_SHORT[Number(date.slice(5, 7)) - 1] ?? ''}
-      value={date.slice(8, 10)}
-      unit={WEEKDAY_NAMES_SHORT[weekdayOf(date)] ?? ''}
-    />
-  )
-}
+const NAME_LINK =
+  'rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring'
 
 /**
- * «Cobros»: lo que ya te depositaron, un renglón por cobro. En el margen, el
- * día; en el centro, quién pagó y a qué caja entró; a la derecha, lo que entró
- * y, si le descontaron, de cuánto era la liquidación. Cada renglón lleva a su
- * comprobante (ahí se anula si quedó mal).
+ * «Cobros»: lo que ya te depositaron, un renglón por cobro: el día, quién pagó, a qué caja entró, lo
+ * que entró y lo que te descontaron. Cada renglón lleva a su comprobante (ahí se anula si quedó mal).
+ * El total va solo si la lista está entera: con más páginas, sumaría solo lo que se ve.
  */
 export function CollectionsList({
   rows,
   base,
+  total,
 }: {
   rows: readonly DocumentListRow[]
   /** `/<bar>/administracion`. */
   base: string
+  /** Lo que entró y lo descontado de todo el período; `null` si la lista sigue en otra página. */
+  total: { receivedCents: number; discountCents: number } | null
 }) {
   return (
-    <LedgerList aria-label="Cobros" bare>
-      {rows.map((row) => {
-        const voided = row.status === 'voided'
-        const means = row.means ?? []
-        const received = means.reduce((sum, item) => sum + item.amountCents, 0)
-        const shown = means.length > 0 ? received : row.totalCents
-        const discount = row.totalCents - received
-        const where = means.length > 0 ? `Entró a ${joinNames(means.map((m) => m.label))}` : null
-        return (
-          <LedgerRow
-            key={row.id}
-            href={`${base}/comprobantes/${row.id}`}
-            title={row.partyName ?? row.title}
-            muted={voided}
-            rail={<DateRail date={row.accountingDate} />}
-            meta={
-              voided ? (
-                <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <StatusPill tone="muted">Anulado</StatusPill>
-                  {where}
-                </span>
-              ) : (
-                where
-              )
-            }
-            amount={
-              <Amount
-                cents={shown}
-                decimals={0}
-                className={voided ? 'line-through' : 'font-serif text-lg font-semibold'}
-              />
-            }
-            amountNote={
-              !voided && means.length > 0 && discount > 0
-                ? `de ${formatCentsShort(row.totalCents)} · te descontaron ${formatCentsShort(discount)}`
-                : null
-            }
-          />
-        )
-      })}
-    </LedgerList>
+    <PTable minWidth={640} label="Cobros">
+      <thead>
+        <tr>
+          <PTh>Día</PTh>
+          <PTh>Quién</PTh>
+          <PTh>Entró a</PTh>
+          <PTh align="right">Entró</PTh>
+          <PTh align="right">Te descontaron</PTh>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const voided = row.status === 'voided'
+          const { shown, discount, where } = collectionAmounts(row)
+          return (
+            <PRow key={row.id} className={voided ? 'text-muted-foreground' : undefined}>
+              <PTd className="whitespace-nowrap">{formatDayLabel(row.accountingDate)}</PTd>
+              <PTd>
+                <Link href={`${base}/comprobantes/${row.id}`} className={NAME_LINK}>
+                  {row.partyName ?? row.title}
+                </Link>
+                {voided ? (
+                  <StatusPill tone="muted" className="ml-2">
+                    Anulado
+                  </StatusPill>
+                ) : null}
+              </PTd>
+              <PTd className="text-muted-foreground">{where || '—'}</PTd>
+              <PTd align="right" className={cn('font-medium', voided && 'line-through')}>
+                {formatCentsShort(shown)}
+              </PTd>
+              <PTd align="right">
+                {!voided && discount > 0 ? (
+                  formatCentsShort(discount)
+                ) : (
+                  <span className="text-muted-foreground/60">—</span>
+                )}
+              </PTd>
+            </PRow>
+          )
+        })}
+      </tbody>
+      {total ? (
+        <tfoot>
+          <PTotalRow>
+            <PTd colSpan={3}>Total</PTd>
+            <PTd align="right">{formatCentsShort(total.receivedCents)}</PTd>
+            <PTd align="right">
+              {total.discountCents > 0 ? formatCentsShort(total.discountCents) : '—'}
+            </PTd>
+          </PTotalRow>
+        </tfoot>
+      ) : null}
+    </PTable>
   )
 }

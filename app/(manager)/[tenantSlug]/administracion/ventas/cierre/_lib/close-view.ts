@@ -1,30 +1,24 @@
 /**
- * Lo que el cierre del día MUESTRA (rediseño de octubre 2026): cómo se agrupan
- * los medios por «de dónde saco el número», a dónde va la plata de cada uno,
- * cuándo entra y el reparto «con factura / sin factura». Puro: lo prueba
- * `administracion-cierre.test.ts`.
+ * Lo que el cierre del día MUESTRA: cómo se agrupan los medios por «de dónde saco
+ * el número», a dónde va la plata de cada uno, el reparto «con factura / sin
+ * factura» y los impuestos que se calculan solos. Puro: lo prueban
+ * `administracion-cierre.test.ts` y `administracion-cierre-vista.test.tsx`.
  *
  * Acá no se arma nada de lo que se manda: el envío (`SalesCloseValues`) lo
  * sigue armando el formulario con su estado de siempre, y los medios viajan en
  * el orden de Ajustes › Medios de cobro. Esto solo decide cómo se ven.
  */
 
-import type { Channel, SalesMethodKind, TreasuryKind } from '@/lib/accounting/types'
+import { netFromGross } from '@/lib/accounting/iva'
+import { vatRateLabel } from '@/lib/accounting/queries/labels'
+import { closeTaxes, type TaxBase, type TaxSettings } from '@/lib/accounting/taxes'
+import type { Channel, SalesMethodKind, TreasuryKind, VatRateBp } from '@/lib/accounting/types'
 import { addDays, formatWeekdayDayMonth } from '@/lib/dates'
 
 // ─── Los medios, agrupados ───────────────────────────────────────────────────
 
 /** De dónde sale el número: billetes, el reporte de la billetera, el posnet, cada app… */
 export type CloseMethodGroup = 'cash' | 'wallet' | 'cards' | 'delivery' | 'account' | 'advance'
-
-/** Un renglón de «Cuándo entra» del ticket: los medios con la misma `key` se suman. */
-export type CloseArrival = {
-  key: string
-  /** Para ordenar: lo que ya está, lo que está en camino, lo que llega por fecha y el resto. */
-  order: string
-  /** «Entra a Caja», «En camino a Mercado Pago», «Jue 08/10». */
-  label: string
-}
 
 /** Lo que la página sabe de un medio (del catálogo), sin nada de pantalla. */
 export type CloseMethodSource = {
@@ -46,11 +40,15 @@ export type CloseMethodLookup = {
 
 export type CloseMethodView = {
   group: CloseMethodGroup
+  /**
+   * La columna «Entró a»: la caja o quien te lo paga después («Caja», «Mercado Pago», «Tarjetas de
+   * débito (Posnet)»). Sale del medio de cobro: en un cierre no se cambia.
+   */
+  entersTo: string
   /** A dónde va, en palabras y corto: «Entra a Caja», «Queda en camino», «Llega el jue 08/10». */
   destination: string
   /** Quién lo tiene o lo paga, para cuando hay lugar: «Mercado Pago», «Tarjetas de débito (Posnet)». */
   payer: string | null
-  arrival: CloseArrival
 }
 
 function groupOf(method: CloseMethodSource, lookup: CloseMethodLookup): CloseMethodGroup {
@@ -65,11 +63,10 @@ function groupOf(method: CloseMethodSource, lookup: CloseMethodLookup): CloseMet
 }
 
 /**
- * Cómo se ve un medio en el cierre de un día: su grupo, a dónde va lo cobrado
- * y en qué renglón de «Cuándo entra» suma. Sigue lo que hace el asiento: «a
- * caja» entra en el momento; lo que se acredita en el acto queda en camino
- * hasta que se lo ve en la billetera; tarjetas y apps llegan `settlementDays`
- * después.
+ * Cómo se ve un medio en el cierre de un día: su grupo y a dónde va lo cobrado.
+ * Sigue lo que hace el asiento: «a caja» entra en el momento; lo que se acredita
+ * en el acto queda en camino hasta que se lo ve en la billetera; tarjetas y apps
+ * llegan `settlementDays` después.
  */
 export function describeCloseMethod(
   method: CloseMethodSource,
@@ -81,56 +78,34 @@ export function describeCloseMethod(
   switch (method.kind) {
     case 'treasury': {
       const name = lookup.treasury?.name ?? 'Caja'
-      return {
-        group,
-        destination: `Entra a ${name}`,
-        payer: null,
-        arrival: {
-          key: `now:${lookup.treasury?.id ?? 'caja'}`,
-          order: '0',
-          label: `Entra a ${name}`,
-        },
-      }
+      return { group, entersTo: name, destination: `Entra a ${name}`, payer: null }
     }
     case 'settled_now': {
       const name = payer ?? lookup.treasury?.name ?? 'Mercado Pago'
-      return {
-        group,
-        destination: 'Queda en camino',
-        payer: name,
-        arrival: {
-          key: `pending:${lookup.party?.id ?? lookup.treasury?.id ?? 'billetera'}`,
-          order: '1',
-          label: `En camino a ${name}`,
-        },
-      }
+      return { group, entersTo: name, destination: 'Queda en camino', payer: name }
     }
     case 'receivable': {
       const when = addDays(date, Math.max(0, method.settlementDays))
       return {
         group,
+        entersTo: payer ?? 'A cobrar',
         destination: `Llega el ${formatWeekdayDayMonth(when)}`,
         payer,
-        arrival: {
-          key: `due:${when}`,
-          order: `2:${when}`,
-          label: `Llega el ${formatWeekdayDayMonth(when)}`,
-        },
       }
     }
     case 'customer_account':
       return {
         group,
+        entersTo: 'Cuenta del cliente',
         destination: 'Queda en la cuenta de cada cliente',
         payer: null,
-        arrival: { key: 'account', order: '8', label: 'A cobrarle a clientes' },
       }
     case 'advance':
       return {
         group,
+        entersTo: 'Señas',
         destination: 'Se descuenta de las señas',
         payer: null,
-        arrival: { key: 'advance', order: '9', label: 'Ya cobrado como seña' },
       }
   }
 }
@@ -157,39 +132,8 @@ export function groupCloseMethods<M extends { group: CloseMethodGroup }>(
 
 // ─── Cuándo entra ────────────────────────────────────────────────────────────
 
+/** Un renglón de «Cuándo entra» del ticket de un cierre ya guardado. */
 export type ArrivalLine = { key: string; label: string; cents: number }
-
-/**
- * «Cuándo entra» del ticket: lo cargado, sumado por lugar y fecha. Si se contó
- * el efectivo, a la caja entra lo CONTADO (es lo que registra el asiento), no
- * lo vendido. Lo que no tiene importe no figura.
- */
-export function closeArrivals(
-  methods: ReadonlyArray<{ id: string; arrival: CloseArrival }>,
-  amountOf: (methodId: string) => number,
-  cash: { methodId: string | null; countedCents: number | null },
-): ArrivalLine[] {
-  const lines = new Map<string, ArrivalLine & { order: string; index: number }>()
-  methods.forEach((method, index) => {
-    const counted = method.id === cash.methodId ? cash.countedCents : null
-    const cents = counted ?? amountOf(method.id)
-    if (cents <= 0) return
-    const line = lines.get(method.arrival.key)
-    if (line) line.cents += cents
-    else {
-      lines.set(method.arrival.key, {
-        key: method.arrival.key,
-        label: method.arrival.label,
-        cents,
-        order: method.arrival.order,
-        index,
-      })
-    }
-  })
-  return [...lines.values()]
-    .sort((a, b) => a.order.localeCompare(b.order) || a.index - b.index)
-    .map(({ key, label, cents }) => ({ key, label, cents }))
-}
 
 // ─── Con factura / sin factura ───────────────────────────────────────────────
 
@@ -271,18 +215,68 @@ export function controlCheck(controlCents: number | null, soldCents: number): Co
 
 // ─── El objetivo del día ─────────────────────────────────────────────────────
 
+/** Lo vendido ese día contra su objetivo, en el papel del ticket. */
 export type TargetProgress = { targetCents: number; percent: number }
 
+// ─── Lo que se calcula solo ──────────────────────────────────────────────────
+
+export type CloseTaxLine = { key: string; label: string; cents: number }
+
+export type CloseTaxView = {
+  /** Un renglón por alícuota de lo facturado; sin nada facturado, el de la alícuota general en cero. */
+  vat: CloseTaxLine[]
+  /** Ingresos Brutos y Comercio e Industria. Vacío con los impuestos automáticos apagados. */
+  accrued: CloseTaxLine[]
+  /** Sobre qué se calculan los de `accrued`; `null` si están apagados. */
+  base: TaxBase | null
+}
+
+/** La alícuota de un bar con factura de todos los días: la que se muestra mientras no hay nada. */
+const GENERAL_VAT_BP: VatRateBp = 2100
+
 /**
- * Lo vendido ese día (este cierre más los turnos ya cargados) contra su
- * objetivo. Es sobre lo vendido en bruto: Ventas › Proyección descuenta además
- * las comisiones estimadas, por eso la pantalla lo aclara. `null` sin objetivo
- * (un objetivo en cero no se puede cumplir ni incumplir).
+ * «Se calcula solo»: lo que el cierre va a registrar además de las ventas, con los mismos números del
+ * asiento. El IVA sale de cada fila facturada como en `buildSalesClose` (las notas de crédito restan);
+ * Ingresos Brutos y Comercio e Industria, de `closeTaxes`, con lo facturado sin IVA que ya calculó
+ * `summarizeSalesClose`.
  */
-export function targetProgress(
-  targetCents: number | null,
-  dayCents: number,
-): TargetProgress | null {
-  if (targetCents === null || targetCents <= 0) return null
-  return { targetCents, percent: Math.max(0, Math.round((dayCents * 100) / targetCents)) }
+export function closeTaxView(input: {
+  invoiced: ReadonlyArray<{ totalCents: number; vatRateBp: VatRateBp; creditNote: boolean }>
+  invoicedNetCents: number
+  uninvoicedCents: number
+  settings: TaxSettings | null | undefined
+}): CloseTaxView {
+  const byRate = new Map<VatRateBp, number>()
+  for (const row of input.invoiced) {
+    if (row.vatRateBp === 0) continue
+    const vat = row.totalCents - netFromGross(row.totalCents, row.vatRateBp)
+    byRate.set(row.vatRateBp, (byRate.get(row.vatRateBp) ?? 0) + (row.creditNote ? -vat : vat))
+  }
+  if (byRate.size === 0) byRate.set(GENERAL_VAT_BP, 0)
+  const vat = [...byRate.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([rate, cents]) => ({ key: `vat-${rate}`, label: `IVA ${vatRateLabel(rate)}`, cents }))
+
+  const { settings } = input
+  if (!settings?.auto) return { vat, accrued: [], base: null }
+  const { iibbCents, municipalCents } = closeTaxes(
+    { invoicedNetCents: input.invoicedNetCents, uninvoicedCents: input.uninvoicedCents },
+    settings,
+  )
+  return {
+    vat,
+    accrued: [
+      {
+        key: 'iibb',
+        label: `Ingresos Brutos ${vatRateLabel(settings.iibbBp)}`,
+        cents: iibbCents,
+      },
+      {
+        key: 'municipal',
+        label: `Comercio e Industria ${vatRateLabel(settings.municipalBp)}`,
+        cents: municipalCents,
+      },
+    ],
+    base: settings.base,
+  }
 }

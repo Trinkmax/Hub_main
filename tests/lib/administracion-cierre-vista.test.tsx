@@ -8,20 +8,21 @@ import {
   SalesCloseForm,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/cierre/_components/sales-close-form'
 import {
-  closeArrivals,
+  closeTaxView,
   controlCheck,
   describeCloseMethod,
   groupCloseMethods,
   invoiceSplit,
-  targetProgress,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/cierre/_lib/close-view'
+import { buildSalesClose, summarizeSalesClose } from '@/lib/accounting/posting/sales-close'
+import { DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
 import { E8, prepare } from './accounting-fixtures'
 
 /**
- * Lo que el cierre del día MUESTRA desde el rediseño de octubre 2026: los medios
- * agrupados, a dónde va la plata de cada uno, «Cuándo entra», el reparto con
- * factura / sin factura y el ticket. Lo que se MANDA lo fija
- * `administracion-cierre.test.ts` (el golden E8) y no cambió.
+ * Lo que el cierre del día MUESTRA: los medios, a dónde va la plata de cada uno,
+ * el reparto con factura / sin factura, lo que se calcula solo y el ticket de un
+ * cierre guardado. Lo que se MANDA lo fija `administracion-cierre.test.ts` (el
+ * golden E8) y no cambió.
  */
 
 vi.mock('next/navigation', () => ({
@@ -75,7 +76,7 @@ describe('cierre del día: cada medio, en palabras', () => {
     expect(view.group).toBe('cash')
     expect(view.destination).toBe('Entra a Caja')
     expect(view.payer).toBeNull()
-    expect(view.arrival).toMatchObject({ key: 'now:t-caja', label: 'Entra a Caja' })
+    expect(view.entersTo).toBe('Caja')
   })
 
   it('lo que se acredita en el acto queda «en camino» (no «a acreditar»)', () => {
@@ -87,8 +88,8 @@ describe('cierre del día: cada medio, en palabras', () => {
     expect(view.group).toBe('wallet')
     expect(view.destination).toBe('Queda en camino')
     expect(view.payer).toBe('Mercado Pago')
-    expect(view.arrival.label).toBe('En camino a Mercado Pago')
-    expect(`${view.destination} ${view.arrival.label}`).not.toMatch(/acreditar/i)
+    expect(view.entersTo).toBe('Mercado Pago')
+    expect(`${view.destination} ${view.entersTo}`).not.toMatch(/acreditar/i)
   })
 
   it('la tarjeta dice qué día llega: el día del cierre más los días del medio', () => {
@@ -105,7 +106,7 @@ describe('cierre del día: cada medio, en palabras', () => {
     expect(view.group).toBe('cards')
     expect(view.destination).toBe('Llega el sáb 17/10')
     expect(view.payer).toBe('Tarjetas de crédito (Posnet)')
-    expect(view.arrival).toMatchObject({ key: 'due:2026-10-17', label: 'Llega el sáb 17/10' })
+    expect(view.entersTo).toBe('Tarjetas de crédito (Posnet)')
   })
 
   it('una app de delivery va con las apps, también si paga a los 0 días o con días negativos', () => {
@@ -127,7 +128,7 @@ describe('cierre del día: cada medio, en palabras', () => {
       DAY,
       lookup,
     )
-    expect(sameDay.arrival.key).toBe('due:2026-10-07')
+    expect(sameDay.destination).toBe('Llega el mié 07/10')
   })
 
   it('una transferencia directo al banco va con las billeteras; cuenta corriente y señas, aparte', () => {
@@ -158,7 +159,8 @@ describe('cierre del día: cada medio, en palabras', () => {
       none,
     )
     expect(advance.group).toBe('advance')
-    expect(advance.arrival.label).toBe('Ya cobrado como seña')
+    expect(advance.entersTo).toBe('Señas')
+    expect(account.entersTo).toBe('Cuenta del cliente')
   })
 })
 
@@ -194,73 +196,6 @@ describe('cierre del día: los grupos no cambian el orden de Ajustes', () => {
       ['cards', ['debito', 'credito']],
       ['wallet', ['qr']],
     ])
-  })
-})
-
-describe('cierre del día: «Cuándo entra»', () => {
-  const methods = [
-    { id: 'efectivo', arrival: { key: 'now:caja', order: '0', label: 'Entra a Caja' } },
-    { id: 'qr', arrival: { key: 'pending:mp', order: '1', label: 'En camino a Mercado Pago' } },
-    {
-      id: 'transfer',
-      arrival: { key: 'pending:mp', order: '1', label: 'En camino a Mercado Pago' },
-    },
-    {
-      id: 'credito',
-      arrival: { key: 'due:2026-10-17', order: '2:2026-10-17', label: 'Llega el sáb 17/10' },
-    },
-    {
-      id: 'debito',
-      arrival: { key: 'due:2026-10-08', order: '2:2026-10-08', label: 'Llega el jue 08/10' },
-    },
-    {
-      id: 'rappi',
-      arrival: { key: 'due:2026-10-21', order: '2:2026-10-21', label: 'Llega el mié 21/10' },
-    },
-    {
-      id: 'pedidosya',
-      arrival: { key: 'due:2026-10-21', order: '2:2026-10-21', label: 'Llega el mié 21/10' },
-    },
-  ]
-  const amounts: Record<string, number> = {
-    efectivo: 35_000_000,
-    qr: 22_000_000,
-    transfer: 18_000_000,
-    credito: 33_000_000,
-    debito: 41_000_000,
-    rappi: 6_000_000,
-    pedidosya: 15_000_000,
-  }
-  const amountOf = (id: string) => amounts[id] ?? 0
-
-  it('suma por lugar y fecha, y ordena: lo que ya está, lo que está en camino y lo que llega', () => {
-    const lines = closeArrivals(methods, amountOf, { methodId: 'efectivo', countedCents: null })
-    expect(lines).toEqual([
-      { key: 'now:caja', label: 'Entra a Caja', cents: 35_000_000 },
-      { key: 'pending:mp', label: 'En camino a Mercado Pago', cents: 40_000_000 },
-      { key: 'due:2026-10-08', label: 'Llega el jue 08/10', cents: 41_000_000 },
-      { key: 'due:2026-10-17', label: 'Llega el sáb 17/10', cents: 33_000_000 },
-      { key: 'due:2026-10-21', label: 'Llega el mié 21/10', cents: 21_000_000 },
-    ])
-    // Nada se pierde ni se inventa: suma lo mismo que lo cargado.
-    const total = Object.values(amounts).reduce((sum, v) => sum + v, 0)
-    expect(lines.reduce((sum, l) => sum + l.cents, 0)).toBe(total)
-  })
-
-  it('si se contó el efectivo, a la caja entra lo contado (lo que registra el asiento)', () => {
-    const lines = closeArrivals(methods, amountOf, {
-      methodId: 'efectivo',
-      countedCents: 34_950_000,
-    })
-    expect(lines[0]).toEqual({ key: 'now:caja', label: 'Entra a Caja', cents: 34_950_000 })
-  })
-
-  it('lo que no tiene importe no figura', () => {
-    const lines = closeArrivals(methods, (id) => (id === 'qr' ? 100 : 0), {
-      methodId: 'efectivo',
-      countedCents: null,
-    })
-    expect(lines).toEqual([{ key: 'pending:mp', label: 'En camino a Mercado Pago', cents: 100 }])
   })
 })
 
@@ -329,18 +264,104 @@ describe('cierre del día: el total del sistema de caja', () => {
   })
 })
 
-describe('cierre del día: el objetivo', () => {
-  it('sin objetivo (o en cero) no se muestra', () => {
-    expect(targetProgress(null, 1_000_00)).toBeNull()
-    expect(targetProgress(0, 1_000_00)).toBeNull()
+describe('cierre del día: lo que se calcula solo', () => {
+  const invoiced = [{ totalCents: 145_000_000, vatRateBp: 2100 as const, creditNote: false }]
+  /** Lo facturado sin IVA, igual que en el prototipo: 1.450.000 / 1,21. */
+  const NET = 119_834_711
+
+  it('IVA, Ingresos Brutos y Comercio e Industria, con su porcentaje', () => {
+    const view = closeTaxView({
+      invoiced,
+      invoicedNetCents: NET,
+      uninvoicedCents: 91_500_000,
+      settings: DEFAULT_TAX_SETTINGS,
+    })
+    expect(view.vat).toEqual([{ key: 'vat-2100', label: 'IVA 21 %', cents: 25_165_289 }])
+    expect(view.accrued).toEqual([
+      { key: 'iibb', label: 'Ingresos Brutos 3 %', cents: 3_595_041 },
+      { key: 'municipal', label: 'Comercio e Industria 0,7 %', cents: 838_843 },
+    ])
+    expect(view.base).toBe('invoiced_net')
   })
 
-  it('el avance es lo vendido ese día contra el objetivo', () => {
-    expect(targetProgress(200_000_000, 170_000_000)).toEqual({
-      targetCents: 200_000_000,
-      percent: 85,
+  it('sobre todo lo vendido, si así lo eligieron en Ajustes', () => {
+    const view = closeTaxView({
+      invoiced,
+      invoicedNetCents: NET,
+      uninvoicedCents: 80_165_289,
+      settings: { ...DEFAULT_TAX_SETTINGS, base: 'all_sales' },
     })
-    expect(targetProgress(100_000_00, 0)?.percent).toBe(0)
+    expect(view.accrued[0]?.cents).toBe(6_000_000)
+    expect(view.base).toBe('all_sales')
+  })
+
+  it('una nota de crédito resta IVA; cada alícuota, su renglón', () => {
+    const view = closeTaxView({
+      invoiced: [
+        { totalCents: 121_000, vatRateBp: 2100, creditNote: false },
+        { totalCents: 12_100, vatRateBp: 2100, creditNote: true },
+        { totalCents: 110_500, vatRateBp: 1050, creditNote: false },
+        { totalCents: 50_000, vatRateBp: 0, creditNote: false },
+      ],
+      invoicedNetCents: 0,
+      uninvoicedCents: 0,
+      settings: DEFAULT_TAX_SETTINGS,
+    })
+    expect(view.vat).toEqual([
+      { key: 'vat-2100', label: 'IVA 21 %', cents: 18_900 },
+      { key: 'vat-1050', label: 'IVA 10,5 %', cents: 10_500 },
+    ])
+  })
+
+  it('sin nada facturado se ve la alícuota general en cero, y nada se calcula', () => {
+    const view = closeTaxView({
+      invoiced: [],
+      invoicedNetCents: 0,
+      uninvoicedCents: 91_500_000,
+      settings: DEFAULT_TAX_SETTINGS,
+    })
+    expect(view.vat).toEqual([{ key: 'vat-2100', label: 'IVA 21 %', cents: 0 }])
+    expect(view.accrued.map((line) => line.cents)).toEqual([0, 0])
+  })
+
+  it('con los impuestos apagados, o sin dato, solo queda el IVA', () => {
+    for (const settings of [{ ...DEFAULT_TAX_SETTINGS, auto: false }, null, undefined]) {
+      const view = closeTaxView({
+        invoiced,
+        invoicedNetCents: NET,
+        uninvoicedCents: 0,
+        settings,
+      })
+      expect(view.accrued).toEqual([])
+      expect(view.base).toBeNull()
+      expect(view.vat).toHaveLength(1)
+    }
+  })
+
+  it('son los mismos números que van al asiento', () => {
+    const { r, ctx, meta } = prepare(E8)
+    const close = E8.input(r)
+    const built = buildSalesClose(close, ctx, meta)
+    const summary = summarizeSalesClose(close, ctx)
+    if (!built.ok) throw new Error('el asiento no se armó')
+    const lines = built.bundle.documents[0]?.lines ?? []
+    const vatOfEntry = lines
+      .filter((line) => line.role === 'vat')
+      .reduce(
+        (sum, line) => sum + (line.side === 'credit' ? line.amountCents : -line.amountCents),
+        0,
+      )
+    const view = closeTaxView({
+      invoiced: close.invoiced.map((row) => ({
+        totalCents: row.totalCents ?? 0,
+        vatRateBp: row.vatRateBp,
+        creditNote: row.voucherType.startsWith('nota_credito'),
+      })),
+      invoicedNetCents: summary.channels.reduce((sum, c) => sum + c.invoicedNetCents, 0),
+      uninvoicedCents: summary.channels.reduce((sum, c) => sum + c.uninvoicedCents, 0),
+      settings: ctx.settings.taxSettings,
+    })
+    expect(view.vat.reduce((sum, line) => sum + line.cents, 0)).toBe(vatOfEntry)
   })
 })
 
@@ -391,7 +412,7 @@ describe('cierre del día: el ticket', () => {
           { key: 'now:caja', label: 'Entra a Caja', cents: 34_950_000 },
           { key: 'due:2026-10-08', label: 'Llega el jue 08/10', cents: 135_000_000 },
         ],
-        target: targetProgress(200_000_000, 170_000_000),
+        target: { targetCents: 200_000_000, percent: 85 },
       }),
     )
     expect(html).toContain('miércoles 07/10 · noche')
@@ -628,12 +649,12 @@ describe('cierre del día: la pantalla al entrar', () => {
         name: m.name,
         kind: m.kind,
         channel: m.channel,
+        entersTo: view.entersTo,
         destination: view.destination,
         isCash,
         group: view.group,
         payer: view.payer,
         mercadoPago: false,
-        arrival: view.arrival,
       }
     })
 
@@ -653,73 +674,134 @@ describe('cierre del día: la pantalla al entrar', () => {
         afterSaveHref: '/bar/administracion/ventas',
         afterSaveLabel: 'jueves 08/10',
         mercadoPago: null,
-        targetCents: null,
         ...overrides,
       }),
     )
 
-  it('los pasos están todos a la vista, numerados, y el efectivo contado no hay que buscarlo', () => {
+  it('la planilla: Medio, Entró a e Importe, con el total y la doble raya', () => {
     const html = render()
-    expect(methods.some((m) => m.isCash)).toBe(true)
-    for (const title of [
-      '¿Cuánto se vendió y cómo te pagaron?',
-      '¿Contaste el efectivo?',
-      '¿Qué facturaste?',
-      'Revisá y guardá',
-    ]) {
-      expect(html).toContain(title)
+    for (const column of ['Medio', 'Entró a', 'Importe', 'Total vendido']) {
+      expect(html).toContain(column)
     }
-    for (const anchor of ['paso-1', 'paso-2', 'paso-3', 'paso-4']) {
-      expect(html).toContain(`id="${anchor}"`)
-    }
-    expect(html).toContain('Efectivo contado')
-    expect(html).toContain('Saltear')
+    expect(html).toContain('adm-double-rule')
     // Un renglón por medio, con su campo.
     for (const m of methods.filter((x) => x.kind !== 'customer_account')) {
       expect(html).toContain(m.name)
+      expect(html).toContain(`>${m.entersTo}`)
     }
+    // «Entró a» viene del medio de cobro: en un cierre no se elige.
+    expect(html).not.toContain('Cuenta de Efectivo')
+    expect(html).not.toContain('<select')
   })
 
-  it('vacía no muestra ceros: el total es «—» y el ticket dice cómo se arma', () => {
+  it('sin el ticket vivo ni los pasos en tarjetas', () => {
+    const html = render()
+    expect(html).not.toContain('adm-ticket')
+    expect(html).not.toContain('paso-1')
+    expect(html).not.toContain('Ver ticket')
+    expect(html).not.toContain('Revisá y guardá')
+  })
+
+  it('el pegado de la columna de Thinkeon es una acción de arriba', () => {
+    const html = render()
+    expect(html).toContain('Pegar la columna de Thinkeon')
+    expect(html.indexOf('Pegar la columna de Thinkeon')).toBeLessThan(html.indexOf('Entró a'))
+  })
+
+  it('debajo: Con factura, Sin factura y Efectivo contado', () => {
+    const html = render()
+    for (const label of ['Con factura', 'Sin factura', 'Efectivo contado']) {
+      expect(html).toContain(label)
+    }
+    expect(html).toContain('¿Contaste el efectivo?')
+  })
+
+  it('el «Sin factura» es un número más: nada oculta ventas de los libros', () => {
+    const html = render()
+    expect(html).not.toMatch(/oculta|no registrar|no contabilizar|en negro|en blanco/i)
+    expect(html).not.toMatch(/afuera de los libros|fuera de los libros/i)
+    expect(html).not.toContain('type="checkbox"')
+  })
+
+  it('vacía no muestra ceros y el botón no invita', () => {
     const html = render()
     expect(html).not.toContain('$ 0')
-    expect(html).toContain('Cargá los importes y el ticket se arma solo.')
-    expect(html).toContain('Guardar cierre del miércoles 07/10')
+    expect(html).toContain('Cargar cierre')
+    expect(html).not.toContain('Cargar cierre ·')
     expect(html).toContain('Después sigue el del jueves 08/10.')
-    expect(html).toContain('Ver cómo queda en los libros')
-    // Plegado no muestra jerga de contadora ni un «Sin importes».
-    expect(html).not.toContain('Cuadra')
-    expect(html).not.toContain('Sin importes')
-    // El control opcional habla del sistema de caja, no de «el cierre de caja».
-    expect(html).toContain('Total que dice tu sistema de caja')
-    expect(html).not.toContain('Total del cierre de caja')
     // Sin importes, el botón de guardar no invita (sigue siendo el mismo submit).
     expect(html).toMatch(/<button(?=[^>]*type="submit")[^>]*\bbg-secondary\b/)
-    // Y los atajos a «Revisar y guardar» recién aparecen cuando hay algo que guardar.
-    expect(html).not.toContain('Revisar y guardar')
+  })
+
+  it('«Ver el asiento» va plegado: no muestra jerga de contadora ni un «Sin importes»', () => {
+    const html = render()
+    expect(html).toContain('Ver el asiento')
+    expect(html).not.toContain('Cuadra')
+    expect(html).not.toContain('Sin importes')
+  })
+
+  it('a la derecha, lo que se calcula solo, con su porcentaje y el link a Ajustes', () => {
+    const html = render({
+      ctx: { ...ctx, settings: { ...ctx.settings, taxSettings: DEFAULT_TAX_SETTINGS } },
+    })
+    expect(html).toContain('Se calcula solo')
+    expect(html).toContain('IVA 21 %')
+    expect(html).toContain('Ingresos Brutos 3 %')
+    expect(html).toContain('Comercio e Industria 0,7 %')
+    expect(html).toContain('Sobre lo facturado, sin IVA.')
+    expect(html).toContain('/bar/administracion/ajustes?tab=impuestos')
+  })
+
+  it('con los impuestos automáticos apagados lo dice, y deja el IVA', () => {
+    const html = render({
+      ctx: {
+        ...ctx,
+        settings: { ...ctx.settings, taxSettings: { ...DEFAULT_TAX_SETTINGS, auto: false } },
+      },
+    })
+    expect(html).toContain('IVA 21 %')
+    expect(html).not.toContain('Ingresos Brutos 3 %')
+    expect(html).toContain('Ingresos Brutos y Comercio e Industria no se están calculando.')
+  })
+
+  it('lo menos usado va plegado, y lo que se pliega no se dibuja', () => {
+    const html = render({
+      mercadoPago: {
+        qrMethodId: null,
+        transferMethodId: null,
+        cutoffHour: 0,
+        sasCuit: null,
+        settingsHref: '/bar/administracion/importar/mercado-pago',
+      },
+    })
+    expect(html).toContain('Completar con el reporte de Mercado Pago')
+    expect(html).toContain('Control con tu sistema de caja')
+    // Plegados: no se ve lo de adentro, y Enter no se traba en un campo que no se ve.
+    expect(html).not.toContain('Total que dice tu sistema de caja')
+    expect(html).not.toContain('Importar › Mercado Pago')
+    expect(html.split('aria-expanded="false"').length - 1).toBeGreaterThanOrEqual(3)
+  })
+
+  it('sin Mercado Pago conectado no se ofrece el reporte', () => {
+    expect(render()).not.toContain('Completar con el reporte de Mercado Pago')
   })
 
   it('sin puntos de venta explica que todo queda sin factura y a dónde ir a cargarlos', () => {
     const html = render()
     expect(html).toContain('Sin puntos de venta, todo el día queda como venta sin factura.')
-    expect(html).toContain('/bar/administracion/ajustes?tab=puntos-de-venta')
-    // «Con factura / sin factura» está siempre, también sin datos.
-    expect(html).toContain('Con factura y sin factura')
-    // Dice que igual queda registrado, y el vacío del reparto no promete un «con factura»
-    // que sin puntos de venta no se puede anotar.
     expect(html).toContain('Queda registrado igual.')
-    expect(html).toContain('mientras no tengas puntos de venta, todo del lado «sin factura»')
-    expect(html).not.toContain('cuánto fue con factura y cuánto sin factura')
+    expect(html).toContain('/bar/administracion/ajustes?tab=puntos-de-venta')
+    // Sin puntos de venta no hay rangos que anotar.
+    expect(html).not.toContain('¿Qué facturaste?')
     // A esta altura ya están cargados los importes: el link no saca de la pantalla.
     expect(html).toMatch(
       /<a(?=[^>]*href="\/bar\/administracion\/ajustes\?tab=puntos-de-venta")(?=[^>]*target="_blank")[^>]*>/,
     )
-    expect(html).toContain('Se abre en otra pestaña: no perdés lo que cargaste.')
     // Un solo libro: nada sugiere que algo queda afuera.
     expect(html).not.toMatch(/en negro|en blanco|afuera de los libros/i)
   })
 
-  it('con puntos de venta, cada uno es un renglón: desde, hasta y total; lo fijo, plegado', () => {
+  it('con varios puntos de venta, los rangos vienen abiertos: desde, hasta y total; lo fijo, plegado', () => {
     const html = render({
       salesPoints: [
         { number: 3, label: 'Salón', defaultChannel: 'salon' },
@@ -727,8 +809,10 @@ describe('cierre del día: la pantalla al entrar', () => {
       ],
       rangeDefaults: [
         { voucherType: 'factura_b', pointOfSale: 3, channel: 'salon', lastNumberTo: 19_022 },
+        { voucherType: 'factura_b', pointOfSale: 4, channel: 'delivery', lastNumberTo: 88 },
       ],
     })
+    expect(html).toContain('¿Qué facturaste?')
     // El título dice todo lo fijo con palabras de dueño: el nombre del punto de venta y el IVA.
     expect(html).toContain('Factura B')
     expect(html).toContain('0003 · Salón · IVA 21 %')
@@ -737,7 +821,7 @@ describe('cierre del día: la pantalla al entrar', () => {
     // A la vista, lo de todos los días; el «desde» ya viene puesto.
     for (const label of ['Desde', 'Hasta', 'Total (con IVA)']) expect(html).toContain(label)
     expect(html).toContain('value="19023"')
-    // La fila que nadie tocó lo dice con palabras, no solo con el borde punteado.
+    // La fila que nadie tocó lo dice con palabras.
     expect(html).toContain('Sin usar · no se guarda')
     // Comprobante, punto de venta, IVA y canal van detrás de «Cambiar»: plegados no se
     // dibujan (su valor vive en el estado de la fila), así Enter no se traba en ellos.
@@ -746,10 +830,17 @@ describe('cierre del día: la pantalla al entrar', () => {
     for (const label of ['>Comprobante<', '>Punto de venta<', '>Canal<']) {
       expect(html).not.toContain(label)
     }
-    // Con puntos de venta y sin facturas anotadas, el ticket todavía no sella «Sin factura».
-    expect(html).not.toContain('adm-stamp-in')
-    // Y el vacío del reparto es el de siempre.
-    expect(html).toContain('cuánto fue con factura y cuánto sin factura')
+    // Con varias filas, «Con factura» es la suma: no se escribe.
+    expect(html).not.toMatch(/<label[^>]*>Con factura/)
+  })
+
+  it('con un solo punto de venta, «Con factura» se escribe y los rangos quedan plegados', () => {
+    const html = render({
+      salesPoints: [{ number: 3, label: 'Salón', defaultChannel: 'salon' }],
+    })
+    expect(html).toMatch(/<label[^>]*>Con factura/)
+    expect(html).toContain('¿Qué facturaste?')
+    expect(html).not.toContain('Total (con IVA)')
   })
 
   it('con el día ya cargado muestra el cierre y recién después deja cargar otro turno', () => {
@@ -761,6 +852,8 @@ describe('cierre del día: la pantalla al entrar', () => {
     // Lo que sigue es la acción principal: el próximo día que falta.
     expect(html).toContain('Cargar el del jueves 08/10')
     expect(html).toContain('href="/bar/administracion/ventas"')
+    // Cómo se corrige: anular y cargar de nuevo.
+    expect(html).toContain('Abrí el cierre y anulalo')
     // El formulario no se abre solo.
     expect(html).not.toContain('¿Cuánto se vendió y cómo te pagaron?')
   })
@@ -778,6 +871,6 @@ describe('cierre del día: la pantalla al entrar', () => {
     const html = render({ methods: [] })
     expect(html).toContain('Primero decime cómo cobrás')
     expect(html).toContain('/bar/administracion/ajustes?tab=medios')
-    expect(html).not.toContain('Revisá y guardá')
+    expect(html).not.toContain('Se calcula solo')
   })
 })

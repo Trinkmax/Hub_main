@@ -64,7 +64,8 @@ export function SupplierEditButton({
   'aria-label'?: string
 }) {
   const edit = useSupplierEdit()
-  if (!edit) return null
+  // Sin el diálogo montado no hay nada que abrir: un chip se lee como texto.
+  if (!edit) return chip ? children : null
   if (chip) {
     return (
       <button type="button" onClick={edit.open} aria-label={ariaLabel} className={className}>

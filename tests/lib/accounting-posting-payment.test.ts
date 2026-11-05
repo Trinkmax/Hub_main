@@ -24,6 +24,16 @@ describe('orden de pago: los golden de E.5.5', () => {
     })
   }
 
+  it('un pago puede dejar pagado un gasto fijo (Rentas, Municipalidad)', () => {
+    const { r, ctx, meta } = prepare(E7)
+    const recurring = '00000000-0000-4000-8000-000000000abc'
+    const linked = buildPayment({ ...E7.input(r), recurringExpenseId: recurring }, ctx, meta)
+    expect(linked.ok && linked.bundle.documents[0]?.recurringExpenseId).toBe(recurring)
+    // Sin pedirlo, ningún pago se liga a nada.
+    const plain = buildPayment(E7.input(r), ctx, meta)
+    expect(plain.ok && plain.bundle.documents[0]?.recurringExpenseId).toBeNull()
+  })
+
   it('sin facturas elegidas es un pago a cuenta contra la cuenta «le debemos» del proveedor', () => {
     const { r, ctx, meta } = prepare()
     const result = buildPayment(

@@ -448,6 +448,63 @@ describe('DEFAULT_BANK_RULES (la tabla maestra de banco.md §2.10)', () => {
     }
   })
 
+  it('los textos habituales de BBVA, Nación y Mercado Pago se reconocen solos', () => {
+    const samples: ReadonlyArray<readonly [string, number]> = [
+      // Impuesto al cheque (Ley 25.413, débitos y créditos).
+      ['Impuesto al cheque', 1],
+      ['IMP. AL CHEQUE', 1],
+      ['IMP LEY 25413 S/DEBITOS', 1],
+      ['IMP.LEY 25413 ALIC. GENERAL S/DEB', 1],
+      ['GRAVAMEN LEY 25413 S/DEB', 1],
+      ['IMPUESTO 25.413', 1],
+      ['Impuesto a los débitos y créditos', 1],
+      ['Impuesto sobre los créditos y débitos', 1],
+      ['Débitos y créditos', 1],
+      ['IMP S/DEBITOS', 1],
+      ['IMPUESTO A LAS TRANSACCIONES FINANCIERAS', 1],
+      // Ingresos Brutos.
+      ['RETENCION SIRCREB', 2],
+      ['ING. BRUTOS SIRCREB', 2],
+      ['Retención de Ingresos Brutos', 2],
+      ['RETENCION IIBB', 2],
+      ['ING.BRUTOS S/ CRED', 2],
+      ['Retención IIBB SIRTAC', 2],
+      ['PERCEPCION IIBB', 2],
+      // Percepción de IVA.
+      ['R.G. 2408', 3],
+      ['Percepción de IVA', 3],
+      ['RETENCION I.V.A. RG 2408', 3],
+      // IVA de la comisión.
+      ['IVA TASA GENERAL', 4],
+      ['I.V.A. REDUCIDO', 4],
+      ['IVA sobre la comisión', 4],
+      // Comisiones.
+      ['COM.MANT.CTA.CTE', 6],
+      ['COM. MOVIMIENTOS', 6],
+      ['Comisión de Mercado Pago', 6],
+      ['Costo de Mercado Pago', 6],
+      ['SERVICIO DE CUENTA', 6],
+      ['Cargo por transferencia', 6],
+    ]
+    for (const [description, rule] of samples) {
+      expect({ description, rule: classifyDescription(description, 'D').id }).toEqual({
+        description,
+        rule,
+      })
+    }
+  })
+
+  it('lo que solo se parece no entra: un pago de un impuesto no es el impuesto al cheque', () => {
+    expect(classifyDescription('PAGO VEP AFIP', 'D').category).toBe('arca')
+    expect(classifyDescription('PAGO INGRESOS BRUTOS RENTAS', 'D').category).toBe('prov_munic')
+    // Una devolución entra plata: no es un gasto del banco.
+    expect(classifyDescription('DEVOLUCION IMPUESTO LEY 25413', 'C').category).toBe('reverso')
+    // «Cheque» a secas tampoco es el impuesto.
+    expect(classifyDescription('DEPOSITO DE CHEQUE', 'D').category).not.toBe('ley25413')
+    // Una compra en una distribuidora que se llama parecido.
+    expect(classifyDescription('TRANSF A IMPORTADORA DEL SUR', 'D').category).toBe('transf_out')
+  })
+
   it('el sentido sale del importe, nunca del texto', () => {
     expect(bankDirectionOf(-1)).toBe('D')
     expect(bankDirectionOf(1)).toBe('C')

@@ -1,7 +1,7 @@
 /**
- * «Cómo se usa Administración»: el contenido del instructivo (rediseño de oct 2026), en datos.
+ * «Cómo se usa Administración»: el contenido de la guía, en datos.
  *
- * - El MAPA: cinco estaciones, siempre en el mismo orden, y qué mueve cada una en la plata.
+ * - DÓNDE ESTÁ CADA COSA: las seis secciones del menú, el engranaje y «+ Cargar».
  * - Las RECETAS: una por situación («Cerré la caja de ayer»), de 3 a 5 pasos de una oración.
  * - CON FACTURA Y SIN FACTURA: los cuatro papeles y qué cambia con cada uno.
  * - CÓMO SE VINCULA cada cosa: qué es, dónde se hace, qué pasa si no y cómo se deshace.
@@ -61,112 +61,54 @@ export const GUIDE_PATHS = {
  * el código de su pantalla: si una pantalla cambia un nombre, el test avisa y se cambian las dos
  * cosas juntas. Mejor una guía que repite un nombre feo que una que promete un botón que no está.
  *
- * Los títulos de las hojas y las tarjetas del lanzador no están acá: salen de `ACTION_TITLES` y
+ * Los títulos de las hojas y las opciones de «+ Cargar» no están acá: salen de `ACTION_TITLES` y
  * `LAUNCHER_ITEMS`, que ya son la fuente de las pantallas.
  */
 export const SCREEN_LABELS = {
   /** El cierre del día (`ventas/cierre`). */
   cierre: {
-    title: 'Cierre del día',
-    methods: '¿Cuánto se vendió y cómo te pagaron?',
-    counted: '¿Contaste el efectivo?',
-    invoiced: '¿Qué facturaste?',
-    total: 'Total vendido',
+    counted: 'Efectivo contado',
     withInvoice: 'Con factura',
     withoutInvoice: 'Sin factura',
-    /** Sigue el día: «Guardar cierre del miércoles 07/10». */
-    save: 'Guardar cierre del',
-    otherShift: 'Cargar otro turno',
+    total: 'Total vendido',
+    /** Sigue el importe: «Cargar cierre · $ 1.450.000». */
+    save: 'Cargar cierre',
   },
-  /** La hoja «Nuevo gasto». */
-  gasto: {
-    amount: '¿Cuánto gastaste?',
-    target: '¿En qué se gastó?',
-    treasury: '¿Con qué pagaste?',
-    paper: '¿Qué papel te dieron?',
-    paperNone: 'Remito o nada',
-    remito: 'Agregar n.º de remito',
-    another: 'Cargar otro después',
-    /** Sigue el importe: «Cargar gasto · $ 12.500». */
-    save: 'Cargar gasto',
-    books: 'Ver cómo queda en los libros',
-    duplicate: 'Ver el que ya está',
-    remember: 'Usar siempre para',
-    /** Lo elegido en «¿En qué se gastó?», cuando es un gasto fijo: «Gasto fijo «Alquiler»». */
-    fixedMark: 'Gasto fijo',
-    pickOther: 'Elegir otro',
-    stampA: 'Con factura A',
-    stampTicket: 'Con tique',
-    stampNone: 'Sin factura',
-    ticketNet: 'Neto',
-    ticketVat: 'Lo recuperás',
-    /** Sigue la caja: «Salen de Caja». */
-    ticketTotal: 'Salen de',
-    noteA: 'Entra al Libro IVA y recuperás el IVA. Con el proveedor no queda deuda.',
-    noteNone: 'Queda en tus números, sin factura. No entra al Libro IVA.',
-    saved: 'Gasto cargado',
-  },
-  /** La compra que queda a pagar (`compras/nueva`): cuatro preguntas y el ticket al costado. */
+  /** Compra y Compra y pago (`compras/nueva`). */
   compra: {
-    title: 'Cargar una compra que debo',
-    who: '¿A quién le compraste?',
-    /** Sigue lo que se le debe: «Hoy le debés $ 42.500». */
-    owedToday: 'Hoy le debés',
-    change: 'Cambiar',
-    paper: '¿Qué papel te dieron?',
-    paperNone: 'Remito o nada',
-    otherPaper: 'Es otro papel',
-    notPurchase: '¿No es una compra?',
-    creditNote: 'Es una nota de crédito',
-    debitNote: 'Es una nota de débito',
-    /** El rótulo largo: sigue en «Otro papel» y en la ficha del proveedor. */
-    typeNone: 'Remito u otro comprobante (sin factura)',
+    who: 'Proveedor',
+    paperNone: 'Remito',
     number: 'Punto de venta y número',
     remito: 'N.º de remito',
-    amount: '¿Cuánto es?',
-    total: 'Total del papel',
-    payWhen: '¿Cuándo le pagás?',
-    payLater: 'Más adelante: lo debo',
-    payLaterNote: 'Queda anotado en su libreta hasta que le pagues.',
-    paidNow: 'Ya lo pagué',
-    paidNowNote: 'Sale de la caja ahora. No queda deuda.',
-    due: '¿Cuándo vence?',
-    dueSameDay: 'El mismo día',
+    due: 'Vence',
+    owe: 'La debo',
+    paid: 'Ya la pagué',
+    from: 'Salió de',
+    entry: 'Ver el asiento',
+    notPurchase: '¿No es una compra?',
+    creditNote: 'Es una nota de crédito',
     /** Sigue el importe: «Cargar compra · $ 84.000». */
     save: 'Cargar compra',
-    /** El mismo botón con «Ya lo pagué» elegido. */
-    saveAndPay: 'Cargar y pagar',
-    recurring: '¿Es un gasto fijo?',
-    corrects: '¿Qué compra corrige?',
+    savePaid: 'Cargar compra y pago',
+  },
+  /** El panel de la foto, al lado de la carga. */
+  foto: {
+    scan: 'Escanealo y sacale la foto',
+    drop: 'O arrastrá la foto o el PDF acá.',
   },
   /** La hoja «Pagar»: primero a quién, después qué y con qué. */
   pagar: {
-    description: 'A quién, qué le pagás y con qué.',
     who: '¿A quién le pagás?',
     urgent: 'Lo más urgente',
-    owes: 'Le debés',
-    search: 'Buscar otro proveedor',
     notSupplier: '¿No es a un proveedor?',
     fixed: 'Un gasto fijo',
     invoices: '¿Qué le pagás?',
-    overdue: 'Lo vencido',
-    all: 'Todo',
-    credit: 'A tu favor',
-    treasury: '¿Con qué pagás?',
+    from: 'Salió de',
     partial: 'Pagar solo una parte',
   },
-  /** La hoja «Registrar un cobro»: tres pasos. */
+  /** La hoja «Registrar un cobro». */
   cobrar: {
-    who: '¿Quién te pagó?',
-    step: '¿Cuánto te entró y a dónde?',
     amount: '¿Cuánto te entró?',
-    into: '¿A dónde entró?',
-    day: '¿Qué día entró?',
-    sales: '¿De qué ventas es y qué te descontaron?',
-    pending: 'Ventas pendientes',
-    discounted: 'Te descontaron',
-    deductions: '¿En qué te lo descontaron?',
-    estimated: 'Estimado',
     explainFee: 'Es comisión',
     explainOther: 'Son otros cargos',
     explainUnknown: 'No sé qué es',
@@ -185,10 +127,6 @@ export const SCREEN_LABELS = {
     matches: 'Sí, coincide',
     /** El botón cuando falta o sobra. */
     save: 'Guardar la diferencia',
-    /** El resultado: «Faltan» y el número grande, en ámbar. */
-    missing: 'Faltan',
-    /** Sigue: «…y el sistema pasa a decir $ 285.000.» */
-    shortage: 'Queda anotado como faltante de caja',
     bankFees: 'Son gastos del banco',
   },
   /** Las subidas de archivos y la revisión de lo que se subió (`importar`). */
@@ -215,64 +153,54 @@ export const SCREEN_LABELS = {
   },
   /** Un comprobante abierto (`comprobantes/[id]`). */
   comprobante: {
-    fix: '¿Hay algo mal?',
     void: 'Anular',
     voidToday: 'Anular con fecha de hoy',
     voidNote: 'Queda anulado con tu nombre y el motivo (no se borra) y deja de contar en los',
     cancel: 'Cancelar',
     separate: 'Separar',
-    /** El botón del renglón «en camino» del cierre (antes «Ya llegó»). */
-    arrived: 'Anotar que llegó',
   },
   /** Gastos fijos: la planilla del mes. */
   gastosFijos: {
-    title: 'Gastos fijos',
-    /** Sigue el mes: «Te falta de gasto fijo · octubre». */
-    pending: 'Te falta de gasto fijo',
-    next: 'Lo que sigue',
-    pay: 'Pagar',
-    /** Sigue el día: «Pagado el 08/10». */
-    paid: 'Pagado el',
+    add: 'Agregar gasto fijo',
+    from: 'Salió de',
+    /** Sigue el importe: «Cargar pago · $ 850.000». */
+    save: 'Cargar pago',
     bill: 'Me llegó la factura y la pago después',
     skip: 'Este mes no se paga',
-    unskip: 'Sí se paga este mes',
-    /** Pagaste menos de lo calculado: «Calculabas $ X y pagaste $ Y. ¿Era eso?» */
-    ask: '¿Era eso?',
-    /** Sigue el importe: «Sí, dejar $ 170.000». */
-    keep: 'Sí, dejar',
-    fill: 'Completar la planilla',
-    restore: 'Volver a dejarlo pendiente',
   },
-  /** La hoja de un proveedor (`compras/proveedores/[id]`). */
-  proveedor: {
-    edit: 'Editar datos',
-    voucher: '¿Qué papel te da?',
-    applyCredit: 'Usarlo ahora',
+  /** Sueldos: la planilla del mes. */
+  sueldos: {
+    add: 'Agregar empleado',
+    advance: 'Adelanto',
+    pay: 'Pagar',
+    /** Sigue el mes: «Devengar noviembre». */
+    accrue: 'Devengar',
+    leave: 'Dar de baja',
   },
-  /** El fin de mes (`libros/cierres`): tres pasos. */
+  /** El Plan de la semana. */
+  semana: {
+    budget: 'Presupuesto',
+    bring: 'Traer lo vencido',
+    copy: 'Copiar la semana pasada',
+    month: 'Ver el mes',
+  },
+  /** Caja: cuánto hay en cada cuenta. */
+  caja: {
+    in: 'Entró plata',
+    out: 'Salió plata',
+    add: 'Agregar cuenta',
+    transfer: 'Transferir a otra cuenta',
+  },
+  /** El cierre de mes (`libros/cierres`). */
   cierreMes: {
-    title: 'Fin de mes',
-    review: 'Revisá los avisos',
-    closes: 'Cierres del día',
-    purchases: 'Compras y gastos',
-    money: 'La plata',
-    papers: 'Los papeles del bar',
-    noNotices: 'Sin avisos',
-    uncounted: 'Hay cajas sin contar en',
-    /** El paso 3. */
-    send: 'Mandale los libros a tu contadora',
-    sendWhen: 'Cuando el mes esté cerrado.',
-    /** Sigue el mes: «Descargar el paquete de septiembre». */
-    package: 'Descargar el paquete',
-    message: 'Copiar el mensaje',
+    title: 'Cierre de mes',
+    download: 'Descargar los libros',
   },
-  /** Ventas. */
-  ventas: {
-    cashCheck: 'Ventas contra caja',
-  },
-  /** El Resumen. */
-  resumen: {
-    fixedLeft: 'Te falta de gasto fijo',
+  /** Lo de la contadora: reimputar y el asiento manual. */
+  contabilidad: {
+    reimpute: 'Reimputar',
+    model: 'Modelo',
+    save: 'Grabar asiento',
   },
   /** El aviso que aparece al guardar. */
   aviso: {
@@ -292,41 +220,31 @@ const S = SCREEN_LABELS
 
 // ─── Las pantallas simuladas ─────────────────────────────────────────────────
 
-/** Las tarjetas del lanzador «¿Qué querés cargar?» (las claves de `LAUNCHER_ITEMS`). */
+/** Las opciones del menú «¿Qué cargás?» (las claves de `LAUNCHER_ITEMS`). */
 export type GuideLauncherKey =
-  | 'cierre'
-  | 'gasto'
   | 'compra'
-  | 'pagar'
+  | 'compra-y-pago'
+  | 'pago'
+  | 'cierre'
+  | 'sueldo'
   | 'cobrar'
-  | 'mover'
-  | 'ajustar'
   | 'movimiento'
+  | 'banco'
+  | 'ajustar'
 
 export type PaperId = 'factura_a' | 'factura_bc' | 'tique' | 'sin'
 
-/** Qué dibuja cada pantalla simulada (las arma `guias/uso/mock-scenes.tsx`). */
+/**
+ * Qué dibuja cada pantalla simulada (las arma `guias/uso/mock-scenes.tsx`). Son pocas a propósito:
+ * el menú y lo que no cambia. Lo demás se cuenta con palabras: dibujar cada pantalla obligaba a
+ * cambiar dos veces cada cosa.
+ */
 export type GuideScene =
   | { kind: 'launcher'; pick: GuideLauncherKey }
-  | { kind: 'close'; part: 'methods' | 'ticket' }
-  | { kind: 'expense'; focus: 'amount' | 'category' | 'paper'; paper: PaperId }
-  | { kind: 'expense-ticket'; paper: 'factura_a' | 'sin' }
-  /**
-   * La compra, en dos mitades (entera no entra en un celular): `paper` = a quién y qué papel;
-   * `pay` = cuánto es, cuándo le pagás y el botón. `remito`: con «Remito o nada» elegido.
-   */
-  | { kind: 'purchase'; paper: 'factura' | 'remito'; part: 'paper' | 'pay' }
-  /** `who`: «¿A quién le pagás?» · `what`: lo que le pagás y con qué. */
-  | { kind: 'pay'; part: 'who' | 'what' }
-  /** El cobro, en dos mitades: `amount` = cuánto entró y a dónde · `sales` = de qué ventas es. */
-  | { kind: 'collect'; part: 'amount' | 'sales' }
   | { kind: 'count' }
   | { kind: 'import'; source: 'mercado_pago' | 'arca'; phase: 'upload' | 'review' }
   | { kind: 'undo' }
   | { kind: 'void' }
-  | { kind: 'month-close' }
-  /** La planilla de gastos fijos: `due` con «Pagar» en el renglón · `paid` con el casillero tildado. */
-  | { kind: 'fixed'; state: 'due' | 'paid' }
 
 export type GuideScreen = {
   /** Corto, para el contador «Pantalla 2 de 3 · …». */
@@ -340,16 +258,22 @@ export type GuideScreen = {
 
 export const RECIPE_IDS = [
   'cierre',
-  'gasto',
   'compra',
+  'gasto',
   'sin-factura',
   'pagar-deuda',
+  'plan-semana',
   'gasto-fijo',
+  'sueldos',
   'cobro',
   'contar-caja',
   'mercado-pago',
+  'banco',
   'arca',
+  'impuestos',
   'corregir',
+  'reimputar',
+  'asiento',
   'fin-de-mes',
 ] as const
 export type RecipeId = (typeof RECIPE_IDS)[number]
@@ -377,11 +301,13 @@ export type GuideRecipe = {
   id: RecipeId
   /** La situación, en primera persona: «Cerré la caja de ayer». */
   title: string
-  /** El ejemplo en gris de la tarjeta. */
+  /** El ejemplo en gris. */
   hint: string
+  /** Dónde se hace, con el nombre que tiene en el menú: «+ Cargar › Compra». */
+  where: string
   frequency: RecipeFrequency
   minutes: number | null
-  /** La tarjeta del lanzador por la que se entra (el paso que la nombra la cita igual). */
+  /** La opción de «+ Cargar» por la que se entra (el paso que la nombra la cita igual). */
   launcher?: GuideLauncherKey
   /** El ítem de «Cómo arrancar» que dice si esta rutina está al día. */
   routine?: OnboardingItemId
@@ -409,6 +335,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     id: 'cierre',
     title: 'Cerré la caja de ayer',
     hint: 'Lo que se vendió y cómo te pagaron',
+    where: '+ Cargar › Cierre del día',
     frequency: 'daily',
     minutes: 5,
     launcher: 'cierre',
@@ -418,115 +345,132 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         text: 'Tené a mano el cierre de caja de tu sistema de ventas, con el total de cada medio.',
       },
       {
-        text: 'Tocá «+ Cargar» y elegí «Cerrar el día». Se abre en el primer día que te falta.',
+        text: 'Tocá «+ Cargar» y elegí «Cierre del día». Se abre en el primer día que te falta.',
         screen: 0,
       },
       {
-        text: 'Escribí cuánto se cobró con cada medio: efectivo, Mercado Pago, tarjetas y apps de delivery.',
-        screen: 1,
+        text: 'Escribí cuánto se cobró con cada medio, o pegá la columna entera en el primero.',
       },
-      { text: 'Si contaste el efectivo, anotalo. Si facturaste, cargá los números y el total.' },
       {
-        text: 'Revisá el ticket: tiene que dar lo mismo que tu cierre de caja. Tocá «Guardar cierre», que dice el día.',
-        screen: 2,
+        text: `Si contaste el efectivo, anotalo en «${S.cierre.counted}». Si facturaste, cargá cuánto fue en «${S.cierre.withInvoice}».`,
+      },
+      {
+        text: `Revisá que «${S.cierre.total}» dé lo mismo que tu cierre de caja y tocá «${S.cierre.save}».`,
       },
     ],
     screens: [
       {
-        title: 'Elegí «Cerrar el día»',
-        label:
-          'El lanzador «¿Qué querés cargar?» con ocho opciones. Está marcada la primera, «Cerrar el día».',
+        title: 'Elegí «Cierre del día»',
+        label: 'El menú «¿Qué cargás?» con «Cierre del día» marcado.',
         scene: { kind: 'launcher', pick: 'cierre' },
-      },
-      {
-        title: 'Un importe por medio',
-        label:
-          'El cierre del día: un renglón por medio de cobro con su importe y, debajo, a dónde va esa plata. Al pie, el total.',
-        scene: { kind: 'close', part: 'methods' },
-      },
-      {
-        title: 'El ticket y guardar',
-        label:
-          'El ticket del cierre con cada medio, el total vendido y cuánto fue con factura y sin factura. Debajo, el botón «Guardar cierre» con el día, marcado.',
-        scene: { kind: 'close', part: 'ticket' },
       },
     ],
     checks: [
-      'El total del ticket es igual al total de tu cierre de caja.',
-      'Cada medio dice a dónde va: entra a la caja o llega otro día.',
-      'En el Resumen, ese día figura como cargado.',
+      'El total es igual al de tu cierre de caja.',
+      'En Ventas, ese día figura con lo vendido.',
+      'Ingresos Brutos y Comercio e Industria salieron solos, con los porcentajes de Ajustes › Impuestos.',
     ],
     troubles: [
       {
         problem: 'No me aparece ningún medio de cobro',
-        fix: 'Se cargan una sola vez. Ahí también se define a qué caja va cada uno.',
+        fix: 'Se cargan una sola vez. Ahí también se define a qué cuenta va cada uno.',
         link: { label: 'Ajustes › Medios de cobro', path: '/ajustes?tab=medios' },
       },
       {
-        problem: 'No me deja cargar lo que facturé',
-        fix: 'Falta cargar la numeración de tus facturas. Mientras tanto, el día queda entero como venta sin factura.',
-        link: { label: 'Ajustes › Puntos de venta', path: '/ajustes?tab=puntos-de-venta' },
-      },
-      {
         problem: 'Hubo dos turnos',
-        fix: `Cargá el primero. Después aparece «${S.cierre.otherShift}» para sumar el segundo.`,
+        fix: 'Cargá el primero. Después podés sumar el segundo para el mismo día.',
       },
       {
         problem: 'Ya lo guardé y está mal',
         fix: 'El cierre no se edita. Abrilo, anulalo y cargalo de nuevo.',
       },
     ],
-    result: 'El efectivo entra a la caja. Lo demás queda en camino hasta que te lo depositan.',
+    result: 'El efectivo entra a la caja. Lo demás queda por cobrar hasta que te lo depositan.',
     action: { label: 'Cargar el cierre', target: { kind: 'route', path: '/ventas/cierre' } },
+  },
+  {
+    id: 'compra',
+    title: 'Me llegó una factura que pago después',
+    hint: 'Queda como deuda con el proveedor',
+    where: '+ Cargar › Compra',
+    frequency: 'daily',
+    minutes: 3,
+    launcher: 'compra',
+    steps: [
+      { text: 'Tocá «+ Cargar» y elegí «Compra».', screen: 0 },
+      {
+        text: `Donde dice «${S.foto.scan}», escaneá el QR con el celular, o arrastrá la foto. Si es factura electrónica, se completa sola.`,
+      },
+      {
+        text: `Elegí el «${S.compra.who}»: la cuenta sale sola. Marcá el papel: A, B, C, tique o remito.`,
+      },
+      { text: `Completá lo que falte: «${S.compra.number}» solo se pide en una factura.` },
+      { text: `Dejá «${S.compra.owe}», revisá «${S.compra.due}» y tocá «${S.compra.save}».` },
+    ],
+    screens: [
+      {
+        title: 'Elegí «Compra»',
+        label: 'El menú «¿Qué cargás?» con «Compra» marcada, la primera de la lista.',
+        scene: { kind: 'launcher', pick: 'compra' },
+      },
+    ],
+    checks: [
+      'En Compras y pagos › Proveedores, ese proveedor muestra lo que le debés.',
+      'La compra figura sin pagar, con su vencimiento.',
+      'En Comprobantes tiene su foto.',
+    ],
+    troubles: [
+      {
+        problem: 'La pagué en el momento',
+        fix: `Elegí «${S.compra.paid}», o entrá por «Compra y pago»: guarda la compra junto con su pago.`,
+      },
+      {
+        problem: 'Es una nota de crédito o de débito',
+        fix: `Abajo, en «${S.compra.notPurchase}», elegí «${S.compra.creditNote}» o la de débito.`,
+        link: { label: 'Cargar una nota de crédito', path: '/compras/nueva?tipo=nc' },
+      },
+      {
+        problem: 'Me avisa que ya la cargué',
+        fix: 'Mirá la que ya está. Si es la misma, no la cargues dos veces.',
+      },
+    ],
+    result: 'La caja no se mueve. Queda la deuda con el proveedor, con su vencimiento.',
+    action: { label: 'Cargar una compra', target: { kind: 'route', path: '/compras/nueva' } },
   },
   {
     id: 'gasto',
     title: 'Compré y pagué en el momento',
     hint: 'El hielo, la verdulería, un flete',
+    where: '+ Cargar › Compra y pago',
     frequency: 'daily',
     minutes: 2,
-    launcher: 'gasto',
+    launcher: 'compra-y-pago',
     steps: [
-      { text: 'Tocá «+ Cargar» y elegí «Pagué algo recién».', screen: 0 },
-      { text: 'Escribí cuánto pagaste, con el IVA incluido, tal cual dice el papel.', screen: 1 },
-      { text: 'Elegí en qué se gastó y con qué caja pagaste.', screen: 1 },
+      { text: 'Tocá «+ Cargar» y elegí «Compra y pago».', screen: 0 },
+      { text: `Sumá la foto, con el QR o arrastrándola. Elegí el «${S.compra.who}» y el papel.` },
+      { text: 'Escribí el total, con el IVA incluido, tal cual dice el papel.' },
       {
-        text: 'Elegí qué papel te dieron: Factura A, Factura B o C, tique, o remito o nada.',
-        screen: 1,
+        text: `En «${S.compra.from}» elegí la cuenta. Con banco o billetera, el impuesto al cheque se anota solo.`,
       },
-      { text: `Sacale una foto al papel y tocá «${S.gasto.save}».`, screen: 2 },
+      { text: `Tocá «${S.compra.savePaid}»: la compra y su pago quedan juntos.` },
     ],
     screens: [
       {
-        title: 'Elegí «Pagué algo recién»',
-        label: 'El lanzador «¿Qué querés cargar?». Está marcada la opción «Pagué algo recién».',
-        scene: { kind: 'launcher', pick: 'gasto' },
-      },
-      {
-        title: 'Cuánto, en qué, con qué y el papel',
-        label:
-          'La hoja del gasto: el importe, en qué se gastó, con qué caja se pagó y los cuatro papeles para elegir. Está marcado el papel.',
-        scene: { kind: 'expense', focus: 'paper', paper: 'factura_a' },
-      },
-      {
-        title: 'El ticket y guardar',
-        label: `Un ticket chico que dice de qué caja sale la plata, el proveedor, la categoría y el sello «${S.gasto.stampA}». Debajo, el botón «${S.gasto.save}» con el importe, marcado.`,
-        scene: { kind: 'expense-ticket', paper: 'factura_a' },
+        title: 'Elegí «Compra y pago»',
+        label: 'El menú «¿Qué cargás?» con «Compra y pago» marcada.',
+        scene: { kind: 'launcher', pick: 'compra-y-pago' },
       },
     ],
     checks: [
-      'El ticket dice de qué caja sale la plata y cuánto.',
-      'El sello dice «Con factura», «Con tique» o «Sin factura», según el papel.',
-      'El saldo de esa caja bajó por ese importe.',
+      'El saldo de esa cuenta bajó por ese importe.',
+      'En Comprobantes figura con la marca de su papel.',
+      'Con el proveedor no quedó deuda.',
     ],
     troubles: [
       {
         problem: 'Siempre me pregunta en qué se gastó',
-        fix: `Tildá «${S.gasto.remember}» ese proveedor. La próxima vez ya viene elegido.`,
-      },
-      {
-        problem: 'Me avisa que ya lo cargué',
-        fix: `Tocá «${S.gasto.duplicate}». Si es el mismo, no lo guardes dos veces.`,
+        fix: 'La categoría sale del proveedor: en su ficha elegí en qué le comprás y ya viene puesta.',
+        link: { label: 'Compras y pagos › Proveedores', path: '/compras' },
       },
       {
         problem: 'Me pide la CUIT del proveedor',
@@ -537,128 +481,32 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         fix: 'Tocá «Deshacer» en el aviso de abajo. Si ya se fue, mirá «Me equivoqué y quiero corregir».',
       },
     ],
-    result: 'Sale la plata de la caja y el gasto queda en su categoría, con su papel.',
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
-  },
-  {
-    id: 'compra',
-    title: 'Me llegó una factura que pago después',
-    hint: 'Queda como deuda con el proveedor',
-    frequency: 'daily',
-    minutes: 3,
-    launcher: 'compra',
-    steps: [
-      {
-        text: `Tocá «+ Cargar» y elegí «Me llegó una factura o un remito y lo pago después». Se abre «${S.compra.title}».`,
-        screen: 0,
-      },
-      {
-        text: `Elegí el proveedor. En «${S.compra.paper}» tocá el que tenés en la mano y escribí su número.`,
-        screen: 1,
-      },
-      {
-        text: `En «${S.compra.amount}» escribí el total, tal cual figura en el papel.`,
-        screen: 2,
-      },
-      {
-        text: `En «${S.compra.payWhen}» dejá «${S.compra.payLater}», elegí cuándo vence y tocá «${S.compra.save}».`,
-        screen: 2,
-      },
-      { text: 'El día que la pagues, entrá por «Pago algo que debía» y tildala.' },
-    ],
-    screens: [
-      {
-        title: 'Elegí «…lo pago después»',
-        label:
-          'El lanzador «¿Qué querés cargar?». Está marcada la opción «Me llegó una factura o un remito y lo pago después».',
-        scene: { kind: 'launcher', pick: 'compra' },
-      },
-      {
-        title: `El proveedor y «${S.compra.paper}»`,
-        label: `La pantalla «${S.compra.title}»: el proveedor elegido con lo que le debés hoy y, en «${S.compra.paper}», las cuatro tarjetas de papel con «Factura A» elegida y marcada. Debajo, el punto de venta y el número.`,
-        scene: { kind: 'purchase', paper: 'factura', part: 'paper' },
-      },
-      {
-        title: 'El total, cuándo le pagás y guardar',
-        label: `La misma pantalla, más abajo: el total del papel; «${S.compra.payWhen}» con «${S.compra.payLater}» elegido, y cuándo vence. Al pie, el botón «${S.compra.save}» con el importe, marcado.`,
-        scene: { kind: 'purchase', paper: 'factura', part: 'pay' },
-      },
-    ],
-    checks: [
-      'En Compras y pagos, el proveedor muestra lo que le debés.',
-      'La compra figura sin pagar, con su vencimiento.',
-      'El Resumen la suma en lo que tenés que pagar.',
-    ],
-    troubles: [
-      {
-        problem: 'La pagué en el momento',
-        fix: `En «${S.compra.payWhen}» elegí «${S.compra.paidNow}» y con qué caja: el botón pasa a decir «${S.compra.saveAndPay}» y guarda la compra con su pago.`,
-      },
-      {
-        problem: 'Es un gasto fijo, como el alquiler',
-        fix: `Si ese proveedor tiene un gasto fijo de este mes, te pregunta «${S.compra.recurring}». Elegilo y el renglón queda cargado.`,
-      },
-      {
-        problem: 'No es una factura, es un remito',
-        fix: `En «${S.compra.paper}» tocá «${S.compra.paperNone}». La deuda queda igual y no entra al Libro IVA.`,
-      },
-      {
-        problem: 'Es una nota de crédito',
-        fix: `Al pie de «${S.compra.paper}», al lado de «${S.compra.notPurchase}», tocá «${S.compra.creditNote}».`,
-      },
-    ],
-    result: 'La caja no se mueve. Queda la deuda con el proveedor, con su vencimiento.',
-    // El botón dice lo mismo que el título de la pantalla que abre.
+    result: 'Sale la plata de la cuenta y el gasto queda en su categoría, con su papel.',
     action: {
-      label: S.compra.title,
-      target: { kind: 'route', path: '/compras/nueva' },
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
     },
   },
   {
     id: 'sin-factura',
     title: 'Compré sin factura',
     hint: 'Con un remito o sin ningún papel',
+    where: '+ Cargar › Compra o Compra y pago',
     frequency: 'event',
     minutes: 2,
     steps: [
       {
-        text: `¿Lo pagaste en el momento? Entrá por «Pagué algo recién» y en «${S.gasto.paper}» elegí «${S.gasto.paperNone}».`,
-        screen: 0,
+        text: '¿Lo pagaste en el momento? Entrá por «Compra y pago». ¿Lo pagás después? Por «Compra».',
       },
-      {
-        text: `¿Lo pagás después? Entrá por «Me llegó una factura o un remito y lo pago después» y en «${S.compra.paper}» elegí «${S.compra.paperNone}».`,
-        screen: 1,
-      },
-      {
-        text: `Si el remito tiene número, anotalo en «${S.compra.remito}». Sacale una foto al papel.`,
-        screen: 1,
-      },
-      {
-        text: `Guardá. Si pagaste en el momento, el ticket lleva el sello «${S.gasto.stampNone}».`,
-        screen: 2,
-      },
+      { text: `Como papel marcá «${S.compra.paperNone}», aunque no te hayan dado ninguno.` },
+      { text: `Si tiene número, anotalo en «${S.compra.remito}». No pide punto de venta.` },
+      { text: 'Sacale una foto al papel, si hay, y guardá.' },
     ],
-    screens: [
-      {
-        title: `Si ya pagaste: «${S.gasto.paperNone}»`,
-        label: `La hoja del gasto con los cuatro papeles para elegir. Está elegido y marcado «${S.gasto.paperNone}»; debajo, «${S.gasto.remito}».`,
-        scene: { kind: 'expense', focus: 'paper', paper: 'sin' },
-      },
-      {
-        title: `Si lo pagás después: también «${S.compra.paperNone}»`,
-        label: `La pantalla «${S.compra.title}»: el proveedor elegido y, en «${S.compra.paper}», las cuatro tarjetas de papel con «${S.compra.paperNone}» elegida y marcada. Debajo, el número de remito.`,
-        scene: { kind: 'purchase', paper: 'remito', part: 'paper' },
-      },
-      {
-        title: 'El ticket con el sello',
-        label: `Un ticket chico que dice de qué caja sale la plata y lleva el sello «${S.gasto.stampNone}». Debajo, el botón «${S.gasto.save}» con el importe, marcado.`,
-        scene: { kind: 'expense-ticket', paper: 'sin' },
-      },
-    ],
+    screens: [],
     checks: [
-      'El ticket lleva el sello «Sin factura».',
       'En Compras y pagos › Comprobantes aparece con la marca «Sin factura».',
       'Queda en tus números igual que cualquier otra compra.',
+      'No entra al Libro IVA.',
     ],
     troubles: [
       {
@@ -671,54 +519,42 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
       {
         problem: 'Ese proveedor siempre me da remito',
-        fix: `En su ficha tocá «${S.proveedor.edit}» y en «${S.proveedor.voucher}» elegí «${S.compra.typeNone}». Así ya viene elegido.`,
-        link: { label: 'Compras y pagos › Proveedores', path: '/compras?tab=proveedores' },
+        fix: 'Decilo en su ficha y ya viene elegido.',
+        link: { label: 'Compras y pagos › Proveedores', path: '/compras' },
       },
     ],
     result: 'Queda registrado como cualquier compra. No entra al Libro IVA.',
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    action: {
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
+    },
   },
   {
     id: 'pagar-deuda',
     title: 'Pago una deuda',
     hint: 'A un proveedor al que le debés',
+    where: '+ Cargar › Pago',
     frequency: 'event',
     minutes: 1,
-    launcher: 'pagar',
+    launcher: 'pago',
     steps: [
-      { text: 'Tocá «+ Cargar» y elegí «Pago algo que debía».', screen: 0 },
-      {
-        text: `En «${S.pagar.who}» tocá al proveedor en «${S.pagar.urgent}», o buscalo debajo.`,
-        screen: 1,
-      },
-      {
-        text: `En «${S.pagar.invoices}» tildá lo que le pagás. Lo vencido y lo de esta semana ya viene tildado.`,
-        screen: 2,
-      },
-      { text: `En «${S.pagar.treasury}» elegí la caja y revisá el monto.`, screen: 2 },
-      { text: 'Tocá «Pagar», que dice cuánto sale.', screen: 2 },
+      { text: 'Tocá «+ Cargar» y elegí «Pago».', screen: 0 },
+      { text: `En «${S.pagar.who}» tocá al proveedor en «${S.pagar.urgent}», o buscalo debajo.` },
+      { text: `En «${S.pagar.invoices}» tildá lo que le pagás. Lo vencido ya viene tildado.` },
+      { text: `En «${S.pagar.from}» elegí la cuenta y revisá el importe.` },
+      { text: 'Guardá. Con banco o billetera, el impuesto al cheque se anota solo.' },
     ],
     screens: [
       {
-        title: 'Elegí «Pago algo que debía»',
-        label: 'El lanzador «¿Qué querés cargar?». Está marcada la opción «Pago algo que debía».',
-        scene: { kind: 'launcher', pick: 'pagar' },
-      },
-      {
-        title: 'A quién: lo más urgente, arriba',
-        label: `La hoja «Pagar»: bajo «${S.pagar.who}», la lista «${S.pagar.urgent}» con los proveedores a los que les debés, marcada. En el margen de cada uno, hace cuánto venció o cuándo vence; a la derecha, cuánto le debés. Debajo, el buscador y «${S.pagar.notSupplier}».`,
-        scene: { kind: 'pay', part: 'who' },
-      },
-      {
-        title: 'Lo que le pagás y con qué',
-        label: `El pago a un proveedor: bajo «${S.pagar.invoices}», tres compras con su vencimiento en el margen, dos tildadas; las cajas para elegir con qué se paga y el botón «Pagar» con el total, marcado.`,
-        scene: { kind: 'pay', part: 'what' },
+        title: 'Elegí «Pago»',
+        label: 'El menú «¿Qué cargás?» con «Pago» marcado.',
+        scene: { kind: 'launcher', pick: 'pago' },
       },
     ],
     checks: [
       'La compra pasa a figurar pagada.',
       'Bajó lo que le debés a ese proveedor.',
-      'Bajó el saldo de la caja con la que pagaste.',
+      'Bajó el saldo de la cuenta con la que pagaste.',
     ],
     troubles: [
       {
@@ -731,140 +567,177 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
       {
         problem: 'Tildé la factura equivocada',
-        fix: `Abrí el pago y tocá «${S.comprobante.separate}»: queda a favor con ese proveedor. Después pagá la correcta: el saldo a favor ya viene tildado.`,
-      },
-      {
-        problem: 'Queda una diferencia de pocos pesos',
-        fix: 'Si el resto es de hasta $ 1.000, lo podés dar por pagado ahí mismo.',
+        fix: `Abrí el pago y tocá «${S.comprobante.separate}»: queda a favor con ese proveedor. Después pagá la correcta.`,
       },
       {
         problem: 'No es a un proveedor: es el alquiler o la luz',
-        fix: `En «${S.pagar.notSupplier}» tocá «${S.pagar.fixed}» y elegilo de la lista. Mirá «Pago un gasto fijo».`,
+        fix: `En «${S.pagar.notSupplier}» tocá «${S.pagar.fixed}» y elegilo de la lista.`,
       },
     ],
-    result: 'Baja lo que debés y baja la caja de donde salió la plata.',
-    action: { label: 'Pagar una deuda', target: { kind: 'sheet', sheet: 'pagar' } },
+    result: 'Baja lo que debés y baja la cuenta de donde salió la plata.',
+    action: { label: 'Cargar un pago', target: { kind: 'sheet', sheet: 'pagar' } },
+  },
+  {
+    id: 'plan-semana',
+    title: 'Armo los pagos de la semana',
+    hint: 'Cuánto le voy a pagar a cada proveedor',
+    where: 'Compras y pagos › Plan de la semana',
+    frequency: 'weekly',
+    minutes: 10,
+    steps: [
+      { text: 'Entrá a Compras y pagos › Plan de la semana.' },
+      {
+        text: `En cada proveedor escribí en «${S.semana.budget}» cuánto le vas a pagar. Se guarda solo.`,
+      },
+      { text: `Podés «${S.semana.bring}» o «${S.semana.copy}», y después corregir.` },
+      { text: 'A medida que cargás los pagos, se va viendo lo pagado y lo que falta.' },
+    ],
+    screens: [],
+    checks: [
+      'Arriba, el presupuesto, lo pagado y lo que falta dan lo mismo que la suma de la tabla.',
+      'Cada pago de la semana aparece en su proveedor.',
+    ],
+    troubles: [
+      {
+        problem: 'Le pagué más de lo que había puesto',
+        fix: 'La tabla te avisa cuánto te pasaste. El pago queda igual.',
+      },
+      {
+        problem: '¿Y todo el mes junto?',
+        fix: `Tocá «${S.semana.month}»: las semanas una al lado de la otra.`,
+      },
+      {
+        problem: 'Es un presupuesto: ¿mueve plata?',
+        fix: 'No. Solo los pagos mueven plata; esta tabla es tu plan.',
+      },
+    ],
+    result: 'Sabés cuánto tenés pensado pagar y cuánto falta, proveedor por proveedor.',
+    action: {
+      label: 'Ir al Plan de la semana',
+      target: { kind: 'route', path: '/compras/semana' },
+    },
   },
   {
     id: 'gasto-fijo',
     title: 'Pago un gasto fijo',
     hint: 'El alquiler, la luz, internet',
+    where: 'Gastos y sueldos › Gastos fijos',
     frequency: 'event',
     minutes: 2,
     steps: [
-      {
-        // Arriba, en «Lo que sigue», está el botón grande del que vence primero; cada renglón
-        // tiene el suyo. Los dos abren lo mismo.
-        text: `En Gastos fijos, tocá «${S.gastosFijos.pay}»: arriba, en «${S.gastosFijos.next}», o en su renglón. Se abre «Nuevo gasto» con ese gasto fijo ya elegido.`,
-        screen: 0,
-      },
-      {
-        text: 'Revisá el importe y con qué caja pagás. Si el gasto fijo tiene monto, ya viene puesto.',
-        screen: 1,
-      },
-      { text: `Elegí qué papel te dieron y tocá «${S.gasto.save}».`, screen: 1 },
-      {
-        text: `En Gastos fijos, el casillero queda tildado y el renglón dice «${S.gastosFijos.paid}», con el día.`,
-        screen: 2,
-      },
+      { text: 'Entrá a Gastos y sueldos › Gastos fijos y buscá el renglón.' },
+      { text: `Tildalo: se abre para elegir «${S.gastosFijos.from}» y qué papel te dieron.` },
+      { text: 'Si tenés el comprobante, sumá la foto. También con el QR.' },
+      { text: `Tocá «${S.gastosFijos.save}»: el renglón queda pagado y arriba baja lo que falta.` },
     ],
-    screens: [
-      {
-        title: `«${S.gastosFijos.pay}», arriba o en el renglón`,
-        label: `La planilla de gastos fijos del mes: arriba, «${S.gastosFijos.pending}» con el importe y, adentro, «${S.gastosFijos.next}»: el alquiler, vencido, con el botón grande «${S.gastosFijos.pay}» y su importe, marcado. Debajo, los renglones agrupados por el día en que vencen, cada uno con su casillero, su monto y su «${S.gastosFijos.pay}». La heladera muestra sus cuotas en puntitos.`,
-        scene: { kind: 'fixed', state: 'due' },
-      },
-      {
-        title: 'El gasto, con el gasto fijo ya elegido',
-        label: `La hoja «Nuevo gasto»: el importe ya viene puesto y, en «${S.gasto.target}», figura el alquiler con la marca de gasto fijo (marcado). Debajo, con qué caja se paga y los cuatro papeles.`,
-        scene: { kind: 'expense', focus: 'category', paper: 'factura_bc' },
-      },
-      {
-        title: 'El renglón queda tildado',
-        label: `La misma planilla después de pagar: el casillero del alquiler está tildado y el renglón dice «${S.gastosFijos.paid}» con el día (marcado). «${S.gastosFijos.pending}» bajó y «${S.gastosFijos.next}» ya nombra la luz.`,
-        scene: { kind: 'fixed', state: 'paid' },
-      },
-    ],
+    screens: [],
     checks: [
-      `En Gastos fijos, ese renglón quedó tildado y dice «${S.gastosFijos.paid}», con el día.`,
-      'Su próximo vencimiento pasó al mes que viene.',
-      `En el Resumen bajó «${S.resumen.fixedLeft}».`,
+      'El renglón quedó tildado, con la marca de pagado.',
+      'Arriba, el total pagado subió y lo que falta bajó.',
+      'Bajó el saldo de la cuenta con la que pagaste.',
     ],
     troubles: [
       {
         problem: 'Me llegó la factura y la pago más adelante',
-        fix: `En Gastos fijos, abrí el renglón y tocá «${S.gastosFijos.bill}». Queda como deuda hasta que la pagues.`,
+        fix: `En su renglón, tocá «${S.gastosFijos.bill}». Queda como deuda hasta que la pagues.`,
         link: { label: 'Gastos fijos', path: '/gastos-fijos' },
       },
       {
-        problem: 'Lo cargué sin elegir el gasto fijo',
-        fix: 'Hoy no se puede vincular después. Anulá esa carga y hacela de nuevo desde el renglón del gasto fijo.',
-      },
-      {
         problem: 'Este mes no lo pago',
-        fix: `En Gastos fijos, abrí el renglón y tocá «${S.gastosFijos.skip}». Si te arrepentís, ahí mismo está «${S.gastosFijos.unskip}».`,
+        fix: `En su renglón, tocá «${S.gastosFijos.skip}». Después lo podés volver a dejar pendiente.`,
       },
       {
         problem: 'Pagué otro monto',
-        fix: `Si pagaste menos, el renglón te pregunta «${S.gastosFijos.ask}». Con «${S.gastosFijos.keep}» y el importe, ese pasa a ser el monto de siempre.`,
-      },
-      {
-        problem: 'Tengo muchos sin monto ni día',
-        fix: `Tocá «${S.gastosFijos.fill}»: los completás todos de corrido, sin abrir uno por uno.`,
+        fix: 'Escribí el monto del mes en la celda del renglón.',
       },
     ],
-    result: 'Sale la plata de la caja y el gasto fijo queda pago este mes.',
+    result: 'Sale la plata de la cuenta y el gasto fijo queda pago este mes.',
     action: { label: 'Ir a Gastos fijos', target: { kind: 'route', path: '/gastos-fijos' } },
   },
   {
+    id: 'sueldos',
+    title: 'Pago un sueldo o un adelanto',
+    hint: 'Cuánto le debo a cada empleado',
+    where: 'Gastos y sueldos › Sueldos',
+    frequency: 'event',
+    minutes: 2,
+    launcher: 'sueldo',
+    steps: [
+      {
+        text: 'Tocá «+ Cargar» y elegí «Adelanto o sueldo», o entrá a Gastos y sueldos › Sueldos.',
+        screen: 0,
+      },
+      { text: `La primera vez, tocá «${S.sueldos.add}» y cargale su sueldo.` },
+      {
+        text: `En su renglón tocá «${S.sueldos.advance}» o «${S.sueldos.pay}» y elegí de qué cuenta salió.`,
+      },
+      { text: 'El saldo dice cuánto le debés a fin de mes: el sueldo menos lo que ya le pagaste.' },
+      { text: `A fin de mes, tocá «${S.sueldos.accrue}»: el sueldo del mes queda en los libros.` },
+    ],
+    screens: [
+      {
+        title: 'Elegí «Adelanto o sueldo»',
+        label: 'El menú «¿Qué cargás?» con «Adelanto o sueldo» marcado, entre las de cada tanto.',
+        scene: { kind: 'launcher', pick: 'sueldo' },
+      },
+    ],
+    checks: [
+      'El saldo de ese empleado bajó por lo que le pagaste.',
+      'Bajó el saldo de la cuenta de donde salió.',
+      'En Gastos fijos, los sueldos suman en el total del mes.',
+    ],
+    troubles: [
+      {
+        problem: 'Le cambió el sueldo',
+        fix: 'Escribilo en la celda de su renglón: vale desde ese mes.',
+      },
+      {
+        problem: 'Se fue del bar',
+        fix: `Abrí su renglón y tocá «${S.sueldos.leave}». Lo que ya le pagaste queda registrado.`,
+      },
+      {
+        problem: '¿Y los recibos y las cargas sociales?',
+        fix: 'Los sigue llevando la contadora.',
+      },
+    ],
+    result: 'Queda cada pago en los libros y el saldo de cada empleado al día.',
+    action: { label: 'Ir a Sueldos', target: { kind: 'route', path: '/sueldos' } },
+  },
+  {
     id: 'cobro',
-    title: 'Me entró plata de una tarjeta o una app',
+    title: 'Entró plata de una tarjeta o una app',
     hint: 'Lo que te depositan después de vender',
+    where: '+ Cargar › Entró plata',
     frequency: 'event',
     minutes: 3,
     launcher: 'cobrar',
     steps: [
-      { text: 'Tocá «+ Cargar» y elegí «Me entró plata».', screen: 0 },
-      { text: 'Elegí quién te pagó: la tarjeta, la app de delivery o el cliente.', screen: 1 },
+      { text: 'Tocá «+ Cargar» y elegí «Entró plata».', screen: 0 },
+      { text: 'Elegí quién te pagó: la tarjeta, la app de delivery o el cliente.' },
       {
-        text: `En «${S.cobrar.amount}» escribí lo que ves en el banco. Elegí a qué caja entró y qué día.`,
-        screen: 1,
+        text: `En «${S.cobrar.amount}» escribí lo que ves en el banco. Elegí a qué cuenta entró y qué día.`,
       },
-      {
-        text: 'Tildá de qué ventas es. Las que ya tenían que llegar vienen tildadas.',
-        screen: 2,
-      },
+      { text: 'Tildá de qué ventas es. Las que ya tenían que llegar vienen tildadas.' },
       {
         text: `Revisá en qué te lo descontaron (la comisión y los impuestos) y tocá «${S.cobrar.save}».`,
-        screen: 2,
       },
     ],
     screens: [
       {
-        title: 'Elegí «Me entró plata»',
-        label: 'El lanzador «¿Qué querés cargar?». Está marcada la opción «Me entró plata».',
+        title: 'Elegí «Entró plata»',
+        label: 'El menú «¿Qué cargás?» con «Entró plata» marcado, entre las de cada tanto.',
         scene: { kind: 'launcher', pick: 'cobrar' },
-      },
-      {
-        title: 'Quién te pagó, cuánto entró y a dónde',
-        label: `La hoja «Registrar un cobro», en tres pasos numerados. El primero dice quién te pagó y cuánto te debe. En el segundo, «${S.cobrar.step}», está escrito lo que entró (marcado), elegida la caja y puesto el día.`,
-        scene: { kind: 'collect', part: 'amount' },
-      },
-      {
-        title: 'De qué ventas es y qué te descontaron',
-        label: `La misma hoja, en el tercer paso: bajo «${S.cobrar.pending}», dos días de ventas tildados (marcados). Debajo, cuánto te descontaron, con la marca «${S.cobrar.estimated}», y en qué. Al pie, el botón «${S.cobrar.save}» con lo que entró.`,
-        scene: { kind: 'collect', part: 'sales' },
       },
     ],
     checks: [
-      'Bajó lo que estaba en camino.',
-      'Subió la caja o el banco donde entró la plata.',
+      'En Ventas › Por cobrar bajó lo que te tenían que depositar.',
+      'Subió la cuenta donde entró la plata.',
       'La diferencia quedó anotada como comisión y descuentos.',
     ],
     troubles: [
       {
         problem: 'Es de Mercado Pago',
-        fix: 'Es más fácil contar la caja de Mercado Pago: escribís lo que dice la app y lo que entró queda anotado solo. O subí el reporte.',
+        fix: 'Es más fácil subir el reporte de «Liquidaciones»: separa la comisión y los impuestos solo.',
       },
       {
         problem: 'No aparece ninguna venta para tildar',
@@ -879,20 +752,21 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         fix: `Elegí «${S.cobrar.explainFee}», «${S.cobrar.explainOther}» o «${S.cobrar.explainUnknown}». Lo que no sepas queda aparte, a la vista de la contadora.`,
       },
     ],
-    result: 'Lo que estaba en camino pasa a la caja o al banco, menos los descuentos.',
+    result: 'Lo que estaba por cobrar pasa a la cuenta, menos los descuentos.',
     action: { label: 'Anotar lo que entró', target: { kind: 'sheet', sheet: 'cobrar' } },
   },
   {
     id: 'contar-caja',
     title: 'Conté la caja y no da',
     hint: 'Para que el sistema diga lo que hay de verdad',
+    where: '+ Cargar › Contar la caja',
     frequency: 'event',
     minutes: 2,
     launcher: 'ajustar',
     routine: 'treasury_check',
     steps: [
       {
-        text: `Tocá «+ Cargar» y elegí «Conté la caja». Se abre la hoja «${S.ajustar.title}».`,
+        text: `Tocá «+ Cargar» y elegí «Contar la caja». Se abre la hoja «${S.ajustar.title}».`,
         screen: 0,
       },
       {
@@ -900,7 +774,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         screen: 1,
       },
       {
-        text: `Si coincide, tocá «${S.ajustar.matches}». La caja queda como contada hoy.`,
+        text: `Si coincide, tocá «${S.ajustar.matches}». La cuenta queda como contada hoy.`,
         screen: 1,
       },
       {
@@ -910,8 +784,8 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     ],
     screens: [
       {
-        title: 'Elegí «Conté la caja»',
-        label: 'El lanzador «¿Qué querés cargar?». Está marcada la opción «Conté la caja».',
+        title: 'Elegí «Contar la caja»',
+        label: 'El menú «¿Qué cargás?» con «Contar la caja» marcado, entre las de cada tanto.',
         scene: { kind: 'launcher', pick: 'ajustar' },
       },
       {
@@ -921,9 +795,9 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
     ],
     checks: [
-      'El saldo de la caja es el que contaste.',
+      'El saldo de la cuenta es el que contaste.',
       'La diferencia quedó anotada como faltante o sobrante.',
-      'La caja figura contada este mes.',
+      'La cuenta figura contada este mes.',
     ],
     troubles: [
       {
@@ -933,11 +807,6 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       {
         problem: 'No sé de dónde sale la diferencia',
         fix: 'En el banco y en Mercado Pago, lo que no se explica queda aparte para que lo revise la contadora.',
-      },
-      {
-        problem: 'Solo quiero ver la diferencia de cada día',
-        fix: `Eso es «${S.ventas.cashCheck}»: compara lo vendido con lo que entró y no cambia ningún saldo.`,
-        link: { label: 'Ventas › Ventas contra caja', path: '/ventas?tab=caja' },
       },
       {
         problem: 'Conté el efectivo la noche del cierre',
@@ -951,16 +820,16 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     id: 'mercado-pago',
     title: 'Subo el reporte de Mercado Pago',
     hint: 'Una vez por semana, desde la compu',
+    where: 'Arrastrá el archivo a cualquier pantalla',
     frequency: 'weekly',
     minutes: 10,
     routine: 'mp_weekly',
     howTo: 'mercado_pago',
     steps: [
-      { text: 'Bajá de Mercado Pago el reporte de «Liquidaciones». Hacelo desde la compu.' },
       {
-        text: `En Importar, tocá «${S.importar.titleMercadoPago}» y soltá el archivo en «${S.importar.stepUpload}».`,
-        screen: 0,
+        text: 'Bajá de Mercado Pago el reporte de «Liquidaciones», desde la compu. El de Cobros no sirve: no trae los descuentos.',
       },
+      { text: 'Arrastralo a cualquier pantalla de Administración: se reconoce solo.', screen: 0 },
       { text: 'Revisá lo que propone: un cobro por día y por medio, con su comisión.', screen: 1 },
       {
         text: 'Tocá el botón «Cargar», que dice cuántos movimientos son. Nada se carga solo: vos decidís qué entra.',
@@ -980,11 +849,15 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
     ],
     checks: [
-      'Bajó lo que estaba en camino de Mercado Pago.',
+      'En Ventas › Por cobrar bajó lo de Mercado Pago.',
       'El saldo de Mercado Pago se parece al de la app.',
       'Cada cobro tiene su comisión aparte.',
     ],
     troubles: [
+      {
+        problem: 'Dice que ese es el reporte de Cobros',
+        fix: 'Ese no trae lo que te descontaron. Bajá «Liquidaciones»: en la pantalla te muestra cómo.',
+      },
       {
         problem: 'Dice que ese día ya tiene movimientos cargados a mano',
         fix: 'No se cargan dos veces. Pedí el reporte desde el día siguiente, o anulá lo que cargaste a mano.',
@@ -997,34 +870,65 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         problem: 'Me pregunta a qué medio corresponde',
         fix: 'Elegilo una vez. Queda guardado para la próxima.',
       },
-      {
-        problem: '¿Y el banco?',
-        fix: 'Se sube igual, con los movimientos de la cuenta.',
-        link: { label: 'Importar › Banco', path: '/importar/banco' },
-      },
     ],
-    result: 'Lo que te depositaron pasa de «en camino» a Mercado Pago, con su comisión separada.',
+    result: 'Lo que te depositaron pasa de por cobrar a Mercado Pago, con su comisión separada.',
     action: {
       label: 'Subir el reporte',
       target: { kind: 'route', path: '/importar/mercado-pago' },
     },
   },
   {
+    id: 'banco',
+    title: 'Subo los movimientos del banco',
+    hint: 'Una vez por semana, del home banking',
+    where: 'Arrastrá el archivo a cualquier pantalla',
+    frequency: 'weekly',
+    minutes: 10,
+    routine: 'bank_weekly',
+    howTo: 'banco',
+    steps: [
+      { text: 'En el home banking de la empresa, exportá los movimientos en CSV, TXT o Excel.' },
+      { text: 'Arrastralos a cualquier pantalla. La primera vez decinos qué es cada columna.' },
+      {
+        text: 'Revisá lo que propone: el impuesto al cheque, las comisiones, el IVA y el SIRCREB se reconocen solos.',
+      },
+      {
+        text: 'Lo que el sistema ya anotó al pagar dice «Ya está cargado»: no se cuenta dos veces.',
+      },
+    ],
+    screens: [],
+    checks: [
+      'El saldo del banco se parece al del home banking.',
+      'Cada día tiene sus gastos del banco juntos.',
+      'El impuesto al cheque no quedó dos veces.',
+    ],
+    troubles: [
+      {
+        problem: 'No reconoce el archivo',
+        fix: 'Si es del banco, te pregunta qué es cada columna y se acuerda para la próxima.',
+      },
+      {
+        problem: 'Un gasto no lo reconoció',
+        fix: 'Decile qué es en la revisión y enseñáselo: la próxima vez lo reconoce solo.',
+      },
+    ],
+    result: 'Los gastos del banco quedan cargados, sin repetir lo que ya estaba.',
+    action: { label: 'Subir los movimientos', target: { kind: 'route', path: '/importar/banco' } },
+  },
+  {
     id: 'arca',
     title: 'Bajo las compras de ARCA',
     hint: 'Una vez por mes, del 11 en adelante',
+    where: 'Arrastrá el archivo a cualquier pantalla',
     frequency: 'monthly',
     minutes: 15,
     routine: 'arca_monthly',
     howTo: 'mis_comprobantes',
     steps: [
       {
-        text: 'Del día 11 en adelante, bajá de ARCA «Mis Comprobantes» › Recibidos del mes pasado.',
+        text: 'Del día 11 en adelante, bajá de ARCA «Mis Comprobantes» › «Recibidos» del mes pasado.',
       },
-      {
-        text: `En Importar, tocá «${S.importar.titleArca}» y soltá el archivo en «${S.importar.stepUpload}», sin abrirlo con Excel.`,
-        screen: 0,
-      },
+      { text: 'Arrastrá el ZIP a cualquier pantalla, sin abrirlo con Excel.', screen: 0 },
       {
         text: `Contestá lo que te pregunta. Lo que ya cargaste a mano dice «${S.importar.loaded}».`,
         screen: 1,
@@ -1063,11 +967,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       {
         problem: 'No reconoce algo que cargué a mano',
         fix: `Compara por la CUIT del proveedor. Agregala en su ficha antes de subir el archivo, o contestá «${S.importar.knownBefore}» en la revisión.`,
-        link: { label: 'Compras y pagos › Proveedores', path: '/compras?tab=proveedores' },
-      },
-      {
-        problem: 'Dije «Es el mismo» y no veo con cuál lo juntó',
-        fix: 'Hoy solo la deja sin cargar. No queda anotado con qué comprobante coincidía.',
+        link: { label: 'Compras y pagos › Proveedores', path: '/compras' },
       },
       {
         problem: 'Subí el archivo de lo que facturé yo',
@@ -1083,9 +983,39 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     action: { label: S.importar.titleArca, target: { kind: 'route', path: '/importar/arca' } },
   },
   {
+    id: 'impuestos',
+    title: 'Quiero cambiar un impuesto',
+    hint: 'Ingresos Brutos, Comercio e Industria, débitos y créditos',
+    where: 'Ajustes › Impuestos',
+    frequency: 'event',
+    minutes: 2,
+    steps: [
+      { text: 'Tocá el engranaje y entrá a Ajustes › Impuestos.' },
+      { text: 'Cambiá el porcentaje en su celda. Elegí sobre qué se calcula cada uno.' },
+      {
+        text: 'Ingresos Brutos y Comercio e Industria se calculan en cada cierre. Débitos y créditos, al pagar con banco o billetera.',
+      },
+    ],
+    screens: [],
+    checks: [
+      'El próximo cierre del día los calcula con el porcentaje nuevo.',
+      'Lo que ya estaba cargado no cambia.',
+    ],
+    troubles: [
+      {
+        problem: 'Esta cuenta no cobra el impuesto al cheque',
+        fix: 'Se elige por cuenta, en el menú «⋯» de cada una, en Caja. Bancos y billeteras lo cobran; el efectivo, no.',
+        link: { label: 'Caja', path: '/cajas' },
+      },
+    ],
+    result: 'Lo que cargues desde ahora se calcula con esos porcentajes.',
+    action: { label: 'Ir a Impuestos', target: { kind: 'route', path: '/ajustes?tab=impuestos' } },
+  },
+  {
     id: 'corregir',
     title: 'Me equivoqué y quiero corregir',
     hint: 'Deshacer, anular o corregir un mes cerrado',
+    where: 'Compras y pagos › Comprobantes',
     frequency: 'event',
     minutes: 2,
     steps: [
@@ -1095,7 +1025,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
       { text: 'Si ya pasó, abrí el comprobante desde Compras y pagos › Comprobantes.' },
       {
-        text: `Bajá hasta «${S.comprobante.fix}» y tocá «${S.comprobante.void}». Escribí el motivo: queda anulado con tu nombre, no se borra.`,
+        text: `Tocá «${S.comprobante.void}» y escribí el motivo: queda anulado con tu nombre, no se borra.`,
         screen: 1,
       },
       { text: 'Cargalo de nuevo, bien. No existe «editar»: se anula y se vuelve a cargar.' },
@@ -1103,7 +1033,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     screens: [
       {
         title: '«Deshacer», apenas guardás',
-        label: 'El aviso que aparece al guardar un gasto, con el botón «Deshacer», marcado.',
+        label: 'El aviso que aparece al guardar una compra, con el botón «Deshacer», marcado.',
         scene: { kind: 'undo' },
       },
       {
@@ -1120,16 +1050,16 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     ],
     troubles: [
       {
+        problem: 'Solo está mal la cuenta',
+        fix: 'No hace falta anular: se reimputa. Mirá «Un gasto quedó en otra cuenta».',
+      },
+      {
         problem: 'El mes ya está cerrado',
-        fix: `No se anula con su fecha. En «${S.comprobante.fix}» el comprobante te ofrece la salida: una nota de crédito, «${S.comprobante.voidToday}» o un ajuste de la contadora.`,
+        fix: `No se anula con su fecha. El comprobante te ofrece la salida: una nota de crédito, «${S.comprobante.voidToday}» o un ajuste de la contadora.`,
       },
       {
         problem: 'Tiene pagos unidos',
         fix: 'Si lo anulás, esos pagos quedan a cuenta: como saldo a favor con el proveedor.',
-      },
-      {
-        problem: 'Es una factura hecha con ARCA',
-        fix: 'No se anula. Se corrige con una nota de crédito.',
       },
       {
         problem: 'Lo único mal es a qué factura fue el pago',
@@ -1143,9 +1073,79 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     },
   },
   {
+    id: 'reimputar',
+    title: 'Un gasto quedó en otra cuenta',
+    hint: 'La luz cargada en el agua',
+    where: 'Contabilidad › Mayor',
+    frequency: 'event',
+    minutes: 2,
+    steps: [
+      { text: 'Entrá a Contabilidad › Sumas y saldos y tocá la cuenta que no da.' },
+      { text: 'En el Mayor, abrí el movimiento: ves su asiento y su comprobante.' },
+      {
+        text: `Tocá «${S.contabilidad.reimpute}», elegí la cuenta que corresponde y, si querés, escribí el motivo.`,
+      },
+    ],
+    screens: [],
+    checks: [
+      'El Mayor de las dos cuentas cambió.',
+      'En el comprobante queda la historia: quién lo cambió, cuándo y por qué.',
+      'El importe, el proveedor y el IVA no se movieron.',
+    ],
+    troubles: [
+      {
+        problem: 'No me deja: el mes está cerrado',
+        fix: 'Reimputar se hace con el mes abierto. Si hace falta, reabrilo desde Contabilidad › Cierre de mes.',
+        link: { label: 'Contabilidad › Cierre de mes', path: '/libros/cierres' },
+      },
+      {
+        problem: '¿Quién puede hacerlo?',
+        fix: 'Los dueños con acceso y la contadora.',
+      },
+    ],
+    result: 'El renglón queda en la cuenta correcta, con su historia.',
+    action: { label: 'Ir al Mayor', target: { kind: 'route', path: '/libros/mayor' } },
+  },
+  {
+    id: 'asiento',
+    title: 'Necesito un asiento manual',
+    hint: 'Un préstamo, una amortización, un aporte',
+    where: 'Contabilidad › Asiento manual',
+    frequency: 'event',
+    minutes: 5,
+    steps: [
+      { text: 'Entrá a Contabilidad y tocá Asiento manual.' },
+      {
+        text: `Partí de un «${S.contabilidad.model}», si hay uno que sirva, o cargá los renglones a mano.`,
+      },
+      { text: `«${S.contabilidad.save}» se destraba recién cuando el Debe da igual que el Haber.` },
+    ],
+    screens: [],
+    checks: [
+      'Aparece en el Libro diario con su fecha.',
+      'Las cuentas de Sumas y saldos se movieron.',
+    ],
+    troubles: [
+      {
+        problem: 'Es una compra, un pago o una venta',
+        fix: 'Eso va por «+ Cargar»: el asiento sale solo. El manual es para lo que no tiene otro lugar.',
+      },
+      {
+        problem: '¿Quién puede hacerlo?',
+        fix: 'Los dueños con acceso y la contadora.',
+      },
+    ],
+    result: 'El asiento queda en los libros, con Debe igual a Haber.',
+    action: {
+      label: 'Ir a Asiento manual',
+      target: { kind: 'route', path: '/libros/asiento-manual' },
+    },
+  },
+  {
     id: 'fin-de-mes',
-    title: 'Fin de mes para la contadora',
+    title: 'Cierre de mes para la contadora',
     hint: 'Revisar, cerrar y mandar los libros',
+    where: 'Contabilidad › Cierre de mes',
     frequency: 'monthly',
     minutes: 20,
     routine: 'month_close',
@@ -1153,31 +1153,20 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       {
         text: 'Cargá lo que falte: los cierres del día, Mercado Pago, el banco y las compras de ARCA.',
       },
-      { text: 'Contá cada caja, para que los saldos sean los de verdad.' },
+      { text: 'Contá cada cuenta, para que los saldos sean los de verdad.' },
       {
-        text: `Entrá a Libros › ${S.cierreMes.title}. En el paso 1, «${S.cierreMes.review}», cada aviso dice qué falta.`,
-        screen: 0,
+        text: 'Entrá a Contabilidad › Cierre de mes y mirá la lista: cada renglón dice qué falta.',
       },
+      { text: 'Cerrá el mes con la contadora. Después ya no cambia, salvo que lo reabras.' },
       {
-        text: 'En el paso 2, cerrá el mes con la contadora: el botón dice «Cerrar» y el mes. Después ya no cambia.',
-        screen: 0,
-      },
-      {
-        text: `En el paso 3, tocá «${S.cierreMes.package}» o «${S.cierreMes.message}» para mandárselo.`,
-        screen: 0,
+        text: `Tocá «${S.cierreMes.download}» para mandárselos, o que los baje ella con su acceso.`,
       },
     ],
-    screens: [
-      {
-        title: 'Los tres pasos del fin de mes',
-        label: `La pantalla «${S.cierreMes.title}»: arriba, los meses del año, con el que falta cerrar marcado. Debajo, tres pasos numerados. En el primero, «${S.cierreMes.review}», cuatro renglones: cierres del día, compras y gastos, la plata y los papeles del bar; uno tiene un aviso. Están marcados. Siguen «Cerrá septiembre», con su botón, y «${S.cierreMes.send}».`,
-        scene: { kind: 'month-close' },
-      },
-    ],
+    screens: [],
     checks: [
       'El mes figura cerrado.',
       'No quedan avisos sin mirar.',
-      'La contadora tiene los archivos, o entra con su usuario de solo lectura.',
+      'La contadora tiene los archivos, o entra con su acceso.',
     ],
     troubles: [
       {
@@ -1187,13 +1176,8 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
       {
         problem: 'La contadora quiere solo lo que tiene factura',
-        fix: 'En Comprobantes, filtrá «Con factura» y exportá. Los libros no se filtran: llevan todo.',
+        fix: 'En Comprobantes, filtrá con factura y exportá. Los libros no se filtran: llevan todo.',
         link: { label: 'Compras y pagos › Comprobantes', path: '/compras?tab=comprobantes' },
-      },
-      {
-        problem: 'Hay gastos fijos sin cargar',
-        fix: `El aviso los nombra, cada uno con su «${S.gastosFijos.pay}». Si alguno no va, abrí su renglón en Gastos fijos y tocá «${S.gastosFijos.skip}».`,
-        link: { label: 'Gastos fijos', path: '/gastos-fijos' },
       },
       {
         problem: 'Cerré y hay que cambiar algo',
@@ -1201,11 +1185,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
     ],
     result: 'El mes queda fijo y la contadora tiene todo para trabajar.',
-    // Lleva a la pantalla, no cierra nada: el botón dice adónde va, como todos los de las recetas.
-    action: {
-      label: `Ir a ${S.cierreMes.title}`,
-      target: { kind: 'route', path: '/libros/cierres' },
-    },
+    action: { label: 'Ir a Cierre de mes', target: { kind: 'route', path: '/libros/cierres' } },
   },
 ]
 
@@ -1220,115 +1200,95 @@ export function guideRecipe(id: RecipeId): GuideRecipe {
   return recipe
 }
 
-// ─── El mapa ─────────────────────────────────────────────────────────────────
+// ─── Dónde está cada cosa ────────────────────────────────────────────────────
 
-export const STATION_IDS = ['vender', 'comprar', 'pagar', 'controlar', 'fin-de-mes'] as const
-export type StationId = (typeof STATION_IDS)[number]
-
-/** Los tres lugares donde está la plata del bar. */
-export type MoneyPocket = 'cajas' | 'en_camino' | 'deuda'
-
-export const MONEY_POCKET_LABEL: Readonly<Record<MoneyPocket, string>> = {
-  cajas: 'Cajas',
-  en_camino: 'En camino',
-  deuda: 'Lo que debés',
-}
-
-/** Qué es cada lugar, en una línea (la referencia del mapa). */
-export const MONEY_POCKET_HINT: Readonly<Record<MoneyPocket, string>> = {
-  cajas: 'La plata que tenés hoy: efectivo, banco y billeteras.',
-  en_camino: 'Ventas con tarjeta, QR o app que todavía no llegaron a tu cuenta.',
-  deuda: 'Compras que te dejaron a pagar y todavía no pagaste.',
-}
-
-export type StationMove = { pocket: MoneyPocket; direction: 'up' | 'down' }
-
-export type GuideStation = {
-  id: StationId
-  n: number
+export type GuideSection = {
+  key: string
+  /** El nombre en el menú. */
   title: string
-  /** Qué se hace, en una oración. */
   what: string
-  /** Qué mueve, en chips (vacío: no mueve plata). */
-  moves: readonly StationMove[]
-  /** Qué mueve, en palabras. */
-  movesText: string
-  /** La receta de «Ver cómo». */
-  recipe: RecipeId
-  /** «Hacerlo ahora». */
-  action: GuideAction
+  /** Sus solapas, con el nombre que tienen en pantalla. */
+  tabs: readonly string[]
+  /** Después de `/administracion`. */
+  path: string
 }
 
-export const GUIDE_STATIONS: readonly GuideStation[] = [
+/** Las seis palabras de arriba y el engranaje. Un test las compara con `ADM_SECTIONS`. */
+export const GUIDE_SECTIONS: readonly GuideSection[] = [
   {
-    id: 'vender',
-    n: 1,
-    title: 'Vendés',
-    what: 'Cargás el cierre del día: cuánto se vendió y cómo te pagaron.',
-    moves: [
-      { pocket: 'cajas', direction: 'up' },
-      { pocket: 'en_camino', direction: 'up' },
-    ],
-    movesText:
-      'El efectivo entra a la caja. Las tarjetas, el QR y las apps quedan en camino hasta que te los depositan.',
-    recipe: 'cierre',
-    action: { label: 'Cargar el cierre', target: { kind: 'route', path: '/ventas/cierre' } },
+    key: 'resumen',
+    title: 'Resumen',
+    what: 'Cómo viene el mes y lo que te toca hoy.',
+    tabs: [],
+    path: '',
   },
   {
-    id: 'comprar',
-    n: 2,
-    title: 'Comprás y gastás',
-    what: 'Cargás cada compra y cada gasto, con el papel que te dieron.',
-    moves: [
-      { pocket: 'cajas', direction: 'down' },
-      { pocket: 'deuda', direction: 'up' },
-    ],
-    movesText: 'Lo que pagás en el momento baja la caja. Lo que te dejan a pagar queda como deuda.',
-    recipe: 'gasto',
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    key: 'compras',
+    title: 'Compras y pagos',
+    what: 'Lo que le debés a cada proveedor, qué le vas a pagar esta semana y cada comprobante.',
+    tabs: ['Proveedores', 'Plan de la semana', 'Comprobantes'],
+    path: '/compras',
   },
   {
-    id: 'pagar',
-    n: 3,
-    title: 'Pagás',
-    what: 'Elegís a quién le pagás y qué compras le cancelás.',
-    moves: [
-      { pocket: 'deuda', direction: 'down' },
-      { pocket: 'cajas', direction: 'down' },
-    ],
-    movesText: 'Baja lo que debés y baja la caja de donde salió la plata.',
-    recipe: 'pagar-deuda',
-    action: { label: 'Pagar una deuda', target: { kind: 'sheet', sheet: 'pagar' } },
+    key: 'gastos',
+    title: 'Gastos y sueldos',
+    what: 'Lo que pagás todos los meses y lo de cada empleado: sueldo, adelantos y saldo.',
+    tabs: ['Gastos fijos', 'Sueldos'],
+    path: '/gastos-fijos',
   },
   {
-    id: 'controlar',
-    n: 4,
-    title: 'Controlás la plata',
-    what: 'Contás cada caja y anotás lo que te depositaron Mercado Pago, las tarjetas y las apps.',
-    moves: [
-      { pocket: 'en_camino', direction: 'down' },
-      { pocket: 'cajas', direction: 'up' },
-    ],
-    movesText:
-      'Lo que te depositan pasa de «en camino» a tu cuenta. Si contás y no coincide, el saldo se corrige.',
-    recipe: 'contar-caja',
-    action: { label: 'Contar la caja', target: { kind: 'sheet', sheet: 'ajustar' } },
+    key: 'ventas',
+    title: 'Ventas',
+    what: 'El objetivo y lo vendido de cada día, lo que te tienen que depositar y lo que llegó.',
+    tabs: ['Planilla del mes', 'Por cobrar', 'Lo que llegó'],
+    path: '/ventas',
   },
   {
-    id: 'fin-de-mes',
-    n: 5,
-    title: 'Fin de mes',
-    what: 'Revisás los avisos, cerrás el mes y le mandás los libros a la contadora.',
-    moves: [],
-    movesText: 'No mueve plata. Deja el mes fijo: después ya no cambia.',
-    recipe: 'fin-de-mes',
-    // Lleva a la pantalla, no cierra nada: el botón dice adónde va, como todos los de las recetas.
-    action: {
-      label: `Ir a ${S.cierreMes.title}`,
-      target: { kind: 'route', path: '/libros/cierres' },
-    },
+    key: 'caja',
+    title: 'Caja',
+    what: 'Cuánto hay en cada cuenta y de dónde salió cada movimiento.',
+    tabs: [],
+    path: '/cajas',
+  },
+  {
+    key: 'contabilidad',
+    title: 'Contabilidad',
+    what: 'Los libros, para la contadora: de ahí se reimputa, se hacen asientos y se cierra el mes.',
+    tabs: ['Sumas y saldos', 'Mayor', 'Libro diario', 'IVA', 'Plan de cuentas', 'Cierre de mes'],
+    path: '/libros/sumas-y-saldos',
+  },
+  {
+    key: 'ajustes',
+    title: 'Ajustes',
+    what: 'Detrás del engranaje: impuestos, cuentas, medios de cobro y accesos, y lo de una sola vez.',
+    tabs: ['Ajustes', 'Puesta en marcha', 'Guía', 'Importar'],
+    path: '/ajustes',
   },
 ]
+
+/** Lo que se hace desde cualquier pantalla. */
+export const GUIDE_EVERYWHERE: ReadonlyArray<{ title: string; what: string }> = [
+  {
+    title: '+ Cargar',
+    what: 'Compra, Compra y pago, Pago y Cierre del día. Lo demás, en la fila de abajo.',
+  },
+  {
+    title: 'Arrastrar un archivo',
+    what: 'Una foto o un PDF abre la compra. El ZIP de ARCA, el reporte de Mercado Pago o los movimientos del banco se reconocen solos.',
+  },
+  {
+    title: 'La foto por QR',
+    what: 'Al lado de cada carga hay un QR: lo escaneás con el celular, sacás la foto y aparece en la compu.',
+  },
+]
+
+/** Lo que significa cada parte de la plata, en una línea (el glosario). */
+const MONEY_WORDS = {
+  cuentas: 'La plata que tenés hoy: efectivo, banco y billeteras.',
+  porCobrar:
+    'Ventas con tarjeta, QR o app que todavía no llegaron a tu cuenta, y clientes con cuenta.',
+  deuda: 'Compras que te dejaron a pagar y todavía no pagaste.',
+} as const
 
 // ─── El estado real ──────────────────────────────────────────────────────────
 
@@ -1422,12 +1382,12 @@ export function routineStatus(
       // Sin los saldos iniciales no hay con qué comparar lo contado: primero se dice cuánto hay
       // en cada caja (es lo que pide el Resumen). Recién después contar es una rutina.
       if (!data.openingDone) {
-        return { state: 'idle', text: 'Primero cargá lo que había en cada caja al arrancar' }
+        return { state: 'idle', text: 'Primero cargá lo que había en cada cuenta al arrancar' }
       }
       const n = data.treasuriesUnchecked
       return {
         state: 'todo',
-        text: `${plural(n, 'Falta', 'Faltan')} contar ${n} ${plural(n, 'caja', 'cajas')} este mes`,
+        text: `${plural(n, 'Falta', 'Faltan')} contar ${n} ${plural(n, 'cuenta', 'cuentas')} este mes`,
       }
     }
     case 'month_close': {
@@ -1437,33 +1397,6 @@ export function routineStatus(
       return done ? UP_TO_DATE : { state: 'todo', text: 'El mes pasado sigue abierto' }
     }
   }
-}
-
-const STATION_ROUTINE: Readonly<Partial<Record<StationId, RoutineItemId>>> = {
-  vender: 'daily_close',
-  controlar: 'treasury_check',
-  'fin-de-mes': 'month_close',
-}
-
-export type StationStates = {
-  /** `null`: de esa estación la base no dice nada (comprar y pagar son «cuando pasa»). */
-  byId: Readonly<Record<StationId, GuideStatus | null>>
-  /** La primera estación que te toca: ahí va el botón principal del mapa. */
-  current: StationId | null
-  /** Hay datos y no te toca nada. */
-  allClear: boolean
-}
-
-/** Cómo viene cada estación del mapa y cuál te toca. */
-export function stationStates(overview: GuideOverview | null): StationStates {
-  const byId = Object.fromEntries(
-    STATION_IDS.map((id) => {
-      const routine = STATION_ROUTINE[id]
-      return [id, routine ? routineStatus(routine, overview) : null]
-    }),
-  ) as Record<StationId, GuideStatus | null>
-  const current = STATION_IDS.find((id) => byId[id]?.state === 'todo') ?? null
-  return { byId, current, allClear: overview !== null && current === null }
 }
 
 /** El estado de una receta (solo las que son rutina con dato en la base). */
@@ -1520,8 +1453,8 @@ export function guideRoutine(overview: GuideOverview | null): RoutineGroup[] {
         },
         {
           key: 'gastos',
-          title: 'Cargar las compras y los gastos del día',
-          link: { kind: 'recipe', recipe: 'gasto' },
+          title: 'Cargar las compras del día',
+          link: { kind: 'recipe', recipe: 'compra' },
           status: null,
         },
         {
@@ -1546,8 +1479,14 @@ export function guideRoutine(overview: GuideOverview | null): RoutineGroup[] {
         {
           key: 'banco',
           title: 'Subir los movimientos del banco',
-          link: { kind: 'route', path: '/importar/banco' },
+          link: { kind: 'recipe', recipe: 'banco' },
           status: routineStatus('bank_weekly', overview),
+        },
+        {
+          key: 'plan',
+          title: 'Armar los pagos de la semana',
+          link: { kind: 'recipe', recipe: 'plan-semana' },
+          status: null,
         },
         {
           key: 'cobros',
@@ -1570,9 +1509,15 @@ export function guideRoutine(overview: GuideOverview | null): RoutineGroup[] {
         },
         {
           key: 'cajas',
-          title: 'Contar cada caja',
+          title: 'Contar cada cuenta',
           link: { kind: 'recipe', recipe: 'contar-caja' },
           status: routineStatus('treasury_check', overview),
+        },
+        {
+          key: 'sueldos',
+          title: 'Pagar y devengar los sueldos',
+          link: { kind: 'recipe', recipe: 'sueldos' },
+          status: null,
         },
         {
           key: 'cierre-mes',
@@ -1661,7 +1606,7 @@ export const GUIDE_PAPERS: readonly GuidePaper[] = [
   },
   {
     id: 'sin',
-    title: 'Remito o nada',
+    title: 'Remito',
     lead: 'Sin factura: queda en tus números y no entra al Libro IVA.',
     filter: 'Sin factura',
     facts: {
@@ -1682,10 +1627,8 @@ export type PaperRoute = {
 }
 
 const LAUNCH = '+ Cargar'
-const PAID_NOW = 'Pagué algo recién'
-const PAY_LATER = 'Me llegó una factura o un remito y lo pago después'
-/** La pregunta de la compra y la tarjeta que se toca: «¿Qué papel te dieron? Factura A». */
-const paperStep = (card: string) => `${S.compra.paper} ${card}`
+const PAID_NOW = 'Compra y pago'
+const PAY_LATER = 'Compra'
 
 export type PaperCase = {
   id: string
@@ -1707,29 +1650,29 @@ export const GUIDE_PAPER_CASES: readonly PaperCase[] = [
     id: 'remito-contado',
     title: 'Me dieron un remito y pagué en el momento',
     art: 'sin',
-    where: [{ steps: [LAUNCH, PAID_NOW, 'Remito o nada'] }],
+    where: [{ steps: [LAUNCH, PAID_NOW, S.compra.paperNone] }],
     result: [
       'Sale la plata de la caja.',
       'No queda deuda con el proveedor.',
       'No entra al Libro IVA.',
     ],
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    action: {
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
+    },
     recipe: 'sin-factura',
   },
   {
     id: 'remito-cuenta',
     title: 'Me dejaron un remito y lo pago después',
     art: 'sin',
-    where: [{ steps: [LAUNCH, PAY_LATER, paperStep(S.compra.paperNone)] }],
+    where: [{ steps: [LAUNCH, PAY_LATER, S.compra.paperNone] }],
     result: [
       'Queda la deuda con el proveedor, con su vencimiento.',
       'La caja baja recién cuando la pagás.',
       'No entra al Libro IVA.',
     ],
-    action: {
-      label: S.compra.title,
-      target: { kind: 'route', path: '/compras/nueva' },
-    },
+    action: { label: 'Cargar una compra', target: { kind: 'route', path: '/compras/nueva' } },
     recipe: 'sin-factura',
   },
   {
@@ -1742,7 +1685,10 @@ export const GUIDE_PAPER_CASES: readonly PaperCase[] = [
       'Con el comercio y el número, entra al Libro IVA.',
       'Si falta alguno de los dos, queda como gasto y no entra.',
     ],
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    action: {
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
+    },
     recipe: 'gasto',
   },
   {
@@ -1751,14 +1697,17 @@ export const GUIDE_PAPER_CASES: readonly PaperCase[] = [
     art: 'factura_bc',
     where: [
       { when: 'Si ya la pagaste', steps: [LAUNCH, PAID_NOW, 'Factura B o C'] },
-      { when: 'Si la pagás después', steps: [LAUNCH, PAY_LATER, paperStep('Factura B o C')] },
+      { when: 'Si la pagás después', steps: [LAUNCH, PAY_LATER, 'Factura B o C'] },
     ],
     result: [
       'Entra al Libro IVA.',
       'El IVA no se recupera: queda dentro del gasto.',
       'Si el proveedor es responsable inscripto, pedile Factura A.',
     ],
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    action: {
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
+    },
     recipe: 'gasto',
   },
   {
@@ -1767,21 +1716,24 @@ export const GUIDE_PAPER_CASES: readonly PaperCase[] = [
     art: 'factura_a',
     where: [
       { when: 'Si ya la pagaste', steps: [LAUNCH, PAID_NOW, 'Factura A'] },
-      { when: 'Si la pagás después', steps: [LAUNCH, PAY_LATER, paperStep('Factura A')] },
+      { when: 'Si la pagás después', steps: [LAUNCH, PAY_LATER, 'Factura A'] },
     ],
     result: [
       'Entra al Libro IVA.',
       'El IVA queda a tu favor: se resta del que pagás cada mes.',
       'Hace falta la CUIT del proveedor.',
     ],
-    action: { label: 'Cargar un gasto', target: { kind: 'sheet', sheet: 'gasto' } },
+    action: {
+      label: 'Cargar compra y pago',
+      target: { kind: 'route', path: '/compras/nueva?modo=pago' },
+    },
     recipe: 'gasto',
   },
   {
     id: 'nota-credito',
     title: 'Me dieron una nota de crédito',
     art: 'nota_credito',
-    where: [{ steps: [LAUNCH, PAY_LATER, `${S.compra.notPurchase} ${S.compra.creditNote}`] }],
+    where: [{ steps: [LAUNCH, PAY_LATER, S.compra.creditNote] }],
     result: [
       'Es el papel que descuenta o anula una factura.',
       'Si elegís qué compra corrige, se descuenta sola de esa.',
@@ -1840,7 +1792,7 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     when: 'una sola vez',
     what: 'Le decís una vez en qué le comprás a ese proveedor. Desde ahí, cada compra suya ya viene con esa categoría.',
     where:
-      'En la ficha del proveedor, en Compras y pagos › Proveedores. O al cargarle algo, tildando «Usar siempre para» ese proveedor.',
+      'En la ficha del proveedor, en Compras y pagos › Proveedores. O al cargarle algo, eligiendo la categoría de siempre.',
     ifNot: 'Cada vez que le cargás algo, te pregunta en qué se gastó.',
     undo: 'Cambiala o quitala en la ficha. Lo que ya cargaste no cambia.',
     limit: null,
@@ -1852,7 +1804,7 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     how: 'you',
     when: 'al pagar',
     what: 'Es decir que esta plata que salió es para pagar esta compra.',
-    where: `En «Pago algo que debía», tildándola en «${S.pagar.invoices}». O al cargar la compra, eligiendo «${S.compra.paidNow}» en «${S.compra.payWhen}». Si pagaste en el momento con «Pagué algo recién», queda unido solo.`,
+    where: `En «Pago», tildándola en «${S.pagar.invoices}». O al cargar la compra, eligiendo «${S.compra.paid}». Con «Compra y pago» queda unido solo.`,
     ifNot:
       'La compra sigue figurando como deuda. La plata que salió queda como saldo a favor con ese proveedor.',
     undo: `Tocá «${S.comprobante.separate}» en el comprobante: el pago queda a favor con ese proveedor y la compra vuelve a deber. Si se guardaron juntos, se anulan los dos.`,
@@ -1865,10 +1817,11 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     how: 'auto',
     when: 'en el próximo pago',
     what: 'Es usar plata que ya le diste a un proveedor (un pago de más o una nota de crédito) contra una factura que le debés.',
-    where: `Se usa solo en el próximo pago: viene tildado, en «${S.pagar.credit}». Si no querés esperar, en la ficha del proveedor está «${S.proveedor.applyCredit}».`,
+    where:
+      'Se usa solo en el próximo pago: viene tildado. Si no querés esperar, se usa desde la ficha del proveedor.',
     ifNot: 'El proveedor muestra a la vez una deuda y un saldo a favor.',
     undo: `Con «Deshacer», apenas lo usás. Después, con «${S.comprobante.separate}» en el comprobante.`,
-    limit: `Del lado de la plata por cobrar todavía no existe «${S.proveedor.applyCredit}» ni «${S.comprobante.separate}».`,
+    limit: `Del lado de la plata por cobrar todavía no se puede, ni existe «${S.comprobante.separate}».`,
     recipe: 'pagar-deuda',
   },
   {
@@ -1877,7 +1830,8 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     how: 'you',
     when: 'al cargarla',
     what: 'La nota de crédito es el papel que descuenta o anula una factura. Unirla es decir cuál corrige.',
-    where: `Al cargarla, en «${S.compra.corrects}». Es opcional. Al subir las compras de ARCA te lo pregunta también.`,
+    where:
+      'Al cargarla, eligiendo qué compra corrige. Es opcional. Al subir las compras de ARCA te lo pregunta también.',
     ifNot: 'Queda a favor del proveedor y se usa sola en el próximo pago.',
     undo: 'Anulá la nota de crédito. La factura vuelve a deber lo que debía.',
     limit: null,
@@ -1889,10 +1843,10 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     how: 'you',
     when: 'solo al cargar',
     what: 'Es decir que este gasto es, por ejemplo, el alquiler de este mes. El renglón queda cargado y el vencimiento pasa al mes que viene.',
-    where: `Desde Gastos fijos, con «${S.gastosFijos.pay}» en ese renglón. O al cargar un gasto, eligiéndolo en «${S.gasto.target}». Si la factura la pagás después, abrí el renglón y tocá «${S.gastosFijos.bill}».`,
+    where: `Desde Gastos y sueldos › Gastos fijos, tildando ese renglón. Si la factura la pagás después, en su renglón tocá «${S.gastosFijos.bill}».`,
     ifNot:
       'El gasto queda en tus números, pero el renglón sigue figurando sin pagar y sigue avisando. El comprobante te pregunta si era ese gasto fijo.',
-    undo: `Anulá el gasto. En Gastos fijos aparece un aviso con «${S.gastosFijos.restore}», para que el renglón vuelva a su mes.`,
+    undo: 'Anulá el gasto. En Gastos fijos aparece un aviso para que el renglón vuelva a su mes.',
     limit: `Hoy no se puede vincular después. Si lo cargaste sin elegir el gasto fijo, anulalo y cargalo de nuevo, o abrí su renglón y tocá «${S.gastosFijos.skip}».`,
     recipe: 'gasto-fijo',
   },
@@ -1903,22 +1857,23 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     when: 'cuando quieras',
     what: 'Es la foto o el PDF del papel, guardado junto a lo que cargaste.',
     where:
-      'Al cargar un gasto o una compra. O después, abriendo el comprobante, también con el mes cerrado: ahí mismo avisa cuando le falta. Hasta 5 archivos.',
+      'Al cargar: con el QR desde el celular, o arrastrándola. O después, abriendo el comprobante, también con el mes cerrado. Hasta 5 archivos.',
     ifNot: 'No cambia ningún número. Falta el respaldo el día que lo pida la contadora.',
     undo: 'Quitá el archivo desde el comprobante. Se borra y no se recupera.',
-    limit: 'Hoy las listas no muestran qué comprobantes tienen foto y cuáles no.',
+    limit: null,
     recipe: 'gasto',
   },
   {
     id: 'cierre-cajas',
-    ends: ['Cierre del día', 'Cajas', 'En camino'],
+    ends: ['Cierre del día', 'Cuentas', 'Por cobrar'],
     how: 'auto',
     when: 'al guardar el cierre',
-    what: 'El cierre reparte solo cada medio de cobro. El efectivo entra a la caja. Lo demás queda en camino hasta que te lo depositan.',
-    where: `A dónde va cada medio se define una vez, en Ajustes › Medios de cobro. Lo que te depositan se anota con «Me entró plata», con «${S.comprobante.arrived}» en el comprobante del cierre, o subiendo el reporte de Mercado Pago.`,
+    what: 'El cierre reparte solo cada medio de cobro. El efectivo entra a la caja. Lo demás queda por cobrar hasta que te lo depositan.',
+    where:
+      'A dónde va cada medio se define una vez, en Ajustes › Medios de cobro. Lo que te depositan se anota con «Entró plata», o subiendo el reporte de Mercado Pago.',
     ifNot:
-      'Las ventas están contadas, pero la plata figura sin entrar: «en camino» crece y tu cuenta queda por debajo de la real.',
-    undo: 'Anulá el cobro: esas ventas vuelven a quedar en camino. El cierre no se edita: se anula y se carga de nuevo.',
+      'Las ventas están contadas, pero la plata figura sin entrar: lo que está por cobrar crece y tu cuenta queda por debajo de la real.',
+    undo: 'Anulá el cobro: esas ventas vuelven a quedar por cobrar. El cierre no se edita: se anula y se carga de nuevo.',
     limit:
       'Si anotás un cobro antes de cargar el cierre de ese día, queda a cuenta. Hoy no hay un botón para aplicarlo después.',
     recipe: 'cobro',
@@ -1942,8 +1897,7 @@ export const GUIDE_LINKS: readonly GuideLink[] = [
     how: 'auto',
     when: 'siempre',
     what: 'Cada cosa que guardás arma sola su registro en los libros. Los contadores le dicen asiento.',
-    where:
-      'No hay que hacer nada. Antes de guardar lo podés mirar en «Ver cómo queda en los libros».',
+    where: `No hay que hacer nada. Antes de guardar lo podés mirar en «${S.compra.entry}».`,
     ifNot:
       'No hay forma de guardar algo sin que quede en los libros. Con factura o sin factura, va al mismo libro.',
     undo: 'Anulando el comprobante. Queda anulado con tu nombre y el motivo, y deja de contar.',
@@ -1969,17 +1923,13 @@ function sharedMeaning(term: string): string {
 
 /** Un solo glosario: la idea primero, el nombre de contadora después. */
 export const GUIDE_GLOSSARY: readonly GuideGlossaryEntry[] = [
+  { idea: 'Cuentas', name: 'Disponibilidades', meaning: MONEY_WORDS.cuentas },
+  { idea: 'Por cobrar', name: 'Cuentas a cobrar', meaning: MONEY_WORDS.porCobrar },
+  { idea: 'Lo que debés', name: 'Cuentas a pagar', meaning: MONEY_WORDS.deuda },
   {
-    idea: 'Cajas',
-    name: 'Disponibilidades',
-    meaning: MONEY_POCKET_HINT.cajas,
-  },
-  { idea: 'En camino', name: 'Por acreditar', meaning: MONEY_POCKET_HINT.en_camino },
-  { idea: 'Lo que debés', name: 'Cuentas a pagar', meaning: MONEY_POCKET_HINT.deuda },
-  {
-    idea: 'Plata por cobrar',
-    name: 'Cuentas a cobrar',
-    meaning: 'Lo que te deben las tarjetas, las apps y los clientes con cuenta.',
+    idea: 'Impuesto al cheque',
+    name: 'Ley 25.413, débitos y créditos',
+    meaning: 'Lo que cobra el banco o la billetera cada vez que sale o entra plata.',
   },
   {
     idea: 'Saldo a favor',
@@ -2051,8 +2001,18 @@ export const GUIDE_GLOSSARY: readonly GuideGlossaryEntry[] = [
   {
     idea: 'Sumas y saldos',
     name: null,
-    meaning:
-      'El listado de todas las categorías con su total. Es lo que se le manda a la contadora.',
+    meaning: 'El listado de todas las cuentas con su total. Es lo que se le manda a la contadora.',
+  },
+  { idea: 'Mayor', name: null, meaning: 'Los movimientos de una cuenta y su saldo.' },
+  {
+    idea: 'Cambiarle la cuenta a un renglón',
+    name: 'Reimputar',
+    meaning: 'Pasar un renglón a la cuenta correcta, sin tocar el importe. Queda la historia.',
+  },
+  {
+    idea: 'Anotar el sueldo del mes',
+    name: 'Devengar',
+    meaning: 'Dejarlo en los libros como gasto del mes, aunque todavía no lo hayas pagado.',
   },
   { idea: 'ARCA', name: null, meaning: sharedMeaning('ARCA') },
   { idea: 'CUIT', name: null, meaning: sharedMeaning('CUIT') },

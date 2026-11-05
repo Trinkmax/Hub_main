@@ -27,14 +27,12 @@ import { type RecipeIndexItem, RecipesShell } from './recipes-shell'
 
 /**
  * Las recetas del día a día: una por situación («Cerré la caja de ayer»), con el mismo andamiaje
- * de la guía de ARCA (`GuideStep` en acordeón, `StepScreens` con la pantalla al lado del texto,
- * «Chequeá que…» y «Si algo sale mal»). Cada una cierra con qué queda cuando terminás y el botón
- * «Hacerlo ahora», que abre la pantalla o la hoja real.
+ * de la guía de ARCA (`GuideStep` en acordeón, `StepScreens` con la pantalla al lado del texto si
+ * tiene una, «Chequeá que…» y «Si algo sale mal»). Cada una cierra con qué queda cuando terminás y
+ * el botón «Hacerlo ahora», que abre la pantalla o la hoja real.
  *
  * No se marcan a mano: las que son rutina dicen solas si estás al día, con lo que hay cargado.
- * El estado se dice igual que en el mapa de la portada: «Te toca» en una píldora ámbar con su
- * detalle al lado, «Al día» en una verde. Antes las dos iban en texto verde y no se distinguía
- * lo pendiente de lo hecho.
+ * El estado se dice con una píldora: «Te toca» en ámbar con su detalle al lado, «Al día» en verde.
  *
  * Server component; lo interactivo son islas (el acordeón, el carrusel, la maqueta y el botón).
  */
@@ -99,7 +97,13 @@ function Recipe({
       {/* Desde la tablet, el texto a la izquierda y la pantalla a la derecha (`StepScreens`
           devuelve primero la pantalla: se da vuelta con `order`). En una sola columna, a 820 px,
           el dibujo quedaba pegado a la izquierda con media tarjeta vacía al lado. */}
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:[&>*:first-child]:order-2 lg:grid-cols-[minmax(0,1fr)_342px]">
+      <div
+        className={cn(
+          'grid gap-6',
+          recipe.screens.length > 0 &&
+            'md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:[&>*:first-child]:order-2 lg:grid-cols-[minmax(0,1fr)_342px]',
+        )}
+      >
         <StepScreens
           seeLabel="Así se ve"
           doLabel="Paso a paso"
@@ -152,7 +156,7 @@ export function Recipes({ base, overview }: { base: string; overview: GuideOverv
   // Abierta al entrar: la rutina que te toca o, si no hay ninguna, la de todos los días.
   const first = rows.find(({ status }) => status?.state === 'todo')?.recipe ?? GUIDE_RECIPES[0]
   return (
-    // Quien llega con `#receta-…` (desde el mapa, «¿Qué pasó?» o la rutina) ve solo esa abierta.
+    // Quien llega con `#receta-…` (desde «¿Qué pasó?» o la rutina) ve solo esa abierta.
     <RecipesShell items={items} initialOpen={first ? [first.id] : []}>
       {rows.map(({ recipe, status }, index) => (
         <Recipe key={recipe.id} recipe={recipe} n={index + 1} base={base} status={status} />

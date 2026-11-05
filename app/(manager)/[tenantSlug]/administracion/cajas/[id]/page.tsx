@@ -227,7 +227,7 @@ export default async function CajaPage({
   return (
     <AdmPage width="comfortable">
       <AdmHeader
-        back={{ href: `${base}/cajas`, label: 'Cajas y bancos' }}
+        back={{ href: `${base}/cajas`, label: 'Caja' }}
         title={treasury.name}
         badge={
           <>

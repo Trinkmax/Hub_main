@@ -1,16 +1,15 @@
 'use client'
 
+import { ChevronDown } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { MobileFold } from '../uso/mobile-fold'
 
 /**
  * «Tené a mano» (diseño §5.2.1): lo que conviene juntar antes de la puesta en
  * marcha. Las casillas son solo una ayuda para quien la está leyendo: no se
- * guardan. En el celular la lista viene plegada: va antes de los pasos y no
- * tiene que empujarlos una pantalla y media para abajo.
+ * guardan. Plegado: es para mirar una vez, no para todos los días.
  */
 export function HaveAtHand({ items, className }: { items: readonly string[]; className?: string }) {
   const [checked, setChecked] = useState<ReadonlySet<number>>(() => new Set())
@@ -27,24 +26,24 @@ export function HaveAtHand({ items, className }: { items: readonly string[]; cla
   }
 
   return (
-    <section
-      aria-labelledby={`${id}-titulo`}
-      className={cn('card-hairline overflow-hidden rounded-xl border bg-card', className)}
+    <details
+      className={cn(
+        'group/hand overflow-hidden rounded-xl border border-border/70 bg-card',
+        className,
+      )}
     >
-      <header className="space-y-0.5 border-b border-border/60 px-5 py-4">
-        <h2 id={`${id}-titulo`} className="font-serif text-lg font-semibold tracking-tight">
-          Tené a mano
-        </h2>
-        <p className="text-sm text-muted-foreground text-pretty">
-          Para la puesta en marcha. Tildá lo que ya juntaste: es solo una ayuda, no se guarda.
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:pointer-fine:min-h-9 [&::-webkit-details-marker]:hidden">
+        Tené a mano
+        <ChevronDown
+          aria-hidden
+          className="size-4 text-muted-foreground transition-transform group-open/hand:rotate-180 motion-reduce:transition-none"
+        />
+      </summary>
+      <div className="border-t border-border/70">
+        <p id={`${id}-ayuda`} className="px-3 pt-2 text-xs text-muted-foreground text-pretty">
+          Tildá lo que ya juntaste: es solo una ayuda, no se guarda.
         </p>
-      </header>
-      <MobileFold
-        label={`Ver las ${items.length} cosas`}
-        className="px-5 py-1"
-        contentClassName="max-sm:-mx-5"
-      >
-        <ul className="space-y-0.5 px-3 py-2">
+        <ul className="space-y-0.5 px-1 py-1">
           {items.map((text, index) => {
             const boxId = `${id}-${index}`
             const on = checked.has(index)
@@ -74,7 +73,7 @@ export function HaveAtHand({ items, className }: { items: readonly string[]; cla
         </ul>
         <p
           aria-live="polite"
-          className="border-t border-border/60 px-5 py-3 text-xs tabular-nums text-muted-foreground"
+          className="border-t border-border/60 px-3 py-2 text-xs tabular-nums text-muted-foreground"
         >
           {count === 0
             ? `${items.length} cosas para juntar.`
@@ -82,7 +81,7 @@ export function HaveAtHand({ items, className }: { items: readonly string[]; cla
               ? 'Tenés todo a mano.'
               : `${count} de ${items.length} a mano.`}
         </p>
-      </MobileFold>
-    </section>
+      </div>
+    </details>
   )
 }

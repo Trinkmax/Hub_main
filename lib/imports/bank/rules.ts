@@ -66,14 +66,18 @@ export const MERCADOLIBRE_CUIT = '30703088534'
 /** ARCA/AFIP (VEP, `banco.md` §2.9). */
 export const ARCA_CUIT = '33693450239'
 
-/** La tabla maestra de `banco.md` §2.10, tal cual se probó con `check-rules.mjs`. */
+/**
+ * La tabla maestra de `banco.md` §2.10, tal cual se probó con `check-rules.mjs`, más los textos
+ * habituales de BBVA, Nación y Mercado Pago que se sumaron en noviembre de 2026 («Impuesto al cheque»,
+ * «Débitos y créditos», «Retención de Ingresos Brutos», «Costo de Mercado Pago»…).
+ */
 export const DEFAULT_BANK_RULES: readonly DefaultBankRule[] = [
   {
     id: 1,
     category: 'ley25413',
     direction: 'D',
     pattern:
-      /LEY\s*25\.?413|IMP(UESTO)?\.?\s*(AL\s*)?(DEB|CRED)|GRAV(AMEN)?\.?\s*LEY|I25413|IMP\.?\s*DEB\.?\s*TASA|DB\/CR\s*BANCARIOS/i,
+      /\b25\.?413\b|LEY\s*25\.?413|\bIMP(UESTOS?)?\.?\s*((AL|A\s*LOS|DE|S\/|SOBRE(\s*LOS)?)\s*)?(DEB|CRED|DB\b|CR\b|CHEQUES?\b)|GRAV(AMEN)?\.?\s*LEY|I25413|\bDEB(ITOS?)?\.?\s*(Y|\/)\s*CRED|\bCRED(ITOS?)?\.?\s*(Y|\/)\s*DEB|DB\/CR\s*BANCARIOS|TRANSACC?IONES\s*FINANC/i,
     label: 'Impuesto a los débitos y créditos (Ley 25.413)',
     confidence: 'alta',
   },
@@ -82,7 +86,7 @@ export const DEFAULT_BANK_RULES: readonly DefaultBankRule[] = [
     category: 'sircreb',
     direction: 'D',
     pattern:
-      /SIRCREB|DBSIR\d*|REG\.?\s*REC|RECAUD.*(IIBB|ING\.?\s*BR)|RET(EN)?\.?\s*(IIBB|I\.?B\.?|ING\.?\s*BR)|GRAV\.?\s*IB/i,
+      /SIRCREB|SIRTAC|SIRCUPA|DBSIR\d*|REG\.?\s*REC|RECAUD.*(IIBB|ING\.?\s*BR|INGR)|\b(RET(EN(CION(ES)?)?)?|PERC(EP(CION(ES)?)?)?)\.?\s*(DE\s*)?(IIBB|I\.?B\.?\b|ING(R(ESOS)?)?\.?\s*BR)|GRAV\.?\s*IB|ING(R(ESOS)?)?\.?\s*BR(UTOS)?\.?\s*S\/\s*CRED/i,
     label: 'Recaudación de Ingresos Brutos (SIRCREB)',
     confidence: 'alta',
   },
@@ -90,7 +94,8 @@ export const DEFAULT_BANK_RULES: readonly DefaultBankRule[] = [
     id: 3,
     category: 'perc_iva',
     direction: 'D',
-    pattern: /RG\.?\s*2408|PERC(EP)?\.?\s*(DE\s*)?I\.?\s*V\.?\s*A|RETEN\.?\s*I\.?\s*V\.?\s*A/i,
+    pattern:
+      /R\.?\s*G\.?\s*2408|\b(PERC(EP(CION(ES)?)?)?|RET(EN(CION(ES)?)?)?)\.?\s*(DE\s*)?I\.?\s*V\.?\s*A\b/i,
     label: 'Percepción de IVA (RG 2408)',
     confidence: 'alta',
   },
@@ -114,7 +119,8 @@ export const DEFAULT_BANK_RULES: readonly DefaultBankRule[] = [
     id: 6,
     category: 'comisiones',
     direction: 'D',
-    pattern: /COMIS|COMI\s|MANT(ENIMIENTO)?|PAQUETE|ARANCEL|CARGO\s/i,
+    pattern:
+      /COMIS|COMI\s|\bCOM\.\s*[A-Z]|MANT(ENIMIENTO)?|PAQUETE|ARANCEL|CARGO\s|\bSERV(ICIO)?S?\.?\s*(DE\s*)?(CUENTA|CTA)\b|\b(COSTOS?|TARIFA)\s*(DE\s*)?MERCADO\s*(PAGO|LIBRE)/i,
     label: 'Comisiones bancarias',
     confidence: 'alta',
   },

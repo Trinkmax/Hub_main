@@ -1,31 +1,38 @@
 import { Suspense } from 'react'
-import { AdmPage } from '@/components/administracion/kit'
+import { SimplePage } from '@/components/administracion/planilla'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AccountsSkeleton } from './_components/accounts-skeleton'
 import { TabSkeleton } from './_components/caja-switch'
-import { LoQueHaySkeleton } from './_components/cash-daily-section'
 import { FlowTabSkeleton } from './_components/flow-blocks'
 
+/** Lo de arriba de la tabla: la frase y «Entró plata» / «Salió plata». */
+function CuentasSkeleton() {
+  return (
+    <>
+      <div aria-hidden className="flex flex-wrap items-center justify-between gap-2.5">
+        <Skeleton className="h-4 w-44" />
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-8 w-28" />
+        </div>
+      </div>
+      <AccountsSkeleton />
+    </>
+  )
+}
+
 /**
- * Cajas y bancos mientras carga, con la forma de lo que viene. «Lo que hay» es
- * la billetera: el total, las acciones, tres tarjetas con su lomo, el dibujo y
- * los movimientos. «Entró y salió» (`?tab=flujo`) es otra pantalla: el período,
- * el dibujo por mes, las barras por categoría y las próximas semanas. Cuál de
- * los dos se ve lo decide `TabSkeleton`, que lee la URL.
- *
- * Los dos esqueletos son los mismos que muestra la página al cambiar de vista.
+ * Caja mientras carga, con la forma de lo que viene: la tabla de cuentas o, con `?tab=flujo`, el
+ * detalle (el período, el dibujo por mes y las próximas semanas). Cuál de los dos se ve lo decide
+ * `TabSkeleton`, que lee la URL.
  */
 export default function CajasLoading() {
   return (
-    <AdmPage>
-      <Skeleton className="h-9 w-56" />
-      <div className="flex gap-1.5">
-        <Skeleton className="h-11 w-28 rounded-full md:h-9" />
-        <Skeleton className="h-11 w-32 rounded-full md:h-9" />
-      </div>
-      {/* Sin la URL a mano (el primer dibujo en el servidor), la vista de siempre. */}
-      <Suspense fallback={<LoQueHaySkeleton />}>
-        <TabSkeleton saldos={<LoQueHaySkeleton />} flujo={<FlowTabSkeleton />} />
+    <SimplePage>
+      {/* Sin la URL a mano (el primer dibujo en el servidor), la tabla de siempre. */}
+      <Suspense fallback={<CuentasSkeleton />}>
+        <TabSkeleton saldos={<CuentasSkeleton />} flujo={<FlowTabSkeleton />} />
       </Suspense>
-    </AdmPage>
+    </SimplePage>
   )
 }

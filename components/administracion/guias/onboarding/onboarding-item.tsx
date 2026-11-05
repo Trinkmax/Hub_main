@@ -1,6 +1,6 @@
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
 import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
+import { PRow, PTd } from '@/components/administracion/planilla'
 import { Button } from '@/components/ui/button'
 import {
   canMarkManually,
@@ -12,7 +12,7 @@ import { formatIsoDay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { HowSteps } from './how-steps'
 import { SheetButton } from './sheet-button'
-import { StatusBadge, StepMarker } from './status'
+import { StatusBadge } from './status'
 import { SupplierMessage, type SupplierMessageData } from './supplier-message'
 
 /** Botones a lo ancho en el celular (44 px) y a su medida desde `sm`. */
@@ -33,35 +33,6 @@ export function hasPrimaryAction(row: OnboardingRow): boolean {
   return Boolean(row.sheet || row.where.path)
 }
 
-/** El botón principal de un ítem (ver `hasPrimaryAction`). */
-export function ItemPrimaryAction({
-  row,
-  base,
-  variant,
-}: {
-  row: OnboardingRow
-  base: string
-  variant: 'default' | 'outline'
-}) {
-  if (!hasPrimaryAction(row) || !row.actionLabel) return null
-  if (row.sheet) {
-    return (
-      <SheetButton sheet={row.sheet} variant={variant} className={GUIDE_BUTTON}>
-        {row.actionLabel}
-      </SheetButton>
-    )
-  }
-  if (!row.where.path) return null
-  return (
-    <Button asChild variant={variant} className={GUIDE_BUTTON}>
-      <Link href={`${base}${row.where.path}`}>
-        {row.actionLabel}
-        <ArrowRight className="size-4" aria-hidden="true" />
-      </Link>
-    </Button>
-  )
-}
-
 /** «Dónde»: el link a la pantalla exacta, o el texto si es afuera de la plataforma. */
 export function WhereText({ row, base }: { row: OnboardingRow; base: string }) {
   if (!row.where.path) return <span className="text-muted-foreground">{row.where.label}</span>
@@ -76,23 +47,18 @@ export function WhereText({ row, base }: { row: OnboardingRow; base: string }) {
 }
 
 /**
- * Un ítem de «Cómo arrancar» (diseño §5.2.1): estado (con palabras), qué
- * cargás, dónde (link a la pantalla exacta), cómo (pasos y ejemplo), lo que
- * hace la plataforma sola y la acción. Los que solo pasan afuera se marcan con
- * «Ya lo hice»; el mismo botón pasa a «Desmarcar» (el foco no se pierde).
+ * Un paso de «Cómo arrancar», en dos filas de la planilla: Estado · Paso · [Ir] y, debajo, plegado,
+ * el detalle (qué, dónde, cómo y lo que hace sola), con su mini guía y su «Ya lo hice».
  *
- * Lo que ya está («Listo», «Al día», «Marcado por vos») viene plegado a un
- * renglón: el tilde, el nombre, su estado y «Ver». Abiertos vienen lo próximo
- * y lo que falta, que es lo que hay que hacer. Todos son el mismo `<details>`
- * nativo (anda sin script y el contenido sigue en la página): marcar o
- * desmarcar no cambia el árbol, así el botón no se desarma bajo el dedo. Lo
- * que la persona acaba de marcar sigue abierto (`keepOpen`) hasta que recarga.
+ * Todo arranca plegado: se abre al tocar el nombre, y solo llega abierto el que trae la URL
+ * (`#arranque-<paso>`). El detalle queda en la página con `hidden`: marcar o desmarcar no cambia el
+ * árbol, así el botón no se desarma bajo el dedo.
  */
 export function OnboardingItemRow({
   row,
-  n,
   isNext,
-  keepOpen = false,
+  open,
+  onToggle,
   base,
   canWrite,
   canMark,
@@ -101,11 +67,9 @@ export function OnboardingItemRow({
   booksStartDate,
 }: {
   row: OnboardingRow
-  /** El número del paso dentro de su sección. */
-  n: number
   isNext: boolean
-  /** Se marcó o desmarcó en esta visita: no se pliega aunque quede hecho. */
-  keepOpen?: boolean
+  open: boolean
+  onToggle: (id: string) => void
   base: string
   canWrite: boolean
   /** Se pueden guardar marcas (la base ya da el estado de la guía). */
@@ -114,40 +78,56 @@ export function OnboardingItemRow({
   supplier: SupplierMessageData
   booksStartDate: string | null
 }) {
-  const titleId = `${itemAnchor(row.id)}-titulo`
+  const anchor = itemAnchor(row.id)
+  const titleId = `${anchor}-titulo`
+  const panelId = `${anchor}-detalle`
   const statusText = onboardingStatusText(row, isNext)
-  const folded = row.status === 'done' && !isNext && !keepOpen
-
   return (
-    <li id={itemAnchor(row.id)} className="scroll-mt-24">
-      <details open={!folded} className={cn('group/item', isNext && 'bg-primary/5')}>
-        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-4 py-3 outline-none transition-colors duration-(--duration-fast) hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none group-open/item:items-start group-open/item:pt-5 group-open/item:pb-3 sm:gap-4 sm:px-5 [&::-webkit-details-marker]:hidden">
-          <StepMarker n={n} status={row.status} isNext={isNext} className="group-open/item:mt-px" />
-          {/* El título con su estado: un `<summary>` admite un encabezado adentro. */}
-          <h3
+    <>
+      <PRow className={cn(isNext && 'bg-primary/5')}>
+        <PTd className="w-28 whitespace-nowrap">
+          {statusText ? (
+            <StatusBadge status={row.status} isNext={isNext}>
+              {statusText}
+            </StatusBadge>
+          ) : null}
+        </PTd>
+        <PTd className="p-0">
+          <button
             id={titleId}
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium leading-snug group-open/item:text-base group-open/item:font-semibold group-open/item:tracking-tight"
+            type="button"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => onToggle(row.id)}
+            className="flex min-h-11 w-full scroll-mt-24 items-center gap-2 px-3 py-[7px] text-left font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:pointer-fine:min-h-9"
           >
-            <span className="text-pretty">{row.title}</span>
-            {statusText ? (
-              <StatusBadge status={row.status} isNext={isNext}>
-                {statusText}
-              </StatusBadge>
-            ) : null}
-            {row.optional ? <Badge variant="muted">Opcional</Badge> : null}
-          </h3>
-          <span className="shrink-0 text-xs font-medium text-muted-foreground group-open/item:hidden">
-            Ver
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) group-open/item:mt-1 group-open/item:rotate-180 motion-reduce:transition-none"
-          />
-        </summary>
-        <div className="pr-4 pb-5 pl-14 sm:pr-5 sm:pl-16">
+            <span className="min-w-0 flex-1 text-pretty">
+              {row.title}
+              {row.optional ? (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">Opcional</span>
+              ) : null}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) motion-reduce:transition-none',
+                open && 'rotate-180',
+              )}
+            />
+          </button>
+        </PTd>
+        <PTd align="right" className="w-20">
+          {canWrite ? <ItemGoButton row={row} base={base} /> : null}
+        </PTd>
+      </PRow>
+      <tr id={anchor} hidden={!open} className="scroll-mt-24">
+        <td
+          id={panelId}
+          colSpan={3}
+          className="border-b border-border/60 bg-secondary/30 px-3 py-4"
+        >
           <ItemBody
             row={row}
-            isNext={isNext}
             base={base}
             canWrite={canWrite}
             canMark={canMark}
@@ -155,17 +135,42 @@ export function OnboardingItemRow({
             supplier={supplier}
             booksStartDate={booksStartDate}
             titleId={titleId}
+            open={open}
           />
-        </div>
-      </details>
-    </li>
+        </td>
+      </tr>
+    </>
   )
 }
 
-/** Lo de adentro de un ítem: qué, dónde, por qué falta, cómo, lo que hace sola y los botones. */
+/** La columna [Ir]: lleva a la pantalla donde se hace, o abre su hoja. */
+function ItemGoButton({ row, base }: { row: OnboardingRow; base: string }) {
+  if (!hasPrimaryAction(row)) return null
+  if (row.sheet) {
+    return (
+      <SheetButton
+        sheet={row.sheet}
+        variant="outline"
+        size="sm"
+        aria-label={row.actionLabel ?? undefined}
+      >
+        Abrir
+      </SheetButton>
+    )
+  }
+  if (!row.where.path) return null
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link href={`${base}${row.where.path}`} aria-label={row.actionLabel ?? undefined}>
+        Ir
+      </Link>
+    </Button>
+  )
+}
+
+/** Lo de adentro de un paso: qué, dónde, por qué falta, cómo, lo que hace sola y su marca. */
 function ItemBody({
   row,
-  isNext,
   base,
   canWrite,
   canMark,
@@ -173,9 +178,9 @@ function ItemBody({
   supplier,
   booksStartDate,
   titleId,
+  open,
 }: {
   row: OnboardingRow
-  isNext: boolean
   base: string
   canWrite: boolean
   canMark: boolean
@@ -183,29 +188,16 @@ function ItemBody({
   supplier: SupplierMessageData
   booksStartDate: string | null
   titleId: string
+  /** La mini guía, con sus maquetas, se arma recién al abrir el paso. */
+  open: boolean
 }) {
   const minutes = minutesText(row.minutes)
   const markable =
     canWrite && canMark && canMarkManually(row) && (row.status === 'todo' || row.manualDone)
-  const primary =
-    canWrite && hasPrimaryAction(row) ? (
-      <ItemPrimaryAction
-        row={row}
-        base={base}
-        variant={isNext && row.kind !== 'manual' ? 'default' : 'outline'}
-      />
-    ) : null
-  const markVariant = row.manualDone
-    ? 'ghost'
-    : row.kind === 'manual'
-      ? isNext
-        ? 'default'
-        : 'outline'
-      : 'ghost'
 
   return (
-    <div className="space-y-3">
-      <dl className="grid gap-1.5 text-sm">
+    <div className="max-w-3xl space-y-3 text-sm">
+      <dl className="grid gap-1.5">
         <div className="text-pretty">
           <dt className="inline font-medium text-foreground">{row.whatLabel ?? 'Qué cargás'}: </dt>
           <dd className="inline text-muted-foreground">{row.what}</dd>
@@ -227,14 +219,14 @@ function ItemBody({
       </dl>
 
       {row.pending ? (
-        <p className="flex items-start gap-1.5 text-sm text-warning-text text-pretty">
+        <p className="flex items-start gap-1.5 text-warning-text text-pretty">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {row.pending}
         </p>
       ) : null}
 
       {row.id === 'opening' && booksStartDate && row.status !== 'done' ? (
-        <p className="text-sm text-muted-foreground text-pretty">
+        <p className="text-muted-foreground text-pretty">
           Los libros arrancan el{' '}
           <span className="font-medium text-foreground">{formatIsoDay(booksStartDate)}</span>: cargá
           lo que había ese día.
@@ -245,16 +237,10 @@ function ItemBody({
         <SupplierMessage data={supplier} base={base} canWrite={canWrite} />
       ) : null}
 
-      <HowSteps
-        key={isNext ? 'abierto' : 'cerrado'}
-        steps={row.how}
-        example={row.example}
-        howTo={row.howTo}
-        defaultOpen={isNext}
-      />
+      <HowSteps steps={row.how} example={row.example} howTo={row.howTo} showHowTo={open} />
 
       {row.auto && row.status !== 'done' ? (
-        <p className="flex items-start gap-1.5 text-sm text-muted-foreground text-pretty">
+        <p className="flex items-start gap-1.5 text-muted-foreground text-pretty">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
           <span>
             <span className="font-medium text-foreground">La plataforma lo hace sola: </span>
@@ -263,26 +249,21 @@ function ItemBody({
         </p>
       ) : null}
 
-      {primary || markable ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          {primary}
-          {markable ? (
-            <Button
-              type="button"
-              variant={markVariant}
-              className={cn(GUIDE_BUTTON, markVariant === 'ghost' && 'text-muted-foreground')}
-              aria-describedby={titleId}
-              onClick={() => onMark(row, !row.manualDone)}
-            >
-              {row.manualDone ? (
-                <Undo2 className="size-4" aria-hidden="true" />
-              ) : (
-                <Check className="size-4" aria-hidden="true" />
-              )}
-              {row.manualDone ? 'Desmarcar' : (row.manualLabel ?? 'Ya lo hice')}
-            </Button>
-          ) : null}
-        </div>
+      {markable ? (
+        <Button
+          type="button"
+          variant={row.manualDone ? 'ghost' : 'outline'}
+          className={cn(GUIDE_BUTTON, row.manualDone && 'text-muted-foreground')}
+          aria-describedby={titleId}
+          onClick={() => onMark(row, !row.manualDone)}
+        >
+          {row.manualDone ? (
+            <Undo2 className="size-4" aria-hidden="true" />
+          ) : (
+            <Check className="size-4" aria-hidden="true" />
+          )}
+          {row.manualDone ? 'Desmarcar' : (row.manualLabel ?? 'Ya lo hice')}
+        </Button>
       ) : null}
     </div>
   )

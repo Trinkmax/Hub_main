@@ -53,7 +53,7 @@ const FULL: OnboardingData = {
   openingDone: true,
   accountantAdded: true,
   arca: { status: 'connected', certNotAfter: '2028-10-01', emissionEnabled: true },
-  manual: ['platforms'],
+  manual: ['platforms', 'taxes'],
 }
 
 function strip(
@@ -81,7 +81,7 @@ describe('los pasos de esta área', () => {
       'treasuries',
       'sales_methods',
       'platforms',
-      'sales_points',
+      'taxes',
       'access',
       'arca',
     ])
@@ -129,7 +129,7 @@ describe('HUB hoy: lo que hace que los números sean de verdad', () => {
     if (view.kind !== 'urgent') return
     expect(view.after.map((s) => s.title)).toEqual([
       'Completá los datos de la SAS',
-      'Cajas y cuentas',
+      'Cuentas: caja, bancos y billeteras',
     ])
     expect(view.after.map(stepHref)).toEqual([
       '/hub/administracion/ajustes?tab=sas',
@@ -240,7 +240,7 @@ describe('en una lista corta, cada paso va por el nombre de su lugar', () => {
         'Datos de la SAS',
         'Cajas y cuentas',
         'Medios de cobro',
-        'Puntos de venta',
+        'Impuestos',
         'Accesos',
         'ARCA',
       ]).toContain(label)

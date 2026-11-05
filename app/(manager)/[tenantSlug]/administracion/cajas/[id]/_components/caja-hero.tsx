@@ -46,7 +46,7 @@ function QuietLink({
 }
 
 /**
- * «La tarjeta abierta»: la misma tarjeta de la billetera, en grande. A la
+ * «La tarjeta abierta»: la ficha de una cuenta, en grande. A la
  * izquierda, cuánta plata hay y la oración del período, con su cuenta; a la
  * derecha, si coincide con lo que hay de verdad y EL botón de la pantalla
  * («Contar la caja», o «Ya me entró» en una billetera con plata en camino).
@@ -72,7 +72,7 @@ export function CajaHero({
   treasuryId: string
   name: string
   kind: TreasuryKind
-  /** El color de la caja (`walletTones`): el mismo que en la billetera y en el Resumen. */
+  /** El color de la caja (`walletTones`): sale de su tipo, y es uno solo en toda la sección. */
   tone: TreasuryTone | null
   active: boolean
   /** `null`: no se pudieron leer los movimientos del período (lo dice el bloque de abajo). */
@@ -202,7 +202,7 @@ export function CajaHero({
               className={cn(QUIET, 'shadow-none')}
             >
               <ArrowLeftRight aria-hidden className="size-4 shrink-0" />
-              {card ? 'Pagar el resumen' : 'Mover plata'}
+              {card ? 'Pagar el resumen' : 'Transferir a otra cuenta'}
             </ActionButton>
           </li>
           {card ? null : (

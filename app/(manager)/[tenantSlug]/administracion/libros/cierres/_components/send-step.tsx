@@ -1,27 +1,23 @@
-import { ArrowRight, UserPlus } from 'lucide-react'
+import { UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { PanelSection } from '@/components/administracion/kit/panel'
-import { PanelLink } from '@/components/administracion/kit/panel-states'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { formatMonthYear } from '@/lib/dates'
-import { ExportAllButton } from '../../_components/export-button'
 import { monthNoun } from '../../_lib/months'
-import { type PackageFile, packageCountText } from '../../_lib/package'
+import { OpenFoldLink } from './open-fold-link'
 
 /**
- * El cuerpo del paso 3 de «Fin de mes»: mandarle los libros a la contadora. Sin
- * un envío de verdad (no hay dónde anotar «ya se lo mandé»), mandar es una de
- * dos cosas: que ella entre con su usuario de solo lectura, o bajarle los
- * archivos. Va primero «Que entre ella»: es un mensaje para pegar, no quince
+ * Mandarle los libros a la contadora, con el mes cerrado. Sin un envío de verdad (no hay dónde anotar
+ * «ya se lo mandé»), mandar es una de dos cosas: que ella entre con su usuario, o bajarle los archivos
+ * con «Descargar los libros». Va primero «Que entre ella»: es un mensaje para pegar, no quince
  * descargas.
  *
  * Quién ve qué:
- * - un dueño ve si la contadora ya tiene usuario (y si no, «Sumar a la
- *   contadora», solo si administra los accesos);
- * - quien carga pero no es dueño no puede listar personas: copia el link;
- * - la contadora no ve «Que entre ella»: descarga.
- * Descargar no es cargar: el paquete se le ofrece a todos. Server-safe.
+ * - un dueño ve si la contadora ya tiene usuario (y si no, «Sumar a la contadora», solo si administra
+ *   los accesos);
+ * - quien carga pero no es dueño no puede listar personas: copia el link.
+ * La contadora no ve esto: los libros son para ella. Server-safe.
  */
 
 /** «Ana», «Ana y Luis», «Ana, Luis y Marta». */
@@ -55,20 +51,15 @@ export type SendAudience =
   | { kind: 'owner'; accountants: readonly string[]; canInvite: boolean }
   /** Carga pero no es dueño: no puede listar personas. */
   | { kind: 'writer' }
-  /** La contadora (solo lectura). */
-  | { kind: 'reader' }
 
 export function SendStepBody({
   month,
   audience,
   link,
   inviteHref,
-  files,
-  downloadable,
-  cuitHref,
-  indexHref,
+  fileCount,
+  indexFold,
   receiptsHref,
-  primary,
 }: {
   /** `yyyy-MM`. */
   month: string
@@ -77,49 +68,17 @@ export function SendStepBody({
   link: string
   /** Dónde se suma a la contadora (Configuración › Equipo). */
   inviteHref: string
-  files: readonly PackageFile[]
-  /** Los que se pueden descargar hoy (sin la CUIT, los de IVA quedan afuera). */
-  downloadable: readonly PackageFile[]
-  cuitHref: string
-  /** «Ver archivo por archivo» → el índice de `/libros`. */
-  indexHref: string
+  /** Cuántas planillas trae el mes. */
+  fileCount: number
+  /** «Ver archivo por archivo»: el `id` del plegable con el índice, abajo en la misma pantalla. */
+  indexFold: string
   /** Compras y pagos › Comprobantes. */
   receiptsHref: string
-  /** Este paso es el que toca: su primera acción va rellena. */
-  primary: boolean
 }) {
   const noun = monthNoun(month)
   const message = sendMessage(month, link)
-  const missing = files.length - downloadable.length
-  const download = (variant: 'default' | 'outline') =>
-    downloadable.length > 0 ? (
-      <ExportAllButton
-        label={`Descargar el paquete de ${noun}`}
-        count={packageCountText(files.length, downloadable.length)}
-        variant={variant}
-        className="h-12 w-full px-5 sm:w-auto"
-        files={downloadable.map((f) => ({ href: f.href, fileName: f.fileName, title: f.title }))}
-      />
-    ) : null
-  const fileByFile = (
-    <PanelLink href={indexHref}>
-      Ver archivo por archivo
-      <ArrowRight className="size-3.5" aria-hidden />
-    </PanelLink>
-  )
-
-  if (audience.kind === 'reader') {
-    return (
-      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
-        {download(primary ? 'default' : 'outline')}
-        {fileByFile}
-      </div>
-    )
-  }
-
   const hasAccountant = audience.kind === 'owner' && audience.accountants.length > 0
   const who = audience.kind === 'owner' ? namesText(audience.accountants) : ''
-  const copyVariant = primary ? 'default' : 'outline'
 
   return (
     <div>
@@ -133,9 +92,9 @@ export function SendStepBody({
               value={link}
               label={`Copiar el link de ${noun}`}
               copiedLabel="Copiado: pegáselo por WhatsApp o por mail."
-              variant={copyVariant}
+              variant="outline"
               size="default"
-              className="h-12 w-full gap-2 px-5 sm:w-auto"
+              className="h-11 w-full gap-2 px-4 sm:w-auto md:pointer-fine:h-9"
             />
             <CopyFallback label="El link:" value={link} rows={2} />
           </div>
@@ -155,9 +114,9 @@ export function SendStepBody({
                   : 'Copiar el mensaje'
               }
               copiedLabel="Copiado: pegáselo por WhatsApp o por mail."
-              variant={copyVariant}
+              variant="outline"
               size="default"
-              className="h-12 w-full max-w-full gap-2 px-5 sm:w-auto"
+              className="h-11 w-full max-w-full gap-2 px-4 sm:w-auto md:pointer-fine:h-9"
             />
             <CopyFallback label="El mensaje:" value={message} rows={3} />
           </div>
@@ -170,8 +129,8 @@ export function SendStepBody({
             {audience.kind === 'owner' && audience.canInvite ? (
               <Button
                 asChild
-                variant={copyVariant}
-                className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
+                variant="outline"
+                className="h-11 w-full gap-2 px-4 sm:w-auto md:pointer-fine:h-9"
               >
                 <Link href={inviteHref}>
                   <UserPlus className="size-4" aria-hidden />
@@ -190,19 +149,15 @@ export function SendStepBody({
       <PanelSection title="O mandarle los archivos">
         <div className="space-y-3">
           <p className="max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
-            Son {files.length} planillas (CSV) que se abren con Excel. Se descargan una atrás de la
-            otra.
+            «Descargar los libros» baja {fileCount} planillas (CSV) que se abren con Excel, una
+            atrás de la otra.
           </p>
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
-            {download('outline')}
-            {fileByFile}
-          </div>
-          {missing > 0 ? (
-            <p className="text-sm text-muted-foreground text-pretty">
-              Se descargan {downloadable.length} de {files.length}: los {missing} de IVA necesitan
-              la CUIT del bar. <PanelLink href={cuitHref}>Cargarla</PanelLink>
-            </p>
-          ) : null}
+          <OpenFoldLink
+            target={indexFold}
+            className="inline-flex min-h-11 w-fit items-center gap-1 rounded-sm text-sm font-medium whitespace-nowrap text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+          >
+            Ver archivo por archivo
+          </OpenFoldLink>
           <p className="text-xs text-muted-foreground text-pretty sm:hidden">
             En el celular se descargan de a uno: es más cómodo desde la compu.
           </p>

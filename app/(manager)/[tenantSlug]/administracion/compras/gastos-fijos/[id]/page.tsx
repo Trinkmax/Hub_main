@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
-import { AdmHeader, AdmPage, categoryOptions, PanelError } from '@/components/administracion/kit'
+import { TaskHeader } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_components/task-header'
+import { categoryOptions, PanelError } from '@/components/administracion/kit'
+import { SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
 import { AccountingContextError, loadPostingCatalog } from '@/lib/accounting/context'
 import { getRecurringExpense, settleQuery } from '@/lib/accounting/queries'
@@ -16,17 +18,12 @@ export const metadata = { title: 'Gasto fijo' }
 
 const PARTY_KINDS = new Set(['supplier', 'other', 'tax_agency'])
 
-const DESCRIPTION =
-  'Lo cargás una vez y aparece todos los meses en tu planilla, con su vencimiento.'
-
 /**
- * La ficha de un gasto fijo: alta (`/gastos-fijos/nuevo`) o edición. Es un
- * renglón de la planilla abierto en grande, con todo lo que la planilla no
- * deja cambiar en el lugar (el papel de siempre, a quién y con qué se paga,
- * las cuotas, el detalle). Lee lo mismo de siempre: ninguna lectura más.
+ * La ficha de un gasto fijo: alta (`/gastos-fijos/nuevo`) o edición, con todo lo que la planilla no
+ * deja cambiar en la fila (el papel de siempre, a quién y con qué se paga, las cuotas, el detalle).
+ * Lee lo mismo de siempre: ninguna lectura más.
  *
- * A la contadora se le muestra un aviso con la vuelta a la planilla, donde ve
- * todos los datos en el renglón abierto.
+ * A la contadora se le muestra un aviso con la vuelta a la planilla.
  */
 export default async function GastoFijoPage({
   params,
@@ -45,14 +42,14 @@ export default async function GastoFijoPage({
 
   if (!canWrite) {
     return (
-      <AdmPage width="compact">
-        <AdmHeader back={back} title="Gasto fijo" description={DESCRIPTION} />
+      <SimplePage width="narrow">
+        <TaskHeader back={back} title="Gasto fijo" />
         <ReadOnlyNotice
-          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Gastos fijos: tocá un renglón y se abre con sus datos."
+          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Gastos fijos."
           href={backHref}
           linkLabel="Ir a Gastos fijos"
         />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -83,10 +80,10 @@ export default async function GastoFijoPage({
         ? rowOutcome.message
         : ''
     return (
-      <AdmPage width="compact">
-        <AdmHeader back={back} title={title} description={DESCRIPTION} />
+      <SimplePage width="narrow">
+        <TaskHeader back={back} title={title} />
         <PanelError title="La ficha del gasto fijo" message={message} />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -139,8 +136,8 @@ export default async function GastoFijoPage({
       }
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader back={back} title={title} description={DESCRIPTION} />
+    <SimplePage width="narrow">
+      <TaskHeader back={back} title={title} />
       <RecurringForm
         tenantSlug={tenantSlug}
         today={today}
@@ -175,6 +172,6 @@ export default async function GastoFijoPage({
           active: t.active,
         }))}
       />
-    </AdmPage>
+    </SimplePage>
   )
 }

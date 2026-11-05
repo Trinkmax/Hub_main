@@ -19,7 +19,7 @@ export const CONFIG_STEP_IDS = [
   'treasuries',
   'sales_methods',
   'platforms',
-  'sales_points',
+  'taxes',
   'access',
   'arca',
 ] as const
@@ -55,8 +55,8 @@ const LATER_MAX = 3
 /**
  * Qué muestra el bloque «Puesta en marcha» de la portada. Lo urgente es, en
  * este orden: los saldos iniciales, la CUIT y que haya algún medio de cobro.
- * Lo demás (el resto de la constancia, el banco, las comisiones, los puntos de
- * venta, la contadora, ARCA) puede esperar: no sostiene un cartel de «falta».
+ * Lo demás (el resto de la constancia, el banco, las comisiones, los impuestos,
+ * la contadora, ARCA) puede esperar: no sostiene un cartel de «falta».
  */
 export function setupNextView(steps: readonly SetupStep[], facts: SetupFacts): SetupNextView {
   const pending = steps.filter((s) => !s.done)
@@ -97,7 +97,7 @@ const STEP_PLACE: Readonly<Record<ConfigStepId, string>> = {
   treasuries: 'Cajas y cuentas',
   sales_methods: 'Medios de cobro',
   platforms: 'Medios de cobro',
-  sales_points: 'Puntos de venta',
+  taxes: 'Impuestos',
   access: 'Accesos',
   arca: 'ARCA',
 }

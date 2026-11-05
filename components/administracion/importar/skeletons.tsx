@@ -22,48 +22,34 @@ function HeaderSkeleton({ back = false }: { back?: boolean }) {
   )
 }
 
-/** La bandeja: la franja de arriba, las tres bandejas y el historial. */
+/** «Importar»: la tabla de los orígenes y el historial. */
 export function InboxSkeleton() {
   return (
-    <div className={`${PAGE} max-w-7xl`} aria-busy="true">
+    <div
+      className="mx-auto grid w-full max-w-7xl content-start gap-3.5 px-4 pt-3.5 pb-24 sm:px-6 lg:px-8"
+      aria-busy="true"
+    >
       <span className="sr-only">Cargando Importar…</span>
-      <HeaderSkeleton />
-      <Skeleton className="h-20 w-full rounded-2xl" />
-      <div className="grid gap-5 lg:grid-cols-3">
-        {['arca', 'mercado-pago', 'banco'].map((k) => (
-          <div key={k} className={`${SURFACE} space-y-4`}>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-12 rounded-xl" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-3 w-52 max-w-full" />
+      {[4, 4].map((rows, block) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: dos bloques fijos, no se reordenan
+          key={block}
+          className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
+        >
+          <Skeleton className="m-3 h-4 w-28" />
+          <div className="divide-y divide-border/60 border-t border-border/70">
+            {Array.from({ length: rows }, (_, row) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: filas de relleno
+              <div key={row} className="flex items-center gap-4 px-3 py-2.5">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-32 max-sm:hidden" />
+                <Skeleton className="h-8 w-16 rounded-md" />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-10 w-32" />
-              <Skeleton className="h-4 w-48 max-w-full" />
-            </div>
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-11 w-full rounded-md" />
+            ))}
           </div>
-        ))}
-      </div>
-      <div className={`${SURFACE} space-y-4`}>
-        <Skeleton className="h-6 w-48" />
-        <div className="divide-y divide-border/60">
-          {['a', 'b', 'c', 'd'].map((k) => (
-            <div key={k} className="flex items-center gap-3 py-3">
-              <Skeleton className="size-10 rounded-md" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="h-3 w-64 max-w-full" />
-              </div>
-              <Skeleton className="h-6 w-24 rounded-full" />
-            </div>
-          ))}
         </div>
-      </div>
+      ))}
     </div>
   )
 }

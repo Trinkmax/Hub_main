@@ -20,21 +20,19 @@ import {
 } from '@/lib/accounting/queries'
 import { getOnboarding } from '@/lib/accounting/queries/onboarding'
 import { getArcaOverview } from '@/lib/arca/queries'
-import { configSteps, setupNextView } from '../../configurar/_lib/setup-next'
 import { PARTY_KIND_ORDER } from '../_lib/cobros'
 import type { SystemPartyRow } from '../_lib/payloads'
-import type { ArcaTileState } from '../_lib/portada'
+import { type ArcaTileState, portadaRows } from '../_lib/portada'
 import { ROOMS } from '../_lib/rooms'
 import { AccessPanel } from './access-panel'
 import { ArcaPanel } from './arca-panel'
 import { IntegrityPanel } from './integrity-panel'
 import { MethodsPanel } from './methods-panel'
-import { AccountantDrawer } from './portada/accountant-drawer'
-import { SettingsBoard } from './portada/settings-board'
-import { SetupNext, SetupPills } from './portada/setup-next'
+import { PortadaList } from './portada/portada-list'
 import { SalesPointsPanel } from './sales-points-panel'
 import { PeriodSettingsForm, SasSettingsForm } from './settings-forms'
 import { FiscalYearsList, PeriodSettingsView, SasSettingsView } from './settings-views'
+import { TaxesPanel } from './taxes-panel'
 import { TreasuriesPanel } from './treasuries-panel'
 
 /**
@@ -65,9 +63,12 @@ export type RoomContext = {
 // ─── La portada ──────────────────────────────────────────────────────────────
 
 /**
- * La portada: lo próximo de la puesta en marcha, los seis objetos y el cajón
- * de la contadora. Tres lecturas en paralelo (el catálogo, la guía «Cómo
- * arrancar» y los accesos); una que falla no tira las otras.
+ * La portada: «Puesta en marcha: N de M» y una fila por habitación. Tres lecturas
+ * en paralelo (el catálogo, la guía «Cómo arrancar» y los accesos); una que falla
+ * no tira las otras.
+ *
+ * El avance es el de la guía, a la que lleva, y se dice sin importar quién mira:
+ * la contadora también la abre. Si la guía no cargó no se afirma ningún número.
  */
 export async function Portada({ ctx }: { ctx: RoomContext }) {
   const [catalog, onboarding, access, arca] = await Promise.all([
@@ -76,50 +77,41 @@ export async function Portada({ ctx }: { ctx: RoomContext }) {
     settleQuery(getAccessOverview(ctx.tenantId, { includeMembers: ctx.isOwner })),
     arcaRoomState(ctx.tenantId),
   ])
-  const settings = catalog.ok ? catalog.data.settings : null
   const guide = onboarding.ok ? onboarding.data : null
   const strip = buildSetup({
     summary: null,
-    settings,
+    settings: catalog.ok ? catalog.data.settings : null,
     onboarding: guide,
-    canWrite: ctx.canWrite,
+    canWrite: true,
     base: ctx.base,
   })
-  const board = (
-    <SettingsBoard
-      base={ctx.base}
-      catalog={catalog.ok ? catalog.data : null}
-      onboarding={onboarding.ok ? onboarding.data : undefined}
-      access={access.ok ? access.data : null}
-      showMembers={ctx.isOwner}
-      arcaState={arca}
+  return (
+    <PortadaList
+      rows={portadaRows({
+        base: ctx.base,
+        catalog: catalog.ok ? catalog.data : null,
+        onboarding: onboarding.ok ? onboarding.data : undefined,
+        access: access.ok ? access.data : null,
+        showMembers: ctx.isOwner,
+        arcaState: arca,
+      })}
+      setup={guide ? { done: strip.done, total: strip.total } : null}
+      guideHref={strip.guideHref}
     />
   )
+}
 
-  if (!ctx.canWrite) {
-    return (
-      <div className="space-y-6">
-        <SetupPills steps={strip.steps} />
-        <AccountantDrawer base={ctx.base} mine />
-        {board}
-      </div>
-    )
-  }
+// ─── Impuestos ───────────────────────────────────────────────────────────────
 
-  const steps = configSteps(strip)
-  const view = setupNextView(steps, {
-    openingPending: settings
-      ? settings.openingStatus === 'pending'
-      : steps.some((s) => s.id === 'opening' && !s.done),
-    cuitMissing: settings ? !settings.cuit : false,
-    noMethods: catalog.ok ? !catalog.data.methods.some((m) => m.active) : false,
-  })
+export async function ImpuestosRoom({ ctx }: { ctx: RoomContext }) {
+  const catalog = await settleQuery(loadPostingCatalog(ctx.tenantId))
+  if (!catalog.ok) return <PanelError title={ROOMS.impuestos.title} message={catalog.message} />
   return (
-    <div className="space-y-6">
-      <SetupNext view={view} guideHref={strip.guideHref} />
-      {board}
-      <AccountantDrawer base={ctx.base} mine={false} />
-    </div>
+    <TaxesPanel
+      tenantSlug={ctx.tenantSlug}
+      settings={catalog.data.settings.taxSettings}
+      readOnly={!ctx.canWrite}
+    />
   )
 }
 

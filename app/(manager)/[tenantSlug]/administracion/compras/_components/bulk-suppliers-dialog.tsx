@@ -25,9 +25,10 @@ import { parseNameList } from '../_lib/bulk'
  * cargan todos de una. Los que ya están no se repiten. El resto de la ficha
  * (CUIT, contactos, días de entrega) se completa después en cada uno.
  *
- * El botón que lo abre cambia de aspecto según dónde va: callado en la barra
- * de la libreta (`variant="ghost"`), en link dentro de un estado vacío
- * (`variant="link"`). Por dentro es el mismo diálogo y manda lo mismo.
+ * El botón que lo abre cambia de aspecto según dónde va (en link dentro de un
+ * estado vacío, `variant="link"`). Desde el «⋯» de la planilla no lleva botón:
+ * el menú le pasa `open` y `onOpenChange`. Por dentro es el mismo diálogo y
+ * manda lo mismo.
  */
 export function BulkSuppliersDialog({
   tenantSlug,
@@ -35,6 +36,8 @@ export function BulkSuppliersDialog({
   className,
   label = 'Agregar de una lista',
   variant = 'outline',
+  open: controlledOpen,
+  onOpenChange,
 }: {
   tenantSlug: string
   existingNames: readonly string[]
@@ -42,10 +45,19 @@ export function BulkSuppliersDialog({
   /** Lo que dice el botón que lo abre. */
   label?: string
   variant?: 'outline' | 'ghost' | 'link'
+  /** Lo abre otro (el «⋯» de la planilla): no se dibuja el botón. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const router = useRouter()
   const uid = useId()
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : ownOpen
+  const setOpen = (next: boolean) => {
+    if (controlled) onOpenChange?.(next)
+    else setOwnOpen(next)
+  }
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
@@ -86,23 +98,25 @@ export function BulkSuppliersDialog({
 
   return (
     <>
-      <Button
-        type="button"
-        variant={variant}
-        className={
-          className ??
-          (variant === 'link'
-            ? 'h-auto min-h-11 p-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground md:min-h-0'
-            : 'h-11 gap-2 md:h-9')
-        }
-        onClick={() => {
-          setError(null)
-          setOpen(true)
-        }}
-      >
-        {variant === 'link' ? null : <ListPlus className="size-4" aria-hidden />}
-        {label}
-      </Button>
+      {controlled ? null : (
+        <Button
+          type="button"
+          variant={variant}
+          className={
+            className ??
+            (variant === 'link'
+              ? 'h-auto min-h-11 p-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground md:min-h-0'
+              : 'h-11 gap-2 md:h-9')
+          }
+          onClick={() => {
+            setError(null)
+            setOpen(true)
+          }}
+        >
+          {variant === 'link' ? null : <ListPlus className="size-4" aria-hidden />}
+          {label}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>

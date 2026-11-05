@@ -4,11 +4,13 @@
  *
  * El asistente guardaba todo en dos pantallas (los datos de la SAS y, en una
  * sola, cajas + cobros + puntos de venta: unas treinta decisiones juntas, con
- * los porcentajes plegados; ahí fue el Enter del 12/10). Ahora son cinco pasos
- * chicos y el sexto son los saldos iniciales. Lo que se manda no cambió: el
- * mismo `WizardState`, el mismo `checkWizard` (que sigue validando en dos
- * tramos, 1 y 2) y UN solo guardado. Este archivo solo dice a qué paso visual
- * pertenece cada campo, cómo se resume cada paso y cómo se lee un borrador.
+ * los porcentajes plegados; ahí fue el Enter del 12/10). Ahora son cuatro pasos
+ * chicos y el quinto son los saldos iniciales. Los puntos de venta dejaron de ser
+ * un paso (reunión del 29/10/2026: «no va a emitir factura esto, por lo menos
+ * todavía»): quedan plegados y opcionales en «Revisá y arrancá». Lo que se manda
+ * no cambió: el mismo `WizardState`, el mismo `checkWizard` (que sigue validando
+ * en dos tramos, 1 y 2) y UN solo guardado. Este archivo solo dice a qué paso
+ * visual pertenece cada campo, cómo se resume cada paso y cómo se lee un borrador.
  */
 
 import { padPv } from '@/lib/fiscal'
@@ -23,24 +25,23 @@ import {
 
 // ─── El riel ─────────────────────────────────────────────────────────────────
 
-/** Los seis pasos del riel: el nombre de cada lugar, igual que en Ajustes. */
+/** Los cinco pasos del riel: el nombre de cada lugar, igual que en Ajustes. */
 export const SETUP_RAIL_STEPS = [
   'Datos de la SAS',
   'Cajas y cuentas',
   'Medios de cobro',
-  'Puntos de venta',
   'Revisá y arrancá',
   'Saldos iniciales',
 ] as const
 
 /** El paso de los saldos iniciales (el último del riel). */
-export const OPENING_RAIL_STEP = 6
+export const OPENING_RAIL_STEP = 5
 
 export type RailState = 'done' | 'current' | 'todo'
 export type RailItem = { title: string; state: RailState; summary?: string }
 
 /**
- * El riel con el avance de verdad. `current` es el paso que toca (1 a 6) o
+ * El riel con el avance de verdad. `current` es el paso que toca (1 a 5) o
  * `'done'` cuando ya está todo. `summaries[n]` es lo que quedó cargado en el
  * paso `n`, para mostrarlo debajo de su nombre. `doneUpTo` es el último paso
  * ya resuelto cuando se volvió atrás a cambiar uno anterior (el asistente): lo
@@ -66,34 +67,32 @@ export function setupRailItems(
   })
 }
 
-// ─── Los cinco pasos del asistente ───────────────────────────────────────────
+// ─── Los cuatro pasos del asistente ──────────────────────────────────────────
 
 /** Los pasos que se cargan antes del único guardado. */
-export type WizardScreen = 1 | 2 | 3 | 4 | 5
-export const WIZARD_SCREENS: readonly WizardScreen[] = [1, 2, 3, 4, 5]
-export const REVIEW_SCREEN: WizardScreen = 5
+export type WizardScreen = 1 | 2 | 3 | 4
+export const WIZARD_SCREENS: readonly WizardScreen[] = [1, 2, 3, 4]
+export const REVIEW_SCREEN: WizardScreen = 4
 
 /** La pregunta de cada paso: el riel dice el nombre, la tarjeta pregunta. */
 export const WIZARD_QUESTIONS: Readonly<Record<WizardScreen, string>> = {
   1: '¿Cómo figura el bar en los papeles?',
   2: '¿Dónde está la plata?',
   3: '¿Cómo te pagan?',
-  4: '¿Con qué número facturás?',
-  5: 'Revisá y arrancá',
+  4: 'Revisá y arrancá',
 }
 
 /** El botón que cierra cada paso: dice a dónde va. */
-export const WIZARD_NEXT_LABEL: Readonly<Record<1 | 2 | 3 | 4, string>> = {
+export const WIZARD_NEXT_LABEL: Readonly<Record<1 | 2 | 3, string>> = {
   1: 'Seguir con las cajas',
   2: 'Seguir con los cobros',
-  3: 'Seguir con las facturas',
-  4: 'Revisar todo',
+  3: 'Revisar todo',
 }
 
 /**
  * A qué paso visual pertenece el error de un campo (las claves que arma
  * `wizardFieldKey`). Lo que no es de ningún campo (`form`) va al paso 1, como
- * siempre.
+ * siempre. Los puntos de venta están plegados en «Revisá y arrancá».
  */
 export function visualStepOfField(field: string): 1 | 2 | 3 | 4 {
   if (field === 'treasuries' || field.startsWith('treasury.')) return 2
@@ -130,12 +129,12 @@ export function firstErrorScreen(errors: Readonly<Record<string, string>>): 1 | 
 
 // ─── La bienvenida ───────────────────────────────────────────────────────────
 
-/** Lo que conviene tener a mano para los cinco pasos (los saldos iniciales piden el resto después). */
+/** Lo que conviene tener a mano para el asistente (los saldos iniciales piden el resto después). */
 const WELCOME_NEEDS: readonly RegExp[] = [
   /constancia de inscripción/i,
   /saldo de Mercado Pago/i,
   /comisión/i,
-  /puntos de venta/i,
+  /porcentajes/i,
 ]
 
 /**
@@ -173,7 +172,8 @@ export function readWizardDraft(raw: unknown): WizardDraft | null {
   const draft = raw as { v?: unknown; step?: unknown; screen?: unknown; state?: unknown }
   if (draft.v !== WIZARD_DRAFT_VERSION) return null
   const step: 1 | 2 = draft.step === 2 ? 2 : 1
-  const saved = draft.screen
+  // De cuando los puntos de venta eran un paso: «Revisá y arrancá» era el 5.
+  const saved = draft.screen === 5 ? REVIEW_SCREEN : draft.screen
   const screen: WizardScreen =
     typeof saved === 'number' &&
     (WIZARD_SCREENS as readonly number[]).includes(saved) &&

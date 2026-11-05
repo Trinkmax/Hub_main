@@ -75,12 +75,14 @@ function Stepper({
   month,
   today,
   minMonth,
+  maxMonth,
   pending,
   go,
 }: {
   month: string
   today: string
   minMonth?: string | null
+  maxMonth?: string | null
   pending: boolean
   go: (updates: Record<string, string | null>) => void
 }) {
@@ -88,7 +90,7 @@ function Stepper({
   const prev = addMonthsToYearMonth(month, -1)
   const next = addMonthsToYearMonth(month, 1)
   const canPrev = !minMonth || prev >= minMonth
-  const canNext = next <= current
+  const canNext = next <= (maxMonth ?? current)
   return (
     // Con mouse mide 36 px, lo mismo que las píldoras de al lado (no quedan escalonadas).
     <div className={cn(PAPER_PILL, 'flex items-center gap-1 md:pointer-fine:h-9')}>
@@ -131,6 +133,7 @@ export function MonthStepper({
   month,
   today,
   minMonth,
+  maxMonth,
   className,
 }: {
   /** `yyyy-MM`. */
@@ -138,13 +141,22 @@ export function MonthStepper({
   today: string
   /** Primer mes con cuentas (`books_start_date`): antes no hay nada. */
   minMonth?: string | null
+  /** Hasta dónde llega la flecha. Sin esto, hasta este mes: lo que viene no tiene cuentas. */
+  maxMonth?: string | null
   className?: string
 }) {
   const { go, pending } = usePeriodNavigation()
   const current = monthOf(today)
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)} aria-busy={pending}>
-      <Stepper month={month} today={today} minMonth={minMonth} pending={pending} go={go} />
+      <Stepper
+        month={month}
+        today={today}
+        minMonth={minMonth}
+        maxMonth={maxMonth}
+        pending={pending}
+        go={go}
+      />
       {month !== current ? (
         <Chip
           label="Este mes"

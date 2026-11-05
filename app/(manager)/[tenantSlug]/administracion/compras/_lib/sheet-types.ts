@@ -17,6 +17,9 @@ import type {
 
 export type SheetResult<T> = { ok: true; data: T } | { ok: false; message: string }
 
+/** Lo que dice el Plan de la semana de un proveedor, en la hoja «Pago». */
+export type SheetWeekPlan = { budgetCents: number; paidCents: number }
+
 export type SheetTreasury = {
   id: string
   name: string

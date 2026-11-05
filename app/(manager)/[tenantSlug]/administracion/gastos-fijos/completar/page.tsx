@@ -1,13 +1,8 @@
-import {
-  AdmHeader,
-  AdmPage,
-  categoryOptions,
-  EmptyTeach,
-  PanelError,
-  PanelLink,
-  PillLink,
-} from '@/components/administracion/kit'
+import Link from 'next/link'
+import { categoryOptions, PanelError, PillLink } from '@/components/administracion/kit'
+import { Planilla, SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
+import { Button } from '@/components/ui/button'
 import { listAccounts, listRecurringExpenses, settleQuery } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
 import { isPurchaseImputation, isQuickExpenseAccount } from '../../compras/_lib/accounts'
@@ -19,6 +14,7 @@ import {
   recurringHref,
 } from '../../compras/_lib/links'
 import { requireComprasAccess } from '../../compras/_lib/page-access'
+import { TaskHeader } from '../_components/task-header'
 import { FillSheet, type FillView } from './_components/fill-sheet'
 
 export const metadata = { title: 'Completar la planilla' }
@@ -53,18 +49,14 @@ export default async function CompletarPlanillaPage({
 
   if (!canWrite) {
     return (
-      <AdmPage width="compact">
-        <AdmHeader
-          back={back}
-          title="Completar la planilla"
-          description="Los montos y los días de los gastos fijos, de corrido."
-        />
+      <SimplePage width="narrow">
+        <TaskHeader back={back} title="Completar la planilla" />
         <ReadOnlyNotice
           description="Esta pantalla es para cargar los montos de los gastos fijos. Con Contabilidad podés verlos en Gastos fijos."
           href={backHref}
           linkLabel="Ir a Gastos fijos"
         />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -82,10 +74,10 @@ export default async function CompletarPlanillaPage({
         ? accountsOutcome.message
         : ''
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader back={back} title="Completá tu planilla" />
+      <SimplePage width="narrow">
+        <TaskHeader back={back} title="Completá tu planilla" />
         <PanelError title="Tus gastos fijos" message={message} />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -94,16 +86,17 @@ export default async function CompletarPlanillaPage({
 
   if (rows.length === 0) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader back={back} title="Completá tu planilla" />
-        <EmptyTeach
-          title="Todavía no hay gastos fijos para completar"
-          action={<PanelLink href={recurringHref(tenantSlug, 'nuevo')}>Cargar uno</PanelLink>}
-          secondary={<PanelLink href={backHref}>Volver a la planilla</PanelLink>}
-        >
-          Cargá el alquiler, la luz o los sueldos y después volvé acá a ponerles el monto y el día.
-        </EmptyTeach>
-      </AdmPage>
+      <SimplePage width="narrow">
+        <TaskHeader back={back} title="Completá tu planilla" />
+        <Planilla className="px-4 py-6 text-center">
+          <p className="text-sm text-muted-foreground text-pretty">
+            Todavía no hay gastos fijos para completar.
+          </p>
+          <Button asChild variant="outline" className="mt-3 h-11">
+            <Link href={recurringHref(tenantSlug, 'nuevo')}>Cargar uno</Link>
+          </Button>
+        </Planilla>
+      </SimplePage>
     )
   }
 
@@ -128,15 +121,11 @@ export default async function CompletarPlanillaPage({
       : null
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
+    <SimplePage width="narrow">
+      <TaskHeader
         back={back}
         title={missing > 0 ? 'Completá tu planilla' : 'Editá tu planilla'}
-        description={
-          missing > 0
-            ? 'Poné cuánto pagás por cada uno y qué día vence. Cada renglón se guarda solo.'
-            : 'Cambiá montos y días de corrido. Cada renglón se guarda solo.'
-        }
+        note="Cada renglón se guarda solo."
       />
       <FillSheet
         // Cambiar de vista arma la lista de nuevo (el filtro se aplica al entrar).
@@ -201,6 +190,6 @@ export default async function CompletarPlanillaPage({
           </div>
         }
       />
-    </AdmPage>
+    </SimplePage>
   )
 }

@@ -1,40 +1,27 @@
 'use client'
 
-import { AlertTriangle, ArrowDown, CircleCheck } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { StatusPill } from '@/components/administracion/kit/status-pill'
+import { Planilla, PlanillaTitle, PTable, PTh } from '@/components/administracion/planilla'
 import { toastUndo } from '@/components/administracion/quick-actions'
-import { Button } from '@/components/ui/button'
-import { CopyButton } from '@/components/ui/copy-button'
 import { Progress } from '@/components/ui/progress'
 import type { AccSimpleState } from '@/lib/accounting/action-state'
 import {
-  minutesText,
   ONBOARDING_HAVE_AT_HAND,
-  ONBOARDING_SECTION_HINT,
   ONBOARDING_SECTION_LABEL,
   ONBOARDING_SECTIONS,
   type OnboardingData,
   type OnboardingItemId,
   type OnboardingRow,
   type OnboardingSection,
-  type OnboardingState,
   onboardingRows,
   onboardingState,
   sectionProgressText,
 } from '@/lib/accounting/onboarding'
 import { markOnboardingStep } from '@/lib/imports/actions'
-import { cn } from '@/lib/utils'
 import { HaveAtHand } from './have-at-hand'
-import {
-  GUIDE_BUTTON,
-  hasPrimaryAction,
-  ItemPrimaryAction,
-  itemAnchor,
-  OnboardingItemRow,
-  WhereText,
-} from './onboarding-item'
+import { OnboardingItemRow } from './onboarding-item'
 import type { SupplierMessageData } from './supplier-message'
 
 /** Por qué la guía no tiene el estado del bar. */
@@ -60,17 +47,27 @@ type MarkChange = { step: OnboardingItemId; done: boolean }
 
 const NO_MARKS: readonly string[] = []
 
+/** Lo que se abre con un link a la rutina: sus secciones y sus pasos. */
+const ROUTINE_TARGETS: ReadonlySet<string> = new Set([
+  'daily',
+  'weekly',
+  'monthly',
+  ...onboardingRows(null)
+    .filter((row) => row.section !== 'day1')
+    .map((row) => row.id),
+])
+
 function applyMarkChange(current: readonly string[], change: MarkChange): readonly string[] {
   const rest = current.filter((step) => step !== change.step)
   return change.done ? [...rest, change.step] : rest
 }
 
 /**
- * «Cómo arrancar con Administración» (diseño §5.2): el avance, «Lo próximo
- * que te conviene hacer», «Tené a mano» y los ítems por frecuencia. El estado
- * sale de la base (`acc_report_onboarding`) y se vuelve a calcular acá con
- * las marcas «Ya lo hice» optimistas: se ven al instante y, si la base dice
- * que no, vuelven solas (con el aviso de por qué). Cada marca deja «Deshacer».
+ * La Puesta en marcha: la barra de avance y una planilla Estado · Paso · [Ir] (lo de una sola vez),
+ * con el detalle de cada paso plegado. Debajo, plegada mientras falte arrancar, la rutina de cada
+ * día, semana y mes, y lo que conviene tener a mano. El estado sale de la base (`acc_report_onboarding`) y se vuelve a calcular
+ * acá con las marcas «Ya lo hice» optimistas: se ven al instante y, si la base dice que no, vuelven
+ * solas (con el aviso de por qué). Cada marca deja «Deshacer».
  */
 export function OnboardingGuide({
   slug,
@@ -87,18 +84,32 @@ export function OnboardingGuide({
   const rows = useMemo(() => onboardingRows(state), [state])
   // Sin estado, «Lo próximo» es por dónde arrancar: el primer ítem de la guía.
   const nextId = state ? state.next : (rows.find((r) => r.status !== 'info')?.id ?? null)
-  const nextRow = nextId ? (rows.find((r) => r.id === nextId) ?? null) : null
   const canMark = canWrite && data !== null
-  // Lo que se marcó o desmarcó en esta visita no se pliega: el botón queda donde estaba.
-  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set())
+  const setup = state ? state.sections.day1 : { done: 0, total: 0 }
+  // Mientras falte arrancar, una sola lista: la rutina espera plegada.
+  const [routineOpen, setRoutineOpen] = useState(setup.total > 0 && setup.done === setup.total)
 
-  // Quien llega con `#arranque-<ítem>` ve ese ítem abierto, aunque ya esté hecho.
+  const toggle = (id: string) =>
+    setOpened((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  // Quien llega con `#arranque-<paso>` ve ese paso abierto, aunque ya esté hecho.
   useEffect(() => {
     const openFromHash = () => {
       const id = window.location.hash.slice(1)
       if (!id.startsWith('arranque-')) return
-      const details = document.getElementById(id)?.querySelector('details')
-      if (details) details.open = true
+      const step = id.slice('arranque-'.length)
+      if (ROUTINE_TARGETS.has(step)) setRoutineOpen(true)
+      setOpened((prev) => (prev.has(step) ? prev : new Set(prev).add(step)))
+      // La fila estaba oculta: el navegador no pudo bajar hasta ella.
+      requestAnimationFrame(() =>
+        document.getElementById(`${id}-titulo`)?.scrollIntoView({ block: 'start' }),
+      )
     }
     openFromHash()
     window.addEventListener('hashchange', openFromHash)
@@ -106,7 +117,6 @@ export function OnboardingGuide({
   }, [])
 
   function mark(row: OnboardingRow, done: boolean) {
-    setTouched((prev) => (prev.has(row.id) ? prev : new Set(prev).add(row.id)))
     startTransition(async () => {
       addMark({ step: row.id, done })
       let result: AccSimpleState<{ step: string; done: boolean }>
@@ -127,58 +137,77 @@ export function OnboardingGuide({
     })
   }
 
-  return (
-    <div className="space-y-6">
-      <ProgressCard
-        state={state}
-        nextRow={nextRow}
-        guess={state === null}
-        problem={problem}
-        canWrite={canWrite}
-        base={base}
-        supplier={supplier}
-      />
+  const percent = setup.total > 0 ? Math.round((setup.done / setup.total) * 100) : 0
+  const sheet = (section: OnboardingSection) => (
+    <SectionSheet
+      key={section}
+      section={section}
+      rows={rows.filter((r) => r.section === section)}
+      counts={state ? state.sections[section] : null}
+      nextId={nextId}
+      opened={opened}
+      onToggle={toggle}
+      base={base}
+      canWrite={canWrite}
+      canMark={canMark}
+      onMark={mark}
+      supplier={supplier}
+      booksStartDate={booksStartDate}
+    />
+  )
 
-      <div
-        className={cn(
-          'grid gap-6',
-          canWrite && 'lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start',
-        )}
-      >
-        {canWrite ? (
-          // Sin `sticky`: `.card-hairline` (position: relative) le ganaba y `top-20` la
-          // corría 80 px para abajo; además es «para el Día 1», va al lado de esa sección.
-          <HaveAtHand items={ONBOARDING_HAVE_AT_HAND} className="lg:col-start-2 lg:row-start-1" />
-        ) : null}
-        <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
-          {ONBOARDING_SECTIONS.map((section) => (
-            <SectionCard
-              key={section}
-              section={section}
-              rows={rows.filter((r) => r.section === section)}
-              counts={state ? state.sections[section] : null}
-              nextId={nextId}
-              touched={touched}
-              base={base}
-              canWrite={canWrite}
-              canMark={canMark}
-              onMark={mark}
-              supplier={supplier}
-              booksStartDate={booksStartDate}
-            />
-          ))}
+  return (
+    <div className="grid gap-3.5">
+      {state ? (
+        <div className="grid gap-1.5">
+          <Progress
+            value={percent}
+            aria-label={`Puesta en marcha: ${setup.done} de ${setup.total} listos`}
+          />
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {setup.done} de {setup.total} {setup.total === 1 ? 'listo' : 'listos'}
+          </p>
         </div>
-      </div>
+      ) : (
+        <p className="text-sm text-muted-foreground text-pretty">
+          {problem?.kind === 'error'
+            ? 'No pudimos ver tu avance. Igual podés seguir la lista paso a paso.'
+            : 'Todavía no podemos marcar tu avance solos: usá esto como lista.'}
+        </p>
+      )}
+
+      {sheet('day1')}
+
+      <details
+        open={routineOpen}
+        onToggle={(event) => setRoutineOpen(event.currentTarget.open)}
+        className="group/routine"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-3 py-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          Tu rutina: cada día, cada semana y cada mes
+          <ChevronDown
+            aria-hidden
+            className="size-4 text-muted-foreground transition-transform group-open/routine:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div className="grid gap-3.5 pt-3.5">
+          {ONBOARDING_SECTIONS.filter((section) => section !== 'day1').map(sheet)}
+        </div>
+      </details>
+
+      {canWrite ? <HaveAtHand items={ONBOARDING_HAVE_AT_HAND} /> : null}
     </div>
   )
 }
 
-function SectionCard({
+/** Una planilla: la de la puesta en marcha, o la de la rutina de cada día, semana o mes. */
+function SectionSheet({
   section,
   rows,
   counts,
   nextId,
-  touched,
+  opened,
+  onToggle,
   base,
   canWrite,
   canMark,
@@ -190,7 +219,8 @@ function SectionCard({
   rows: OnboardingRow[]
   counts: { done: number; total: number } | null
   nextId: OnboardingItemId | null
-  touched: ReadonlySet<string>
+  opened: ReadonlySet<string>
+  onToggle: (id: string) => void
   base: string
   canWrite: boolean
   canMark: boolean
@@ -198,230 +228,47 @@ function SectionCard({
   supplier: SupplierMessageData
   booksStartDate: string | null
 }) {
-  const titleId = `arranque-${section}-titulo`
-  const progress = counts ? sectionProgressText(section, counts) : ''
+  const progress = counts && section !== 'day1' ? sectionProgressText(section, counts) : ''
   return (
-    <section
-      id={`arranque-${section}`}
-      aria-labelledby={titleId}
-      className="card-hairline scroll-mt-24 overflow-hidden rounded-xl border bg-card"
-    >
-      <header className="flex flex-col gap-1 border-b border-border/60 px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-        <div className="min-w-0 space-y-0.5">
-          <h2 id={titleId} className="font-serif text-lg font-semibold tracking-tight">
-            {ONBOARDING_SECTION_LABEL[section]}
-          </h2>
-          <p className="text-sm text-muted-foreground text-pretty">
-            {ONBOARDING_SECTION_HINT[section]}
-          </p>
-        </div>
-        {progress ? (
-          <p className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
-            {progress}
-          </p>
-        ) : null}
-      </header>
-      <ol className="divide-y divide-border/60">
-        {rows.map((row, index) => (
-          <OnboardingItemRow
-            key={row.id}
-            row={row}
-            n={index + 1}
-            isNext={row.id === nextId}
-            keepOpen={touched.has(row.id)}
-            base={base}
-            canWrite={canWrite}
-            canMark={canMark}
-            onMark={onMark}
-            supplier={supplier}
-            booksStartDate={booksStartDate}
-          />
-        ))}
-      </ol>
+    <section id={`arranque-${section}`} className="scroll-mt-24">
+      <Planilla>
+        <PlanillaTitle
+          title={ONBOARDING_SECTION_LABEL[section]}
+          actions={
+            progress ? (
+              <span className="text-xs tabular-nums text-muted-foreground">{progress}</span>
+            ) : undefined
+          }
+        />
+        <PTable label={ONBOARDING_SECTION_LABEL[section]} minWidth={420}>
+          <thead>
+            <tr>
+              <PTh>Estado</PTh>
+              <PTh>Paso</PTh>
+              <PTh>
+                <span className="sr-only">Ir</span>
+              </PTh>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <OnboardingItemRow
+                key={row.id}
+                row={row}
+                isNext={row.id === nextId}
+                open={opened.has(row.id)}
+                onToggle={onToggle}
+                base={base}
+                canWrite={canWrite}
+                canMark={canMark}
+                onMark={onMark}
+                supplier={supplier}
+                booksStartDate={booksStartDate}
+              />
+            ))}
+          </tbody>
+        </PTable>
+      </Planilla>
     </section>
   )
-}
-
-/** El avance (izquierda) y «Lo próximo que te conviene hacer» (derecha; abajo en el celular). */
-function ProgressCard({
-  state,
-  nextRow,
-  guess,
-  problem,
-  canWrite,
-  base,
-  supplier,
-}: {
-  state: OnboardingState | null
-  nextRow: OnboardingRow | null
-  /** Sin estado de la base: «Lo próximo» es solo por dónde arrancar. */
-  guess: boolean
-  problem: OnboardingGuideProblem | null
-  canWrite: boolean
-  base: string
-  supplier: SupplierMessageData
-}) {
-  const setup = state ? state.sections.day1 : { done: 0, total: 0 }
-  const setupPercent = setup.total > 0 ? Math.round((setup.done / setup.total) * 100) : 0
-  const minutes = nextRow ? minutesText(nextRow.minutes) : null
-  const eyebrow = guess
-    ? 'Por dónde arrancar'
-    : canWrite
-      ? 'Lo próximo que te conviene hacer'
-      : 'Lo próximo que les toca a los dueños'
-
-  return (
-    <section
-      aria-labelledby="arranque-avance"
-      className="card-hairline overflow-hidden rounded-xl border bg-card"
-    >
-      <div className="grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div className="space-y-4 p-5">
-          <h2 id="arranque-avance" className="font-serif text-lg font-semibold tracking-tight">
-            Tu avance
-          </h2>
-          {state ? (
-            <>
-              {/* El número es el de la puesta en marcha (lo de una sola vez): el mismo «N de M»
-                  de la franja del Resumen, que trae justo a esa sección. La rutina va aparte,
-                  dicha como «Al día» o «Te toca»: no se suma a la puesta en marcha. */}
-              <div className="space-y-2">
-                <p className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-serif text-4xl font-semibold tabular-nums">
-                    {setup.done}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    de {setup.total} {setup.total === 1 ? 'listo' : 'listos'} de la puesta en marcha
-                  </span>
-                </p>
-                <Progress
-                  value={setupPercent}
-                  aria-label={`Puesta en marcha: ${setup.done} de ${setup.total} listos`}
-                />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  La rutina
-                </p>
-                <ul className="grid">
-                  {ROUTINE_SECTIONS.map((section) => {
-                    const counts = state.sections[section]
-                    if (counts.total === 0) return null
-                    return (
-                      <li key={section} className="flex items-center justify-between gap-3 text-sm">
-                        <a
-                          href={`#arranque-${section}`}
-                          className="inline-flex min-h-11 min-w-0 items-center rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-9"
-                        >
-                          {ONBOARDING_SECTION_LABEL[section]}
-                        </a>
-                        <RoutineState counts={counts} />
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            </>
-          ) : problem?.kind === 'error' ? (
-            <p className="text-sm text-muted-foreground text-pretty">
-              No pudimos ver tu avance. Igual podés seguir la guía paso a paso.
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground text-pretty">
-              Todavía no podemos marcar tu avance solos: estamos terminando de activar esta parte.
-              Mientras tanto, usá la guía como lista.
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-3 border-t border-border/60 p-5 lg:border-t-0 lg:border-l">
-          <p className="text-xs font-medium uppercase tracking-wide text-primary">
-            {nextRow ? eyebrow : 'Lo próximo'}
-          </p>
-          {nextRow ? (
-            <>
-              <h3 className="font-serif text-xl font-semibold tracking-tight text-balance">
-                {nextRow.title}
-              </h3>
-              <p className="text-sm text-muted-foreground text-pretty">{nextRow.what}</p>
-              <p className="text-sm text-pretty">
-                <span className="font-medium">Dónde: </span>
-                <WhereText row={nextRow} base={base} />
-                {minutes ? (
-                  <span className="text-muted-foreground">
-                    {/* El punto queda pegado a lo anterior (nbsp) y los minutos enteros: si no
-                        entra, «≈ 5 min» baja solo y ningún renglón empieza con «·». */}
-                    {'\u00a0· '}
-                    <span className="whitespace-nowrap">{minutes}</span>
-                  </span>
-                ) : null}
-              </p>
-              {nextRow.pending ? (
-                <p className="flex items-start gap-1.5 text-sm text-warning-text text-pretty">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  {nextRow.pending}
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
-                {canWrite ? <NextAction row={nextRow} base={base} supplier={supplier} /> : null}
-                <Button asChild variant="outline" className={GUIDE_BUTTON}>
-                  <a href={`#${itemAnchor(nextRow.id)}`}>
-                    Ver cómo se hace
-                    <ArrowDown className="size-4" aria-hidden="true" />
-                  </a>
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-start gap-3">
-              <CircleCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden="true" />
-              <div className="space-y-1">
-                <p className="font-medium">Está todo al día.</p>
-                <p className="text-sm text-muted-foreground text-pretty">
-                  Seguí con lo de cada semana y cada mes: cuando algo te toque, te avisamos en el
-                  Resumen.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/** La rutina, sin la puesta en marcha: se dice «Al día» o «Te toca», no se suma. */
-const ROUTINE_SECTIONS = ONBOARDING_SECTIONS.filter((section) => section !== 'day1')
-
-function RoutineState({ counts }: { counts: { done: number; total: number } }) {
-  // Cuántos de cada una lo dice el encabezado de su sección, adonde lleva el link.
-  return counts.done >= counts.total ? (
-    <StatusPill tone="ok">Al día</StatusPill>
-  ) : (
-    <StatusPill tone="warn">Te toca</StatusPill>
-  )
-}
-
-/** El botón de «Lo próximo»: el mismo del ítem, o copiar el mensaje para los proveedores. */
-function NextAction({
-  row,
-  base,
-  supplier,
-}: {
-  row: OnboardingRow
-  base: string
-  supplier: SupplierMessageData
-}) {
-  if (row.id === 'suppliers_message') {
-    return supplier.status === 'ready' ? (
-      <CopyButton
-        value={supplier.message}
-        label="Copiar el mensaje"
-        variant="default"
-        className={GUIDE_BUTTON}
-      />
-    ) : null
-  }
-  if (!hasPrimaryAction(row)) return null
-  return <ItemPrimaryAction row={row} base={base} variant="default" />
 }

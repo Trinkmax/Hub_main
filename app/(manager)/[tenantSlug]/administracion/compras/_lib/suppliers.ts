@@ -16,8 +16,8 @@ import { isPurchaseImputation, isQuickExpenseAccount } from './accounts'
 /**
  * Los filtros de la libreta, en el orden en que se ven. «Sin categoría» no es
  * un filtro de saldos: trae a todos y la pestaña deja los que no tienen
- * categoría. El valor de la URL (`sin-clasificar`) no cambió: los links de
- * antes siguen andando.
+ * categoría; no se ofrece en el segmento (se llega por «Clasificar proveedores»
+ * y por `?filtro=sin-clasificar&vista=lista`, que sigue andando).
  */
 export const SUPPLIER_FILTERS = [
   { value: 'todos', label: 'Todos', filter: 'all', unclassifiedOnly: false },
@@ -55,6 +55,18 @@ type SupplierRowLike = {
   debtCents: number
   creditCents: number
   overdueCents: number
+  dueSoonCents: number
+}
+
+/**
+ * ¿Es un organismo, sueldos o el sindicato? No son proveedores: no suman en el
+ * «Le debés» de arriba y se ven en su filtro. La misma regla que el filtro de
+ * `listParties` (`taxes_payroll`).
+ */
+export function isTaxOrPayroll(row: { partyKind: string; systemKey: string | null }): boolean {
+  return (
+    row.partyKind === 'tax_agency' || row.partyKind === 'payroll' || row.systemKey === 'sindicato'
+  )
 }
 
 /**
@@ -63,7 +75,10 @@ type SupplierRowLike = {
  * cuando les debés algo, cuando tienen algo a favor o en «Impuestos y
  * sueldos». Los proveedores que cargaste vos se ven siempre.
  */
-export function isVisibleSupplier(row: SupplierRowLike, filter: PartyListFilter): boolean {
+export function isVisibleSupplier(
+  row: Pick<SupplierRowLike, 'systemKey' | 'debtCents' | 'creditCents'>,
+  filter: PartyListFilter,
+): boolean {
   if (filter === 'taxes_payroll') return true
   return row.systemKey === null || row.debtCents !== 0 || row.creditCents !== 0
 }
@@ -244,17 +259,19 @@ export function supplierRowActions(row: {
 export type SupplierTotals = {
   debtCents: number
   overdueCents: number
+  dueSoonCents: number
   creditCents: number
 }
 
-/** Σ de las filas que se ven (el pie de la tabla). */
+/** Σ de unas filas (el total de la tabla, el totalizador). */
 export function supplierTotals(rows: readonly SupplierRowLike[]): SupplierTotals {
   return rows.reduce<SupplierTotals>(
     (acc, r) => ({
       debtCents: acc.debtCents + r.debtCents,
       overdueCents: acc.overdueCents + r.overdueCents,
+      dueSoonCents: acc.dueSoonCents + r.dueSoonCents,
       creditCents: acc.creditCents + r.creditCents,
     }),
-    { debtCents: 0, overdueCents: 0, creditCents: 0 },
+    { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0 },
   )
 }

@@ -367,6 +367,8 @@ export const NOTE_COPY: Readonly<Record<NoteKey, string>> = {
   unmatched_charges: 'Hay cargos de IVA o de impuestos que no encajan con ninguna comisión.',
   rule_applied: 'Se aplicó algo que me enseñaste.',
   reimport: 'El comprobante anterior se anuló: esta es una carga nueva.',
+  bank_tax_noted:
+    'El impuesto al cheque de ese día ya estaba: se anotó solo al pagar. Acá va únicamente lo que faltaba.',
 }
 
 // ─── Lo que falta: la etiqueta corta ─────────────────────────────────────────

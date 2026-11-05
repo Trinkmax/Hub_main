@@ -11,6 +11,7 @@ import {
   salesPointSavePayload,
   salesPointTogglePayload,
   treasuryDraftOf,
+  treasuryRenamePayload,
   treasurySavePayload,
   treasuryTogglePayload,
 } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_lib/payloads'
@@ -109,6 +110,30 @@ function point(over: Partial<SalesPointRow> = {}): SalesPointRow {
 }
 
 describe('Cajas y cuentas · saveTreasuryAccount', () => {
+  it('«Cambiar el nombre» desde Caja: viaja solo el nombre, con su token', () => {
+    expect(
+      treasuryRenamePayload({ id: 'caja', updatedAt: 'token', kind: 'cash' }, 'Caja del salón'),
+    ).toEqual({ id: 'caja', expectedUpdatedAt: 'token', name: 'Caja del salón', kind: 'cash' })
+  })
+
+  it('«+ Agregar cuenta» desde Caja manda lo mismo que el alta de Ajustes, con el tipo elegido', () => {
+    expect(
+      treasurySavePayload({ ...treasuryDraftOf(null), name: 'Caja chica', kind: 'cash' }),
+    ).toEqual({
+      name: 'Caja chica',
+      kind: 'cash',
+      bankName: null,
+      accountNumber: null,
+      cbuCvu: null,
+      alias: null,
+      allowNegative: false,
+      createBankParty: false,
+    })
+    expect(
+      treasurySavePayload({ ...treasuryDraftOf(null), name: 'BBVA', kind: 'bank' }),
+    ).toMatchObject({ kind: 'bank', createBankParty: true })
+  })
+
   it('el alta sin tocar nada: un banco, con «sumarlo como proveedor» prendido', () => {
     const draft = treasuryDraftOf(null)
     expect(draft.kind).toBe('bank')

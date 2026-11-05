@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { commandEntries } from '@/components/command-palette/command-config'
 import { computeActiveHrefs } from '@/components/shell/nav-active'
 import { type ResolvedNavGroup, resolveNavGroups } from '@/components/shell/nav-config'
 import { getTenantFeatures, type TenantFeatures } from '@/lib/platform/features'
@@ -143,5 +144,59 @@ describe('menú: Administración queda resaltada en toda la sección', () => {
       expect(labels).not.toContain('Fin de mes')
       expect(adminEntries(groups)).toHaveLength(1)
     }
+  })
+})
+
+describe('⌘K: los nombres nuevos de Administración', () => {
+  const entries = commandEntries.filter((e) => e.group === 'Administración')
+  const hrefOf = (label: string) => entries.find((e) => e.label === label)?.href('hub')
+
+  it('cada cosa se busca con el nombre que tiene en pantalla', () => {
+    expect(hrefOf('Compra')).toBe('/hub/administracion/compras/nueva')
+    expect(hrefOf('Compra y pago')).toBe('/hub/administracion/compras/nueva?modo=pago')
+    expect(hrefOf('Pago')).toBe('/hub/administracion?accion=pagar')
+    expect(hrefOf('Plan de la semana')).toBe('/hub/administracion/compras/semana')
+    expect(hrefOf('Sueldos')).toBe('/hub/administracion/sueldos')
+    expect(hrefOf('Sumas y saldos')).toBe('/hub/administracion/libros/sumas-y-saldos')
+    expect(hrefOf('Mayor')).toBe('/hub/administracion/libros/mayor')
+    expect(hrefOf('Asiento manual')).toBe('/hub/administracion/libros/asiento-manual')
+    expect(hrefOf('Impuestos')).toBe('/hub/administracion/ajustes?tab=impuestos')
+    expect(hrefOf('Cierre de mes')).toBe('/hub/administracion/libros/cierres')
+    expect(hrefOf('Puesta en marcha')).toBe('/hub/administracion/guias/como-arrancar')
+  })
+
+  it('no quedan los nombres de antes, pero se siguen encontrando por esas palabras', () => {
+    const labels = entries.map((e) => e.label)
+    for (const old of [
+      'Nuevo gasto',
+      'Pagar',
+      'Registrar un cobro',
+      'Mover plata',
+      'Cargar una compra que debo',
+      'Otro ingreso o egreso',
+      'Cajas y bancos',
+      'Cerrar el mes',
+      'Paquete del mes',
+      'Cómo arrancar con Administración',
+    ]) {
+      expect(labels, old).not.toContain(old)
+    }
+    const found = (id: string, word: string) =>
+      expect(entries.find((e) => e.id === id)?.keywords, word).toContain(word)
+    found('acc-transfer', 'mover plata')
+    found('acc-new-expense', 'gasto')
+    found('acc-month-closes', 'cerrar')
+    found('acc-getting-started', 'cómo arrancar')
+  })
+
+  it('la contadora encuentra el asiento manual: también lo graba', () => {
+    const entry = entries.find((e) => e.id === 'acc-manual-entry')
+    expect(entry?.roles).toEqual(['owner', 'accountant'])
+    expect(entry?.accounting).toBe('read')
+  })
+
+  it('un id por entrada', () => {
+    const ids = commandEntries.map((e) => e.id)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
