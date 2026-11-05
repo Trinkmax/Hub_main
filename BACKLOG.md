@@ -1504,7 +1504,7 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 
 - **A confirmar con Silvia y los socios:**
   - Comercio e Industria: en la reunión se dijo «0,007»; quedó 0,7 %, sobre lo facturado sin IVA. Se cambia en Ajustes › Impuestos.
-  - «Ingresos brutos / Comercio e industria Piojo y Porte - RRII» (5 gastos fijos de HUB) tienen la cuenta del bar: tildarlos abre
+  - «Ingresos brutos / Comercio e industria Piojo y Porte - RRII» (4 gastos fijos de HUB) tienen la cuenta del bar: tildarlos abre
     el Pago a Rentas o Municipalidad. Si son impuestos personales de los socios, hay que cambiarles la cuenta (Editar) a «Otros
     impuestos y tasas» o a la cuenta particular del socio.
   - Si el modelo de Sueldos le sirve: adelanto y pago contra Sueldos a pagar, y «Devengar» a fin de mes.
