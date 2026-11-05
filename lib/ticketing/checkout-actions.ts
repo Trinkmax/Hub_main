@@ -3,7 +3,7 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { getAppUrl } from '@/lib/app-url'
 import { getRequestIp } from '@/lib/ip'
-import { createPreference, type PreferenceInput } from '@/lib/mercadopago/client'
+import { createPreference, mercadoPagoPhone, type PreferenceInput } from '@/lib/mercadopago/client'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 import { mealTypeToSave } from '@/lib/salon/segments'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -191,7 +191,11 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
         unit_price: centsToMercadoPagoAmount(order.unit_price_cents),
       },
     ],
-    payer: { name: firstName, surname: rest.join(' ') || undefined },
+    payer: {
+      name: firstName,
+      surname: rest.join(' ') || undefined,
+      phone: mercadoPagoPhone(data.guest_phone),
+    },
     back_urls: { success: ticketUrl, pending: ticketUrl, failure: ticketUrl },
     // Mercado Pago solo vuelve solo a una URL https; en local se vuelve con el
     // botón «Volver al sitio».

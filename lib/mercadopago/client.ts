@@ -1,4 +1,5 @@
 import 'server-only'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import { z } from 'zod'
 
 /**
@@ -121,6 +122,22 @@ export async function getAccount(token: string): Promise<MercadoPagoAccount> {
 // Preferencias (Checkout Pro)
 // ──────────────────────────────────────────────
 
+export type MercadoPagoPhone = { area_code: string; number: string }
+
+/**
+ * El teléfono de quien compra, como lo pide Mercado Pago. No hace falta para cobrar: es un
+ * dato más para su antifraude. Si no se puede partir se omite: mejor sin teléfono que sin pago.
+ *   +5493512345678 → { area_code: '351', number: '2345678' }
+ */
+export function mercadoPagoPhone(e164: string): MercadoPagoPhone | undefined {
+  const groups = parsePhoneNumberFromString(e164)?.formatInternational().split(' ').slice(1) ?? []
+  // En Argentina, el 9 de los celulares va delante de la característica y no es parte de ella.
+  if (e164.startsWith('+549') && groups[0] === '9') groups.shift()
+  const [area, ...rest] = groups
+  const number = rest.join('').replace(/\D/g, '')
+  return area && number ? { area_code: area, number } : undefined
+}
+
 export type PreferenceInput = {
   items: Array<{
     id: string
@@ -132,7 +149,7 @@ export type PreferenceInput = {
     currency_id: 'ARS'
     unit_price: number
   }>
-  payer?: { name?: string; surname?: string }
+  payer?: { name?: string; surname?: string; phone?: MercadoPagoPhone }
   back_urls: { success: string; pending: string; failure: string }
   auto_return?: 'approved'
   notification_url?: string
@@ -162,13 +179,20 @@ export async function createPreference(
   input: PreferenceInput,
   idempotencyKey: string,
 ): Promise<Preference> {
-  const data = await mpFetch('/checkout/preferences', {
-    token,
-    method: 'POST',
-    body: input,
-    idempotencyKey,
-  })
-  return preferenceSchema.parse(data)
+  const create = (body: PreferenceInput, key: string) =>
+    mpFetch('/checkout/preferences', { token, method: 'POST', body, idempotencyKey: key })
+  try {
+    return preferenceSchema.parse(await create(input, idempotencyKey))
+  } catch (error) {
+    // El teléfono es un dato de más para su antifraude: si no lo acepta, se cobra igual.
+    const refused = error instanceof MercadoPagoError && error.status === 400
+    if (!refused || !input.payer?.phone) throw error
+    console.error('[mercadopago.createPreference] rechazó la preferencia con teléfono', {
+      code: error.code,
+    })
+    const withoutPhone = { ...input, payer: { ...input.payer, phone: undefined } }
+    return preferenceSchema.parse(await create(withoutPhone, `${idempotencyKey}-sin-telefono`))
+  }
 }
 
 // ──────────────────────────────────────────────
