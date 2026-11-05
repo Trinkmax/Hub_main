@@ -232,11 +232,21 @@ const optionalPhoneField = z.union([z.string(), z.null(), z.undefined()]).transf
   return normalized
 })
 
+/** El alias de una cuenta: de 6 a 20 letras, números, puntos o guiones. */
+const optionalAliasField = z
+  .string()
+  .trim()
+  .regex(/^$|^[A-Za-z0-9.-]{6,20}$/, 'El alias lleva de 6 a 20 letras, números, puntos o guiones.')
+  .nullish()
+  .transform((v) => (v ? v : null))
+
 export const ticketingSettingsSchema = z.object({
   headline: optionalText(80),
   intro: optionalText(500),
   venue_address: optionalText(160),
   contact_whatsapp: optionalPhoneField,
+  transfer_alias: optionalAliasField,
+  transfer_holder: optionalText(120),
   hold_minutes: z.coerce
     .number({ error: 'Poné cuántos minutos se guarda el lugar' })
     .int('Tiene que ser un número entero')

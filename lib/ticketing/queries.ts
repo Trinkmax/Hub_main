@@ -86,6 +86,8 @@ type SettingsPublicRow = {
   intro: string | null
   venue_address: string | null
   contact_whatsapp: string | null
+  transfer_alias: string | null
+  transfer_holder: string | null
   hold_minutes: number | null
   mp_connected_at: string | null
 }
@@ -93,7 +95,9 @@ type SettingsPublicRow = {
 async function loadVenue(service: SBAny, tenant: TenantRow): Promise<PublicVenue> {
   const { data, error } = await service
     .from('ticketing_settings')
-    .select('headline, intro, venue_address, contact_whatsapp, hold_minutes, mp_connected_at')
+    .select(
+      'headline, intro, venue_address, contact_whatsapp, transfer_alias, transfer_holder, hold_minutes, mp_connected_at',
+    )
     .eq('tenant_id', tenant.id)
     .maybeSingle()
   if (error) {
@@ -109,6 +113,9 @@ async function loadVenue(service: SBAny, tenant: TenantRow): Promise<PublicVenue
     intro: row?.intro ?? null,
     address: row?.venue_address ?? null,
     whatsapp: row?.contact_whatsapp ?? null,
+    transfer: row?.transfer_alias
+      ? { alias: row.transfer_alias, holder: row.transfer_holder ?? null }
+      : null,
     canSell: Boolean(row?.mp_connected_at),
     holdMinutes: row?.hold_minutes ?? 15,
   }
@@ -665,7 +672,7 @@ export async function getSampleOrder(
 // ──────────────────────────────────────────────
 
 const SETTINGS_VIEW_COLUMNS =
-  'tenant_id, mp_user_id, mp_nickname, mp_live, mp_connected_at, online_manager_id, hold_minutes, headline, intro, venue_address, contact_whatsapp, updated_at'
+  'tenant_id, mp_user_id, mp_nickname, mp_live, mp_connected_at, online_manager_id, hold_minutes, headline, intro, venue_address, contact_whatsapp, transfer_alias, transfer_holder, updated_at'
 
 export async function getTicketingSettings(tenantId: string): Promise<TicketingSettingsView> {
   const supabase = (await createClient()) as SBAny
@@ -691,6 +698,8 @@ export async function getTicketingSettings(tenantId: string): Promise<TicketingS
       intro: null,
       venue_address: null,
       contact_whatsapp: null,
+      transfer_alias: null,
+      transfer_holder: null,
       updated_at: null,
     }
   )

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { daysUntilLabel, guestShortName, paymentTypeLabel } from '@/lib/ticketing/copy'
+import {
+  daysUntilLabel,
+  guestShortName,
+  paymentTypeLabel,
+  transferProofMessage,
+} from '@/lib/ticketing/copy'
 import { serviceDayIn } from '@/lib/ticketing/dates'
 import { orderEntryFrom } from '@/lib/ticketing/door'
 
@@ -13,6 +18,26 @@ describe('paymentTypeLabel', () => {
   it('uno desconocido, o sin dato: Mercado Pago', () => {
     expect(paymentTypeLabel('otro')).toBe('Mercado Pago')
     expect(paymentTypeLabel(null)).toBe('Mercado Pago')
+  })
+})
+
+describe('transferProofMessage', () => {
+  it('lleva lo que hace falta para cargar la reserva a mano', () => {
+    expect(
+      transferProofMessage({
+        tenantName: 'HUB',
+        title: 'Shrek 2',
+        dateLabel: 'lunes 1 de diciembre',
+        time: '21:00',
+        partySize: 2,
+        guestName: 'Juan',
+        amountLabel: '$ 40.000',
+        alias: 'mi.bar.pagos',
+        code: 'E38D8CEB',
+      }),
+    ).toBe(
+      '¡Hola HUB! Mercado Pago me rechazó el pago, así que transferí $ 40.000 al alias mi.bar.pagos. Es para Shrek 2, lunes 1 de diciembre a las 21:00 hs, 2 personas, a nombre de Juan (entrada #E38D8CEB). Te paso el comprobante.',
+    )
   })
 })
 

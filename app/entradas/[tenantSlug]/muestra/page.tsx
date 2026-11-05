@@ -10,7 +10,8 @@ import { SampleView } from './_components/sample-view'
  * toca la base ni crea reservas. No la enlaza nadie y no se indexa.
  *
  * `?pelicula=<slug>` elige la película, `?nombre=` el nombre, `?personas=` cuántos y
- * `?ver=puerta` abre lo que ve quien recibe. `?video=1` es para grabar: sin los botones
+ * `?ver=puerta` abre lo que ve quien recibe y `?ver=rechazado`, lo que ve quien paga si
+ * Mercado Pago le rechaza el pago. `?video=1` es para grabar: sin los botones
  * de la muestra, la película entera sigue sola y el talón se corta al final.
  */
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,9 @@ export default async function MuestraPage({
         tenantName={page.venue.tenantName}
         address={page.venue.address}
         door={text('ver') === 'puerta'}
+        rejected={text('ver') === 'rechazado'}
+        transfer={page.venue.transfer}
+        whatsapp={page.venue.whatsapp}
         video={text('video') === '1'}
       />
     </>

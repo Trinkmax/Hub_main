@@ -34,6 +34,26 @@ export function rejectionReason(statusDetail: string | null | undefined): string
   }
 }
 
+/** El WhatsApp de quien transfirió, con todo lo que hace falta para cargarle la reserva. */
+export function transferProofMessage(input: {
+  tenantName: string
+  title: string
+  dateLabel: string
+  time: string
+  partySize: number
+  guestName: string
+  amountLabel: string
+  alias: string
+  code: string
+}): string {
+  return (
+    `¡Hola ${input.tenantName}! Mercado Pago me rechazó el pago, así que transferí ` +
+    `${input.amountLabel} al alias ${input.alias}. Es para ${input.title}, ${input.dateLabel} ` +
+    `a las ${input.time} hs, ${peopleLabel(input.partySize)}, a nombre de ${input.guestName} ` +
+    `(entrada #${input.code}). Te paso el comprobante.`
+  )
+}
+
 /** «2 personas» / «1 persona». */
 export function peopleLabel(n: number): string {
   return `${n} ${n === 1 ? 'persona' : 'personas'}`

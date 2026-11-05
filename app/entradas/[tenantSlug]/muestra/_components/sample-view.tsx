@@ -10,15 +10,17 @@ import {
   type DoorStage,
   DoorVerdictView,
 } from '@/components/door/door-verdict-view'
+import { rejectionReason } from '@/lib/ticketing/copy'
 import { formatLongDate } from '@/lib/ticketing/dates'
 import { type DoorTicket, doorVerdict } from '@/lib/ticketing/door'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { tornProfile } from '@/lib/ticketing/ticket-art'
-import type { PublicOrder } from '@/lib/ticketing/types'
+import type { PublicOrder, TransferAccount } from '@/lib/ticketing/types'
 import { LightsOff } from '../../mi-entrada/[orderId]/_components/lights-off'
 import {
   ApprovedTicket,
   capitalizeFirst,
+  RejectedTicket,
   Row,
   StatusBlock,
   TicketHeader,
@@ -46,18 +48,74 @@ export function SampleView({
   tenantName,
   address,
   door,
+  rejected,
+  transfer,
+  whatsapp,
   video,
 }: {
   order: PublicOrder
   tenantName: string
   address: string | null
   door: boolean
+  rejected: boolean
+  transfer: TransferAccount | null
+  whatsapp: string | null
   video: boolean
 }) {
+  if (rejected) {
+    return (
+      <RejectedSample
+        order={order}
+        tenantName={tenantName}
+        transfer={transfer}
+        whatsapp={whatsapp}
+      />
+    )
+  }
   return door ? (
     <DoorSample order={order} video={video} />
   ) : (
     <TicketSample order={order} tenantName={tenantName} address={address} video={video} />
+  )
+}
+
+/** Lo que ve quien paga si Mercado Pago le rechaza el pago. */
+function RejectedSample({
+  order,
+  tenantName,
+  transfer,
+  whatsapp,
+}: {
+  order: PublicOrder
+  tenantName: string
+  transfer: TransferAccount | null
+  whatsapp: string | null
+}) {
+  return (
+    <main
+      className="ent-hero -mt-[4.5rem] min-h-[100dvh] px-4 pt-28 pb-32"
+      style={{ '--accent': order.accent } as React.CSSProperties}
+    >
+      <div className="ent-beam" aria-hidden />
+      <div className="ent-screen-glow" aria-hidden />
+      <div className="relative mx-auto w-full max-w-md">
+        <RejectedTicket
+          order={order}
+          tenantName={tenantName}
+          header={<TicketHeader order={order} />}
+          reason={rejectionReason('rejected_high_risk')}
+          retryUrl="#"
+          restartUrl="#"
+          transfer={transfer ?? { alias: 'alias.del.bar', holder: tenantName }}
+          whatsapp={whatsapp}
+        />
+      </div>
+      <SampleBar>
+        <Link href="?" className="ent-press ent-ghost ent-sample-btn">
+          Ver la entrada
+        </Link>
+      </SampleBar>
+    </main>
   )
 }
 

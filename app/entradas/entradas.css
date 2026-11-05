@@ -730,6 +730,26 @@
     }
   }
 
+  /* La cuenta para transferir si Mercado Pago rechaza el pago: un papelito adentro
+     de la entrada, con el alias grande para copiarlo sin errores. */
+  .ent-transfer {
+    border: 1.5px dashed rgb(26 37 31 / 0.3);
+    border-radius: 18px;
+    background: rgb(26 37 31 / 0.035);
+    padding: 0.9rem 1rem 1rem;
+  }
+
+  .ent-transfer-alias {
+    font-family: var(--ent-mono-font);
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+    -webkit-user-select: all;
+    user-select: all;
+  }
+
   /* Contenido del botón mientras cambia (espera → listo): blur para que el
    cambio se lea como una sola transformación. */
   .ent-morph {

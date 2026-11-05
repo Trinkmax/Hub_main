@@ -283,6 +283,10 @@ quedarse tranquilo. En la puerta se corta el talón, como en el cine.
   con los mismos trazos: pasar el DOM a imagen falla en Safari con máscaras y SVG. Se
   prepara antes del toque porque Safari no deja compartir un archivo si hay que esperar.
 
+**El teléfono de quien compra** va en `payer.phone` de la preferencia (`mercadoPagoPhone`): es lo único que se le manda además del nombre, para ayudar a su antifraude. Si Mercado Pago responde 400 a una preferencia con teléfono, se vuelve a crear sin él: el pago no depende de ese dato. Casi todos los rechazos son `rejected_high_risk`. La guía de datos por rubro de Mercado Pago también pide `category_descriptor.event_date` en el ítem: todavía no se manda.
+
+**Si Mercado Pago rechaza el pago** (`transfer-slip.tsx`, `RejectedTicket`): la entrada muestra primero cómo transferir, con el alias para copiar, a nombre de quién y cuánto. Se configura en Entradas › Configuración (`transfer_alias`, `transfer_holder`; lo cambia solo el dueño y queda en `audit_log`). Con «WhatsApp para consultas» cargado aparece «Ya transferí: mandar comprobante», con el mensaje armado; sin número, avisa que el bar confirma por WhatsApp al que dejó al comprar. **La transferencia no reserva sola ni da QR:** alguien del bar mira la cuenta y carga la reserva a mano. Se ve sin pagar en `/entradas/[bar]/muestra?ver=rechazado`. Si el lugar se vence mientras transfiere, la pantalla de vencido conserva el botón del comprobante.
+
 **La función** (`ticket-show.ts`, `data-act` en `.ent-counter`): por actos y con cámara, para que nada pase fuera de la pantalla. Sello de goma que golpea, QR renglón por renglón, comprobante que se imprime mientras la página baja y, al final, las acciones. Si la persona toca la pantalla, la cámara se queda quieta y los actos siguen; con «reducir movimiento» no hay función. Por ahora solo la usa la muestra (prop `show` de `ApprovedTicket`): la compra real sigue con la animación corta hasta que los dueños la aprueben.
 
 **El QR** (`lib/ticketing/ticket-qr.ts`) lleva `/e/<id del pedido en base64url>`, 22
