@@ -5,13 +5,15 @@ import type { StoredMessage } from '@/lib/tex/display'
 import { friendlyApiError, runTexLoop, toolResultContent, unansweredToolUses } from '@/lib/tex/loop'
 import type { TexEvent } from '@/lib/tex/protocol'
 import type { TexPending, TexThread } from '@/lib/tex/store'
-import { defineTool, type TexToolContext } from '@/lib/tex/tools/types'
+import { defineTool, type TexToolContext, texApiTools } from '@/lib/tex/tools/types'
 
 const CTX: TexToolContext = {
   slug: 'hub',
   tenantId: 't',
   tenantName: 'HUB',
   userId: 'u',
+  role: 'owner',
+  features: {} as never,
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-11-05',
@@ -173,6 +175,7 @@ async function run(
     client,
     store,
     tools: [read, write, roto, navega],
+    system: 'Sos Tex.',
     ctx: CTX,
     emit: (e) => events.push(e),
     deadline: options.deadline ?? Date.now() + 60_000,
@@ -199,8 +202,18 @@ describe('el ciclo de Tex', () => {
     expect(params.tool_choice).toBeUndefined()
     const system = params.system as Array<{ cache_control?: unknown }>
     expect(system[0]?.cache_control).toEqual({ type: 'ephemeral' })
-    const tools = params.tools as Array<{ eager_input_streaming?: boolean }>
-    expect(tools.every((t) => t.eager_input_streaming)).toBe(true)
+    const tools = params.tools as Array<{
+      name: string
+      type?: string
+      eager_input_streaming?: boolean
+      defer_loading?: boolean
+    }>
+    // La búsqueda va primera; lo demás no entra al contexto hasta que Tex lo busca.
+    expect(tools[0]).toEqual({
+      type: 'tool_search_tool_regex_20251119',
+      name: 'tool_search_tool_regex',
+    })
+    expect(tools.slice(1).every((t) => t.eager_input_streaming && t.defer_loading)).toBe(true)
   })
 
   it('cada ronda le manda a la API la charla entera, en orden', async () => {
@@ -370,6 +383,26 @@ describe('el ciclo de Tex', () => {
   })
 })
 
+describe('la búsqueda de herramientas', () => {
+  it('si la API la pausó, le pide que siga sin ejecutar nada', async () => {
+    const { asked, store } = await run([
+      message(
+        [{ type: 'server_tool_use', id: 's1', name: 'tool_search_tool_regex', input: {} }],
+        'pause_turn',
+      ),
+      message([{ type: 'text', text: 'Listo' }], 'end_turn'),
+    ])
+    expect(asked).toHaveLength(2)
+    expect(store.saved.map((m) => m.role)).toEqual(['user', 'assistant', 'assistant'])
+  })
+
+  it('una herramienta core va cargada desde el principio', () => {
+    const tools = texApiTools([{ ...read, core: true }, write])
+    expect(tools[1]).not.toHaveProperty('defer_loading')
+    expect(tools[2]).toMatchObject({ defer_loading: true })
+  })
+})
+
 describe('una charla que la API ya no acepta', () => {
   it('no asusta a nadie: avisa a quien llama para que siga en otra', async () => {
     const bad = new Anthropic.BadRequestError(400, {}, 'history changed', new Headers())
@@ -380,6 +413,7 @@ describe('una charla que la API ya no acepta', () => {
       client,
       store,
       tools: [read],
+      system: 'Sos Tex.',
       ctx: CTX,
       emit: (e) => events.push(e),
       deadline: Date.now() + 60_000,

@@ -1,5 +1,6 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { Tex } from '@/components/administracion/tex/tex'
 import { AppShell } from '@/components/shell/app-shell'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
@@ -14,6 +15,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { roleForSlug } from '@/lib/tenant/claims'
+import { texEnabled } from '@/lib/tex/enabled'
 import { PATH_HEADER } from '@/lib/workspace'
 
 export default async function DashboardLayout({
@@ -74,6 +76,10 @@ export default async function DashboardLayout({
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />
       {children}
+      {/* En todo el panel de gestión; el salón (mozos, caja, cocina) es otro espacio. */}
+      {texEnabled() ? (
+        <Tex slug={tenantSlug} role={access.role} canAttach={access.accounting.write} />
+      ) : null}
     </AppShell>
   )
 }

@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type MouseEvent, type ReactNode } from 'react'
+
+type TexLinkHandler = (event: MouseEvent<HTMLAnchorElement>, href: string) => void
 
 /**
  * Lo que dice Tex, con el poco formato que usa: negrita, listas, tablas y links a pantallas del bar.
  * Es un lector propio a propósito: no entra HTML ni imágenes, y un link solo funciona si va adentro de
- * Administración de este bar. Lo que venga en un dato no puede sacar a nadie de acá ni cargar nada de
- * afuera.
+ * este bar. Lo que venga en un dato no puede sacar a nadie de acá ni cargar nada de afuera.
  */
 
 export type TexBlock =
@@ -82,9 +83,12 @@ export function parseTexBlocks(source: string): TexBlock[] {
 
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g
 
-/** Solo links a Administración de este bar. Puro. */
+/**
+ * Solo links a pantallas de este bar. Si la persona no tiene permiso para esa pantalla, el `proxy` la
+ * lleva a la suya, como con cualquier link. Puro.
+ */
 export function safeTexHref(href: string, slug: string): string | null {
-  const base = `/${slug}/administracion`
+  const base = `/${slug}`
   if (!href.startsWith(base)) return null
   const rest = href.slice(base.length)
   if (rest !== '' && !rest.startsWith('/') && !rest.startsWith('?')) return null
@@ -92,7 +96,7 @@ export function safeTexHref(href: string, slug: string): string | null {
   return href
 }
 
-function renderInline(text: string, slug: string): ReactNode {
+function renderInline(text: string, slug: string, onLink?: TexLinkHandler): ReactNode {
   return text.split(INLINE).map((part, index) => {
     const key = `${index}-${part.slice(0, 8)}`
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -114,7 +118,12 @@ function renderInline(text: string, slug: string): ReactNode {
       const href = safeTexHref(link[2] as string, slug)
       if (!href) return <Fragment key={key}>{link[1]}</Fragment>
       return (
-        <Link key={key} href={href} className="font-medium underline underline-offset-2">
+        <Link
+          key={key}
+          href={href}
+          onClick={(event) => onLink?.(event, href)}
+          className="font-medium underline underline-offset-2"
+        >
           {link[1]}
         </Link>
       )
@@ -123,16 +132,25 @@ function renderInline(text: string, slug: string): ReactNode {
   })
 }
 
-export function TexMarkdown({ text, slug }: { text: string; slug: string }) {
+export function TexMarkdown({
+  text,
+  slug,
+  onLink,
+}: {
+  text: string
+  slug: string
+  /** Se tocó un link: en el celular la hoja tiene que dejar ver a dónde llevó. */
+  onLink?: TexLinkHandler
+}) {
   const blocks = parseTexBlocks(text)
   return (
-    <div className="grid gap-2 text-sm leading-relaxed text-pretty">
+    <div className="grid gap-2 text-sm leading-relaxed text-pretty max-sm:text-[15px]">
       {blocks.map((block, index) => {
         const key = `${block.kind}-${index}`
         if (block.kind === 'p') {
           return (
             <p key={key} className="whitespace-pre-line">
-              {renderInline(block.text, slug)}
+              {renderInline(block.text, slug, onLink)}
             </p>
           )
         }
@@ -147,7 +165,7 @@ export function TexMarkdown({ text, slug }: { text: string; slug: string }) {
                         key={cell}
                         className="border-b-2 border-current/25 px-1.5 py-1 text-left font-semibold whitespace-nowrap"
                       >
-                        {renderInline(cell, slug)}
+                        {renderInline(cell, slug, onLink)}
                       </th>
                     ))}
                   </tr>
@@ -158,7 +176,7 @@ export function TexMarkdown({ text, slug }: { text: string; slug: string }) {
                       {row.map((cell, cellIndex) => (
                         // biome-ignore lint/suspicious/noArrayIndexKey: las celdas de un renglón no cambian de lugar.
                         <td key={cellIndex} className="px-1.5 py-1">
-                          {renderInline(cell, slug)}
+                          {renderInline(cell, slug, onLink)}
                         </td>
                       ))}
                     </tr>
@@ -177,7 +195,7 @@ export function TexMarkdown({ text, slug }: { text: string; slug: string }) {
             }
           >
             {block.items.map((item) => (
-              <li key={item}>{renderInline(item, slug)}</li>
+              <li key={item}>{renderInline(item, slug, onLink)}</li>
             ))}
           </List>
         )

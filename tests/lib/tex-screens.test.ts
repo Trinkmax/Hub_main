@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { TAB_VALUES } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_lib/rooms'
@@ -9,20 +9,60 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/periods'
 import { parseTab } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/ventas-view'
 import { resolveMonth, resolveRange } from '@/components/administracion/cajas-ventas/periods'
-import { TEX_AJUSTES_TABS, TEX_SCREENS, texScreen, texScreenHref } from '@/lib/tex/screens'
+import {
+  TEX_ADMIN_SCREENS,
+  TEX_AJUSTES_TABS,
+  TEX_SCREENS,
+  texScreen,
+  texScreenAllowed,
+  texScreenHref,
+  texScreensFor,
+  texScreenUrlName,
+} from '@/lib/tex/screens'
 
-const ADMIN = resolve(__dirname, '../../app/(manager)/[tenantSlug]/administracion')
+const PANEL = resolve(__dirname, '../../app/(manager)/[tenantSlug]')
+const ADMIN = join(PANEL, 'administracion')
 const ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 const TODAY = '2026-11-05'
 
 const source = (file: string) => readFileSync(join(ADMIN, file), 'utf8')
 
-/** `/compras/proveedores/:id` → la carpeta de esa ruta en `app/`. */
-const pageOf = (path: string) => join(ADMIN, path.replace(':id', '[id]'), 'page.tsx')
+/** La carpeta de esa ruta en `app/`. `:id` es el segmento dinámico que haya ahí: `[id]`, `[managerId]`… */
+const folderOf = (path: string, root = false) => {
+  let dir = root ? PANEL : ADMIN
+  for (const part of path.split('/').filter(Boolean)) {
+    if (part !== ':id') {
+      dir = join(dir, part)
+      continue
+    }
+    const dynamic = existsSync(dir)
+      ? readdirSync(dir).find((name) => /^\[[^\]]+\]$/.test(name))
+      : undefined
+    dir = join(dir, dynamic ?? '[id]')
+  }
+  return dir
+}
+const pageOf = (path: string, root = false) => join(folderOf(path, root), 'page.tsx')
+
+/** Todo el código de una pantalla: su página y lo suyo, sin las pantallas que cuelgan de ella. */
+function codeOf(dir: string): string {
+  let text = ''
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name)
+    if (statSync(full).isDirectory()) {
+      if (name.startsWith('_')) text += codeOf(full)
+    } else if (/\.tsx?$/.test(name)) {
+      text += readFileSync(full, 'utf8')
+    }
+  }
+  return text
+}
 
 describe('las pantallas existen', () => {
-  it.each(TEX_SCREENS.map((s) => [s.id, s.path] as const))('%s → %s', (_id, path) => {
-    expect(existsSync(pageOf(path))).toBe(true)
+  it.each(
+    TEX_SCREENS.map((s) => [s.id, s.path, s.root ?? false] as const),
+  )('%s → %s', (_id, path, root) => {
+    expect(existsSync(pageOf(path, root))).toBe(true)
   })
 
   it('no hay dos con el mismo id', () => {
@@ -142,8 +182,8 @@ const READS: Readonly<Record<string, Readonly<Record<string, readonly [string, R
   ajustes: { tab: ['ajustes/page.tsx', /roomOfTab\(sp\.tab\)/] },
 }
 
-describe('cada pantalla lee lo que declara', () => {
-  const declared = TEX_SCREENS.flatMap((screen) =>
+describe('cada pantalla de Administración lee lo que declara', () => {
+  const declared = TEX_ADMIN_SCREENS.flatMap((screen) =>
     (screen.params ?? []).filter((p) => p !== 'id').map((param) => [screen.id, param] as const),
   )
 
@@ -163,6 +203,43 @@ describe('cada pantalla lee lo que declara', () => {
           `${id} ya no declara ${param}`,
         ).toBe(true)
       }
+    }
+  })
+})
+
+describe('cada pantalla de las otras secciones lee lo que declara', () => {
+  const declared = TEX_SCREENS.filter((screen) => screen.root).flatMap((screen) =>
+    (screen.params ?? [])
+      .filter((param) => param !== 'id')
+      .map((param) => [screen.id, param, texScreenUrlName(screen, param as never)] as const),
+  )
+
+  /**
+   * Si la pantalla no lee ese nombre, Tex la abriría en otro día creyendo que es el pedido. Las que leen por un esquema
+   * (`calendarParamsSchema`) lo nombran en él.
+   */
+  const SCHEMAS: Readonly<Record<string, string>> = {
+    'eventos.calendario': 'lib/salon/segment-schemas.ts',
+    'reservas.nueva': 'lib/salon/segment-schemas.ts',
+  }
+
+  it.each(declared)('%s lee %s como ?%s=', (id, _param, urlName) => {
+    const screen = texScreen(id)
+    if (!screen) throw new Error(id)
+    const schema = SCHEMAS[id]
+    const code =
+      codeOf(folderOf(screen.path, true)) +
+      (schema ? readFileSync(resolve(__dirname, '../..', schema), 'utf8') : '')
+    expect(code).toMatch(
+      new RegExp(
+        `(\\bsp\\??\\.${urlName}\\b|[{ ]${urlName}\\b[^\\n]*(searchParams|sp\\b)|\\b${urlName}:|get\\('${urlName}'\\))`,
+      ),
+    )
+  })
+
+  it('la solapa va solo donde se dijeron cuáles', () => {
+    for (const screen of TEX_SCREENS) {
+      expect(screen.params?.includes('tab') ?? false, screen.id).toBe(screen.tabs !== undefined)
     }
   })
 })
@@ -303,7 +380,33 @@ describe('texScreenHref', () => {
     })
   })
 
-  describe('nunca arma un link fuera de /<slug>/administracion', () => {
+  it('cada pantalla manda el día con el nombre que ella lee', () => {
+    const href = (id: string, params: Record<string, string>) => {
+      const link = texScreenHref('hub', id, params)
+      return link.ok ? link.href : null
+    }
+    expect(href('reservas.lista', { fecha: '2026-11-06' })).toBe('/hub/reservas?day=2026-11-06')
+    expect(href('reservas.lista', { desde: '2026-11-02', hasta: '2026-11-08' })).toBe(
+      '/hub/reservas?from=2026-11-02&to=2026-11-08',
+    )
+    expect(href('operativo.tablero', { fecha: '2026-11-06' })).toBe(
+      '/hub/operativo?date=2026-11-06',
+    )
+    expect(href('eventos.calendario', { mes: '2026-12' })).toBe(
+      '/hub/eventos/programados?month=2026-12',
+    )
+    expect(href('estadisticas.como_nos_fue', { fecha: '2026-11-01' })).toBe(
+      '/hub/estadisticas/como-nos-fue?dia=2026-11-01',
+    )
+    expect(href('estadisticas.resenas', { estrellas: '1' })).toBe('/hub/reviews?rating=1')
+    expect(href('estadisticas.resenas', { estrellas: '9' })).toBe('/hub/reviews')
+    expect(href('mensajeria.inbox', { chat: ID })).toBe(`/hub/mensajeria/inbox?c=${ID}`)
+    expect(href('mensajeria.inbox', { chat: 'Ana' })).toBe('/hub/mensajeria/inbox')
+    expect(href('clientes.lista', { etiqueta: ID })).toBe(`/hub/clientes?tag=${ID}`)
+    expect(href('senas.reporte', { mes: '2026-10' })).toBe('/hub/estadisticas/senas?month=2026-10')
+  })
+
+  describe('nunca arma un link fuera de la sección de la pantalla', () => {
     const hostile = [
       '../../../login',
       '//evil.test',
@@ -329,14 +432,18 @@ describe('texScreenHref', () => {
         cuenta: value,
         semana: value,
         tab: value,
+        fecha: value,
+        chat: value,
+        evento: value,
+        etiqueta: value,
+        estrellas: value,
       })
       expect(link.ok).toBe(true)
       if (!link.ok) return
       const url = new URL(link.href, 'https://hub.test')
       expect(url.origin).toBe('https://hub.test')
-      expect(
-        url.pathname === '/hub/administracion' || url.pathname.startsWith('/hub/administracion/'),
-      ).toBe(true)
+      const base = screen?.root ? '/hub' : '/hub/administracion'
+      expect(url.pathname === base || url.pathname.startsWith(`${base}/`)).toBe(true)
       expect(link.href).not.toContain('..')
       expect(link.href).not.toContain('evil')
       // Nada de lo malo llegó: solo queda lo fijo de la pantalla.
@@ -348,5 +455,45 @@ describe('texScreenHref', () => {
     )('%s no se abre con un id malo', (id) => {
       for (const value of hostile) expect(texScreenHref('hub', id, { id: value }).ok).toBe(false)
     })
+  })
+})
+
+describe('cada uno ve sus pantallas', () => {
+  const features = {}
+  const admin = texScreen('resumen')
+  if (!admin) throw new Error('falta resumen')
+  const root = { id: 'x', label: 'x', what: 'x', path: '/menu', root: true } as const
+  const reservas = { id: 'y', label: 'y', what: 'y', path: '/reservas', root: true } as const
+
+  it('Administración, solo con su acceso', () => {
+    expect(texScreenAllowed(admin, { role: 'owner', features, accounting: true })).toBe(true)
+    expect(texScreenAllowed(admin, { role: 'owner', features, accounting: false })).toBe(false)
+  })
+
+  it('el dueño navega todo; los roles acotados, solo lo suyo', () => {
+    const viewer = (role: 'owner' | 'editor' | 'host' | 'accountant') => ({
+      role,
+      features,
+      accounting: role === 'accountant',
+    })
+    expect(texScreenAllowed(root, viewer('owner'))).toBe(true)
+    expect(texScreenAllowed(root, viewer('editor'))).toBe(true)
+    expect(texScreenAllowed(reservas, viewer('editor'))).toBe(false)
+    expect(texScreenAllowed(reservas, viewer('host'))).toBe(true)
+    expect(texScreenAllowed(root, viewer('host'))).toBe(false)
+    expect(texScreenAllowed(root, viewer('accountant'))).toBe(false)
+  })
+
+  it('lo que depende de una función, solo si el bar la tiene', () => {
+    const screen = { ...root, feature: 'reviews' as const }
+    expect(texScreenAllowed(screen, { role: 'owner', features: {}, accounting: true })).toBe(false)
+    expect(
+      texScreenAllowed(screen, { role: 'owner', features: { reviews: true }, accounting: true }),
+    ).toBe(true)
+  })
+
+  it('la contadora ve las de Administración', () => {
+    const screens = texScreensFor({ role: 'accountant', features: {}, accounting: true })
+    expect(screens.length).toBe(TEX_ADMIN_SCREENS.length)
   })
 })

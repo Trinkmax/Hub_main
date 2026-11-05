@@ -121,7 +121,7 @@ export function TexTicket({ ticket }: { ticket: Ticket }) {
               type="button"
               aria-expanded={showEntry}
               onClick={() => setShowEntry((v) => !v)}
-              className="inline-flex min-h-7 items-center gap-1 rounded-sm font-sans text-xs text-muted-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex min-h-7 items-center gap-1 rounded-sm font-sans text-xs text-muted-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10"
             >
               Ver asiento
               <ChevronDown

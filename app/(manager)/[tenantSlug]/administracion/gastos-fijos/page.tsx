@@ -84,6 +84,7 @@ export default async function GastosFijosPage({
   const pasteList =
     canWrite && catalog ? (
       <BulkRecurringDialog
+        key="pegar-lista"
         tenantSlug={tenantSlug}
         today={today}
         trigger={rows.length === 0 ? 'primary' : 'link'}

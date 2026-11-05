@@ -1,7 +1,14 @@
 import { isRealIsoDay, isRealYearMonth } from '@/lib/dates/civil'
+import { canAccessManagerPath } from '@/lib/tenant/roles'
+import type { TenantRole } from '@/lib/tenant/types'
+import { agendaScreens } from './area-screens/agenda'
+import { clientesScreens } from './area-screens/clientes'
+import { mensajeriaScreens } from './area-screens/mensajeria'
+import { negocioScreens } from './area-screens/negocio'
+import type { TexScreenDef, TexScreenParam } from './screen-types'
 
 /**
- * Todas las pantallas de Administración a las que Tex puede llevar. Es una lista cerrada a propósito:
+ * Todas las pantallas del panel a las que Tex puede llevar. Es una lista cerrada a propósito:
  * Tex nunca arma una URL suelta, elige una pantalla de acá y el servidor arma el link. Lo que venga de
  * un dato (el nombre de un proveedor, una nota) no puede mandar a nadie a otro lado.
  *
@@ -12,29 +19,7 @@ import { isRealIsoDay, isRealYearMonth } from '@/lib/dates/civil'
  * lea su pantalla.
  */
 
-export type TexScreenParam =
-  | 'id'
-  | 'mes'
-  | 'cuenta'
-  | 'desde'
-  | 'hasta'
-  | 'semana'
-  | 'fecha'
-  | 'tab'
-
-export type TexScreenDef = {
-  /** El nombre que usa Tex. */
-  id: string
-  /** Cómo la llaman en el bar. */
-  label: string
-  /** Para qué sirve, en una oración: es lo que lee Tex para saber a dónde ir. */
-  what: string
-  /** Después de `/administracion`. `:id` se reemplaza por el parámetro. */
-  path: string
-  /** Parte de la URL que no cambia (`?tab=clientes`). */
-  query?: string
-  params?: readonly TexScreenParam[]
-}
+export type { TexScreenDef, TexScreenParam } from './screen-types'
 
 /**
  * Lo que acepta `?tab=` en Ajustes (`ajustes/_lib/rooms.ts`): cualquier otra cosa abre la portada.
@@ -53,7 +38,7 @@ export const TEX_AJUSTES_TABS = [
   'integridad',
 ] as const
 
-export const TEX_SCREENS: readonly TexScreenDef[] = [
+export const TEX_ADMIN_SCREENS: readonly TexScreenDef[] = [
   {
     id: 'resumen',
     label: 'Resumen',
@@ -306,9 +291,10 @@ export const TEX_SCREENS: readonly TexScreenDef[] = [
   {
     id: 'ajustes',
     label: 'Ajustes',
-    what: 'Datos del bar, impuestos, cajas, medios de cobro y accesos.',
+    what: `Datos del bar, impuestos, cajas, medios de cobro y accesos. Solapas: ${TEX_AJUSTES_TABS.join(', ')}.`,
     path: '/ajustes',
     params: ['tab'],
+    tabs: TEX_AJUSTES_TABS,
   },
   {
     id: 'ajustes.arca',
@@ -354,14 +340,37 @@ export const TEX_SCREENS: readonly TexScreenDef[] = [
   },
 ]
 
-const SCREEN_IDS = TEX_SCREENS.map((s) => s.id) as [string, ...string[]]
-
-export function texScreenIds(): [string, ...string[]] {
-  return SCREEN_IDS
-}
+export const TEX_SCREENS: readonly TexScreenDef[] = [
+  ...TEX_ADMIN_SCREENS,
+  ...clientesScreens,
+  ...mensajeriaScreens,
+  ...agendaScreens,
+  ...negocioScreens,
+]
 
 export function texScreen(id: string): TexScreenDef | null {
   return TEX_SCREENS.find((s) => s.id === id) ?? null
+}
+
+/** Lo que hace falta saber de quien mira para decidir qué pantallas ve. */
+export type TexScreenViewer = {
+  role: TenantRole
+  features: Readonly<Record<string, boolean>>
+  /** Puede ver Administración. */
+  accounting: boolean
+}
+
+/** ¿Esta persona puede ver esta pantalla? Las mismas reglas que el menú y el proxy. */
+export function texScreenAllowed(screen: TexScreenDef, viewer: TexScreenViewer): boolean {
+  if (screen.feature && !viewer.features[screen.feature]) return false
+  if (screen.roles && !screen.roles.includes(viewer.role)) return false
+  if (!screen.root) return viewer.accounting
+  const head = screen.path.split('/').filter(Boolean)
+  return canAccessManagerPath(viewer.role, head) && !(head.length === 0 && viewer.role !== 'owner')
+}
+
+export function texScreensFor(viewer: TexScreenViewer): TexScreenDef[] {
+  return TEX_SCREENS.filter((screen) => texScreenAllowed(screen, viewer))
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -370,11 +379,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Solo se aceptan valores que la pantalla entiende: lo que no, no llega a la URL. Un mes o una fecha
  * que no existen abrirían la pantalla en «Ese mes no existe» en vez de abrirla.
  */
-function validParam(name: TexScreenParam, value: string): boolean {
+function validParam(name: TexScreenParam, value: string, screen: TexScreenDef): boolean {
   switch (name) {
     case 'id':
     case 'cuenta':
+    case 'chat':
+    case 'evento':
+    case 'etiqueta':
       return UUID_RE.test(value)
+    case 'estrellas':
+      return /^[1-5]$/.test(value)
     case 'mes':
       return isRealYearMonth(value)
     case 'desde':
@@ -383,7 +397,9 @@ function validParam(name: TexScreenParam, value: string): boolean {
     case 'fecha':
       return isRealIsoDay(value)
     case 'tab':
-      return (TEX_AJUSTES_TABS as readonly string[]).includes(value)
+      return screen.tabs?.includes(value) ?? false
+    case 'q':
+      return value.length > 0 && value.length <= 60
   }
 }
 
@@ -404,6 +420,19 @@ const URL_PARAM: Readonly<Record<Exclude<TexScreenParam, 'id'>, string>> = {
   semana: 'semana',
   fecha: 'fecha',
   tab: 'tab',
+  q: 'q',
+  chat: 'c',
+  evento: 'evento',
+  etiqueta: 'tag',
+  estrellas: 'rating',
+}
+
+/** El nombre de un parámetro en la URL de esta pantalla. */
+export function texScreenUrlName(
+  screen: TexScreenDef,
+  param: Exclude<TexScreenParam, 'id'>,
+): string {
+  return screen.urlNames?.[param] ?? URL_PARAM[param]
 }
 
 export type TexScreenLink = { ok: true; href: string; label: string } | { ok: false; error: string }
@@ -422,7 +451,7 @@ export function texScreenHref(
   let path = screen.path
   if (path.includes(':id')) {
     const id = params.id ?? ''
-    if (!validParam('id', id)) {
+    if (!validParam('id', id, screen)) {
       return { ok: false, error: `Para abrir «${screen.label}» hace falta el id.` }
     }
     path = path.replace(':id', id)
@@ -432,12 +461,12 @@ export function texScreenHref(
     if (name === 'id') continue
     if ((name === 'desde' || name === 'hasta') && !validRange(params)) continue
     const value = params[name]
-    if (value && validParam(name, value)) search.set(URL_PARAM[name], value)
+    if (value && validParam(name, value, screen)) search.set(texScreenUrlName(screen, name), value)
   }
   const query = search.toString()
   return {
     ok: true,
-    href: `/${slug}/administracion${path}${query ? `?${query}` : ''}`,
+    href: `/${slug}${screen.root ? '' : '/administracion'}${path}${query ? `?${query}` : ''}`,
     label: screen.label,
   }
 }

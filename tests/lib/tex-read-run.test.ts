@@ -94,6 +94,8 @@ const CTX: TexToolContext = {
   tenantId: 'tenant-hub',
   tenantName: 'HUB',
   userId: 'user-1',
+  role: 'owner',
+  features: {} as never,
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-11-05',

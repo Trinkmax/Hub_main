@@ -3,16 +3,14 @@
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { admFabFromFrame } from '../nav/adm-nav-model'
+import type { TenantRole } from '@/lib/tenant/types'
 import { TexDock } from './tex-dock'
 import { TexGuide } from './tex-guide'
 import { TexPanel } from './tex-panel'
 import { TexProvider, useTex } from './tex-provider'
 
 function TexStage() {
-  const { open, slug, pathname, pointing, guide } = useTex()
-  // En el celular, las pantallas de tarea tienen su pie fijo: Tex no se le para encima.
-  const roomOnPhone = admFabFromFrame(`/${slug}/administracion`, pathname)
+  const { open, pointing, guide } = useTex()
   return (
     <>
       <AnimatePresence>
@@ -20,7 +18,7 @@ function TexStage() {
           <TexPanel key="panel" />
         ) : pointing || guide ? null : (
           // Mientras señala, Tex está parado al lado de lo que muestra: no hay dos.
-          <TexDock key="dock" roomOnPhone={roomOnPhone} />
+          <TexDock key="dock" />
         )}
       </AnimatePresence>
       <TexGuide />
@@ -29,15 +27,23 @@ function TexStage() {
 }
 
 /**
- * Tex en Administración. Va en un portal: queda fuera de `<main>`, así lo que Tex «ve» de la pantalla
+ * Tex en todo el panel de gestión. Va en un portal: queda fuera de `<main>`, así lo que Tex «ve» de la pantalla
  * es lo que ve la persona, sin él adentro.
  */
-export function Tex({ slug, isAccountant }: { slug: string; isAccountant: boolean }) {
+export function Tex({
+  slug,
+  role,
+  canAttach,
+}: {
+  slug: string
+  role: TenantRole
+  canAttach: boolean
+}) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   if (!mounted) return null
   return createPortal(
-    <TexProvider slug={slug} isAccountant={isAccountant}>
+    <TexProvider slug={slug} role={role} canAttach={canAttach}>
       <TexStage />
     </TexProvider>,
     document.body,

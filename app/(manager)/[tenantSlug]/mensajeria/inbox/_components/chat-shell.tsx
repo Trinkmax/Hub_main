@@ -39,7 +39,8 @@ export function ChatShell({
   const [panelOpen, setPanelOpen] = useState(false)
 
   return (
-    <div className="relative flex h-full min-h-0">
+    // `data-tex-away`: en el celular, con un chat abierto, Tex no tapa los mensajes ni el campo de escribir.
+    <div data-tex-away className="relative flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="@container flex h-[59px] shrink-0 items-center gap-1.5 border-b border-(--wa-border) bg-(--wa-panel) pl-2 pr-3 md:pl-3">

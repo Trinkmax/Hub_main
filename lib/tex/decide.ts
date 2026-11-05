@@ -22,21 +22,41 @@ export type DecisionsOutcome = {
 }
 
 function auditPayload(action: TexActionRow, ticket: TexTicket): Record<string, unknown> {
-  // Sin importes ni nombres: el tique está en `acc_tex_actions` para quien pueda leerlo.
+  // Sin importes ni nombres: el tique queda en `acc_tex_actions`.
   return { kind: action.kind, status: ticket.status, action_id: action.id }
 }
+
+/**
+ * Lo que se iba a hacer ya no hace falta una vez decidido, y puede traer el teléfono de un cliente: solo queda el
+ * tique, que es lo que se le mostró a la persona.
+ */
+function spentPayload(action: TexActionRow): TexActionRow['payload'] {
+  return { executor: action.payload.executor, data: null }
+}
+
+/** Otro pedido ya tomó este tique. */
+const ALREADY_TAKEN = Symbol('ya tomado')
 
 async function runDecision(
   decision: TexDecision,
   action: TexActionRow,
-  store: Pick<TexStore, 'updateAction'>,
+  store: Pick<TexStore, 'updateAction' | 'claimAction'>,
   ctx: TexToolContext,
-): Promise<{ ticket: TexTicket; result: unknown | null; isError: boolean; wrote: boolean }> {
+): Promise<
+  | { ticket: TexTicket; result: unknown | null; isError: boolean; wrote: boolean }
+  | typeof ALREADY_TAKEN
+> {
   const decidedAt = new Date().toISOString()
+  const payload = spentPayload(action)
 
   if (!decision.approve) {
     const ticket: TexTicket = { ...action.ticket, status: 'declined' }
-    await store.updateAction(action.id, { status: 'declined', ticket, decided_at: decidedAt })
+    await store.updateAction(action.id, {
+      status: 'declined',
+      ticket,
+      payload,
+      decided_at: decidedAt,
+    })
     return {
       ticket,
       result: {
@@ -50,6 +70,8 @@ async function runDecision(
     }
   }
 
+  if (!(await store.claimAction(action.id))) return ALREADY_TAKEN
+
   const executor = texExecutor(action.payload.executor)
   if (!executor) {
     const ticket: TexTicket = {
@@ -57,7 +79,12 @@ async function runDecision(
       status: 'failed',
       error: 'Este tique ya no se puede hacer.',
     }
-    await store.updateAction(action.id, { status: 'failed', ticket, decided_at: decidedAt })
+    await store.updateAction(action.id, {
+      status: 'failed',
+      ticket,
+      payload,
+      decided_at: decidedAt,
+    })
     return { ticket, result: ticket.error, isError: true, wrote: false }
   }
 
@@ -80,6 +107,7 @@ async function runDecision(
     await store.updateAction(action.id, {
       status: 'done',
       ticket,
+      payload,
       result: execution.data ?? null,
       document_id: execution.documentId ?? null,
       decided_at: decidedAt,
@@ -111,6 +139,7 @@ async function runDecision(
     // Sigue pendiente, con lo nuevo a la vista: la persona lo tiene que ver antes de seguir.
     const ticket: TexTicket = {
       ...action.ticket,
+      ...execution.ticket,
       status: 'pending',
       warnings: execution.warnings,
       entry: execution.entry ?? action.ticket.entry,
@@ -118,6 +147,8 @@ async function runDecision(
     await store.updateAction(action.id, {
       ticket,
       payload: { executor: action.payload.executor, data: execution.payload },
+      // Se vuelve a poder confirmar.
+      decided_at: null,
     })
     return { ticket, result: null, isError: false, wrote: false }
   }
@@ -126,6 +157,7 @@ async function runDecision(
   await store.updateAction(action.id, {
     status: 'failed',
     ticket,
+    payload,
     result: { error: execution.message },
     decided_at: decidedAt,
   })
@@ -136,7 +168,7 @@ async function runDecision(
 export async function applyDecisions(
   decisions: readonly TexDecision[],
   thread: TexThread,
-  store: Pick<TexStore, 'action' | 'updateAction' | 'updateThread'>,
+  store: Pick<TexStore, 'action' | 'updateAction' | 'updateThread' | 'claimAction'>,
   ctx: TexToolContext,
 ): Promise<DecisionsOutcome> {
   const events: TexEvent[] = []
@@ -151,12 +183,15 @@ export async function applyDecisions(
   const results = { ...pending.results }
   let waiting = [...pending.waiting]
   let wrote = false
+  let decided = false
 
   for (const decision of decisions) {
     const action = await store.action(decision.actionId)
     if (!action || action.threadId !== thread.id || action.status !== 'pending') continue
     if (!waiting.includes(action.toolUseId)) continue
     const outcome = await runDecision(decision, action, store, ctx)
+    if (outcome === ALREADY_TAKEN) continue
+    decided = true
     events.push({ type: 'ticket', ticket: outcome.ticket })
     wrote = wrote || outcome.wrote
     if (outcome.result === null) continue
@@ -172,6 +207,9 @@ export async function applyDecisions(
     events.push({ type: 'mood', mood: 'happy' })
     events.push({ type: 'refresh' })
   }
+
+  // Lo tomó otro pedido, y ese es el que sigue la charla: pisarle lo que está escribiendo la rompería.
+  if (!decided) return { events, stillWaiting: true, results: null }
 
   if (waiting.length > 0) {
     await store.updateThread(thread.id, { pending: { order: pending.order, results, waiting } })
@@ -205,6 +243,7 @@ export async function supersedePending(
       await store.updateAction(action.id, {
         status: 'superseded',
         ticket,
+        payload: spentPayload(action),
         decided_at: new Date().toISOString(),
       })
       events.push({ type: 'ticket', ticket })

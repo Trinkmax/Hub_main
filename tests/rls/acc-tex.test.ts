@@ -12,9 +12,10 @@ import {
 } from './setup'
 
 /**
- * Tex (migraciones 20261105120000 y 120100): la charla es de quien la tuvo; las acciones las ve quien
- * lee Administración; un mensaje no se edita ni se borra; una charla no se borra; nada entre bares y
- * nada para anónimos. Corre contra el Supabase local del job `rls`.
+ * Tex (migraciones 20261105120000 a 120300): la charla es de quien la tuvo; cada uno ve sus acciones, y
+ * quien lee Administración además las de un comprobante; un mensaje no se edita ni se borra; una charla
+ * no se borra; lo usan los roles del panel, no los del salón; nada entre bares y nada para anónimos.
+ * Corre contra el Supabase local del job `rls`.
  */
 
 const describeIfRls = RLS_TESTS_ENABLED ? describe : describe.skip
@@ -162,5 +163,140 @@ describeIfRls('Tex', () => {
     const anon = getAnonClient()
     const { error } = await anon.from('acc_tex_threads').select('id').limit(1)
     expect(error?.code).toBe('42501')
+  })
+})
+
+describeIfRls('Tex en todo el panel', () => {
+  let owner: UserCtx
+  let partner: UserCtx
+  let editor: UserCtx
+  let host: UserCtx
+  let accountant: UserCtx
+  let waiter: UserCtx
+  let tenantId: string
+  let ownerThread: string
+  const customerActionId = randomUUID()
+  const documentActionId = randomUUID()
+
+  const add = async (ctx: UserCtx, role: string) => {
+    const { error } = await getServiceClient()
+      .from('memberships')
+      .insert({ tenant_id: tenantId, user_id: ctx.userId, role })
+    if (error) throw new Error(`membership ${role} failed: ${error.message}`)
+  }
+
+  /** Abre una charla, le manda un mensaje y deja una acción. Devuelve los errores que hubo. */
+  const chat = async (ctx: UserCtx) => {
+    const thread = await ctx.client
+      .from('acc_tex_threads')
+      .insert({ tenant_id: tenantId, user_id: ctx.userId })
+      .select('id')
+      .single()
+    const id = (thread.data as { id: string } | null)?.id
+    if (!id) return [thread.error?.code]
+    const message = await ctx.client.from('acc_tex_messages').insert({
+      thread_id: id,
+      tenant_id: tenantId,
+      user_id: ctx.userId,
+      seq: 0,
+      role: 'user',
+      content: [{ type: 'text', text: 'hola' }],
+    })
+    const action = await ctx.client.from('acc_tex_actions').insert({
+      thread_id: id,
+      tenant_id: tenantId,
+      user_id: ctx.userId,
+      tool_use_id: 'tu_1',
+      kind: 'reserva',
+      payload: {},
+      ticket: {},
+    })
+    return [message.error?.code, action.error?.code].filter(Boolean)
+  }
+
+  beforeAll(async () => {
+    owner = await createUserClient({ email: uniqueEmail('tex-duenio') })
+    partner = await createUserClient({ email: uniqueEmail('tex-socio') })
+    editor = await createUserClient({ email: uniqueEmail('tex-editor') })
+    host = await createUserClient({ email: uniqueEmail('tex-host') })
+    accountant = await createUserClient({ email: uniqueEmail('tex-contadora') })
+    waiter = await createUserClient({ email: uniqueEmail('tex-mozo') })
+    tenantId = await createAccountingTenant('Bar de todo el panel', owner.userId)
+    // El socio es dueño pero no tiene acceso a Administración.
+    await add(partner, 'owner')
+    await add(editor, 'editor')
+    await add(host, 'host')
+    await add(accountant, 'accountant')
+    await add(waiter, 'waiter')
+
+    const { data, error } = await owner.client
+      .from('acc_tex_threads')
+      .insert({ tenant_id: tenantId, user_id: owner.userId })
+      .select('id')
+      .single()
+    if (error || !data) throw new Error(`create thread failed: ${error?.message}`)
+    ownerThread = (data as { id: string }).id
+    const base = { thread_id: ownerThread, tenant_id: tenantId, user_id: owner.userId, ticket: {} }
+    await owner.client.from('acc_tex_actions').insert([
+      {
+        ...base,
+        id: customerActionId,
+        tool_use_id: 'tu_cliente',
+        kind: 'cliente',
+        payload: { telefono: '+5493510000000' },
+      },
+      {
+        ...base,
+        id: documentActionId,
+        tool_use_id: 'tu_compra',
+        kind: 'compra',
+        payload: {},
+        document_id: randomUUID(),
+      },
+    ])
+  })
+
+  afterAll(async () => {
+    await getServiceClient().from('tenants').delete().eq('id', tenantId)
+    for (const user of [owner, partner, editor, host, accountant, waiter]) {
+      await deleteUser(user.userId)
+    }
+  })
+
+  it('charlan los socios sin acceso a Administración, Contenido, la anfitriona y la contadora', async () => {
+    for (const user of [partner, editor, host, accountant]) {
+      expect(await chat(user)).toEqual([])
+    }
+  })
+
+  it('los del salón no tienen Tex', async () => {
+    expect(await chat(waiter)).toEqual(['42501'])
+  })
+
+  it('la contadora no ve lo que otro hizo con Tex, salvo que sea un comprobante', async () => {
+    const ids = [customerActionId, documentActionId]
+    const { data } = await accountant.client.from('acc_tex_actions').select('id').in('id', ids)
+    expect(data).toEqual([{ id: documentActionId }])
+  })
+
+  it('un socio sin acceso a Administración no ve lo que otro hizo con Tex', async () => {
+    const ids = [customerActionId, documentActionId]
+    const { data } = await partner.client.from('acc_tex_actions').select('id').in('id', ids)
+    expect(data).toEqual([])
+  })
+
+  it('quien la hizo ve la suya', async () => {
+    const { data } = await owner.client
+      .from('acc_tex_actions')
+      .select('id')
+      .eq('id', customerActionId)
+    expect(data).toEqual([{ id: customerActionId }])
+  })
+
+  it('nadie lee la charla de otro, aunque sea del mismo bar', async () => {
+    for (const user of [partner, editor, host, accountant]) {
+      const { data } = await user.client.from('acc_tex_threads').select('id').eq('id', ownerThread)
+      expect(data).toEqual([])
+    }
   })
 })
