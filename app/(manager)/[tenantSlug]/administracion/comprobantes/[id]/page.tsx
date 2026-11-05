@@ -1,28 +1,35 @@
+import { Printer } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Fragment } from 'react'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { SimplePage } from '@/components/administracion/planilla'
 import { VoucherText } from '@/components/administracion/voucher-text'
+import { Button } from '@/components/ui/button'
+import { loadPostingCatalog } from '@/lib/accounting/context'
 import {
   type DocumentDetail,
   type DocumentLink,
   getAccountingSettings,
   getDocument,
+  getImputationFlags,
   getRecurringExpense,
+  listLineReimputations,
   listRecurringExpenses,
   listTreasuryAccounts,
   settleQuery,
 } from '@/lib/accounting/queries'
 import { listDocumentAttachments } from '@/lib/accounting/queries/attachments'
 import { getDocumentOrigin, getLinkedDocuments } from '@/lib/accounting/queries/document-origin'
+import { reimputeAccountOptions, reimputeTargets } from '@/lib/accounting/reimpute'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
 import { maxIsoDay, todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { supplierHref } from '../../compras/_lib/links'
+import { BackLink } from '../../libros/_components/book-page'
+import { ReimputationList, ReimputeBlock } from '../../libros/_components/reimpute-form'
 import { QueryErrorBlock } from '../../libros/_components/report-error'
 import { requireBooksAccess } from '../../libros/_lib/page-access'
 import {
@@ -42,6 +49,7 @@ import {
   creditNoteHref,
   documentActions,
 } from '../_lib/document-view'
+import { internalVoucherNumber } from '../_lib/internal-voucher'
 import { DocumentHero } from './_components/document-hero'
 import { DocumentLinks } from './_components/document-links'
 import { DocumentTicket } from './_components/document-ticket'
@@ -51,7 +59,9 @@ import { FixBlock } from './_components/fix-block'
  * La ficha de un comprobante: el mismo papel que se vio antes de guardar, ya
  * archivado. A la derecha el ticket con su sello; a la izquierda, un número
  * con lo que pasó con la plata y el botón del momento, y debajo lo que el
- * papel tiene unido (o le falta), cómo se corrige y cómo queda en los libros.
+ * papel tiene unido (o le falta), reimputar, cómo se corrige y cómo queda en los
+ * libros. Un comprobante sin factura muestra su número interno y se imprime:
+ * «tenés que hacer un comprobante interno que justifique el pago» (Silvia).
  *
  * Sin lugar para dos columnas va en ese mismo orden, en una: qué pasó con la
  * plata → el papel → con qué está unido → ¿hay algo mal? → los libros. La
@@ -74,6 +84,8 @@ export const metadata = { title: 'Comprobante' }
 const ARCA_KINDS = new Set(['sales_invoice', 'sales_debit_note', 'sales_credit_note'])
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+const TITLE = 'font-serif text-2xl font-semibold tracking-tight'
 
 function linkText(doc: DocumentLink): string {
   return `${doc.title} #${doc.seq}`
@@ -208,16 +220,16 @@ export default async function ComprobantePage({
   if (result.ok && !result.data) notFound()
   if (!result.ok || !result.data) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader
-          title="Comprobante"
-          back={{ href: `${base}/compras?tab=comprobantes`, label: 'Volver a comprobantes' }}
-        />
+      <SimplePage>
+        <div className="grid gap-1">
+          <BackLink href={`${base}/compras?tab=comprobantes`}>Volver a comprobantes</BackLink>
+          <h1 className={TITLE}>Comprobante</h1>
+        </div>
         <QueryErrorBlock
           code={result.ok ? 'error' : result.code}
           message={result.ok ? 'No pudimos cargar el comprobante.' : result.message}
         />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
@@ -248,6 +260,9 @@ export default async function ComprobantePage({
     treasuries,
     origin,
     linked,
+    catalog,
+    flags,
+    reimputations,
   ] = await Promise.all([
     // La foto o el PDF del comprobante.
     settleQuery(listDocumentAttachments(tenantId, doc.id)),
@@ -263,6 +278,10 @@ export default async function ComprobantePage({
     // ¿Vino de un archivo importado?
     settleQuery(getDocumentOrigin(tenantId, doc.id)),
     linkedIds.length > 0 ? settleQuery(getLinkedDocuments(tenantId, linkedIds)) : null,
+    // Reimputar: el plan para el buscador, qué renglón está marcado y lo que ya se cambió.
+    settleQuery(loadPostingCatalog(tenantId)),
+    settleQuery(getImputationFlags(tenantId, { from: doc.accountingDate, to: doc.accountingDate })),
+    settleQuery(listLineReimputations(tenantId, doc.id)),
   ])
 
   const arcaCard = arcaOutcome?.ok ? arcaOutcome.data : null
@@ -334,25 +353,52 @@ export default async function ComprobantePage({
     (node) => node.id === 'en-camino' && node.rows.some((row) => row.action !== null),
   )
 
+  const back = backLinkFor(doc.kind, base, doc.accountingDate)
+  const internalNumber = internalVoucherNumber(doc)
+  const targets = catalog.ok
+    ? reimputeTargets(
+        doc,
+        new Map(catalog.data.accounts.map((a) => [a.id, a])),
+        flags.ok ? flags.data.filter((f) => f.documentId === doc.id) : [],
+      )
+    : []
+
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={backLinkFor(doc.kind, base, doc.accountingDate)}
-        // En el celular un nombre muy largo se corta a tres renglones, para que el número no
-        // se vaya de la primera pantalla: entero está en el papel.
-        title={
-          <span className="max-sm:line-clamp-3">
-            <VoucherText text={heading.title} />
-          </span>
-        }
-        description={<HeadingLine parts={heading.parts} tenantSlug={tenantSlug} base={base} />}
-        badge={
-          <>
-            {badge ? <StatusPill tone={badge.tone}>{badge.text}</StatusPill> : null}
-            <ReadOnlyBadge show={!canWrite} />
-          </>
-        }
-      />
+    <SimplePage>
+      <div className="grid gap-1">
+        <BackLink href={back.href}>{back.label}</BackLink>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {/* En el celular un nombre muy largo se corta a tres renglones, para que el número no se
+              vaya de la primera pantalla: entero está en el papel. */}
+          <h1 className={TITLE}>
+            <span className="max-sm:line-clamp-3">
+              <VoucherText text={heading.title} />
+            </span>
+          </h1>
+          {badge ? <StatusPill tone={badge.tone}>{badge.text}</StatusPill> : null}
+        </div>
+        <div className="text-sm text-muted-foreground">
+          <HeadingLine parts={heading.parts} tenantSlug={tenantSlug} base={base} />
+        </div>
+        {internalNumber !== null ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+            <span className="font-medium tabular-nums">
+              Comprobante interno N.º {internalNumber}
+            </span>
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-11 gap-1.5 md:pointer-fine:h-8"
+            >
+              <Link href={`/print/comprobante-interno/${tenantSlug}/${doc.id}`}>
+                <Printer className="size-3.5" aria-hidden />
+                Imprimir
+              </Link>
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       {/* Con lugar (56rem de ficha), dos columnas: el papel a la derecha, pegado. Sin lugar,
           una columna en el orden del DOM (o con el mapa antes del papel, si `mapFirst`). */}
@@ -405,6 +451,26 @@ export default async function ComprobantePage({
               mapFirst && 'order-4',
             )}
           >
+            {catalog.ok ? (
+              <ReimputeBlock
+                tenantSlug={tenantSlug}
+                base={base}
+                targets={targets}
+                accounts={reimputeAccountOptions(catalog.data.accounts)}
+                periodOpen={doc.period?.status === 'open'}
+                month={doc.accountingDate.slice(0, 7)}
+                documentId={doc.id}
+                canWrite={canWrite}
+              />
+            ) : null}
+
+            {reimputations.ok ? (
+              <ReimputationList
+                items={reimputations.data}
+                className="rounded-xl border border-border/70 bg-card p-3 shadow-xs sm:p-4"
+              />
+            ) : null}
+
             <FixBlock
               tenantSlug={tenantSlug}
               base={base}
@@ -446,6 +512,6 @@ export default async function ComprobantePage({
           </div>
         </div>
       </div>
-    </AdmPage>
+    </SimplePage>
   )
 }

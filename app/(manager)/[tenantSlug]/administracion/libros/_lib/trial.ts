@@ -102,3 +102,53 @@ export function visibleTrialRows<T extends TrialLike>(
 export function netOf(debitCents: number, creditCents: number): number {
   return debitCents - creditCents
 }
+
+/** ¿Alguna cuenta traía saldo de antes? Entonces Debe − Haber no da el saldo y hay que decirlo. */
+export function hasOpeningBalances(
+  rows: ReadonlyArray<{ openingDebitCents: number; openingCreditCents: number }>,
+): boolean {
+  return rows.some((row) => row.openingDebitCents !== 0 || row.openingCreditCents !== 0)
+}
+
+// ─── La vuelta desde el Mayor ────────────────────────────────────────────────
+
+/** Los filtros de Sumas y saldos: el período viaja aparte, en los parámetros de siempre. */
+const TRIAL_FILTERS = ['nivel', 'todas', 'raro', 'inicial', 'antes_refundicion'] as const
+
+const RETURN_MARK = 'sumas'
+
+/**
+ * Lo que va en `?volver=` al pasar de Sumas y saldos al Mayor: «sin perder el lugar». Con esto la
+ * vuelta cae en el mismo nivel y con «Solo lo raro» prendido.
+ */
+export function trialReturnParam(
+  filters: Readonly<Record<string, string | null | undefined>>,
+): string {
+  const search = new URLSearchParams()
+  for (const key of TRIAL_FILTERS) {
+    const value = filters[key]
+    if (value) search.set(key, value)
+  }
+  const query = search.toString()
+  return query ? `${RETURN_MARK}:${query}` : RETURN_MARK
+}
+
+/** El `id` de la fila de una cuenta en Sumas y saldos: el Mayor vuelve justo ahí. */
+export function trialRowAnchor(accountId: string): string {
+  return `cuenta-${accountId}`
+}
+
+/**
+ * Los filtros de un `?volver=`, o `null` si no se vino de Sumas y saldos. Solo se toman los que Sumas
+ * y saldos conoce: es un parámetro de la URL, cualquiera lo puede escribir.
+ */
+export function trialReturnFilters(raw: string | null): Record<string, string> | null {
+  if (raw !== RETURN_MARK && !raw?.startsWith(`${RETURN_MARK}:`)) return null
+  const search = new URLSearchParams(raw.slice(RETURN_MARK.length + 1))
+  const out: Record<string, string> = {}
+  for (const key of TRIAL_FILTERS) {
+    const value = search.get(key)
+    if (value && /^[\w-]{1,8}$/.test(value)) out[key] = value
+  }
+  return out
+}

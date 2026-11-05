@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import {
   ACCOUNT_TYPES,
   type AccountType,
@@ -31,6 +32,7 @@ import {
   JOURNAL_PAGE_LIMIT,
   keysetPage,
   keysetParams,
+  namesById,
   type QueryOutcome,
   type QueryPage,
   queryError,
@@ -1001,20 +1003,219 @@ export async function getTrialBalance(
   params: { from: string; to: string; excludeFyResult?: boolean },
 ): Promise<TrialBalance> {
   const { from, to } = requireRange(params.from, params.to)
-  const raw = await callRpcRows('acc_report_trial_balance', {
+  return readTrialBalance(tenantId, from, to, params.excludeFyResult === true)
+}
+
+/**
+ * Por pedido, una sola lectura de cada período: Sumas y saldos y el Mayor (sus flechas y sus totales)
+ * miran el mismo balance en la misma pantalla.
+ */
+const readTrialBalance = cache(
+  async (
+    tenantId: string,
+    from: string,
+    to: string,
+    excludeFyResult: boolean,
+  ): Promise<TrialBalance> => {
+    const raw = await callRpcRows('acc_report_trial_balance', {
+      p_tenant_id: tenantId,
+      p_from: from,
+      p_to: to,
+      p_exclude_fy_result: excludeFyResult,
+    })
+    const rows = raw.map(parseTrialRow)
+    const totals = sumTotals(rows)
+    const differenceCents = Math.max(
+      Math.abs(totals.openingDebitCents - totals.openingCreditCents),
+      Math.abs(totals.periodDebitCents - totals.periodCreditCents),
+      Math.abs(totals.closingDebitCents - totals.closingCreditCents),
+    )
+    return { from, to, rows, totals, balanced: differenceCents === 0, differenceCents }
+  },
+)
+
+/**
+ * El uso que le da el sistema a cada cuenta (`system_key`). Lo mira el ojo de auditor: Sueldos a pagar
+ * puede estar deudor mientras no se devengó el mes. El balance no lo trae: se pide aparte.
+ */
+export const getAccountSystemKeys = cache(
+  async (tenantId: string): Promise<ReadonlyMap<string, string | null>> => {
+    const supabase = await readerClient()
+    const { data, error } = await supabase
+      .from('acc_accounts')
+      .select('id, system_key')
+      .eq('tenant_id', tenantId)
+      .not('system_key', 'is', null)
+    if (error) throw queryError('acc_accounts', error)
+    const out = new Map<string, string | null>()
+    for (const row of (data ?? []) as unknown[]) {
+      if (isRecord(row)) out.set(str(row.id), strOrNull(row.system_key))
+    }
+    return out
+  },
+)
+
+/** Las cuentas imputables que tuvieron algún movimiento en el rango (para el «Plan simple»). */
+export async function getAccountsWithMovement(
+  tenantId: string,
+  params: { from: string; to: string },
+): Promise<ReadonlySet<string>> {
+  const trial = await getTrialBalance(tenantId, params)
+  return new Set(
+    trial.rows
+      .filter(
+        (row) =>
+          row.postable &&
+          !row.isVirtual &&
+          (row.periodDebitCents !== 0 || row.periodCreditCents !== 0),
+      )
+      .map((row) => row.accountId),
+  )
+}
+
+// ─── Reimputar: lo que hay para mirar ────────────────────────────────────────
+
+/** Un renglón cuya cuenta no es la habitual de su proveedor o de su gasto fijo. */
+export type ImputationFlag = {
+  documentId: string
+  documentLineId: string
+  accountingDate: string
+  partyName: string | null
+  amountCents: number
+  accountId: string
+  accountCode: string
+  accountName: string
+  usualAccountId: string
+  usualAccountCode: string
+  usualAccountName: string
+}
+
+/** `acc_report_imputation_flags`: «EPEC siempre va a Energía eléctrica» (hasta 200 por período). */
+export async function getImputationFlags(
+  tenantId: string,
+  params: { from: string; to: string },
+): Promise<ImputationFlag[]> {
+  const { from, to } = requireRange(params.from, params.to)
+  const raw = await callRpcRows('acc_report_imputation_flags', {
     p_tenant_id: tenantId,
     p_from: from,
     p_to: to,
-    p_exclude_fy_result: params.excludeFyResult === true,
   })
-  const rows = raw.map(parseTrialRow)
-  const totals = sumTotals(rows)
-  const differenceCents = Math.max(
-    Math.abs(totals.openingDebitCents - totals.openingCreditCents),
-    Math.abs(totals.periodDebitCents - totals.periodCreditCents),
-    Math.abs(totals.closingDebitCents - totals.closingCreditCents),
+  return raw.map((row) => ({
+    documentId: str(row.document_id),
+    documentLineId: str(row.document_line_id),
+    accountingDate: day(row.accounting_date),
+    partyName: strOrNull(row.party_name),
+    amountCents: cents(row.amount_cents),
+    accountId: str(row.account_id),
+    accountCode: str(row.account_code),
+    accountName: str(row.account_name),
+    usualAccountId: str(row.usual_account_id),
+    usualAccountCode: str(row.usual_account_code),
+    usualAccountName: str(row.usual_account_name),
+  }))
+}
+
+/** Una reimputación ya hecha: de qué cuenta a qué cuenta, quién y por qué. */
+export type LineReimputation = {
+  id: string
+  documentLineId: string
+  fromCode: string
+  fromName: string
+  toCode: string
+  toName: string
+  reason: string | null
+  createdByName: string
+  createdAt: string
+}
+
+/** La historia de reimputaciones de un comprobante, en el orden en que se hicieron. */
+export async function listLineReimputations(
+  tenantId: string,
+  documentId: string,
+): Promise<LineReimputation[]> {
+  if (!isUuid(documentId)) return []
+  const supabase = await readerClient()
+  const { data, error } = await supabase
+    .from('acc_line_reimputations')
+    .select(
+      'id, document_line_id, from_account_id, to_account_id, reason, created_by_name, created_at',
+    )
+    .eq('tenant_id', tenantId)
+    .eq('document_id', documentId)
+    .order('created_at', { ascending: true })
+  if (error) throw queryError('acc_line_reimputations', error)
+  const rows = ((data ?? []) as unknown[]).filter(isRecord)
+  if (rows.length === 0) return []
+  const accounts = await namesById(
+    tenantId,
+    'acc_accounts',
+    rows.flatMap((r) => [r.from_account_id, r.to_account_id]),
+    'id, code, name',
   )
-  return { from, to, rows, totals, balanced: differenceCents === 0, differenceCents }
+  const nameOf = (id: unknown) => {
+    const account = typeof id === 'string' ? accounts.get(id) : undefined
+    return { code: account ? str(account.code) : '', name: account ? str(account.name) : '' }
+  }
+  return rows.map((row) => {
+    const from = nameOf(row.from_account_id)
+    const to = nameOf(row.to_account_id)
+    return {
+      id: str(row.id),
+      documentLineId: str(row.document_line_id),
+      fromCode: from.code,
+      fromName: from.name,
+      toCode: to.code,
+      toName: to.name,
+      reason: strOrNull(row.reason),
+      createdByName: str(row.created_by_name),
+      createdAt: str(row.created_at),
+    }
+  })
+}
+
+/** El comprobante de un asiento (`null` si el asiento no es de este bar). */
+export async function getEntryDocumentId(
+  tenantId: string,
+  entryId: string,
+): Promise<string | null> {
+  if (!isUuid(entryId)) return null
+  const supabase = await readerClient()
+  const { data, error } = await supabase
+    .from('acc_journal_entries')
+    .select('document_id')
+    .eq('tenant_id', tenantId)
+    .eq('id', entryId)
+    .maybeSingle()
+  if (error) throw queryError('acc_journal_entries', error)
+  return isRecord(data) ? strOrNull(data.document_id) : null
+}
+
+// ─── Sueldos del mes (para el cierre) ────────────────────────────────────────
+
+export type PayrollMonthStatus = {
+  /** Empleados activos con sueldo cargado en ese mes. */
+  employees: number
+  /** El mes ya tiene su asiento de «Devengar». */
+  accrued: boolean
+}
+
+/**
+ * ¿Falta devengar los sueldos del mes? Sale de `acc_report_payroll`; un bar que no usa la planilla de
+ * Sueldos da cero empleados y el cierre no dice nada.
+ */
+export async function getPayrollMonthStatus(
+  tenantId: string,
+  month: string,
+): Promise<PayrollMonthStatus> {
+  const first = requireMonth(month)
+  const data = asRecord(
+    await callRpc('acc_report_payroll', { p_tenant_id: tenantId, p_month: first }),
+  )
+  const employees = asRecords(data.employees).filter(
+    (e) => e.active !== false && cents(e.salary_cents) > 0,
+  ).length
+  return { employees, accrued: isRecord(data.accrual) }
 }
 
 /** Libro IVA compras o ventas del mes (F.4/F.5), 500 filas por página. */

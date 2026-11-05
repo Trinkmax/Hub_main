@@ -2,10 +2,10 @@ import Link from 'next/link'
 import { Meter } from '@/components/administracion/charts/meter'
 import { SplitBar } from '@/components/administracion/charts/split-bar'
 import { Explain, MathRow } from '@/components/administracion/kit/explain'
-import { HeroPanel, MoneyHero } from '@/components/administracion/kit/hero'
+import { Planilla } from '@/components/administracion/planilla'
 import { ActionButton } from '@/components/administracion/quick-actions'
 import { VoucherText } from '@/components/administracion/voucher-text'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
   type DocumentHero as DocumentHeroData,
@@ -68,21 +68,26 @@ export function DocumentHero({
 }) {
   const sentence = richText(hero.sentence)
   return (
-    <HeroPanel tone="crema">
+    <Planilla className="p-4">
       <h2 className="sr-only">Qué pasó con la plata</h2>
       <div className="@container">
-        <div className="grid gap-x-6 gap-y-4 @xl:grid-cols-[minmax(0,1fr)_auto] @xl:items-center">
+        <div className="grid gap-x-6 gap-y-3 @xl:grid-cols-[minmax(0,1fr)_auto] @xl:items-center">
           <div className="min-w-0">
-            <MoneyHero
-              size="lg"
-              cents={hero.cents}
-              label={hero.label}
-              sentence={
-                hero.sentence.length > 0 ? <RichLine rich={hero.sentence} base={base} /> : null
-              }
-              // Anulado: se apaga el número (el segundo renglón), no la oración que lo explica.
-              className={hero.muted ? '[&>p:nth-of-type(2)]:opacity-55' : undefined}
-            />
+            <p className="text-xs text-muted-foreground">{hero.label}</p>
+            {/* Anulado: se apaga el número, no la oración que lo explica. */}
+            <p
+              className={cn(
+                'text-2xl leading-tight font-semibold tracking-tight whitespace-nowrap tabular-nums',
+                hero.muted && 'opacity-55',
+              )}
+            >
+              {hero.cents === null ? '—' : formatCentsShort(hero.cents)}
+            </p>
+            {hero.sentence.length > 0 ? (
+              <p className="mt-0.5 max-w-prose text-sm text-muted-foreground text-pretty">
+                <RichLine rich={hero.sentence} base={base} />
+              </p>
+            ) : null}
             {hero.help ? (
               <p className="mt-2 max-w-prose text-sm text-foreground text-pretty">{hero.help}</p>
             ) : null}
@@ -103,7 +108,7 @@ export function DocumentHero({
               // Con ARCA a medio autorizar lo urgente es terminar eso (su botón está abajo, en el
               // nodo ARCA): este queda en contorno, para que haya un solo botón relleno a la vista.
               variant={arcaPending ? 'outline' : 'default'}
-              className="h-12 w-full px-6 text-base @xl:w-auto @xl:min-w-40"
+              className="h-11 w-full px-5 @xl:w-auto @xl:min-w-32 md:pointer-fine:h-9"
             >
               {hero.action.label}
             </ActionButton>
@@ -150,6 +155,6 @@ export function DocumentHero({
           ))}
         </Explain>
       ) : null}
-    </HeroPanel>
+    </Planilla>
   )
 }

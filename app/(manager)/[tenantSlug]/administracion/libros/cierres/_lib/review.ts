@@ -1,25 +1,19 @@
-import type { CloseStripDay } from '@/components/administracion/charts/close-strip'
-import type { StepState } from '@/components/administracion/kit/step'
 import {
   addDays,
   addMonthsToYearMonth,
   endOfMonth,
   formatDayMonth,
   formatIsoDay,
-  startOfWeek,
-  WEEKDAY_NAMES_MIN,
   weekdayName,
-  weekdayOf,
 } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { closedSentence, monthNoun, monthTitle } from '../../_lib/months'
 import { blockerLine, type ChecklistItemLike, infoLine, warningLine } from './checklist'
 
 /**
- * «Fin de mes» en palabras: qué dice el título de la pantalla, qué paso toca y
- * los cuatro renglones de «Revisá los avisos». Puro: arma todo con el checklist
- * de la base, el almanaque de cierres y los datos del bar, y lo prueban los
- * tests.
+ * El Cierre de mes en palabras: qué dice el título de la pantalla y los renglones de lo que hay que
+ * revisar. Puro: arma todo con el checklist de la base, el almanaque de cierres y los datos del bar, y
+ * lo prueban los tests. `close-lines.ts` los pasa a la planilla.
  *
  * La regla que manda acá: **un «está bien» nunca sale de que la base calle**.
  * La base no avisa «faltan cierres» si el bar nunca cargó uno, ni «cajas sin
@@ -57,47 +51,6 @@ export type ReviewCalendar = {
 export type ReviewSettings = {
   openingStatus: 'pending' | 'posted' | 'skipped'
   cuit: string | null
-}
-
-// ─── El almanaque ────────────────────────────────────────────────────────────
-
-/**
- * Los días del mes para `CloseStrip`: cada día que falta (y hoy) lleva a su cierre.
- *
- * El mes en que el bar arranca no dibuja las semanas ENTERAS anteriores al arranque: eran
- * renglones de números apagados («del 1 al 11») antes del primer día que cuenta. La semana del
- * arranque va completa (sus días previos, apagados), para que el almanaque siga empezando en lunes.
- */
-export function closeStripDays(
-  calendar: Pick<ReviewCalendar, 'days' | 'serviceDay'>,
-  /** `/<bar>/administracion`. `null` = sin links (la contadora no carga). */
-  base: string | null,
-): CloseStripDay[] {
-  const firstUsed = calendar.days.find((day) => day.status !== 'before_start')
-  const from = firstUsed ? startOfWeek(firstUsed.date) : null
-  const days = from ? calendar.days.filter((day) => day.date >= from) : calendar.days
-  return days.map((day) => {
-    const state: CloseStripDay['state'] =
-      day.status === 'loaded'
-        ? 'loaded'
-        : day.status === 'missing'
-          ? 'missing'
-          : day.status === 'pending'
-            ? 'today'
-            : day.status === 'before_start'
-              ? 'before'
-              : 'future'
-    const loadable = state === 'missing' || state === 'today'
-    return {
-      date: day.date,
-      dayNumber: Number(day.date.slice(8, 10)),
-      weekday: WEEKDAY_NAMES_MIN[weekdayOf(day.date)] ?? '',
-      state,
-      cents: day.totalCents,
-      href: base && loadable ? `${base}/ventas/cierre?fecha=${day.date}` : undefined,
-      isToday: day.date === calendar.serviceDay,
-    }
-  })
 }
 
 /** «miércoles 07/10». */
@@ -145,16 +98,6 @@ export type ReviewItem = {
   note?: string | null
   /** Una ayuda con su link («Ver cómo»). */
   help?: { text: string; label: string; href: string } | null
-  /**
-   * Algo que todavía no toca (las cajas, a mitad de mes): una sola línea gris con su link, sin
-   * botones. No cuenta como aviso.
-   */
-  soft?: boolean
-  /**
-   * Sus acciones nunca son EL botón relleno de la pantalla: contar una caja de un mes que ya
-   * terminó sirve, pero con la fecha de hoy no apaga el aviso.
-   */
-  quiet?: boolean
 }
 
 export type ReviewRowId = 'closes' | 'purchases' | 'money' | 'papers' | 'other'
@@ -168,8 +111,6 @@ export type ReviewRow = {
   /** Cuando no hay nada: la negación literal de lo que se revisó. */
   okText: string | null
   items: ReviewItem[]
-  /** El renglón de cierres dibuja el almanaque del mes. */
-  showStrip: boolean
   /** Sueldos: el sistema no puede saberlo, así que no lleva tilde ni cuenta como aviso. */
   payroll: { text: string; action: ReviewAction } | null
 }
@@ -279,7 +220,6 @@ function closesRow(input: ReviewInput): ReviewRow {
   const fromBase = input.checklist.warnings.find((w) => w.key === 'missing_daily_closes') ?? null
   const items: ReviewItem[] = []
   let okText: string | null = null
-  let showStrip = false
 
   if (!calendar) {
     if (fromBase) {
@@ -306,7 +246,6 @@ function closesRow(input: ReviewInput): ReviewRow {
     const total = loaded + missing
     const firstMissing = calendar.days.find((d) => d.status === 'missing')?.date ?? null
     const pending = calendar.days.find((d) => d.status === 'pending')?.date ?? null
-    showStrip = true
 
     if (missing === 0 && loaded > 0) {
       okText = finished
@@ -316,7 +255,6 @@ function closesRow(input: ReviewInput): ReviewRow {
         : loaded === 1
           ? `Vas al día: el día que va de ${noun} tiene su cierre.`
           : `Vas al día: están los ${loaded} días que van de ${noun}.`
-      showStrip = false
     } else if (missing > 0 && loaded > 0) {
       items.push({
         key: 'missing_daily_closes',
@@ -387,7 +325,6 @@ function closesRow(input: ReviewInput): ReviewRow {
     pill: pillOf(tone, items, calendar ? 'Sin cierres' : 'Sin dato'),
     okText,
     items,
-    showStrip,
     payroll: null,
   }
 }
@@ -503,7 +440,6 @@ function moneyItem(item: ChecklistItemLike, input: ReviewInput): ReviewItem {
         return {
           key: item.key,
           tone: 'muted',
-          soft: true,
           title: `Las cajas de ${noun} se cuentan antes de cerrar el mes.`,
           detail: names.length > 0 ? `Todavía sin contar: ${names.join(', ')}.` : null,
           actions: [seeAll],
@@ -522,8 +458,6 @@ function moneyItem(item: ChecklistItemLike, input: ReviewInput): ReviewItem {
             : null,
         // Si la base no dijo cuáles, queda el camino general.
         actions: actions.length === 0 ? [seeAll] : actions,
-        // Con la fecha de hoy no apaga el aviso: no puede ser EL botón de la pantalla.
-        quiet: true,
       }
     }
     case 'treasury_negative': {
@@ -612,7 +546,6 @@ function papersRow(input: ReviewInput): ReviewRow {
     pill: pillOf(tone, items),
     okText: items.length === 0 ? 'La CUIT y lo que había al arrancar están cargados.' : null,
     items,
-    showStrip: false,
     payroll: null,
   }
 }
@@ -680,7 +613,6 @@ export function closeReview(input: ReviewInput): CloseReview {
           ? `No hay gastos fijos de ${noun} sin cargar ni tiques sin comercio.`
           : null,
       items: purchases,
-      showStrip: false,
       payroll: canWrite
         ? {
             text: `Sueldos del mes: el sistema no sabe si ya los cargaste. Si tu contadora te pasó los números de ${noun}, van acá.`,
@@ -700,7 +632,6 @@ export function closeReview(input: ReviewInput): CloseReview {
       okText:
         money.length === 0 ? 'Ninguna caja con movimientos quedó sin contar ni en negativo.' : null,
       items: money,
-      showStrip: false,
       payroll: null,
     },
     papers,
@@ -714,7 +645,6 @@ export function closeReview(input: ReviewInput): CloseReview {
       pill: pillOf(tone, other),
       okText: null,
       items: other,
-      showStrip: false,
       payroll: null,
     })
   }
@@ -749,21 +679,6 @@ export function closeReview(input: ReviewInput): CloseReview {
   }
 }
 
-/** La primera acción del paso 1, en el orden de los renglones: es EL botón primario de la pantalla. */
-export function firstReviewAction(review: Pick<CloseReview, 'rows'>): ReviewAction | null {
-  for (const row of review.rows) {
-    for (const item of row.items) {
-      // Lo que todavía no toca, o lo que hoy no apaga su aviso, nunca es el botón relleno.
-      if (item.soft || item.quiet) continue
-      const recurring = item.recurring?.find((r) => r.action)?.action
-      if (recurring) return recurring
-      const [first] = item.actions
-      if (first) return first
-    }
-  }
-  return null
-}
-
 // ─── El título de la pantalla ────────────────────────────────────────────────
 
 export type CloseHeadline = {
@@ -779,7 +694,7 @@ function avisosText(count: number, one: string, many: (n: number) => string): st
 }
 
 /**
- * La afirmación del mes en «Fin de mes». El número de avisos es el de la base
+ * La afirmación del mes en el Cierre de mes. El número de avisos es el de la base
  * (`checklist.warnings.length`): el mismo que usan el Resumen y el diálogo de
  * «Cerrar».
  */
@@ -896,44 +811,6 @@ export function closeHeadline(input: {
   return { lead: `${name} está listo para cerrar.`, rest: 'No hay avisos.', link: null }
 }
 
-// ─── Qué paso toca ───────────────────────────────────────────────────────────
-
-/**
- * El estado de los tres pasos (revisar · cerrar · mandar). Uno solo es
- * `current` a la vez: el que toca.
- */
-export function stepStates(input: {
-  closed: boolean
-  /** La base deja cerrarlo (sin bloqueos y abierto). */
-  canClose: boolean
-  /** Hay algo para hacer en el paso 1 (`closeReview().hasWork`). */
-  hasWork: boolean
-}): [StepState, StepState, StepState] {
-  if (input.closed) return ['done', 'done', 'current']
-  if (input.canClose)
-    return input.hasWork ? ['current', 'todo', 'todo'] : ['done', 'current', 'todo']
-  return [input.hasWork ? 'current' : 'done', 'todo', 'todo']
-}
-
-/** «Se puede desde el 01/11/2026.» y sus pares: por qué todavía no se puede cerrar. */
-export function closeWaitText(input: {
-  month: string
-  period: { endsOn: string }
-  today: string
-  earlierOpen: string | null
-  openingPending: boolean
-  blockersCount: number
-}): string {
-  if (input.period.endsOn >= input.today) {
-    return `Se puede desde el ${formatIsoDay(addDays(input.period.endsOn, 1))}.`
-  }
-  if (input.earlierOpen) return `Primero hay que cerrar ${monthNoun(input.earlierOpen)}.`
-  if (input.openingPending && input.blockersCount === 1) {
-    return 'Antes falta decir cuánta plata había al arrancar (paso 1).'
-  }
-  return 'Hay algo que no deja cerrar este mes todavía.'
-}
-
 // ─── El IVA que toma el cierre ───────────────────────────────────────────────
 
 /** Lo que hace falta de la posición del checklist (`CloseChecklistIva` lo cumple). */
@@ -1029,7 +906,7 @@ export function ivaClosePlan(iva: CloseIva | null, month: string): IvaClosePlan 
     return {
       ...plan,
       text: {
-        lead: 'El IVA de este mes se anota a mano, desde El IVA del mes.',
+        lead: 'El IVA de este mes se anota a mano, desde la solapa IVA.',
         amount: null,
         tail: '',
       },

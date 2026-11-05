@@ -1,40 +1,29 @@
 'use client'
 
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useId, useState, useTransition } from 'react'
-import { Pill } from '@/components/administracion/kit/pill'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { addMonthsToYearMonth, formatMonthLabel, monthOf } from '@/lib/dates'
 import { cn } from '@/lib/utils'
+import { SEG_ITEM, SEG_OFF, SEG_ON, SEG_ROOT } from './seg'
 
 /**
- * El período de los libros en la URL (H.12): `?mes=` o `?desde=&hasta=`.
- * Cambiar de período conserva los demás filtros (cuenta, partícipe, nivel) y
- * vuelve a la primera página; mientras carga, todo queda «pendiente».
+ * El período de los libros en la URL (H.12): `?mes=` o `?desde=&hasta=`. Es un segmento chico, como
+ * en un sistema contable: Mes · Ejercicio · Rango. Cambiar de período conserva los demás filtros
+ * (cuenta, partícipe, nivel) y vuelve a la primera página; mientras carga, todo queda «pendiente».
  *
- * Se ve igual que el período de Ventas y de Cajas (`MonthStepper` /
- * `RangeFilter` de `cajas-ventas/period-filters.tsx`): el mes es una píldora de
- * papel con una flecha en cada punta y, al lado, las píldoras del kit con la
- * elegida RELLENA en tinta. Con un rango elegido, las fechas SON el control:
- * una sola píldora que abre el selector para cambiarlas. Mismos parámetros de
- * URL y mismo teclado de siempre; los libros suman «Ejercicio a la fecha», que
- * las otras pantallas no tienen. Donde se toca con el dedo todo mide 44 px; con
- * mouse, 36.
+ * Mismos parámetros y mismo teclado de siempre: con el mes elegido van sus flechas y tocar el nombre
+ * vuelve al mes de hoy.
  */
 
 const PERIOD_KEYS = ['mes', 'desde', 'hasta', 'despues'] as const
 
-/** La píldora de papel: la misma superficie que la navegación de día del cierre. */
-const PAPER_PILL = 'card-hairline rounded-full border bg-card shadow-xs'
-/** Las flechas: redondas, para calzar en las puntas de la píldora, con su anillo de foco. */
-const STEP_BUTTON =
-  'size-11 rounded-full focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:size-[2.125rem]'
-/** Las píldoras de al lado: el corte es por tipo de puntero, no por ancho. */
-const CHIP_SIZE = 'md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
+/** Las flechas: angostas, pero con el alto del segmento. */
+const STEP = 'px-2 md:pointer-fine:px-1.5'
 
 function usePeriodNavigation() {
   const router = useRouter()
@@ -56,14 +45,18 @@ function usePeriodNavigation() {
   return { go, pending }
 }
 
-function Stepper({
+function MonthPiece({
   month,
+  active,
   today,
   minMonth,
   pending,
   go,
 }: {
+  /** `yyyy-MM`. */
   month: string
+  /** Es el período elegido (si no, el botón lleva a este mes). */
+  active: boolean
   today: string
   minMonth?: string | null
   pending: boolean
@@ -75,44 +68,54 @@ function Stepper({
   const canPrev = !minMonth || prev >= minMonth
   const canNext = next <= current
   return (
-    // Con mouse mide 36 px, lo mismo que las píldoras de al lado (no quedan escalonadas).
-    <div className={cn(PAPER_PILL, 'flex items-center gap-1 md:pointer-fine:h-9')}>
-      <Button
+    <>
+      {active ? (
+        <button
+          type="button"
+          className={cn(SEG_ITEM, SEG_OFF, STEP)}
+          aria-label={`Mes anterior: ${formatMonthLabel(prev)}`}
+          disabled={!canPrev || pending}
+          onClick={() => go({ mes: prev })}
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+        </button>
+      ) : null}
+      <button
         type="button"
-        variant="ghost"
-        size="icon"
-        className={STEP_BUTTON}
-        aria-label={`Mes anterior: ${formatMonthLabel(prev)}`}
-        disabled={!canPrev || pending}
-        onClick={() => go({ mes: prev })}
+        // El mes de hoy elegido no lleva a ningún lado, pero es lo que se está viendo: no se apaga.
+        className={cn(
+          SEG_ITEM,
+          active ? SEG_ON : SEG_OFF,
+          'min-w-28',
+          active && 'disabled:opacity-100',
+        )}
+        aria-pressed={active}
+        aria-label={
+          active && month !== current
+            ? `${formatMonthLabel(month)}. Volver a este mes`
+            : formatMonthLabel(month)
+        }
+        disabled={pending || (active && month === current)}
+        onClick={() => go({ mes: current })}
       >
-        <ChevronLeft className="size-4" />
-      </Button>
-      <div className="flex items-center gap-2 px-1.5">
-        <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
-        <span className="min-w-[124px] text-center text-sm font-semibold tabular-nums">
-          {formatMonthLabel(month)}
-        </span>
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={STEP_BUTTON}
-        aria-label={`Mes siguiente: ${formatMonthLabel(next)}`}
-        disabled={!canNext || pending}
-        onClick={() => go({ mes: next })}
-      >
-        <ChevronRight className="size-4" />
-      </Button>
-    </div>
+        {formatMonthLabel(month)}
+      </button>
+      {active ? (
+        <button
+          type="button"
+          className={cn(SEG_ITEM, SEG_OFF, STEP)}
+          aria-label={`Mes siguiente: ${formatMonthLabel(next)}`}
+          disabled={!canNext || pending}
+          onClick={() => go({ mes: next })}
+        >
+          <ChevronRight className="size-4" aria-hidden />
+        </button>
+      ) : null}
+    </>
   )
 }
 
-/**
- * Libros mensuales (IVA compras y ventas, posición): ‹ Octubre 2026 › y «Este
- * mes» cuando se mira otro.
- */
+/** Libros mensuales (IVA compras y ventas, posición): ‹ Octubre 2026 ›. */
 export function MonthPicker({
   month,
   today,
@@ -127,26 +130,22 @@ export function MonthPicker({
   className?: string
 }) {
   const { go, pending } = usePeriodNavigation()
-  const current = monthOf(today)
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)} aria-busy={pending}>
-      <Stepper month={month} today={today} minMonth={minMonth} pending={pending} go={go} />
-      {month !== current ? (
-        <Chip
-          label="Este mes"
-          active={false}
-          disabled={pending}
-          onClick={() => go({ mes: current })}
-        />
-      ) : null}
-    </div>
+    <fieldset aria-busy={pending} className={cn(SEG_ROOT, className)}>
+      <legend className="sr-only">Mes</legend>
+      <MonthPiece
+        month={month}
+        active
+        today={today}
+        minMonth={minMonth}
+        pending={pending}
+        go={go}
+      />
+    </fieldset>
   )
 }
 
-/**
- * Libros de rango (diario, mayor, sumas y saldos, subdiarios, historia): el
- * mes con flechas, «Este mes», «Ejercicio a la fecha» y un rango a mano.
- */
+/** Libros de rango (diario, mayor, sumas y saldos, subdiarios, historia): Mes · Ejercicio · Rango. */
 export function RangePicker({
   range,
   today,
@@ -162,7 +161,6 @@ export function RangePicker({
   className?: string
 }) {
   const { go, pending } = usePeriodNavigation()
-  const current = monthOf(today)
   const isMonth = range.kind === 'month' && range.month !== null
   const fyActive =
     Boolean(fiscalYear) &&
@@ -171,45 +169,36 @@ export function RangePicker({
     range.to === fiscalYear?.to
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)} aria-busy={pending}>
-      {isMonth && range.month ? (
-        <Stepper month={range.month} today={today} minMonth={minMonth} pending={pending} go={go} />
-      ) : (
-        // El rango elegido: las fechas son el botón que las cambia. Si el rango es justo el
-        // ejercicio a la fecha, la rellena es esa píldora (una sola elegida a la vista).
-        <RangePopover
-          active={!fyActive}
-          label={range.label}
-          from={range.from}
-          to={range.to}
-          disabled={pending}
-          onApply={(from, to) => go({ desde: from, hasta: to })}
-        />
-      )}
-      <Chip
-        label="Este mes"
-        active={isMonth && range.month === current}
-        disabled={pending}
-        onClick={() => go({ mes: current })}
+    <fieldset aria-busy={pending} className={cn(SEG_ROOT, className)}>
+      <legend className="sr-only">Período</legend>
+      <MonthPiece
+        month={range.month ?? monthOf(today)}
+        active={isMonth}
+        today={today}
+        minMonth={minMonth}
+        pending={pending}
+        go={go}
       />
       {fiscalYear ? (
-        <Chip
-          label="Ejercicio a la fecha"
-          active={fyActive}
+        <button
+          type="button"
+          className={cn(SEG_ITEM, fyActive ? SEG_ON : SEG_OFF)}
+          aria-pressed={fyActive}
           disabled={pending}
           onClick={() => go({ desde: fiscalYear.from, hasta: fiscalYear.to })}
-        />
+        >
+          Ejercicio
+        </button>
       ) : null}
-      {isMonth ? (
-        <RangePopover
-          active={false}
-          from={range.from}
-          to={range.to}
-          disabled={pending}
-          onApply={(from, to) => go({ desde: from, hasta: to })}
-        />
-      ) : null}
-    </div>
+      <RangePopover
+        active={!isMonth && !fyActive}
+        label={!isMonth && !fyActive ? range.label : undefined}
+        from={range.from}
+        to={range.to}
+        disabled={pending}
+        onApply={(from, to) => go({ desde: from, hasta: to })}
+      />
+    </fieldset>
   )
 }
 
@@ -257,12 +246,11 @@ function RangePopover({
       }}
     >
       <PopoverTrigger asChild>
-        <Pill
-          size="touch"
-          icon={CalendarRange}
-          active={active}
+        <button
+          type="button"
           disabled={disabled}
-          className={cn(CHIP_SIZE, label && 'tabular-nums')}
+          aria-pressed={active}
+          className={cn(SEG_ITEM, active ? SEG_ON : SEG_OFF)}
         >
           {label ? (
             <>
@@ -272,7 +260,7 @@ function RangePopover({
           ) : (
             'Rango'
           )}
-        </Pill>
+        </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 space-y-3">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">Rango de fechas</p>
@@ -317,23 +305,5 @@ function RangePopover({
         </Button>
       </PopoverContent>
     </Popover>
-  )
-}
-
-function Chip({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <Pill size="touch" active={active} disabled={disabled} onClick={onClick} className={CHIP_SIZE}>
-      {label}
-    </Pill>
   )
 }

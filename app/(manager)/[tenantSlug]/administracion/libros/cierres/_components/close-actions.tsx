@@ -129,91 +129,89 @@ export function CloseMonthButton({
 
   const label = `Cerrar ${monthNoun}`
   return (
-    <div className="flex flex-col gap-3 sm:items-start">
-      {iva?.optional ? (
-        <div className="flex min-h-11 items-start gap-3">
-          <Switch
-            id={switchId}
-            checked={generate}
-            onCheckedChange={setGenerate}
-            disabled={pending}
-            aria-describedby={`${switchId}-hint`}
-            className="mt-0.5"
-          />
-          <div className="space-y-0.5">
-            <Label htmlFor={switchId} className="text-sm font-normal">
-              Anotar el IVA del mes al cerrar
-            </Label>
-            <p id={`${switchId}-hint`} className="text-xs text-muted-foreground">
-              Si lo apagás, el mes se cierra sin anotar el IVA.
-            </p>
-          </div>
-        </div>
-      ) : null}
-      <AlertDialog
-        open={open}
-        onOpenChange={(next) => {
-          if (pending) return
-          setOpen(next)
-          if (!next) {
-            setError(null)
-            setExtraWarnings([])
-          }
-        }}
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (pending) return
+        setOpen(next)
+        if (!next) {
+          setError(null)
+          setExtraWarnings([])
+        }
+      }}
+    >
+      <Button
+        type="button"
+        variant={emphasis === 'quiet' ? 'outline' : 'default'}
+        className="h-11 gap-2 md:pointer-fine:h-9"
+        onClick={() => setOpen(true)}
       >
-        <Button
-          type="button"
-          variant={emphasis === 'quiet' ? 'outline' : 'default'}
-          className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
-          onClick={() => setOpen(true)}
-        >
-          <Lock className="size-4" aria-hidden />
-          {label}
-        </Button>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Cerrás {monthNoun}?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
+        <Lock className="size-4" aria-hidden />
+        {label}
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Cerrás {monthNoun}?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="text-pretty">
+                Después no se puede cargar ni cambiar nada con fecha de {monthNoun}. Las
+                correcciones van con una nota de crédito o un ajuste en {nextMonthNoun}.
+              </p>
+              {warningKeys.length > 0 ? (
                 <p className="text-pretty">
-                  Después no se puede cargar ni cambiar nada con fecha de {monthNoun}. Las
-                  correcciones van con una nota de crédito o un ajuste en {nextMonthNoun}.
+                  {warningKeys.length === 1
+                    ? 'Queda un aviso sin resolver: se cierra igual.'
+                    : `Quedan ${warningKeys.length} avisos sin resolver: se cierra igual.`}
                 </p>
-                {warningKeys.length > 0 ? (
-                  <p className="text-pretty">
-                    {warningKeys.length === 1
-                      ? 'Queda un aviso sin resolver: se cierra igual.'
-                      : `Quedan ${warningKeys.length} avisos sin resolver: se cierra igual.`}
-                  </p>
-                ) : null}
-                {iva && settle && iva.summary ? <p className="text-pretty">{iva.summary}</p> : null}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {extraWarnings.length > 0 ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm">
-              {extraWarnings.map((w) => (
-                <li key={w.key} className="text-pretty">
-                  {w.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {error ? (
-            <p role="alert" className="text-sm text-destructive text-pretty">
-              {error}
-            </p>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <Button type="button" disabled={pending} onClick={run} className={DESTRUCTIVE}>
-              {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {pending ? 'Cerrando…' : extraWarnings.length > 0 ? 'Cerrar igual' : label}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+              ) : null}
+              {iva && settle && iva.summary ? <p className="text-pretty">{iva.summary}</p> : null}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {iva?.optional ? (
+          <div className="flex min-h-11 items-start gap-3">
+            <Switch
+              id={switchId}
+              checked={generate}
+              onCheckedChange={setGenerate}
+              disabled={pending}
+              aria-describedby={`${switchId}-hint`}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor={switchId} className="text-sm font-normal">
+                Anotar el IVA del mes al cerrar
+              </Label>
+              <p id={`${switchId}-hint`} className="text-xs text-muted-foreground">
+                Si lo apagás, el mes se cierra sin anotar el IVA.
+              </p>
+            </div>
+          </div>
+        ) : null}
+        {extraWarnings.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {extraWarnings.map((w) => (
+              <li key={w.key} className="text-pretty">
+                {w.message}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive text-pretty">
+            {error}
+          </p>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+          <Button type="button" disabled={pending} onClick={run} className={DESTRUCTIVE}>
+            {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+            {pending ? 'Cerrando…' : extraWarnings.length > 0 ? 'Cerrar igual' : label}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

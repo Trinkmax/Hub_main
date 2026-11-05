@@ -1,12 +1,11 @@
 import { Skeleton } from '@/components/ui/skeleton'
-import { BookSkeleton, PickerSkeleton } from '../_components/book-skeleton'
+import { BookSkeleton } from '../_components/book-skeleton'
 
 /** Historia: período, las píldoras de «qué» y la bitácora agrupada por día. */
 export default function HistoriaLoading() {
   return (
-    <BookSkeleton picker="none">
+    <BookSkeleton picker="range" heading>
       <div className="space-y-3 py-2">
-        <PickerSkeleton range />
         <div className="flex gap-1.5 overflow-hidden py-1 sm:flex-wrap">
           {['w-16', 'w-32', 'w-32', 'w-36', 'w-40', 'w-20'].map((w, i) => (
             <Skeleton

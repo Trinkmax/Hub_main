@@ -224,8 +224,8 @@ export function BookIndex({
   month: PackageMonth
   today: string
   hasCuit: boolean
-  /** La promesa de los conteos: cada renglón la espera en su propio `Suspense`. */
-  counts: Promise<BookCounts>
+  /** La promesa de los conteos: cada renglón la espera en su propio `Suspense`. `null`: sin cuentas. */
+  counts: Promise<BookCounts> | null
   openAll: boolean
 }) {
   const period: BookPeriod = { kind: 'month', month: month.month, from: month.from, to: month.to }
@@ -299,7 +299,7 @@ function IndexRow({
   period: BookPeriod
   today: string
   hasCuit: boolean
-  counts: Promise<BookCounts>
+  counts: Promise<BookCounts> | null
 }) {
   const file = bookExport(tenantSlug, entry.libro, month, today)
   const blocked = file.needsCuit && !hasCuit
@@ -313,6 +313,7 @@ function IndexRow({
   // Sumas y saldos tampoco: su archivo trae TODAS las cuentas del plan («229 cuentas»), y la
   // pantalla cuenta las que tuvieron movimiento («32»): dos números distintos para lo mismo.
   const counted =
+    counts !== null &&
     entry.libro !== 'posicion-iva' &&
     entry.libro !== 'sumas-y-saldos' &&
     (MONTH_PACKAGE_BOOKS as readonly ExportBook[]).includes(entry.libro)

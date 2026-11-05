@@ -1,19 +1,12 @@
-import { BookText } from 'lucide-react'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { Amount } from '@/components/administracion/amount'
-import { plural } from '@/components/administracion/format'
-import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
-import { PanelLink } from '@/components/administracion/kit/panel-states'
+import { Planilla, PRow, PTable, PTd, PTh, PTotalRow } from '@/components/administracion/planilla'
+import { Stamp } from '@/components/administracion/planilla/stamp'
 import { ActionButton } from '@/components/administracion/quick-actions'
-import {
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
+import { VoucherText } from '@/components/administracion/voucher-text'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   entryKindLabel,
   exportHref,
@@ -28,8 +21,9 @@ import {
 import { decodePageToken } from '@/lib/accounting/queries/shared'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
-import { BalanceSeal, BookTotals, TotalPending } from '../_components/book-totals'
+import { BookPage, SLIDING_SHEET } from '../_components/book-page'
+import { ClickableBody } from '../_components/clickable-body'
+import { EntryPanelProvider, OpenEntryButton } from '../_components/entry-panel'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -37,12 +31,18 @@ import { loadBookContext } from '../_lib/book-context'
 import { keysetPageInfo } from '../_lib/keyset'
 import { requireBooksAccess } from '../_lib/page-access'
 import { bookHref, firstParam, periodParams, resolveBookRange } from '../_lib/periods'
+import { lineDetail } from '../mayor/_lib/ledger-rows'
 
 export const metadata = { title: 'Libro diario' }
 
 /** Asientos por página (el diario pide de a 100; la base acepta hasta 200). */
 const PAGE_SIZE = 100
 
+/**
+ * El Libro diario: los asientos en orden, como en el papel. Fecha · Asiento · Cuenta · Debe · Haber,
+ * el haber con sangría y el comprobante chiquito debajo. Tocar un asiento abre el mismo panel que el
+ * Mayor. Los totales son de todo el período y llegan después de pintar la tabla.
+ */
 export default async function DiarioPage({
   params,
   searchParams,
@@ -82,8 +82,6 @@ export default async function DiarioPage({
     : null
 
   const period = periodParams(shown)
-  const exportLink = exportHref(tenantSlug, 'diario', { desde: shown.from, hasta: shown.to })
-  const fileName = `administracion-${tenantSlug}-diario-${shown.from}_${shown.to}.csv`
   const page = journal?.ok ? journal.data : null
   const info = page
     ? keysetPageInfo({
@@ -93,96 +91,88 @@ export default async function DiarioPage({
         pageSize: PAGE_SIZE,
       })
     : null
-  const description = page
-    ? `${shown.label} · ${plural(page.totalRows, 'asiento', 'asientos')}`
-    : shown.label
 
   return (
-    <BookPage
-      backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
-      title="Libro diario"
-      description={description}
-      exports={[{ href: exportLink, fileName }]}
-      booksPath={`${base}/libros`}
-      book="diario"
-      period={shown}
-      toolbar={
-        <RangePicker
-          className={PERIOD_ROW}
-          range={shown}
-          today={today}
-          fiscalYear={ctx.fiscalYear}
-          minMonth={ctx.minMonth}
-        />
-      }
-      totals={
-        page && page.rows.length > 0 && summary ? (
-          <BookTotals
-            items={[
-              { key: 'asientos', label: 'Asientos', value: page.totalRows },
-              {
-                key: 'debe',
-                label: 'Debe',
-                value: (
-                  <Suspense fallback={<TotalPending />}>
-                    <SummaryAmount summary={summary} side="debit" />
-                  </Suspense>
-                ),
-              },
-              {
-                key: 'haber',
-                label: 'Haber',
-                value: (
-                  <Suspense fallback={<TotalPending />}>
-                    <SummaryAmount summary={summary} side="credit" />
-                  </Suspense>
-                ),
-              },
-            ]}
-            seal={
-              <Suspense fallback={null}>
-                <SummarySeal summary={summary} />
-              </Suspense>
-            }
-            note={
-              page.rows.some((e) => e.numberIsProvisional) ? (
-                <>
-                  Números en <span className="italic">cursiva</span>: provisorios hasta cerrar el
-                  mes.
-                </>
-              ) : null
-            }
+    <EntryPanelProvider tenantSlug={tenantSlug} canWrite={canWrite}>
+      <BookPage
+        title="Libro diario"
+        toolbar={
+          <RangePicker
+            range={shown}
+            today={today}
+            fiscalYear={ctx.fiscalYear}
+            minMonth={ctx.minMonth}
           />
-        ) : null
-      }
-    >
-      {!range.ok ? <PeriodError message={range.message} /> : null}
-      {journal && !journal.ok ? (
-        <QueryErrorBlock code={journal.code} message={journal.message} />
-      ) : null}
+        }
+        aside={
+          summary && page && page.rows.length > 0 ? (
+            <Suspense fallback={null}>
+              <SummarySeal summary={summary} />
+            </Suspense>
+          ) : null
+        }
+        exports={[
+          {
+            href: exportHref(tenantSlug, 'diario', { desde: shown.from, hasta: shown.to }),
+            fileName: `administracion-${tenantSlug}-diario-${shown.from}_${shown.to}.csv`,
+          },
+        ]}
+      >
+        {!range.ok ? <PeriodError message={range.message} /> : null}
+        {journal && !journal.ok ? (
+          <QueryErrorBlock code={journal.code} message={journal.message} />
+        ) : null}
 
-      {page && info ? (
-        page.rows.length === 0 ? (
-          <EmptyJournal
-            base={base}
-            label={shown.label}
-            canWrite={canWrite}
-            nothingLoaded={ctx.settings !== null && !ctx.settings.hasDocuments}
-          />
-        ) : (
+        {page && info ? (
           <>
-            <WideBookHint>
-              En el celular ves cada asiento con su total: tocalo para ver sus cuentas. El libro
-              completo se lee mejor en la compu.
-            </WideBookHint>
-            <JournalTable
-              rows={page.rows}
-              base={base}
-              caption={`Libro diario, ${shown.label}`}
-              totalsLabel={
-                info.isFirst && !page.nextCursor ? 'Totales del período' : 'Totales de esta página'
-              }
-            />
+            <Planilla className={SLIDING_SHEET}>
+              <PTable minWidth={680} label={`Libro diario, ${shown.label}`}>
+                <thead>
+                  <tr>
+                    <PTh>Fecha</PTh>
+                    <PTh>Asiento</PTh>
+                    <PTh>Cuenta</PTh>
+                    <PTh align="right">Debe</PTh>
+                    <PTh align="right">Haber</PTh>
+                  </tr>
+                </thead>
+                {page.rows.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <PTd colSpan={5} className="py-6 text-center text-muted-foreground">
+                        <EmptyJournal
+                          base={base}
+                          label={shown.label}
+                          canWrite={canWrite}
+                          nothingLoaded={ctx.settings !== null && !ctx.settings.hasDocuments}
+                        />
+                      </PTd>
+                    </tr>
+                  </tbody>
+                ) : (
+                  page.rows.map((entry) => <EntryRows key={entry.entryId} entry={entry} />)
+                )}
+                {page.rows.length > 0 && summary ? (
+                  <tfoot>
+                    <PTotalRow>
+                      <PTd colSpan={3} className="font-semibold">
+                        Totales
+                      </PTd>
+                      <PTd align="right" className="font-semibold">
+                        <Suspense fallback={<TotalPending />}>
+                          <SummaryAmount summary={summary} side="debit" />
+                        </Suspense>
+                      </PTd>
+                      <PTd align="right" className="font-semibold">
+                        <Suspense fallback={<TotalPending />}>
+                          <SummaryAmount summary={summary} side="credit" />
+                        </Suspense>
+                      </PTd>
+                    </PTotalRow>
+                  </tfoot>
+                ) : null}
+              </PTable>
+            </Planilla>
             <KeysetPagination
               info={info}
               noun="asientos"
@@ -192,10 +182,14 @@ export default async function DiarioPage({
               }
             />
           </>
-        )
-      ) : null}
-    </BookPage>
+        ) : null}
+      </BookPage>
+    </EntryPanelProvider>
   )
+}
+
+function TotalPending() {
+  return <Skeleton className="ml-auto inline-block h-4 w-24 align-middle" />
 }
 
 /** El Debe o el Haber de todo el período; «—» si no se pudo sumar. */
@@ -218,9 +212,11 @@ async function SummaryAmount({
 
 async function SummarySeal({ summary }: { summary: Promise<QueryOutcome<JournalSummary>> }) {
   const result = await summary
-  return result.ok ? <BalanceSeal balanced={result.data.balanced} /> : null
+  if (!result.ok) return null
+  return result.data.balanced ? <Stamp>Debe = Haber</Stamp> : <Stamp tone="bad">No cuadra</Stamp>
 }
 
+/** Una oración y sus botones, adentro de la misma planilla. */
 function EmptyJournal({
   base,
   label,
@@ -233,210 +229,102 @@ function EmptyJournal({
   nothingLoaded: boolean
 }) {
   return (
-    <EmptyTeach
-      icon={BookText}
-      title={
-        nothingLoaded ? 'Todavía no hay nada cargado' : `No hay asientos en ${label.toLowerCase()}`
-      }
-      action={canWrite ? <ActionButton action="gasto" className="h-11 gap-2" /> : undefined}
-      secondary={
-        canWrite ? <PanelLink href={`${base}/ventas/cierre`}>Cierre del día</PanelLink> : undefined
-      }
-    >
-      {canWrite
-        ? 'El diario se arma solo: cada gasto, pago o cierre del día que cargues suma su asiento acá.'
-        : 'Cuando los dueños carguen gastos, ventas y pagos, sus asientos aparecen acá.'}
-    </EmptyTeach>
+    <div className="grid justify-items-center gap-3">
+      <p className="text-pretty">
+        {nothingLoaded
+          ? 'Todavía no hay nada cargado.'
+          : `No hay asientos en ${label.toLowerCase()}.`}{' '}
+        {canWrite
+          ? 'Cada gasto, pago o cierre del día que cargues suma su asiento acá.'
+          : 'Cuando los dueños carguen gastos, ventas y pagos, sus asientos aparecen acá.'}
+      </p>
+      {canWrite ? (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <ActionButton action="gasto" className="h-11 gap-2 md:pointer-fine:h-9" />
+          <Button asChild variant="outline" className="h-11 md:pointer-fine:h-9">
+            <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
 /** El número del asiento: congelado, o provisorio (en cursiva) mientras el mes está abierto. */
 function EntryNumber({ entry }: { entry: JournalEntryRow }) {
-  if (entry.number === null) return <span className="text-muted-foreground">—</span>
+  if (entry.number === null) return <span>Ver</span>
   return entry.numberIsProvisional ? (
     <span className="italic" title="Provisorio: se numera al cerrar el mes">
-      {entry.number}
+      #{entry.number}
       <span className="sr-only"> (provisorio)</span>
     </span>
   ) : (
-    <span>{entry.number}</span>
+    <span>#{entry.number}</span>
   )
 }
 
-function JournalTable({
-  rows,
-  base,
-  caption,
-  totalsLabel,
-}: {
-  rows: readonly JournalEntryRow[]
-  base: string
-  caption: string
-  totalsLabel: string
-}) {
-  let debit = 0
-  let credit = 0
-  for (const entry of rows) {
-    for (const line of entry.lines) {
-      debit += line.debitCents
-      credit += line.creditCents
-    }
-  }
-  const balanced = debit === credit
-
+/** Un asiento: su fecha y su número en el primer renglón; el haber, con sangría. */
+function EntryRows({ entry }: { entry: JournalEntryRow }) {
+  const caption = lineDetail(
+    {
+      documentLabel: entry.documentLabel,
+      description: entry.description,
+      partyName: null,
+      memo: null,
+    },
+    false,
+  )
   return (
-    <>
-      {/* Compu y tablet: el diario completo. */}
-      <DataTableShell className="hidden sm:block">
-        <DataTableScroll>
-          <DataTableRoot>
-            <caption className="sr-only">{caption}</caption>
-            <DataTableHead>
-              <tr>
-                <DataTableHeader className="w-16">N°</DataTableHeader>
-                <DataTableHeader className="w-28">Fecha</DataTableHeader>
-                <DataTableHeader>Cuenta</DataTableHeader>
-                <DataTableHeader>Proveedor o cliente</DataTableHeader>
-                <DataTableHeader className="w-36 text-right">Debe</DataTableHeader>
-                <DataTableHeader className="w-36 text-right">Haber</DataTableHeader>
-              </tr>
-            </DataTableHead>
-            {rows.map((entry) => (
-              <tbody key={entry.entryId} className="border-b border-border/60 last:border-b-0">
-                <tr className="bg-secondary/20">
-                  <DataTableCell className="py-2 font-medium tabular-nums">
-                    <Link
-                      href={`${base}/asientos/${entry.entryId}`}
-                      className="rounded-sm underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label={
-                        entry.number === null
-                          ? `Ver el asiento del ${formatIsoDay(entry.entryDate)}`
-                          : `Ver el asiento ${entry.number}${entry.numberIsProvisional ? ' (provisorio)' : ''}`
-                      }
-                    >
-                      <EntryNumber entry={entry} />
-                    </Link>
-                  </DataTableCell>
-                  <DataTableCell className="whitespace-nowrap py-2 tabular-nums text-muted-foreground">
-                    {formatIsoDay(entry.entryDate)}
-                  </DataTableCell>
-                  <DataTableCell colSpan={4} className="py-2">
-                    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="font-medium">{entry.description || '—'}</span>
-                      {entry.documentLabel ? (
-                        <Link
-                          href={`${base}/comprobantes/${entry.documentId}`}
-                          className="rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {entry.documentLabel}
-                          {entry.documentSeq ? ` · #${entry.documentSeq}` : ''}
-                        </Link>
-                      ) : null}
-                      {entry.kind !== 'standard' ? (
-                        <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {entryKindLabel(entry.kind)}
-                        </span>
-                      ) : null}
-                      {entry.createdByName ? (
-                        <span className="text-xs text-muted-foreground">
-                          Cargado por {entry.createdByName}
-                        </span>
-                      ) : null}
-                    </span>
-                  </DataTableCell>
-                </tr>
-                {entry.lines.map((line) => {
-                  const isCredit = line.debitCents === 0 && line.creditCents !== 0
-                  return (
-                    <tr key={`${entry.entryId}:${line.lineNo}`}>
-                      <DataTableCell className="py-1.5">{null}</DataTableCell>
-                      <DataTableCell className="py-1.5">{null}</DataTableCell>
-                      <DataTableCell className={cn('py-1.5', isCredit && 'pl-10')}>
-                        <span className="flex items-baseline gap-1.5">
-                          {isCredit ? <span className="text-muted-foreground">a</span> : null}
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {line.accountCode}
-                          </span>
-                          <span>{line.accountName}</span>
-                        </span>
-                        {line.memo ? (
-                          <span className="block text-xs text-muted-foreground">{line.memo}</span>
-                        ) : null}
-                      </DataTableCell>
-                      <DataTableCell className="py-1.5 text-muted-foreground">
-                        {line.partyName ?? null}
-                      </DataTableCell>
-                      <DataTableCell className="py-1.5 text-right">
-                        {line.debitCents ? (
-                          <Amount cents={line.debitCents} currency={false} />
-                        ) : null}
-                      </DataTableCell>
-                      <DataTableCell className="py-1.5 text-right">
-                        {line.creditCents ? (
-                          <Amount cents={line.creditCents} currency={false} />
-                        ) : null}
-                      </DataTableCell>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            ))}
-            <tfoot className="bg-secondary/30 font-semibold">
-              <tr className="border-t border-border">
-                <DataTableCell colSpan={4} className="text-xs">
-                  <span className="flex flex-wrap items-center gap-2">
-                    {totalsLabel}
-                    <BalanceSeal balanced={balanced} />
-                  </span>
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <Amount cents={debit} currency={false} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <Amount cents={credit} currency={false} />
-                </DataTableCell>
-              </tr>
-            </tfoot>
-          </DataTableRoot>
-        </DataTableScroll>
-      </DataTableShell>
-
-      {/* Celular: la lista simplificada (cada asiento lleva a su detalle). */}
-      <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
-        <ul aria-label={caption} className="divide-y divide-border/60">
-          {rows.map((entry) => (
-            <li key={entry.entryId}>
-              <Link
-                href={`${base}/asientos/${entry.entryId}`}
-                className="flex items-start justify-between gap-3 px-4 py-3 outline-none hover:bg-cream-tint focus-visible:bg-cream-tint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <span className="min-w-0 space-y-0.5">
-                  <span className="block text-xs tabular-nums text-muted-foreground">
-                    N° <EntryNumber entry={entry} /> · {formatIsoDay(entry.entryDate)}
-                  </span>
-                  <span className="block truncate text-sm font-medium">
-                    {entry.description || entry.documentLabel || '—'}
-                  </span>
-                  {entry.documentLabel ? (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {entry.documentLabel}
-                    </span>
-                  ) : null}
+    <ClickableBody className="border-b border-border last:border-b-0">
+      {entry.lines.map((line, index) => {
+        const isCredit = line.debitCents === 0 && line.creditCents !== 0
+        return (
+          <PRow key={`${entry.entryId}:${line.lineNo}`} className="cursor-pointer">
+            <PTd className="align-top whitespace-nowrap text-muted-foreground">
+              {index === 0 ? formatIsoDay(entry.entryDate) : null}
+            </PTd>
+            <PTd className="align-top whitespace-nowrap">
+              {index === 0 ? (
+                <OpenEntryButton
+                  entryId={entry.entryId}
+                  aria-label={
+                    entry.number === null
+                      ? `Ver el asiento del ${formatIsoDay(entry.entryDate)}`
+                      : `Ver el asiento ${entry.number}${entry.numberIsProvisional ? ' (provisorio)' : ''}`
+                  }
+                >
+                  <EntryNumber entry={entry} />
+                </OpenEntryButton>
+              ) : null}
+            </PTd>
+            <PTd className={cn('align-top', isCredit && 'pl-8')}>
+              <span className="block">
+                {line.accountName}
+                {line.partyName ? (
+                  <span className="text-muted-foreground"> · {line.partyName}</span>
+                ) : null}
+              </span>
+              {line.memo && line.memo !== line.accountName && line.memo !== entry.documentLabel ? (
+                <span className="block text-xs text-muted-foreground">{line.memo}</span>
+              ) : null}
+              {index === 0 ? (
+                <span className="block text-xs text-muted-foreground text-pretty">
+                  {entry.documentLabel ? <VoucherText text={entry.documentLabel} /> : null}
+                  {entry.documentLabel && caption ? ' · ' : null}
+                  {caption}
+                  {entry.kind !== 'standard' ? ` · ${entryKindLabel(entry.kind)}` : null}
                 </span>
-                <Amount cents={entry.totalCents} className="shrink-0 text-sm font-medium" />
-              </Link>
-            </li>
-          ))}
-          <li className="flex items-center justify-between gap-3 bg-secondary/30 px-4 py-3 text-sm font-semibold">
-            {/* El sello va debajo: al lado del total no entra en una línea. */}
-            <span className="flex flex-col items-start gap-1">
-              {totalsLabel}
-              <BalanceSeal balanced={balanced} />
-            </span>
-            <Amount cents={debit} className="shrink-0" />
-          </li>
-        </ul>
-      </div>
-    </>
+              ) : null}
+            </PTd>
+            <PTd align="right" className="align-top">
+              {line.debitCents ? <Amount cents={line.debitCents} currency={false} /> : null}
+            </PTd>
+            <PTd align="right" className="align-top">
+              {line.creditCents ? <Amount cents={line.creditCents} currency={false} /> : null}
+            </PTd>
+          </PRow>
+        )
+      })}
+    </ClickableBody>
   )
 }

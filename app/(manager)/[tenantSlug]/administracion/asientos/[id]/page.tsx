@@ -1,27 +1,52 @@
-import { ArrowRight, Ban, Info } from 'lucide-react'
+import { Ban, Info } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Amount } from '@/components/administracion/amount'
 import { DueStatus } from '@/components/administracion/due-status'
-import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { Panel } from '@/components/administracion/kit/panel'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import {
+  Planilla,
+  PlanillaTitle,
+  PRow,
+  PTable,
+  PTd,
+  PTh,
+  PTotalRow,
+  SimplePage,
+} from '@/components/administracion/planilla'
+import { Stamp } from '@/components/administracion/planilla/stamp'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import { Button } from '@/components/ui/button'
-import { entryKindLabel, getDocument, getEntry, settleQuery } from '@/lib/accounting/queries'
+import { loadPostingCatalog } from '@/lib/accounting/context'
+import {
+  entryKindLabel,
+  getDocument,
+  getEntry,
+  getImputationFlags,
+  listLineReimputations,
+  settleQuery,
+} from '@/lib/accounting/queries'
+import {
+  imputationFlagText,
+  reimputeAccountOptions,
+  reimputeTargets,
+} from '@/lib/accounting/reimpute'
 import { formatDateTime, formatIsoDay, todayInCordoba } from '@/lib/dates'
+import { cn } from '@/lib/utils'
+import { BackLink, SLIDING_SHEET } from '../../libros/_components/book-page'
+import { ReimputationList, ReimputeBlock } from '../../libros/_components/reimpute-form'
 import { QueryErrorBlock } from '../../libros/_components/report-error'
 import { requireBooksAccess } from '../../libros/_lib/page-access'
 
 export const metadata = { title: 'Asiento' }
 
+const TITLE = 'font-serif text-2xl font-semibold tracking-tight'
+
 /**
- * La ficha de un asiento: cómo quedó anotado un comprobante en los libros. Es
- * una pantalla de la contadora, pero un socio cae acá desde el diario o el
- * mayor; por eso abre con una oración para quien no es contador («Así quedó
- * anotado … en los libros») y el botón que lo lleva a lo que sí conoce: el
- * comprobante. Acá no se carga ni se cambia nada.
+ * La ficha de un asiento: cómo quedó anotado un comprobante en los libros, con sus renglones y a un
+ * toque el comprobante. Es la versión de pantalla entera del panel del Mayor: se llega desde un link,
+ * el historial o el cierre del ejercicio. Acá también se reimputa (Silvia, min. 12: «entrar al asiento
+ * y cambiarle el número de cuenta»).
  */
 export default async function AsientoPage({
   params,
@@ -30,7 +55,7 @@ export default async function AsientoPage({
 }) {
   const { tenantSlug, id } = await params
   const base = `/${tenantSlug}/administracion`
-  const { access } = await requireBooksAccess(tenantSlug, `${base}/asientos/${id}`)
+  const { access, canWrite } = await requireBooksAccess(tenantSlug, `${base}/asientos/${id}`)
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
@@ -38,21 +63,26 @@ export default async function AsientoPage({
   if (result.ok && !result.data) notFound()
   if (!result.ok || !result.data) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader
-          back={{ href: `${base}/libros/diario`, label: 'Libro diario' }}
-          title="Asiento"
-        />
+      <SimplePage width="narrow">
+        <div className="grid gap-1">
+          <BackLink href={`${base}/libros/diario`}>Libro diario</BackLink>
+          <h1 className={TITLE}>Asiento</h1>
+        </div>
         <QueryErrorBlock
           code={result.ok ? 'error' : result.code}
           message={result.ok ? 'No pudimos cargar el asiento.' : result.message}
         />
-      </AdmPage>
+      </SimplePage>
     )
   }
 
   const entry = result.data
-  const docResult = await settleQuery(getDocument(tenantId, entry.documentId))
+  const [docResult, catalog, flags, reimputations] = await Promise.all([
+    settleQuery(getDocument(tenantId, entry.documentId)),
+    settleQuery(loadPostingCatalog(tenantId)),
+    settleQuery(getImputationFlags(tenantId, { from: entry.entryDate, to: entry.entryDate })),
+    settleQuery(listLineReimputations(tenantId, entry.documentId)),
+  ])
   const doc = docResult.ok ? docResult.data : null
   const month = entry.entryDate.slice(0, 7)
   // Mes abierto: el número que se ve en el diario (provisorio, en cursiva) hasta cerrar el mes.
@@ -67,74 +97,39 @@ export default async function AsientoPage({
           ? `Asiento N° ${provisional}`
           : 'Asiento sin número todavía'
 
-  const preview: EntryPreviewData = {
-    documentRef: entry.id,
-    description: entry.description,
-    date: entry.entryDate,
-    lines: entry.lines.map((l) => ({
-      id: l.id,
-      accountCode: l.accountCode,
-      accountName: l.accountName,
-      partyName: l.partyName,
-      debitCents: l.side === 'debit' ? l.amountCents : null,
-      creditCents: l.side === 'credit' ? l.amountCents : null,
-      note: l.memo,
-    })),
-  }
   const partidas = entry.lines.filter((l) => l.partyId)
-
   const documentName = doc ? `${doc.title} #${doc.seq}` : null
+  const ownFlags = flags.ok ? flags.data.filter((f) => f.documentId === entry.documentId) : []
+  const usualOf = new Map(ownFlags.map((f) => [f.accountId, f]))
+  const periodOpen = entry.periodStatus === 'open'
+  const targets =
+    doc && catalog.ok
+      ? reimputeTargets(doc, new Map(catalog.data.accounts.map((a) => [a.id, a])), ownFlags)
+      : []
 
   return (
-    <AdmPage width="comfortable">
-      <AdmHeader
-        back={{ href: `${base}/libros/diario?mes=${month}`, label: 'Libro diario' }}
-        title={<span className={provisional !== null ? 'italic' : undefined}>{title}</span>}
-        badge={
-          <>
-            <ReadOnlyBadge className="ml-0" />
-            {entry.status === 'voided' ? (
-              <StatusPill tone="late">Anulado</StatusPill>
-            ) : (
-              <StatusPill tone="ok">Vigente</StatusPill>
-            )}
-          </>
-        }
-        description={
-          <>
-            <span className="font-medium text-foreground">{entry.description || '—'}</span>
-            <span className="tabular-nums"> · {formatIsoDay(entry.entryDate)}</span> · Mes{' '}
-            {entry.periodStatus === 'open' ? 'abierto' : 'cerrado'} · Lo cargó{' '}
-            {entry.createdByName || 'alguien del equipo'} el {formatDateTime(entry.createdAt)}
-          </>
-        }
-      />
-
-      {/* Para quien no es contador: qué es esto y a dónde ir a ver lo que sí conoce. */}
-      <section
-        aria-label="De qué comprobante es"
-        className="card-hairline flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:p-5"
-      >
-        <div className="min-w-0 space-y-1">
-          <p className="text-base leading-snug text-pretty">
-            Así quedó anotado{' '}
-            <span className="font-semibold">{documentName ?? 'este comprobante'}</span> en los
-            libros.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {entryKindLabel(entry.kind)} · por <Amount cents={entry.debitCents} /> · Debe = Haber
-          </p>
+    <SimplePage width="narrow">
+      <div className="grid gap-1">
+        <BackLink href={`${base}/libros/diario?mes=${month}`}>Libro diario</BackLink>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h1 className={cn(TITLE, provisional !== null && 'italic')}>{title}</h1>
+          {entry.status === 'voided' ? <StatusPill tone="late">Anulado</StatusPill> : null}
+          {provisional !== null ? (
+            <span className="text-xs text-muted-foreground">
+              Provisorio: se fija al cerrar el mes
+            </span>
+          ) : null}
         </div>
-        <Button asChild className="h-11 shrink-0 gap-2 px-5">
-          <Link href={`${base}/comprobantes/${entry.documentId}`}>
-            Ver el comprobante
-            <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </Button>
-      </section>
+        <p className="text-sm text-muted-foreground text-pretty">
+          <span className="font-medium text-foreground">{entry.description || '—'}</span>
+          <span className="tabular-nums"> · {formatIsoDay(entry.entryDate)}</span> ·{' '}
+          {entryKindLabel(entry.kind)} · Mes {periodOpen ? 'abierto' : 'cerrado'} · Lo cargó{' '}
+          {entry.createdByName || 'alguien del equipo'} el {formatDateTime(entry.createdAt)}
+        </p>
+      </div>
 
       {entry.status === 'voided' ? (
-        <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <Ban className="mt-0.5 size-4 shrink-0" aria-hidden />
           <div className="space-y-1 text-pretty">
             <p className="font-medium">
@@ -147,39 +142,119 @@ export default async function AsientoPage({
         </div>
       ) : null}
 
-      {entry.status === 'posted' && entry.number === null ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
-          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <p className="text-pretty">
-            {provisional !== null
-              ? `El N° ${provisional} es provisorio (por eso va en cursiva): queda fijo al cerrar el mes.`
-              : 'El número queda fijo al cerrar el mes. Mientras tanto, en el libro diario se ve uno provisorio (en cursiva).'}
-          </p>
-        </div>
-      ) : null}
-
       {entry.isMirror ? (
-        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
+        <p className="flex items-start gap-2 text-sm text-pretty">
           <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-          <p className="text-pretty">
-            Es un asiento espejo del cierre del ejercicio: está en el libro diario como lo pide la
-            contadora, pero no cambia ningún saldo.
-          </p>
-        </div>
+          Es un asiento espejo del cierre del ejercicio: está en el libro diario como lo pide la
+          contadora, pero no cambia ningún saldo.
+        </p>
       ) : null}
 
-      <EntryPreview entries={[preview]} alwaysOpen />
+      <Planilla className={SLIDING_SHEET}>
+        <PlanillaTitle
+          title={documentName ? <VoucherText text={documentName} /> : 'Este comprobante'}
+          actions={
+            <Button asChild variant="outline" size="sm" className="h-11 md:pointer-fine:h-8">
+              <Link href={`${base}/comprobantes/${entry.documentId}`}>Abrir comprobante</Link>
+            </Button>
+          }
+        />
+        <PTable minWidth={480} label={`Los renglones del ${title.toLowerCase()}`}>
+          <thead>
+            <tr>
+              <PTh>Código</PTh>
+              <PTh>Cuenta</PTh>
+              <PTh align="right">Debe</PTh>
+              <PTh align="right">Haber</PTh>
+            </tr>
+          </thead>
+          <tbody>
+            {entry.lines.map((line) => {
+              const flag = usualOf.get(line.accountId)
+              return (
+                <PRow key={line.id} flagged={Boolean(flag)}>
+                  <PTd className="align-top font-mono text-xs whitespace-nowrap text-muted-foreground">
+                    {line.accountCode}
+                  </PTd>
+                  <PTd className={cn('align-top', line.side === 'credit' && 'pl-8')}>
+                    {line.accountName}
+                    {line.partyName ? (
+                      <span className="text-muted-foreground"> · {line.partyName}</span>
+                    ) : null}
+                    {line.memo && line.memo !== line.accountName ? (
+                      <span className="block text-xs text-muted-foreground">{line.memo}</span>
+                    ) : null}
+                    {flag ? (
+                      <span className="block text-xs font-medium text-destructive">
+                        {imputationFlagText(flag, { open: periodOpen })}
+                      </span>
+                    ) : null}
+                  </PTd>
+                  <PTd align="right" className="align-top">
+                    {line.side === 'debit' ? (
+                      <Amount cents={line.amountCents} currency={false} />
+                    ) : null}
+                  </PTd>
+                  <PTd align="right" className="align-top">
+                    {line.side === 'credit' ? (
+                      <Amount cents={line.amountCents} currency={false} />
+                    ) : null}
+                  </PTd>
+                </PRow>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <PTotalRow>
+              <PTd colSpan={2} className="font-semibold">
+                <span className="flex flex-wrap items-center gap-2">
+                  Totales
+                  {entry.debitCents === entry.creditCents ? (
+                    <Stamp>Debe = Haber</Stamp>
+                  ) : (
+                    <Stamp tone="bad">No cuadra</Stamp>
+                  )}
+                </span>
+              </PTd>
+              <PTd align="right" className="font-semibold">
+                <Amount cents={entry.debitCents} currency={false} />
+              </PTd>
+              <PTd align="right" className="font-semibold">
+                <Amount cents={entry.creditCents} currency={false} />
+              </PTd>
+            </PTotalRow>
+          </tfoot>
+        </PTable>
+      </Planilla>
+
+      {catalog.ok ? (
+        <ReimputeBlock
+          tenantSlug={tenantSlug}
+          base={base}
+          targets={targets}
+          accounts={reimputeAccountOptions(catalog.data.accounts)}
+          periodOpen={periodOpen}
+          month={month}
+          documentId={entry.documentId}
+          canWrite={canWrite}
+        />
+      ) : null}
+
+      {reimputations.ok ? (
+        <ReimputationList
+          items={reimputations.data}
+          className="rounded-xl border border-border/70 bg-card p-3 shadow-xs sm:p-4"
+        />
+      ) : null}
 
       {partidas.length > 0 ? (
-        <Panel
-          title="Con proveedores y clientes"
-          description="Las líneas que dejan deuda o crédito, con lo que queda pendiente hoy."
-        >
+        <Planilla>
+          <PlanillaTitle title="Con proveedores y clientes" />
           <ul className="divide-y divide-border/60">
             {partidas.map((line) => (
               <li
                 key={line.id}
-                className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
               >
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{line.partyName ?? '—'}</p>
@@ -213,8 +288,8 @@ export default async function AsientoPage({
               </li>
             ))}
           </ul>
-        </Panel>
+        </Planilla>
       ) : null}
-    </AdmPage>
+    </SimplePage>
   )
 }

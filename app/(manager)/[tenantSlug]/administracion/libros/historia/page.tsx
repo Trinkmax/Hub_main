@@ -12,7 +12,7 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
-import { BookPage, PERIOD_ROW } from '../_components/book-page'
+import { BookPage } from '../_components/book-page'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -125,7 +125,10 @@ export default async function HistoriaPage({
 
   return (
     <BookPage
-      backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
+      back={{
+        href: bookHref(`${base}/libros/cierres`, shown.month ? { mes: shown.month } : {}),
+        label: 'Cierre de mes',
+      }}
       title="Historia"
       description={`Quién cargó, anuló o cerró qué · ${shown.label}${
         page ? ` · ${plural(page.totalRows, 'movimiento', 'movimientos')}` : ''
@@ -136,18 +139,16 @@ export default async function HistoriaPage({
           fileName: `administracion-${tenantSlug}-historia-${shown.from}_${shown.to}.csv`,
         },
       ]}
-      booksPath={`${base}/libros`}
-      book="historia"
-      period={shown}
       toolbar={
+        <RangePicker
+          range={shown}
+          today={today}
+          fiscalYear={ctx.fiscalYear}
+          minMonth={ctx.minMonth}
+        />
+      }
+      below={
         <div className="space-y-3">
-          <RangePicker
-            className={PERIOD_ROW}
-            range={shown}
-            today={today}
-            fiscalYear={ctx.fiscalYear}
-            minMonth={ctx.minMonth}
-          />
           <nav aria-label="Qué pasó">
             <ul className={FILTER_ROW}>
               <li className="shrink-0">

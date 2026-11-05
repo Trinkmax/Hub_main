@@ -1,4 +1,4 @@
-import { AdmPage } from '@/components/administracion/kit/adm-page'
+import { SimplePage } from '@/components/administracion/planilla'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /**
@@ -14,26 +14,25 @@ const PAPER_ROWS = ['a', 'b', 'c', 'd', 'e'] as const
 
 export default function ComprobanteLoading() {
   return (
-    <AdmPage width="comfortable">
-      <div className="space-y-3">
-        <Skeleton className="h-4 w-44" />
-        <Skeleton className="h-9 w-80 max-w-full" />
+    <SimplePage>
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-36" />
+        <Skeleton className="h-8 w-80 max-w-full" />
         <Skeleton className="h-4 w-96 max-w-full" />
       </div>
 
       <div className="@container">
         <div className="grid gap-6 @4xl:grid-cols-[minmax(0,1fr)_360px] @4xl:grid-rows-[auto_1fr] @4xl:items-start">
           {/* ① Qué pasó con la plata */}
-          <div className="card-hairline rounded-2xl border bg-card p-5 shadow-xs sm:p-6 @4xl:col-start-1 @4xl:row-start-1">
+          <div className="rounded-xl border border-border/70 bg-card p-4 shadow-xs @4xl:col-start-1 @4xl:row-start-1">
             <div className="@container">
-              <div className="grid gap-x-6 gap-y-4 @xl:grid-cols-[minmax(0,1fr)_auto] @xl:items-center">
-                <div className="space-y-3">
+              <div className="grid gap-x-6 gap-y-3 @xl:grid-cols-[minmax(0,1fr)_auto] @xl:items-center">
+                <div className="space-y-2">
                   <Skeleton className="h-3 w-40" />
-                  <Skeleton className="h-12 w-56 max-w-full" />
+                  <Skeleton className="h-8 w-44 max-w-full" />
                   <Skeleton className="h-4 w-full max-w-md" />
-                  <Skeleton className="h-4 w-3/4 max-w-sm" />
                 </div>
-                <Skeleton className="h-12 w-full @xl:w-40" />
+                <Skeleton className="h-11 w-full @xl:w-32 md:pointer-fine:h-9" />
               </div>
             </div>
           </div>
@@ -90,6 +89,6 @@ export default function ComprobanteLoading() {
           </div>
         </div>
       </div>
-    </AdmPage>
+    </SimplePage>
   )
 }

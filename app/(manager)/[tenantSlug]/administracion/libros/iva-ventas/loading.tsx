@@ -1,6 +1,6 @@
 import { BookSkeleton } from '../_components/book-skeleton'
 
-/** Libro IVA ventas: el mes, la franja de totales y el libro. */
-export default function IvaVentasLoading() {
-  return <BookSkeleton picker="month" stats={4} rows={10} columns={8} />
+/** Libro IVA mientras carga: el segmento y el mes, el totalizador y la planilla. */
+export default function IvaBookLoading() {
+  return <BookSkeleton picker="month" totals={4} rows={10} columns={8} />
 }

@@ -1,26 +1,32 @@
-import { BookText, ListTree, Tags, Upload } from 'lucide-react'
+import { Upload } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { plural } from '@/components/administracion/format'
-import { AdmHeader, AdmPage, PanelError, ViewPills } from '@/components/administracion/kit'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { PanelError } from '@/components/administracion/kit'
+import { SimplePage } from '@/components/administracion/planilla'
 import { Button } from '@/components/ui/button'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
-import { exportHref, listAccountsWithBalances, settleQuery } from '@/lib/accounting/queries'
-import { formatIsoDay } from '@/lib/dates'
+import {
+  exportHref,
+  getAccountingSettings,
+  getAccountsWithMovement,
+  listAccountsWithBalances,
+  settleQuery,
+} from '@/lib/accounting/queries'
+import { todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
   type TenantAccess,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { Callout } from '../ajustes/_components/form-bits'
-import { ExportButton } from '../libros/_components/export-button'
+import { BackLink, BookExport } from '../libros/_components/book-page'
+import { SegLinks } from '../libros/_components/seg'
 import { CategoryList, NewCategoryButton } from './_components/category-list'
+import { ChartMoreMenu } from './_components/chart-more-menu'
 import { ChartTree } from './_components/chart-tree'
 import { ChartWorkspace } from './_components/chart-workspace'
 import { NewAccountButton } from './_components/new-account-button'
@@ -31,35 +37,21 @@ export const metadata = { title: 'Plan de cuentas · Administración' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type Tab = 'categorias' | 'plan' | 'sistema'
-
-const TABS: readonly Tab[] = ['categorias', 'plan', 'sistema']
-
-const DESCRIPTIONS: Readonly<Record<Tab, string>> = {
-  // La tarjeta de abajo ya dice dónde aparecen: acá no se repite.
-  categorias: 'Dónde se anota cada gasto y cada compra del bar.',
-  plan: 'Las cuentas del bar en árbol: agregá, renombrá, recodificá, mové o desactivá cualquiera.',
-  // Corto a propósito: más largo empuja «Exportar» a un segundo renglón en la compu.
-  sistema: 'Con qué cuenta arma el sistema cada asiento: IVA, proveedores, ventas…',
-}
+const TITLE = 'font-serif text-2xl font-semibold tracking-tight'
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
 }
 
 /**
- * Plan de cuentas (H.16 + #16), con tres vistas en la URL (`?tab=`):
+ * Plan de cuentas: una sola tabla jerárquica, Código · Cuenta · Saldo, con **Plan simple** (por defecto:
+ * lo que se usa) y **Todas** (`?ver=todas`, el árbol entero). Reunión del 29/10: «¿y el plan de cuentas
+ * es esto?», «¿las categorías o no?»: las categorías son estas mismas cuentas.
  *
- * - **Tus categorías** (`categorias`): lo que ve un socio. La lista de «¿En qué se gastó?», en
- *   los mismos grupos que el selector de los gastos, con un buscador y el alta corta.
- * - **Plan completo** (`plan`): el árbol con el saldo de cada cuenta al día. Es la vista de la
- *   contadora; quien carga crea cuentas en cualquier lugar, edita código, nombre, tipo y tildes,
- *   mueve grupos enteros y desactiva.
- * - **Cuentas del sistema** (`sistema`): con qué cuenta arma el sistema cada asiento.
- *
- * Sin `?tab=`: el dueño cae en «Tus categorías» y la contadora en «Plan completo». Un link viejo
- * con `?cuenta=` (y sin `?tab=`) sigue abriendo la hoja sobre el árbol. Quien además administra
- * los accesos importa un plan y cambia las cuentas del sistema. La contadora lo ve y lo exporta.
+ * Nada de lo que había se perdió, solo dejó de ser una pestaña: «Cuentas del sistema» (`?tab=sistema`)
+ * y la lista por categorías (`?tab=categorias`, con su alta corta) quedan en el «⋯» de la barra, y un
+ * link viejo con `?tab=plan` o `?cuenta=` sigue andando. La contadora ve y exporta todo; escribir el
+ * plan sigue siendo de quien carga, e importar y reasignar, de quien además administra los accesos.
  */
 export default async function PlanDeCuentasPage({
   params,
@@ -71,13 +63,14 @@ export default async function PlanDeCuentasPage({
   const { tenantSlug } = await params
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
+  const path = `${base}/plan-de-cuentas`
 
   let access: TenantAccess
   try {
     access = await requireAccountingAccess(tenantSlug, 'read')
   } catch (error) {
     if (error instanceof UnauthenticatedError) {
-      redirect(`/login?reason=session&redirectTo=${encodeURIComponent(`${base}/plan-de-cuentas`)}`)
+      redirect(`/login?reason=session&redirectTo=${encodeURIComponent(path)}`)
     }
     if (
       error instanceof AccountingDisabledError ||
@@ -90,20 +83,27 @@ export default async function PlanDeCuentasPage({
     throw error
   }
 
+  const tenantId = access.tenant.id
   const readOnly = !access.accounting.write
   const canAdmin = access.accounting.write && access.accounting.admin
-  const result = await settleQuery(
-    listAccountsWithBalances(access.tenant.id, { includeInactive: true }),
-  )
+  const rawTab = first(sp.tab)
   const cuentaParam = first(sp.cuenta)
   const initialAccountId = cuentaParam && UUID_RE.test(cuentaParam) ? cuentaParam : null
-  const rawTab = first(sp.tab)
-  const tab: Tab = TABS.includes(rawTab as Tab)
-    ? (rawTab as Tab)
-    : // Los links de siempre a una cuenta (`?cuenta=`) la abren sobre el árbol.
-      readOnly || initialAccountId
-      ? 'plan'
-      : 'categorias'
+  const today = todayInCordoba()
+
+  const [result, settings] = await Promise.all([
+    settleQuery(listAccountsWithBalances(tenantId, { includeInactive: true })),
+    settleQuery(getAccountingSettings(tenantId)),
+  ])
+  // Lo que se movió desde que arrancaron los libros. Si no se pudo leer, el Plan simple se arma con
+  // los saldos, las compras y las cajas: se ve menos, pero «Todas» sigue ahí.
+  const movedResult =
+    settings.ok && settings.data
+      ? await settleQuery(
+          getAccountsWithMovement(tenantId, { from: settings.data.booksStartDate, to: today }),
+        )
+      : null
+  const moved: ReadonlySet<string> = movedResult?.ok ? movedResult.data : new Set<string>()
 
   const accounts: ChartAccount[] = result.ok
     ? result.data.rows.map((a) => ({
@@ -127,18 +127,8 @@ export default async function PlanDeCuentasPage({
         updatedAt: a.updatedAt,
       }))
     : []
-  const postable = accounts.filter((a) => a.postable && a.active).length
-  const groups = accounts.filter((a) => !a.postable && a.active).length
-  const tabHref = (t: Tab) => `${base}/plan-de-cuentas?tab=${t}`
-  const exportButton = (
-    <ExportButton
-      href={exportHref(tenantSlug, 'plan-de-cuentas')}
-      fileName="plan-de-cuentas.csv"
-      className="h-11 md:pointer-fine:h-9"
-    />
-  )
 
-  return (
+  const workspace = (children: React.ReactNode) => (
     <ChartWorkspace
       tenantSlug={tenantSlug}
       accounts={accounts}
@@ -147,105 +137,87 @@ export default async function PlanDeCuentasPage({
       balancesAvailable={result.ok && result.data.balancesAvailable}
       initialAccountId={initialAccountId}
     >
-      <AdmPage>
-        <AdmHeader
-          title="Plan de cuentas"
-          badge={<ReadOnlyBadge className="ml-0" />}
-          description={
-            result.ok && tab === 'plan'
-              ? `${plural(postable, 'cuenta para imputar', 'cuentas para imputar')} en ${plural(groups, 'grupo', 'grupos')}${
-                  result.data.balancesAvailable
-                    ? ` · saldos al ${formatIsoDay(result.data.asOf)}`
-                    : ''
-                }.`
-              : DESCRIPTIONS[tab]
-          }
-          actions={
-            !result.ok ? null : tab === 'categorias' ? (
-              <NewCategoryButton />
-            ) : tab === 'plan' ? (
+      {children}
+    </ChartWorkspace>
+  )
+
+  // Las dos vistas que dejaron de ser pestañas: se llega por el «⋯» y por los links de siempre.
+  if (rawTab === 'sistema' || rawTab === 'categorias') {
+    const system = rawTab === 'sistema'
+    return workspace(
+      <SimplePage>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="grid gap-1">
+            <BackLink href={path}>Plan de cuentas</BackLink>
+            <h1 className={TITLE}>{system ? 'Cuentas del sistema' : 'Por categorías'}</h1>
+          </div>
+          {system ? null : <NewCategoryButton />}
+        </div>
+        {!result.ok ? (
+          <PanelError title="No pudimos cargar el plan de cuentas" message={result.message} />
+        ) : system ? (
+          <SystemAccounts />
+        ) : (
+          <CategoryList suppliersHref={`${base}/compras?tab=proveedores&filtro=sin-clasificar`} />
+        )}
+      </SimplePage>,
+    )
+  }
+
+  const all = first(sp.ver) === 'todas' || rawTab === 'plan'
+  const exportItem = {
+    href: exportHref(tenantSlug, 'plan-de-cuentas'),
+    fileName: 'plan-de-cuentas.csv',
+    label: 'Exportar',
+  }
+
+  return workspace(
+    <SimplePage>
+      <h1 className="sr-only">Plan de cuentas</h1>
+      {!result.ok ? (
+        <PanelError title="No pudimos cargar el plan de cuentas" message={result.message} />
+      ) : (
+        <>
+          <ChartTree
+            mode={all ? 'all' : 'simple'}
+            moved={moved}
+            segment={
+              <SegLinks
+                label="Qué cuentas se ven"
+                items={[
+                  { key: 'simple', label: 'Plan simple', href: path, active: !all },
+                  { key: 'todas', label: 'Todas', href: `${path}?ver=todas`, active: all },
+                ]}
+              />
+            }
+            actions={
               <>
-                <NewAccountButton />
                 {canAdmin ? (
-                  <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
-                    <Link href={`${base}/plan-de-cuentas/importar`}>
-                      <Upload className="size-4" aria-hidden />
-                      Importar plan
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="h-11 gap-1.5 md:pointer-fine:h-8"
+                  >
+                    <Link href={`${path}/importar`}>
+                      <Upload className="size-3.5" aria-hidden />
+                      Importar
                     </Link>
                   </Button>
                 ) : null}
-                {exportButton}
+                <BookExport item={exportItem} />
+                <NewAccountButton />
+                <ChartMoreMenu path={path} />
               </>
-            ) : (
-              exportButton
-            )
-          }
-        />
-
-        <ViewPills
-          label="Vistas del plan de cuentas"
-          // En el celular van sin ícono y con menos aire: así las tres entran sin deslizar. Si
-          // deslizan, la fila arranca mostrando la elegida y «Categorías» quedaba cortada contra
-          // el borde izquierdo, sin nada que avisara que seguía para ese lado.
-          className="max-sm:[&_a]:px-3.5 max-sm:[&_svg]:hidden"
-          items={[
-            {
-              key: 'categorias',
-              label: 'Tus categorías',
-              shortLabel: 'Categorías',
-              href: tabHref('categorias'),
-              icon: Tags,
-              active: tab === 'categorias',
-            },
-            {
-              key: 'plan',
-              label: 'Plan completo',
-              shortLabel: 'Plan',
-              href: tabHref('plan'),
-              icon: ListTree,
-              active: tab === 'plan',
-            },
-            {
-              key: 'sistema',
-              label: 'Cuentas del sistema',
-              shortLabel: 'Del sistema',
-              href: tabHref('sistema'),
-              icon: BookText,
-              active: tab === 'sistema',
-            },
-          ]}
-        />
-
-        {!result.ok ? (
-          <PanelError title="No pudimos cargar el plan de cuentas" message={result.message} />
-        ) : tab === 'sistema' ? (
-          <SystemAccounts />
-        ) : tab === 'categorias' ? (
-          <CategoryList suppliersHref={`${base}/compras?tab=proveedores&filtro=sin-clasificar`} />
-        ) : (
-          <>
-            {result.data.balancesAvailable ? null : (
-              <Callout tone="info">
-                Los saldos todavía no están disponibles: el plan se ve igual y se puede editar.
-              </Callout>
-            )}
-            <ChartTree />
-            <div className="space-y-1 text-xs text-muted-foreground text-pretty">
-              <p>
-                «Usada por el sistema»: el sistema arma asientos con esa cuenta y la busca por su
-                uso, no por el código ni el nombre. «De control»: cada movimiento dice con qué
-                proveedor, cliente u organismo es. El código es una etiqueta: cambiarlo o mover una
-                cuenta de grupo no toca lo cargado.
-              </p>
-              {readOnly ? (
-                <p>
-                  Si querés cambiar algo del plan, pasale la lista a los dueños y lo cargan acá.
-                </p>
-              ) : null}
-            </div>
-          </>
-        )}
-      </AdmPage>
-    </ChartWorkspace>
+            }
+          />
+          {result.data.balancesAvailable ? null : (
+            <p className="text-xs text-muted-foreground text-pretty">
+              Los saldos todavía no están disponibles: el plan se ve igual y se puede editar.
+            </p>
+          )}
+        </>
+      )}
+    </SimplePage>,
   )
 }

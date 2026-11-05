@@ -4,7 +4,6 @@ import { type ReactNode, useId } from 'react'
 import { Amount } from '@/components/administracion/amount'
 import { plural, signedMovement } from '@/components/administracion/format'
 import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
-import { ViewPills } from '@/components/administracion/kit/view-pills'
 import {
   DataTableBody,
   DataTableCell,
@@ -27,10 +26,11 @@ import {
 } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
+import { BookPage } from '../_components/book-page'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
+import { SegLinks } from '../_components/seg'
 import { loadBookContext } from '../_lib/book-context'
 import { keysetPageInfo } from '../_lib/keyset'
 import { requireBooksAccess } from '../_lib/page-access'
@@ -116,7 +116,10 @@ export default async function SubdiariosPage({
 
   return (
     <BookPage
-      backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
+      back={{
+        href: bookHref(`${base}/libros/cierres`, shown.month ? { mes: shown.month } : {}),
+        label: 'Cierre de mes',
+      }}
       title="Subdiarios"
       description={`${tab.label}${cajaName ? ` · ${cajaName}` : ''} · ${shown.label}${
         page ? ` · ${plural(page.totalRows, 'fila', 'filas')}` : ''
@@ -129,39 +132,34 @@ export default async function SubdiariosPage({
             caja: cajaId,
           }),
           fileName: `administracion-${tenantSlug}-${tab.exportBook}-${shown.from}_${shown.to}.csv`,
-          label: `Exportar ${tab.label.toLowerCase()}`,
         },
       ]}
-      booksPath={`${base}/libros`}
-      book="subdiarios"
-      period={shown}
       toolbar={
-        <div className="space-y-3">
-          <ViewPills
+        <>
+          <SegLinks
             label="Subdiarios"
             items={SUBLEDGER_TABS.map((t) => ({
               key: t.value,
-              label: t.label,
-              shortLabel: t.shortLabel,
+              label: t.shortLabel ?? t.label,
               href: bookHref(path, { ...period, tipo: t.value }),
               active: t.value === tab.value,
-              scroll: false,
             }))}
           />
           <RangePicker
-            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}
             minMonth={ctx.minMonth}
           />
-          {isTreasury && treasuryList.length > 0 ? (
-            <TreasuryFilter
-              treasuries={treasuryList.map((t) => ({ id: t.id, name: t.name }))}
-              value={cajaId}
-            />
-          ) : null}
-        </div>
+        </>
+      }
+      below={
+        isTreasury && treasuryList.length > 0 ? (
+          <TreasuryFilter
+            treasuries={treasuryList.map((t) => ({ id: t.id, name: t.name }))}
+            value={cajaId}
+          />
+        ) : null
       }
     >
       {!range.ok ? <PeriodError message={range.message} /> : null}
@@ -236,7 +234,6 @@ function WideTable({
         Ver la tabla completa
       </label>
       <div className="hidden space-y-3 peer-checked:block sm:block">
-        <WideBookHint />
         {wide ? (
           <p className="flex items-center gap-2 text-xs text-muted-foreground max-sm:hidden">
             <MoveHorizontal className="size-3.5 shrink-0" aria-hidden />
