@@ -88,7 +88,7 @@ describe('los siete ?tab= de siempre siguen valiendo', () => {
 
   it('cada vista tiene su nombre para lectores: lo que se ve es la solapa', () => {
     expect(VIEW_TITLES).toEqual({
-      mes: 'Planilla del mes',
+      mes: 'Proyección',
       cobrar: 'Por cobrar',
       llego: 'Lo que llegó',
       cobros: 'Cobros',

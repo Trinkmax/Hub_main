@@ -500,7 +500,7 @@ export function MonthPlanilla({
           </div>
         ) : null}
 
-        <PTable minWidth={detail ? 1720 : 560} label={`Planilla de ${name}`}>
+        <PTable minWidth={detail ? 1720 : 560} label={`Proyección de ${name}`}>
           <thead>
             <tr>
               <PTh className={detail ? STICKY_HEAD : undefined}>Día</PTh>

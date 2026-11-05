@@ -187,6 +187,8 @@ describe('⌘K: los nombres nuevos de Administración', () => {
     found('acc-new-expense', 'gasto')
     found('acc-month-closes', 'cerrar')
     found('acc-getting-started', 'cómo arrancar')
+    found('acc-projection', 'proyeccion')
+    found('acc-projection', 'objetivo')
   })
 
   it('la contadora encuentra el asiento manual: también lo graba', () => {

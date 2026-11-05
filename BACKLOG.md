@@ -1522,3 +1522,16 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **Ficha del comprobante:** sigue con su ticket y «Con qué está unido»; se dejó como estaba. Para Silvia el camino es el
   panel lateral del Mayor. Se puede simplificar si no la usan.
 - **`/favicon.ico` cae en `[tenantSlug]`** y loguea `TenantNotFoundError` en cada carga: falta el ícono en `app/` o excluirlo del matcher.
+
+## Tex (05/11/2026)
+
+- Mirar el consumo: cada charla guarda sus tokens en `acc_tex_threads`; todavía no hay pantalla que lo muestre.
+- Marcar en la ficha del comprobante que lo cargó Tex (`acc_tex_actions.document_id` ya lo permite).
+- Los límites de pedidos (`lib/rate-limit.ts`) son por instancia de Vercel: en serio habría que llevarlos a Upstash.
+- Dictado por voz: quedó afuera a propósito. El teclado del celular ya dicta, y en la compu haría falta abrir
+  `microphone=(self)` en `Permissions-Policy`.
+- `tests/rls/acc-tex.test.ts` no corre en CI por el mismo motivo que los demás de `tests/rls`.
+- Un empleado de baja sin movimientos en el mes no aparece en `acc_report_payroll`: Tex no lo encuentra para reactivarlo y un alta nueva lo duplicaría. Falta una lectura de todos los empleados.
+- `ver_mayor` hace un `select` directo a `acc_document_lines` porque `acc_report_ledger` no devuelve el id de línea: conviene pasarlo a `lib/accounting/queries`.
+- `lib/tex/tools/actions/gastos.ts` repite la traducción de `AccActionState` y `UNDO_WINDOW_MS` de `document-action.ts`; `_contabilidad-values.ts` copia el esquema de `saveTaxSettings`, porque un archivo `'use server'` no lo puede exportar.
+- Un posible duplicado puede pedir dos confirmaciones (en el tique y cuando contesta la base): no se probó esa doble vuelta.

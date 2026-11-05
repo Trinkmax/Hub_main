@@ -15,6 +15,7 @@ import {
 import { ACTION_PARAM } from '@/components/administracion/acciones/types'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { cn } from '@/lib/utils'
+import { openTex, texAvailable } from '../tex/open-tex'
 import {
   LAUNCHER_DESCRIPTION,
   LAUNCHER_DROP_HINT,
@@ -317,7 +318,12 @@ export function Launcher({
           // La hoja ya tiene el foco: no se lo saca para devolvérselo al botón.
           if (handedOff.current) event.preventDefault()
         }}
-        footer={<p>{LAUNCHER_DROP_HINT}</p>}
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <p>{LAUNCHER_DROP_HINT}</p>
+            <TexLauncherLink onPick={() => onOpenChange(false)} />
+          </div>
+        }
       >
         <LauncherDoors base={base} pending={pending} onPick={pick} />
       </NavDialog>
@@ -376,5 +382,24 @@ export function LauncherButton({
       </button>
       <Launcher open={open} onOpenChange={setOpen} onSheetClosed={returnFocus} />
     </>
+  )
+}
+
+/** Para quien prefiere contarlo: Tex lo carga. Solo si Tex está en esta pantalla. */
+function TexLauncherLink({ onPick }: { onPick: () => void }) {
+  const [available, setAvailable] = useState(false)
+  useEffect(() => setAvailable(texAvailable()), [])
+  if (!available) return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onPick()
+        openTex()
+      }}
+      className="min-h-8 rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      O contale a Tex qué pasó
+    </button>
   )
 }

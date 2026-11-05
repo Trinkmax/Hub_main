@@ -1240,7 +1240,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     key: 'ventas',
     title: 'Ventas',
     what: 'El objetivo y lo vendido de cada día, lo que te tienen que depositar y lo que llegó.',
-    tabs: ['Planilla del mes', 'Por cobrar', 'Lo que llegó'],
+    tabs: ['Proyección', 'Por cobrar', 'Lo que llegó'],
     path: '/ventas',
   },
   {

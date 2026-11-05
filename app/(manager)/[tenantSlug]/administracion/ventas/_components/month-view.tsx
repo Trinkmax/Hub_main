@@ -208,7 +208,7 @@ export async function MonthBody(props: MonthBodyProps) {
     return (
       <>
         {bar(null)}
-        <PanelError title="Planilla del mes" message={rowsR.message} />
+        <PanelError title="Proyección" message={rowsR.message} />
       </>
     )
   }

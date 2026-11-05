@@ -448,7 +448,7 @@ describe('la planilla del mes', () => {
 
   it('debajo, la regla del tipo y lo que se hace con la planilla', async () => {
     const read = text(await renderMonth({ targetCents: 150_000_000 }))
-    expect(read).toContain('Fuerte: 20 % arriba del promedio. Flojo: 20 % abajo.')
+    expect(read).toContain('Fuerte: 10 % arriba del promedio. Flojo: 10 % abajo.')
     expect(read).toContain('Pegar una lista')
     expect(read).toContain('Ver detalle')
   })

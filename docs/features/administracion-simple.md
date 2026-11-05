@@ -133,7 +133,7 @@ contar el impuesto) y el banco baja $ 503.000. «Devengar noviembre»: asiento y
 queda de solo lectura.
 
 **Ventas y cierre**
-Objetivos $ 1.000.000, $ 1.000.000, $ 2.000.000 y $ 500.000: Normal, Normal, Fuerte y Flojo solos. Cierre con $ 1.000.000
+Objetivos $ 1.000.000, $ 1.000.000, $ 2.000.000 y $ 500.000: Flojo, Flojo, Fuerte y Flojo solos (margen del 10 % desde el 05/11; con el 20 % los dos primeros daban Normal). Cierre con $ 1.000.000
 facturados: IIBB $ 24.793,39 y Comercio e Industria $ 5.785,12 dentro del asiento, contra Rentas y Municipalidad.
 
 **La contadora** (membresía temporal, sacada al terminar)
