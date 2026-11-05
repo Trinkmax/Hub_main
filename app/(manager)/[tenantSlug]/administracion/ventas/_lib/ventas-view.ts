@@ -1,5 +1,5 @@
 /**
- * Ventas son tres solapas (las dibuja `AdmNav`: Planilla del mes, Por cobrar y Lo que llegó) y dos
+ * Ventas son tres solapas (las dibuja `AdmNav`: Proyección, Por cobrar y Lo que llegó) y dos
  * pantallas a las que se llega desde el «⋯» de la planilla (Facturas y Cobros). Los siete valores de
  * `?tab=` siguen valiendo tal cual (los citan el Resumen, la guía, Libros, los comprobantes y ⌘K):
  * acá está a qué vista lleva cada uno y qué viene abierto. Puro: lo prueba
@@ -51,7 +51,7 @@ export function ventasView(tab: VentasTab): { view: VentasViewKey; focus: Ventas
 
 /** El nombre de cada vista: el `<h1>` para lectores (lo que se ve es la solapa). */
 export const VIEW_TITLES: Readonly<Record<VentasViewKey, string>> = {
-  mes: 'Planilla del mes',
+  mes: 'Proyección',
   cobrar: 'Por cobrar',
   llego: 'Lo que llegó',
   cobros: 'Cobros',

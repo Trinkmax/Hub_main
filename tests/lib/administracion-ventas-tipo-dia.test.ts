@@ -27,15 +27,15 @@ const MILLION = 100_000_000
 describe('dayTypeOf: el tipo sale del objetivo contra el promedio', () => {
   const stats = { count: 4, sumCents: 4 * MILLION }
 
-  it('debajo del 80 % es flojo; arriba del 120 %, fuerte; el resto, normal', () => {
-    expect(dayTypeOf(79_999_999, stats)).toBe('low')
+  it('debajo del 90 % es flojo; arriba del 110 %, fuerte; el resto, normal', () => {
+    expect(dayTypeOf(89_999_999, stats)).toBe('low')
     expect(dayTypeOf(MILLION, stats)).toBe('normal')
-    expect(dayTypeOf(120_000_001, stats)).toBe('strong')
+    expect(dayTypeOf(110_000_001, stats)).toBe('strong')
   })
 
-  it('justo en el 80 % y en el 120 % todavía es normal: dice «menor» y «mayor»', () => {
-    expect(dayTypeOf(80_000_000, stats)).toBe('normal')
-    expect(dayTypeOf(120_000_000, stats)).toBe('normal')
+  it('justo en el 90 % y en el 110 % todavía es normal: dice «menor» y «mayor»', () => {
+    expect(dayTypeOf(90_000_000, stats)).toBe('normal')
+    expect(dayTypeOf(110_000_000, stats)).toBe('normal')
   })
 
   it('sin objetivo, o con cero, no tiene tipo', () => {
@@ -45,19 +45,19 @@ describe('dayTypeOf: el tipo sale del objetivo contra el promedio', () => {
   })
 
   it('un promedio con decimales no corre un día de tipo', () => {
-    // Promedio de 3 días: 333.333,33… × 0,8 = 266.666,66…: $ 266.666,67 ya no es flojo.
+    // Promedio de 3 días: 333.333,33… × 1,1 = 366.666,66…: $ 366.666,67 ya es fuerte.
     const third = { count: 3, sumCents: 100_000_000 }
-    expect(dayTypeOf(26_666_666, third)).toBe('low')
-    expect(dayTypeOf(26_666_667, third)).toBe('normal')
-    expect(dayTypeOf(40_000_000, third)).toBe('normal')
-    expect(dayTypeOf(40_000_001, third)).toBe('strong')
+    expect(dayTypeOf(29_999_999, third)).toBe('low')
+    expect(dayTypeOf(30_000_000, third)).toBe('normal')
+    expect(dayTypeOf(36_666_666, third)).toBe('normal')
+    expect(dayTypeOf(36_666_667, third)).toBe('strong')
   })
 
   it('con los topes de la base, la cuenta sigue siendo exacta', () => {
     const top = 999_999_999_999
     const month = { count: 31, sumCents: top * 31 }
     expect(Number.isSafeInteger(top * 31 * 100)).toBe(true)
-    expect(Number.isSafeInteger(month.sumCents * 120)).toBe(true)
+    expect(Number.isSafeInteger(month.sumCents * 110)).toBe(true)
     expect(dayTypeOf(top, month)).toBe('normal')
   })
 })
@@ -89,6 +89,26 @@ describe('dayTypes: un mes entero', () => {
     })
   })
 
+  it('noviembre de HUB: los viernes y sábados salen fuertes, los domingos y el miércoles 4, flojos', () => {
+    const target = (day: number): number => {
+      if ([7, 14, 21, 28].includes(day)) return 420_000_000
+      if ([6, 13, 20, 27].includes(day)) return 350_000_000
+      if ([1, 8, 15, 22, 29].includes(day)) return 270_000_000
+      if (day === 19) return 320_000_000
+      if (day === 4) return 280_000_000
+      if ([11, 12, 26].includes(day)) return 290_000_000
+      return 300_000_000
+    }
+    const days = Array.from({ length: 30 }, (_, i) => ({
+      day: `2026-11-${String(i + 1).padStart(2, '0')}`,
+      targetCents: target(i + 1),
+    }))
+    const types = Object.values(dayTypes(days))
+    expect(types.filter((t) => t === 'strong')).toHaveLength(8)
+    expect(types.filter((t) => t === 'low')).toHaveLength(6)
+    expect(types.filter((t) => t === 'normal')).toHaveLength(16)
+  })
+
   it('con un solo día, ese día es el promedio', () => {
     expect(dayTypes([{ day: '2026-11-02', targetCents: 5 }])).toEqual({ '2026-11-02': 'normal' })
   })
@@ -106,7 +126,7 @@ describe('las palabras', () => {
       normal: 'Normal',
       strong: 'Fuerte',
     })
-    expect(DAY_TYPE_LEGEND).toBe(`Fuerte: 20${NB}% arriba del promedio. Flojo: 20${NB}% abajo.`)
+    expect(DAY_TYPE_LEGEND).toBe(`Fuerte: 10${NB}% arriba del promedio. Flojo: 10${NB}% abajo.`)
   })
 })
 

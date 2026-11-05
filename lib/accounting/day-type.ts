@@ -18,13 +18,18 @@ export const DAY_TYPE_LABELS: Readonly<Record<DayType, string>> = {
   strong: 'Fuerte',
 }
 
+/**
+ * El margen es del 10 % desde el 05/11/2026: con el 20 %, noviembre de HUB daba cuatro días fuertes y ninguno flojo
+ * (sus objetivos son parejos). En la reunión no se dijo ningún número; lo decidió Nacho.
+ */
+
 /** Por debajo de este porcentaje del promedio, el día es flojo. */
-export const LOW_DAY_PERCENT = 80
+export const LOW_DAY_PERCENT = 90
 /** Por arriba de este porcentaje del promedio, el día es fuerte. */
-export const STRONG_DAY_PERCENT = 120
+export const STRONG_DAY_PERCENT = 110
 
 /** La regla, dicha una sola vez: va debajo de la planilla. */
-export const DAY_TYPE_LEGEND = `Fuerte: 20${NBSP}% arriba del promedio. Flojo: 20${NBSP}% abajo.`
+export const DAY_TYPE_LEGEND = `Fuerte: 10${NBSP}% arriba del promedio. Flojo: 10${NBSP}% abajo.`
 
 /** Cuántos días tienen objetivo y cuánto suman: con eso alcanza para el promedio, sin dividir. */
 export type TargetStats = { count: number; sumCents: number }
@@ -45,7 +50,7 @@ export function targetStats(targets: Iterable<number | null>): TargetStats {
 }
 
 /**
- * Flojo, normal, fuerte o sin objetivo. Justo en el 80 % o en el 120 % todavía es normal («menor» y «mayor»).
+ * Flojo, normal, fuerte o sin objetivo. Justo en el 90 % o en el 110 % todavía es normal («menor» y «mayor»).
  * Se compara sin dividir (objetivo × días × 100 contra suma × porcentaje): un promedio con decimales no puede
  * correr un día de tipo. Con los topes de la base (31 días de $ 10.000 millones) todo entra en un entero seguro.
  */

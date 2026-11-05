@@ -77,7 +77,7 @@ export const ADM_SECTIONS: readonly AdmSectionDef[] = [
     label: 'Ventas',
     path: '/ventas',
     sub: [
-      { value: 'planilla', label: 'Planilla del mes', path: '/ventas' },
+      { value: 'planilla', label: 'Proyección', path: '/ventas' },
       { value: 'cobrar', label: 'Por cobrar', path: '/ventas?tab=clientes' },
       { value: 'llego', label: 'Lo que llegó', path: '/ventas?tab=neto-por-medio' },
     ],

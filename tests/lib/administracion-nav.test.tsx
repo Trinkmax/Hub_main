@@ -130,7 +130,7 @@ describe('buildAdmNav: seis palabras', () => {
     expect(sub('resumen')).toEqual([])
     expect(sub('compras')).toEqual(['Proveedores', 'Plan de la semana', 'Comprobantes'])
     expect(sub('gastos')).toEqual(['Gastos fijos', 'Sueldos'])
-    expect(sub('ventas')).toEqual(['Planilla del mes', 'Por cobrar', 'Lo que llegó'])
+    expect(sub('ventas')).toEqual(['Proyección', 'Por cobrar', 'Lo que llegó'])
     expect(sub('caja')).toEqual([])
     expect(sub('contabilidad')).toEqual([
       'Sumas y saldos',
