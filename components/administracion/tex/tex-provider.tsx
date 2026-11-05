@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import {
   createContext,
+  type MouseEvent,
   type ReactNode,
   useCallback,
   useContext,
@@ -30,6 +31,7 @@ import {
   type TexTicket,
 } from '@/lib/tex/protocol'
 import { TEX_OPEN_EVENT } from './open-tex'
+import { isPhoneScreen } from './use-phone'
 
 /**
  * El estado de Tex en el navegador: la charla, cómo está de ánimo y qué está señalando. Vive en el
@@ -210,6 +212,8 @@ type TexContextValue = TexState & {
   stop: () => void
   restart: () => void
   showWhere: (href: string, point: string | null) => void
+  /** Se tocó un link adentro de la hoja: en el celular se cierra, para ver a dónde llevó. */
+  followLink: (event: MouseEvent<HTMLAnchorElement>, href: string) => void
   clearPoint: () => void
   guideNext: () => void
   guideClose: () => void
@@ -223,8 +227,6 @@ export function useTex(): TexContextValue {
   return value
 }
 
-/** Hasta acá el panel ocupa toda la pantalla. */
-const PHONE_MAX = 640
 /** El ancho que ocupa el panel con sus manos, y lo mínimo que tiene que quedarle a la página. */
 const PANEL_SPACE_PX = 512
 const PAGE_MIN_PX = 640
@@ -261,6 +263,11 @@ export function maskPersonal(text: string): string {
   return text
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[mail]')
     .replace(/(?<![\d.,$/])\+?(?:\d[\s-]?){8,14}\d(?![\d.,/])/g, '[teléfono]')
+    .replace(
+      // Lo de salud, hasta el final de esa celda: «alérgica al maní» no sale de la pantalla.
+      /(?:cel[ií]ac|sin tacc|alerg|al[eé]rgic|intoleran|diab[eé]tic|embaraz|discapacid|silla de ruedas|movilidad reducida)[^\n\t]*/gi,
+      '[aviso de salud]',
+    )
 }
 
 /** Lo que se lee en pantalla: Tex ve lo mismo que la persona. Tex y las hojas de arriba no cuentan. */
@@ -304,6 +311,8 @@ export function TexProvider({
   /** El archivo elegido, y después el ya leído: se suma al comprobante que salga de él. */
   const fileRef = useRef<File | null>(null)
   const readFileRef = useRef<File | null>(null)
+  /** La hoja del celular dejó una entrada en el historial: «atrás» la cierra en vez de irse. */
+  const sheetEntry = useRef(false)
 
   // La charla se trae la primera vez que se abre.
   useEffect(() => {
@@ -321,6 +330,24 @@ export function TexProvider({
       cancelled = true
     }
   }, [state.open, state.loaded, slug])
+
+  /**
+   * Tex lleva a otra pantalla. En el celular la hoja tapa todo, así que se cierra para que se vea a dónde
+   * llegó. Si la hoja había dejado su entrada en el historial, la nueva pantalla ocupa ese lugar: «atrás»
+   * vuelve a donde estaba la persona, sin pasar por una pantalla repetida.
+   */
+  const goTo = useCallback(
+    (href: string) => {
+      if (sheetEntry.current) {
+        sheetEntry.current = false
+        router.replace(href)
+      } else {
+        router.push(href)
+      }
+      if (isPhoneScreen()) dispatch({ type: 'open', open: false })
+    },
+    [router],
+  )
 
   const handle = useCallback(
     (event: TexEvent): boolean => {
@@ -349,9 +376,7 @@ export function TexProvider({
           talkTimer.current = setTimeout(() => dispatch({ type: 'talking', talking: false }), 260)
           break
         case 'navigate':
-          router.push(event.href)
-          // En el celular el panel tapa todo: se achica para que se vea a dónde llegó.
-          if (window.innerWidth < PHONE_MAX) dispatch({ type: 'open', open: false })
+          goTo(event.href)
           break
         case 'point':
           // Sin lugar al costado, lo señalado podría quedar abajo del panel.
@@ -366,7 +391,7 @@ export function TexProvider({
           if (!document.documentElement.dataset.texPush) dispatch({ type: 'open', open: false })
           const first = event.steps[0]
           dispatch({ type: 'guide', guide: { title: event.title, steps: event.steps, index: 0 } })
-          if (first?.href) router.push(first.href)
+          if (first?.href) goTo(first.href)
           if (first?.point) {
             pointId.current += 1
             dispatch({
@@ -390,7 +415,7 @@ export function TexProvider({
       }
       return false
     },
-    [router, slug],
+    [router, slug, goTo],
   )
 
   const post = useCallback(
@@ -541,13 +566,22 @@ export function TexProvider({
 
   const showWhere = useCallback(
     (href: string, point: string | null) => {
-      router.push(href)
+      goTo(href)
       if (point) {
         pointId.current += 1
         dispatch({ type: 'point', pointing: { text: point, note: null, id: pointId.current } })
       }
     },
-    [router],
+    [goTo],
+  )
+
+  const followLink = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (!isPhoneScreen()) return
+      event.preventDefault()
+      goTo(href)
+    },
+    [goTo],
   )
 
   const clearPoint = useCallback(() => dispatch({ type: 'point', pointing: null }), [])
@@ -562,13 +596,13 @@ export function TexProvider({
       return
     }
     dispatch({ type: 'guide', guide: { ...state.guide, index } })
-    if (step.href) router.push(step.href)
+    if (step.href) goTo(step.href)
     pointId.current += 1
     dispatch({
       type: 'point',
       pointing: step.point ? { text: step.point, note: null, id: pointId.current } : null,
     })
-  }, [state.guide, router])
+  }, [state.guide, goTo])
 
   const guideClose = useCallback(() => {
     dispatch({ type: 'guide', guide: null })
@@ -607,6 +641,26 @@ export function TexProvider({
   const stateOpen = useRef(state.open)
   stateOpen.current = state.open
 
+  // En el celular, el «atrás» del teléfono cierra la hoja en vez de irse de la pantalla.
+  useEffect(() => {
+    if (!state.open || !isPhoneScreen()) return
+    window.history.pushState(window.history.state, '')
+    sheetEntry.current = true
+    const onBack = () => {
+      sheetEntry.current = false
+      dispatch({ type: 'open', open: false })
+    }
+    window.addEventListener('popstate', onBack)
+    return () => {
+      window.removeEventListener('popstate', onBack)
+      // Se cerró con la X o deslizando: se saca la entrada que había dejado.
+      if (sheetEntry.current) {
+        sheetEntry.current = false
+        window.history.back()
+      }
+    }
+  }, [state.open])
+
   // Para que ⌘K y el lanzador sepan que Tex está en esta pantalla.
   useEffect(() => {
     document.documentElement.dataset.tex = ''
@@ -621,7 +675,8 @@ export function TexProvider({
     const root = document.documentElement
     const update = () => {
       const width = document.querySelector('main')?.getBoundingClientRect().width ?? 0
-      if (state.open && width - PANEL_SPACE_PX >= PAGE_MIN_PX) root.dataset.texPush = '1'
+      if (state.open && !isPhoneScreen() && width - PANEL_SPACE_PX >= PAGE_MIN_PX)
+        root.dataset.texPush = '1'
       else delete root.dataset.texPush
     }
     update()
@@ -649,6 +704,7 @@ export function TexProvider({
       stop,
       restart,
       showWhere,
+      followLink,
       clearPoint,
       guideNext,
       guideClose,
@@ -668,6 +724,7 @@ export function TexProvider({
       stop,
       restart,
       showWhere,
+      followLink,
       clearPoint,
       guideNext,
       guideClose,

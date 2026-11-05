@@ -179,7 +179,14 @@ export function TexGuide() {
           data-tex-ui
           aria-hidden
           initial={
-            reduced ? false : { x: viewport.width - 130, y: viewport.height - 100, opacity: 0 }
+            reduced
+              ? false
+              : {
+                  // Sale de donde estaba: hasta la tablet está abajo a la izquierda.
+                  x: viewport.width < 1024 ? 8 : viewport.width - 130,
+                  y: viewport.height - 100,
+                  opacity: 0,
+                }
           }
           animate={{ x: perch.x, y: perch.y, opacity: 1 }}
           transition={
@@ -224,16 +231,27 @@ export function TexGuide() {
                   size="sm"
                   variant="ghost"
                   onClick={guideClose}
-                  className="h-8"
+                  className="h-8 pointer-coarse:h-11"
                 >
                   Salir
                 </Button>
-                <Button type="button" size="sm" onClick={guideNext} className="h-8">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={guideNext}
+                  className="h-8 pointer-coarse:h-11"
+                >
                   {guide.index + 1 === guide.steps.length ? 'Listo' : 'Seguir'}
                 </Button>
               </>
             ) : (
-              <Button type="button" size="sm" variant="ghost" onClick={clearPoint} className="h-8">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={clearPoint}
+                className="h-8 pointer-coarse:h-11"
+              >
                 Entendido
               </Button>
             )}

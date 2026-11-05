@@ -4,16 +4,13 @@ import { AnimatePresence } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { TenantRole } from '@/lib/tenant/types'
-import { admFabFromFrame } from '../nav/adm-nav-model'
 import { TexDock } from './tex-dock'
 import { TexGuide } from './tex-guide'
 import { TexPanel } from './tex-panel'
 import { TexProvider, useTex } from './tex-provider'
 
 function TexStage() {
-  const { open, slug, pathname, pointing, guide } = useTex()
-  // En el celular, las pantallas de tarea tienen su pie fijo: Tex no se le para encima.
-  const roomOnPhone = admFabFromFrame(`/${slug}/administracion`, pathname)
+  const { open, pointing, guide } = useTex()
   return (
     <>
       <AnimatePresence>
@@ -21,7 +18,7 @@ function TexStage() {
           <TexPanel key="panel" />
         ) : pointing || guide ? null : (
           // Mientras señala, Tex está parado al lado de lo que muestra: no hay dos.
-          <TexDock key="dock" roomOnPhone={roomOnPhone} />
+          <TexDock key="dock" />
         )}
       </AnimatePresence>
       <TexGuide />

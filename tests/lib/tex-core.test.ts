@@ -10,6 +10,7 @@ import {
   maskPersonal,
   texReducer,
 } from '@/components/administracion/tex/tex-provider'
+import { keyboardIsOpen } from '@/components/administracion/tex/use-phone'
 import { administracionManual } from '@/lib/tex/areas/administracion-manual'
 import { plainAnswer, type StoredMessage, toDisplayItems, userTextOf } from '@/lib/tex/display'
 import {
@@ -354,9 +355,27 @@ describe('lo que dice Tex: un lector chico y seguro', () => {
     expect(safeTexHref('https://malo.com', 'hub')).toBeNull()
     expect(safeTexHref('//malo.com/hub/administracion', 'hub')).toBeNull()
     expect(safeTexHref('/otro/administracion', 'hub')).toBeNull()
-    expect(safeTexHref('/hub/administracion-falsa', 'hub')).toBeNull()
+    expect(safeTexHref('/hub-falso/administracion', 'hub')).toBeNull()
+    expect(safeTexHref('/hubfalso', 'hub')).toBeNull()
     expect(safeTexHref('/hub/administracion//malo.com', 'hub')).toBeNull()
+    // Tex anda en todo el panel: los links a las otras secciones del bar tienen que funcionar.
+    expect(safeTexHref('/hub/reservas?fecha=2026-11-05', 'hub')).toBe(
+      '/hub/reservas?fecha=2026-11-05',
+    )
+    expect(safeTexHref('/hub/clientes/abc', 'hub')).toBe('/hub/clientes/abc')
+    expect(safeTexHref('/hub', 'hub')).toBe('/hub')
     expect(safeTexHref('javascript:alert(1)', 'hub')).toBeNull()
+  })
+})
+
+describe('el teclado del celular', () => {
+  it('se nota cuando lo visible se achica mucho', () => {
+    expect(keyboardIsOpen(508, 844)).toBe(true)
+    expect(keyboardIsOpen(844, 844)).toBe(false)
+  })
+
+  it('la barra del navegador que aparece y desaparece no es un teclado', () => {
+    expect(keyboardIsOpen(760, 844)).toBe(false)
   })
 })
 
@@ -444,5 +463,13 @@ describe('lo que Tex ve de la pantalla', () => {
   it('deja lo que hace falta: plata, fechas y cantidades', () => {
     const text = 'Vendido $ 1.185.300 el 05/11/2026 · 120 personas · $ 12.100,50'
     expect(maskPersonal(text)).toBe(text)
+  })
+
+  it('saca lo de salud, hasta el final de esa celda', () => {
+    expect(maskPersonal('Ana Pérez\tSIN TACC\t21:00')).toBe('Ana Pérez\t[aviso de salud]\t21:00')
+    expect(maskPersonal('Comentario: alérgica al maní')).toBe('Comentario: [aviso de salud]')
+    expect(maskPersonal('Beto\nCeliaca, cuidar la barra\nMesa 12')).toBe(
+      'Beto\n[aviso de salud]\nMesa 12',
+    )
   })
 })

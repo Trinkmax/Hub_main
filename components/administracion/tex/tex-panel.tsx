@@ -2,6 +2,7 @@
 
 import {
   ArrowUp,
+  Camera,
   Check,
   ChevronDown,
   CircleSlash2,
@@ -12,7 +13,13 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react'
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useDragControls,
+  useReducedMotion,
+} from 'motion/react'
 import {
   type DragEvent,
   type KeyboardEvent,
@@ -31,6 +38,7 @@ import { TexMarkdown } from './tex-markdown'
 import { useTex } from './tex-provider'
 import { TexPart, useTexFace, useTexLook } from './tex-sprite'
 import { TexTicket } from './tex-ticket'
+import { isCoarsePointer, useIsPhone, useScrollLock, useSheetViewport } from './use-phone'
 
 /**
  * Tex se agranda y la charla pasa adentro de su cara: el marco azul es su cuerpo, la crema es su cara,
@@ -77,7 +85,7 @@ function StepList({ steps }: { steps: Extract<TexDisplayItem, { kind: 'tex' }>['
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex w-fit items-center gap-1 rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-fit items-center gap-1 rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-9"
         >
           <Check aria-hidden className="size-3 text-success" />
           Miré {steps.length} cosas
@@ -89,7 +97,7 @@ function StepList({ steps }: { steps: Extract<TexDisplayItem, { kind: 'tex' }>['
 }
 
 function Conversation() {
-  const { items, slug, busy, mood, error, retry, restart, decide } = useTex()
+  const { items, slug, busy, mood, error, retry, restart, decide, followLink } = useTex()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -98,6 +106,18 @@ function Conversation() {
     if (!el) return
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
+
+  // Al abrirse el teclado se achica lo visible: lo último tiene que seguir a la vista.
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const follow = () => {
+      const el = scrollRef.current
+      if (el && stick.current) el.scrollTop = el.scrollHeight
+    }
+    viewport.addEventListener('resize', follow)
+    return () => viewport.removeEventListener('resize', follow)
+  }, [])
 
   // Sigue lo último mientras llega, salvo que la persona haya subido a leer.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tiene que correr cuando cambia la charla.
@@ -127,7 +147,7 @@ function Conversation() {
                     <span className="truncate">{item.attachment}</span>
                   </p>
                 ) : null}
-                <p className="tex-bubble-user max-w-[85%] px-3 py-2 text-sm leading-snug text-pretty whitespace-pre-wrap text-white">
+                <p className="tex-bubble-user max-w-[85%] px-3 py-2 text-sm leading-snug text-pretty whitespace-pre-wrap text-white max-sm:text-[15px]">
                   {item.text}
                 </p>
               </div>
@@ -137,7 +157,7 @@ function Conversation() {
           return (
             <div key={item.id} className="min-w-0">
               <StepList steps={item.steps} />
-              {item.text ? <TexMarkdown text={item.text} slug={slug} /> : null}
+              {item.text ? <TexMarkdown text={item.text} slug={slug} onLink={followLink} /> : null}
             </div>
           )
         })}
@@ -194,15 +214,21 @@ function Hello() {
   const { pathname, role, send, loaded } = useTex()
   const suggestions = texSuggestions(pathname, role)
   return (
-    <div className="tex-scroll flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto px-5 py-4">
-      <div className="text-center">
+    <div className="tex-scroll flex min-h-0 flex-1 flex-col justify-center-safe gap-4 overflow-y-auto px-5 py-4">
+      {/* Hasta saber si había una charla, nada de «¿Qué hacemos?» que después se reemplaza. */}
+      <div className={cn('text-center transition-opacity', !loaded && 'invisible opacity-0')}>
         <p className="font-mono text-lg font-bold">¿Qué hacemos?</p>
         <p className="mx-auto mt-1 max-w-[19rem] text-sm text-pretty text-(--tex-muted)">
           Contame qué pasó o qué querés ver. Yo lo hago, te llevo a la pantalla y te muestro cómo
           quedó.
         </p>
       </div>
-      <div className={cn('flex flex-wrap justify-center gap-2', !loaded && 'invisible')}>
+      <div
+        className={cn(
+          'flex flex-wrap justify-center gap-2 transition-opacity',
+          !loaded && 'invisible opacity-0',
+        )}
+      >
         {suggestions.map((text) => (
           <button
             key={text}
@@ -224,8 +250,9 @@ function Composer() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Con el dedo el teclado no se abre solo: taparía la mitad de la pantalla antes de pedir nada.
   useEffect(() => {
-    if (open) inputRef.current?.focus()
+    if (open && !isCoarsePointer()) inputRef.current?.focus()
   }, [open])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: crece con lo que se escribe.
@@ -242,6 +269,8 @@ function Composer() {
     if (!canSend) return
     send(text)
     setText('')
+    // Con el dedo el teclado se baja: lo que viene es para leer, y puede ser un tique para confirmar.
+    if (isCoarsePointer()) inputRef.current?.blur()
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -297,9 +326,11 @@ function Composer() {
               onClick={() => fileRef.current?.click()}
               aria-label="Pasarle una foto o un PDF"
               title="Pasarle una foto o un PDF"
-              className="grid size-10 shrink-0 place-items-center rounded-sm text-(--tex-muted) outline-none hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring"
+              className="grid size-10 shrink-0 place-items-center rounded-sm text-(--tex-muted) outline-none hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
             >
-              <Paperclip aria-hidden className="size-[18px]" />
+              {/* Con el dedo, lo que se hace es sacarle una foto al papel. */}
+              <Camera aria-hidden className="hidden size-5 pointer-coarse:block" />
+              <Paperclip aria-hidden className="size-[18px] pointer-coarse:hidden" />
             </button>
           </>
         ) : null}
@@ -311,15 +342,16 @@ function Composer() {
           onKeyDown={onKeyDown}
           placeholder="Contale a Tex…"
           aria-label="Contale a Tex"
+          enterKeyHint="send"
           maxLength={4000}
-          className="min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2 text-base leading-snug outline-none placeholder:text-(--tex-muted) sm:text-sm"
+          className="min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2 text-base leading-snug outline-none placeholder:text-(--tex-muted) sm:pointer-fine:text-sm"
         />
         {busy ? (
           <button
             type="button"
             onClick={stop}
             aria-label="Frenar"
-            className="tex-send grid size-10 shrink-0 place-items-center text-white outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="tex-send grid size-10 shrink-0 place-items-center text-white outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
           >
             <span aria-hidden className="size-3 bg-white" />
           </button>
@@ -329,7 +361,7 @@ function Composer() {
             onClick={submit}
             disabled={!canSend}
             aria-label="Mandar"
-            className="tex-send grid size-10 shrink-0 place-items-center text-white outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-35"
+            className="tex-send grid size-10 shrink-0 place-items-center text-white outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-35 pointer-coarse:size-11"
           >
             <ArrowUp aria-hidden className="size-5" />
           </button>
@@ -376,6 +408,10 @@ function useDropOnPanel() {
   }
 }
 
+/** Con esto o más, soltar la hoja la cierra. */
+const SHEET_CLOSE_DISTANCE_PX = 110
+const SHEET_CLOSE_SPEED_PX = 500
+
 export function TexPanel() {
   const { items, mood, talking, setOpen, restart, busy, cheers } = useTex()
   const cheering = useCheering(cheers)
@@ -383,6 +419,11 @@ export function TexPanel() {
   const { ref, look } = useTexLook()
   const reduced = useReducedMotion()
   const { over, handlers } = useDropOnPanel()
+  const phone = useIsPhone()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const keyboard = useSheetViewport(panelRef, phone)
+  useScrollLock(phone)
+  const dragControls = useDragControls()
   const empty = items.length === 0
   const face = over ? 'o' : cheering ? 'happy' : baseFace
 
@@ -392,105 +433,152 @@ export function TexPanel() {
       .filter((step) => step.state === 'running')
       .at(-1)?.label ?? STATUS_WORDS[busy && mood === 'listening' ? 'thinking' : mood]
 
-  return (
-    <motion.div
-      data-tex-ui
-      role="dialog"
-      aria-label="Tex"
-      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.26, x: 60, y: 90 }}
-      animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, x: 0, y: 0 }}
-      exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.26, x: 60, y: 90 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
-      className="tex-panel fixed z-40 flex origin-bottom-right"
-      {...handlers}
-    >
-      <TexPart name="cap" w={24} h={8} scale={4} className="tex-limb tex-cap z-10" />
-      <TexPart
-        name="hand-left"
-        w={12}
-        h={16}
-        scale={4}
-        className="tex-limb tex-hand-left tex-wave"
-      />
-      <TexPart name="hand-right" w={10} h={10} scale={4} className="tex-limb tex-hand-right" />
-      <TexPart name="tail" w={14} h={5} scale={4} className="tex-limb tex-tail" />
-      <TexPart name="legs" w={39} h={8} scale={4} className="tex-limb tex-legs" />
-      <div aria-hidden className="tex-panel-shadow absolute inset-3 -z-10" />
+  // En el celular es una hoja: sube desde abajo y se baja con el dedo. En la compu, Tex se agranda.
+  const shown = reduced ? { opacity: 1 } : { opacity: 1, scale: 1, x: 0, y: 0 }
+  const hidden = reduced
+    ? { opacity: 0 }
+    : phone
+      ? { opacity: 1, scale: 1, x: 0, y: '100%' }
+      : { opacity: 0, scale: 0.26, x: 60, y: 90 }
 
-      <div className="tex-frame-outline tex-steps flex min-h-0 w-full">
-        <div className="tex-frame-body tex-steps flex min-h-0 w-full">
-          <div className="tex-screen tex-steps flex min-h-0 w-full flex-col">
-            <LayoutGroup>
-              <header className="flex min-h-14 items-center gap-3 py-2 pr-2 pl-4">
-                {empty ? null : (
-                  <motion.div
-                    layoutId="tex-face"
-                    transition={reduced ? { duration: 0 } : FACE_SPRING}
-                    ref={ref as React.RefObject<HTMLDivElement>}
-                    className="tex-face-plate tex-steps shrink-0"
-                    style={{ width: TEX_FACE_W * 2.4, height: TEX_FACE_H * 2.4 }}
-                  >
-                    <TexFace name={face} look={look} className="size-full" />
-                  </motion.div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono text-sm leading-tight font-bold tracking-wide">Tex</p>
-                  <p className="truncate text-xs leading-tight text-(--tex-muted)">{status}</p>
-                </div>
-                {items.length > 0 ? (
+  return (
+    <>
+      {phone ? (
+        // Lo que asoma arriba de la hoja no se toca sin querer: un toque ahí la baja.
+        <motion.div
+          aria-hidden
+          data-tex-ui
+          onClick={() => setOpen(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="tex-veil fixed inset-0 z-39"
+        />
+      ) : null}
+      <motion.div
+        ref={panelRef}
+        data-tex-ui
+        data-keyboard={keyboard ? '' : undefined}
+        role="dialog"
+        aria-label="Tex"
+        aria-modal={phone ? true : undefined}
+        initial={hidden}
+        animate={shown}
+        exit={hidden}
+        transition={
+          phone
+            ? { type: 'spring', stiffness: 420, damping: 40 }
+            : { type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }
+        }
+        drag={phone ? 'y' : false}
+        dragControls={dragControls}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.7 }}
+        onDragEnd={(_event, info) => {
+          if (info.offset.y > SHEET_CLOSE_DISTANCE_PX || info.velocity.y > SHEET_CLOSE_SPEED_PX) {
+            setOpen(false)
+          }
+        }}
+        className="tex-panel fixed z-40 flex origin-bottom-right"
+        {...handlers}
+      >
+        <TexPart name="cap" w={24} h={8} scale={4} className="tex-limb tex-cap z-10" />
+        <TexPart
+          name="hand-left"
+          w={12}
+          h={16}
+          scale={4}
+          className="tex-limb tex-hand-left tex-wave"
+        />
+        <TexPart name="hand-right" w={10} h={10} scale={4} className="tex-limb tex-hand-right" />
+        <TexPart name="tail" w={14} h={5} scale={4} className="tex-limb tex-tail" />
+        <TexPart name="legs" w={39} h={8} scale={4} className="tex-limb tex-legs" />
+        <div aria-hidden className="tex-panel-shadow absolute inset-3 -z-10" />
+
+        <div className="tex-frame-outline tex-steps flex min-h-0 w-full">
+          <div className="tex-frame-body tex-steps flex min-h-0 w-full">
+            <div className="tex-screen tex-steps flex min-h-0 w-full flex-col">
+              <LayoutGroup>
+                <header
+                  className="tex-sheet-handle relative flex min-h-14 items-center gap-3 py-2 pr-2 pl-4"
+                  onPointerDown={(event) => {
+                    if (phone && !(event.target as Element).closest('button')) {
+                      dragControls.start(event)
+                    }
+                  }}
+                >
+                  <span aria-hidden className="tex-grabber" />
+                  {empty && !keyboard ? null : (
+                    <motion.div
+                      layoutId="tex-face"
+                      transition={reduced ? { duration: 0 } : FACE_SPRING}
+                      ref={ref as React.RefObject<HTMLDivElement>}
+                      className="tex-face-plate tex-steps shrink-0"
+                      style={{ width: TEX_FACE_W * 2.4, height: TEX_FACE_H * 2.4 }}
+                    >
+                      <TexFace name={face} look={look} className="size-full" />
+                    </motion.div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-sm leading-tight font-bold tracking-wide">Tex</p>
+                    <p className="truncate text-xs leading-tight text-(--tex-muted)">{status}</p>
+                  </div>
+                  {items.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={restart}
+                      aria-label="Charla nueva"
+                      title="Charla nueva"
+                      className="grid size-9 place-items-center rounded-sm text-(--tex-muted) outline-none hover:bg-current/5 hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
+                    >
+                      <Plus aria-hidden className="size-4" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={restart}
-                    aria-label="Charla nueva"
-                    title="Charla nueva"
-                    className="grid size-9 place-items-center rounded-sm text-(--tex-muted) outline-none hover:bg-current/5 hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setOpen(false)}
+                    aria-label="Cerrar Tex"
+                    title="Cerrar (⌘J)"
+                    className="grid size-9 place-items-center rounded-sm text-(--tex-muted) outline-none hover:bg-current/5 hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
                   >
-                    <Plus aria-hidden className="size-4" />
+                    <X aria-hidden className="size-4" />
                   </button>
+                </header>
+                <div aria-hidden className="tex-rule mx-4" />
+                {empty && !keyboard ? (
+                  <div className="flex shrink-0 justify-center pt-6">
+                    <motion.div
+                      layoutId="tex-face"
+                      transition={reduced ? { duration: 0 } : FACE_SPRING}
+                      ref={ref as React.RefObject<HTMLDivElement>}
+                      className="tex-face-plate tex-steps"
+                      style={{ width: TEX_FACE_W * 7, height: TEX_FACE_H * 7 }}
+                    >
+                      <TexFace name={face} look={look} className="size-full" />
+                    </motion.div>
+                  </div>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Cerrar Tex"
-                  title="Cerrar (⌘J)"
-                  className="grid size-9 place-items-center rounded-sm text-(--tex-muted) outline-none hover:bg-current/5 hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <X aria-hidden className="size-4" />
-                </button>
-              </header>
-              <div aria-hidden className="tex-rule mx-4" />
-              {empty ? (
-                <div className="flex shrink-0 justify-center pt-6">
-                  <motion.div
-                    layoutId="tex-face"
-                    transition={reduced ? { duration: 0 } : FACE_SPRING}
-                    ref={ref as React.RefObject<HTMLDivElement>}
-                    className="tex-face-plate tex-steps"
-                    style={{ width: TEX_FACE_W * 7, height: TEX_FACE_H * 7 }}
-                  >
-                    <TexFace name={face} look={look} className="size-full" />
-                  </motion.div>
-                </div>
-              ) : null}
-            </LayoutGroup>
-            {empty ? <Hello /> : <Conversation />}
-            <Composer />
+              </LayoutGroup>
+              {empty ? <Hello /> : <Conversation />}
+              <Composer />
+            </div>
           </div>
         </div>
-      </div>
-      <TexCheer count={cheers} />
-      <AnimatePresence>
-        {over ? (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="pointer-events-none absolute inset-x-8 top-16 z-20 bg-(--tex-mid) px-3 py-2 text-center text-sm font-medium text-white"
-          >
-            Soltalo acá y lo leo
-          </motion.p>
-        ) : null}
-      </AnimatePresence>
-    </motion.div>
+        <TexCheer count={cheers} />
+        <AnimatePresence>
+          {over ? (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="pointer-events-none absolute inset-x-8 top-16 z-20 bg-(--tex-mid) px-3 py-2 text-center text-sm font-medium text-white"
+            >
+              Soltalo acá y lo leo
+            </motion.p>
+          ) : null}
+        </AnimatePresence>
+      </motion.div>
+    </>
   )
 }

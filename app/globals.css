@@ -1427,14 +1427,27 @@
   70% { opacity: 1; }
   to { transform: translate(var(--x), calc(var(--y) + 120px)) scale(0.6); opacity: 0; }
 }
-@media (max-width: 639px) {
-  /* En el celular es casi toda la pantalla: sin manos ni zapatillas, con la gorra. */
+/* La barrita para bajar la hoja: solo en el celular. */
+.tex-grabber {
+  display: none;
+}
+@media (max-width: 639px), (max-height: 480px) {
+  /* En el celular es una hoja que ocupa casi toda la pantalla, con la gorra asomando arriba. Se mide con
+     lo que de verdad se ve (`--tex-vv-*`, de `useSheetViewport`), así el teclado no le pasa por encima. */
   .tex-panel {
+    --tex-gap: max(env(safe-area-inset-top), 2.25rem);
+    top: calc(var(--tex-vv-top, 0px) + var(--tex-gap));
     right: 0;
+    bottom: auto;
     left: 0;
-    bottom: 0;
     width: 100%;
-    height: calc(100dvh - max(env(safe-area-inset-top), 2.25rem));
+    height: calc(var(--tex-vv-h, 100dvh) - var(--tex-gap));
+  }
+  .tex-panel[data-keyboard] {
+    --tex-gap: 0.5rem;
+  }
+  .tex-panel[data-keyboard] .tex-limb {
+    display: none;
   }
   .tex-limb:not(.tex-cap) {
     display: none;
@@ -1442,6 +1455,61 @@
   .tex-frame-body {
     padding: 10px 10px calc(14px + env(safe-area-inset-bottom));
   }
+  .tex-panel[data-keyboard] .tex-frame-body {
+    padding-bottom: 10px;
+  }
+  /* Se arrastra desde el encabezado: el dedo mueve la hoja, no la página. */
+  .tex-sheet-handle {
+    touch-action: none;
+    padding-top: 0.75rem;
+  }
+  .tex-grabber {
+    display: block;
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    background: color-mix(in oklch, var(--tex-mid) 35%, transparent);
+  }
+  .tex-dock-button {
+    touch-action: manipulation;
+  }
+  /* Asomado se ve poco: el toque llega más arriba de lo que se ve. */
+  .tex-dock-button::before {
+    content: '';
+    position: absolute;
+    inset: -12px -6px 0;
+  }
+}
+.tex-scroll {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+.tex-panel,
+.tex-dock,
+.tex-veil {
+  -webkit-tap-highlight-color: transparent;
+}
+.tex-veil {
+  background: color-mix(in oklch, var(--tex-navy) 45%, transparent);
+  touch-action: none;
+}
+/* Mantener el dedo sobre Tex o arrastrar la hoja no selecciona texto ni abre el menú de la imagen. */
+.tex-dock-button,
+.tex-sheet-handle {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tex-panel button {
+  touch-action: manipulation;
+}
+html.tex-lock,
+html.tex-lock body {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 /* Si hay lugar, la página le hace lugar en vez de quedar tapada (lo decide `TexProvider`). */
 @media (min-width: 640px) {
@@ -1479,9 +1547,14 @@ html[data-tex-drag] [data-tex-ui] {
   border: 2px solid color-mix(in oklch, var(--tex-mid) 45%, transparent);
   transition: background-color 120ms, transform 120ms;
 }
-.tex-chip:hover {
+@media (hover: hover) {
+  .tex-chip:hover {
+    background: color-mix(in oklch, var(--tex-light) 28%, transparent);
+    transform: translateY(-1px);
+  }
+}
+.tex-chip:active {
   background: color-mix(in oklch, var(--tex-light) 28%, transparent);
-  transform: translateY(-1px);
 }
 .tex-send {
   background: var(--tex-mid);
@@ -1507,8 +1580,10 @@ html[data-tex-drag] [data-tex-ui] {
   from { transform: translateY(0); }
   to { transform: translateY(-2px); }
 }
-.tex-dock-button:hover .tex-idle {
-  animation: tex-happy-hop 420ms steps(4) infinite alternate;
+@media (hover: hover) {
+  .tex-dock-button:hover .tex-idle {
+    animation: tex-happy-hop 420ms steps(4) infinite alternate;
+  }
 }
 @keyframes tex-happy-hop {
   from { transform: translateY(0) rotate(-1deg); }
