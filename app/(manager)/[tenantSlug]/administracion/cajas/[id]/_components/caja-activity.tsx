@@ -255,7 +255,7 @@ export function CajaActivity({
  * al último mes en que pasó algo.
  *
  * El paso que sigue es una carga («Cargar lo que había», «Cargar el cierre»,
- * «Mover plata»): quien solo lee ve el texto y ningún botón (`canWrite`). Vive
+ * «Transferir a otra cuenta»): quien solo lee ve el texto y ningún botón (`canWrite`). Vive
  * acá, y no en la página, para que ese resguardo tenga su test de render.
  */
 export function CajaActivityEmpty({
@@ -335,7 +335,7 @@ export function CajaActivityEmpty({
     </Button>
   ) : empty.action === 'move' ? (
     <ActionButton action="mover" params={{ caja: treasury.id }} variant="outline" className="h-11">
-      Mover plata
+      Transferir a otra cuenta
     </ActionButton>
   ) : null
   return (

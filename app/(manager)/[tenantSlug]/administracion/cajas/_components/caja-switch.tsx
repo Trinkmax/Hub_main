@@ -199,7 +199,7 @@ export function CajaSwitch({
 /**
  * El esqueleto de la vista que pide la URL: `loading.tsx` no recibe los
  * parámetros de búsqueda, y «Entró y salió» (`?tab=flujo`) no tiene la forma de
- * la billetera. Los dos esqueletos llegan armados del servidor; acá solo se
+ * la tabla de cuentas. Los dos esqueletos llegan armados del servidor; acá solo se
  * elige cuál se ve.
  */
 export function TabSkeleton({ saldos, flujo }: { saldos: ReactNode; flujo: ReactNode }) {

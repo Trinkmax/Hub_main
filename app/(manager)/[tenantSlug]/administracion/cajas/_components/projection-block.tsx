@@ -36,7 +36,7 @@ export function ProjectionBlock({
   canWrite,
 }: {
   projection: QueryOutcome<CashProjectionRow[]>
-  /** La «Plata disponible» de hoy (la misma de la billetera). */
+  /** La plata de hoy (la misma del total de la tabla de cuentas y del Resumen). */
   availableCents: number
   /** Ese número es un dato (si faltan los saldos iniciales y nada se movió, no lo es). */
   known: boolean

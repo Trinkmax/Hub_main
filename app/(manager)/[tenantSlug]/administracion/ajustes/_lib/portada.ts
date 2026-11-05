@@ -1,8 +1,8 @@
 /**
- * La portada de Ajustes (rediseño de octubre 2026), pura: qué dice cada uno de
- * los seis objetos —una oración con el dato y un estado en una palabra— con lo
- * que ya traen tres lecturas (el catálogo, la guía «Cómo arrancar» y los
- * accesos). Lo prueba `administracion-ajustes-portada.test.ts`.
+ * La portada de Ajustes, pura: qué dice la fila de cada habitación —una oración
+ * con el dato y un estado en una palabra— con lo que ya traen tres lecturas (el
+ * catálogo, la guía «Cómo arrancar» y los accesos). Lo prueba
+ * `administracion-ajustes-portada.test.ts`.
  *
  * Tres reglas que no se negocian:
  * - **Tonos honestos.** `warn` y `late` solo para lo que rompe o deforma los
@@ -11,16 +11,19 @@
  *   contadora, los puntos de venta, conectar ARCA) va en `info`: nunca un ámbar
  *   que no es cierto.
  * - **Un dato que no cargó no es cero.** La oración dice «—» y el estado «No
- *   pudimos cargarlo»; el objeto igual lleva a su habitación.
+ *   pudimos cargarlo»; la fila igual lleva a su habitación.
  * - **Ningún número suelto.** Cada cifra va con su palabra («6 de 18 socios»,
  *   «9 medios prendidos»).
  */
 
+import type { PostingCatalog } from '@/lib/accounting/context'
 import type { SasRequiredField } from '@/lib/accounting/onboarding'
+import type { OnboardingOverview } from '@/lib/accounting/queries/onboarding'
+import { bpLabel, type TaxSettings } from '@/lib/accounting/taxes'
 import type { PartyRates, SalesMethodKind, TreasuryKind } from '@/lib/accounting/types'
 import { padPv } from '@/lib/fiscal'
 import { hasRates, joinWords } from './cobros'
-import type { OwnerRoom } from './rooms'
+import { ROOM_KEYS, ROOMS, type RoomKey, roomHref } from './rooms'
 
 export type TileTone = 'ok' | 'warn' | 'late' | 'info' | 'muted'
 
@@ -30,7 +33,7 @@ export type TileState = {
   pill: { tone: TileTone; text: string }
 }
 
-/** Lo que dice un objeto cuya lectura falló. */
+/** Lo que dice una fila cuya lectura falló. */
 export const TILE_UNKNOWN: TileState = {
   sentence: '—',
   pill: { tone: 'muted', text: 'No pudimos cargarlo' },
@@ -368,14 +371,78 @@ export function tileArcaOf(state: ArcaTileState): TileState & { state: ArcaTileS
   return { ...ARCA_TILE[state], state }
 }
 
-// ─── Los seis juntos ─────────────────────────────────────────────────────────
+// ─── 7 · Impuestos ───────────────────────────────────────────────────────────
 
-/** El orden de la portada. */
-export const TILE_ORDER: readonly OwnerRoom[] = [
-  'accesos',
-  'cajas',
-  'medios',
-  'sas',
-  'puntos-de-venta',
-  'arca',
-]
+/** Los tres porcentajes en una oración y, en una palabra, si se calculan solos. */
+export function tileTaxes(settings: TaxSettings | null | undefined): TileState {
+  if (!settings) return TILE_UNKNOWN
+  return {
+    sentence: `Ingresos Brutos ${bpLabel(settings.iibbBp)}, Comercio e Industria ${bpLabel(settings.municipalBp)}, débitos y créditos ${bpLabel(settings.bankTaxBp)}.`,
+    pill: settings.auto
+      ? { tone: 'ok', text: 'Se calculan solos' }
+      : { tone: 'muted', text: 'No se calculan solos' },
+  }
+}
+
+// ─── Todas juntas ────────────────────────────────────────────────────────────
+
+export type PortadaRow = {
+  room: RoomKey
+  title: string
+  href: string
+  sentence: string
+  /** El texto entero de la oración, si se corta (la razón social). */
+  sentenceTitle?: string
+  /** `null`: la habitación no tiene un estado que contar (Ejercicio, Integridad). */
+  pill: TileState['pill'] | null
+}
+
+/**
+ * Una fila por habitación, en el orden de `ROOM_KEYS`. Una lectura que falló no
+ * tira la lista: su fila dice «—» y «No pudimos cargarlo», y sigue llevando a su
+ * habitación.
+ */
+export function portadaRows(input: {
+  /** `/<bar>/administracion`. */
+  base: string
+  /** `null` = la lectura falló. */
+  catalog: PostingCatalog | null
+  /** `undefined` = falló; `null` = la guía todavía no está en la base. */
+  onboarding: OnboardingOverview | null | undefined
+  access: AccessFacts | null
+  /** Quien mira ve la lista de socios (un dueño). */
+  showMembers: boolean
+  /** El estado de ARCA como lo dice su habitación; sin él, vale el de la guía. */
+  arcaState?: ArcaTileState | null
+}): PortadaRow[] {
+  const { base, catalog, onboarding, access, showMembers, arcaState } = input
+  const guide = onboarding?.state ?? null
+  const manualDone = (id: string) => guide?.items.find((i) => i.id === id)?.manualDone === true
+
+  const states: Readonly<Record<RoomKey, TileState | null>> = {
+    sas: tileSas(catalog?.settings ?? null, onboarding?.data.sasMissing),
+    cajas: tileTreasuries(catalog?.treasuries ?? null, { manualDone: manualDone('treasuries') }),
+    medios: tileMethods(catalog),
+    impuestos: tileTaxes(catalog?.settings.taxSettings),
+    accesos: tileAccess(access, { showMembers, manualDone: manualDone('access') }),
+    arca: arcaState
+      ? tileArcaOf(arcaState)
+      : tileArca(onboarding === undefined ? undefined : (onboarding?.data.arca ?? null)),
+    'puntos-de-venta': tileSalesPoints(catalog?.salesPoints ?? null),
+    ejercicio: null,
+    integridad: null,
+  }
+
+  return ROOM_KEYS.map((room) => {
+    const state = states[room]
+    const legalName = room === 'sas' ? catalog?.settings.legalName : undefined
+    return {
+      room,
+      title: ROOMS[room].shortTitle ?? ROOMS[room].title,
+      href: roomHref(base, room),
+      sentence: state?.sentence ?? ROOMS[room].description,
+      ...(legalName ? { sentenceTitle: legalName } : {}),
+      pill: state?.pill ?? null,
+    }
+  })
+}

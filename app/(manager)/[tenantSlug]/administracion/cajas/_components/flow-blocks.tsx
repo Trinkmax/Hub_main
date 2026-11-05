@@ -85,7 +85,7 @@ export function FlowBlocks({
             </div>
           }
           table={<CashFlow rows={rows} label={label} />}
-          footer={<p>Mover plata entre cajas no cuenta.</p>}
+          footer={<p>Transferir entre cuentas no cuenta.</p>}
         />
       </Panel>
 

@@ -90,6 +90,14 @@ export function treasurySavePayload(d: TreasuryDraft): Record<string, unknown> {
     : { ...base, createBankParty: d.kind === 'bank' && d.createBankParty }
 }
 
+/** «Cambiar el nombre» desde Caja: solo cambia el nombre (`kind` lo pide el esquema, y no cambia). */
+export function treasuryRenamePayload(
+  t: Pick<TreasuryAccountRow, 'id' | 'updatedAt' | 'kind'>,
+  name: string,
+): Record<string, unknown> {
+  return { id: t.id, expectedUpdatedAt: t.updatedAt, name, kind: t.kind }
+}
+
 /** El interruptor «En uso»: solo cambia `active` (la base decide si puede apagarse). */
 export function treasuryTogglePayload(
   t: Pick<TreasuryAccountRow, 'id' | 'updatedAt' | 'name' | 'kind'>,

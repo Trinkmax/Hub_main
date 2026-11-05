@@ -250,7 +250,7 @@ export function yearTitle(year: Pick<FiscalYearRow, 'endDate' | 'status' | 'peri
  * Los meses de cada ejercicio (el más nuevo primero) como una tira de
  * pestañas, la misma que usa Libros: de un vistazo, qué está cerrado y en cuál
  * estamos. «Ver como tabla» trae la lista de siempre. Cerrar y reabrir se hace
- * en Libros › Fin de mes.
+ * en Contabilidad › Cierre de mes.
  */
 export function FiscalYearsList({
   years,
@@ -310,7 +310,7 @@ export function FiscalYearsList({
           href={cierresHref}
           className="rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          Libros › Fin de mes
+          Contabilidad › Cierre de mes
         </Link>
         .
       </p>

@@ -1,3 +1,4 @@
+import { Planilla } from '@/components/administracion/planilla'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { RoomKey } from '../_lib/rooms'
 
@@ -9,7 +10,6 @@ import type { RoomKey } from '../_lib/rooms'
  */
 
 const SURFACE = 'card-hairline rounded-2xl border bg-card p-4 shadow-xs sm:p-5'
-const QUIET = 'rounded-2xl bg-secondary/50 p-4 sm:p-5'
 
 function Lines({ rows = 3 }: { rows?: number }) {
   return (
@@ -56,44 +56,30 @@ export function HeaderSkeleton({ back = false }: { back?: boolean }) {
   )
 }
 
-/** La portada: el bloque de la puesta en marcha, los seis objetos y el cajón. */
+const PORTADA_ROWS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] as const
+
+/** La portada: la puesta en marcha y una fila por habitación. */
 export function PortadaSkeleton() {
   return (
-    <div className="space-y-6">
-      <div
-        className={`${SURFACE} grid gap-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center`}
-      >
-        <div className="space-y-2.5">
-          <Skeleton className="h-3 w-32" />
-          <Skeleton className="h-8 w-96 max-w-full" />
-          <Skeleton className="h-4 w-[30rem] max-w-full" />
-        </div>
-        <Skeleton className="h-12 w-full rounded-md lg:w-56" />
+    <div aria-hidden className="grid gap-3.5">
+      <div className="flex min-h-11 items-center gap-3 rounded-xl border border-border/70 bg-card px-3 py-2 shadow-xs">
+        <Skeleton className="h-4 w-44" />
+        <Skeleton className="h-1.5 flex-1 rounded-full" />
       </div>
-      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {['a', 'b', 'c', 'd', 'e', 'f'].map((k) => (
-          <li
-            key={k}
-            className={`${SURFACE} grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 sm:gap-4`}
-          >
-            <Skeleton className="h-[64px] w-[64px] rounded-lg" />
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-36 max-w-full" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-6 w-28 rounded-full" />
-            </div>
-          </li>
-        ))}
-      </ul>
-      <div className={`${QUIET} space-y-3`}>
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-4 w-80 max-w-full" />
-        <div className="flex flex-wrap gap-2">
-          {['a', 'b', 'c', 'd'].map((k) => (
-            <Skeleton key={k} className="h-9 w-40 rounded-full" />
+      <Planilla>
+        <ul>
+          {PORTADA_ROWS.map((k) => (
+            <li
+              key={k}
+              className="flex min-h-12 items-center gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0 sm:min-h-0"
+            >
+              <Skeleton className="h-4 w-36 shrink-0 sm:w-44" />
+              <Skeleton className="h-4 flex-1 max-sm:hidden" />
+              <Skeleton className="h-6 w-24 rounded-full max-sm:hidden" />
+            </li>
           ))}
-        </div>
-      </div>
+        </ul>
+      </Planilla>
     </div>
   )
 }
@@ -101,6 +87,29 @@ export function PortadaSkeleton() {
 /** El contenido de una habitación mientras carga, con su forma. */
 export function RoomSkeleton({ room }: { room: RoomKey }) {
   switch (room) {
+    // «Calcular solos» y la planilla de cuatro renglones.
+    case 'impuestos':
+      return (
+        <div className="grid gap-3.5">
+          <Skeleton className="h-6 w-40" />
+          <Planilla>
+            <div className="border-b border-border bg-secondary/50 px-3 py-2">
+              <Skeleton className="h-3 w-full max-w-md" />
+            </div>
+            {['a', 'b', 'c', 'd'].map((k) => (
+              <div
+                key={k}
+                className="flex items-center gap-4 border-b border-border/60 px-3 py-2.5 last:border-b-0"
+              >
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-4 w-14" />
+                <Skeleton className="h-8 w-44 max-sm:hidden" />
+                <Skeleton className="h-4 w-24 max-sm:hidden" />
+              </div>
+            ))}
+          </Planilla>
+        </div>
+      )
     // El número y las llaves, y las dos listas.
     case 'accesos':
       return (

@@ -1,20 +1,15 @@
 /**
- * «La billetera»: qué muestra la portada de Cajas y bancos. Puro (sin React ni
- * base); lo prueba `tests/lib/administracion-cajas-vista.test.ts`.
+ * Lo que muestra Caja, puro (sin React ni base): la tabla «cuánto hay en cada
+ * cuenta» y la ficha de una caja. Lo prueba `tests/lib/administracion-cajas-vista.test.ts`.
  *
  * Tiene que decir LO MISMO que el Resumen, que es la otra pantalla donde se ve
  * cuánta plata hay. Por eso:
- * - el estado («todavía no sé cuánta plata hay», el total, la oración) sale de
- *   `heroState()` de `lib/accounting/home.ts`, con las cajas ACTIVAS;
+ * - el estado («todavía no sé cuánta plata hay», el total) sale de `heroState()`
+ *   de `lib/accounting/home.ts`, con las cajas ACTIVAS;
  * - el total suma las activas que no son tarjeta de la empresa (una caja
  *   desactivada que todavía tiene plata se muestra aparte y no suma);
  * - el color de cada caja sale de su tipo (`treasuryTones`), calculado sobre
  *   esas mismas cajas activas, en el orden de Ajustes.
- *
- * Contar una caja es lo que se hace con ella, así que cada tarjeta ofrece UNA
- * acción y en toda la pantalla hay un solo botón relleno: el de la primera
- * caja a la que le toca algo (tiene plata en camino o hace más de una semana
- * que no se cuenta).
  */
 
 import { type HeroState, heroState, type TreasuryTone, treasuryTones } from '@/lib/accounting/home'
@@ -22,6 +17,7 @@ import { TREASURY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import type { AccountingSettings } from '@/lib/accounting/queries/settings'
 import type { SummaryTreasury } from '@/lib/accounting/queries/summary'
 import type { TreasuryBalanceRow } from '@/lib/accounting/queries/treasury'
+import { chargesBankTax } from '@/lib/accounting/taxes'
 import type { TreasuryKind } from '@/lib/accounting/types'
 import { daysBetween, formatDayMonth, isRealIsoDay, monthName } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
@@ -82,29 +78,6 @@ export function countStatus(input: {
   return { tone: 'ok', text, due: false }
 }
 
-/** «Último movimiento: hoy» · «…ayer» · «…el 07/10» · «Sin movimientos todavía». */
-export function lastMovementText(date: string | null, today: string): string {
-  const day = validDay(date)
-  if (day === null) return 'Sin movimientos todavía'
-  const days = daysBetween(day, today)
-  if (days <= 0) return 'Último movimiento: hoy'
-  if (days === 1) return 'Último movimiento: ayer'
-  return `Último movimiento: el ${formatDayMonth(day)}`
-}
-
-/** «Efectivo» · «Billetera · alias hub.bar» · «Banco · Banco de la Nación Argentina». */
-export function treasuryDetail(row: {
-  kind: TreasuryKind
-  alias?: string | null
-  bankName?: string | null
-}): string {
-  const kind = TREASURY_KIND_LABELS[row.kind] ?? 'Cuenta'
-  const alias = (row.alias ?? '').trim()
-  const bank = (row.bankName ?? '').trim()
-  const extra = alias !== '' ? `alias ${alias}` : bank !== '' ? bank : null
-  return extra ? `${kind} · ${extra}` : kind
-}
-
 // ─── Lo que se lee de un saldo ───────────────────────────────────────────────
 
 export type TreasuryMoney = {
@@ -132,101 +105,7 @@ export function treasuryMoney(kind: TreasuryKind, balanceCents: number): Treasur
   return { amount, label: null, words: null }
 }
 
-// ─── La acción de cada tarjeta ───────────────────────────────────────────────
-
-export type WalletCardAction = {
-  /** `count` contar · `arrived` «ya me entró» · `pay_card` pagar el resumen. */
-  kind: 'count' | 'arrived' | 'pay_card'
-  label: string
-  /** La hoja que abre, con `caja` puesta. */
-  sheet: 'ajustar' | 'mover'
-  /** El nombre entero, para lectores: «Contar Mercado Pago». */
-  ariaLabel: string
-  /** El único botón relleno de la pantalla. */
-  filled: boolean
-}
-
-export type WalletCardView = {
-  id: string
-  name: string
-  kind: TreasuryKind
-  /** «Efectivo», «Billetera · alias hub.bar». */
-  detail: string
-  /** El color por tipo de caja, el del Resumen. `null`: neutro. */
-  tone: TreasuryTone | null
-  /** `/…/cajas/{id}`. */
-  href: string
-  money: TreasuryMoney
-  /** Billeteras: lo vendido con QR y transferencia que todavía no entró. */
-  pendingCents: number
-  /** `null` en una caja desactivada: ya no se cuenta. */
-  status: CountStatus | null
-  footer: string
-  /** `null`: sin botón (quien solo lee, o una caja desactivada). */
-  action: WalletCardAction | null
-  /** Desactivada con saldo: va gris y no suma. */
-  muted: boolean
-}
-
-export type WalletSlot = {
-  id: string
-  name: string
-  kind: TreasuryKind
-  detail: string
-  tone: TreasuryTone | null
-}
-
-export type WalletMathRow = { key: string; label: string; value: string; op: '+' | '−' }
-
-export type WalletView =
-  | {
-      /** No hay ninguna caja cargada. */
-      kind: 'no_treasuries'
-      title: string
-      sentence: string
-      action: { href: string; label: string } | null
-    }
-  | {
-      /** El bar recién arrancado: faltan los saldos iniciales y nada se movió. Ningún «$ 0». */
-      kind: 'opening_pending'
-      title: string
-      sentence: string
-      action: { href: string; label: string } | null
-      /** Las cajas, como casilleros que esperan su monto. */
-      slots: WalletSlot[]
-      /** La primera caja de efectivo y la primera billetera, para explicar qué entra sola. */
-      cashName: string | null
-      walletName: string | null
-      addHref: string
-    }
-  | {
-      kind: 'normal'
-      /** «Plata disponible hoy» o, en descubierto, «Hoy estás en descubierto por». */
-      label: string
-      /** En positivo: el descubierto lo dice la etiqueta. */
-      cents: number
-      sentence: string
-      /** El estado del conteo de todas, en una píldora. */
-      countPill: { tone: 'ok' | 'warn' | 'muted'; text: string }
-      /** Cajas, bancos y billeteras activas, en el orden de Ajustes. */
-      cards: WalletCardView[]
-      /** Tarjetas de la empresa: van aparte (son deuda). */
-      companyCards: WalletCardView[]
-      /** Desactivadas que todavía tienen saldo. */
-      inactive: WalletCardView[]
-      /** «¿Cómo se calcula?»: un renglón por caja que suma. */
-      math: WalletMathRow[]
-      /** Ya hay movimientos pero falta decir con cuánto arrancó. */
-      openingMissing: { since: string | null; href: string } | null
-      /** Hay algo que no es efectivo: se pueden cargar gastos del banco. */
-      hasNonCash: boolean
-      hasWallet: boolean
-      hasBank: boolean
-      /** El día del último movimiento de cualquier caja (`null` si ninguna se movió). */
-      lastMovementDate: string | null
-    }
-
-type Options = { today: string; canWrite?: boolean; base?: string }
+// ─── Los totales, igual que el Resumen ───────────────────────────────────────
 
 function asSummary(row: TreasuryBalanceRow): SummaryTreasury {
   return {
@@ -288,7 +167,7 @@ function quiet(status: CountStatus | null): CountStatus | null {
 }
 
 /**
- * El estado del conteo de UNA caja como se muestra en su tarjeta y en su ficha:
+ * El estado del conteo de UNA caja como se muestra en su fila y en su ficha:
  * `null` si está desactivada (ya no se cuenta) y sin ámbar en la tarjeta de la
  * empresa.
  */
@@ -311,61 +190,101 @@ export function treasuryCountStatus(
   return treasury.kind === 'credit_card' ? quiet(status) : status
 }
 
-function countPill(cards: readonly WalletCardView[]): {
-  tone: 'ok' | 'warn' | 'muted'
-  text: string
-} {
-  const due = cards.filter((c) => c.status?.due).length
-  if (due > 0) return { tone: 'warn', text: `${due} sin contar esta semana` }
-  const counted = cards.filter((c) => c.status?.tone === 'ok').length
-  if (counted === 0) return { tone: 'muted', text: 'Todavía no contaste ninguna' }
-  if (counted === cards.length) return { tone: 'ok', text: 'Todas contadas esta semana' }
-  return { tone: 'muted', text: `${counted} de ${cards.length} contadas esta semana` }
+// ─── La acción de cada fila ──────────────────────────────────────────────────
+
+export type CajaRowAction = {
+  /** `count` contar · `arrived` «ya me entró» · `pay_card` pagar el resumen. */
+  kind: 'count' | 'arrived' | 'pay_card'
+  label: string
+  /** La hoja que abre, con `caja` puesta. */
+  sheet: 'ajustar' | 'mover'
+  /** El nombre entero, para lectores: «Contar Mercado Pago». */
+  ariaLabel: string
+  /** Le toca (hace más de una semana que no se cuenta, o tiene plata en camino): queda a la vista. */
+  due: boolean
 }
 
-export function walletView(
+export type CajaAccountRow = {
+  id: string
+  name: string
+  kind: TreasuryKind
+  /** «Efectivo», «Banco», «Billetera». */
+  kindLabel: string
+  active: boolean
+  /** «hoy» · «ayer» · «hace 3 días» · «07/10» · «Sin movimientos». */
+  lastMovement: string
+  lastMovementDate: string | null
+  money: TreasuryMoney
+  /** Faltan los saldos iniciales y esta cuenta nunca se movió: su cero no es un dato. */
+  unknown: boolean
+  /** Billeteras: lo vendido con QR y transferencia que todavía no entró. */
+  pendingCents: number
+  /** Cómo viene el conteo, en palabras (`null`: ya no se cuenta). */
+  countText: string | null
+  /** `null`: sin botón (quien solo lee, una cuenta desactivada, o falta decir cuánto hay). */
+  action: CajaRowAction | null
+  /** Para guardar cambios (`expectedUpdatedAt`). `null`: esta lectura no lo trajo. */
+  updatedAt: string | null
+  /** ¿Cobra el impuesto al cheque? `null`: no corresponde preguntarlo (efectivo y tarjeta). */
+  bankTax: boolean | null
+}
+
+/** Lo de cada cuenta que no trae el reporte de saldos: sale del catálogo. */
+export type CajaAccountMeta = {
+  updatedAt: string | null
+  chargesBankTax: boolean | null
+}
+
+export type CajaView = {
+  /** `no_treasuries`: ninguna cuenta. `opening_pending`: hay cuentas, y ningún saldo es un dato. */
+  status: 'normal' | 'opening_pending' | 'no_treasuries'
+  /** Efectivo, bancos y billeteras en uso, en el orden de Ajustes: las que suman. */
+  accounts: CajaAccountRow[]
+  /** Lo que no suma: las tarjetas de la empresa (deuda) y las desactivadas que tienen saldo. */
+  apart: CajaAccountRow[]
+  /** La suma, con la doble raya, en positivo. `null`: todavía no se sabe. */
+  total: { cents: number; overdrawn: boolean } | null
+  /** Lo que hay que decir antes de la tabla, con su paso. `null`: nada. */
+  notice: { title: string; sentence: string; action: { href: string; label: string } | null } | null
+  /** Faltan los saldos iniciales: al crear una cuenta se avisa que lo que tiene se carga ahí. */
+  openingPending: boolean
+}
+
+/** El último movimiento, para su columna: «hoy», «ayer», «hace 3 días», «07/10». */
+export function lastMovementShort(date: string | null, today: string): string {
+  const day = validDay(date)
+  if (day === null) return 'Sin movimientos'
+  const days = daysBetween(day, today)
+  if (days <= 0) return 'hoy'
+  if (days === 1) return 'ayer'
+  return days <= CHECK_STALE_DAYS ? `hace ${days} días` : formatDayMonth(day)
+}
+
+/** Los tipos a los que tiene sentido preguntarles: el efectivo no pasa por un banco ni la tarjeta. */
+const BANK_TAX_KINDS: ReadonlySet<TreasuryKind> = new Set(['bank', 'wallet', 'other'])
+
+/**
+ * La tabla de Caja: una fila por cuenta y el total. El total y el estado («todavía no sé cuánta
+ * plata hay») salen de `heroState`, igual que en el Resumen: las dos pantallas dicen lo mismo.
+ *
+ * Cada fila ofrece una acción (contar, «ya me entró» o pagar el resumen); mientras falta decir con
+ * cuánto se arrancó no ofrece ninguna: contar antes anotaría toda la plata como sobrante.
+ */
+export function cajaView(
   rows: readonly TreasuryBalanceRow[],
+  meta: ReadonlyMap<string, CajaAccountMeta>,
   settings: Pick<AccountingSettings, 'openingStatus' | 'booksStartDate'> | null,
-  opts: Options,
-): WalletView {
+  opts: { today: string; canWrite?: boolean; base?: string },
+): CajaView {
   const canWrite = opts.canWrite ?? true
   const base = opts.base ?? ''
   const hero = walletHero(rows, settings, { canWrite, base })
-  const active = rows.filter((r) => r.active)
-  const tones = walletTones(rows)
-  const action = (state: Extract<HeroState, { kind: 'unknown' }>) =>
-    state.action?.kind === 'href' ? { href: state.action.href, label: state.action.label } : null
-
-  if (hero.kind === 'unknown') {
-    if (hero.reason === 'no_treasuries') {
-      return {
-        kind: 'no_treasuries',
-        title: hero.title,
-        sentence: hero.sentence,
-        action: action(hero),
-      }
-    }
-    return {
-      kind: 'opening_pending',
-      title: hero.title,
-      sentence: hero.sentence,
-      action: action(hero),
-      slots: active.map((r) => ({
-        id: r.treasuryId,
-        name: r.name,
-        kind: r.kind,
-        detail: treasuryDetail(r),
-        tone: tones[r.treasuryId] ?? null,
-      })),
-      cashName: active.find((r) => r.kind === 'cash')?.name ?? null,
-      walletName: active.find((r) => r.kind === 'wallet')?.name ?? null,
-      addHref: `${base}/ajustes?tab=cajas`,
-    }
-  }
-
+  const unknown = hero.kind === 'unknown'
   const since = settings?.booksStartDate ?? null
-  const card = (row: TreasuryBalanceRow): WalletCardView => {
+
+  const toRow = (row: TreasuryBalanceRow): CajaAccountRow => {
     const isCard = row.kind === 'credit_card'
+    const pendingCents = row.kind === 'wallet' ? Math.max(0, row.pendingWalletCents) : 0
     const status = treasuryCountStatus(
       {
         kind: row.kind,
@@ -375,95 +294,123 @@ export function walletView(
       },
       { today: opts.today, since },
     )
-    const pendingCents = row.kind === 'wallet' ? Math.max(0, row.pendingWalletCents) : 0
-    let cardAction: WalletCardAction | null = null
-    if (canWrite && row.active) {
+    let action: CajaRowAction | null = null
+    if (canWrite && row.active && !unknown) {
       if (isCard && row.balanceCents < 0) {
-        cardAction = {
+        action = {
           kind: 'pay_card',
           label: 'Pagar el resumen',
           sheet: 'mover',
           ariaLabel: `Pagar el resumen de ${row.name}`,
-          filled: false,
+          due: false,
         }
       } else if (pendingCents > 0) {
-        cardAction = {
+        action = {
           kind: 'arrived',
           label: 'Ya me entró',
           sheet: 'ajustar',
           ariaLabel: `Ya me entró lo de ${row.name}`,
-          filled: false,
+          due: true,
         }
       } else {
-        cardAction = {
+        action = {
           kind: 'count',
           label: 'Contar',
           sheet: 'ajustar',
           ariaLabel: `Contar ${row.name}`,
-          filled: false,
+          due: status?.due === true,
         }
       }
     }
+    const info = meta.get(row.treasuryId)
     return {
       id: row.treasuryId,
       name: row.name,
       kind: row.kind,
-      detail: treasuryDetail(row),
-      tone: row.active ? (tones[row.treasuryId] ?? null) : null,
-      href: `${base}/cajas/${row.treasuryId}`,
+      kindLabel: TREASURY_KIND_LABELS[row.kind] ?? 'Cuenta',
+      active: row.active,
+      lastMovement: lastMovementShort(row.lastMovementDate, opts.today),
+      lastMovementDate: row.lastMovementDate,
       money: treasuryMoney(row.kind, row.balanceCents),
+      unknown: unknown && !isCard && row.active,
       pendingCents,
-      status,
-      footer: row.active
-        ? lastMovementText(row.lastMovementDate, opts.today)
-        : 'Desactivada · no suma a lo disponible',
-      action: cardAction,
-      muted: !row.active,
+      countText: status?.text ?? null,
+      action,
+      updatedAt: info?.updatedAt ?? null,
+      bankTax:
+        info && BANK_TAX_KINDS.has(row.kind)
+          ? chargesBankTax({ kind: row.kind, chargesBankTax: info.chargesBankTax })
+          : null,
     }
   }
 
-  const cards = active.filter((r) => r.kind !== 'credit_card').map(card)
-  const companyCards = active.filter((r) => r.kind === 'credit_card').map(card)
-  const inactive = rows.filter((r) => !r.active).map(card)
+  const accounts = rows.filter((r) => r.active && r.kind !== 'credit_card').map(toRow)
+  const apart = rows.filter((r) => !r.active || r.kind === 'credit_card').map(toRow)
+  const openingPending = settings?.openingStatus === 'pending'
 
-  // Un solo botón relleno: el de la primera caja (en orden) a la que le toca algo.
-  const first = cards.find((c) => c.action !== null && (c.pendingCents > 0 || c.status?.due))
-  if (first?.action) first.action = { ...first.action, filled: true }
-
-  const moved = active
-    .map((r) => r.lastMovementDate)
-    .filter((d): d is string => d !== null)
-    .sort()
-
-  return {
-    kind: 'normal',
-    // Un descubierto se dice con palabras, nunca con un menos.
-    label: hero.overdrawn ? 'Hoy estás en descubierto por' : 'Plata disponible hoy',
-    cents: Math.abs(hero.cents),
-    sentence: hero.sentence,
-    countPill: countPill(cards),
-    cards,
-    companyCards,
-    inactive,
-    math: cards.map((c) => {
-      const row = active.find((r) => r.treasuryId === c.id)
-      const cents = row?.balanceCents ?? 0
-      return {
-        key: c.id,
-        label: cents < 0 ? `${c.name} (descubierto)` : c.name,
-        value: formatCentsShort(Math.abs(cents)),
-        op: cents < 0 ? '−' : '+',
-      }
-    }),
-    openingMissing:
-      settings?.openingStatus === 'pending'
-        ? { since: validDay(settings.booksStartDate), href: `${base}/configurar` }
-        : null,
-    hasNonCash: active.some((r) => r.kind !== 'cash'),
-    hasWallet: active.some((r) => r.kind === 'wallet'),
-    hasBank: active.some((r) => r.kind === 'bank'),
-    lastMovementDate: moved.at(-1) ?? null,
+  if (hero.kind === 'unknown') {
+    return {
+      status: hero.reason,
+      accounts,
+      apart,
+      total: null,
+      notice: {
+        title: hero.title,
+        sentence: hero.sentence,
+        // Sin cuentas no hay a dónde ir: se agrega la primera ahí mismo, en la tabla.
+        action:
+          hero.reason === 'opening_pending' && hero.action?.kind === 'href'
+            ? { href: hero.action.href, label: hero.action.label }
+            : null,
+      },
+      openingPending,
+    }
   }
+
+  const start = validDay(since)
+  return {
+    status: 'normal',
+    accounts,
+    apart,
+    total: { cents: Math.abs(hero.cents), overdrawn: hero.overdrawn },
+    notice: openingPending
+      ? {
+          title: 'Falta decir con cuánto arrancaste',
+          sentence: start
+            ? `Los números cuentan solo lo cargado desde el ${formatDayMonth(start)}.`
+            : 'Los números cuentan solo lo que cargaste hasta ahora.',
+          action: canWrite ? { href: `${base}/configurar`, label: 'Cargar lo que había' } : null,
+        }
+      : null,
+    openingPending,
+  }
+}
+
+// ─── Los movimientos del panel lateral ───────────────────────────────────────
+
+/** Cuántos días mira el panel lateral de una cuenta (con hoy). Lo demás está en su ficha. */
+export const ACCOUNT_SHEET_DAYS = 30
+
+/** Cuántos renglones muestra, como mucho: es un vistazo, no un libro. */
+export const ACCOUNT_SHEET_ROWS = 40
+
+/** Una fila del panel lateral de una cuenta: Fecha · Concepto · Entró · Salió. */
+export type AccountMovement = {
+  key: string
+  date: string
+  title: string
+  sub: string
+  inCents: number
+  outCents: number
+  /** `/comprobantes/{id}`, después de `/<bar>/administracion`. */
+  path: string | null
+}
+
+/** Lo que se lee para el panel lateral: lo más nuevo primero. */
+export type AccountMovements = {
+  movements: AccountMovement[]
+  /** Hubo más de los que entran en una lectura: no se muestra una lista que no es la más nueva. */
+  tooMany: boolean
 }
 
 // ─── La ficha de una caja («la tarjeta abierta») ─────────────────────────────

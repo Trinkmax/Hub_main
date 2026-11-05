@@ -1,15 +1,16 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { Suspense } from 'react'
 import { PeriodError } from '@/components/administracion/cajas-ventas/block-error'
 import { ExportButton } from '@/components/administracion/cajas-ventas/export-button'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
 import { RangeFilter } from '@/components/administracion/cajas-ventas/period-filters'
 import { firstParam, resolveRange } from '@/components/administracion/cajas-ventas/periods'
-import { treasuryToneSwatch } from '@/components/administracion/charts/palette'
-import { AdmHeader, AdmPage, PanelError, ViewPills } from '@/components/administracion/kit'
-import { QuickActionsBar } from '@/components/administracion/quick-actions'
+import { PanelError } from '@/components/administracion/kit/panel-states'
+import { PlanillaBar, SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { CASH_CHART_RANGE_PARAM, resolveCashChartRange } from '@/lib/accounting/cash-daily'
-import { getSubledger } from '@/lib/accounting/queries/books'
+import { loadPostingCatalog } from '@/lib/accounting/context'
 import { getCashDaily } from '@/lib/accounting/queries/cash-flow'
 import { exportHref } from '@/lib/accounting/queries/labels'
 import { getAccountingSettings } from '@/lib/accounting/queries/settings'
@@ -19,209 +20,160 @@ import {
   getCashProjection,
   listTreasuryBalances,
 } from '@/lib/accounting/queries/treasury'
-import type { TreasuryKind } from '@/lib/accounting/types'
 import {
-  addDays,
   addMonthsToYearMonth,
   formatRange,
   monthOf,
   startOfMonth,
   todayInCordoba,
 } from '@/lib/dates'
-import {
-  CashMoveBlock,
-  CashMoveSkeleton,
-  LoQueHaySkeleton,
-  MOVE_SPLIT,
-} from './_components/cash-daily-section'
+import { AccountsSkeleton } from './_components/accounts-skeleton'
+import { AccountsTable } from './_components/accounts-table'
+import { CashMoveBlock, CashMoveSkeleton } from './_components/cash-daily-section'
 import { FlowBlocks, FlowTabSkeleton } from './_components/flow-blocks'
+import { MoneyButtons } from './_components/money-buttons'
 import { ProjectionBlock } from './_components/projection-block'
-import { RECENT_DAYS, RecentActivity, RecentActivitySkeleton } from './_components/recent-activity'
-import { type TreasuryBalanceItem, TreasuryBalances } from './_components/treasury-balances'
-import { Wallet } from './_components/wallet'
-import { WalletEmpty, WalletNoTreasuries } from './_components/wallet-empty'
-import { walletHero, walletTones, walletTotals, walletView } from './_lib/wallet-view'
+import {
+  type CajaAccountMeta,
+  cajaView,
+  walletHero,
+  walletTones,
+  walletTotals,
+} from './_lib/wallet-view'
 
-export const metadata = { title: 'Cajas y bancos' }
+export const metadata = { title: 'Caja' }
 
-type Tab = 'saldos' | 'flujo'
-
-/**
- * Cajas y bancos, «la billetera». Dos vistas en la URL: «Lo que hay» (la de
- * siempre: el total, una tarjeta por caja, cómo se movió y los últimos
- * movimientos) y «Entró y salió» (`?tab=flujo`: mes por mes, en qué se fue y si
- * alcanza para las próximas semanas).
- */
-export default async function CajasPage({
-  params,
-  searchParams,
-}: {
+type PageProps = {
   params: Promise<{ tenantSlug: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
+}
+
+/**
+ * Caja: cuánto hay en cada cuenta, en una sola tabla con su total (es lo que pidió Luciano). Arriba,
+ * «Entró plata» y «Salió plata». Lo demás de la plata (mes por mes, en qué se fue, las próximas
+ * semanas y cómo se movió día por día) queda en «Ver el detalle» (`?tab=flujo`), y lo de una cuenta,
+ * en su panel lateral y en su ficha (`/cajas/[id]`).
+ */
+export default async function CajasPage({ params, searchParams }: PageProps) {
   const { tenantSlug } = await params
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
-  const tab: Tab = firstParam(sp.tab) === 'flujo' ? 'flujo' : 'saldos'
+  const flujo = firstParam(sp.tab) === 'flujo'
   const { access, canWrite } = await requireAdminPage(
     tenantSlug,
-    tab === 'flujo' ? `${base}/cajas?tab=flujo` : `${base}/cajas`,
+    flujo ? `${base}/cajas?tab=flujo` : `${base}/cajas`,
   )
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
+  if (flujo) {
+    return (
+      <SimplePage>
+        <div className="grid justify-items-start gap-1">
+          <Link
+            href={`${base}/cajas`}
+            className="inline-flex min-h-10 items-center gap-1 rounded-sm text-[13px] text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+          >
+            <ArrowLeft aria-hidden className="size-3.5" />
+            Cuánto hay en cada cuenta
+          </Link>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="font-serif text-2xl font-semibold tracking-tight">Entró y salió</h1>
+            <ReadOnlyBadge />
+          </div>
+        </div>
+        <Suspense fallback={<FlowTabSkeleton />}>
+          <Detalle
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            base={base}
+            today={today}
+            canWrite={canWrite}
+            sp={sp}
+          />
+        </Suspense>
+      </SimplePage>
+    )
+  }
+
   return (
-    <AdmPage>
-      <AdmHeader title="Cajas y bancos" badge={<ReadOnlyBadge />} />
-      <ViewPills
-        label="Secciones de Cajas y bancos"
-        items={[
-          { key: 'saldos', label: 'Lo que hay', href: `${base}/cajas`, active: tab === 'saldos' },
-          {
-            key: 'flujo',
-            label: 'Entró y salió',
-            href: `${base}/cajas?tab=flujo`,
-            active: tab === 'flujo',
-          },
-        ]}
-      />
-
-      {/* Con `key`, cambiar de vista muestra enseguida el esqueleto de la que viene (y la
-          píldora ya marcada): sin esto la pantalla vieja quedaba quieta hasta que llegaba todo
-          y el toque parecía no haber entrado. Cambiar el período o la caja del dibujo no
-          cambia la `key`: ahí se queda lo anterior, sin saltos. */}
-      <Suspense key={tab} fallback={tab === 'flujo' ? <FlowTabSkeleton /> : <LoQueHaySkeleton />}>
-        {tab === 'saldos' ? (
-          <LoQueHay
-            tenantId={tenantId}
-            tenantSlug={tenantSlug}
-            base={base}
-            today={today}
-            canWrite={canWrite}
-            sp={sp}
-          />
-        ) : (
-          <EntroYSalio
-            tenantId={tenantId}
-            tenantSlug={tenantSlug}
-            base={base}
-            today={today}
-            canWrite={canWrite}
-            sp={sp}
-          />
-        )}
+    <SimplePage>
+      <h1 className="sr-only">Caja</h1>
+      <PlanillaBar className="justify-between">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <p className="text-[13px] text-muted-foreground">Cuánto hay en cada cuenta</p>
+          <ReadOnlyBadge />
+        </div>
+        <MoneyButtons base={base} />
+      </PlanillaBar>
+      <Suspense fallback={<AccountsSkeleton />}>
+        <Cuentas
+          tenantId={tenantId}
+          tenantSlug={tenantSlug}
+          base={base}
+          today={today}
+          canWrite={canWrite}
+        />
       </Suspense>
-
-      <QuickActionsBar />
-    </AdmPage>
+    </SimplePage>
   )
 }
 
-type TabProps = {
+type BlockProps = {
   tenantId: string
   tenantSlug: string
   base: string
   today: string
   canWrite: boolean
-  sp: Record<string, string | string[] | undefined>
 }
 
-async function LoQueHay({ tenantId, tenantSlug, base, today, canWrite, sp }: TabProps) {
-  // El dibujo se pide junto con los saldos pero no se espera acá: llega en su
-  // propio Suspense. `settleQuery` nunca rechaza.
+/**
+ * Los saldos salen de su reporte; lo que falta para escribir (el `updated_at` de cada cuenta, si
+ * cobra el impuesto al cheque, cómo vienen los saldos iniciales), del catálogo. Si el catálogo falla
+ * la tabla sale igual, sin lo que necesita ese dato.
+ */
+async function Cuentas({ tenantId, tenantSlug, base, today, canWrite }: BlockProps) {
+  const [balances, catalog] = await Promise.all([
+    settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
+    settleQuery(loadPostingCatalog(tenantId)),
+  ])
+  if (!balances.ok) return <PanelError title="Las cuentas" message={balances.message} />
+
+  const meta = new Map<string, CajaAccountMeta>()
+  if (catalog.ok) {
+    for (const t of catalog.data.treasuries) {
+      meta.set(t.id, { updatedAt: t.updatedAt, chargesBankTax: t.chargesBankTax ?? null })
+    }
+  }
+  return (
+    <AccountsTable
+      tenantSlug={tenantSlug}
+      base={base}
+      view={cajaView(balances.data, meta, catalog.ok ? catalog.data.settings : null, {
+        today,
+        canWrite,
+        base,
+      })}
+      exportHref={exportHref(tenantSlug, 'cajas-y-bancos', { hasta: today })}
+      exportFileName={`administracion-${tenantSlug}-cajas-y-bancos-${today}.csv`}
+    />
+  )
+}
+
+/** «Ver el detalle»: el flujo por mes, cómo se movió día por día y si alcanza las próximas semanas. */
+async function Detalle({
+  tenantId,
+  tenantSlug,
+  base,
+  today,
+  canWrite,
+  sp,
+}: BlockProps & { sp: Record<string, string | string[] | undefined> }) {
+  // El dibujo por día se pide junto con el resto pero no se espera acá: llega en su Suspense.
   const chartRange = resolveCashChartRange(firstParam(sp[CASH_CHART_RANGE_PARAM]), today)
   const cashDaily = settleQuery(
     getCashDaily(tenantId, { from: chartRange.from, to: chartRange.to }),
   )
-  const [balances, settingsResult] = await Promise.all([
-    settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
-    settleQuery(getAccountingSettings(tenantId)),
-  ])
-  if (!balances.ok) return <PanelError title="Lo que hay" message={balances.message} />
-
-  const rows = balances.data
-  const settings = settingsResult.ok ? settingsResult.data : null
-  const view = walletView(rows, settings, { today, canWrite, base })
-
-  if (view.kind === 'no_treasuries') return <WalletNoTreasuries view={view} />
-  if (view.kind === 'opening_pending') return <WalletEmpty view={view} canWrite={canWrite} />
-
-  const tones = walletTones(rows)
-  const swatches: Record<string, string> = {}
-  const kinds: Record<string, TreasuryKind> = {}
-  for (const row of rows) {
-    swatches[row.treasuryId] = treasuryToneSwatch(tones[row.treasuryId] ?? null)
-    kinds[row.treasuryId] = row.kind
-  }
-
-  // «Últimos movimientos» mira dos semanas: si ninguna caja se movió en ese
-  // tiempo, la lectura no se pide.
-  const recentFrom = addDays(today, -(RECENT_DAYS - 1))
-  const recent =
-    view.lastMovementDate !== null && view.lastMovementDate >= recentFrom
-      ? settleQuery(getSubledger(tenantId, { kind: 'treasury', from: recentFrom, to: today }))
-      : null
-
-  const items: TreasuryBalanceItem[] = rows.map((t) => ({
-    id: t.treasuryId,
-    name: t.name,
-    kind: t.kind,
-    balanceCents: t.balanceCents,
-    pendingWalletCents: t.pendingWalletCents,
-    lastCheckedOn: t.lastCheckedOn,
-    lastMovementDate: t.lastMovementDate,
-    active: t.active,
-    detail: t.alias ?? t.bankName ?? null,
-  }))
-
-  return (
-    <div className="space-y-8">
-      <Wallet
-        view={view}
-        base={base}
-        canWrite={canWrite}
-        table={
-          <TreasuryBalances
-            items={items}
-            availableCents={walletTotals(rows).availableCents}
-            today={today}
-            since={settings?.booksStartDate ?? null}
-            base={base}
-            exportHref={exportHref(tenantSlug, 'cajas-y-bancos', { hasta: today })}
-            exportFileName={`administracion-${tenantSlug}-cajas-y-bancos-${today}.csv`}
-          />
-        }
-      />
-
-      <div className={MOVE_SPLIT.grid}>
-        <Suspense fallback={<CashMoveSkeleton className={MOVE_SPLIT.chart} />}>
-          <CashMoveBlock
-            report={cashDaily}
-            range={chartRange}
-            today={today}
-            base={base}
-            booksStartDate={settings?.booksStartDate ?? null}
-            tones={tones}
-            className={MOVE_SPLIT.chart}
-          />
-        </Suspense>
-        <Suspense fallback={<RecentActivitySkeleton className={MOVE_SPLIT.recent} />}>
-          <RecentActivity
-            page={recent}
-            base={base}
-            today={today}
-            swatches={swatches}
-            kinds={kinds}
-            lastMovementDate={view.lastMovementDate}
-            className={MOVE_SPLIT.recent}
-          />
-        </Suspense>
-      </div>
-    </div>
-  )
-}
-
-async function EntroYSalio({ tenantId, tenantSlug, base, today, canWrite, sp }: TabProps) {
   // Por defecto, los últimos tres meses (con el actual).
   const fallbackFrom = startOfMonth(addMonthsToYearMonth(monthOf(today), -2))
   const range = resolveRange(sp, today, { kind: 'range', from: fallbackFrom, to: today })
@@ -249,7 +201,7 @@ async function EntroYSalio({ tenantId, tenantSlug, base, today, canWrite, sp }: 
   const everMoved = rows.some((r) => r.lastMovementDate !== null)
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <RangeFilter range={picker} today={today} />
         {range.ok ? (
@@ -281,6 +233,16 @@ async function EntroYSalio({ tenantId, tenantSlug, base, today, canWrite, sp }: 
         base={base}
         canWrite={canWrite}
       />
+      <Suspense fallback={<CashMoveSkeleton />}>
+        <CashMoveBlock
+          report={cashDaily}
+          range={chartRange}
+          today={today}
+          base={base}
+          booksStartDate={settings?.booksStartDate ?? null}
+          tones={walletTones(rows)}
+        />
+      </Suspense>
     </div>
   )
 }

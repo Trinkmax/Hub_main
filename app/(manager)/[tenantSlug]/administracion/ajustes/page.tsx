@@ -1,8 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { type ReactNode, Suspense } from 'react'
-import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
-import { ReadOnlyBadge } from '@/components/administracion/read-only'
+import { SimplePage } from '@/components/administracion/planilla'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
@@ -22,6 +21,7 @@ import {
   ArcaRoom,
   CajasRoom,
   EjercicioRoom,
+  ImpuestosRoom,
   IntegridadRoom,
   MediosRoom,
   Portada,
@@ -35,10 +35,9 @@ export const metadata = { title: 'Ajustes · Administración' }
 
 /**
  * Ajustes de Administración: la trastienda del bar. Sin `?tab=` se ve la
- * portada —lo próximo de la puesta en marcha, seis objetos que el dueño
- * reconoce y, aparte, el cajón de la contadora—; con `?tab=`, la habitación
- * que se pide (las nueve claves de siempre siguen valiendo: todos los links de
- * la app que mandan a «Ajustes › …» caen en lo que nombran).
+ * portada —«Puesta en marcha: N de M» y una fila por habitación—; con `?tab=`,
+ * la habitación que se pide (todos los links de la app que mandan a «Ajustes ›
+ * …» caen en lo que nombran).
  *
  * La página solo revisa el acceso y pone el marco: cada habitación carga lo
  * suyo y llega detrás de su esqueleto. La contadora ve todo en modo lectura:
@@ -89,22 +88,19 @@ export default async function AjustesPage({
 
   if (room === null) {
     return (
-      <AdmPage width="comfortable">
-        <AdmHeader
-          title="Ajustes"
-          badge={<ReadOnlyBadge />}
-          description="Lo que se arma una vez y después casi no se toca."
-        />
+      <SimplePage width="narrow">
+        <h1 className="sr-only">Ajustes</h1>
         <Suspense fallback={<PortadaSkeleton />}>
           <Portada ctx={ctx} />
         </Suspense>
-      </AdmPage>
+      </SimplePage>
     )
   }
 
   const content: Record<RoomKey, () => ReactNode> = {
     accesos: () => <AccesosRoom ctx={ctx} />,
     cajas: () => <CajasRoom ctx={ctx} />,
+    impuestos: () => <ImpuestosRoom ctx={ctx} />,
     // `participes` abre la misma habitación con la lista de CUIT desplegada.
     medios: () => <MediosRoom ctx={ctx} cuitOpen={readTab(sp.tab) === 'participes'} />,
     sas: () => <SasRoom ctx={ctx} />,
@@ -127,7 +123,7 @@ export default async function AjustesPage({
               href={`${base}/cajas`}
               className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              Cajas
+              Caja
             </Link>
             .
           </>

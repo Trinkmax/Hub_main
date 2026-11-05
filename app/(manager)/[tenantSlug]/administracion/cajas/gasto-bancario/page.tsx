@@ -34,7 +34,7 @@ export default async function GastoBancarioPage({
 
   const header = (
     <AdmHeader
-      back={{ href: `${base}/cajas`, label: 'Cajas y bancos' }}
+      back={{ href: `${base}/cajas`, label: 'Caja' }}
       title="Gastos del banco"
       badge={<ReadOnlyBadge />}
       // En el celular cada renglón de arriba es un campo menos a la vista, y el primer paso
@@ -55,7 +55,7 @@ export default async function GastoBancarioPage({
         <ReadOnlyNotice
           description="Acá se cargan las comisiones y los impuestos que debita el banco. Vos los ves en los movimientos de cada cuenta."
           href={`${base}/cajas`}
-          linkLabel="Ir a Cajas y bancos"
+          linkLabel="Ir a Caja"
         />
       </AdmPage>
     )
