@@ -1163,23 +1163,10 @@ estos resultados:
   `20260624120000` y `supabase db reset` moría con `schema_migrations_pkey`.
   Arreglado renombrando `platform_meta_config` a `20260624130000`.
 
-Con eso corriendo, `tests/rls` da **233 verdes y 9 rojos** (6 archivos), ninguno
-de los cambios de esta semana (cupos por servicio, mesa del mozo y tamaños pasan):
-
-- `welcome-reward.test.ts` (4): el cashier escribe cuando no debería, y el RPC no
-  entrega el welcome reward al registrar (incluye un "Missing Supabase service
-  role configuration").
-- `broadcasts-optin.test.ts` (2): materializa 0 recipients en vez de 2 y los
-  stats no reflejan `excluded=2`.
-- `cobro.test.ts` (1): el `qr_token` no rota después de cobrar.
-- `customers.test.ts` (1): `submit_capture` no deduplica por teléfono.
-- `find-or-create-conversation.test.ts` (1): la segunda llamada no es idempotente.
-- `loyalty-tiers.test.ts` (1).
-
-Hay que ver si son fallas reales contra el stack local (deriva entre lo aplicado
-al remoto por MCP y lo que reconstruyen las migraciones) o interferencia entre
-archivos al correr los 30 en paralelo contra la misma base. Hasta resolverlo, el
-check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
+**05/11/2026: CI en verde entero.** Los 9 rojos de `tests/rls` eran pruebas viejas frente a cambios hechos a propósito
+(QR fijo, alta que no pisa una ficha, clave canónica del chat, niveles por categoría, mesa que abre el personal) y una
+variable que CI no le pasaba a la app (`NEXT_PUBLIC_SUPABASE_URL`). Se actualizaron; el CLI de Supabase quedó fijado en la
+versión del proyecto.
 
 ## Administración — lo que quedó fuera del Sprint 1 (07/10/2026)
 
@@ -1530,7 +1517,6 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - Los límites de pedidos (`lib/rate-limit.ts`) son por instancia de Vercel: en serio habría que llevarlos a Upstash.
 - Dictado por voz: quedó afuera a propósito. El teclado del celular ya dicta, y en la compu haría falta abrir
   `microphone=(self)` en `Permissions-Policy`.
-- `tests/rls/acc-tex.test.ts` no corre en CI por el mismo motivo que los demás de `tests/rls`.
 - Un empleado de baja sin movimientos en el mes no aparece en `acc_report_payroll`: Tex no lo encuentra para reactivarlo y un alta nueva lo duplicaría. Falta una lectura de todos los empleados.
 - `ver_mayor` hace un `select` directo a `acc_document_lines` porque `acc_report_ledger` no devuelve el id de línea: conviene pasarlo a `lib/accounting/queries`.
 - `lib/tex/tools/actions/gastos.ts` repite la traducción de `AccActionState` y `UNDO_WINDOW_MS` de `document-action.ts`; `_contabilidad-values.ts` copia el esquema de `saveTaxSettings`, porque un archivo `'use server'` no lo puede exportar.
