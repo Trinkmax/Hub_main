@@ -125,6 +125,8 @@ const LINE_2 = '00000000-0000-4000-8000-0000000000f2'
 
 const CONTADORA: TexToolContext = {
   ...TEX_CTX,
+  role: 'accountant',
+  features: {} as never,
   isAccountant: true,
   access: { read: true, write: false, admin: false },
 }

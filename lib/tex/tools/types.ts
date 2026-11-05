@@ -1,5 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
+import type { TenantRole } from '@/lib/tenant/types'
 import type { TexEvent, TexMood, TexTicket, TexTicketResult, TexTicketWarning } from '../protocol'
 
 /**
@@ -21,7 +23,10 @@ export type TexToolContext = {
   tenantId: string
   tenantName: string
   userId: string
-  /** Dueño o contadora. */
+  /** Dueño, Contenido, Anfitrión o Contabilidad: los del salón no llegan acá. */
+  role: TenantRole
+  /** Lo que el bar tiene prendido. */
+  features: TenantFeatures
   isAccountant: boolean
   /** Lo que puede hacer esta persona en Administración. */
   access: { read: boolean; write: boolean; admin: boolean }
@@ -37,6 +42,8 @@ export type TexToolNeed =
   | 'write'
   /** Dueño con acceso de carga, o la contadora (asientos y reimputar). */
   | 'poster'
+  /** Fuera de Administración: estos roles (importá los sets de `lib/tenant/roles.ts`). */
+  | { roles: readonly TenantRole[]; feature?: FeatureKey }
 
 /** Lo que muestra el tique antes de confirmar: el resto lo completa el ciclo. */
 export type TexTicketDraft = Omit<TexTicket, 'actionId' | 'status' | 'result' | 'error'>
@@ -56,6 +63,8 @@ export type TexToolResult =
       data: unknown
       /** Eventos para la pantalla: llevar a otro lado, señalar algo. */
       events?: TexEvent[]
+      /** Cuánto puede leer de esto, si es más que lo normal. */
+      limit?: number
     }
   | { kind: 'error'; message: string }
   | { kind: 'prepared'; prepared: TexPrepared }
@@ -73,6 +82,11 @@ export type TexTool<S extends z.ZodType = z.ZodType> = {
   done: (input: z.output<S>) => string
   /** Cómo se pone Tex mientras tanto. Por defecto, `reading`. */
   mood?: TexMood
+  /**
+   * Siempre cargada. El resto Tex las busca cuando las necesita (`tool_search_tool_regex`): con más de
+   * cien herramientas, cargarlas todas en cada mensaje sería lento y caro.
+   */
+  core?: boolean
   run: (input: z.output<S>, ctx: TexToolContext) => Promise<TexToolResult>
 }
 
@@ -176,12 +190,19 @@ export function capped<T>(rows: readonly T[], max: number): { filas: T[]; hay_ma
   return { filas: rows.slice(0, max), hay_mas: rows.length > max }
 }
 
-/** Las herramientas como las lee la API, en el mismo orden: el caché depende de eso. */
-export function texApiTools(tools: readonly TexTool[]): Anthropic.Tool[] {
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: toInputSchema(tool.input) as Anthropic.Tool.InputSchema,
-    eager_input_streaming: true,
-  }))
+/**
+ * Las herramientas como las lee la API, en el mismo orden: el caché depende de eso. La búsqueda va
+ * primera; las que no son `core` viajan en el pedido pero no entran al contexto hasta que Tex las busca.
+ */
+export function texApiTools(tools: readonly TexTool[]): Anthropic.ToolUnion[] {
+  return [
+    { type: 'tool_search_tool_regex_20251119', name: 'tool_search_tool_regex' },
+    ...tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: toInputSchema(tool.input) as Anthropic.Tool.InputSchema,
+      eager_input_streaming: true,
+      ...(tool.core ? {} : { defer_loading: true }),
+    })),
+  ]
 }

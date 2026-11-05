@@ -3,11 +3,27 @@
  * se resuelven con un toque, con las palabras del bar.
  */
 
+import type { TenantRole } from '@/lib/tenant/types'
+
 const OWNER_DEFAULT = [
   '¿Cómo venimos este mes?',
-  '¿Qué vence esta semana?',
+  '¿Qué hay hoy en el bar?',
   '¿Cuánta plata hay?',
-  'Cargá una compra',
+  '¿Quiénes son los mejores clientes?',
+]
+
+const EDITOR_DEFAULT = [
+  '¿Qué productos no tienen foto?',
+  'Cambiá un precio',
+  '¿Qué está sin stock?',
+  'Explicame esta pantalla',
+]
+
+const HOST_DEFAULT = [
+  '¿Cuántas reservas hay hoy?',
+  'Armá una reserva',
+  '¿Qué eventos vienen esta semana?',
+  '¿Cuánta comisión llevo?',
 ]
 
 const ACCOUNTANT_DEFAULT = [
@@ -18,6 +34,90 @@ const ACCOUNTANT_DEFAULT = [
 ]
 
 const BY_SCREEN: ReadonlyArray<{ path: RegExp; items: readonly string[] }> = [
+  {
+    path: /\/clientes/,
+    items: [
+      '¿Quiénes son los mejores clientes?',
+      '¿Quién cumple esta semana?',
+      'Sumá un cliente',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/club|\/puntos|\/punch-cards/,
+    items: ['¿Cómo funciona el club?', '¿Cuántos socios hay por nivel?', 'Explicame esta pantalla'],
+  },
+  {
+    path: /\/mensajeria\/difusiones/,
+    items: [
+      '¿Cómo le fue a la última difusión?',
+      'Prepará una difusión',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/mensajeria\/flows/,
+    items: [
+      '¿Qué automatizaciones están prendidas?',
+      '¿Cómo funciona esto?',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/mensajeria/,
+    items: [
+      '¿Qué mensajes faltan responder?',
+      '¿Cómo le fue a la última difusión?',
+      'Prepará una difusión',
+    ],
+  },
+  {
+    path: /\/tareas/,
+    items: ['¿Qué tareas faltan esta semana?', 'Sumá una tarea', 'Explicame esta pantalla'],
+  },
+  {
+    path: /\/reservas|\/operativo/,
+    items: [
+      '¿Cuántas reservas hay hoy?',
+      'Armá una reserva',
+      '¿Quién falta llegar?',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/eventos/,
+    items: [
+      '¿Qué eventos vienen esta semana?',
+      '¿Cuánto cupo queda el sábado?',
+      'Armá un evento',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/entradas/,
+    items: [
+      '¿Cuántas entradas se vendieron?',
+      '¿Qué función está por agotarse?',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/menu/,
+    items: [
+      'Cambiá un precio',
+      '¿Qué productos no tienen foto?',
+      'Sacá algo de la carta',
+      'Explicame esta pantalla',
+    ],
+  },
+  {
+    path: /\/estadisticas/,
+    items: ['¿Cómo nos fue este mes?', '¿Qué evento funcionó mejor?', 'Explicame esta pantalla'],
+  },
+  {
+    path: /\/configuracion|\/local|\/enlaces|\/paginas/,
+    items: ['¿Qué me falta configurar?', 'Explicame esta pantalla'],
+  },
   {
     path: /\/ventas(\?|$)/,
     items: [
@@ -73,8 +173,14 @@ const BY_SCREEN: ReadonlyArray<{ path: RegExp; items: readonly string[] }> = [
   },
 ]
 
-export function texSuggestions(path: string, isAccountant: boolean): readonly string[] {
+const BY_ROLE: Readonly<Partial<Record<TenantRole, readonly string[]>>> = {
+  accountant: ACCOUNTANT_DEFAULT,
+  editor: EDITOR_DEFAULT,
+  host: HOST_DEFAULT,
+}
+
+export function texSuggestions(path: string, role: TenantRole): readonly string[] {
   const match = BY_SCREEN.find((entry) => entry.path.test(path))
   if (match) return match.items
-  return isAccountant ? ACCOUNTANT_DEFAULT : OWNER_DEFAULT
+  return BY_ROLE[role] ?? OWNER_DEFAULT
 }

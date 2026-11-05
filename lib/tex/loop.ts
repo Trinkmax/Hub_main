@@ -6,7 +6,6 @@ import { storedBlocks } from './display'
 import { TEX_MODEL } from './model'
 import type { TexEvent, TexMood, TexTicket } from './protocol'
 import type { TexPending, TexStore, TexThread } from './store'
-import { TEX_SYSTEM } from './system-prompt'
 import {
   type TexTool,
   type TexToolContext,
@@ -38,6 +37,8 @@ export type TexLoopDeps = {
   client: Pick<Anthropic, 'messages'>
   store: Pick<TexStore, 'append' | 'updateThread' | 'addUsage' | 'insertAction'>
   tools: readonly TexTool[]
+  /** Las instrucciones para esta persona. */
+  system: string
   ctx: TexToolContext
   emit: (event: TexEvent) => void
   /** Cuándo hay que soltar el pedido (Vercel lo corta a los 60 s). */
@@ -48,10 +49,10 @@ export type TexLoopDeps = {
 }
 
 /** Lo que devuelve una herramienta, ya como texto para la API. */
-export function toolResultContent(data: unknown): string {
+export function toolResultContent(data: unknown, limit = MAX_TOOL_RESULT_CHARS): string {
   const text = JSON.stringify(data)
-  if (text.length <= MAX_TOOL_RESULT_CHARS) return text
-  return `${text.slice(0, MAX_TOOL_RESULT_CHARS)}… (cortado: pedí menos filas o un período más corto)`
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}… (cortado: pedí menos filas o un período más corto)`
 }
 
 function resultBlock(
@@ -137,7 +138,7 @@ async function runToolRound(
     }
     if (outcome.kind === 'data') {
       for (const event of outcome.events ?? []) deps.emit(event)
-      results[use.id] = resultBlock(use.id, toolResultContent(outcome.data))
+      results[use.id] = resultBlock(use.id, toolResultContent(outcome.data, outcome.limit))
       continue
     }
     const actionId = (deps.newId ?? crypto.randomUUID.bind(crypto))()
@@ -266,7 +267,7 @@ async function runRounds(
         {
           model: TEX_MODEL,
           max_tokens: MAX_TOKENS,
-          system: [{ type: 'text', text: TEX_SYSTEM, cache_control: { type: 'ephemeral' } }],
+          system: [{ type: 'text', text: deps.system, cache_control: { type: 'ephemeral' } }],
           tools: apiTools,
           messages: apiMessages(messages),
           output_config: { effort: 'medium' },
@@ -340,6 +341,9 @@ async function runRounds(
 
     // Un turno sin contenido no se guarda: la API rechaza un mensaje vacío.
     if (message.content.length > 0) await save('assistant', message.content)
+
+    // La búsqueda de herramientas corre del lado de la API: si se pausó, se le pide que siga.
+    if (message.stop_reason === 'pause_turn') continue
 
     const uses = message.content.filter((b): b is ToolUse => b.type === 'tool_use')
     if (uses.length === 0) {

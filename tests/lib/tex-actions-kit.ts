@@ -29,6 +29,8 @@ export const TEX_CTX: TexToolContext = {
   tenantId: '00000000-0000-4000-8000-0000000000aa',
   tenantName: 'HUB',
   userId: '00000000-0000-4000-8000-0000000000cc',
+  role: 'owner',
+  features: {} as never,
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-10-31',

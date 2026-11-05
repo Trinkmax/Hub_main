@@ -1,7 +1,6 @@
 'use server'
 
-import { authorizeAccounting } from '@/lib/accounting/access'
-import { todayInCordoba } from '@/lib/dates'
+import { texContext } from './context'
 import { undoAction } from './decide'
 import type { TexTicket } from './protocol'
 import { TexStore } from './store'
@@ -15,17 +14,8 @@ export async function undoTexAction(
   slug: string,
   actionId: string,
 ): Promise<{ ok: boolean; message: string; ticket: TexTicket | null }> {
-  const auth = await authorizeAccounting(slug, 'read')
-  if (!auth.ok) return { ok: false, message: auth.state.message, ticket: null }
-  const accounting = auth.access.accounting
-  const store = await TexStore.open(auth.tenantId, auth.userId)
-  return undoAction(actionId, store, {
-    slug,
-    tenantId: auth.tenantId,
-    tenantName: auth.access.tenant.name,
-    userId: auth.userId,
-    isAccountant: auth.access.role === 'accountant',
-    access: { read: accounting.read, write: accounting.write, admin: accounting.admin },
-    today: todayInCordoba(),
-  })
+  const auth = await texContext(slug)
+  if (!auth.ok) return { ok: false, message: auth.message, ticket: null }
+  const store = await TexStore.open(auth.ctx.tenantId, auth.ctx.userId)
+  return undoAction(actionId, store, auth.ctx)
 }

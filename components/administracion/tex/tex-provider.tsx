@@ -13,6 +13,7 @@ import {
 } from 'react'
 import { readyFile } from '@/components/administracion/adjuntos/ready-file'
 import { attachPendingFiles } from '@/components/administracion/adjuntos/upload'
+import type { TenantRole } from '@/lib/tenant/types'
 import { undoTexAction } from '@/lib/tex/actions'
 import {
   parseTexEvents,
@@ -196,7 +197,9 @@ export function texReducer(state: TexState, action: TexAction): TexState {
 
 type TexContextValue = TexState & {
   slug: string
-  isAccountant: boolean
+  role: TenantRole
+  /** Puede pasarle papeles: es de quien carga en Administración. */
+  canAttach: boolean
   pathname: string
   setOpen: (open: boolean) => void
   send: (text: string) => void
@@ -250,11 +253,25 @@ async function texAttachmentOf(
   return { name: file.name.slice(0, 120), mime, data: btoa(binary) }
 }
 
+/**
+ * Lo que se lee en pantalla sin los teléfonos y mails de los clientes: Tex no los necesita y no tienen
+ * por qué salir del sistema. Puro.
+ */
+export function maskPersonal(text: string): string {
+  return text
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[mail]')
+    .replace(/(?<![\d.,$/])\+?(?:\d[\s-]?){8,14}\d(?![\d.,/])/g, '[teléfono]')
+}
+
 /** Lo que se lee en pantalla: Tex ve lo mismo que la persona. Tex y las hojas de arriba no cuentan. */
 function captureScreen(): TexScreen {
   const main = document.querySelector('main')
   const heading = main?.querySelector('h1')?.textContent ?? document.title
-  const text = (main instanceof HTMLElement ? main.innerText : '').slice(0, TEX_SCREEN_TEXT_MAX)
+  const seen = main instanceof HTMLElement ? main.innerText : ''
+  // En Administración los números de comprobante y de CUIT hacen falta; en el resto, no los de la gente.
+  const text = (
+    window.location.pathname.includes('/administracion') ? seen : maskPersonal(seen)
+  ).slice(0, TEX_SCREEN_TEXT_MAX)
   return {
     path: `${window.location.pathname}${window.location.search}`.slice(0, 600),
     title: heading.trim().slice(0, 200),
@@ -264,11 +281,13 @@ function captureScreen(): TexScreen {
 
 export function TexProvider({
   slug,
-  isAccountant,
+  role,
+  canAttach,
   children,
 }: {
   slug: string
-  isAccountant: boolean
+  role: TenantRole
+  canAttach: boolean
   children: ReactNode
 }) {
   const router = useRouter()
@@ -290,7 +309,7 @@ export function TexProvider({
   useEffect(() => {
     if (!state.open || state.loaded) return
     let cancelled = false
-    fetch(`/api/administracion/tex?slug=${encodeURIComponent(slug)}`)
+    fetch(`/api/tex?slug=${encodeURIComponent(slug)}`)
       .then(async (res) => {
         const history: TexHistory = res.ok ? await res.json() : { threadId: null, items: [] }
         if (!cancelled) dispatch({ type: 'loaded', history })
@@ -385,7 +404,7 @@ export function TexProvider({
       if (fresh) freshRef.current = false
       let again = false
       try {
-        const response = await fetch(`/api/administracion/tex?slug=${encodeURIComponent(slug)}`, {
+        const response = await fetch(`/api/tex?slug=${encodeURIComponent(slug)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -618,7 +637,8 @@ export function TexProvider({
     () => ({
       ...state,
       slug,
-      isAccountant,
+      role,
+      canAttach,
       pathname,
       setOpen,
       send,
@@ -636,7 +656,8 @@ export function TexProvider({
     [
       state,
       slug,
-      isAccountant,
+      role,
+      canAttach,
       pathname,
       setOpen,
       send,

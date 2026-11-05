@@ -1,8 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
-import { authorizeAccounting } from '@/lib/accounting/access'
-import { todayInCordoba } from '@/lib/dates'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
+import { texContext } from '@/lib/tex/context'
 import { applyDecisions, supersedePending } from '@/lib/tex/decide'
 import {
   plainAnswer,
@@ -21,13 +20,13 @@ import {
   texRequestSchema,
 } from '@/lib/tex/protocol'
 import { attachmentBlock, readTexAttachment } from '@/lib/tex/read-attachment'
-import { texStepLabel, texToolsFor } from '@/lib/tex/registry'
+import { texAreasFor, texScreensForContext, texStepLabel, texToolsFor } from '@/lib/tex/registry'
 import { TexStore, type TexThread } from '@/lib/tex/store'
-import { contextBlock, screenHash } from '@/lib/tex/system-prompt'
-import type { TexToolContext } from '@/lib/tex/tools/types'
+import { contextBlock, screenHash, texSystemFor, whoIsTalking } from '@/lib/tex/system-prompt'
+import type { TexTool, TexToolContext } from '@/lib/tex/tools/types'
 
 /**
- * La charla con Tex. Es una ruta y no una server action porque responde de a poco (SSE) y porque
+ * La charla con Tex, desde cualquier sección del panel. Es una ruta y no una server action porque responde de a poco (SSE) y porque
  * Next corre las server actions de a una por navegador: una charla larga frenaría el resto de la
  * pantalla.
  *
@@ -66,23 +65,29 @@ function lastUserWords(history: readonly StoredMessage[]): StoredBlock[] | null 
 
 async function authorize(request: Request) {
   const slug = new URL(request.url).searchParams.get('slug')
-  if (!slug || slug.length > 80)
+  if (!slug || slug.length > 80) {
     return { ok: false as const, response: jsonError('Falta el bar.', 400) }
-  const auth = await authorizeAccounting(slug, 'read')
-  if (!auth.ok) return { ok: false as const, response: jsonError(auth.state.message, 403) }
-  if (!texEnabled())
-    return { ok: false as const, response: jsonError('Tex no está prendido.', 404) }
-  const accounting = auth.access.accounting
-  const ctx: TexToolContext = {
-    slug,
-    tenantId: auth.tenantId,
-    tenantName: auth.access.tenant.name,
-    userId: auth.userId,
-    isAccountant: auth.access.role === 'accountant',
-    access: { read: accounting.read, write: accounting.write, admin: accounting.admin },
-    today: todayInCordoba(),
   }
-  return { ok: true as const, ctx }
+  const auth = await texContext(slug)
+  if (!auth.ok) return { ok: false as const, response: jsonError(auth.message, auth.status) }
+  if (!texEnabled()) {
+    return { ok: false as const, response: jsonError('Tex no está prendido.', 404) }
+  }
+  return { ok: true as const, ctx: auth.ctx }
+}
+
+/** Las instrucciones para esta persona: sus áreas, sus herramientas y sus pantallas. */
+function systemFor(ctx: TexToolContext, tools: readonly TexTool[]): string {
+  const usable = new Set(tools.map((tool) => tool.name))
+  return texSystemFor(
+    texAreasFor(ctx).map((area) => ({
+      id: area.id,
+      label: area.label,
+      summary: area.summary,
+      tools: area.tools.map((tool) => tool.name).filter((name) => usable.has(name)),
+    })),
+    texScreensForContext(ctx),
+  )
 }
 
 export async function GET(request: Request) {
@@ -122,6 +127,10 @@ export async function POST(request: Request) {
   const parsed = texRequestSchema.safeParse(raw)
   if (!parsed.success) return jsonError('No entendí el pedido.', 400)
   const body = parsed.data
+  // Leer papeles sirve para cargarlos: es de quien carga en Administración.
+  if (body.attachment && !ctx.access.write) {
+    return jsonError('No podés pasarme archivos: es para quien carga en Administración.', 403)
+  }
 
   try {
     rateLimit({ key: `tex:${ctx.userId}`, ...RATE_LIMIT })
@@ -207,8 +216,7 @@ export async function POST(request: Request) {
       const context = contextBlock({
         barName: ctx.tenantName,
         today: ctx.today,
-        isAccountant: ctx.isAccountant,
-        canWrite: ctx.access.write,
+        who: whoIsTalking(ctx.role, ctx.access.write),
         screen: body.screen,
         sameScreen: hash !== null && hash === thread.lastScreenHash,
       })
@@ -296,10 +304,12 @@ export async function POST(request: Request) {
               },
             ]
           }
+          const tools = texToolsFor(ctx)
           const deps = {
             client,
             store,
-            tools: texToolsFor(ctx),
+            tools,
+            system: systemFor(ctx, tools),
             ctx,
             emit,
             deadline: startedAt + TURN_BUDGET_MS,

@@ -23,7 +23,7 @@ export function shortLine(text: string): string {
  * agranda y abre la charla.
  */
 export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
-  const { setOpen, mood, talking, attach, cheers, items } = useTex()
+  const { setOpen, mood, talking, attach, cheers, items, canAttach } = useTex()
   const cheering = useCheering(cheers)
   const baseFace = useTexFace({ talking, mood })
   const { ref, look } = useTexLook()
@@ -45,7 +45,7 @@ export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
       seen = true
     }
     if (seen) return
-    const show = setTimeout(() => setBubble('¡Hola! Soy Tex. Pedime lo que sea de acá.'), 1200)
+    const show = setTimeout(() => setBubble('¡Hola! Soy Tex. Pedime lo que sea.'), 1200)
     const hide = setTimeout(() => setBubble(null), 8000)
     return () => {
       clearTimeout(show)
@@ -83,7 +83,7 @@ export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
     const hasFiles = (event: DragEvent) =>
       Array.from(event.dataTransfer?.types ?? []).includes('Files')
     const onEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return
+      if (!canAttach || !hasFiles(event)) return
       depth += 1
       setDragging(true)
     }
@@ -104,7 +104,7 @@ export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
       window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('drop', onEnd, true)
     }
-  }, [])
+  }, [canAttach])
 
   useEffect(() => {
     if (dragging) document.documentElement.dataset.texDrag = ''
@@ -138,7 +138,7 @@ export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         const file = event.dataTransfer.files[0]
-        if (!file) return
+        if (!file || !canAttach) return
         // Es de Tex: el arrastre general de Administración no se entera.
         event.preventDefault()
         event.stopPropagation()

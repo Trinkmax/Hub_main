@@ -9,7 +9,15 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/periods'
 import { parseTab } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/ventas-view'
 import { resolveMonth, resolveRange } from '@/components/administracion/cajas-ventas/periods'
-import { TEX_AJUSTES_TABS, TEX_SCREENS, texScreen, texScreenHref } from '@/lib/tex/screens'
+import {
+  TEX_ADMIN_SCREENS,
+  TEX_AJUSTES_TABS,
+  TEX_SCREENS,
+  texScreen,
+  texScreenAllowed,
+  texScreenHref,
+  texScreensFor,
+} from '@/lib/tex/screens'
 
 const ADMIN = resolve(__dirname, '../../app/(manager)/[tenantSlug]/administracion')
 const ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
@@ -18,11 +26,14 @@ const TODAY = '2026-11-05'
 const source = (file: string) => readFileSync(join(ADMIN, file), 'utf8')
 
 /** `/compras/proveedores/:id` → la carpeta de esa ruta en `app/`. */
-const pageOf = (path: string) => join(ADMIN, path.replace(':id', '[id]'), 'page.tsx')
+const pageOf = (path: string, root = false) =>
+  join(root ? resolve(ADMIN, '..') : ADMIN, path.replace(':id', '[id]'), 'page.tsx')
 
 describe('las pantallas existen', () => {
-  it.each(TEX_SCREENS.map((s) => [s.id, s.path] as const))('%s → %s', (_id, path) => {
-    expect(existsSync(pageOf(path))).toBe(true)
+  it.each(
+    TEX_SCREENS.map((s) => [s.id, s.path, s.root ?? false] as const),
+  )('%s → %s', (_id, path, root) => {
+    expect(existsSync(pageOf(path, root))).toBe(true)
   })
 
   it('no hay dos con el mismo id', () => {
@@ -348,5 +359,45 @@ describe('texScreenHref', () => {
     )('%s no se abre con un id malo', (id) => {
       for (const value of hostile) expect(texScreenHref('hub', id, { id: value }).ok).toBe(false)
     })
+  })
+})
+
+describe('cada uno ve sus pantallas', () => {
+  const features = {}
+  const admin = texScreen('resumen')
+  if (!admin) throw new Error('falta resumen')
+  const root = { id: 'x', label: 'x', what: 'x', path: '/menu', root: true } as const
+  const reservas = { id: 'y', label: 'y', what: 'y', path: '/reservas', root: true } as const
+
+  it('Administración, solo con su acceso', () => {
+    expect(texScreenAllowed(admin, { role: 'owner', features, accounting: true })).toBe(true)
+    expect(texScreenAllowed(admin, { role: 'owner', features, accounting: false })).toBe(false)
+  })
+
+  it('el dueño navega todo; los roles acotados, solo lo suyo', () => {
+    const viewer = (role: 'owner' | 'editor' | 'host' | 'accountant') => ({
+      role,
+      features,
+      accounting: role === 'accountant',
+    })
+    expect(texScreenAllowed(root, viewer('owner'))).toBe(true)
+    expect(texScreenAllowed(root, viewer('editor'))).toBe(true)
+    expect(texScreenAllowed(reservas, viewer('editor'))).toBe(false)
+    expect(texScreenAllowed(reservas, viewer('host'))).toBe(true)
+    expect(texScreenAllowed(root, viewer('host'))).toBe(false)
+    expect(texScreenAllowed(root, viewer('accountant'))).toBe(false)
+  })
+
+  it('lo que depende de una función, solo si el bar la tiene', () => {
+    const screen = { ...root, feature: 'reviews' as const }
+    expect(texScreenAllowed(screen, { role: 'owner', features: {}, accounting: true })).toBe(false)
+    expect(
+      texScreenAllowed(screen, { role: 'owner', features: { reviews: true }, accounting: true }),
+    ).toBe(true)
+  })
+
+  it('la contadora ve las de Administración', () => {
+    const screens = texScreensFor({ role: 'accountant', features: {}, accounting: true })
+    expect(screens.length).toBe(TEX_ADMIN_SCREENS.length)
   })
 })

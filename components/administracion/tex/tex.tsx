@@ -3,6 +3,7 @@
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { TenantRole } from '@/lib/tenant/types'
 import { admFabFromFrame } from '../nav/adm-nav-model'
 import { TexDock } from './tex-dock'
 import { TexGuide } from './tex-guide'
@@ -29,15 +30,23 @@ function TexStage() {
 }
 
 /**
- * Tex en Administración. Va en un portal: queda fuera de `<main>`, así lo que Tex «ve» de la pantalla
+ * Tex en todo el panel de gestión. Va en un portal: queda fuera de `<main>`, así lo que Tex «ve» de la pantalla
  * es lo que ve la persona, sin él adentro.
  */
-export function Tex({ slug, isAccountant }: { slug: string; isAccountant: boolean }) {
+export function Tex({
+  slug,
+  role,
+  canAttach,
+}: {
+  slug: string
+  role: TenantRole
+  canAttach: boolean
+}) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   if (!mounted) return null
   return createPortal(
-    <TexProvider slug={slug} isAccountant={isAccountant}>
+    <TexProvider slug={slug} role={role} canAttach={canAttach}>
       <TexStage />
     </TexProvider>,
     document.body,

@@ -191,14 +191,14 @@ function Conversation() {
 }
 
 function Hello() {
-  const { pathname, isAccountant, send, loaded } = useTex()
-  const suggestions = texSuggestions(pathname, isAccountant)
+  const { pathname, role, send, loaded } = useTex()
+  const suggestions = texSuggestions(pathname, role)
   return (
     <div className="tex-scroll flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto px-5 py-4">
       <div className="text-center">
         <p className="font-mono text-lg font-bold">¿Qué hacemos?</p>
         <p className="mx-auto mt-1 max-w-[19rem] text-sm text-pretty text-(--tex-muted)">
-          Contame qué pasó o qué querés ver. Yo lo cargo, te llevo a la pantalla y te muestro cómo
+          Contame qué pasó o qué querés ver. Yo lo hago, te llevo a la pantalla y te muestro cómo
           quedó.
         </p>
       </div>
@@ -219,7 +219,7 @@ function Hello() {
 }
 
 function Composer() {
-  const { send, busy, stop, open, attachment, attach, setOpen } = useTex()
+  const { send, busy, stop, open, attachment, attach, setOpen, canAttach } = useTex()
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -279,26 +279,30 @@ function Composer() {
         ) : null}
       </AnimatePresence>
       <div className="tex-input flex items-end gap-1 p-1">
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,application/pdf"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) attach(file)
-            event.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          aria-label="Pasarle una foto o un PDF"
-          title="Pasarle una foto o un PDF"
-          className="grid size-10 shrink-0 place-items-center rounded-sm text-(--tex-muted) outline-none hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Paperclip aria-hidden className="size-[18px]" />
-        </button>
+        {canAttach ? (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) attach(file)
+                event.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              aria-label="Pasarle una foto o un PDF"
+              title="Pasarle una foto o un PDF"
+              className="grid size-10 shrink-0 place-items-center rounded-sm text-(--tex-muted) outline-none hover:text-(--tex-ink) focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Paperclip aria-hidden className="size-[18px]" />
+            </button>
+          </>
+        ) : null}
         <textarea
           ref={inputRef}
           rows={1}
@@ -337,10 +341,11 @@ function Composer() {
 
 /** Los bordes del panel reciben un archivo: Tex abre la boca y lo lee. */
 function useDropOnPanel() {
-  const { attach } = useTex()
+  const { attach, canAttach } = useTex()
   const [over, setOver] = useState(false)
   const depth = useRef(0)
-  const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer.types).includes('Files')
+  const hasFiles = (event: DragEvent) =>
+    canAttach && Array.from(event.dataTransfer.types).includes('Files')
   return {
     over,
     handlers: {
