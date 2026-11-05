@@ -269,6 +269,26 @@ export class TexStore {
     return ((data ?? []) as ActionRow[]).map(toAction)
   }
 
+  /**
+   * Toma un tique para hacerlo. Con dos pedidos a la vez (dos pestañas, un reintento) solo uno lo consigue: la base
+   * vuelve a mirar el `where` cuando se libera la fila, así el mismo mensaje o el mismo pago no sale dos veces.
+   * Si el pedido se corta después de tomarlo, el tique no se vuelve a hacer: la persona sigue hablando y Tex
+   * mira cómo quedó, porque no hay forma de saber si llegó a escribirse.
+   */
+  async claimAction(actionId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('acc_tex_actions')
+      .update({ decided_at: new Date().toISOString() })
+      .eq('tenant_id', this.tenantId)
+      .eq('user_id', this.userId)
+      .eq('id', actionId)
+      .eq('status', 'pending')
+      .is('decided_at', null)
+      .select('id')
+    if (error) throw fail('claimAction', error)
+    return (data ?? []).length > 0
+  }
+
   async updateAction(
     actionId: string,
     patch: Partial<{
@@ -277,7 +297,7 @@ export class TexStore {
       ticket: TexTicket
       result: unknown
       document_id: string | null
-      decided_at: string
+      decided_at: string | null
     }>,
   ): Promise<void> {
     const { error } = await this.supabase

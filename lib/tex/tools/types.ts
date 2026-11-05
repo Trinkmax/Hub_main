@@ -108,6 +108,8 @@ export type TexExecution =
       payload: unknown
       warnings: TexTicketWarning[]
       entry?: TexTicket['entry']
+      /** Lo que cambió en el tique: el botón no puede seguir prometiendo el número viejo. */
+      ticket?: Partial<Pick<TexTicket, 'confirmLabel' | 'total' | 'rows'>>
       message: string
     }
   | { ok: false; kind: 'failed'; message: string }
