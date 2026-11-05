@@ -28,6 +28,9 @@ vi.mock('@/lib/ticketing/actions', () => ({
   setExperiencePublished: vi.fn(),
   deleteExperience: vi.fn(),
   saveTicketingSettings: vi.fn(),
+  confirmTicketTransfer: vi.fn(),
+  voidTicketTransfer: vi.fn(),
+  refundTicketOrder: vi.fn(),
   connectMercadoPago: vi.fn(),
   disconnectMercadoPago: vi.fn(),
 }))
@@ -111,6 +114,7 @@ function order(over: Partial<AdminOrder>): AdminOrder {
   return {
     reservation: null,
     undo: null,
+    mp_payment_type: null,
     id: 'o1',
     title: 'Shrek',
     event_date: '2026-12-01',
@@ -225,6 +229,40 @@ describe('Ventas online', () => {
     expect(t).toContain('Mandar entrada')
     expect(html).toContain('https://wa.me/5493515551234?text=')
     expect(html).toContain(encodeURIComponent('https://hub.test/entradas/hub/mi-entrada/'))
+  })
+
+  it('con alias cargado: confirmar lo que no se pagó, anular lo que se confirmó', () => {
+    const orders = [
+      order({ id: 'o-1', status: 'rejected', guest_name: 'Rechazada' }),
+      order({
+        id: 'o-2',
+        status: 'approved',
+        paid_cents: 1_000_000,
+        reservation_id: 'r-2',
+        mp_payment_type: 'manual_transfer',
+      }),
+      order({ id: 'o-3', status: 'approved', paid_cents: 1_000_000, reservation_id: 'r-3' }),
+    ]
+    const render = (transferEnabled: boolean) =>
+      text(
+        renderToString(
+          createElement(OrdersSection, {
+            tenantSlug: 'hub',
+            appUrl: 'https://hub.test',
+            result: { ok: true, orders },
+            now: NOW,
+            transferEnabled,
+          }),
+        ),
+      )
+    const on = render(true)
+    expect(on).toContain('Confirmar transferencia')
+    expect(on).toContain('Pagado por transferencia')
+    expect(on).toContain('Anular')
+    // La pagada por Mercado Pago se sigue devolviendo por Mercado Pago.
+    expect(on).toContain('Devolver')
+    // Sin alias no hay nada que confirmar.
+    expect(render(false)).not.toContain('Confirmar transferencia')
   })
 
   it('un «Deshacer» de la puerta queda a la vista de los dueños', () => {

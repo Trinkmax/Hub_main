@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Lock, MessageCircle, Minus, Plus } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, MessageCircle, Minus, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import PhoneInput from 'react-phone-number-input'
@@ -9,6 +9,7 @@ import { buildWaMeUrl } from '@/lib/phone'
 import { allSoldOut, maxSelectable } from '@/lib/ticketing/availability'
 import { startCheckout } from '@/lib/ticketing/checkout-actions'
 import { formatLongDate, formatShortDate } from '@/lib/ticketing/dates'
+import { readLastOrder, saveLastOrder } from '@/lib/ticketing/last-order'
 import {
   balanceCashOnly,
   cashPrice,
@@ -59,6 +60,8 @@ type VenueInfo = {
   canSell: boolean
   holdMinutes: number
   whatsapp: string | null
+  /** El bar cargó un alias: si Mercado Pago rechaza, se puede transferir. */
+  canTransfer: boolean
 }
 
 const GUEST_KEY = 'hub-entradas-guest'
@@ -115,6 +118,8 @@ export function TicketCheckout({
   const [phone, setPhone] = useState<string | undefined>(undefined)
   const [error, setError] = useState<{ message: string; field?: string } | null>(null)
   const [redirecting, setRedirecting] = useState(false)
+  // Volvió de Mercado Pago a esta página: su compra sigue ahí, con la forma de transferir.
+  const [lastOrderId, setLastOrderId] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const stepRef = useRef<HTMLDivElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -152,6 +157,13 @@ export function TicketCheckout({
     window.addEventListener('pageshow', onShow)
     return () => window.removeEventListener('pageshow', onShow)
   }, [])
+
+  useEffect(() => {
+    const read = () => setLastOrderId(readLastOrder(experience.slug))
+    read()
+    window.addEventListener('pageshow', read)
+    return () => window.removeEventListener('pageshow', read)
+  }, [experience.slug])
 
   function goTo(next: Step, keepError: { message: string; field?: string } | null = null) {
     setDir(next === 'details' ? 'fwd' : 'back')
@@ -207,6 +219,7 @@ export function TicketCheckout({
       })
       if (result.ok) {
         saveGuest(name.trim(), phone)
+        saveLastOrder(experience.slug, result.orderId)
         setRedirecting(true)
         window.location.assign(result.redirectUrl)
         return
@@ -438,6 +451,16 @@ export function TicketCheckout({
           <div className="mt-4 lg:hidden">{termsBox}</div>
         ) : null}
 
+        {venue.canSell && venue.canTransfer && lastOrderId ? (
+          <Link
+            href={`/entradas/${venue.tenantSlug}/mi-entrada/${lastOrderId}`}
+            className="ent-press mt-4 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-(--ent-ink)/25 px-3.5 py-2 text-sm font-semibold text-(--ent-ink)"
+          >
+            ¿Mercado Pago no te dejó pagar? Ver cómo transferir
+            <ArrowRight className="size-4 shrink-0" aria-hidden />
+          </Link>
+        ) : null}
+
         {!venue.canSell ? (
           <WhatsappReserve
             href={waLink(
@@ -504,6 +527,11 @@ export function TicketCheckout({
             ) : (
               'Pagás con Mercado Pago. Tu reserva queda hecha al instante.'
             )}
+          </p>
+        ) : null}
+        {!preview && venue.canSell && venue.canTransfer && step === 'details' ? (
+          <p className="mt-1.5 text-center text-xs leading-relaxed text-(--ent-ink-2)">
+            Si Mercado Pago te rechaza el pago, volvé a esta página: te mostramos cómo transferir.
           </p>
         ) : null}
       </div>

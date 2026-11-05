@@ -1,4 +1,4 @@
-import { paymentTypeLabel } from './copy'
+import { paymentMethodLine } from './copy'
 import { formatLongDate } from './dates'
 import { formatShortCode } from './door'
 import { formatPesos } from './pricing'
@@ -407,7 +407,7 @@ export async function renderTicketImage(input: TicketImageInput): Promise<Blob> 
     line('La entrada ya está paga.')
   }
   rule()
-  line(`${paymentTypeLabel(order.mpPaymentType)} · Mercado Pago`)
+  line(paymentMethodLine(order.mpPaymentType))
   if (order.mpPaymentId) line(`Operación ${order.mpPaymentId}`)
   if (order.paidAtLabel) line(`${order.paidAtLabel} hs`)
   if (termsLines.length) {

@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { DEFAULT_TZ, formatShortDate, formatTime } from '@/lib/ticketing/dates'
+import { isManualTransfer } from '@/lib/ticketing/transfer'
 import type { OrderAttention, OrderStatus, PaymentOption } from '@/lib/ticketing/types'
 
 /**
@@ -40,17 +41,32 @@ const UNPAID: OrderStatusView = {
 }
 
 export function orderStatusView(
-  order: { status: OrderStatus; hold_expires_at: string },
+  order: { status: OrderStatus; hold_expires_at: string; mp_payment_type?: string | null },
   now: Date = new Date(),
 ): OrderStatusView {
+  const transfer = isManualTransfer(order.mp_payment_type)
   switch (order.status) {
     case 'approved':
+      if (transfer) {
+        return {
+          label: 'Pagado por transferencia',
+          tone: 'paid',
+          hint: 'Alguien del bar confirmó la transferencia y la reserva se cargó sola.',
+        }
+      }
       return {
         label: 'Pagado',
         tone: 'paid',
         hint: 'Mercado Pago confirmó el pago y la reserva se cargó sola.',
       }
     case 'refunded':
+      if (transfer) {
+        return {
+          label: 'Transferencia anulada',
+          tone: 'refunded',
+          hint: 'Se anuló la transferencia confirmada: la entrada ya no vale.',
+        }
+      }
       return {
         label: 'Devuelto',
         tone: 'refunded',

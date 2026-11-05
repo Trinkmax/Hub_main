@@ -21,7 +21,9 @@ import type { OrderAttention, OrderStatus } from './types'
  *   · la vuelta del cliente a su entrada (trae el payment_id en la URL),
  *   · la entrada preguntando por su pedido cuando el webhook tarda,
  *   · la conciliación cada 15 minutos (reconcile.ts),
- *   · el botón «Devolver» del panel, apenas Mercado Pago acepta la devolución.
+ *   · el botón «Devolver» del panel, apenas Mercado Pago acepta la devolución,
+ *   · «Confirmar transferencia» y «Anular» del panel: no hay un pago de Mercado Pago
+ *     detrás, lo confirma una persona que vio la plata en la cuenta (lib/ticketing/transfer.ts).
  *
  * Nunca se confía en lo que trae el aviso: siempre se le pide el pago a la API
  * de Mercado Pago con el token del bar. Un webhook falso, como mucho, hace que

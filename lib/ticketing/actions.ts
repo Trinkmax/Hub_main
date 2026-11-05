@@ -3,7 +3,12 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/audit'
-import { getAccount, MercadoPagoError, refundPayment } from '@/lib/mercadopago/client'
+import {
+  getAccount,
+  MercadoPagoError,
+  type MercadoPagoPayment,
+  refundPayment,
+} from '@/lib/mercadopago/client'
 import { encryptToken } from '@/lib/meta/crypto'
 import { uniqueSlugFrom } from '@/lib/salon/slug-dedupe'
 import { createClient } from '@/lib/supabase/server'
@@ -18,17 +23,26 @@ import {
 import type { CurrentUser } from '@/lib/tenant/current'
 import type { Tenant } from '@/lib/tenant/types'
 import { getMercadoPagoCredentials } from './credentials'
-import { formatPesos, pesosToCents } from './pricing'
+import { centsToMercadoPagoAmount, formatPesos, pesosToCents } from './pricing'
 import {
   createExperienceSchema,
   type ExperienceFormInput,
   experienceFormSchema,
   mercadoPagoCredentialsSchema,
+  orderIdSchema,
   RESERVED_EXPERIENCE_SLUGS,
   type TicketingSettingsInput,
   ticketingSettingsSchema,
 } from './schemas'
-import { reconcilePaymentById, type SettleOutcome } from './settle'
+import { applyPayment, reconcilePaymentById, type SettleOutcome } from './settle'
+import {
+  canConfirmTransfer,
+  isManualTransfer,
+  MANUAL_TRANSFER,
+  transferPaymentId,
+  transferReservationComment,
+  voidedReservationComment,
+} from './transfer'
 
 /**
  * Acciones del panel (Marketing → Entradas). Todo es del dueño: es la vidriera
@@ -608,6 +622,21 @@ export async function disconnectMercadoPago(slug: string): Promise<TicketingActi
 // ──────────────────────────────────────────────
 
 const REFUND_CANCEL_REASON = 'Se devolvió el pago online.'
+const TRANSFER_VOID_REASON = 'Se anuló la transferencia.'
+
+function revalidateOrderChange(slug: string, reservationId: string | null): void {
+  revalidateTicketing(slug)
+  if (!reservationId) return
+  for (const path of [
+    `/${slug}/reservas`,
+    `/${slug}/reservas/${reservationId}`,
+    `/${slug}/operativo`,
+    `/${slug}/salon/reservas-operativo`,
+    `/${slug}/eventos/programados`,
+  ]) {
+    revalidatePath(path)
+  }
+}
 
 /**
  * La reserva de una compra devuelta se cancela solo si la persona todavía no
@@ -620,14 +649,16 @@ async function cancelRefundedReservation(input: {
   userId: string
   reservationId: string
   orderId: string
+  reason?: string
 }): Promise<'cancelled' | 'not_pending' | 'error'> {
+  const reason = input.reason ?? REFUND_CANCEL_REASON
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('salon_reservations')
     .update({
       status: 'cancelled',
       cancelled_at: new Date().toISOString(),
-      cancelled_reason: REFUND_CANCEL_REASON,
+      cancelled_reason: reason,
       deposit_cents: 0,
     })
     .eq('tenant_id', input.tenantId)
@@ -651,7 +682,7 @@ async function cancelRefundedReservation(input: {
     action: 'salon_reservation.cancelled',
     entity: 'salon_reservation',
     entityId: input.reservationId,
-    payload: { reason: REFUND_CANCEL_REASON, ticket_order_id: input.orderId },
+    payload: { reason, ticket_order_id: input.orderId },
   })
   return 'cancelled'
 }
@@ -674,7 +705,7 @@ export async function refundTicketOrder(
   const service = createServiceClient() as SBAny
   const { data, error } = await service
     .from('ticket_orders')
-    .select('id, status, mp_payment_id, reservation_id, paid_cents, total_cents')
+    .select('id, status, mp_payment_id, mp_payment_type, reservation_id, paid_cents, total_cents')
     .eq('tenant_id', tenantId)
     .eq('id', orderId)
     .maybeSingle()
@@ -689,12 +720,17 @@ export async function refundTicketOrder(
   const order = data as {
     status: string
     mp_payment_id: string | null
+    mp_payment_type: string | null
     reservation_id: string | null
     paid_cents: number | null
     total_cents: number
   } | null
   if (!order) return { ok: false, message: 'No encontramos esa compra.' }
   if (order.status === 'refunded') return { ok: true, message: 'Esa compra ya estaba devuelta.' }
+  if (isManualTransfer(order.mp_payment_type)) {
+    // Mercado Pago no conoce esta plata: no hay nada que pedirle.
+    return { ok: false, message: 'Esta compra se pagó por transferencia: anulala desde Ventas.' }
+  }
   if (order.status !== 'approved' || !order.mp_payment_id) {
     return { ok: false, message: 'Solo se puede devolver una compra pagada.' }
   }
@@ -769,18 +805,7 @@ export async function refundTicketOrder(
     payload: { paid_cents: paidCents, refunded_now: refunded, reservation },
   })
 
-  revalidateTicketing(slug)
-  if (order.reservation_id) {
-    for (const path of [
-      `/${slug}/reservas`,
-      `/${slug}/reservas/${order.reservation_id}`,
-      `/${slug}/operativo`,
-      `/${slug}/salon/reservas-operativo`,
-      `/${slug}/eventos/programados`,
-    ]) {
-      revalidatePath(path)
-    }
-  }
+  revalidateOrderChange(slug, order.reservation_id)
 
   const pesos = formatPesos(paidCents)
   const reservationNote =
@@ -796,5 +821,244 @@ export async function refundTicketOrder(
     message: refunded
       ? `Devolvimos ${pesos}${reservationNote}.`
       : `Mercado Pago está procesando la devolución de ${pesos}${reservationNote}. En unos minutos la compra figura como devuelta.`,
+  }
+}
+
+// ──────────────────────────────────────────────
+// Transferencias
+// ──────────────────────────────────────────────
+
+type TransferOrderRow = {
+  status: string
+  event_date: string
+  total_cents: number
+  mp_payment_id: string | null
+  mp_payment_type: string | null
+  reservation_id: string | null
+}
+
+async function readTransferOrder(
+  tenantId: string,
+  orderId: string,
+): Promise<{ ok: true; order: TransferOrderRow | null } | { ok: false }> {
+  const service = createServiceClient() as SBAny
+  const { data, error } = await service
+    .from('ticket_orders')
+    .select('status, event_date, total_cents, mp_payment_id, mp_payment_type, reservation_id')
+    .eq('tenant_id', tenantId)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.transfer] leer compra', { tenantId, orderId, code: error.code })
+    return { ok: false }
+  }
+  return { ok: true, order: data as TransferOrderRow | null }
+}
+
+/** No hay un pago de Mercado Pago detrás: se aplica lo que una persona confirmó. */
+function transferPayment(
+  orderId: string,
+  paymentId: string,
+  status: 'approved' | 'refunded',
+  totalCents: number,
+): MercadoPagoPayment {
+  return {
+    id: paymentId,
+    status,
+    status_detail: MANUAL_TRANSFER,
+    external_reference: orderId,
+    transaction_amount: centsToMercadoPagoAmount(totalCents),
+    currency_id: 'ARS',
+    date_approved: status === 'approved' ? new Date().toISOString() : null,
+    payment_type_id: MANUAL_TRANSFER,
+  }
+}
+
+/** El comentario de la reserva lo escribe la base, y habla de Mercado Pago. */
+async function rewriteReservationComment(
+  tenantId: string,
+  reservationId: string,
+  rewrite: (comment: string) => string,
+): Promise<void> {
+  const service = createServiceClient() as SBAny
+  const { data, error } = await service
+    .from('salon_reservations')
+    .select('comments')
+    .eq('tenant_id', tenantId)
+    .eq('id', reservationId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.transfer] leer comentario', { tenantId, code: error.code })
+    return
+  }
+  const comments = (data as { comments: string | null } | null)?.comments
+  if (!comments) return
+  const next = rewrite(comments)
+  if (next === comments) return
+  const { error: updateError } = await service
+    .from('salon_reservations')
+    .update({ comments: next })
+    .eq('tenant_id', tenantId)
+    .eq('id', reservationId)
+  if (updateError) {
+    console.error('[ticketing.transfer] guardar comentario', { tenantId, code: updateError.code })
+  }
+}
+
+/**
+ * «Confirmar transferencia» de Ventas online: alguien vio la plata en la cuenta. La
+ * compra se aprueba por el mismo camino que un pago de Mercado Pago, así que se crea la
+ * reserva y la entrada pasa a tener el QR. Sin cupo, la reserva se carga igual y queda
+ * marcada con sobrecupo, como cuando alguien paga después de que se le venció el lugar.
+ */
+export async function confirmTicketTransfer(
+  slug: string,
+  orderId: string,
+): Promise<TicketingActionState> {
+  const access = await authorizeOwner(slug)
+  if (!access) return NO_ACCESS
+  if (!orderIdSchema.safeParse(orderId).success) return { ok: false, message: 'Compra inválida.' }
+  const tenantId = access.tenant.id
+
+  const read = await readTransferOrder(tenantId, orderId)
+  if (!read.ok) return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
+  const order = read.order
+  if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  // También cubre el segundo toque y a Mercado Pago aprobando mientras tanto.
+  if (order.status === 'approved') return { ok: true, message: 'Esa compra ya está paga.' }
+  if (!canConfirmTransfer(order)) {
+    return { ok: false, message: 'Esa compra ya no se puede confirmar.' }
+  }
+
+  const totalCents = Number(order.total_cents)
+  let outcome: SettleOutcome
+  try {
+    outcome = await applyPayment(
+      tenantId,
+      transferPayment(orderId, transferPaymentId(orderId), 'approved', totalCents),
+      'panel',
+    )
+  } catch (error) {
+    console.error('[ticketing.confirmTicketTransfer] aplicar', {
+      tenantId,
+      orderId,
+      error: error instanceof Error ? error.message : 'unknown',
+    })
+    return { ok: false, message: 'No pudimos confirmar la transferencia. Probá de nuevo.' }
+  }
+  if (outcome.kind !== 'settled' || outcome.status !== 'approved') {
+    return { ok: false, message: 'No pudimos confirmar la transferencia. Probá de nuevo.' }
+  }
+
+  if (outcome.reservationId) {
+    await rewriteReservationComment(tenantId, outcome.reservationId, transferReservationComment)
+  }
+  await logAudit({
+    tenantId,
+    userId: access.user.id,
+    action: 'ticket_order.transfer_confirmed',
+    entity: 'ticket_order',
+    entityId: orderId,
+    // Sin nombre ni teléfono (CLAUDE.md §9).
+    payload: {
+      paid_cents: totalCents,
+      reservation_id: outcome.reservationId,
+      attention: outcome.attention,
+    },
+  })
+  revalidateOrderChange(slug, outcome.reservationId)
+
+  if (outcome.attention === 'event_missing') {
+    return {
+      ok: true,
+      message: 'Quedó paga, pero esa fecha ya no está en el calendario: cargá la reserva a mano.',
+    }
+  }
+  return {
+    ok: true,
+    message:
+      outcome.attention === 'overbooked'
+        ? 'Reserva cargada con sobrecupo: revisá el cupo de esa función. Mandale la entrada por WhatsApp.'
+        : 'Listo: la reserva está cargada. Mandale la entrada por WhatsApp.',
+  }
+}
+
+/**
+ * «Anular»: deshace una transferencia confirmada por error, o que hubo que devolver. La
+ * entrada deja de valer y se cancela la reserva si todavía no llegaron. La plata no pasa
+ * por el sistema: si ya estaba en la cuenta, la devuelve el bar.
+ */
+export async function voidTicketTransfer(
+  slug: string,
+  orderId: string,
+): Promise<TicketingActionState> {
+  const access = await authorizeOwner(slug)
+  if (!access) return NO_ACCESS
+  if (!orderIdSchema.safeParse(orderId).success) return { ok: false, message: 'Compra inválida.' }
+  const tenantId = access.tenant.id
+
+  const read = await readTransferOrder(tenantId, orderId)
+  if (!read.ok) return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
+  const order = read.order
+  if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  if (order.status === 'refunded') {
+    return { ok: true, message: 'Esa transferencia ya estaba anulada.' }
+  }
+  if (
+    order.status !== 'approved' ||
+    !isManualTransfer(order.mp_payment_type) ||
+    !order.mp_payment_id
+  ) {
+    return { ok: false, message: 'Solo se puede anular una transferencia confirmada.' }
+  }
+
+  const totalCents = Number(order.total_cents)
+  try {
+    await applyPayment(
+      tenantId,
+      transferPayment(orderId, order.mp_payment_id, 'refunded', totalCents),
+      'panel',
+    )
+  } catch (error) {
+    console.error('[ticketing.voidTicketTransfer] aplicar', {
+      tenantId,
+      orderId,
+      error: error instanceof Error ? error.message : 'unknown',
+    })
+    return { ok: false, message: 'No pudimos anular la transferencia. Probá de nuevo.' }
+  }
+
+  const reservation = order.reservation_id
+    ? await cancelRefundedReservation({
+        tenantId,
+        userId: access.user.id,
+        reservationId: order.reservation_id,
+        orderId,
+        reason: TRANSFER_VOID_REASON,
+      })
+    : null
+  if (order.reservation_id) {
+    await rewriteReservationComment(tenantId, order.reservation_id, voidedReservationComment)
+  }
+  await logAudit({
+    tenantId,
+    userId: access.user.id,
+    action: 'ticket_order.transfer_voided',
+    entity: 'ticket_order',
+    entityId: orderId,
+    payload: { paid_cents: totalCents, reservation },
+  })
+  revalidateOrderChange(slug, order.reservation_id)
+
+  return {
+    ok: true,
+    message:
+      reservation === 'cancelled'
+        ? 'Transferencia anulada y reserva cancelada.'
+        : reservation === 'not_pending'
+          ? 'Transferencia anulada. La reserva no se tocó porque ya no estaba pendiente.'
+          : reservation === 'error'
+            ? 'Transferencia anulada. No pudimos cancelar la reserva: cancelala desde Reservas.'
+            : 'Transferencia anulada.',
   }
 }

@@ -10,6 +10,7 @@ import { orderEntryFrom } from './door'
 import { entryCodeFromOrderId, shortCodeFromOrderId } from './entry-code'
 import { parseGallery, parseSteps } from './schemas'
 import { buildTicketQr } from './ticket-qr'
+import { isManualTransfer } from './transfer'
 import type {
   ExperienceRow,
   OrderEntry,
@@ -516,7 +517,8 @@ export async function getPublicOrder(
       mpStatusDetail: order.mp_status_detail,
       retryUrl,
       guestShortName: guestShortName(order.guest_name),
-      mpPaymentId: order.mp_payment_id,
+      // Una transferencia no tiene número de operación de Mercado Pago.
+      mpPaymentId: isManualTransfer(order.mp_payment_type) ? null : order.mp_payment_id,
       mpPaymentType: order.mp_payment_type,
       paidAtLabel: order.paid_at
         ? formatInTimeZone(new Date(order.paid_at), tz, 'dd/MM/yyyy HH:mm')
@@ -832,6 +834,7 @@ export type AdminOrder = Pick<
   | 'reservation_id'
   | 'attention'
   | 'mp_status_detail'
+  | 'mp_payment_type'
   | 'created_at'
   | 'paid_at'
 > & {
@@ -909,7 +912,7 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
   const { data, error } = await supabase
     .from('ticket_orders')
     .select(
-      'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, created_at, paid_at, reservation:salon_reservations(status, estimated_guests, actual_guests, arrived_at)',
+      'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, mp_payment_type, created_at, paid_at, reservation:salon_reservations(status, estimated_guests, actual_guests, arrived_at)',
     )
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
