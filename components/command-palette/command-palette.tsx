@@ -1,9 +1,10 @@
 'use client'
 
-import { Search } from 'lucide-react'
+import { MessageCircleQuestion, Search } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { actionHrefFrom } from '@/components/administracion/acciones/types'
+import { openTex, texAvailable } from '@/components/administracion/tex/open-tex'
 import { NO_ACCOUNTING } from '@/components/shell/nav-config'
 import {
   CommandDialog,
@@ -48,8 +49,10 @@ export function CommandPalette({
   accounting = NO_ACCOUNTING,
 }: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const router = useRouter()
   const pathname = usePathname()
+  const asked = query.trim()
 
   const toggle = useCallback(() => setOpen((current) => !current), [])
   useCommandShortcuts(toggle)
@@ -97,7 +100,11 @@ export function CommandPalette({
         title="Buscar y navegar"
         description="Tipeá el nombre de una acción, página o cliente."
       >
-        <CommandInput placeholder="Buscar acciones, páginas, clientes…" />
+        <CommandInput
+          placeholder="Buscar acciones, páginas, clientes…"
+          value={query}
+          onValueChange={setQuery}
+        />
         <CommandList>
           <CommandEmpty>No encontramos nada que coincida.</CommandEmpty>
           {groupedEntries.map((g, index) => (
@@ -109,6 +116,23 @@ export function CommandPalette({
               showSeparator={index > 0}
             />
           ))}
+          {/* Lo que no se encuentra se le pregunta: Tex solo existe en Administración. */}
+          {open && asked.length >= 2 && texAvailable() ? (
+            <CommandGroup heading="Tex" forceMount>
+              <CommandItem
+                forceMount
+                value={`tex ${asked}`}
+                onSelect={() => {
+                  setOpen(false)
+                  setQuery('')
+                  openTex(asked)
+                }}
+              >
+                <MessageCircleQuestion className="size-4 text-muted-foreground" aria-hidden />
+                <span className="truncate">Preguntale a Tex: «{asked}»</span>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
         </CommandList>
       </CommandDialog>
     </>

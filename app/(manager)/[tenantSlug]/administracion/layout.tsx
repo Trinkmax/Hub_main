@@ -4,11 +4,13 @@ import { AccountingProvider } from '@/components/administracion/accounting-provi
 import { GlobalDrop } from '@/components/administracion/drop/global-drop'
 import { AdmNav } from '@/components/administracion/nav/adm-nav'
 import { AdmFab } from '@/components/administracion/nav/launcher-fab'
+import { Tex } from '@/components/administracion/tex/tex'
 import { resolveSection } from '@/components/shell/section-tabs-config'
 import { loadSectionViewer } from '@/components/shell/section-tabs-server'
 import { type AccountingState, getAccountingState } from '@/lib/accounting/access'
 import { todayInCordoba } from '@/lib/dates'
 import { TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
+import { texEnabled } from '@/lib/tex/enabled'
 import {
   AdministracionApagada,
   AdministracionPendiente,
@@ -51,6 +53,8 @@ export const maxDuration = 60
  * `AdmFab` es el «＋ Cargar» flotante del celular: lo pone este marco en las pantallas de primer
  * nivel (menos Ajustes y la Guía: ver `admFabFromFrame`), para que esté siempre en el mismo
  * lugar. No se dibuja para la contadora ni en las pantallas de tarea, que tienen su propio pie.
+ *
+ * `Tex` es el asistente: aparece solo si está la clave de la API de Claude.
  */
 export default async function AdministracionLayout({
   children,
@@ -115,6 +119,7 @@ export default async function AdministracionLayout({
       {children}
       <AdmFab />
       <GlobalDrop />
+      {texEnabled() ? <Tex slug={tenantSlug} isAccountant={state.isAccountant} /> : null}
     </AccountingProvider>
   )
 }

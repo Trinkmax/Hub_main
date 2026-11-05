@@ -1316,3 +1316,264 @@
   padding-right: 2rem;
 }
 /* ── fin de Administración simple ── */
+
+/* ── Tex ──
+   Los colores son los de su dibujo (public/tex). El panel es Tex agrandado: tres marcos recortados en
+   escalones de pixel (contorno, cuerpo, cara). El recorte es `clip-path` y no `filter`, porque el panel
+   se repinta con cada letra que llega. */
+:root {
+  --tex-navy: #06123a;
+  --tex-deep: #03389a;
+  --tex-mid: #0366d3;
+  --tex-body: #0688eb;
+  --tex-light: #32b8f6;
+  --tex-face: #fffdf5;
+  --tex-ink: oklch(0.24 0.03 255);
+  --tex-muted: oklch(0.47 0.03 255);
+  --tex-u: 3px;
+}
+.dark {
+  --tex-face: oklch(0.2 0.025 255);
+  --tex-ink: oklch(0.95 0.01 255);
+  --tex-muted: oklch(0.74 0.02 255);
+}
+.tex-pixel {
+  image-rendering: pixelated;
+}
+.tex-steps {
+  --s: var(--tex-u);
+  clip-path: polygon(
+    0 calc(3 * var(--s)), var(--s) calc(3 * var(--s)), var(--s) var(--s), calc(3 * var(--s)) var(--s), calc(3 * var(--s)) 0,
+    calc(100% - 3 * var(--s)) 0, calc(100% - 3 * var(--s)) var(--s), calc(100% - var(--s)) var(--s), calc(100% - var(--s)) calc(3 * var(--s)), 100% calc(3 * var(--s)),
+    100% calc(100% - 3 * var(--s)), calc(100% - var(--s)) calc(100% - 3 * var(--s)), calc(100% - var(--s)) calc(100% - var(--s)), calc(100% - 3 * var(--s)) calc(100% - var(--s)), calc(100% - 3 * var(--s)) 100%,
+    calc(3 * var(--s)) 100%, calc(3 * var(--s)) calc(100% - var(--s)), var(--s) calc(100% - var(--s)), var(--s) calc(100% - 3 * var(--s)), 0 calc(100% - 3 * var(--s))
+  );
+}
+
+.tex-dock {
+  right: 1.25rem;
+  bottom: 0.75rem;
+}
+@media (max-width: 1023px) {
+  /* En el celular «+ Cargar» está abajo a la derecha: Tex se para del otro lado. */
+  .tex-dock {
+    right: auto;
+    left: 0.5rem;
+    bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  }
+}
+
+.tex-panel {
+  right: 2.75rem;
+  bottom: 2.75rem;
+  width: min(26rem, calc(100vw - 6rem));
+  height: min(46rem, calc(100dvh - 8.5rem));
+}
+.tex-panel-shadow {
+  box-shadow: 0 28px 70px -16px color-mix(in oklch, var(--tex-navy) 55%, transparent);
+}
+.tex-steps {
+  --s: 4px;
+}
+.tex-frame-outline {
+  background: var(--tex-navy);
+  padding: 4px;
+}
+.tex-frame-body {
+  background: var(--tex-body);
+  padding: 16px 16px 24px;
+  box-shadow:
+    inset 0 4px 0 var(--tex-light),
+    inset 4px 0 0 var(--tex-mid),
+    inset -4px 0 0 var(--tex-mid),
+    inset 0 -8px 0 var(--tex-deep);
+}
+.tex-screen {
+  color: var(--tex-ink);
+  background: var(--tex-face);
+}
+/* En oscuro la cara sigue siendo su cara: crema, con los ojos oscuros. */
+.dark .tex-face-plate {
+  --s: 2px;
+  background: #fffdf5;
+  box-sizing: content-box;
+  padding: 4px 6px;
+}
+.tex-rule {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, color-mix(in oklch, var(--tex-mid) 28%, transparent) 0 4px, transparent 4px 8px);
+}
+.tex-limb.tex-cap { top: -28px; right: 56px; }
+.tex-limb.tex-hand-left { top: 34%; left: -40px; }
+.tex-limb.tex-hand-right { right: -32px; bottom: 24%; }
+.tex-limb.tex-tail { bottom: -16px; left: 36px; }
+.tex-limb.tex-legs { right: 56px; bottom: -28px; }
+.tex-input {
+  border: 2px solid color-mix(in oklch, var(--tex-mid) 30%, transparent);
+  transition: border-color 120ms;
+}
+.tex-input:focus-within {
+  border-color: var(--tex-mid);
+}
+.tex-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--tex-mid) 35%, transparent) transparent;
+}
+.tex-bit {
+  animation: tex-bit 900ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes tex-bit {
+  from { transform: translate(0, 0) scale(1); opacity: 1; }
+  70% { opacity: 1; }
+  to { transform: translate(var(--x), calc(var(--y) + 120px)) scale(0.6); opacity: 0; }
+}
+@media (max-width: 639px) {
+  /* En el celular es casi toda la pantalla: sin manos ni zapatillas, con la gorra. */
+  .tex-panel {
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: calc(100dvh - max(env(safe-area-inset-top), 2.25rem));
+  }
+  .tex-limb:not(.tex-cap) {
+    display: none;
+  }
+  .tex-frame-body {
+    padding: 10px 10px calc(14px + env(safe-area-inset-bottom));
+  }
+}
+/* Si hay lugar, la página le hace lugar en vez de quedar tapada (lo decide `TexProvider`). */
+@media (min-width: 640px) {
+  html[data-tex] main {
+    transition: padding-right 240ms var(--ease-out);
+  }
+  html[data-tex-push] main {
+    padding-right: 32rem;
+  }
+}
+/* Con un archivo en la mano, Tex queda arriba del aviso «Soltalo acá»: también se lo puede pasar a él. */
+html[data-tex-drag] [data-tex-ui] {
+  z-index: 70;
+}
+
+.tex-bubble-user {
+  --s: 2px;
+  background: var(--tex-mid);
+  clip-path: polygon(
+    0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0,
+    calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px,
+    100% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 100%,
+    4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px)
+  );
+}
+.tex-bubble-note {
+  color: var(--tex-ink);
+  background: var(--tex-face);
+  border: 3px solid var(--tex-mid);
+  box-shadow: 3px 3px 0 var(--tex-navy);
+}
+.tex-chip {
+  color: var(--tex-ink);
+  background: color-mix(in oklch, var(--tex-light) 14%, transparent);
+  border: 2px solid color-mix(in oklch, var(--tex-mid) 45%, transparent);
+  transition: background-color 120ms, transform 120ms;
+}
+.tex-chip:hover {
+  background: color-mix(in oklch, var(--tex-light) 28%, transparent);
+  transform: translateY(-1px);
+}
+.tex-send {
+  background: var(--tex-mid);
+  box-shadow: inset 0 2px 0 var(--tex-light), inset 0 -2px 0 var(--tex-deep);
+  clip-path: polygon(0 3px, 3px 3px, 3px 0, calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px));
+}
+.tex-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--tex-mid);
+  animation: tex-dot 900ms steps(2, jump-none) infinite;
+}
+@keyframes tex-dot {
+  from { transform: translateY(0); opacity: 0.35; }
+  to { transform: translateY(-4px); opacity: 1; }
+}
+/* Respira de a un pixel, como en un juego viejo. */
+.tex-idle {
+  animation: tex-idle 1100ms steps(2, jump-none) infinite alternate;
+}
+@keyframes tex-idle {
+  from { transform: translateY(0); }
+  to { transform: translateY(-2px); }
+}
+.tex-dock-button:hover .tex-idle {
+  animation: tex-happy-hop 420ms steps(4) infinite alternate;
+}
+@keyframes tex-happy-hop {
+  from { transform: translateY(0) rotate(-1deg); }
+  to { transform: translateY(-8px) rotate(1deg); }
+}
+.tex-wave {
+  transform-origin: 100% 90%;
+  animation: tex-wave 700ms steps(3, jump-none) 3 alternate;
+}
+@keyframes tex-wave {
+  from { rotate: -6deg; }
+  to { rotate: 8deg; }
+}
+.tex-hop {
+  animation: tex-hop 520ms cubic-bezier(0.3, 0, 0.3, 1) 2;
+}
+@keyframes tex-hop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-16px); }
+}
+.tex-zzz {
+  animation: tex-zzz 2.4s steps(6) infinite;
+}
+@keyframes tex-zzz {
+  from { transform: translate(0, 4px); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: translate(8px, -18px); opacity: 0; }
+}
+/* El tique sale como de la impresora: de arriba para abajo, a los saltos. */
+.tex-print {
+  animation: tex-print 560ms steps(9) both;
+}
+@keyframes tex-print {
+  from { clip-path: inset(0 -20px 100% -20px); transform: translateY(-14px); }
+  to { clip-path: inset(0 -20px -30px -20px); transform: translateY(0); }
+}
+/* Las cuatro esquinas de lo señalado, en pixel, entrando y saliendo. */
+.tex-ring {
+  background: color-mix(in oklch, var(--tex-light) 12%, transparent);
+  outline: 2px dashed color-mix(in oklch, var(--tex-mid) 55%, transparent);
+  outline-offset: -1px;
+  transition: left 180ms, top 180ms, width 180ms, height 180ms;
+}
+.tex-ring-corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 0 solid var(--tex-mid);
+  animation: tex-ring 800ms steps(2, jump-none) infinite alternate;
+}
+.tex-ring-tl { --dx: -4px; --dy: -4px; left: -3px; top: -3px; border-width: 4px 0 0 4px; }
+.tex-ring-tr { --dx: 4px; --dy: -4px; right: -3px; top: -3px; border-width: 4px 4px 0 0; }
+.tex-ring-bl { --dx: -4px; --dy: 4px; left: -3px; bottom: -3px; border-width: 0 0 4px 4px; }
+.tex-ring-br { --dx: 4px; --dy: 4px; right: -3px; bottom: -3px; border-width: 0 4px 4px 0; }
+@keyframes tex-ring {
+  from { translate: 0 0; }
+  to { translate: var(--dx) var(--dy); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tex-idle, .tex-wave, .tex-hop, .tex-zzz, .tex-print, .tex-dot, .tex-ring-corner, .tex-bit { animation: none; }
+  .tex-chip:hover { transform: none; }
+  .tex-dock-button:hover .tex-idle { animation: none; }
+}
+@media print {
+  [data-tex-ui] { display: none !important; }
+  html[data-tex-push] main { padding-right: 0; }
+}
+/* ── fin de Tex ── */
