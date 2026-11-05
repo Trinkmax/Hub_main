@@ -78,7 +78,11 @@ export function TransferSlip({
       </span>
 
       {holder ? (
-        <p className="mt-2 text-balance text-xs text-(--ent-ink-2)">A nombre de {holder}</p>
+        <p className="mt-2 text-xs text-(--ent-ink-2)">
+          A nombre de
+          <br />
+          <span className="font-medium text-(--ent-ink)">{holder}</span>
+        </p>
       ) : null}
 
       {proofUrl ? (
