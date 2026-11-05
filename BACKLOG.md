@@ -1492,3 +1492,31 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   `show` desde `OrderView`, celebrar también al volver de Mercado Pago con el pago ya aprobado
   (hoy `firstStatus` aprobado no anima), un resguardo para que el QR no quede oculto si fallan
   los scripts, y sacar las reglas viejas de `[data-celebrate]`. Espera el «sí» de los dueños.
+
+## Administración simple — la compra y la foto por QR (04/11/2026)
+
+- **En oscuro, un `Checkbox` tildado parece destildado, en todo el sistema.** En
+  `components/ui/checkbox.tsx`, `dark:bg-input/30` le gana a `data-[state=checked]:bg-primary` y el
+  tilde queda oscuro sobre oscuro. Falta `dark:data-[state=checked]:bg-primary`. No se tocó porque
+  `components/ui/*` está fuera de la tanda; en la carga de la compra se resuelve desde el formulario.
+
+## Administración simple — lo que queda (04/11/2026)
+
+- **A confirmar con Silvia y los socios:**
+  - Comercio e Industria: en la reunión se dijo «0,007»; quedó 0,7 %, sobre lo facturado sin IVA. Se cambia en Ajustes › Impuestos.
+  - «Ingresos brutos / Comercio e industria Piojo y Porte - RRII» (5 gastos fijos de HUB) tienen la cuenta del bar: tildarlos abre
+    el Pago a Rentas o Municipalidad. Si son impuestos personales de los socios, hay que cambiarles la cuenta (Editar) a «Otros
+    impuestos y tasas» o a la cuenta particular del socio.
+  - Si el modelo de Sueldos le sirve: adelanto y pago contra Sueldos a pagar, y «Devengar» a fin de mes.
+- **Falta una muestra de `collection-20261029001539-137f.csv`** (la tiene Tomi): hoy se reconoce por nombre y por títulos
+  inferidos, y se pide Liquidaciones. Con la muestra se puede leer directo.
+- **Leer una factura sin QR** necesitaría una clave de Anthropic: hoy se tipea.
+- **`tests/rls/acc-simple.test.ts`** no corrió nunca: el job `rls` de CI está roto (ver «La puerta») y acá no hay Docker. Se
+  ensayó en la base con rollback.
+- **`types/database.ts`** sigue sin las tablas `acc_*`. `lib/accounting` no lo usa (`callRpc`).
+- **Movimientos de sueldos en Caja** dicen «Personal (sueldos) · Otra salida»: podrían decir «Adelanto de Ana».
+- **Sin uso desde el rediseño:** funciones de `lib/accounting/home.ts` (franja del IVA, almanaque, «Hoy te toca») y
+  `TreasuryBalance`, `CheckedStatus`, `TreasuryIcon`, `cardBalanceText` de `cajas-ventas/treasury-display.tsx`.
+- **Ficha del comprobante:** sigue con su ticket y «Con qué está unido»; se dejó como estaba. Para Silvia el camino es el
+  panel lateral del Mayor. Se puede simplificar si no la usan.
+- **`/favicon.ico` cae en `[tenantSlug]`** y loguea `TenantNotFoundError` en cada carga: falta el ícono en `app/` o excluirlo del matcher.
