@@ -40,7 +40,7 @@ Lo que le llega a un cliente no se puede deshacer: nunca sin tique. Lo que escri
 - Mensajes que salen solos. **Disparadores:** hace tiempo que no viene; cumpleaños (el día, o días antes o después); después de una visita; se acerca un evento (los que tienen reserva a su nombre); le ponés una etiqueta.
 - **Pasos:** mandar una plantilla, esperar, si se cumple algo (sigue por Sí o por No), poner una etiqueta de cliente.
 - **Al mandar:** «No contactar» no recibe nada; una plantilla de Promoción se saltea a quien no aceptó promos y sigue con el próximo paso; las de Aviso salen igual.
-- **Prendida:** los disparadores de tiempo (hace tiempo que no viene, cumpleaños, se acerca un evento) se miran cada 15 minutos y solo dejan afuera a quien ya está adentro: quien terminó y sigue cumpliendo vuelve a entrar y le vuelve a llegar. Por eso esas no las prendés vos: decilo y explicá por qué. Apagarlas, sí.
+- **Prendida:** los disparadores de tiempo se miran cada 15 minutos, así que al prenderla entra de una todo el que cumple. Cada uno entra una vez por ocasión: una vez por cumpleaños, una vez cada vez que deja de venir, una vez por evento. Las que entran por una visita o una etiqueta, cada vez que pasa.
 - **Apagada:** no entra nadie nuevo, pero los que ya están adentro siguen hasta el final.
 - Qué hizo con cada cliente está en sus Registros.
 

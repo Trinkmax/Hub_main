@@ -9,8 +9,10 @@ type FlowRow = Database['public']['Tables']['flows']['Row']
 const TZ = 'America/Argentina/Cordoba'
 
 // Recorre flows activos por tipo y encola jobs `start_flow` para cada
-// (flow, customer) que cumpla el criterio. Idempotencia garantizada por
-// el RPC start_flow_for_customer.
+// (flow, customer) que cumpla el criterio. Cada uno entra una vez por ocasión
+// (un cumpleaños, cada vez que deja de venir, un evento): lo decide
+// `flow_already_enrolled` en la base, tanto al elegir candidatos como en
+// start_flow_for_customer.
 export async function evaluateTimeTriggers(
   triggerTypes: FlowTriggerType[] = ['customer_inactive', 'birthday', 'event_starting'],
 ): Promise<{ enqueued: number }> {
@@ -32,7 +34,7 @@ export async function evaluateTimeTriggers(
 async function evaluateOneFlow(flow: FlowRow): Promise<number> {
   const service = createServiceClient()
   const config = flow.trigger_config as Record<string, unknown>
-  let candidates: Array<{ customer_id: string }> = []
+  let candidates: Array<{ customer_id: string; context?: { scheduled_event_id: string } }> = []
 
   if (flow.trigger_type === 'customer_inactive') {
     const days = Number(config.days ?? 0)
@@ -56,10 +58,36 @@ async function evaluateOneFlow(flow: FlowRow): Promise<number> {
     await enqueueJob({
       tenantId: flow.tenant_id,
       kind: 'start_flow',
-      payload: { flow_id: flow.id, customer_id: c.customer_id },
+      // Con el evento en el contexto, la base sabe que ya le avisó de ese y no lo repite.
+      payload: {
+        flow_id: flow.id,
+        customer_id: c.customer_id,
+        ...(c.context ? { context: c.context } : {}),
+      },
     })
   }
   return candidates.length
+}
+
+type EventStart = { customer_id: string; context: { scheduled_event_id: string } }
+
+/**
+ * Quiénes faltan avisar, una vez por cliente y por evento. `already` son los (cliente, evento) que ya entraron. Puro.
+ */
+export function pendingEventStarts(
+  reservations: ReadonlyArray<{ customer_id: string | null; scheduled_event_id: string | null }>,
+  already: ReadonlySet<string>,
+): EventStart[] {
+  const seen = new Set<string>()
+  const out: EventStart[] = []
+  for (const r of reservations) {
+    if (!r.customer_id || !r.scheduled_event_id) continue
+    const key = `${r.customer_id}:${r.scheduled_event_id}`
+    if (seen.has(key) || already.has(key)) continue
+    seen.add(key)
+    out.push({ customer_id: r.customer_id, context: { scheduled_event_id: r.scheduled_event_id } })
+  }
+  return out
 }
 
 // Clientes con reserva (con CRM) para un evento del calendario que arranca en
@@ -68,7 +96,7 @@ async function evaluateOneFlow(flow: FlowRow): Promise<number> {
 async function customersForEventStarting(
   flow: FlowRow,
   hoursBefore: number,
-): Promise<Array<{ customer_id: string }>> {
+): Promise<EventStart[]> {
   const service = createServiceClient()
   const now = Date.now()
   const lower = new Date(now + (hoursBefore - 1) * 3600_000)
@@ -93,20 +121,31 @@ async function customersForEventStarting(
 
   const { data } = await service
     .from('salon_reservations')
-    .select('customer_id')
+    .select('customer_id, scheduled_event_id')
     .eq('tenant_id', flow.tenant_id)
     .in('scheduled_event_id', eventIds)
     .not('customer_id', 'is', null)
     .in('status', ['pending', 'arrived', 'seated'])
     .limit(1000)
+  const rows = data ?? []
+  const customerIds = [
+    ...new Set(rows.map((r) => r.customer_id).filter((id): id is string => !!id)),
+  ]
+  if (customerIds.length === 0) return []
 
-  const seen = new Set<string>()
-  const out: Array<{ customer_id: string }> = []
-  for (const r of data ?? []) {
-    if (r.customer_id && !seen.has(r.customer_id)) {
-      seen.add(r.customer_id)
-      out.push({ customer_id: r.customer_id })
+  // El cron pasa varias veces por el mismo plazo: a quien ya se le avisó de ese evento no se le encola otra vez.
+  const { data: started } = await service
+    .from('flow_executions')
+    .select('customer_id, context')
+    .eq('tenant_id', flow.tenant_id)
+    .eq('flow_id', flow.id)
+    .in('customer_id', customerIds)
+  const already = new Set<string>()
+  for (const e of started ?? []) {
+    const context = e.context as { scheduled_event_id?: unknown } | null
+    if (typeof context?.scheduled_event_id === 'string') {
+      already.add(`${e.customer_id}:${context.scheduled_event_id}`)
     }
   }
-  return out
+  return pendingEventStarts(rows, already)
 }

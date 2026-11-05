@@ -152,23 +152,6 @@ export function triggerText(type: FlowTriggerType, raw: unknown): string {
   return trigger ? triggerSummary(trigger) : TRIGGER_TYPE_LABEL[type]
 }
 
-/**
- * Los de tiempo se miran cada 15 minutos y solo dejan afuera a quien tiene una ejecución en curso
- * (`customers_for_birthday_flow`, `customers_for_inactive_flow`, `start_flow_for_customer`): quien terminó y
- * sigue cumpliendo vuelve a entrar. Una de cumpleaños con un solo mensaje le llegaría cada 15 minutos todo
- * el día. Hasta arreglar el motor (`BACKLOG.md`), Tex no las prende; apagarlas, sí.
- */
-const REPEATING_TRIGGERS: ReadonlySet<FlowTriggerType> = new Set([
-  'customer_inactive',
-  'birthday',
-  'event_starting',
-])
-
-export function flowRepeatsProblem(name: string, type: FlowTriggerType): string | null {
-  if (!REPEATING_TRIGGERS.has(type)) return null
-  return `«${name}» no la prendo: tal como está hoy el sistema, le repetiría el mensaje a la misma persona cada 15 minutos. Decile a quien administra el sistema que primero hay que arreglar eso.`
-}
-
 /** Lo que hace el motor con cada disparador (`lib/flows/triggers.ts` y las funciones de la base). */
 export function triggerWarnings(type: FlowTriggerType, raw: unknown) {
   const trigger = triggerOf(raw)
@@ -182,8 +165,8 @@ export function triggerWarnings(type: FlowTriggerType, raw: unknown) {
           `En los próximos 15 minutos entran todos los que ${days ? `hace más de ${days} días` : 'hace tiempo'} que no vienen y aceptan promos.`,
         ),
         warning(
-          'enrols_again',
-          'Ojo: el sistema mira cada 15 minutos. Quien termina y sigue sin venir vuelve a entrar, y le vuelve a llegar el mensaje, una y otra vez.',
+          'enrols_once',
+          'A cada uno le llega una vez cada vez que deja de venir: si vuelve y después vuelve a faltar, le llega de nuevo.',
         ),
       ]
     }
@@ -193,10 +176,7 @@ export function triggerWarnings(type: FlowTriggerType, raw: unknown) {
           'enrols_now',
           'Cada 15 minutos entran los que tocan ese día y aceptan promos, también hoy.',
         ),
-        warning(
-          'enrols_again',
-          'Ojo: quien termina vuelve a entrar mientras dure ese día, y le vuelve a llegar el mensaje, una y otra vez.',
-        ),
+        warning('enrols_once', 'A cada uno le llega una vez por cumpleaños.'),
       ]
     case 'event_starting':
       return [
@@ -204,10 +184,7 @@ export function triggerWarnings(type: FlowTriggerType, raw: unknown) {
           'enrols_now',
           'Antes de cada evento, cuando se cumple el plazo, entran los que tienen una reserva a su nombre.',
         ),
-        warning(
-          'enrols_again',
-          'Ojo: el plazo dura una hora y el sistema mira cada 15 minutos. Quien termina puede volver a entrar y recibirlo de nuevo.',
-        ),
+        warning('enrols_once', 'A cada uno le llega una vez por evento.'),
       ]
     case 'after_visit':
       return [

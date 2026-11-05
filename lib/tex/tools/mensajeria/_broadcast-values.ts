@@ -1,6 +1,6 @@
 import { fromZonedTime } from 'date-fns-tz'
 import { categoryLabel } from '@/app/(manager)/[tenantSlug]/mensajeria/plantillas/_template-display'
-import type { AudienceFilter } from '@/lib/audiences/schemas'
+import type { AudienceReach } from '@/lib/audiences/reach-filters'
 import type { BroadcastListRow } from '@/lib/broadcasts/queries'
 import {
   templateBodyParamCount,
@@ -27,58 +27,17 @@ const LIST_MAX = 15
 
 // ─── A cuántos les llega ─────────────────────────────────────────────────────
 
-const OPT_IN: AudienceFilter = {
-  kind: 'condition',
-  field: 'opt_in_marketing',
-  op: 'is_true',
-  value: null,
-}
-
-/** Los de la lista que aceptan promos: el primer filtro de `materializeBroadcast`. */
-export function optedInFilter(filter: AudienceFilter): AudienceFilter {
-  return { kind: 'group', op: 'AND', nodes: [filter, OPT_IN] }
-}
-
-/** De esos, los que están en «No contactar»: para restarlos. La condición no existe en el constructor. */
-export function blockedFilter(filter: AudienceFilter, blockedIds: string[]): AudienceFilter {
-  return {
-    kind: 'group',
-    op: 'AND',
-    nodes: [filter, OPT_IN, { kind: 'static_list', customer_ids: blockedIds }],
-  }
-}
-
-export type AudienceReach = {
-  /** Los de la lista, hoy. */
-  total: number
-  /** Los que reciben: aceptan promos y no están en «No contactar». */
-  reach: number
-}
-
-export function reachOf(total: number, optedIn: number, blocked: number): AudienceReach {
-  return { total, reach: Math.max(0, optedIn - blocked) }
-}
+export {
+  type AudienceReach,
+  blockedFilter,
+  optedInFilter,
+  reachOf,
+} from '@/lib/audiences/reach-filters'
 
 export function noReachText(audience: string, total: number): string {
   return total === 0
     ? `«${audience}» hoy no tiene a nadie: no le llegaría a ninguna persona.`
     : `De los ${countText(total)} de «${audience}», ninguno acepta promos: no le llegaría a nadie. Solo les llega a los que aceptaron recibir promos y no están en «No contactar».`
-}
-
-/**
- * El número que muestra la pantalla es el último conteo guardado y no se recalcula solo. Si está lejos
- * del de hoy, la persona vio otro número antes de llegar acá y lo tiene que saber.
- */
-export function staleCountWarnings(saved: number, reach: AudienceReach) {
-  return reachChanged(saved, reach.total)
-    ? [
-        {
-          key: 'stale_count',
-          title: `En la pantalla la lista dice ${countText(saved)}: es un conteo viejo. Hoy tiene ${countText(reach.total)}.`,
-          body: null,
-        },
-      ]
-    : []
 }
 
 /** Tiene que coincidir con lo que dice el botón: si se movió mucho, la persona lo vuelve a ver. */
@@ -247,7 +206,6 @@ export function broadcastTicket(input: {
   name: string
   audienceName: string
   reach: AudienceReach
-  savedCount: number
   template: Pick<TemplateRow, 'name' | 'category' | 'components'>
   mapping: VariableMapping
   assumedName: boolean
@@ -316,7 +274,6 @@ export function broadcastTicket(input: {
             },
           ]
         : []),
-      ...staleCountWarnings(input.savedCount, input.reach),
       ...emptyHoleWarnings(input.mapping),
     ],
     confirmLabel: broadcastConfirmLabel(input.when.mode, reach),

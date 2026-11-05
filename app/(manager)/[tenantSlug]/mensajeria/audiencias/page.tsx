@@ -1,4 +1,4 @@
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { ChevronRight, Plus, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -11,6 +11,8 @@ import {
   getAudienceBuilderOptions,
   listAudiences,
 } from '@/lib/audiences/queries'
+import { audiencesReachToday } from '@/lib/audiences/reach'
+import type { AudienceReach } from '@/lib/audiences/reach-filters'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
 import {
   RoleRequiredError,
@@ -48,6 +50,8 @@ export default async function AudiencesPage({
     getAudienceBuilderOptions(access.tenant.id),
   ])
   const summaries = buildSummaries(audiences, options)
+  // El número de hoy: el guardado es de cuando se armó la lista y no se recalcula solo.
+  const live = await audiencesReachToday(access.tenant.id, audiences)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -98,19 +102,19 @@ export default async function AudiencesPage({
               </div>
               <p className="flex items-baseline gap-1.5">
                 <span className="font-display text-3xl font-semibold leading-none tabular-nums">
-                  {a.customer_count_cached.toLocaleString('es-AR')}
+                  {(live.get(a.id)?.total ?? a.customer_count_cached).toLocaleString('es-AR')}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {a.customer_count_cached === 1 ? 'cliente' : 'clientes'}
+                  {(live.get(a.id)?.total ?? a.customer_count_cached) === 1
+                    ? 'cliente'
+                    : 'clientes'}
                 </span>
               </p>
               <p className="line-clamp-2 min-h-10 text-xs leading-relaxed text-muted-foreground">
                 {summaries.get(a.id) ?? 'Grupo de clientes.'}
               </p>
               <p className="mt-auto text-[11px] text-muted-foreground/70">
-                {a.last_calculated_at
-                  ? `Calculado el ${format(new Date(a.last_calculated_at), 'dd/MM/yyyy HH:mm')}`
-                  : 'Todavía no se calculó'}
+                {reachLine(live.get(a.id), a.last_calculated_at)}
               </p>
             </Link>
           ))}
@@ -118,6 +122,18 @@ export default async function AudiencesPage({
       )}
     </div>
   )
+}
+
+/** Lo que dice abajo de cada lista: a cuántos les llega hoy, o de cuándo es el número si no se pudo contar. */
+function reachLine(today: AudienceReach | undefined, lastCalculatedAt: string | null): string {
+  if (today) {
+    return today.reach === 1
+      ? 'Hoy le llega a 1: acepta promos.'
+      : `Hoy le llega a ${today.reach.toLocaleString('es-AR')}: los que aceptan promos.`
+  }
+  return lastCalculatedAt
+    ? `Último conteo: ${formatInTimeZone(new Date(lastCalculatedAt), 'America/Argentina/Cordoba', 'dd/MM/yyyy HH:mm')}`
+    : 'Todavía no se contó'
 }
 
 function buildSummaries(

@@ -55,7 +55,12 @@ type Template = {
   /** `{"1":"first_name"}` — lo que se eligió al escribir la plantilla. */
   variable_hints?: unknown
 }
-type Audience = { id: string; name: string; customer_count_cached: number }
+/** `total`: los de la lista hoy. `reach`: a cuántos les llega (aceptan promos, no están en «No contactar»); `null` si no se pudo contar. */
+type Audience = { id: string; name: string; total: number; reach: number | null }
+
+function peopleCount(n: number): string {
+  return `${n.toLocaleString('es-AR')} ${n === 1 ? 'cliente' : 'clientes'}`
+}
 type EventOption = { id: string; name: string; date: string; time: string }
 
 function eventShortDate(ymd: string): string {
@@ -401,7 +406,7 @@ export function BroadcastForm({
                           <span className="flex items-center gap-2">
                             {a.name}
                             <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] tabular-nums">
-                              {a.customer_count_cached.toLocaleString('es-AR')}
+                              {(a.reach ?? a.total).toLocaleString('es-AR')}
                             </span>
                           </span>
                         </SelectItem>
@@ -410,12 +415,21 @@ export function BroadcastForm({
                   </Select>
                   {audience ? (
                     <p className="text-xs text-muted-foreground">
-                      Hoy son{' '}
-                      <strong className="text-foreground">
-                        {audience.customer_count_cached.toLocaleString('es-AR')}{' '}
-                        {audience.customer_count_cached === 1 ? 'cliente' : 'clientes'}
-                      </strong>
-                      . Los que no aceptaron recibir promos quedan afuera solos.
+                      {audience.reach === null ? (
+                        <>
+                          En el último conteo eran{' '}
+                          <strong className="text-foreground">{peopleCount(audience.total)}</strong>
+                          . Los que no aceptaron recibir promos quedan afuera solos.
+                        </>
+                      ) : (
+                        <>
+                          Hoy son{' '}
+                          <strong className="text-foreground">{peopleCount(audience.total)}</strong>{' '}
+                          y le llega a{' '}
+                          <strong className="text-foreground">{peopleCount(audience.reach)}</strong>
+                          : los que aceptaron recibir promos y no pidieron que no les escriban.
+                        </>
+                      )}
                     </p>
                   ) : null}
                 </>
@@ -508,11 +522,7 @@ export function BroadcastForm({
                 <p>
                   Se lo vas a mandar a{' '}
                   <strong>
-                    {audience
-                      ? `${audience.customer_count_cached.toLocaleString('es-AR')} ${
-                          audience.customer_count_cached === 1 ? 'cliente' : 'clientes'
-                        }`
-                      : 'los clientes'}
+                    {audience ? peopleCount(audience.reach ?? audience.total) : 'los clientes'}
                   </strong>{' '}
                   de la lista “{audience?.name ?? '—'}”,{' '}
                   {scheduledAt
@@ -542,7 +552,7 @@ export function BroadcastForm({
                   label="Destinatarios"
                   value={
                     audience
-                      ? `${audience.name} · ${audience.customer_count_cached.toLocaleString('es-AR')} clientes`
+                      ? `${audience.name} · ${peopleCount(audience.reach ?? audience.total)}`
                       : '—'
                   }
                 />

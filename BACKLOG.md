@@ -1572,17 +1572,6 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 
 ## Tex en Mensajería y Marketing: lo que se vio de paso (05/11/2026)
 
-- **Una automatización de tiempo le manda el mensaje una y otra vez a la misma persona.** `customers_for_inactive_flow` y
-  `customers_for_birthday_flow` solo dejan afuera a quien tiene una ejecución `running`, y `evaluate_time_triggers` corre cada
-  15 minutos: quien termina y sigue cumpliendo vuelve a entrar. Con un flow de un solo mensaje, un cumpleañero lo recibiría
-  cada 15 minutos todo el día, y un inactivo, sin fin. `event_starting` igual, dentro de su hora. Se leyó en el código y en
-  las funciones de producción; hoy no pega porque el único flow está apagado y nunca corrió. Arreglo: no volver a enrolar a
-  quien ya terminó en el período. **Hay que arreglarlo antes de prender una.** Tex no las prende (`flowRepeatsProblem`); la pantalla
-  no avisa nada.
-- **El conteo de una audiencia no se recalcula solo y Nueva difusión lo muestra como si fuera de hoy.** `customer_count_cached`
-  solo cambia al guardar la audiencia (`recalcAudience` y `refreshAudienceCount` no los llama nadie), no descuenta a los que no
-  aceptan promos y el formulario dice «Hoy son N» y «Se lo vas a mandar a N». En producción las dos audiencias dicen 5 y hoy le
-  llegarían a 159. Tex cuenta en vivo y lo avisa.
 - **Difusiones › Resultados:** cada destinatario está en un solo casillero, así que «Enviados» baja cuando el mensaje se
   entrega o se lee: los casilleros no son un embudo. Tex da los acumulados y dice por qué no coinciden con la pantalla.
 - **`sendTextMessage` no mira la ventana de 24 horas ni «No contactar»:** los mira solo la pantalla (`composer.tsx`). Tex los

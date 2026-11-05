@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { getAudience, getAudienceBuilderOptions } from '@/lib/audiences/queries'
+import { audiencesReachToday } from '@/lib/audiences/reach'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
 import {
   RoleRequiredError,
@@ -36,6 +37,8 @@ export default async function EditAudiencePage({
     getAudienceBuilderOptions(access.tenant.id),
   ])
   if (!audience) notFound()
+  const today = (await audiencesReachToday(access.tenant.id, [audience])).get(audience.id)
+  const count = today?.total ?? audience.customer_count_cached
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -49,9 +52,9 @@ export default async function EditAudiencePage({
       <PageHeader
         eyebrow="Mensajería"
         title="Editar audiencia"
-        description={`${audience.customer_count_cached.toLocaleString('es-AR')} ${
-          audience.customer_count_cached === 1 ? 'cliente' : 'clientes'
-        } en el último conteo. Si cambiás las condiciones, el número se actualiza solo.`}
+        description={`${count.toLocaleString('es-AR')} ${count === 1 ? 'cliente' : 'clientes'} ${
+          today ? `hoy, y le llega a ${today.reach.toLocaleString('es-AR')}` : 'en el último conteo'
+        }. Si cambiás las condiciones, el número se actualiza solo.`}
       />
       <AudienceForm
         tenantSlug={tenantSlug}

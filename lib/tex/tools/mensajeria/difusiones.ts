@@ -34,7 +34,6 @@ import {
   parseWhen,
   type RecipientLike,
   reachChanged,
-  staleCountWarnings,
 } from './_broadcast-values'
 import {
   countText,
@@ -382,7 +381,6 @@ export const difusionesTools = [
             name,
             audienceName: audience.name,
             reach: reach.value,
-            savedCount: audience.customer_count_cached,
             template,
             mapping: mapping.mapping,
             assumedName: mapping.assumedName,
@@ -516,7 +514,6 @@ export const difusionesTools = [
                 title: 'Cuando sale no se puede deshacer: le llega a toda esa gente.',
                 body: null,
               },
-              ...staleCountWarnings(counted.saved, counted.reach),
             ],
             confirmLabel: broadcastConfirmLabel('now', counted.reach.reach),
           },

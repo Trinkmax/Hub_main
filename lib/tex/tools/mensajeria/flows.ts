@@ -21,7 +21,6 @@ import {
   flowData,
   flowNumbersOf,
   flowPauseTicket,
-  flowRepeatsProblem,
   flowRow,
   flowSteps,
   flowStepTexts,
@@ -144,7 +143,7 @@ async function activationProblem(
       channelProblem(await channelOf(ctx, template.channel_id), 'whatsapp')
     if (problem) return `«${flow.name}»: ${problem}`
   }
-  return flowRepeatsProblem(flow.name, flow.trigger_type)
+  return null
 }
 
 /**

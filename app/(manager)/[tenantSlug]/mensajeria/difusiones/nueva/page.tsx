@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { audiencesReachToday } from '@/lib/audiences/reach'
 import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { listScheduledEventsForDateRange } from '@/lib/salon/queries'
 import { createClient } from '@/lib/supabase/server'
@@ -65,11 +66,24 @@ export default async function NuevaDifusionPage({
       .order('name'),
     supabase
       .from('audiences')
-      .select('id, name, customer_count_cached')
+      .select('id, name, customer_count_cached, filters')
       .eq('tenant_id', access.tenant.id)
       .order('updated_at', { ascending: false }),
     listScheduledEventsForDateRange({ tenantId: access.tenant.id, from: fromYmd, to: toYmd }),
   ])
+
+  // Cuántos son hoy y a cuántos les llega: el conteo guardado puede ser de hace meses.
+  const audienceRows = audiencesRes.data ?? []
+  const live = await audiencesReachToday(access.tenant.id, audienceRows)
+  const audiences = audienceRows.map((a) => {
+    const today = live.get(a.id)
+    return {
+      id: a.id,
+      name: a.name,
+      total: today?.total ?? a.customer_count_cached,
+      reach: today?.reach ?? null,
+    }
+  })
 
   // Próximos eventos del calendario para el dropdown "anunciar un evento".
   const events = scheduled.map((e) => ({
@@ -97,7 +111,7 @@ export default async function NuevaDifusionPage({
         tenantSlug={tenantSlug}
         channels={channelsRes.data ?? []}
         templates={visibleTemplates(templatesRes.data ?? [])}
-        audiences={audiencesRes.data ?? []}
+        audiences={audiences}
         events={events}
         initialName={prefillName}
       />

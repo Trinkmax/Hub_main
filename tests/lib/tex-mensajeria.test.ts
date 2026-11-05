@@ -184,7 +184,6 @@ import {
 } from '@/lib/tex/tools/mensajeria/_common'
 import {
   flowNumbersOf,
-  flowRepeatsProblem,
   flowStructureProblem,
   reachableSteps,
   triggerWarnings,
@@ -1635,15 +1634,20 @@ describe('qué se puede prender', () => {
   })
 
   it.each([
-    ['customer_inactive', { type: 'customer_inactive', days: 30 }],
-    ['birthday', { type: 'birthday', offset_days: 0 }],
-    ['event_starting', { type: 'event_starting', hours_before: 2 }],
-  ] as const)('%s avisa que quien termina vuelve a entrar', (type, config) => {
+    [
+      'customer_inactive',
+      { type: 'customer_inactive', days: 30 },
+      /una vez cada vez que deja de venir/,
+    ],
+    ['birthday', { type: 'birthday', offset_days: 0 }, /una vez por cumpleaños/],
+    ['event_starting', { type: 'event_starting', hours_before: 2 }, /una vez por evento/],
+  ] as const)('%s dice cada cuánto le llega a cada uno', (type, config, once) => {
     const text = triggerWarnings(type, config)
       .map((warning) => warning.title)
       .join(' ')
-    expect(text).toMatch(/vuelve|volver/)
-    expect(text).toContain('15 minutos')
+    // Desde `20261105140000_flows_una_vez_por_ocasion`, una vez por ocasión: ya no «una y otra vez».
+    expect(text).toMatch(once)
+    expect(text).not.toContain('una y otra vez')
   })
 
   it('los números salen de los registros', () => {
@@ -2342,15 +2346,13 @@ describe('preparar_difusion', () => {
     expect(prepared.ticket.warnings.map((warning) => warning.key)).toContain('can_cancel')
   })
 
-  it('si la pantalla dice otro número, el tique avisa que ese conteo está viejo', async () => {
+  it('el tique cuenta los de hoy, aunque el conteo guardado sea viejo', async () => {
     vi.mocked(listAudiences).mockResolvedValue([
       { ...(AUDIENCES[0] as AudienceListRow), customer_count_cached: 500 },
     ])
     const { ticket } = asPrepared(await prepare())
-    const warning = ticket.warnings.find((candidate) => candidate.key === 'stale_count')
-    expect(warning?.title).toContain('500')
-    expect(warning?.title).toContain('Hoy tiene 5')
-    // Lo que manda es lo de hoy.
+    // La pantalla ya muestra el número de hoy: no hay un «conteo viejo» que avisar.
+    expect(ticket.warnings.map((warning) => warning.key)).not.toContain('stale_count')
     expect(ticket.confirmLabel).toBe('Mandar a 2 personas')
   })
 
@@ -3333,24 +3335,19 @@ describe('preparar_prender_o_apagar_flow', () => {
     expectNothingWritten()
   })
 
-  it.each([
-    'cumple',
-    'vieja',
-  ])('las de tiempo no las prende: «%s» le repetiría el mensaje a la misma persona', async (flow) => {
-    expect(asError(await prepare(flow, 'prender'))).toContain('cada 15 minutos')
+  it('una de cumpleaños dice que le llega una vez por cumpleaños', async () => {
+    const prepared = asPrepared(await prepare('cumple', 'prender'))
+    expect(rowValue(prepared.ticket, 'Se activa')).toBe('El día del cumpleaños')
+    const keys = prepared.ticket.warnings.map((warning) => warning.key)
+    expect(keys).toEqual(expect.arrayContaining(['sends_alone', 'enrols_now', 'enrols_once']))
+    expect(JSON.stringify(prepared.ticket)).not.toContain('una y otra vez')
     expectNothingWritten()
   })
 
-  it('la misma traba corre al confirmar, por si la cambiaron mientras el tique esperaba', async () => {
-    const payload = { id: FLOW_CUMPLE, name: 'Cumpleaños', active: true }
-    const execution = await executor('mensajeria.flow').run(payload, CTX)
-    expect(execution).toMatchObject({ ok: false, kind: 'failed' })
-    expect(toggleFlowActive).not.toHaveBeenCalled()
-  })
-
-  it('apagar una de tiempo se puede', () => {
-    expect(flowRepeatsProblem('Cumpleaños', 'birthday')).toContain('cada 15 minutos')
-    expect(flowRepeatsProblem('Gracias', 'after_visit')).toBeNull()
+  it('una de «hace tiempo que no viene» dice cuántos entrarían', async () => {
+    const prepared = asPrepared(await prepare('vieja', 'prender'))
+    expect(rowValue(prepared.ticket, 'Entrarían ahora')).toMatch(/^Cerca de \d+ personas?$/)
+    expect(rowValue(prepared.ticket, 'Qué hace')).toBe('Manda la plantilla Promo finde')
   })
 
   it('sin pasos no se prende', async () => {
