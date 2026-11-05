@@ -197,7 +197,7 @@ export function TagsManager({
         )}
       </div>
 
-      <Badge variant="outline">
+      <Badge variant="outline" className="whitespace-normal">
         Tip: estos tags se usan al crear punch cards con trigger_type="tag".
       </Badge>
     </div>

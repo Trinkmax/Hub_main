@@ -217,6 +217,8 @@ export function CategoryRow({
         price_cents: item.price_cents,
         points_override: item.points_override,
         image_url: item.image_url,
+        // El esquema rechaza la clave ausente: sin esto, «Pausar» daba «Datos inválidos».
+        video_url: item.video_url,
         active: next,
       })
       if (r.ok) {
