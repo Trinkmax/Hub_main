@@ -1,3 +1,5 @@
+import { isManualTransfer, MANUAL_TRANSFER } from './transfer'
+
 /**
  * Textos para la persona que compra. Puro y testeable.
  */
@@ -80,9 +82,18 @@ export function paymentTypeLabel(type: string | null | undefined): string {
       return 'Tarjeta prepaga'
     case 'account_money':
       return 'Dinero en cuenta'
+    case MANUAL_TRANSFER:
+      return 'Transferencia'
     default:
       return 'Mercado Pago'
   }
+}
+
+/** El renglón del comprobante que dice cómo se pagó. */
+export function paymentMethodLine(type: string | null | undefined): string {
+  return isManualTransfer(type)
+    ? paymentTypeLabel(type)
+    : `${paymentTypeLabel(type)} · Mercado Pago`
 }
 
 /**

@@ -24,8 +24,10 @@ import {
   transferProofMessage,
 } from '@/lib/ticketing/copy'
 import { buildIcs, formatLongDate } from '@/lib/ticketing/dates'
+import { clearLastOrder } from '@/lib/ticketing/last-order'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { tornClipBottom, tornClipTop, tornProfile } from '@/lib/ticketing/ticket-art'
+import { isManualTransfer } from '@/lib/ticketing/transfer'
 import type { OrderEntry, OrderStatus, PublicOrder, TransferAccount } from '@/lib/ticketing/types'
 import { mapsUrl } from '../../../../_components/chrome'
 import { LightsOff } from './lights-off'
@@ -112,6 +114,7 @@ export function OrderView({
   // Se cortó el talón mientras la persona miraba (dura lo que tarda en caer).
   const [falling, setFalling] = useState(false)
   const [lights, setLights] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
   // Solo se puede armar en el navegador: si se armara en el render, el server y el
   // cliente dibujarían distinto.
   const [whatsappSelf, setWhatsappSelf] = useState<string | null>(null)
@@ -207,6 +210,10 @@ export function OrderView({
   // página a la vista. Después de que entraron todos sigue preguntando un rato, por
   // si quien recibe lo deshace: el QR vuelve solo.
   const allIn = live.entry.inside >= live.entry.total
+  // Ya pagó: la película no tiene que ofrecerle otra forma de pagar esta compra.
+  useEffect(() => {
+    if (live.status === 'approved') clearLastOrder()
+  }, [live.status])
   const isToday = order.date === order.today
   const [doorGrace, setDoorGrace] = useState(false)
   const watchDoor =
@@ -421,6 +428,7 @@ export function OrderView({
               rejected={false}
               expired={expired}
               refunded={refunded}
+              voided={isManualTransfer(order.mpPaymentType)}
               reason=""
               holdUntil={order.holdExpiresAt}
             />
@@ -468,6 +476,24 @@ export function OrderView({
                   >
                     Volver a Mercado Pago
                   </a>
+                ) : null}
+                {transfer && !confirming ? (
+                  showTransfer ? (
+                    <OrderTransferSlip
+                      order={order}
+                      tenantName={tenantName}
+                      transfer={transfer}
+                      whatsapp={whatsapp}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowTransfer(true)}
+                      className="ent-press mx-auto flex min-h-11 items-center text-center text-sm font-semibold text-(--ent-ink) underline underline-offset-4"
+                    >
+                      ¿Mercado Pago no te deja pagar? Ver cómo transferir
+                    </button>
+                  )
                 ) : null}
               </div>
             ) : refunded ? (
@@ -526,6 +552,29 @@ function transferProofUrl(
   )
 }
 
+/** La cuenta para transferir, con el monto y el comprobante de esta compra. */
+function OrderTransferSlip({
+  order,
+  tenantName,
+  transfer,
+  whatsapp,
+}: {
+  order: PublicOrder
+  tenantName: string
+  transfer: TransferAccount
+  whatsapp: string | null
+}) {
+  return (
+    <TransferSlip
+      alias={transfer.alias}
+      holder={transfer.holder}
+      amountCents={order.totalCents}
+      deposit={order.option === 'deposit'}
+      proofUrl={transferProofUrl(order, tenantName, whatsapp, transfer)}
+    />
+  )
+}
+
 /** Fecha, hora, personas y plata: lo mismo en todos los estados del pago. */
 function TicketDetails({ order }: { order: PublicOrder }) {
   return (
@@ -580,12 +629,11 @@ export function RejectedTicket({
         />
         <div className={transfer ? 'mt-5' : 'mt-6'}>
           {transfer ? (
-            <TransferSlip
-              alias={transfer.alias}
-              holder={transfer.holder}
-              amountCents={order.totalCents}
-              deposit={order.option === 'deposit'}
-              proofUrl={transferProofUrl(order, tenantName, whatsapp, transfer)}
+            <OrderTransferSlip
+              order={order}
+              tenantName={tenantName}
+              transfer={transfer}
+              whatsapp={whatsapp}
             />
           ) : (
             <TicketDetails order={order} />
@@ -962,6 +1010,7 @@ export function StatusBlock({
   rejected,
   expired,
   refunded,
+  voided = false,
   reason,
   holdUntil,
 }: {
@@ -969,6 +1018,8 @@ export function StatusBlock({
   rejected: boolean
   expired: boolean
   refunded: boolean
+  /** Se pagó por transferencia: el bar la anuló, Mercado Pago no devolvió nada. */
+  voided?: boolean
   reason: string
   holdUntil: string
 }) {
@@ -999,6 +1050,14 @@ export function StatusBlock({
         <p className="mt-2 text-sm font-semibold text-(--ent-ink)">
           Te guardamos el lugar hasta las {until} hs.
         </p>
+      </div>
+    )
+  }
+  if (refunded && voided) {
+    return (
+      <div aria-live="polite">
+        <h1 className="ent-display text-[2.1rem] leading-[0.95]">Esta entrada se anuló.</h1>
+        <p className="mt-2 text-sm text-(--ent-ink-2)">Si fue un error, escribinos.</p>
       </div>
     )
   }

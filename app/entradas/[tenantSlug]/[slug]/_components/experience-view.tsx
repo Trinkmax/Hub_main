@@ -189,6 +189,7 @@ export function ExperienceView({
                   canSell: venue.canSell,
                   holdMinutes: venue.holdMinutes,
                   whatsapp: venue.whatsapp,
+                  canTransfer: Boolean(venue.transfer),
                 }}
               />
             </aside>

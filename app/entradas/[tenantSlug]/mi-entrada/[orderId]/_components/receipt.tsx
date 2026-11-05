@@ -1,4 +1,4 @@
-import { paymentTypeLabel } from '@/lib/ticketing/copy'
+import { paymentMethodLine } from '@/lib/ticketing/copy'
 import { formatShortCode } from '@/lib/ticketing/door'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicOrder } from '@/lib/ticketing/types'
@@ -63,7 +63,7 @@ export function Receipt({
         )}
 
         <hr className="ent-receipt-rule" />
-        <p>{paymentTypeLabel(order.mpPaymentType)} · Mercado Pago</p>
+        <p>{paymentMethodLine(order.mpPaymentType)}</p>
         {order.mpPaymentId ? <p>Operación {order.mpPaymentId}</p> : null}
         {order.paidAtLabel ? <p>{order.paidAtLabel} hs</p> : null}
 

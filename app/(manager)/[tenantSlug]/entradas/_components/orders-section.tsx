@@ -12,11 +12,13 @@ import {
 import { buildWaMeUrl, formatPhoneForDisplay } from '@/lib/phone'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { AdminOrder } from '@/lib/ticketing/queries'
+import { canConfirmTransfer, isManualTransfer } from '@/lib/ticketing/transfer'
 import { cn } from '@/lib/utils'
 import {
   attentionView,
   canRefund,
   formatOrderMoment,
+  holdExpired,
   type OrderTone,
   orderAmountCents,
   orderEntryLabel,
@@ -27,6 +29,7 @@ import {
   paymentOptionLabel,
   peopleLabel,
 } from '../_lib/orders'
+import { ConfirmTransferButton } from './confirm-transfer-button'
 import { PanelSection } from './panel-section'
 import { RefundOrderButton } from './refund-order-button'
 import { RetryButton } from './retry-button'
@@ -54,11 +57,14 @@ export function OrdersSection({
   appUrl,
   result,
   now,
+  transferEnabled = false,
 }: {
   tenantSlug: string
   appUrl: string
   result: OrdersResult
   now: Date
+  /** El bar cargó un alias: puede haber transferencias que confirmar. */
+  transferEnabled?: boolean
 }) {
   return (
     <PanelSection
@@ -87,12 +93,24 @@ export function OrdersSection({
           <ul className="grid gap-2.5 md:hidden">
             {result.orders.map((order) => (
               <li key={order.id}>
-                <OrderCard tenantSlug={tenantSlug} appUrl={appUrl} order={order} now={now} />
+                <OrderCard
+                  tenantSlug={tenantSlug}
+                  appUrl={appUrl}
+                  order={order}
+                  now={now}
+                  transferEnabled={transferEnabled}
+                />
               </li>
             ))}
           </ul>
           <div className="hidden md:block">
-            <OrdersTable tenantSlug={tenantSlug} appUrl={appUrl} orders={result.orders} now={now} />
+            <OrdersTable
+              tenantSlug={tenantSlug}
+              appUrl={appUrl}
+              orders={result.orders}
+              now={now}
+              transferEnabled={transferEnabled}
+            />
           </div>
         </>
       )}
@@ -229,6 +247,32 @@ function Refund({ tenantSlug, order }: { tenantSlug: string; order: AdminOrder }
       amountLabel={formatPesos(orderAmountCents(order))}
       functionLabel={`${order.title} · ${orderFunctionLabel(order)}`}
       hasReservation={Boolean(order.reservation_id)}
+      transfer={isManualTransfer(order.mp_payment_type)}
+    />
+  )
+}
+
+function ConfirmTransfer({
+  tenantSlug,
+  order,
+  now,
+  enabled,
+}: {
+  tenantSlug: string
+  order: AdminOrder
+  now: Date
+  enabled: boolean
+}) {
+  if (!enabled || !canConfirmTransfer(order, now)) return null
+  return (
+    <ConfirmTransferButton
+      tenantSlug={tenantSlug}
+      orderId={order.id}
+      guestName={order.guest_name}
+      amountLabel={formatPesos(Number(order.total_cents))}
+      functionLabel={`${order.title} · ${orderFunctionLabel(order)}`}
+      peopleLabel={peopleLabel(order.party_size)}
+      placeReleased={holdExpired(order.hold_expires_at, now)}
     />
   )
 }
@@ -246,11 +290,13 @@ function OrderCard({
   appUrl,
   order,
   now,
+  transferEnabled,
 }: {
   tenantSlug: string
   appUrl: string
   order: AdminOrder
   now: Date
+  transferEnabled: boolean
 }) {
   return (
     <article
@@ -292,6 +338,12 @@ function OrderCard({
           {formatOrderMoment(order.created_at, now)}
         </span>
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          <ConfirmTransfer
+            tenantSlug={tenantSlug}
+            order={order}
+            now={now}
+            enabled={transferEnabled}
+          />
           <Refund tenantSlug={tenantSlug} order={order} />
           <SendTicket tenantSlug={tenantSlug} appUrl={appUrl} order={order} />
           <ReservationLink tenantSlug={tenantSlug} order={order} />
@@ -306,11 +358,13 @@ function OrdersTable({
   appUrl,
   orders,
   now,
+  transferEnabled,
 }: {
   tenantSlug: string
   appUrl: string
   orders: AdminOrder[]
   now: Date
+  transferEnabled: boolean
 }) {
   return (
     <Table>
@@ -360,6 +414,12 @@ function OrdersTable({
             </TableCell>
             <TableCell className="align-top text-right">
               <div className="flex flex-col items-end gap-1">
+                <ConfirmTransfer
+                  tenantSlug={tenantSlug}
+                  order={order}
+                  now={now}
+                  enabled={transferEnabled}
+                />
                 <SendTicket tenantSlug={tenantSlug} appUrl={appUrl} order={order} />
                 <ReservationLink tenantSlug={tenantSlug} order={order} />
                 {/* El botón fantasma tiene relleno: así el texto queda alineado con «Ver reserva». */}

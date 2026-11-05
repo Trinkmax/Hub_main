@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { refundTicketOrder } from '@/lib/ticketing/actions'
+import { refundTicketOrder, voidTicketTransfer } from '@/lib/ticketing/actions'
 
 /**
  * «Devolver» de una venta pagada: devuelve la plata por Mercado Pago y cancela
@@ -28,6 +28,7 @@ export function RefundOrderButton({
   amountLabel,
   functionLabel,
   hasReservation,
+  transfer = false,
 }: {
   tenantSlug: string
   orderId: string
@@ -37,16 +38,19 @@ export function RefundOrderButton({
   /** «Shrek 2 · Jue 30 oct 21:00» */
   functionLabel: string
   hasReservation: boolean
+  /** Se pagó por transferencia: se anula acá y la plata la devuelve el bar desde su cuenta. */
+  transfer?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
   function refund() {
     startTransition(async () => {
-      const result = await refundTicketOrder(tenantSlug, orderId)
+      const action = transfer ? voidTicketTransfer : refundTicketOrder
+      const result = await action(tenantSlug, orderId)
       if (result.ok) {
         setOpen(false)
-        toast.success(result.message ?? 'Compra devuelta.')
+        toast.success(result.message ?? (transfer ? 'Transferencia anulada.' : 'Compra devuelta.'))
       } else {
         toast.error(result.message)
       }
@@ -63,7 +67,7 @@ export function RefundOrderButton({
         onClick={() => setOpen(true)}
       >
         <Undo2 className="size-3.5" aria-hidden />
-        Devolver
+        {transfer ? 'Anular' : 'Devolver'}
         <span className="sr-only">la compra de {guestName}</span>
       </Button>
 
@@ -71,25 +75,44 @@ export function RefundOrderButton({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              ¿Devolverle {amountLabel} a {guestName}?
+              {transfer
+                ? `¿Anular la transferencia de ${guestName}?`
+                : `¿Devolverle ${amountLabel} a ${guestName}?`}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p>
-                  Mercado Pago le devuelve la plata por el mismo medio con el que pagó
-                  {hasReservation ? (
-                    <>
-                      {' '}
-                      y se cancela su reserva para{' '}
-                      <span className="text-foreground">{functionLabel}</span>
-                    </>
-                  ) : null}
-                  . No se puede deshacer.
-                </p>
-                <p className="text-xs">
-                  Para devolver, la cuenta de Mercado Pago tiene que tener saldo disponible por ese
-                  monto.
-                </p>
+                {transfer ? (
+                  <p>
+                    Su entrada deja de valer
+                    {hasReservation ? (
+                      <>
+                        {' '}
+                        y se cancela su reserva para{' '}
+                        <span className="text-foreground">{functionLabel}</span>
+                      </>
+                    ) : null}
+                    . Si los {amountLabel} ya están en la cuenta, devolvéselos vos: el sistema no
+                    mueve esa plata. No se puede deshacer.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      Mercado Pago le devuelve la plata por el mismo medio con el que pagó
+                      {hasReservation ? (
+                        <>
+                          {' '}
+                          y se cancela su reserva para{' '}
+                          <span className="text-foreground">{functionLabel}</span>
+                        </>
+                      ) : null}
+                      . No se puede deshacer.
+                    </p>
+                    <p className="text-xs">
+                      Para devolver, la cuenta de Mercado Pago tiene que tener saldo disponible por
+                      ese monto.
+                    </p>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -104,7 +127,13 @@ export function RefundOrderButton({
               }}
             >
               {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {pending ? 'Devolviendo…' : `Sí, devolver ${amountLabel}`}
+              {transfer
+                ? pending
+                  ? 'Anulando…'
+                  : 'Sí, anular'
+                : pending
+                  ? 'Devolviendo…'
+                  : `Sí, devolver ${amountLabel}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

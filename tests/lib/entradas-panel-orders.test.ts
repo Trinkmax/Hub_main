@@ -21,6 +21,17 @@ const LATER = '2026-10-26T21:10:00.000Z'
 const EARLIER = '2026-10-26T20:50:00.000Z'
 
 describe('orderStatusView', () => {
+  it('una transferencia confirmada o anulada lo dice', () => {
+    const base = { hold_expires_at: EARLIER, mp_payment_type: 'manual_transfer' }
+    expect(orderStatusView({ ...base, status: 'approved' }, NOW)).toMatchObject({
+      label: 'Pagado por transferencia',
+      tone: 'paid',
+    })
+    expect(orderStatusView({ ...base, status: 'refunded' }, NOW)).toMatchObject({
+      label: 'Transferencia anulada',
+    })
+  })
+
   it('pagado y devuelto no dependen del lugar guardado', () => {
     expect(orderStatusView({ status: 'approved', hold_expires_at: EARLIER }, NOW)).toMatchObject({
       label: 'Pagado',
