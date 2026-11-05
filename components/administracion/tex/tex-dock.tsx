@@ -157,7 +157,7 @@ export function TexDock({ roomOnPhone }: { roomOnPhone: boolean }) {
             initial={{ opacity: 0, y: 6, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.92 }}
-            className="tex-bubble-note absolute right-2 bottom-full mb-2 w-max max-w-56 px-3 py-2 text-[13px] leading-snug text-pretty"
+            className="tex-bubble-note absolute bottom-full left-1 mb-2 w-max max-w-56 px-3 py-2 text-[13px] leading-snug text-pretty lg:right-2 lg:left-auto"
           >
             {say}
           </motion.p>

@@ -86,11 +86,16 @@ export function TexGuide() {
         setTarget(found)
         return
       }
-      if (Date.now() - started < FIND_TIMEOUT_MS) timer = setTimeout(look, 200)
+      if (Date.now() - started < FIND_TIMEOUT_MS) {
+        timer = setTimeout(look, 200)
+        return
+      }
+      // No está en esta pantalla: Tex vuelve a su esquina. Lo que quería decir ya lo dijo en la charla.
+      if (!guide) clearPoint()
     }
     timer = setTimeout(look, 120)
     return () => clearTimeout(timer)
-  }, [wanted, pointing?.id, pathname, reduced])
+  }, [wanted, pointing?.id, pathname, reduced, guide, clearPoint])
 
   // Lo sigue mientras la página se mueve.
   useLayoutEffect(() => {

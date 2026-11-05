@@ -10,13 +10,18 @@ import { TexPanel } from './tex-panel'
 import { TexProvider, useTex } from './tex-provider'
 
 function TexStage() {
-  const { open, slug, pathname } = useTex()
+  const { open, slug, pathname, pointing, guide } = useTex()
   // En el celular, las pantallas de tarea tienen su pie fijo: Tex no se le para encima.
   const roomOnPhone = admFabFromFrame(`/${slug}/administracion`, pathname)
   return (
     <>
       <AnimatePresence>
-        {open ? <TexPanel key="panel" /> : <TexDock key="dock" roomOnPhone={roomOnPhone} />}
+        {open ? (
+          <TexPanel key="panel" />
+        ) : pointing || guide ? null : (
+          // Mientras señala, Tex está parado al lado de lo que muestra: no hay dos.
+          <TexDock key="dock" roomOnPhone={roomOnPhone} />
+        )}
       </AnimatePresence>
       <TexGuide />
     </>
