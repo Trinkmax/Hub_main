@@ -385,6 +385,9 @@ META_GRAPH_VERSION=                # consultar Context7 al configurar — la ver
 
 # Vercel Cron
 CRON_SECRET=                       # validar header en /api/cron/*
+
+# Tex, el asistente de Administración (docs/features/tex.md). Sin esta clave, Tex no aparece.
+ANTHROPIC_API_KEY=
 ```
 
 ---
