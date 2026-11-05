@@ -16,7 +16,6 @@ import {
   ONBOARDING_ITEM_IDS,
   ONBOARDING_ITEMS,
   ONBOARDING_MANUAL_STEPS,
-  ONBOARDING_SECTION_HINT,
   ONBOARDING_SECTION_LABEL,
   ONBOARDING_SECTIONS,
   ONBOARDING_STAYS_MANUAL,
@@ -48,24 +47,23 @@ function allCopy(): string[] {
   for (const task of ONBOARDING_STAYS_MANUAL) out.push(task.title, task.where.label, task.why)
   for (const entry of ONBOARDING_GLOSSARY) out.push(entry.term, entry.meaning)
   out.push(...ONBOARDING_HAVE_AT_HAND, ...PLATFORM_DOES)
-  out.push(...Object.values(ONBOARDING_SECTION_LABEL), ...Object.values(ONBOARDING_SECTION_HINT))
+  out.push(...Object.values(ONBOARDING_SECTION_LABEL))
   return out
 }
 
 /** Las pantallas que existen (o que llegan con esta fase) bajo `/<bar>/administracion`. */
 const KNOWN_ROUTES = [
-  /^\/ajustes\?tab=(sas|cajas|medios|participes|puntos-de-venta|accesos)$/,
+  /^\/ajustes\?tab=(sas|cajas|medios|participes|impuestos|accesos)$/,
   /^\/ajustes\/arca$/,
   /^\/configurar$/,
   /^\/plan-de-cuentas$/,
   /^\/importar\/(arca|mercado-pago|banco)$/,
-  /^\/compras(\/nueva)?$/,
+  /^\/compras\/nueva(\?modo=pago)?$/,
   /^\/gastos-fijos$/,
+  /^\/sueldos$/,
   /^\/ventas\/cierre$/,
   /^\/cajas$/,
   /^\/libros\/cierres$/,
-  // Los sueldos se cargan en «Sueldos del mes», que es el asiento manual con su tipo puesto.
-  /^\/libros\/asiento-manual\?tipo=sueldos$/,
 ]
 
 describe('los ítems de la guía', () => {
@@ -139,9 +137,11 @@ describe('los ítems de la guía', () => {
       [
         'access',
         'chart_review',
+        'payroll',
         'platforms',
         'recurring',
         'suppliers_message',
+        'taxes',
         'treasuries',
       ].sort(),
     )
@@ -159,12 +159,50 @@ describe('con los nombres de las pantallas de hoy', () => {
     return found
   }
 
-  it('el fin de mes, los medios de cobro y los sueldos se llaman como en su pantalla', () => {
+  it('la Puesta en marcha: sin puntos de venta, con impuestos y sueldos, en el orden aprobado', () => {
+    expect((ONBOARDING_ITEM_IDS as readonly string[]).includes('sales_points')).toBe(false)
+    const day1 = ONBOARDING_ITEMS.filter((i) => i.section === 'day1').map((i) => i.id)
+    expect(day1).toEqual([
+      'sas_data',
+      'treasuries',
+      'sales_methods',
+      'platforms',
+      'taxes',
+      'opening',
+      'access',
+      'chart_review',
+      'arca',
+      'arca_first_import',
+      'recurring',
+      'payroll',
+      'mp_connect',
+      'suppliers_message',
+    ])
+    expect(item('taxes').where).toEqual({
+      label: 'Ajustes › Impuestos',
+      path: '/ajustes?tab=impuestos',
+    })
+    expect(item('taxes').manualLabel).toBe('Ya los revisé')
+    expect(item('taxes').kind).toBe('manual')
+    expect(item('payroll').where).toEqual({
+      label: 'Gastos y sueldos › Sueldos',
+      path: '/sueldos',
+    })
+    expect(item('payroll').kind).toBe('manual')
+    expect(item('chart_review').kind).toBe('manual')
+  })
+
+  it('el cierre de mes, la caja, los medios de cobro y los sueldos se llaman como en su pantalla', () => {
     expect(item('month_close').where).toEqual({
-      label: 'Libros › Fin de mes',
+      label: 'Contabilidad › Cierre de mes',
       path: '/libros/cierres',
     })
-    expect(item('month_close').actionLabel).toBe('Ir a Fin de mes')
+    expect(item('month_close').actionLabel).toBe('Ir a Cierre de mes')
+    expect(item('treasury_check').where).toEqual({ label: 'Caja', path: '/cajas' })
+    expect(item('small_expenses').where).toEqual({
+      label: '+ Cargar › Compra y pago',
+      path: '/compras/nueva?modo=pago',
+    })
     // Las apps y las tarjetas viven en «Medios de cobro» (el link viejo sigue abriendo ahí).
     expect(item('platforms').where).toEqual({
       label: 'Ajustes › Medios de cobro',
@@ -172,31 +210,29 @@ describe('con los nombres de las pantallas de hoy', () => {
     })
     expect(item('platforms').actionLabel).toBe('Revisar las comisiones')
     const payroll = ONBOARDING_STAYS_MANUAL.find((task) => task.title.startsWith('Sueldos'))
-    expect(payroll?.where).toEqual({
-      label: 'Libros › Sueldos del mes',
-      path: '/libros/asiento-manual?tipo=sueldos',
-    })
+    expect(payroll?.where).toEqual({ label: 'Gastos y sueldos › Sueldos', path: '/sueldos' })
     const purchase = ONBOARDING_STAYS_MANUAL.find((task) => task.where.path === '/compras/nueva')
-    expect(purchase?.where.label).toBe('Compras y pagos › Cargar una compra que debo')
+    expect(purchase?.where.label).toBe('+ Cargar › Compra')
   })
 
-  it('la puesta en marcha se llama igual que la franja del Resumen, y la rutina diaria dura lo mismo', () => {
+  it('la puesta en marcha se llama igual que la franja del Resumen', () => {
     expect(ONBOARDING_SECTION_LABEL.day1.startsWith('Puesta en marcha')).toBe(true)
-    const daily = guideRoutine(null).find((group) => group.frequency === 'daily')
-    // «A la mañana siguiente, unos 10 minutos.»: el mismo número en la portada y acá.
-    expect(daily?.hint).toBeTruthy()
-    expect(ONBOARDING_SECTION_HINT.daily.startsWith(daily?.hint ?? '-')).toBe(true)
     expect(Object.values(ONBOARDING_SECTION_LABEL).join(' ')).not.toMatch(/minutos/)
+    expect(guideRoutine(null).map((group) => group.frequency)).toEqual([
+      'daily',
+      'weekly',
+      'monthly',
+    ])
   })
 
   it('lo que se carga con una hoja dice por dónde se entra y su botón es el de la receta', () => {
     const launcher = LAUNCHER_ITEMS.map((item) => item.title)
     const recipeButtons = new Set(GUIDE_RECIPES.map((r) => r.action.label))
     for (const task of ONBOARDING_STAYS_MANUAL.filter((t) => t.sheet)) {
-      // «+ Cargar» › y la tarjeta del lanzador, no el título de la hoja.
-      const quoted = /^«\+ Cargar» › «(.+)»$/.exec(task.where.label)?.[1]
-      expect(quoted, task.title).toBeDefined()
-      expect(launcher, task.title).toContain(quoted)
+      // «+ Cargar» › y la opción del menú, no el título de la hoja.
+      const option = /^\+ Cargar › (.+)$/.exec(task.where.label)?.[1]
+      expect(option, task.title).toBeDefined()
+      expect(launcher, task.title).toContain(option)
       expect(recipeButtons, task.title).toContain(task.sheetLabel)
     }
     const small = ONBOARDING_ITEMS.find((i) => i.id === 'small_expenses')
@@ -226,6 +262,15 @@ describe('con los nombres de las pantallas de hoy', () => {
       /Libros › Asiento manual/,
       /gastos? bancarios?/i,
       /Importar (de ARCA|Mercado Pago|del banco)/,
+      /Pagué algo/,
+      /Nuevo gasto/,
+      /Me entró plata/,
+      /Mover plata/,
+      /\bContadora\b/,
+      /Libros › /,
+      /Fin de mes/,
+      /en camino/i,
+      /Ajustes › Puntos de venta/,
     ]
     for (const text of allCopy()) {
       for (const re of stale) expect(re.test(text), `${re}: ${text}`).toBe(false)

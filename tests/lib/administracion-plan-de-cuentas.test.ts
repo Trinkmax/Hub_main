@@ -33,6 +33,7 @@ import {
   moveTargets,
   proposeChildCode,
   proposeRootCode,
+  simplePlanIds,
 } from '@/app/(manager)/[tenantSlug]/administracion/plan-de-cuentas/_lib/tree'
 import {
   accountPaths,
@@ -322,6 +323,110 @@ describe('lo que se ve del árbol (chartView)', () => {
       '4.2.01.03.000',
       '4.2.01.03.016',
     ])
+  })
+})
+
+describe('Plan simple: lo que este bar usa (simplePlanIds)', () => {
+  const plan = standardPlan()
+  const index = indexChart(plan)
+  /** Una cuenta imputable que no es una caja: no entra por sí sola. */
+  const unused = plan.find((a) => a.postable && !a.isTreasury)
+  if (!unused) throw new Error('el plan estándar tiene cuentas que no son de caja')
+
+  /** El plan con una cuenta cambiada, para probar saldo y desactivadas. */
+  function withChange(id: string, change: Partial<ChartAccount>) {
+    return indexChart(plan.map((a) => (a.id === id ? { ...a, ...change } : a)))
+  }
+
+  it('sin movimientos: solo las cajas; crece a medida que se usa', () => {
+    const ids = simplePlanIds(index, new Set())
+    for (const account of plan) {
+      if (!account.postable) continue
+      expect(ids.has(account.id), account.code).toBe(account.isTreasury)
+    }
+    expect(ids.size).toBeLessThan(plan.length / 4)
+  })
+
+  it('cada cuenta lleva sus grupos, hasta la principal', () => {
+    const ids = simplePlanIds(index, new Set())
+    for (const code of ['1.1.01.01.001', '1.1.01.01.000', '1.1.01.00.000', '1.0.00.00.000']) {
+      expect(ids.has(find(plan, code).id), code).toBe(true)
+    }
+  })
+
+  it('un grupo sin nada adentro no entra', () => {
+    const ids = simplePlanIds(indexChart(plan.filter((a) => a.postable === false)), new Set())
+    expect(ids.size).toBe(0)
+  })
+
+  it('una cuenta con movimiento entra', () => {
+    expect(simplePlanIds(index, new Set()).has(unused.id)).toBe(false)
+    const ids = simplePlanIds(index, new Set([unused.id]))
+    expect(ids.has(unused.id)).toBe(true)
+    for (const ancestor of index.ancestors.get(unused.id) ?? []) {
+      expect(ids.has(ancestor)).toBe(true)
+    }
+  })
+
+  it('una cuenta con saldo entra; sin saber el saldo o en cero, no', () => {
+    expect(
+      simplePlanIds(withChange(unused.id, { balanceCents: -100 }), new Set()).has(unused.id),
+    ).toBe(true)
+    expect(
+      simplePlanIds(withChange(unused.id, { balanceCents: 0 }), new Set()).has(unused.id),
+    ).toBe(false)
+    expect(
+      simplePlanIds(withChange(unused.id, { balanceCents: null }), new Set()).has(unused.id),
+    ).toBe(false)
+  })
+
+  it('una caja desactivada no entra, pero con saldo no se esconde', () => {
+    const box = plan.find((a) => a.postable && a.isTreasury)
+    if (!box) throw new Error('el plan estándar tiene cuentas de caja')
+    expect(simplePlanIds(withChange(box.id, { active: false }), new Set()).has(box.id)).toBe(false)
+    expect(
+      simplePlanIds(withChange(box.id, { active: false, balanceCents: 500 }), new Set()).has(
+        box.id,
+      ),
+    ).toBe(true)
+  })
+
+  it('es una forma de mirar: no toca ningún dato', () => {
+    const before = JSON.stringify(plan)
+    simplePlanIds(index, new Set([unused.id]))
+    expect(JSON.stringify(plan)).toBe(before)
+  })
+
+  it('la tabla muestra esas filas y nada más, con los grupos abiertos', () => {
+    const only = simplePlanIds(index, new Set())
+    const view = chartView(index, {
+      query: '',
+      status: 'active',
+      type: 'all',
+      expanded: new Set(),
+      only,
+    })
+    expect(view.autoOpen).toBe(true)
+    expect(new Set(view.rows.map((r) => r.id))).toEqual(only)
+    expect(view.rows.filter((r) => r.expandable).every((r) => r.open)).toBe(true)
+  })
+
+  it('«Todas» sigue mostrando el plan entero', () => {
+    const expanded = groupsWithChildren(index)
+    const view = chartView(index, { query: '', status: 'all', type: 'all', expanded })
+    expect(view.rows).toHaveLength(plan.length)
+  })
+
+  it('buscar adentro del Plan simple busca solo en él', () => {
+    const only = simplePlanIds(index, new Set())
+    const view = chartView(index, {
+      query: unused.name,
+      status: 'active',
+      type: 'all',
+      expanded: new Set(),
+      only,
+    })
+    expect(view.rows.some((r) => r.id === unused.id)).toBe(false)
   })
 })
 

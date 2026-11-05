@@ -4,6 +4,7 @@ import {
   detectSource,
   detectTableSource,
   IMPORT_MAX_FILE_BYTES,
+  isMpCollectionFileName,
   openTable,
 } from '@/lib/imports/detect'
 import { inflateRawSync } from '@/lib/imports/zip'
@@ -169,6 +170,46 @@ describe('detectTableSource', () => {
         ['a', 'b'],
       ]),
     ).toBe('unknown')
+  })
+
+  it('el reporte de Cobros de Mercado Pago, por sus títulos', () => {
+    // Las columnas de `mercadopago.md` §1.4, con el nombre técnico solo o entre paréntesis.
+    expect(
+      detectTableSource([
+        ['date_created', 'operation_id', 'status', 'transaction_amount', 'net_received_amount'],
+      ]),
+    ).toBe('mp_collection')
+    expect(
+      detectTableSource([
+        ['Número de operación (operation_id)', 'Monto recibido (net_received_amount)'],
+      ]),
+    ).toBe('mp_collection')
+    // Una sola de las dos no alcanza para decirlo.
+    expect(detectTableSource([['operation_id', 'Nombre']])).toBe('unknown')
+  })
+
+  it('el reporte de Cobros, por su nombre: gana a lo desconocido y al banco, no a los títulos buenos', () => {
+    const unknown = [['Fecha', 'Algo']]
+    for (const name of [
+      'collection-20261029001539-137f.csv',
+      'Collection_1.csv',
+      'Reporte_de_ventas_2026-10-29.zip',
+      'reporte de ventas octubre.xlsx',
+      'C:\\Descargas\\collection-1.csv',
+    ]) {
+      expect(isMpCollectionFileName(name), name).toBe(true)
+      expect(detectTableSource(unknown, name), name).toBe('mp_collection')
+    }
+    for (const name of ['coleccion.csv', 'mi-collection.csv', 'ventas.csv', null, undefined]) {
+      expect(isMpCollectionFileName(name), String(name)).toBe(false)
+    }
+    // Un Liquidaciones renombrado sigue siendo Liquidaciones.
+    expect(
+      detectTableSource(
+        [['DATE', 'RECORD_TYPE', 'DESCRIPTION', 'NET_CREDIT_AMOUNT', 'NET_DEBIT_AMOUNT']],
+        'collection-1.csv',
+      ),
+    ).toBe('mp_release')
   })
 
   it('sin columnas del emisor ni del receptor, decide el título o el nombre del archivo', () => {

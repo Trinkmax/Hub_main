@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   type ActivityMovement,
+  accountMovements,
   activityAmountLabel,
   activityAmountText,
   activityFromMovement,
@@ -23,20 +24,20 @@ import {
   restoreOpeningDay,
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/move-view'
 import {
+  type CajaAccountMeta,
   cajaEmpty,
   cajaHero,
+  cajaView,
   countStatus,
-  lastMovementText,
+  lastMovementShort,
   openingMoves,
-  treasuryDetail,
   treasuryMoney,
   walletHero,
   walletTones,
   walletTotals,
-  walletView,
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/wallet-view'
 import { buildCashDailySeries, type CashDailyAccount } from '@/lib/accounting/cash-daily'
-import { heroState, treasuryTones } from '@/lib/accounting/home'
+import { heroState } from '@/lib/accounting/home'
 import type {
   CashFlowRow,
   CashProjectionRow,
@@ -44,14 +45,15 @@ import type {
 } from '@/lib/accounting/queries/treasury'
 
 /**
- * Cajas y bancos, «la billetera»: lo puro. Lo que más se cuida acá es que la
- * pantalla diga LO MISMO que el Resumen (el total, el estado «todavía no sé» y
- * el color de cada caja), que un bar recién arrancado no vea ningún «$ 0» ni
- * avisos de más, y que los movimientos se cuenten con palabras de dueño.
+ * Caja: lo puro. Lo que más se cuida acá es que la pantalla diga LO MISMO que el
+ * Resumen (el total, el estado «todavía no sé» y el color de cada caja), que un
+ * bar recién arrancado no vea ningún «$ 0» ni avisos de más, y que los
+ * movimientos se cuenten con palabras de dueño.
  */
 
 const TODAY = '2026-10-13'
 const BASE = '/hub/administracion'
+const STAMP = '2026-10-12T15:00:00.000+00:00'
 /** El espacio duro que `lib/money` pone entre el «$» y el número. */
 const NB = String.fromCharCode(160)
 const money = (text: string) => text.replaceAll(' ', NB)
@@ -166,24 +168,16 @@ describe('countStatus: cuándo va en ámbar', () => {
   })
 })
 
-describe('lo que se lee de una caja', () => {
-  it('el último movimiento, en palabras', () => {
-    expect(lastMovementText(null, TODAY)).toBe('Sin movimientos todavía')
-    expect(lastMovementText(TODAY, TODAY)).toBe('Último movimiento: hoy')
-    expect(lastMovementText('2026-10-12', TODAY)).toBe('Último movimiento: ayer')
-    expect(lastMovementText('2026-10-07', TODAY)).toBe('Último movimiento: el 07/10')
-  })
-
-  it('el tipo y, si tiene, el alias o el banco', () => {
-    expect(treasuryDetail({ kind: 'cash' })).toBe('Efectivo')
-    expect(treasuryDetail({ kind: 'wallet', alias: 'hub.bar' })).toBe('Billetera · alias hub.bar')
-    expect(treasuryDetail({ kind: 'bank', bankName: 'Banco de la Nación Argentina' })).toBe(
-      'Banco · Banco de la Nación Argentina',
-    )
-    // El alias gana: es lo que la persona reconoce.
-    expect(treasuryDetail({ kind: 'bank', alias: 'hub', bankName: 'Galicia' })).toBe(
-      'Banco · alias hub',
-    )
+describe('lo que se lee de una cuenta', () => {
+  it('el último movimiento, para su columna', () => {
+    expect(lastMovementShort(null, TODAY)).toBe('Sin movimientos')
+    expect(lastMovementShort(TODAY, TODAY)).toBe('hoy')
+    expect(lastMovementShort('2026-10-12', TODAY)).toBe('ayer')
+    expect(lastMovementShort('2026-10-10', TODAY)).toBe('hace 3 días')
+    // Hasta una semana se cuenta en días; después, la fecha.
+    expect(lastMovementShort('2026-10-06', TODAY)).toBe('hace 7 días')
+    expect(lastMovementShort('2026-10-05', TODAY)).toBe('05/10')
+    expect(lastMovementShort('no es una fecha', TODAY)).toBe('Sin movimientos')
   })
 
   it('un saldo nunca lleva un menos pelado', () => {
@@ -209,31 +203,40 @@ describe('lo que se lee de una caja', () => {
   })
 })
 
-describe('walletView: el bar recién arrancado (HUB)', () => {
-  const view = walletView(HUB, PENDING, { today: TODAY, canWrite: true, base: BASE })
+/** Lo de cada cuenta que sale del catálogo, sin nada que decir sobre el impuesto al cheque. */
+function metaOf(rows: readonly TreasuryBalanceRow[]): Map<string, CajaAccountMeta> {
+  return new Map(rows.map((r) => [r.treasuryId, { updatedAt: STAMP, chargesBankTax: null }]))
+}
 
-  it('no produce ningún cero y trae «Cargar lo que había»', () => {
-    expect(view.kind).toBe('opening_pending')
-    if (view.kind !== 'opening_pending') return
-    expect(view.title).toBe('Todavía no sé cuánta plata hay')
-    expect(view.action).toEqual({ href: `${BASE}/configurar`, label: 'Cargar lo que había' })
-    expect(JSON.stringify(view)).not.toMatch(/\$\s?0/)
-    expect(JSON.stringify(view)).not.toContain('balanceCents')
+function view(
+  rows: readonly TreasuryBalanceRow[],
+  settings: Parameters<typeof cajaView>[2],
+  canWrite = true,
+) {
+  return cajaView(rows, metaOf(rows), settings, { today: TODAY, canWrite, base: BASE })
+}
+
+describe('cajaView: el bar recién arrancado (HUB)', () => {
+  const hub = view(HUB, PENDING)
+
+  it('no produce ningún cero: dice que no sabe y trae «Cargar lo que había»', () => {
+    expect(hub.status).toBe('opening_pending')
+    expect(hub.total).toBeNull()
+    expect(hub.notice).toEqual({
+      title: 'Todavía no sé cuánta plata hay',
+      sentence:
+        'Contame cuánto había en cada caja el día que arrancaste y empiezo a llevar la cuenta.',
+      action: { href: `${BASE}/configurar`, label: 'Cargar lo que había' },
+    })
+    expect(hub.accounts.map((a) => a.name)).toEqual(['Caja Efectivo', 'Mercado Pago'])
+    expect(hub.accounts.every((a) => a.unknown)).toBe(true)
   })
 
-  it('las cajas son casilleros con su color, y sabe cuál es la de efectivo y cuál la billetera', () => {
-    if (view.kind !== 'opening_pending') throw new Error('estado inesperado')
-    expect(view.slots.map((s) => s.name)).toEqual(['Caja Efectivo', 'Mercado Pago'])
-    expect(view.slots.map((s) => s.tone)).toEqual([
-      { kind: 'cash', step: 1 },
-      { kind: 'wallet', step: 1 },
-    ])
-    expect(view.cashName).toBe('Caja Efectivo')
-    expect(view.walletName).toBe('Mercado Pago')
-    expect(view.addHref).toBe(`${BASE}/ajustes?tab=cajas`)
+  it('ninguna fila ofrece contar: contar antes de decir cuánto hay anotaría un sobrante', () => {
+    expect(hub.accounts.map((a) => a.action)).toEqual([null, null])
   })
 
-  it('usa los mismos textos que el héroe del Resumen, también para quien solo lee', () => {
+  it('usa los mismos textos que el Resumen, también para quien solo lee', () => {
     const summary = {
       treasuries: HUB.map((r) => ({
         id: r.treasuryId,
@@ -251,43 +254,42 @@ describe('walletView: el bar recién arrancado (HUB)', () => {
     }
     for (const canWrite of [true, false]) {
       const hero = heroState(summary, PENDING, { canWrite, base: BASE })
-      const v = walletView(HUB, PENDING, { today: TODAY, canWrite, base: BASE })
-      if (hero.kind !== 'unknown' || v.kind !== 'opening_pending') throw new Error('estado')
-      expect(v.title).toBe(hero.title)
-      expect(v.sentence).toBe(hero.sentence)
+      const v = view(HUB, PENDING, canWrite)
+      if (hero.kind !== 'unknown') throw new Error('estado')
+      expect(v.notice?.title).toBe(hero.title)
+      expect(v.notice?.sentence).toBe(hero.sentence)
     }
-    const reader = walletView(HUB, PENDING, { today: TODAY, canWrite: false, base: BASE })
-    expect(reader.kind === 'opening_pending' && reader.action).toBeNull()
+    expect(view(HUB, PENDING, false).notice?.action).toBeNull()
   })
 
-  it('sin ninguna caja, manda a agregar la primera', () => {
-    const empty = walletView([], PENDING, { today: TODAY, canWrite: true, base: BASE })
+  it('sin ninguna cuenta: lo dice, y la primera se agrega ahí mismo (sin irse a Ajustes)', () => {
+    const empty = view([], PENDING)
     expect(empty).toMatchObject({
-      kind: 'no_treasuries',
-      title: 'Todavía no hay cajas cargadas',
-      action: { href: `${BASE}/ajustes?tab=cajas`, label: 'Agregar una caja' },
+      status: 'no_treasuries',
+      accounts: [],
+      apart: [],
+      total: null,
+      notice: { title: 'Todavía no hay cajas cargadas', action: null },
     })
-    expect(walletView([], null, { today: TODAY, canWrite: false, base: BASE })).toMatchObject({
-      kind: 'no_treasuries',
-      action: null,
+    expect(view([], null, false)).toMatchObject({
+      status: 'no_treasuries',
+      notice: { action: null },
     })
   })
 
-  it('con «arrancar en cero» elegido, el cero ya es un dato: billetera normal', () => {
-    const view2 = walletView(
-      HUB,
-      { openingStatus: 'skipped', booksStartDate: '2026-10-12' },
-      { today: TODAY, base: BASE },
-    )
-    expect(view2.kind).toBe('normal')
+  it('con «arrancar en cero» elegido, el cero ya es un dato', () => {
+    const skipped = view(HUB, { openingStatus: 'skipped', booksStartDate: '2026-10-12' })
+    expect(skipped.status).toBe('normal')
+    expect(skipped.total).toEqual({ cents: 0, overdrawn: false })
+    expect(skipped.accounts.every((a) => !a.unknown)).toBe(true)
+    expect(skipped.notice).toBeNull()
   })
 })
 
-describe('walletView: el bar con plata', () => {
-  const view = walletView(DEMO, POSTED, { today: TODAY, canWrite: true, base: BASE })
-  if (view.kind !== 'normal') throw new Error('estado inesperado')
+describe('cajaView: el bar con plata', () => {
+  const demo = view(DEMO, POSTED)
 
-  it('el total y la oración son los del Resumen', () => {
+  it('el total es el del Resumen', () => {
     const totals = walletTotals(DEMO)
     expect(totals).toEqual({
       availableCents: 39_475_700 + 47_141_000 + 4_186_342_800,
@@ -296,95 +298,92 @@ describe('walletView: el bar con plata', () => {
     })
     const hero = walletHero(DEMO, POSTED, { base: BASE })
     if (hero.kind !== 'normal') throw new Error('estado')
-    expect(view.cents).toBe(hero.cents)
-    expect(view.cents).toBe(totals.availableCents)
-    expect(view.sentence).toBe(hero.sentence)
-    expect(view.sentence).toContain('Repartida en 3 lugares.')
-    expect(view.sentence).toContain(`Hay ${money('$ 1.400.000')} en camino`)
-    expect(view.label).toBe('Plata disponible hoy')
+    expect(demo.total).toEqual({ cents: hero.cents, overdrawn: false })
+    expect(demo.total?.cents).toBe(totals.availableCents)
+    expect(demo.notice).toBeNull()
   })
 
-  it('una tarjeta por caja, con su link, su color por tipo y su número', () => {
-    expect(view.cards.map((c) => c.name)).toEqual(['Caja', 'Mercado Pago', 'Banco Nación'])
-    expect(view.cards.map((c) => c.href)).toEqual([
-      `${BASE}/cajas/caja`,
-      `${BASE}/cajas/mp`,
-      `${BASE}/cajas/banco`,
+  it('una fila por cuenta: su tipo, su último movimiento y lo que tiene', () => {
+    expect(demo.accounts.map((a) => [a.name, a.kindLabel, a.lastMovement])).toEqual([
+      ['Caja', 'Efectivo', 'ayer'],
+      ['Mercado Pago', 'Billetera', 'hace 5 días'],
+      ['Banco Nación', 'Banco', 'hoy'],
     ])
-    const tones = treasuryTones(DEMO.map((r) => ({ id: r.treasuryId, kind: r.kind })))
-    for (const card of view.cards) expect(card.tone).toEqual(tones[card.id])
-    expect(view.cards[0]?.money.amount).toBe(money('$ 394.757'))
-    expect(view.cards[1]?.pendingCents).toBe(140_000_000)
-    expect(view.cards[2]?.detail).toBe('Banco · Banco de la Nación Argentina')
+    expect(demo.accounts[0]?.money.amount).toBe(money('$ 394.757'))
+    expect(demo.accounts[1]?.pendingCents).toBe(140_000_000)
+    expect(demo.apart).toEqual([])
   })
 
-  it('cada tarjeta ofrece UNA acción y una sola va rellena: la primera a la que le toca algo', () => {
-    expect(view.cards.map((c) => c.action?.label)).toEqual(['Contar', 'Ya me entró', 'Contar'])
-    expect(view.cards.map((c) => c.action?.sheet)).toEqual(['ajustar', 'ajustar', 'ajustar'])
-    // La Caja nunca se contó, tiene movimientos y los libros son de septiembre: le toca.
-    expect(view.cards.map((c) => c.action?.filled)).toEqual([true, false, false])
-    expect(view.cards[0]?.action?.ariaLabel).toBe('Contar Caja')
-  })
-
-  it('el estado del conteo de todas, en una píldora', () => {
-    // Caja y Banco: nunca, con movimientos y libros viejos. Mercado Pago: hace 6 días.
-    expect(view.countPill).toEqual({ tone: 'warn', text: '2 sin contar esta semana' })
-    const allCounted = walletView(
-      DEMO.map((r) => ({ ...r, lastCheckedOn: '2026-10-12' })),
+  it('cada fila ofrece UNA acción, y queda a la vista la que le toca', () => {
+    expect(demo.accounts.map((a) => a.action?.label)).toEqual(['Contar', 'Ya me entró', 'Contar'])
+    expect(demo.accounts.map((a) => a.action?.sheet)).toEqual(['ajustar', 'ajustar', 'ajustar'])
+    // La Caja y el Banco nunca se contaron, con movimientos y libros de septiembre: les toca.
+    // Mercado Pago tiene plata en camino.
+    expect(demo.accounts.map((a) => a.action?.due)).toEqual([true, true, true])
+    expect(demo.accounts[0]?.action?.ariaLabel).toBe('Contar Caja')
+    expect(demo.accounts[1]?.action?.ariaLabel).toBe('Ya me entró lo de Mercado Pago')
+    const counted = view(
+      DEMO.map((r) => ({ ...r, lastCheckedOn: '2026-10-12', pendingWalletCents: 0 })),
       POSTED,
-      { today: TODAY, base: BASE },
     )
-    expect(allCounted.kind === 'normal' && allCounted.countPill).toEqual({
-      tone: 'ok',
-      text: 'Todas contadas esta semana',
-    })
-    // Con todas contadas, a la billetera con plata en camino le toca: va rellena esa.
-    expect(allCounted.kind === 'normal' && allCounted.cards.map((c) => c.action?.filled)).toEqual([
-      false,
-      true,
-      false,
-    ])
+    expect(counted.accounts.map((a) => a.action?.due)).toEqual([false, false, false])
+    expect(counted.accounts[0]?.countText).toBe('Contada ayer')
   })
 
-  it('la primera semana: nada en ámbar y ningún botón relleno', () => {
-    const fresh = walletView(
+  it('la primera semana de los libros no pide contar nada', () => {
+    const fresh = view(
       DEMO.map((r) => ({ ...r, lastCheckedOn: null, pendingWalletCents: 0 })),
       { openingStatus: 'posted', booksStartDate: '2026-10-10' },
-      { today: TODAY, base: BASE },
     )
-    if (fresh.kind !== 'normal') throw new Error('estado')
-    expect(fresh.countPill).toEqual({ tone: 'muted', text: 'Todavía no contaste ninguna' })
-    expect(fresh.cards.every((c) => c.status?.tone === 'muted')).toBe(true)
-    expect(fresh.cards.some((c) => c.action?.filled)).toBe(false)
+    expect(fresh.accounts.map((a) => a.action?.due)).toEqual([false, false, false])
   })
 
   it('quien solo lee no recibe ninguna acción', () => {
-    const reader = walletView(DEMO, POSTED, { today: TODAY, canWrite: false, base: BASE })
-    if (reader.kind !== 'normal') throw new Error('estado')
-    expect(reader.cards.every((c) => c.action === null)).toBe(true)
-  })
-
-  it('«¿Cómo se calcula?»: un renglón por caja que suma', () => {
-    expect(view.math).toEqual([
-      { key: 'caja', label: 'Caja', value: money('$ 394.757'), op: '+' },
-      { key: 'mp', label: 'Mercado Pago', value: money('$ 471.410'), op: '+' },
-      { key: 'banco', label: 'Banco Nación', value: money('$ 41.863.428'), op: '+' },
-    ])
-  })
-
-  it('sabe qué acciones tienen sentido y cuándo fue el último movimiento', () => {
-    expect(view).toMatchObject({
-      hasNonCash: true,
-      hasWallet: true,
-      hasBank: true,
-      lastMovementDate: '2026-10-13',
-      openingMissing: null,
-    })
+    const reader = view(DEMO, POSTED, false)
+    expect(reader.accounts.every((a) => a.action === null)).toBe(true)
+    expect(reader.total).toEqual(demo.total)
   })
 })
 
-describe('walletView: los casos que no se ven todos los días', () => {
-  it('una caja desactivada con saldo se muestra aparte y NO suma (igual que el Resumen)', () => {
+describe('cajaView: lo que sale del catálogo', () => {
+  it('el token para guardar y si cobra el impuesto al cheque (banco y billetera, según su tipo)', () => {
+    const { accounts } = view(DEMO, POSTED)
+    expect(accounts.map((a) => a.updatedAt)).toEqual([STAMP, STAMP, STAMP])
+    // Al efectivo ni se le pregunta; los demás arrancan por su tipo.
+    expect(accounts.map((a) => [a.kind, a.bankTax])).toEqual([
+      ['cash', null],
+      ['wallet', true],
+      ['bank', true],
+    ])
+  })
+
+  it('lo que cada cuenta tiene marcado le gana al tipo', () => {
+    const meta = metaOf(DEMO)
+    meta.set('mp', { updatedAt: STAMP, chargesBankTax: false })
+    const { accounts } = cajaView(DEMO, meta, POSTED, { today: TODAY, base: BASE })
+    expect(accounts.find((a) => a.id === 'mp')?.bankTax).toBe(false)
+  })
+
+  it('la tarjeta de la empresa no se pregunta', () => {
+    const rows = [
+      row({ treasuryId: 'visa', name: 'Visa', kind: 'credit_card', balanceCents: -100 }),
+    ]
+    expect(view(rows, POSTED).apart[0]?.bankTax).toBeNull()
+  })
+
+  it('si el catálogo no cargó, la tabla sale igual y sin lo que necesita ese dato', () => {
+    const { accounts } = cajaView(DEMO, new Map(), POSTED, { today: TODAY, base: BASE })
+    expect(accounts.map((a) => a.money.amount)).toEqual([
+      money('$ 394.757'),
+      money('$ 471.410'),
+      money('$ 41.863.428'),
+    ])
+    expect(accounts.every((a) => a.updatedAt === null && a.bankTax === null)).toBe(true)
+  })
+})
+
+describe('cajaView: los casos que no se ven todos los días', () => {
+  it('una cuenta desactivada con saldo va aparte y NO suma (igual que el Resumen)', () => {
     const rows = [
       ...DEMO,
       row({
@@ -396,18 +395,16 @@ describe('walletView: los casos que no se ven todos los días', () => {
         lastMovementDate: '2026-09-10',
       }),
     ]
-    const view = walletView(rows, POSTED, { today: TODAY, canWrite: true, base: BASE })
-    if (view.kind !== 'normal') throw new Error('estado')
-    expect(view.cents).toBe(walletTotals(DEMO).availableCents)
-    expect(view.math.map((m) => m.key)).toEqual(['caja', 'mp', 'banco'])
-    expect(view.inactive).toHaveLength(1)
-    expect(view.inactive[0]).toMatchObject({
+    const v = view(rows, POSTED)
+    expect(v.total?.cents).toBe(walletTotals(DEMO).availableCents)
+    expect(v.accounts.map((a) => a.id)).toEqual(['caja', 'mp', 'banco'])
+    expect(v.apart).toHaveLength(1)
+    expect(v.apart[0]).toMatchObject({
       name: 'Caja vieja',
-      muted: true,
+      active: false,
       action: null,
-      status: null,
-      tone: null,
-      footer: 'Desactivada · no suma a lo disponible',
+      countText: null,
+      lastMovement: '10/09',
     })
     // El color de las activas no cambia porque haya una desactivada del mismo tipo.
     expect(walletTones(rows).caja).toEqual({ kind: 'cash', step: 1 })
@@ -425,71 +422,135 @@ describe('walletView: los casos que no se ven todos los días', () => {
         lastMovementDate: '2026-10-01',
       }),
     ]
-    const view = walletView(rows, POSTED, { today: TODAY, canWrite: true, base: BASE })
-    if (view.kind !== 'normal') throw new Error('estado')
-    expect(view.cards).toHaveLength(3)
-    expect(view.companyCards).toHaveLength(1)
-    const card = view.companyCards[0]
+    const v = view(rows, POSTED)
+    expect(v.accounts).toHaveLength(3)
+    expect(v.apart).toHaveLength(1)
+    const card = v.apart[0]
     expect(card?.money).toEqual({ amount: money('$ 80.000'), label: 'Debés', words: null })
     expect(card?.action).toMatchObject({
       kind: 'pay_card',
       label: 'Pagar el resumen',
       sheet: 'mover',
+      due: false,
     })
-    // No suma a lo disponible, no tiene color de caja y nunca va en ámbar.
-    expect(view.cents).toBe(walletTotals(DEMO).availableCents)
-    expect(card?.tone).toBeNull()
-    expect(card?.status).toMatchObject({ tone: 'muted', due: false })
-    expect(view.sentence).toContain(`La tarjeta de la empresa debe ${money('$ 80.000')}.`)
+    // No suma a lo disponible.
+    expect(v.total?.cents).toBe(walletTotals(DEMO).availableCents)
     // Sin deuda, se cuenta como cualquier otra.
-    const paid = walletView(
+    const paid = view(
       rows.map((r) => (r.treasuryId === 'visa' ? { ...r, balanceCents: 0 } : r)),
       POSTED,
-      { today: TODAY, base: BASE },
     )
-    expect(paid.kind === 'normal' && paid.companyCards[0]?.action?.label).toBe('Contar')
-    expect(paid.kind === 'normal' && paid.companyCards[0]?.money.words).toBe('Sin deuda')
+    expect(paid.apart[0]?.action?.label).toBe('Contar')
+    expect(paid.apart[0]?.money.words).toBe('Sin deuda')
   })
 
-  it('todo en descubierto: se dice con palabras, y la cuenta resta', () => {
-    const rows = [
-      row({
-        treasuryId: 'banco',
-        name: 'Banco',
-        kind: 'bank',
-        balanceCents: -1_200_000,
-        lastMovementDate: TODAY,
-      }),
-    ]
-    const view = walletView(rows, POSTED, { today: TODAY, base: BASE })
-    if (view.kind !== 'normal') throw new Error('estado')
-    expect(view.label).toBe('Hoy estás en descubierto por')
-    expect(view.cents).toBe(1_200_000)
-    expect(view.cards[0]?.money.label).toBe('Descubierto')
-    expect(view.math).toEqual([
-      { key: 'banco', label: 'Banco (descubierto)', value: money('$ 12.000'), op: '−' },
-    ])
+  it('una tarjeta sin saldos iniciales no pide «¿cuánto hay?»: es una deuda', () => {
+    const rows = [...HUB, row({ treasuryId: 'visa', name: 'Visa', kind: 'credit_card' })]
+    const v = view(rows, PENDING)
+    expect(v.status).toBe('opening_pending')
+    expect(v.apart[0]?.unknown).toBe(false)
   })
 
-  it('con movimientos pero sin saldo inicial: billetera normal y el aviso de qué falta', () => {
+  it('todo en descubierto: se dice con palabras', () => {
+    const v = view(
+      [
+        row({
+          treasuryId: 'banco',
+          name: 'Banco',
+          kind: 'bank',
+          balanceCents: -1_200_000,
+          lastMovementDate: TODAY,
+        }),
+      ],
+      POSTED,
+    )
+    expect(v.total).toEqual({ cents: 1_200_000, overdrawn: true })
+    expect(v.accounts[0]?.money.label).toBe('Descubierto')
+  })
+
+  it('con movimientos pero sin saldo inicial: la tabla normal y el aviso de qué falta', () => {
     const rows = HUB.map((r, i) =>
       i === 0 ? { ...r, balanceCents: 500_000, lastMovementDate: TODAY } : r,
     )
-    const view = walletView(rows, PENDING, { today: TODAY, base: BASE })
-    expect(view).toMatchObject({
-      kind: 'normal',
-      openingMissing: { since: '2026-10-12', href: `${BASE}/configurar` },
+    const v = view(rows, PENDING)
+    expect(v.status).toBe('normal')
+    expect(v.openingPending).toBe(true)
+    expect(v.notice).toEqual({
+      title: 'Falta decir con cuánto arrancaste',
+      sentence: 'Los números cuentan solo lo cargado desde el 12/10.',
+      action: { href: `${BASE}/configurar`, label: 'Cargar lo que había' },
     })
+    expect(view(rows, PENDING, false).notice?.action).toBeNull()
   })
 
-  it('un nombre de 60 caracteres pasa entero (lo corta la tarjeta, no los datos)', () => {
+  it('un nombre de 60 caracteres pasa entero (lo corta la tabla, no los datos)', () => {
     const name = 'Cuenta corriente en pesos del Banco de la Provincia de Córdoba'
-    const view = walletView([row({ name, balanceCents: 100, lastMovementDate: TODAY })], POSTED, {
-      today: TODAY,
-      base: BASE,
-    })
-    expect(view.kind === 'normal' && view.cards[0]?.name).toBe(name)
-    expect(view.kind === 'normal' && view.cards[0]?.action?.ariaLabel).toBe(`Contar ${name}`)
+    const v = view([row({ name, balanceCents: 100, lastMovementDate: TODAY })], POSTED)
+    expect(v.accounts[0]?.name).toBe(name)
+    expect(v.accounts[0]?.action?.ariaLabel).toBe(`Contar ${name}`)
+  })
+})
+
+describe('los movimientos del panel lateral', () => {
+  const line = (key: string, date: string, values: Record<string, string | number>) => ({
+    rowKind: 'line' as const,
+    documentId: `doc-${key}`,
+    entryId: `e-${key}`,
+    date,
+    values,
+  })
+
+  it('lo más nuevo arriba, en palabras y sin el «saldo anterior»', () => {
+    const rows = [
+      {
+        rowKind: 'opening' as const,
+        documentId: null,
+        entryId: null,
+        date: '2026-09-30',
+        values: {},
+      },
+      line('1', '2026-10-12', {
+        document_kind: 'expense',
+        description: 'Gasto · Hielo',
+        outflow_cents: 1_200_000,
+      }),
+      line('2', TODAY, {
+        document_kind: 'payment',
+        description: 'Pago · Cervecería Sierras · Factura A 0003-00000123',
+        outflow_cents: 30_000_000,
+      }),
+      line('3', TODAY, {
+        document_kind: 'collection',
+        description: 'Cobro · Tarjetas',
+        inflow_cents: 81_200_000,
+      }),
+    ]
+    const movements = accountMovements(rows, 'bank')
+    expect(movements.map((m) => [m.date, m.title, m.inCents, m.outCents])).toEqual([
+      [TODAY, 'Tarjetas', 81_200_000, 0],
+      [TODAY, 'Cervecería Sierras', 0, 30_000_000],
+      ['2026-10-12', 'Hielo', 0, 1_200_000],
+    ])
+    expect(movements[2]?.sub).toBe('Gasto')
+    expect(movements[2]?.path).toBe('/comprobantes/doc-1')
+  })
+
+  it('un conteo se dice distinto según el tipo de cuenta', () => {
+    const rows = [
+      line('1', TODAY, {
+        document_kind: 'treasury_adjustment',
+        description: 'Ajuste de saldo',
+        outflow_cents: 125_700,
+      }),
+    ]
+    expect(accountMovements(rows, 'cash')[0]?.title).toBe(`Faltaron ${money('$ 1.257')} al contar`)
+    expect(accountMovements(rows, 'bank')[0]?.title).toBe(
+      `Había ${money('$ 1.257')} menos que en el sistema`,
+    )
+  })
+
+  it('sin movimientos, nada', () => {
+    expect(accountMovements([], 'cash')).toEqual([])
   })
 })
 
@@ -804,6 +865,10 @@ describe('activityFromMovement: lo que pasó, en palabras (con las descripciones
     expect(
       read({ documentKind: 'bank_expense', description: 'Gasto bancario · Banco Nación' }),
     ).toEqual(['Gastos del banco', 'Comisiones e impuestos', 'out', 'bank'])
+    // El que anota solo el sistema al pagar se llama por su nombre.
+    expect(
+      read({ documentKind: 'bank_expense', description: 'Impuesto al cheque · Banco Nación' }),
+    ).toEqual(['Impuesto al cheque', 'Se anotó solo con el pago', 'out', 'bank'])
   })
 
   it('un socio, una seña, un préstamo y lo que rindió la billetera', () => {

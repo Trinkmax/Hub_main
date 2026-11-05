@@ -44,7 +44,7 @@ const RAW = {
   mp_invoice_this_month: false,
   treasuries_unchecked: 2,
   prev_month_closed: false,
-  manual: ['suppliers_message', 'platforms', 'chart_review', 42],
+  manual: ['suppliers_message', 'platforms', 'taxes', 'payroll', 'chart_review', 42],
 }
 
 function data(patch: Record<string, unknown> = {}): OnboardingData {
@@ -85,7 +85,7 @@ describe('lo que devuelve la base', () => {
         bank_statement: { lastBatchAt: '2026-10-01T13:00:00Z', postedBatches: 1, pendingReview: 1 },
       },
       treasuriesUnchecked: 2,
-      manual: ['suppliers_message', 'platforms', 'chart_review'],
+      manual: ['suppliers_message', 'platforms', 'taxes', 'payroll', 'chart_review'],
     })
     expect(d.imports.arca_emitidos).toBeUndefined()
   })
@@ -101,12 +101,12 @@ describe('el estado de la guía', () => {
   it('cuenta lo listo (sin los informativos ni los opcionales) y elige lo próximo', () => {
     const s = onboardingState(data())
     expect({ done: s.done, total: s.total, next: s.next }).toEqual({
-      done: 15,
-      total: 19,
+      done: 16,
+      total: 20,
       next: 'bank_weekly',
     })
     expect(s.sections).toEqual({
-      day1: { done: 12, total: 12 },
+      day1: { done: 13, total: 13 },
       daily: { done: 1, total: 1 },
       weekly: { done: 1, total: 2 },
       monthly: { done: 1, total: 4 },

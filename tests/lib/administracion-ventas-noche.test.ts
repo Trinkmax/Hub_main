@@ -1,29 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import {
   cashTitle,
-  cellAmount,
   commissionGaps,
   joinNames,
   nightSentence,
-} from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/almanac'
+} from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/planilla'
 import { closeTicketProps } from '@/app/(manager)/[tenantSlug]/administracion/ventas/cierre/_lib/close-ticket-props'
 import type { PostingCatalog } from '@/lib/accounting/context'
 
 /**
- * La noche elegida: lo que se muestra al lado del almanaque. Acá se prueba lo
- * propio de Ventas (el puente entre lo cargado y el número del casillero, el
- * título de «Ventas contra caja», el aviso de comisiones sin cargar y una
- * noche con dos turnos). El ticket de un cierre guardado (`closeTicketProps`)
+ * La noche abierta: lo que se ve al tocar «Ver cierre» en la planilla. Acá se
+ * prueba lo propio de Ventas (el puente entre lo cargado y el número del renglón,
+ * lo que dice «Ventas contra caja», el aviso de comisiones sin cargar y una noche
+ * con dos turnos). El ticket de un cierre guardado (`closeTicketProps`)
  * tiene sus tests en `administracion-cierre-ticket-guardado`.
  */
 
 /** El espacio duro que `lib/money` pone entre el «$» y el número. */
 const NB = String.fromCharCode(160)
 
-describe('nightSentence: de lo que se cargó al número del almanaque', () => {
+describe('nightSentence: de lo que se cargó al número de la planilla', () => {
   it('dice cuánto se quedan las tarjetas y las apps, y con cuánto cuenta la noche', () => {
     expect(nightSentence({ loadedCents: 120_074_600, netCents: 113_802_900 })).toBe(
-      `Sacando lo que se quedan las tarjetas y las apps (unos $${NB}62.717, estimado), cuenta $${NB}1.138.029 para el mes: es el número del almanaque.`,
+      `Sacando lo que se quedan las tarjetas y las apps (unos $${NB}62.717, estimado), cuenta $${NB}1.138.029 para el mes: es el número de la planilla.`,
     )
   })
 
@@ -86,13 +85,12 @@ describe('una noche con dos turnos', () => {
     expect(ticket.lines[0]?.cents).toBe(130_000_000)
     // Un cierre guardado es un papel quieto.
     expect(ticket.still).toBe(true)
-    // El casillero muestra la venta neta de la noche entera.
-    expect(cellAmount(loadedCents)).toBe(`$${NB}1.300.000`)
+    // El renglón muestra la venta neta de la noche entera.
     expect(nightSentence({ loadedCents, netCents: 128_000_000 })).toContain(`$${NB}20.000`)
   })
 })
 
-describe('cashTitle: el título de «Ventas contra caja», que afirma', () => {
+describe('cashTitle: cómo viene «Ventas contra caja», que afirma', () => {
   it('sin ninguna noche anotada', () => {
     expect(cashTitle({ comparedDays: 0, diffCents: 0 })).toBe(
       'Todavía no anotaste lo que entró ninguna noche',

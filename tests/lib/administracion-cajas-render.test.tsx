@@ -3,28 +3,27 @@ import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  CajasAcciones,
-  CajasArchivos,
-} from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/cajas-acciones'
+  accountBalanceLine,
+  MovementsTable,
+} from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/account-sheet'
+import { AccountsTable } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/accounts-table'
 import { FlowBlocks } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/flow-blocks'
-import { ProjectionBlock } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/projection-block'
-import { RecentActivity } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/recent-activity'
-import { TreasuryBalances } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/treasury-balances'
-import { Wallet } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/wallet'
 import {
-  WalletEmpty,
-  WalletNoTreasuries,
-} from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/wallet-empty'
+  MONEY_IN,
+  MONEY_OUT,
+  MoneyButtons,
+} from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/money-buttons'
+import { ProjectionBlock } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_components/projection-block'
 import {
   activityFromMovement,
   groupByDay,
   movementFromTreasuryRow,
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/activity'
 import {
+  type CajaAccountMeta,
   cajaHero,
+  cajaView,
   treasuryCountStatus,
-  walletTotals,
-  walletView,
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/wallet-view'
 import {
   CajaActivity,
@@ -32,18 +31,23 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/[id]/_components/caja-activity'
 import { CajaHero } from '@/app/(manager)/[tenantSlug]/administracion/cajas/[id]/_components/caja-hero'
 import { PendingBlock } from '@/app/(manager)/[tenantSlug]/administracion/cajas/[id]/_components/pending-block'
-import type { SubledgerPage } from '@/lib/accounting/queries/books'
 import type { CashFlowRow, TreasuryBalanceRow } from '@/lib/accounting/queries/treasury'
 
 /**
- * Cajas y bancos ya dibujado: lo que la pantalla le promete a cada uno. Las
- * cuentas y las frases tienen sus tests en `administracion-cajas-vista`; acá se
- * cuida lo que solo se ve armado: que el bar recién arrancado no vea ningún
- * «$ 0» y tenga UN solo botón, que la contadora no reciba ningún botón de
- * carga, y que con plata haya una tarjeta por caja y un solo botón relleno.
+ * Caja ya dibujada: lo que la pantalla le promete a cada uno. Las cuentas y las
+ * frases tienen sus tests en `administracion-cajas-vista`; acá se cuida lo que
+ * solo se ve armado: que el bar recién arrancado no vea ningún «$ 0», que la
+ * contadora no reciba ningún botón de carga, y que con plata haya una fila por
+ * cuenta y el total con su doble raya.
  */
 
 const ui = vi.hoisted(() => ({ readOnly: false }))
+// Las acciones del servidor no se llaman al pintar: se reemplazan para no cargar el servidor.
+vi.mock('@/lib/accounting/actions/master', () => ({ saveTreasuryAccount: vi.fn() }))
+vi.mock('@/lib/accounting/actions/taxes', () => ({ setTreasuryBankTax: vi.fn() }))
+vi.mock('@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/account-movements-action', () => ({
+  fetchAccountMovements: vi.fn(),
+}))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/cajas',
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -69,6 +73,7 @@ afterEach(() => {
 const TODAY = '2026-10-13'
 const BASE = '/hub/administracion'
 const NB = String.fromCharCode(160)
+const STAMP = '2026-10-12T15:00:00.000+00:00'
 
 /** El HTML con los importes legibles (sin el espacio duro) y sin los comentarios de React. */
 function html(node: ReactElement): string {
@@ -84,10 +89,14 @@ const WRITE_LABELS = [
   'Ya me entró<',
   'Pagar el resumen',
   'Mover plata',
+  'Transferir a otra cuenta',
   'Otra entrada o salida',
   'Un socio puso o sacó plata',
   'Gastos del banco',
+  'Entró plata',
+  'Salió plata',
   'Agregar una caja o cuenta',
+  'Agregar cuenta',
   'Agregala',
   'Subí el reporte',
   'Subí los movimientos',
@@ -152,236 +161,312 @@ const DEMO = [
 const PENDING = { openingStatus: 'pending', booksStartDate: '2026-10-12' } as const
 const POSTED = { openingStatus: 'posted', booksStartDate: '2026-09-01' } as const
 
-function wallet(rows: TreasuryBalanceRow[], canWrite: boolean) {
-  const view = walletView(rows, POSTED, { today: TODAY, canWrite, base: BASE })
-  if (view.kind !== 'normal') throw new Error('estado inesperado')
+function table(
+  rows: TreasuryBalanceRow[],
+  settings: Parameters<typeof cajaView>[2],
+  canWrite: boolean,
+  meta?: ReadonlyMap<string, CajaAccountMeta>,
+) {
+  const catalog =
+    meta ??
+    new Map(rows.map((r) => [r.treasuryId, { updatedAt: STAMP, chargesBankTax: null }] as const))
   return html(
-    <Wallet
-      view={view}
+    <AccountsTable
+      tenantSlug="hub"
       base={BASE}
-      canWrite={canWrite}
-      table={
-        <TreasuryBalances
-          items={rows.map((r) => ({
-            id: r.treasuryId,
-            name: r.name,
-            kind: r.kind,
-            balanceCents: r.balanceCents,
-            pendingWalletCents: r.pendingWalletCents,
-            lastCheckedOn: r.lastCheckedOn,
-            lastMovementDate: r.lastMovementDate,
-            active: r.active,
-            detail: r.alias ?? r.bankName ?? null,
-          }))}
-          availableCents={walletTotals(rows).availableCents}
-          today={TODAY}
-          since={POSTED.booksStartDate}
-          base={BASE}
-          exportHref="/api/administracion/export?libro=cajas-y-bancos"
-          exportFileName="cajas.csv"
-        />
-      }
+      view={cajaView(rows, catalog, settings, { today: TODAY, canWrite, base: BASE })}
+      exportHref="/api/administracion/export?libro=cajas-y-bancos"
+      exportFileName="cajas.csv"
     />,
   )
 }
 
-describe('la billetera de un bar recién arrancado (HUB)', () => {
-  function empty(canWrite: boolean) {
-    const view = walletView(HUB, PENDING, { today: TODAY, canWrite, base: BASE })
-    if (view.kind !== 'opening_pending') throw new Error('estado inesperado')
-    return html(<WalletEmpty view={view} canWrite={canWrite} />)
-  }
-
-  it('no muestra ningún «$ 0» y enseña los tres pasos', () => {
-    const markup = empty(true)
+describe('Caja en un bar recién arrancado (HUB)', () => {
+  it('no muestra ningún «$ 0»: las cuentas esperan su monto y el total no afirma nada', () => {
+    const markup = table(HUB, PENDING, true)
     expect(markup).toContain('Todavía no sé cuánta plata hay')
     expect(markup).not.toMatch(/\$\s?0/)
-    expect(markup).toContain('Decime cuánto hay hoy en cada caja')
-    expect(markup).toContain('Cargá el cierre de cada día')
-    expect(markup).toContain('Una vez por semana, contá')
-    // Las cajas son casilleros que esperan su monto.
-    expect(markup).toContain('Caja Efectivo')
-    expect(markup).toContain('Billetera · alias hubsas')
     expect(markup.match(/¿cuánto hay\?/g)).toHaveLength(2)
-    // Explica qué entra sola, con el nombre de SU caja.
-    expect(markup).toContain('El efectivo entra solo a Caja Efectivo.')
-    expect(markup).toContain('queda en camino hasta que decís «ya me entró»')
+    expect(markup).toContain('Caja Efectivo')
+    expect(markup).toContain('Mercado Pago')
+    expect(markup).toContain('adm-double-rule')
+    expect(markup).toContain('Sin dato')
   })
 
-  it('tiene UN solo botón: «Cargar lo que había»', () => {
-    const markup = empty(true)
+  it('el botón es «Cargar lo que había», y ninguna fila ofrece contar', () => {
+    const markup = table(HUB, PENDING, true)
     expect(markup.match(/Cargar lo que había/g)).toHaveLength(1)
     expect(markup).toContain(`href="${BASE}/configurar"`)
-    // Las tarjetas con su «¿cuánto hay?» se tocan y llevan al mismo lugar, pero no son otra
-    // parada de Tab: el botón es uno solo.
-    expect(markup.match(/tabindex="-1"/g)).toHaveLength(2)
-    // Ningún botón de hoja: contar antes de decir cuánto hay es el consejo equivocado.
-    expect(markup).not.toContain('<button')
-    expect(markup).not.toContain('Contar')
-    // El otro link es callado: agregar una cuenta antes de cargar.
-    expect(markup).toContain(`href="${BASE}/ajustes?tab=cajas"`)
+    expect(markup).not.toContain('>Contar<')
+    // El resto de lo que se hace con una cuenta sigue estando.
+    expect(markup).toContain('aria-label="Más opciones de Caja Efectivo"')
+    expect(markup).toContain('Agregar cuenta')
   })
 
   it('la contadora ve lo mismo sin ningún botón ni link de carga', () => {
     ui.readOnly = true
-    const markup = empty(false)
+    const markup = table(HUB, PENDING, false)
     expect(markup).toContain('Todavía no sé cuánta plata hay')
     expect(markup).toContain('Los dueños todavía no cargaron cuánto había en cada caja al empezar.')
     expect(markup.match(/¿cuánto hay\?/g)).toHaveLength(2)
     expect(markup).not.toMatch(/\$\s?0/)
     expectNoWriteControls(markup)
-    expect(markup).not.toContain('<a ')
-    expect(markup).not.toContain('<button')
   })
 
-  it('sin ninguna caja, el paso es agregar la primera (y la contadora no lo recibe)', () => {
-    const view = walletView([], PENDING, { today: TODAY, canWrite: true, base: BASE })
-    if (view.kind !== 'no_treasuries') throw new Error('estado inesperado')
-    const markup = html(<WalletNoTreasuries view={view} />)
+  it('sin ninguna cuenta, el renglón para agregar la primera ya está abierto', () => {
+    const markup = table([], PENDING, true)
     expect(markup).toContain('Todavía no hay cajas cargadas')
-    expect(markup).toContain(`href="${BASE}/ajustes?tab=cajas"`)
-    const reader = walletView([], PENDING, { today: TODAY, canWrite: false, base: BASE })
-    if (reader.kind !== 'no_treasuries') throw new Error('estado inesperado')
-    expect(html(<WalletNoTreasuries view={reader} />)).not.toContain('<a ')
+    expect(markup).toContain('aria-label="Nombre de la cuenta"')
+    expect(markup).toContain('aria-label="Tipo de cuenta"')
+    expect(markup).toContain('>Crear<')
+    expect(markup).toContain('Cancelar')
+    // Sin cuentas no hay total que dibujar.
+    expect(markup).not.toContain('adm-double-rule')
+    // La contadora no lo recibe.
+    ui.readOnly = true
+    const reader = table([], PENDING, false)
+    expect(reader).toContain('Todavía no hay cajas cargadas')
+    expect(reader).not.toContain('Crear')
+    expect(reader).not.toContain('<table')
   })
 })
 
-describe('la billetera de un bar con plata', () => {
-  it('el total, la oración y una tarjeta por caja con su link', () => {
-    const markup = wallet(DEMO, true)
-    expect(markup).toContain('Plata disponible hoy')
-    expect(markup).toContain('Repartida en 3 lugares.')
-    expect(markup).toContain('2 sin contar esta semana')
-    for (const id of ['caja', 'mp', 'banco']) {
-      expect(markup).toContain(`href="${BASE}/cajas/${id}"`)
+describe('Caja en un bar con plata', () => {
+  it('una sola tabla: Cuenta, Tipo, Último movimiento, Saldo, y el total con doble raya', () => {
+    const markup = table(DEMO, POSTED, true)
+    for (const head of ['Cuenta', 'Tipo', 'Último movimiento', 'Saldo']) {
+      expect(markup).toContain(`>${head}<`)
     }
-    expect(markup).toContain('394.757')
-    expect(markup).toContain('$ 1.400.000 en camino')
-    expect(markup).toContain('Contada hace 6 días')
-    expect(markup).toContain('Banco · Banco de la Nación Argentina')
-    expect(markup).toContain('Último movimiento: hoy')
-    // El lomo de cada tarjeta lleva el color de su tipo (el del Resumen).
-    for (const tone of ['cash', 'wallet', 'bank']) {
-      expect(markup).toContain(`bg-(--adm-k-${tone}-1)`)
-    }
+    expect(markup).toContain('aria-label="Cuánto hay en cada cuenta"')
+    expect(markup).toContain('$ 394.757')
+    expect(markup).toContain('$ 41.863.428')
+    expect(markup).toContain('+ $ 1.400.000 en camino')
+    expect(markup).toContain('Efectivo')
+    expect(markup).toContain('Billetera')
+    expect(markup).toMatch(/adm-double-rule.*\$ 42\.729\.595/s)
+    expect(markup).toContain('data-slot="money-ticker"')
   })
 
-  it('un solo botón relleno en toda la pantalla', () => {
-    const markup = wallet(DEMO, true)
-    // Tres botones de tarjeta (uno por caja) y «Exportar», en la tabla plegada.
-    const buttons = [...markup.matchAll(/<button[^>]*data-slot="button"[^>]*>/g)].map((m) => m[0])
-    expect(buttons).toHaveLength(4)
-    expect(buttons.filter((b) => /class="[^"]*\bbg-primary\b/.test(b))).toHaveLength(1)
-    // El relleno es el de la primera caja a la que le toca: la Caja, que nunca se contó.
-    expect(buttons[0]).toMatch(/bg-primary/)
-    expect(buttons[0]).toContain('aria-label="Contar Caja"')
-    expect(markup).toContain('Ya me entró')
+  it('ya no están el héroe, las tarjetas, los dibujos ni las cuatro acciones', () => {
+    const markup = table(DEMO, POSTED, true)
+    expect(markup).not.toContain('adm-hero')
+    expect(markup).not.toContain('Plata disponible hoy')
+    expect(markup).not.toContain('Cómo se movió la plata')
+    expect(markup).not.toContain('Últimos movimientos')
+    expect(markup).not.toContain('Mover plata')
+    expect(markup).not.toContain('Un socio puso o sacó plata')
   })
 
-  it('la tabla queda plegada, con su «Exportar»', () => {
-    const markup = wallet(DEMO, true)
-    expect(markup).toContain('Ver como tabla y exportar')
-    expect(markup).toMatch(/<details class="group\/table">/)
-    expect(markup).toContain('Último conteo')
+  it('al pasar por la fila, [Contar] y [⋯]; la que le toca deja su botón a la vista', () => {
+    const counted = table(
+      DEMO.map((r) => ({ ...r, lastCheckedOn: '2026-10-12', pendingWalletCents: 0 })),
+      POSTED,
+      true,
+    )
+    const hoverOnly = 'group-hover/row:opacity-100'
+    const contar = counted.match(/<button[^>]*aria-label="Contar Caja"[^>]*>/)?.[0] ?? ''
+    expect(contar).toContain(hoverOnly)
+    const menu = counted.match(/<button[^>]*aria-label="Más opciones de Caja"[^>]*>/)?.[0] ?? ''
+    expect(menu).toContain(hoverOnly)
+
+    const due = table(DEMO, POSTED, true)
+    const nunca = due.match(/<button[^>]*aria-label="Contar Caja"[^>]*>/)?.[0] ?? ''
+    expect(nunca).not.toContain(hoverOnly)
+    // Dice por qué, para quien pasa el mouse.
+    expect(nunca).toContain('title="Todavía no la contaste"')
+    const entro = due.match(/<button[^>]*aria-label="Ya me entró lo de Mercado Pago"[^>]*>/)?.[0]
+    expect(entro).toBeDefined()
+  })
+
+  it('el nombre es un botón: con el teclado también se abren los movimientos', () => {
+    const markup = table(DEMO, POSTED, true)
+    expect(markup).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Banco Nación<\/button>/)
+  })
+
+  it('al pie: el detalle, los datos de las cuentas, exportar y «Agregar cuenta» en el lugar', () => {
+    const markup = table(DEMO, POSTED, true)
+    expect(markup).toContain(`href="${BASE}/cajas?tab=flujo"`)
+    expect(markup).toContain('Ver el detalle')
+    expect(markup).toContain(`href="${BASE}/ajustes?tab=cajas"`)
     expect(markup).toContain('Exportar')
-    expect(markup).toContain('+ $ 1.400.000,00 en camino')
-    // La tabla ya no trae botones de carga por fila.
-    expect(markup).not.toMatch(/Mover<\/button>/)
+    expect(markup).toContain('Agregar cuenta')
+    // Cerrado hasta que se pide.
+    expect(markup).not.toContain('aria-label="Nombre de la cuenta"')
   })
 
-  it('la contadora no ve NINGÚN botón de carga y la tabla viene abierta', () => {
+  it('la contadora no ve NINGÚN botón de carga; las filas siguen abriendo los movimientos', () => {
     ui.readOnly = true
-    const markup = wallet(DEMO, false)
-    expect(markup).toContain('Plata disponible hoy')
-    expect(markup).toMatch(/<details open=""/)
+    const markup = table(DEMO, POSTED, false)
+    expect(markup).toContain('$ 394.757')
+    expect(markup).toMatch(/adm-double-rule.*\$ 42\.729\.595/s)
     expectNoWriteControls(markup)
-    // Lo único que queda para apretar es exportar; las tarjetas siguen llevando a su ficha.
+    expect(markup).not.toContain('Más opciones')
+    expect(markup).not.toContain('Agregar cuenta')
+    // Lo único para apretar: el nombre de cada cuenta (uno por fila) y exportar.
     const buttons = [...markup.matchAll(/<button[^>]*>.*?<\/button>/gs)].map((m) => m[0])
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0]).toContain('Exportar')
-    expect(markup).toContain(`href="${BASE}/cajas/caja"`)
+    expect(buttons).toHaveLength(DEMO.length + 1)
+    expect(buttons.filter((b) => b.includes('aria-haspopup="dialog"'))).toHaveLength(DEMO.length)
+    expect(markup).toContain('Ver el detalle')
   })
 
-  it('una caja desactivada con saldo va aparte, sin botón; la tarjeta de la empresa, con «Pagar el resumen»', () => {
-    const markup = wallet(
+  it('lo que no suma va aparte: la tarjeta de la empresa con «Pagar el resumen», y una desactivada', () => {
+    const markup = table(
       [
         ...DEMO,
         row({ treasuryId: 'visa', name: 'Visa', kind: 'credit_card', balanceCents: -8_000_000 }),
         row({ treasuryId: 'vieja', name: 'Caja vieja', active: false, balanceCents: 5_000_000 }),
       ],
+      POSTED,
       true,
     )
-    expect(markup).toContain('Tarjetas de la empresa')
+    expect(markup).toContain('Aparte: no suman')
     expect(markup).toContain('Debés')
+    expect(markup).toContain('$ 80.000')
     expect(markup).toContain('aria-label="Pagar el resumen de Visa"')
-    expect(markup).toContain('Desactivada · no suma a lo disponible')
+    expect(markup).toContain('Efectivo · desactivada')
     expect(markup).not.toContain('aria-label="Contar Caja vieja"')
+    // El total no los cuenta y queda arriba de ellos.
+    expect(markup.indexOf('$ 42.729.595')).toBeLessThan(markup.indexOf('Aparte: no suman'))
+  })
+
+  it('un descubierto se dice con palabras, en la fila y en el total', () => {
+    const markup = table(
+      [
+        row({
+          treasuryId: 'banco',
+          name: 'Banco',
+          kind: 'bank',
+          balanceCents: -1_200_000,
+          lastMovementDate: TODAY,
+        }),
+      ],
+      POSTED,
+      true,
+    )
+    expect(markup.match(/Descubierto/g)).toHaveLength(2)
+    expect(markup).not.toMatch(/[−-]\s?\$/)
   })
 
   it('con movimientos pero sin saldo inicial, lo avisa arriba (la contadora, sin el botón)', () => {
     const rows = HUB.map((r, i) =>
       i === 0 ? { ...r, balanceCents: 500_000, lastMovementDate: TODAY } : r,
     )
-    const view = walletView(rows, PENDING, { today: TODAY, canWrite: true, base: BASE })
-    if (view.kind !== 'normal') throw new Error('estado inesperado')
-    const markup = html(<Wallet view={view} base={BASE} canWrite table={null} />)
+    const markup = table(rows, PENDING, true)
     expect(markup).toContain('Falta decir con cuánto arrancaste')
     expect(markup).toContain('Los números cuentan solo lo cargado desde el 12/10.')
     expect(markup).toContain('Cargar lo que había')
     ui.readOnly = true
-    const reader = walletView(rows, PENDING, { today: TODAY, canWrite: false, base: BASE })
-    if (reader.kind !== 'normal') throw new Error('estado inesperado')
-    const readerMarkup = html(<Wallet view={reader} base={BASE} canWrite={false} table={null} />)
-    expect(readerMarkup).toContain('Falta decir con cuánto arrancaste')
-    expectNoWriteControls(readerMarkup)
+    const reader = table(rows, PENDING, false)
+    expect(reader).toContain('Falta decir con cuánto arrancaste')
+    expectNoWriteControls(reader)
+  })
+
+  it('si el catálogo no cargó, la tabla sale igual: sin lo que necesita ese dato', () => {
+    const markup = table(DEMO, POSTED, true, new Map())
+    expect(markup).toContain('$ 394.757')
+    expect(markup).toContain('aria-label="Más opciones de Caja"')
   })
 })
 
-describe('la fila de acciones', () => {
-  const actions = (over: Partial<Parameters<typeof CajasAcciones>[0]> = {}) =>
-    html(<CajasAcciones base={BASE} hasNonCash {...over} />)
-  const files = (over: Partial<Parameters<typeof CajasArchivos>[0]> = {}) =>
-    html(<CajasArchivos base={BASE} hasWallet hasBank {...over} />)
-
-  it('las cuatro cosas de esta pantalla, cada una con su nombre entero para lectores', () => {
-    const markup = actions()
-    for (const label of [
-      'Mover plata',
-      'Contar la caja',
-      'Un socio puso o sacó plata',
-      'Gastos del banco',
-    ]) {
-      expect(markup).toContain(`aria-label="${label}"`)
-    }
-    expect(markup).toContain(`href="${BASE}/cajas/gasto-bancario"`)
+describe('«Entró plata» y «Salió plata»', () => {
+  it('dos botones arriba, y cada uno abre un menú chico', () => {
+    const markup = html(<MoneyButtons base={BASE} />)
+    expect(markup).toContain('Entró plata')
+    expect(markup).toContain('Salió plata')
+    expect(markup).toContain('aria-haspopup="menu"')
   })
 
-  it('sin bancos ni billeteras no ofrece gastos del banco ni subir archivos', () => {
-    const markup = actions({ hasNonCash: false })
-    expect(markup).not.toContain('Gastos del banco')
-    expect(markup.match(/<button/g)).toHaveLength(3)
-    expect(files({ hasWallet: false, hasBank: false })).toBe('')
+  it('lo que entra: un cobro, o algo que se anota aparte', () => {
+    expect(MONEY_IN.map((i) => [i.label, 'action' in i ? i.action : i.path])).toEqual([
+      ['Cobro', 'cobrar'],
+      ['Socio puso plata', 'movimiento'],
+      ['Otro', 'movimiento'],
+    ])
   })
 
-  it('«¿Tenés el archivo?» ofrece subir lo que el bar tiene: Mercado Pago, el banco o los dos', () => {
-    const both = files()
-    expect(both).toContain('¿Tenés el archivo? Se carga solo:')
-    expect(both).toContain(`href="${BASE}/importar/mercado-pago"`)
-    expect(both).toContain(`href="${BASE}/importar/banco"`)
-    const onlyWallet = files({ hasBank: false })
-    expect(onlyWallet).toContain('subí el reporte de Mercado Pago')
-    expect(onlyWallet).not.toContain('importar/banco')
-    const onlyBank = files({ hasWallet: false })
-    expect(onlyBank).toContain('subí los movimientos del banco')
-    expect(onlyBank).not.toContain('importar/mercado-pago')
-    // Los links van adentro de la oración: no la parten en renglones sueltos.
-    expect(both).not.toContain('inline-flex')
+  it('lo que sale: un pago, un socio, los gastos del banco u otra cosa', () => {
+    expect(MONEY_OUT.map((i) => [i.label, 'action' in i ? i.action : i.path])).toEqual([
+      ['Pago', 'pagar'],
+      ['Socio sacó plata', 'movimiento'],
+      ['Gasto del banco', '/cajas/gasto-bancario'],
+      ['Otro', 'movimiento'],
+    ])
   })
 
-  it('la contadora no ve nada', () => {
+  it('la contadora no los ve', () => {
     ui.readOnly = true
-    expect(actions()).toBe('')
-    expect(files()).toBe('')
+    expect(html(<MoneyButtons base={BASE} />)).toBe('')
+  })
+})
+
+describe('el panel lateral de una cuenta', () => {
+  const account = (rows: TreasuryBalanceRow[]) => {
+    const found = cajaView(rows, new Map(), POSTED, { today: TODAY, base: BASE })
+    const first = found.accounts[0] ?? found.apart[0]
+    if (!first) throw new Error('sin cuenta')
+    return first
+  }
+
+  it('dice lo que hay como la fila: sin un menos, y sin afirmar un cero que no es dato', () => {
+    expect(accountBalanceLine(account([DEMO[0] as TreasuryBalanceRow]))).toBe(`Saldo $${NB}394.757`)
+    expect(
+      accountBalanceLine(
+        account([row({ kind: 'bank', balanceCents: -1_200_000, lastMovementDate: TODAY })]),
+      ),
+    ).toBe(`Descubierto $${NB}12.000`)
+    expect(
+      accountBalanceLine(account([row({ kind: 'credit_card', balanceCents: -8_000_000 })])),
+    ).toBe(`Debés $${NB}80.000`)
+    expect(accountBalanceLine(account([row({ kind: 'credit_card', balanceCents: 0 })]))).toBe(
+      'Sin deuda',
+    )
+    const pending = cajaView(HUB, new Map(), PENDING, { today: TODAY, base: BASE }).accounts[0]
+    if (!pending) throw new Error('sin cuenta')
+    expect(accountBalanceLine(pending)).toBe('Todavía no se cargó cuánto hay')
+  })
+
+  it('Fecha, Concepto, Entró y Salió; cada renglón lleva a su comprobante', () => {
+    const markup = html(
+      <MovementsTable
+        base={BASE}
+        card={false}
+        movements={[
+          {
+            key: 'a',
+            date: '2026-10-13',
+            title: 'Cervecería Sierras',
+            sub: 'Pago',
+            inCents: 0,
+            outCents: 30_000_000,
+            path: '/comprobantes/doc-1',
+          },
+          {
+            key: 'b',
+            date: '2026-10-12',
+            title: 'Lo que había al arrancar',
+            sub: 'Saldos iniciales',
+            inCents: 81_200_000,
+            outCents: 0,
+            path: null,
+          },
+        ]}
+      />,
+    )
+    for (const head of ['Fecha', 'Concepto', 'Entró', 'Salió']) {
+      expect(markup).toContain(`>${head}<`)
+    }
+    expect(markup).toContain('13/10')
+    expect(markup).toContain('$ 300.000')
+    expect(markup).toContain('$ 812.000')
+    expect(markup).toContain(`href="${BASE}/comprobantes/doc-1"`)
+    expect(markup).toContain('Pago')
+  })
+
+  it('en la tarjeta de la empresa lo que entra son pagos y lo que sale, consumos', () => {
+    const markup = html(<MovementsTable base={BASE} card movements={[]} />)
+    expect(markup).toContain('>Pagos<')
+    expect(markup).toContain('>Consumos<')
+    expect(markup).not.toContain('>Entró<')
   })
 })
 
@@ -442,7 +527,7 @@ describe('la ficha de una caja', () => {
     // Dice qué mueve a esta caja.
     expect(markup).toContain('Sube sola con el cierre del día')
     // En efectivo no hay gastos del banco ni archivos que subir.
-    expect(markup).toContain('Mover plata')
+    expect(markup).toContain('Transferir a otra cuenta')
     expect(markup).toContain('Otra entrada o salida')
     expect(markup).not.toContain('Gastos del banco')
     expect(markup).not.toContain('importar')
@@ -479,7 +564,7 @@ describe('la ficha de una caja', () => {
     const markup = hero({ active: false, count: null })
     expect(markup).toContain('Está desactivada')
     expect(markup).not.toContain('<button')
-    expect(markup).not.toContain('Mover plata')
+    expect(markup).not.toContain('Transferir a otra cuenta')
   })
 
   it('si no se pudieron leer los movimientos, queda lo que hay hoy (nunca un «$ 0» inventado)', () => {
@@ -589,7 +674,7 @@ describe('la ficha de una caja', () => {
       // A un banco la plata llega desde otra caja.
       const moved = empty({ treasury: bank, methods: [] })
       expect(moved).toContain('Todavía no pasó nada por Banco Nación')
-      expect(moved).toMatch(/<button[^>]*>Mover plata<\/button>/)
+      expect(moved).toMatch(/<button[^>]*>Transferir a otra cuenta<\/button>/)
     })
 
     it('la contadora lee lo mismo y no recibe ningún paso de carga', () => {
@@ -689,128 +774,6 @@ describe('la ficha de una caja', () => {
   })
 })
 
-describe('«Últimos movimientos»', () => {
-  const page = (rows: SubledgerPage['rows'], nextCursor: string | null = null) =>
-    Promise.resolve({
-      ok: true as const,
-      data: {
-        rows,
-        nextCursor,
-        totalRows: rows.length,
-        kind: 'treasury' as const,
-        from: '2026-09-30',
-        to: TODAY,
-      },
-    })
-  const line = (
-    key: string,
-    date: string,
-    values: Record<string, string | number>,
-  ): SubledgerPage['rows'][number] => ({
-    rowKind: 'line',
-    documentId: `doc-${key}`,
-    entryId: `e-${key}`,
-    date,
-    values,
-  })
-  const props = {
-    base: BASE,
-    today: TODAY,
-    swatches: { caja: 'bg-(--adm-k-cash-1)', banco: 'bg-(--adm-k-bank-1)' },
-    kinds: { caja: 'cash', banco: 'bank' } as const,
-    lastMovementDate: '2026-10-08',
-  }
-
-  it('si ninguna caja se movió en dos semanas, dice cuándo fue el último', async () => {
-    const markup = html(await RecentActivity({ ...props, page: null }))
-    expect(markup).toContain('Últimos movimientos')
-    expect(markup).toContain('No hubo movimientos en los últimos 14 días. El último fue el 08/10.')
-  })
-
-  it('cuenta lo que pasó en palabras y junta las dos líneas de un pasaje', async () => {
-    const transfer = {
-      document_kind: 'transfer',
-      description: 'Movimiento entre cuentas · Caja → Banco Nación',
-    }
-    const rows = [
-      {
-        rowKind: 'opening' as const,
-        documentId: null,
-        entryId: null,
-        date: '2026-09-30',
-        values: {},
-      },
-      line('1', '2026-10-12', {
-        document_kind: 'expense',
-        description: 'Gasto · Hielo',
-        outflow_cents: 1_200_000,
-        treasury_id: 'caja',
-        treasury_name: 'Caja',
-      }),
-      {
-        ...line('2', TODAY, {
-          ...transfer,
-          memo: 'De Caja',
-          inflow_cents: 20_000_000,
-          treasury_id: 'banco',
-          treasury_name: 'Banco Nación',
-        }),
-        documentId: 'pase',
-      },
-      {
-        ...line('3', TODAY, {
-          ...transfer,
-          memo: 'A Banco Nación',
-          outflow_cents: 20_000_000,
-          treasury_id: 'caja',
-          treasury_name: 'Caja',
-        }),
-        documentId: 'pase',
-      },
-    ]
-    const markup = html(await RecentActivity({ ...props, page: page(rows) }))
-    // Un solo renglón para el pasaje (el nombre va también en su `title`).
-    expect(markup.match(/>Caja → Banco Nación</g)).toHaveLength(1)
-    expect(markup).toContain('↔ $ 200.000')
-    expect(markup).toContain('Plata movida entre cajas')
-    expect(markup).toContain('Hielo')
-    // A la izquierda, qué pasó; de qué caja es va debajo de la plata.
-    expect(markup).toMatch(/text-muted-foreground[^"]*">Gasto<\/div>/)
-    expect(markup).toMatch(/text-xs tabular-nums text-muted-foreground">Caja<\/div>/)
-    expect(markup).not.toContain('Gasto · ')
-    expect(markup).toContain(`href="${BASE}/comprobantes/doc-1"`)
-    expect(markup).toContain('bg-(--adm-k-cash-1)')
-    expect(markup.indexOf('Martes 13/10 · hoy')).toBeLessThan(markup.indexOf('Lunes 12/10 · ayer'))
-    expect(markup).toContain('Para ver todo lo de una caja, tocá su tarjeta.')
-  })
-
-  it('si la base cortó la lectura, no muestra una lista que no es la más nueva', async () => {
-    const markup = html(
-      await RecentActivity({
-        ...props,
-        page: page(
-          [line('1', TODAY, { document_kind: 'expense', description: 'Gasto · Hielo' })],
-          'cursor',
-        ),
-      }),
-    )
-    expect(markup).toContain('Hubo muchos movimientos estos días: miralos en cada caja.')
-    expect(markup).not.toContain('Hielo')
-  })
-
-  it('si la lectura falla, el bloque conserva su lugar y ofrece reintentar', async () => {
-    const failed = Promise.resolve({
-      ok: false as const,
-      code: 'error' as const,
-      message: 'Sin conexión: no pudimos cargar esto. Probá de nuevo.',
-    })
-    const markup = html(await RecentActivity({ ...props, page: failed }))
-    expect(markup).toContain('Últimos movimientos')
-    expect(markup).toContain('Sin conexión: no pudimos cargar esto.')
-    expect(markup).toContain('Reintentar')
-  })
-})
-
 function flow(month: string, category: string, inflow: number, outflow: number): CashFlowRow {
   return {
     month,
@@ -847,7 +810,7 @@ describe('«Entró y salió»', () => {
     expect(markup).toContain('De cada $ 100 que salieron, $ 79 fueron a proveedores')
     // Una sola fuente de plata: se dice en una oración, sin segundo dibujo.
     expect(markup).toContain('Todo lo que entró fue por ventas cobradas.')
-    expect(markup).toContain('Mover plata entre cajas no cuenta.')
+    expect(markup).toContain('Transferir entre cuentas no cuenta.')
     expect(markup).toContain('Ver como tabla')
   })
 

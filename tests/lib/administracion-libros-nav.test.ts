@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import {
-  BOOKS,
-  bookSwitcherItems,
-} from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/book-nav'
+import { bookPeriodParams } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/book-nav'
 import {
   countText,
   downloadablePackage,
   exportParamsFor,
   packageCountText,
   packageFiles,
-  packageStatusLine,
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/package'
 import {
   collapseHistoryRuns,
@@ -31,14 +27,7 @@ import { EXPORT_BOOK_INFO, MONTH_PACKAGE_BOOKS } from '@/lib/accounting/queries/
 /** Los números llevan un espacio duro antes de su unidad: acá se compara contra texto común. */
 const plain = (text: string | null | undefined) => (text ?? '').replaceAll('\u00a0', ' ')
 
-const BOOKS_PATH = '/hub/administracion/libros'
-
-function hrefOf(items: ReturnType<typeof bookSwitcherItems>, key: string): URL {
-  const item = items.find((i) => i.key === key)
-  return new URL(item?.href ?? '', 'http://x')
-}
-
-describe('pasar de un libro a otro con el período puesto', () => {
+describe('llevar el período de un libro a otro', () => {
   const september = {
     kind: 'month' as const,
     month: '2026-09',
@@ -47,52 +36,17 @@ describe('pasar de un libro a otro con el período puesto', () => {
   }
   const range = { kind: 'range' as const, month: null, from: '2026-08-10', to: '2026-10-13' }
 
-  it('son los ocho libros, con el abierto marcado', () => {
-    const items = bookSwitcherItems(BOOKS_PATH, 'mayor', september)
-    expect(items.map((i) => i.label)).toEqual([
-      'Diario',
-      'Mayor',
-      'Sumas y saldos',
-      'Subdiarios',
-      'IVA compras',
-      'IVA ventas',
-      'Posición de IVA',
-      'Historia',
-    ])
-    expect(items.filter((i) => i.active).map((i) => i.key)).toEqual(['mayor'])
-    expect(items.every((i) => i.href.startsWith(`${BOOKS_PATH}/`))).toBe(true)
-  })
-
   it('con un mes: todos reciben `?mes=`', () => {
-    const items = bookSwitcherItems(BOOKS_PATH, 'diario', september)
-    for (const book of BOOKS) {
-      const url = hrefOf(items, book.key)
-      expect(url.pathname).toBe(`${BOOKS_PATH}/${book.key}`)
-      expect(url.search).toBe('?mes=2026-09')
-    }
+    expect(bookPeriodParams({ period: 'rango' }, september)).toEqual({ mes: '2026-09' })
+    expect(bookPeriodParams({ period: 'mes' }, september)).toEqual({ mes: '2026-09' })
   })
 
   it('de un rango a un libro mensual va el mes de «hasta»; a uno de rango, el rango', () => {
-    const items = bookSwitcherItems(BOOKS_PATH, 'diario', range)
-    expect(hrefOf(items, 'iva-compras').search).toBe('?mes=2026-10')
-    expect(hrefOf(items, 'iva-ventas').search).toBe('?mes=2026-10')
-    expect(hrefOf(items, 'posicion-iva').search).toBe('?mes=2026-10')
-    expect(hrefOf(items, 'mayor').search).toBe('?desde=2026-08-10&hasta=2026-10-13')
-    expect(hrefOf(items, 'historia').search).toBe('?desde=2026-08-10&hasta=2026-10-13')
-  })
-
-  it('los filtros de cada libro no viajan', () => {
-    const items = bookSwitcherItems(BOOKS_PATH, 'mayor', september)
-    for (const item of items) {
-      const params = new URL(item.href, 'http://x').searchParams
-      for (const key of ['cuenta', 'tipo', 'quien', 'caja', 'nivel', 'despues', 'participe']) {
-        expect(params.has(key), `${item.key} ${key}`).toBe(false)
-      }
-    }
-  })
-
-  it('sin libro abierto (una pantalla que no es de la fila), ninguno queda marcado', () => {
-    expect(bookSwitcherItems(BOOKS_PATH, null, september).some((i) => i.active)).toBe(false)
+    expect(bookPeriodParams({ period: 'mes' }, range)).toEqual({ mes: '2026-10' })
+    expect(bookPeriodParams({ period: 'rango' }, range)).toEqual({
+      desde: '2026-08-10',
+      hasta: '2026-10-13',
+    })
   })
 })
 
@@ -172,20 +126,7 @@ describe('el paquete del mes', () => {
     expect(plain(packageCountText(1, 1))).toBe('1 archivo')
   })
 
-  it('el estado del mes y los conteos, en palabras', () => {
-    expect(
-      packageStatusLine('2026-10', { status: 'open', closedAt: null, closedByName: null }),
-    ).toBe('Octubre 2026 · mes abierto: los números pueden cambiar hasta que se cierre')
-    expect(
-      packageStatusLine('2026-09', {
-        status: 'closed',
-        closedAt: '2026-10-05T15:00:00Z',
-        closedByName: 'Franco',
-      }),
-    ).toBe('Septiembre 2026 · cerrado el 05/10/2026 por Franco')
-    expect(
-      packageStatusLine('2026-08', { status: 'missing', closedAt: null, closedByName: null }),
-    ).toBe('Agosto 2026')
+  it('los conteos, en palabras', () => {
     expect(plain(countText({ rows: 35, unit: 'asientos' }))).toBe('35 asientos')
     expect(plain(countText({ rows: 1, unit: 'proveedores' }))).toBe('1 proveedor')
     expect(countText({ rows: 0, unit: 'filas' })).toBe('Sin movimientos')

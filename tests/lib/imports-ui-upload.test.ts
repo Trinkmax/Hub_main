@@ -7,6 +7,7 @@
  * archivos equivocados se frenan con un texto que dice qué hacer.
  */
 
+import { deflateRawSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -27,6 +28,8 @@ import {
 } from '@/lib/imports/ui/bank-mapping'
 import { chunkByRowsAndBytes } from '@/lib/imports/ui/chunks'
 import {
+  detectedSourceHome,
+  fileColumns,
   openImportFile,
   planBank,
   planMercadoPago,
@@ -41,6 +44,7 @@ import {
   nodeInflateRaw,
 } from '@/tests/fixtures/imports/fixtures'
 import { OWN_CBU, SAS_CUIT, TREASURY_ID } from '@/tests/fixtures/imports/synth'
+import { buildZip } from '@/tests/fixtures/imports/zip-writer'
 
 const SHA = 'b'.repeat(64)
 const BATCH = '11111111-2222-4333-8444-555555555555'
@@ -393,6 +397,108 @@ describe('los números del papel «Llegó esto» (`figures`)', () => {
       expect(figures.closingCents, file).toBe(r.plan.meta.finalBalanceCents ?? null)
       expect((figures.inCents ?? 0) + (figures.outCents ?? 0), file).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('el reporte de Cobros de Mercado Pago, que no se deja importar', () => {
+  const COBROS = `date_created;operation_id;status;transaction_amount;net_received_amount
+2026-10-01T10:00:00.000-03:00;123;approved;1000.00;940.00
+`
+  const MESSAGE =
+    'Este es el reporte de Cobros de Mercado Pago. No trae lo que te descontaron. Bajá Liquidaciones y lo cargamos con comisión e impuestos.'
+  const openCsv = (text: string, fileName: string) =>
+    openImportFile({
+      bytes: new TextEncoder().encode(text),
+      fileName,
+      inflateRaw: nodeInflateRaw,
+    })
+
+  it('por el nombre y por los títulos: lo explica y muestra cómo se baja Liquidaciones', async () => {
+    const byHeaders = await openCsv(COBROS, 'descarga.csv')
+    if (!byHeaders.ok) throw new Error('tendría que abrirse')
+    expect(byHeaders.detected).toBe('mp_collection')
+    const byName = await openCsv('Hola;Chau\n1;2\n', 'collection-20261029001539-137f.csv')
+    if (!byName.ok) throw new Error('tendría que abrirse')
+    expect(byName.detected).toBe('mp_collection')
+    expect(wrongPlace('mp_release', 'mp_collection')).toEqual({
+      message: MESSAGE,
+      goTo: null,
+      howTo: true,
+    })
+  })
+
+  it('soltado en otra pantalla: dice lo mismo y ofrece ir a Mercado Pago', () => {
+    for (const expected of ['arca_recibidos', 'bank_statement'] as const) {
+      expect(wrongPlace(expected, 'mp_collection')).toEqual({
+        message: MESSAGE,
+        goTo: 'mp_release',
+      })
+    }
+  })
+
+  it('la carpeta «Reporte_de_ventas» con varios archivos: no se abre, pero se sabe qué es', async () => {
+    const zip = buildZip(
+      [
+        { name: 'a.csv', data: new TextEncoder().encode('x;y\n1;2\n') },
+        { name: 'b.csv', data: new TextEncoder().encode('x;y\n3;4\n') },
+      ],
+      { deflateRaw: (data) => new Uint8Array(deflateRawSync(data)) },
+    )
+    const r = await openImportFile({
+      bytes: zip,
+      fileName: 'Reporte_de_ventas_2026-10-29.zip',
+      inflateRaw: nodeInflateRaw,
+    })
+    expect(r).toEqual({ ok: false, message: MESSAGE, detected: 'mp_collection' })
+  })
+
+  it('cada cosa reconocida tiene su pantalla; lo desconocido no', () => {
+    expect(detectedSourceHome('mp_collection')).toBe('mp_release')
+    expect(detectedSourceHome('mp_settlement')).toBe('mp_release')
+    expect(detectedSourceHome('arca_emitidos')).toBe('arca_recibidos')
+    expect(detectedSourceHome('bank')).toBe('bank_statement')
+    expect(detectedSourceHome('unknown')).toBeNull()
+  })
+})
+
+describe('un archivo que no se reconoce', () => {
+  const ROWS = [
+    ['Reporte de caja', '', ''],
+    ['Fecha', 'Concepto', 'Total', 123],
+    ['2026-10-01', 'Hielo', 100],
+  ]
+
+  it('muestra qué columnas trae y qué se esperaba, en vez de solo un error', () => {
+    expect(wrongPlace('mp_release', 'unknown', ROWS)).toEqual({
+      message: expect.stringMatching(/No reconocemos este archivo/),
+      goTo: null,
+      howTo: true,
+      columns: {
+        found: ['Fecha', 'Concepto', 'Total'],
+        expected: ['DATE', 'RECORD_TYPE', 'DESCRIPTION', 'NET_CREDIT_AMOUNT', 'NET_DEBIT_AMOUNT'],
+      },
+    })
+    expect(wrongPlace('arca_recibidos', 'unknown', ROWS)?.columns?.expected).toContain(
+      'Punto de Venta',
+    )
+  })
+
+  it('sin filas, o sin títulos para mostrar, queda el texto y la guía', () => {
+    expect(wrongPlace('mp_release', 'unknown')?.columns).toBeUndefined()
+    expect(wrongPlace('mp_release', 'unknown', [[1, 2, null]])?.columns).toBeUndefined()
+  })
+
+  it('el banco no da error: sigue preguntando qué es cada columna', () => {
+    expect(wrongPlace('bank_statement', 'unknown', ROWS)).toBeNull()
+  })
+
+  it('fileColumns toma la fila con más títulos, corta los largos y no se pasa de 12', () => {
+    expect(fileColumns(ROWS)).toEqual(['Fecha', 'Concepto', 'Total'])
+    const many = Array.from({ length: 20 }, (_, i) => `Columna ${i + 1}`)
+    expect(fileColumns([many])).toHaveLength(12)
+    const [long] = fileColumns([['x'.repeat(60)]])
+    expect(long).toHaveLength(40)
+    expect(long?.endsWith('…')).toBe(true)
   })
 })
 

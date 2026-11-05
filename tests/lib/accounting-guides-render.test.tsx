@@ -4,8 +4,8 @@ import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * La guía «Cómo se usa Administración» en pantalla (rediseño de oct 2026): el mapa de cinco
- * paradas, las recetas con su ancla y su pantalla simulada, los cuatro papeles y los vínculos.
+ * La guía «Cómo se usa Administración» en pantalla: la portada en planillas, las recetas con su
+ * ancla y su pantalla simulada, los cuatro papeles y los vínculos.
  * Acá: que todo esté en el primer paint (anclas, links, descripciones de los dibujos), que la
  * contadora no vea ningún botón de carga, y que los dibujos no inventen datos de un bar.
  */
@@ -39,10 +39,10 @@ vi.mock('@/components/administracion/guias/onboarding/how-to-slot', () => ({
 }))
 
 import {
-  BigLinks,
   GuideGlossary,
-  RecipeTiles,
-  RoutinePanel,
+  RecipeTable,
+  RoutineTable,
+  SectionsTable,
 } from '@/components/administracion/guias/uso/cover'
 import { LinksDetail, LinksMap } from '@/components/administracion/guias/uso/links'
 import { GuideScenePreview } from '@/components/administracion/guias/uso/mock-scenes'
@@ -53,20 +53,17 @@ import {
   SalesInvoicing,
 } from '@/components/administracion/guias/uso/papers'
 import { Recipes } from '@/components/administracion/guias/uso/recipes'
-import { StationMap } from '@/components/administracion/guias/uso/station-map'
 import {
   GUIDE_GLOSSARY,
   GUIDE_LINKS,
   GUIDE_PAPER_CASES,
   GUIDE_RECIPES,
-  GUIDE_STATIONS,
+  GUIDE_SECTIONS,
   type GuideOverview,
   guideRoutine,
   linkAnchor,
-  PAPERS_ANCHOR,
   recipeAnchor,
   SCREEN_LABELS,
-  stationStates,
 } from '@/lib/accounting/guides'
 import { onboardingState, parseOnboardingData } from '@/lib/accounting/onboarding'
 
@@ -129,103 +126,23 @@ function expectNeutral(html: string) {
   }
 }
 
-describe('el mapa de paradas', () => {
-  it('las cinco, en orden, con qué mueve cada una y «Ver cómo» a su receta', () => {
-    const html = renderToString(<StationMap base={BASE} states={stationStates(overview())} />)
+describe('la portada', () => {
+  it('«¿Qué pasó?»: una planilla con cada situación, dónde se carga y su paso a paso', () => {
+    const html = renderToString(<RecipeTable base={BASE} />)
     const t = text(html)
-    const order = GUIDE_STATIONS.map((s) => t.indexOf(`Parada ${s.n}: ${s.title}`))
-    expect(order.every((at) => at >= 0)).toBe(true)
-    expect([...order].sort((a, b) => a - b)).toEqual(order)
-    for (const s of GUIDE_STATIONS) {
-      expect(html).toContain(`href="${BASE}/guias/dia-a-dia#${recipeAnchor(s.recipe)}"`)
-      expect(t).toContain(s.movesText)
+    for (const head of ['Situación', 'Dónde', 'Cuándo']) expect(html).toContain(`>${head}</th>`)
+    for (const r of GUIDE_RECIPES) {
+      expect(t).toContain(r.title)
+      expect(t).toContain(r.where)
+      expect(html).toContain(`href="${BASE}/guias/dia-a-dia#${recipeAnchor(r.id)}"`)
     }
-    // La dirección va en palabras, no solo en la flecha.
-    expect(t).toContain('Sube: Cajas')
-    expect(t).toContain('Baja: Lo que debés')
-    expect(t).toContain('No mueve plata')
+    // Sin tarjetas: es una tabla.
+    expect(html).toContain('<table')
     expectNeutral(html)
   })
 
-  it('marca la parada que te toca y le pone el botón principal', () => {
-    const html = renderToString(<StationMap base={BASE} states={stationStates(overview())} />)
-    const t = text(html)
-    expect(t).toContain('Te toca')
-    expect(t).toContain('Faltan 2 cierres de la última semana.')
-    expect(html).toContain(`href="${BASE}/ventas/cierre"`)
-    // Una sola parada dorada: la primera que te toca.
-    expect(html.match(/bg-adm-gold px-4/g)).toHaveLength(1)
-  })
-
-  it('al día lo dice; sin datos se ve igual, sin marcas', () => {
-    const clear = text(
-      renderToString(
-        <StationMap base={BASE} states={stationStates(overview({ daily_close_missing: 0 }))} />,
-      ),
-    )
-    expect(clear).toContain('Estás al día')
-    const blank = text(renderToString(<StationMap base={BASE} states={stationStates(null)} />))
-    expect(blank).not.toContain('Te toca')
-    expect(blank).not.toContain('Al día')
-    expect(blank).toContain('Vendés')
-  })
-
-  it('parado (el celular), «qué es y qué mueve» se abre desde el título; viene abierto el que te toca', () => {
-    const html = renderToString(<StationMap base={BASE} states={stationStates(overview())} />)
-    const folds = html.match(/<details[^>]*>/g) ?? []
-    expect(folds).toHaveLength(GUIDE_STATIONS.length)
-    // Faltan cierres: «Vendés» es la que te toca y es la única abierta.
-    expect(folds.filter((tag) => /\sopen(=""|\s|>)/.test(tag))).toHaveLength(1)
-    const opened = html.split('<details').find((chunk) => /^[^>]*\sopen=""/.test(chunk)) ?? ''
-    expect(text(`<details${opened.split('</details>')[0]}`)).toContain('Vendés')
-    // Acostado y parado comparten el corte: el mapa entra acostado en una notebook.
-    expect(html).toContain('@[54rem]:grid-cols-5')
-    expect(html).not.toContain('@[60rem]')
-    // Los botones cortos entran en la columna angosta.
-    for (const s of GUIDE_STATIONS) expect(s.action.label.length, s.id).toBeLessThanOrEqual(16)
-  })
-
-  it('la contadora ve el mapa y «Ver cómo», sin ningún botón de carga', () => {
-    ctx.value = OWNER ? { ...OWNER, readOnly: true } : null
-    const html = renderToString(<StationMap base={BASE} states={stationStates(overview())} />)
-    const t = text(html)
-    expect(t).toContain('Ver cómo')
-    for (const s of GUIDE_STATIONS) expect(t).not.toContain(s.action.label)
-    expect(html).not.toContain('<button')
-  })
-})
-
-describe('la portada', () => {
-  it('«¿Qué pasó?»: las doce recetas, cada una a su paso a paso', () => {
-    const html = renderToString(<RecipeTiles base={BASE} />)
-    for (const r of GUIDE_RECIPES) {
-      expect(text(html)).toContain(r.title)
-      expect(html).toContain(`href="${BASE}/guias/dia-a-dia#${recipeAnchor(r.id)}"`)
-    }
-  })
-
-  it('los dos accesos grandes y la rutina con su estado en palabras', () => {
-    const links = renderToString(<BigLinks base={BASE} />)
-    expect(links).toContain(`href="${BASE}/guias/con-y-sin-factura"`)
-    expect(links).toContain(`href="${BASE}/guias/como-se-vincula"`)
-    // Cada acceso trae tres dudas, y cada una lleva a una parte que existe en su página.
-    const anchors = [...links.matchAll(/href="[^"#]*#([^"]+)"/g)].map((match) => match[1])
-    expect(anchors).toHaveLength(6)
-    const pages = renderToString(
-      <>
-        <PapersCompare />
-        <PaperCases base={BASE} />
-        <SalesInvoicing base={BASE} />
-        <LinksDetail base={BASE} />
-      </>,
-    )
-    for (const anchor of anchors) expect(pages, anchor).toContain(`id="${anchor}"`)
-    expect(anchors).toEqual(
-      expect.arrayContaining([...Object.values(PAPERS_ANCHOR), linkAnchor('compra-pago')]),
-    )
-    expect(text(links)).toContain('¿Dónde cargo un remito?')
-
-    const routine = renderToString(<RoutinePanel base={BASE} groups={guideRoutine(overview())} />)
+  it('la rutina con su estado en palabras', () => {
+    const routine = renderToString(<RoutineTable base={BASE} groups={guideRoutine(overview())} />)
     const t = text(routine)
     expect(t).toContain('Todos los días')
     expect(t).toContain('Cada semana')
@@ -233,24 +150,48 @@ describe('la portada', () => {
     expect(t).toContain('Faltan 2 cierres de la última semana')
     expect(t).toContain('Al día')
     expect(routine).toContain(`href="${BASE}/guias/dia-a-dia#receta-cierre"`)
-    expect(routine).toContain(`href="${BASE}/importar/banco"`)
+    expect(routine).toContain(`href="${BASE}/guias/dia-a-dia#receta-banco"`)
+    expect(routine).toContain(`href="${BASE}/guias/dia-a-dia#receta-plan-semana"`)
+    expect(routine).toContain('id="rutina"')
+  })
+
+  it('sin datos de la base, la rutina se ve igual, sin marcas', () => {
+    const t = text(renderToString(<RoutineTable base={BASE} groups={guideRoutine(null)} />))
+    expect(t).not.toContain('Al día')
+    expect(t).toContain('Subir el reporte de Mercado Pago')
+  })
+
+  it('dónde está cada cosa: las secciones del menú, con sus solapas', () => {
+    const html = renderToString(<SectionsTable base={BASE} />)
+    const t = text(html)
+    for (const section of GUIDE_SECTIONS) {
+      expect(t).toContain(section.title)
+      for (const tab of section.tabs) expect(t).toContain(tab)
+      expect(html).toContain(`href="${BASE}${section.path}"`)
+    }
+    expect(t).toContain('Arrastrar un archivo')
+    expect(t).toContain('La foto por QR')
+    expect(t).toContain('Ajustes')
   })
 
   it('el glosario dice la idea y, en su propio renglón, el nombre de contadora', () => {
     const html = renderToString(<GuideGlossary />)
     const t = text(html)
     expect(t).toContain('Cómo queda en los libros Para los contadores: Asiento')
-    expect(t).toContain('En camino Para los contadores: Por acreditar')
+    expect(t).toContain('Por cobrar Para los contadores: Cuentas a cobrar')
+    expect(t).toContain('Cambiarle la cuenta a un renglón Para los contadores: Reimputar')
+    expect(t).toContain('Impuesto al cheque Para los contadores: Ley 25.413')
     // Sin el «·» que quedaba colgando al final del renglón.
     expect(t).not.toMatch(/ · (Asiento|Retención)/)
-    // En el celular viene plegado: el botón dice cuántas son.
-    expect(t).toContain(`Ver las ${GUIDE_GLOSSARY.length} palabras`)
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"/)
+    // Plegado, para que la portada sea corta, y con su ancla (la Puesta en marcha manda acá).
+    expect(html).toMatch(/<details id="glosario"/)
+    expect(html).not.toMatch(/<details id="glosario"[^>]*\sopen/)
+    expect(GUIDE_GLOSSARY.every((entry) => t.includes(entry.meaning))).toBe(true)
   })
 })
 
 describe('las recetas', () => {
-  it('doce acordeones con su ancla; se abre la rutina que te toca', () => {
+  it('un acordeón por receta, con su ancla; se abre la rutina que te toca', () => {
     const html = renderToString(<Recipes base={BASE} overview={overview()} />)
     for (const r of GUIDE_RECIPES) {
       expect(html).toContain(`id="${recipeAnchor(r.id)}"`)
@@ -260,7 +201,7 @@ describe('las recetas', () => {
     const open = html.match(/aria-expanded="true"/g) ?? []
     expect(open).toHaveLength(1)
     expect(html).toMatch(/id="receta-cierre-titulo"[^>]*aria-expanded="true"/)
-    // «Te toca» se dice como en el mapa: una píldora ámbar y el detalle al lado.
+    // «Te toca» es una píldora ámbar y el detalle al lado.
     expect(text(html)).toContain('Te toca Faltan 2 cierres de la última semana')
     expect(html).toMatch(/data-tone="warn"[^>]*>(?:<[^>]+>)*[^<]*Te toca/)
     // El índice también lo marca en ámbar (antes iba en verde, igual que «Al día»).
@@ -286,9 +227,8 @@ describe('las recetas', () => {
       for (const check of r.checks) expect(t).toContain(check)
       for (const trouble of r.troubles) expect(t).toContain(trouble.problem)
       expect(t).toContain(r.result)
-      // La primera pantalla, como imagen con su descripción.
+      // La primera pantalla, si tiene, como imagen con su descripción.
       const first = r.screens[0]
-      expect(first, r.id).toBeDefined()
       if (first) expect(html).toContain(`aria-label="${first.label.replace(/"/g, '&quot;')}"`)
     }
     // El marco dice «Ejemplo» y nada más: los rótulos son los de la pantalla de hoy.
@@ -296,6 +236,7 @@ describe('las recetas', () => {
     expect(t).toContain('Ejemplo')
     expect(t).not.toContain('Puede verse distinto')
     expect(html).toContain('data-como-lo-bajo="mercado_pago"')
+    expect(html).toContain('data-como-lo-bajo="banco"')
     expect(html).toContain('data-como-lo-bajo="mis_comprobantes"')
     expectNeutral(html)
   })
@@ -315,10 +256,7 @@ describe('las recetas', () => {
     }
   })
 
-  it('las maquetas no usan la letra de máquina fuera del ticket, y la píldora elegida es verde', () => {
-    const sales = renderToString(<GuideScenePreview scene={{ kind: 'collect', part: 'sales' }} />)
-    // Los importes de las ventas pendientes y de la comisión, como en la hoja de verdad.
-    expect(sales).not.toContain('font-mono')
+  it('la píldora elegida de contar la caja es verde', () => {
     const count = renderToString(<GuideScenePreview scene={{ kind: 'count' }} />)
     expect(count).toContain('border-primary bg-primary text-primary-foreground')
     expect(count).not.toContain('bg-foreground text-background')
@@ -338,10 +276,29 @@ describe('las recetas', () => {
         expectNeutral(html)
       }
     }
-    expect(seen.size).toBeGreaterThanOrEqual(26)
+    expect(seen.size).toBeGreaterThanOrEqual(10)
   })
 
-  it('las pantallas de las cargas que más confunden dicen lo que dice la pantalla de hoy', () => {
+  it('el menú de «+ Cargar» dibuja las opciones de verdad y marca la que toca', () => {
+    const draw = (pick: 'compra' | 'sueldo') =>
+      renderToString(<GuideScenePreview scene={{ kind: 'launcher', pick }} />)
+    const t = text(draw('compra'))
+    expect(t).toContain('¿Qué cargás?')
+    for (const title of [
+      'Compra',
+      'Compra y pago',
+      'Pago',
+      'Cierre del día',
+      'Adelanto o sueldo',
+    ]) {
+      expect(t).toContain(title)
+    }
+    expect(t).toContain('Tocá acá')
+    // Vale igual para una de la fila chica.
+    expect(text(draw('sueldo'))).toContain('Tocá acá')
+  })
+
+  it('contar la caja, importar, deshacer y anular dicen lo que dice la pantalla de hoy', () => {
     const draw = (scene: Parameters<typeof GuideScenePreview>[0]['scene']) =>
       text(renderToString(<GuideScenePreview scene={scene} />))
     const count = draw({ kind: 'count' })
@@ -351,141 +308,19 @@ describe('las recetas', () => {
       SCREEN_LABELS.ajustar.book,
       SCREEN_LABELS.ajustar.save,
     ]) {
-      expect(count, label).toContain(label)
+      expect(count).toContain(label)
     }
-    // El conteo: los tres renglones y el resultado en palabras (falta, y qué pasa con eso).
-    for (const label of [
-      SCREEN_LABELS.ajustar.counted,
-      SCREEN_LABELS.ajustar.missing,
-      SCREEN_LABELS.ajustar.shortage,
-    ]) {
-      expect(count, label).toContain(label)
-    }
-    // La compra, en dos mitades: a quién y qué papel; cuánto, cuándo le pagás y el botón.
-    const invoice = draw({ kind: 'purchase', paper: 'factura', part: 'paper' })
-    for (const label of [
-      SCREEN_LABELS.compra.title,
-      SCREEN_LABELS.compra.who,
-      SCREEN_LABELS.compra.paper,
-      SCREEN_LABELS.compra.number,
-      SCREEN_LABELS.compra.notPurchase,
-      SCREEN_LABELS.compra.creditNote,
-    ]) {
-      expect(invoice, label).toContain(label)
-    }
-    const pay = draw({ kind: 'purchase', paper: 'factura', part: 'pay' })
-    for (const label of [
-      SCREEN_LABELS.compra.amount,
-      SCREEN_LABELS.compra.total,
-      SCREEN_LABELS.compra.payWhen,
-      SCREEN_LABELS.compra.payLater,
-      SCREEN_LABELS.compra.paidNow,
-      SCREEN_LABELS.compra.due,
-      `${SCREEN_LABELS.compra.save} · $ 84.000`,
-    ]) {
-      expect(pay, label).toContain(label)
-    }
-    const remito = draw({ kind: 'purchase', paper: 'remito', part: 'paper' })
-    expect(remito).toContain(SCREEN_LABELS.compra.paperNone)
-    expect(remito).toContain(SCREEN_LABELS.compra.remito)
-    expect(remito).not.toContain(SCREEN_LABELS.compra.number)
-    // Pagar: primero a quién (lo más urgente arriba) y después qué.
-    const who = draw({ kind: 'pay', part: 'who' })
-    for (const label of [
-      SCREEN_LABELS.pagar.who,
-      SCREEN_LABELS.pagar.urgent,
-      SCREEN_LABELS.pagar.notSupplier,
-      SCREEN_LABELS.pagar.fixed,
-    ]) {
-      expect(who, label).toContain(label)
-    }
-    const what = draw({ kind: 'pay', part: 'what' })
-    expect(what).toContain(SCREEN_LABELS.pagar.invoices)
-    expect(what).toContain(SCREEN_LABELS.pagar.treasury)
-    // El cobro: cuánto entró y a dónde, y después de qué ventas es.
-    const amount = draw({ kind: 'collect', part: 'amount' })
-    for (const label of [
-      SCREEN_LABELS.cobrar.who,
-      SCREEN_LABELS.cobrar.step,
-      SCREEN_LABELS.cobrar.amount,
-      SCREEN_LABELS.cobrar.into,
-      SCREEN_LABELS.cobrar.day,
-      `${SCREEN_LABELS.cobrar.save} · entraron`,
-    ]) {
-      expect(amount, label).toContain(label)
-    }
-    const sales = draw({ kind: 'collect', part: 'sales' })
-    for (const label of [
-      SCREEN_LABELS.cobrar.sales,
-      SCREEN_LABELS.cobrar.pending,
-      SCREEN_LABELS.cobrar.discounted,
-      SCREEN_LABELS.cobrar.estimated,
-      SCREEN_LABELS.cobrar.deductions,
-    ]) {
-      expect(sales, label).toContain(label)
-    }
-    // Gastos fijos: «Lo que sigue» con el botón grande arriba, «Pagar» en cada renglón, y
-    // después el mismo renglón tildado.
-    const due = draw({ kind: 'fixed', state: 'due' })
-    expect(due).toContain(SCREEN_LABELS.gastosFijos.pending)
-    expect(due).toContain(SCREEN_LABELS.gastosFijos.next)
-    expect(due).toContain(`${SCREEN_LABELS.gastosFijos.pay} $ 950.000`)
-    expect(due).toContain('Después: Luz y 1 más.')
-    expect(due).toContain('cuota 2 de 6')
-    // Los renglones van agrupados por la línea del día, como se ven en un celular.
-    expect(due).toContain('Jue 15 oct · 2 gastos')
-    const paid = draw({ kind: 'fixed', state: 'paid' })
-    expect(paid).toContain(`${SCREEN_LABELS.gastosFijos.paid} 07/10`)
-    expect(paid).not.toContain('Venció hace')
-    // «Lo que sigue» ya nombra al que viene.
-    expect(paid).toContain(`${SCREEN_LABELS.gastosFijos.pay} $ 180.000`)
-    // Las subidas y la revisión, con los nombres de «Importar».
-    const upload = draw({ kind: 'import', source: 'arca', phase: 'upload' })
-    for (const label of [
-      SCREEN_LABELS.importar.titleArca,
-      SCREEN_LABELS.importar.stepGetArca,
-      SCREEN_LABELS.importar.stepUpload,
-      SCREEN_LABELS.importar.dropArca,
-      SCREEN_LABELS.importar.choose,
-      SCREEN_LABELS.importar.stepReview,
-    ]) {
-      expect(upload, label).toContain(label)
-    }
+    expect(count).toContain(SCREEN_LABELS.ajustar.counted)
+    const upload = draw({ kind: 'import', source: 'mercado_pago', phase: 'upload' })
+    expect(upload).toContain(SCREEN_LABELS.importar.titleMercadoPago)
+    expect(upload).toContain(SCREEN_LABELS.importar.dropMercadoPago)
+    expect(upload).toContain(SCREEN_LABELS.importar.choose)
     const review = draw({ kind: 'import', source: 'arca', phase: 'review' })
-    for (const label of [
-      'Revisá las compras de septiembre',
-      'Te falta contestar',
-      SCREEN_LABELS.importar.sameOrOther,
-      SCREEN_LABELS.importar.same,
-      SCREEN_LABELS.importar.different,
-      SCREEN_LABELS.importar.loaded,
-    ]) {
-      expect(review, label).toContain(label)
-    }
-    const mp = draw({ kind: 'import', source: 'mercado_pago', phase: 'review' })
-    expect(mp).toContain('Listos para cargar')
-    expect(mp).toContain(SCREEN_LABELS.importar.ready)
-    expect(mp).toContain('Cargar 3 movimientos')
-    // El fin de mes: los tres pasos y los cuatro renglones del primero.
-    const month = draw({ kind: 'month-close' })
-    for (const label of [
-      SCREEN_LABELS.cierreMes.title,
-      SCREEN_LABELS.cierreMes.review,
-      SCREEN_LABELS.cierreMes.closes,
-      SCREEN_LABELS.cierreMes.purchases,
-      SCREEN_LABELS.cierreMes.money,
-      SCREEN_LABELS.cierreMes.papers,
-      'Cerrar septiembre',
-      SCREEN_LABELS.cierreMes.send,
-    ]) {
-      expect(month, label).toContain(label)
-    }
-    const expense = draw({ kind: 'expense', focus: 'paper', paper: 'sin' })
-    expect(expense).toContain(SCREEN_LABELS.gasto.amount)
-    expect(expense).toContain(SCREEN_LABELS.gasto.remito)
-    const ticket = draw({ kind: 'expense-ticket', paper: 'sin' })
-    expect(ticket).toContain(`${SCREEN_LABELS.gasto.save} · $ 12.500`)
-    expect(ticket).toContain(SCREEN_LABELS.gasto.noteNone)
+    expect(review).toContain(SCREEN_LABELS.importar.sameOrOther)
+    expect(review).toContain(SCREEN_LABELS.importar.same)
+    expect(review).toContain(SCREEN_LABELS.importar.loaded)
+    expect(draw({ kind: 'undo' })).toContain(SCREEN_LABELS.aviso.undo)
+    expect(draw({ kind: 'void' })).toContain(SCREEN_LABELS.comprobante.void)
   })
 })
 
@@ -498,7 +333,7 @@ describe('con factura y sin factura', () => {
       </>,
     )
     const t = text(html)
-    for (const title of ['Factura A', 'Factura B o C', 'Tique', 'Remito o nada']) {
+    for (const title of ['Factura A', 'Factura B o C', 'Tique', 'Remito']) {
       expect(t).toContain(title)
     }
     expect(t).toContain('¿Recuperás el IVA?')

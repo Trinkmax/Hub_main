@@ -97,7 +97,7 @@ describe('los nombres de las hojas', () => {
   it('son LOS nombres: las demás áreas los citan así', () => {
     expect(ACTION_TITLES.ajustar).toBe('Contar la caja')
     expect(ACTION_TITLES.movimiento).toBe('Otra entrada o salida')
-    expect(ACTION_TITLES.mover).toBe('Mover plata')
+    expect(ACTION_TITLES.mover).toBe('Transferir a otra cuenta')
   })
 })
 

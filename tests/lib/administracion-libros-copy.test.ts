@@ -3,15 +3,15 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Las palabras que Libros, Fin de mes y el Plan de cuentas NO pueden decir.
+ * Las palabras que Libros, el Cierre de mes y el Plan de cuentas NO pueden decir.
  *
  * - Un solo libro: lo que va sin factura queda registrado igual. Nada de «en
  *   negro», «en blanco» ni «fuera de los libros».
  * - Ventas menos compras no es ganancia: nada de «ganancia» ni «ganaste». (El
  *   impuesto se llama «Ganancias», en plural: ese sí.)
  * - Los quince archivos del mes son el «Paquete del mes», no una «carpeta».
- * - El vocabulario de la sección: «contar la caja» (no «ajustar saldo»), «Fin de
- *   mes» como nombre de la pantalla.
+ * - El vocabulario de la sección: «contar la caja» (no «ajustar saldo»), «Cierre
+ *   de mes» como nombre de la pantalla.
  *
  * Se mira el texto que llega a la pantalla (cadenas y JSX), no los comentarios.
  */
@@ -51,7 +51,7 @@ function offenders(pattern: RegExp, allow: (hit: { path: string; line: string })
 
 const never = () => false
 
-describe('las palabras de Libros, Fin de mes y Plan de cuentas', () => {
+describe('las palabras de Libros, Cierre de mes y Plan de cuentas', () => {
   it('se miran todos los archivos del área', () => {
     expect(SOURCES.length).toBeGreaterThan(60)
     expect(SOURCES.some((s) => s.path.endsWith('libros/cierres/page.tsx'))).toBe(true)
@@ -90,10 +90,10 @@ describe('las palabras de Libros, Fin de mes y Plan de cuentas', () => {
     expect(offenders(/sin ajustar/i, never)).toEqual([])
   })
 
-  it('la pantalla se llama «Fin de mes» y los libros de IVA piden «la CUIT del bar»', () => {
+  it('la pantalla se llama «Cierre de mes» y los libros de IVA piden «la CUIT del bar»', () => {
     const page = SOURCES.find((s) => s.path.endsWith('libros/cierres/page.tsx'))?.text ?? ''
-    expect(page).toContain("metadata = { title: 'Fin de mes' }")
-    expect(page).toContain('title="Fin de mes"')
+    expect(page).toContain("metadata = { title: 'Cierre de mes' }")
+    expect(page).toContain('Cierre de {noun}')
     expect(offenders(/CUIT de la SAS/i, never)).toEqual([])
     expect(offenders(/el CUIT/i, never)).toEqual([])
   })
@@ -109,15 +109,20 @@ describe('las palabras de Libros, Fin de mes y Plan de cuentas', () => {
     expect(send).toContain('Los libros llevan todo, con factura y sin factura.')
   })
 
-  it('los dos «vendido» del mes dicen de dónde sale cada uno', () => {
-    // El papel de Fin de mes suma los cierres del día; «El IVA del mes» suma además las facturas
-    // cargadas aparte. Son dos números distintos a un clic de distancia: cada uno lo aclara.
-    const cover =
-      SOURCES.find((s) => s.path.endsWith('libros/cierres/_components/month-cover.tsx'))?.text ?? ''
-    expect(cover).toContain('label="Vendido en los cierres del día"')
-    expect(cover).toContain('hint="sin las facturas cargadas aparte"')
+  it('lo vendido del mes dice de dónde sale', () => {
     const iva = SOURCES.find((s) => s.path.endsWith('libros/posicion-iva/page.tsx'))?.text ?? ''
     expect(iva).toContain('contando las facturas cargadas aparte')
+  })
+
+  it('el asiento manual habla como un sistema contable', () => {
+    const form =
+      SOURCES.find((s) => s.path.endsWith('asiento-manual/_components/manual-entry-form.tsx'))
+        ?.text ?? ''
+    expect(form).toContain('Grabar asiento')
+    expect(form).toContain('Cuenta (código o nombre)')
+    expect(form).toContain('Otro renglón')
+    expect(form).not.toContain('Agregar línea')
+    expect(form).not.toContain('Guardar asiento')
   })
 
   it('«Ver cómo queda en los libros» es el único nombre del plegable del asiento', () => {

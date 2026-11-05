@@ -7,9 +7,12 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
+import { buildPrimary, parseDocumentForm } from '@/lib/accounting/server/document-forms'
+import { DEFAULT_TAX_SETTINGS } from '@/lib/accounting/taxes'
 import { suggestRulePattern } from '@/lib/imports/bank/rules'
 import { parseBankStatement } from '@/lib/imports/bank/statement'
 import { openTable } from '@/lib/imports/detect'
+import { importClientRef } from '@/lib/imports/hash'
 import {
   bankRulesFrom,
   buildBankDrafts,
@@ -18,8 +21,11 @@ import {
 } from '@/lib/imports/server/proposals/bank'
 import {
   batchTag,
+  evaluateDraft,
+  importPostingContext,
   OpenItemPool,
   type ProposalDraft,
+  remainingBankTax,
   type StagedItem,
 } from '@/lib/imports/server/proposals/common'
 import type { PostedTransfer } from '@/lib/imports/server/proposals/mp'
@@ -39,6 +45,7 @@ import {
   evaluateAll,
   expectPostable,
   KIT_BATCH,
+  KIT_TENANT,
   type Kit,
   makeKit,
   openPayable,
@@ -83,6 +90,7 @@ function run(
     rules?: Parameters<typeof bankRulesFrom>[0]
     decisions?: Record<string, ProposalDecisions>
     manualExpenses?: string[]
+    autoBankTax?: Record<string, number>
     postedTransfers?: PostedTransfer[]
     rows?: StagedItem<BankItem>[]
   } = {},
@@ -97,6 +105,7 @@ function run(
     rules,
     pool: new OpenItemPool(k.ctx.openItems.values()),
     manualExpenses: new Set(o.manualExpenses ?? []),
+    autoBankTax: new Map(Object.entries(o.autoBankTax ?? {})),
     postedTransfers: o.postedTransfers ?? [],
     mpTreasuryId: k.f.treasury('mp').id,
     decisions: (key) => o.decisions?.[key] ?? {},
@@ -176,6 +185,120 @@ describe('gastos bancarios del día', () => {
     const p = byKey(proposals, expenseKey('2026-10-06'))
     expect(p.status).toBe('skipped')
     expect(p.error).toEqual({ reason: 'already_loaded', date: '2026-10-06' })
+  })
+})
+
+describe('el impuesto al cheque que el sistema ya anotó al pagar', () => {
+  it('remainingBankTax resta lo anotado y nunca da negativo', () => {
+    expect(remainingBankTax(51_000, 0)).toEqual({ remainingCents: 51_000, notedCents: 0 })
+    expect(remainingBankTax(51_000, 20_000)).toEqual({ remainingCents: 31_000, notedCents: 20_000 })
+    expect(remainingBankTax(51_000, 51_000)).toEqual({ remainingCents: 0, notedCents: 51_000 })
+    // El banco redondeó distinto: anotó de más y no queda nada, ni un negativo.
+    expect(remainingBankTax(51_000, 51_001)).toEqual({ remainingCents: 0, notedCents: 51_000 })
+    expect(remainingBankTax(0, 5_000)).toEqual({ remainingCents: 0, notedCents: 0 })
+    expect(remainingBankTax(51_000, -1)).toEqual({ remainingCents: 51_000, notedCents: 0 })
+  })
+
+  it('si cubre todo el día, no se propone: «ya está cargado», con lo que traía el extracto', () => {
+    const { proposals } = run({ autoBankTax: { '2026-10-03': 51_000 } })
+    const p = byKey(proposals, expenseKey('2026-10-03'))
+    expect(p.status).toBe('skipped')
+    expect(p.error).toEqual({ reason: 'already_loaded', date: '2026-10-03' })
+    expect(p.previewHash).toBeNull()
+    expect(p.summary).toMatchObject({
+      total_cents: 51_000,
+      notes: ['bank_tax_noted'],
+      detail: { ley25413_debit_cents: 51_000, ley25413_noted_cents: 51_000 },
+    })
+  })
+
+  it('si cubre una parte, se propone solo lo que falta y lo dice', () => {
+    const { drafts, proposals } = run({ autoBankTax: { '2026-10-03': 20_000 } })
+    const key = expenseKey('2026-10-03')
+    expectPostable(byKey(proposals, key), kit.ctx)
+    expect(valuesOf(drafts, key)).toMatchObject({ ley25413DebitCents: 31_000 })
+    expect(byKey(proposals, key).summary).toMatchObject({
+      total_cents: 31_000,
+      notes: ['bank_tax_noted'],
+      detail: { ley25413_noted_cents: 20_000 },
+    })
+  })
+
+  it('no toca lo de otros días ni el impuesto sobre lo que entra', () => {
+    const { drafts } = run({ autoBankTax: { '2026-10-01': 90_000, '2026-09-30': 500 } })
+    // El 01/10 solo tiene Ley 25.413 sobre un crédito: el automático es sobre lo que sale.
+    expect(valuesOf(drafts, expenseKey('2026-10-01'))).toMatchObject({
+      ley25413CreditCents: 90_000,
+      ley25413DebitCents: 0,
+    })
+    expect(valuesOf(drafts, expenseKey('2026-10-03'))).toMatchObject({ ley25413DebitCents: 51_000 })
+  })
+
+  it('con la comisión del mismo día: la comisión sigue y el impuesto se va', () => {
+    const k = kit
+    const mixed: StagedItem<BankItem>[] = items
+      .filter((x) => x.item.date === '2026-10-03')
+      .concat(
+        items
+          .filter((x) => x.item.description === 'COMISION PAQUETES')
+          .map((x) => ({ ...x, item: { ...x.item, date: '2026-10-03' } })),
+      )
+    const { drafts, proposals } = run({
+      k,
+      rows: mixed,
+      autoBankTax: { '2026-10-03': 51_000 },
+    })
+    const key = expenseKey('2026-10-03')
+    expect(byKey(proposals, key).status).not.toBe('skipped')
+    expect(valuesOf(drafts, key)).toMatchObject({ ley25413DebitCents: 0 })
+    expect(
+      (valuesOf(drafts, key).feesNetCents as number) +
+        (valuesOf(drafts, key).feesNoVatCents as number),
+    ).toBe(6_900_000)
+  })
+})
+
+describe('lo importado no calcula otro impuesto encima', () => {
+  /** El contexto de un bar con los impuestos automáticos prendidos. */
+  const withAutoTax = (ctx: Kit['ctx']): Kit['ctx'] => ({
+    ...ctx,
+    settings: { ...ctx.settings, taxSettings: DEFAULT_TAX_SETTINGS },
+  })
+
+  it('importPostingContext apaga el automático y no toca lo demás', () => {
+    const on = withAutoTax(kit.ctx)
+    const ctx = importPostingContext(on)
+    expect(ctx.settings.taxSettings).toEqual({ ...DEFAULT_TAX_SETTINGS, auto: false })
+    expect(ctx.settings.booksStartDate).toBe(on.settings.booksStartDate)
+    // Ya apagado (o sin dato), es el mismo contexto.
+    expect(importPostingContext(ctx)).toBe(ctx)
+    expect(importPostingContext(kit.ctx)).toBe(kit.ctx)
+  })
+
+  it('un pago del extracto no suma un gasto bancario: la Ley 25.413 ya viene en su renglón', () => {
+    const k = kitFor()
+    const ctx = withAutoTax(k.ctx)
+    const key = `${rowKey(`DEB.TRAN.INTERB-LINK ${BANK_SUPPLIER_CUIT}`)}:pago`
+    const supplier = k.supplier(BANK_SUPPLIER_CUIT)
+    const { drafts } = run({ k, decisions: { [key]: { party_id: supplier.id } } })
+    const draft = drafts.find((d) => d.key === key)
+    if (!draft) throw new Error('falta el pago')
+    const p = evaluateDraft(draft, ctx, { firstOpenDate: null, warningsAck: [] })
+    expectPostable(p, ctx)
+    const form = parseDocumentForm(p.form, {
+      ...p.formValues,
+      clientRef: importClientRef(KIT_TENANT, p.key, 1),
+      previewHash: p.previewHash,
+      warningsAck: p.warningsAck,
+    })
+    if (!form.ok) throw new Error('el formulario no pasa zod')
+    const onImport = buildPrimary(form.value, importPostingContext(ctx), null)
+    if (!onImport.ok) throw new Error('el motor no lo arma')
+    expect(onImport.bundle.documents.map((d) => d.kind)).toEqual(['payment'])
+    // El mismo formulario cargado a mano sí lo calcula: por eso el importador lo apaga.
+    const byHand = buildPrimary(form.value, ctx, null)
+    if (!byHand.ok) throw new Error('el motor no lo arma')
+    expect(byHand.bundle.documents.map((d) => d.kind)).toEqual(['payment', 'bank_expense'])
   })
 })
 

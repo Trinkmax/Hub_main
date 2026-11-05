@@ -30,7 +30,7 @@ import {
 import { ONBOARDING_HAVE_AT_HAND } from '@/lib/accounting/onboarding'
 
 /**
- * Los pasos de la puesta en marcha como se ven. El asistente pasó de dos pantallas a cinco pasos
+ * Los pasos de la puesta en marcha como se ven. El asistente pasó de dos pantallas a cuatro pasos
  * chicos (más los saldos iniciales): cambia el recorrido, no lo que se manda. El borrador de
  * antes se tiene que seguir leyendo y lo que viaja tiene que ser lo mismo.
  */
@@ -40,16 +40,17 @@ const initial = (): WizardState =>
   initialWizardState({ tenantName: 'Bar de Prueba', displayName: 'Ana', today: TODAY })
 
 describe('el riel', () => {
-  it('son seis pasos, con los nombres de cada lugar; el sexto son los saldos iniciales', () => {
+  it('son cinco pasos, con los nombres de cada lugar; el último son los saldos iniciales', () => {
     expect([...SETUP_RAIL_STEPS]).toEqual([
       'Datos de la SAS',
       'Cajas y cuentas',
       'Medios de cobro',
-      'Puntos de venta',
       'Revisá y arrancá',
       'Saldos iniciales',
     ])
-    expect(OPENING_RAIL_STEP).toBe(6)
+    // Los puntos de venta dejaron de ser un paso: hasta que el bar facture, no se piden.
+    expect(SETUP_RAIL_STEPS).not.toContain('Puntos de venta')
+    expect(OPENING_RAIL_STEP).toBe(5)
     expect(SETUP_RAIL_STEPS[OPENING_RAIL_STEP - 1]).toBe('Saldos iniciales')
   })
 
@@ -60,30 +61,27 @@ describe('el riel', () => {
       'current',
       'todo',
       'todo',
-      'todo',
     ])
   })
 
-  it('bar ya configurado con los saldos pendientes: cinco tildes y toca el sexto', () => {
+  it('bar ya configurado con los saldos pendientes: cuatro tildes y toca el quinto', () => {
     expect(setupRailItems(OPENING_RAIL_STEP).map((s) => s.state)).toEqual([
       'done',
       'done',
       'done',
       'done',
-      'done',
       'current',
     ])
   })
 
-  it('todo hecho: los seis tildados', () => {
+  it('todo hecho: los cinco tildados', () => {
     expect(setupRailItems('done').every((s) => s.state === 'done')).toBe(true)
   })
 
   it('al volver atrás a cambiar un paso, lo ya resuelto sigue tildado', () => {
-    expect(setupRailItems(2, {}, 4).map((s) => s.state)).toEqual([
+    expect(setupRailItems(2, {}, 3).map((s) => s.state)).toEqual([
       'done',
       'current',
-      'done',
       'done',
       'todo',
       'todo',
@@ -98,14 +96,15 @@ describe('el riel', () => {
   })
 })
 
-describe('los cinco pasos del asistente', () => {
+describe('los cuatro pasos del asistente', () => {
   it('cada paso pregunta una cosa y su botón dice a dónde va', () => {
-    expect(WIZARD_SCREENS).toEqual([1, 2, 3, 4, 5])
+    expect(WIZARD_SCREENS).toEqual([1, 2, 3, 4])
     expect(WIZARD_QUESTIONS[1]).toBe('¿Cómo figura el bar en los papeles?')
     expect(WIZARD_QUESTIONS[2]).toBe('¿Dónde está la plata?')
     expect(WIZARD_QUESTIONS[3]).toBe('¿Cómo te pagan?')
-    expect(WIZARD_QUESTIONS[4]).toBe('¿Con qué número facturás?')
-    expect(WIZARD_QUESTIONS[5]).toBe('Revisá y arrancá')
+    expect(WIZARD_QUESTIONS[4]).toBe('Revisá y arrancá')
+    // Después de los cobros se revisa: los puntos de venta no frenan el camino.
+    expect(WIZARD_NEXT_LABEL[3]).toBe('Revisar todo')
     // Ningún «Seguir» se llama «Guardar»: solo guarda el último paso.
     for (const label of Object.values(WIZARD_NEXT_LABEL)) expect(label).not.toMatch(/guard/i)
   })
@@ -135,7 +134,6 @@ describe('los cinco pasos del asistente', () => {
     expect(errorsOfScreen(errors, 2)).toEqual({ 'treasury.bank_main.name': 'Falta' })
     expect(errorsOfScreen(errors, 3)).toEqual({ 'rates.debit': 'Mal' })
     expect(errorsOfScreen(errors, 4)).toEqual({ 'salesPoint.sp_1.number': 'Mal' })
-    expect(errorsOfScreen(errors, 5)).toEqual({})
     expect(errorsOfScreen({}, 1)).toEqual({})
   })
 
@@ -145,7 +143,7 @@ describe('los cinco pasos del asistente', () => {
     expect(firstErrorScreen({ salesPoints: 'y', cuit: 'z' })).toBe(1)
   })
 
-  it('con el esquema del servidor: un porcentaje mal va al paso 3; un punto de venta, al 4', () => {
+  it('con el esquema del servidor: un porcentaje mal va al paso 3; un punto de venta, a «Revisá y arrancá»', () => {
     const state = initial()
     state.rates.debit = 'mucho'
     // Un punto de venta con nombre y sin número.
@@ -172,11 +170,16 @@ describe('el borrador (hub:acc:draft:configurar:{slug})', () => {
   it('el nuevo conserva la versión y `step` (1 | 2), y suma en qué paso se estaba', () => {
     const state = initial()
     expect(wizardDraftValue(1, state)).toEqual({ v: 1, step: 1, screen: 1, state })
-    for (const screen of [2, 3, 4, 5] as const) {
+    for (const screen of [2, 3, 4] as const) {
       expect(wizardDraftValue(screen, state)).toEqual({ v: 1, step: 2, screen, state })
       expect(draftStepOf(screen)).toBe(2)
     }
     expect(draftStepOf(1)).toBe(1)
+  })
+
+  it('uno de cuando los puntos de venta eran un paso: «Revisá y arrancá» era el 5', () => {
+    const state = initial()
+    expect(readWizardDraft({ v: 1, step: 2, screen: 5, state })?.screen).toBe(4)
   })
 
   it('ida y vuelta: lo que se guarda es lo que se lee', () => {
@@ -328,7 +331,7 @@ describe('la bienvenida', () => {
     expect(list[0]).toMatch(/constancia de inscripción/)
     expect(list[1]).toMatch(/Mercado Pago/)
     expect(list[2]).toMatch(/comisión/)
-    expect(list[3]).toMatch(/puntos de venta/)
+    expect(list[3]).toMatch(/porcentajes/)
   })
 
   it('si la guía no trae un renglón, no se inventa', () => {

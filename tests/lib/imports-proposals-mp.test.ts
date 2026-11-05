@@ -97,6 +97,7 @@ function run(
     settings?: MpSettings
     manualDays?: string[]
     postedTransfers?: PostedTransfer[]
+    autoBankTax?: Record<string, number>
     taxRules?: MpTaxRule[]
     decisions?: Record<string, ProposalDecisions>
     frozen?: string[]
@@ -111,6 +112,7 @@ function run(
     settings: o.settings ?? settingsOf(kit),
     pool: new OpenItemPool(kit.ctx.openItems.values()),
     manualDays: new Set(o.manualDays ?? []),
+    autoBankTax: new Map(Object.entries(o.autoBankTax ?? {})),
     postedTransfers: o.postedTransfers ?? [],
     taxRules: o.taxRules ?? [],
     decisions: (key) => o.decisions?.[key] ?? {},
@@ -253,6 +255,28 @@ describe('la Ley 25.413, aparte', () => {
     expect(valuesOf(drafts, day2)).toMatchObject({
       ley25413CreditCents: 5_400,
       ley25413DebitCents: 21_000,
+    })
+  })
+
+  it('lo que el sistema ya anotó al pagar con la billetera se resta de los débitos', () => {
+    const { kit, drafts, proposals } = run({ autoBankTax: { '2026-10-02': 20_000 } })
+    const key = `mp:2026-10-02:ley25413:${TAG}`
+    expectPostable(byKey(proposals, key), kit.ctx)
+    expect(valuesOf(drafts, key)).toMatchObject({
+      ley25413CreditCents: 5_400,
+      ley25413DebitCents: 1_000,
+    })
+    expect(byKey(proposals, key).summary).toMatchObject({
+      total_cents: 6_400,
+      notes: ['bank_tax_noted'],
+    })
+  })
+
+  it('el impuesto sobre lo que entra sigue: el automático es solo sobre lo que sale', () => {
+    const { drafts } = run({ autoBankTax: { '2026-10-02': 99_000 } })
+    expect(valuesOf(drafts, `mp:2026-10-02:ley25413:${TAG}`)).toMatchObject({
+      ley25413CreditCents: 5_400,
+      ley25413DebitCents: 0,
     })
   })
 })

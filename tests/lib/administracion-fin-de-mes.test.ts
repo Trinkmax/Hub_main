@@ -2,29 +2,28 @@ import { describe, expect, it } from 'vitest'
 import {
   focusMonth,
   type MonthPeriod,
-  monthHeadline,
   monthState,
-  monthStripModel,
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/months'
 import type { ChecklistItemLike } from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_lib/checklist'
 import {
+  closeLines,
+  oddAccountsText,
+  payrollLine,
+} from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_lib/close-lines'
+import {
   closeHeadline,
   closeReview,
-  closeStripDays,
-  closeWaitText,
-  firstReviewAction,
   ivaClosePlan,
   type ReviewCalendar,
   type ReviewChecklist,
   type ReviewInput,
-  stepStates,
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/cierres/_lib/review'
 import { eachIsoDay } from '@/lib/dates'
 
 /**
- * «Fin de mes» en palabras (puro): qué mes se abre, qué dice el título, qué
- * paso toca y los renglones de la revisión. Lo más importante de este archivo
- * son los tres silencios de la base: sin cierres del día, sin movimientos en
+ * El Cierre de mes en palabras (puro): qué mes se abre, qué dice el título y los
+ * renglones del checklist. Lo más importante de este archivo son los tres
+ * silencios de la base: sin cierres del día, sin movimientos en
  * las cajas y con gastos fijos que vencen el mes que viene, la base NO avisa
  * nada, y aun así la pantalla no puede decir «está todo bien».
  */
@@ -160,159 +159,7 @@ describe('qué mes se abre sin `?mes=`', () => {
   })
 })
 
-describe('las pestañas del año', () => {
-  it('cada mes con su estado; el que no empezó no lleva link', () => {
-    const strip = monthStripModel(DEMO, {
-      today: TODAY,
-      selected: '2026-09',
-      hrefFor: (m) => `/libros?mes=${m}`,
-    })
-    expect(strip.map((m) => [m.key, m.label, m.state])).toEqual([
-      ['2026-09', 'Sep', 'to_close'],
-      ['2026-10', 'Oct', 'current'],
-      ['2026-11', 'Nov', 'future'],
-      ['2026-12', 'Dic', 'future'],
-    ])
-    expect(strip[0]?.selected).toBe(true)
-    expect(strip[0]?.href).toBe('/libros?mes=2026-09')
-    expect(strip[2]?.href).toBeUndefined()
-  })
-
-  it('cerrado: el detalle dice quién y cuándo; con cambio posterior, lleva aviso', () => {
-    const closed = month('2026-09', 'closed', {
-      closedAt: '2026-10-05T15:00:00Z',
-      closedByName: 'Franco',
-    })
-    const [cell] = monthStripModel([closed], {
-      today: TODAY,
-      selected: null,
-      hrefFor: (m) => m,
-      alertIds: new Set([closed.id]),
-    })
-    expect(cell?.state).toBe('closed')
-    expect(cell?.title).toBe('Cerrado el 05/10/2026 por Franco')
-    expect(cell?.alert).toBe(true)
-    expect(monthState(closed, TODAY)).toBe('closed')
-  })
-})
-
-describe('el título del mes en /libros', () => {
-  const books = `${BASE}/libros`
-  const base = { today: TODAY, canWrite: true, booksPath: books }
-
-  it('en curso (HUB hoy): se dice desde cuándo se puede cerrar y el botón es callado', () => {
-    const h = monthHeadline({
-      ...base,
-      month: '2026-10',
-      period: HUB[0] ?? null,
-      earlierOpen: null,
-    })
-    expect(h.title).toBe('Octubre está en curso')
-    expect(h.sentence).toBe(
-      'Se puede cerrar desde el 01/11/2026. Lo que cargues con fecha de octubre entra en este mes.',
-    )
-    expect(h.action).toEqual({
-      label: 'Ver cómo viene el fin de mes',
-      href: `${books}/cierres?mes=2026-10`,
-      emphasis: 'outline',
-    })
-  })
-
-  it('terminó y es el próximo a cerrar (el ejemplo hoy): botón primario', () => {
-    const h = monthHeadline({
-      ...base,
-      month: '2026-09',
-      period: DEMO[0] ?? null,
-      earlierOpen: null,
-    })
-    expect(h.title).toBe('Septiembre terminó y falta cerrarlo')
-    expect(h.action).toEqual({
-      label: 'Revisar y cerrar septiembre',
-      href: `${books}/cierres?mes=2026-09`,
-      emphasis: 'primary',
-    })
-  })
-
-  it('terminó y hay otro antes: los meses se cierran en orden', () => {
-    const today = '2026-11-05'
-    const h = monthHeadline({
-      ...base,
-      today,
-      month: '2026-10',
-      period: DEMO[1] ?? null,
-      earlierOpen: DEMO[0] ?? null,
-    })
-    expect(h.title).toBe('Antes de octubre hay que cerrar septiembre')
-    expect(h.sentence).toBe('Los meses se cierran en orden.')
-    expect(h.action).toEqual({
-      label: 'Ir a septiembre',
-      href: `${books}?mes=2026-09`,
-      emphasis: 'primary',
-    })
-  })
-
-  it('cerrado: el paso que sigue es mandarle los libros a la contadora', () => {
-    const closed = month('2026-09', 'closed', {
-      closedAt: '2026-10-05T15:00:00Z',
-      closedByName: 'Franco',
-    })
-    const h = monthHeadline({ ...base, month: '2026-09', period: closed, earlierOpen: null })
-    expect(h.title).toBe('Septiembre está cerrado')
-    expect(h.sentence).toBe(
-      'Lo cerró Franco el 05/10/2026. Ya le podés mandar los libros a tu contadora.',
-    )
-    expect(h.action?.href).toBe(`${books}/cierres?mes=2026-09#paso-3`)
-  })
-
-  it('la contadora: el mismo título, sin botón; en un mes abierto, el link a lo que falta', () => {
-    const open = monthHeadline({
-      ...base,
-      canWrite: false,
-      month: '2026-09',
-      period: DEMO[0] ?? null,
-      earlierOpen: null,
-    })
-    expect(open.title).toBe('Septiembre terminó y falta cerrarlo')
-    expect(open.sentence).toBe('Sigue abierto: lo cierran los dueños.')
-    expect(open.action).toBeNull()
-    expect(open.link).toEqual({
-      label: 'Ver qué le falta para cerrarse',
-      href: `${books}/cierres?mes=2026-09`,
-    })
-    const closed = monthHeadline({
-      ...base,
-      canWrite: false,
-      month: '2026-09',
-      period: month('2026-09', 'closed', {
-        closedAt: '2026-10-05T15:00:00Z',
-        closedByName: 'Franco',
-      }),
-      earlierOpen: null,
-    })
-    expect(closed.sentence).toBe('Lo cerró Franco el 05/10/2026.')
-    expect(closed.action).toBeNull()
-    expect(closed.link).toBeNull()
-  })
-
-  it('un mes sin libros (o que no empezó) no afirma nada más que eso', () => {
-    const h = monthHeadline({
-      ...base,
-      month: '2026-11',
-      period: DEMO[2] ?? null,
-      earlierOpen: null,
-      unavailable: 'Noviembre 2026 todavía no empezó.',
-    })
-    expect(h).toEqual({
-      kind: 'unavailable',
-      title: 'Noviembre 2026 todavía no empezó.',
-      sentence: null,
-      action: null,
-      link: null,
-    })
-  })
-})
-
-describe('la afirmación de «Fin de mes»: los ocho casos', () => {
+describe('la afirmación del Cierre de mes: los ocho casos', () => {
   const sep = { endsOn: '2026-09-30', status: 'open' as const, closedAt: null, closedByName: null }
   const oct = { endsOn: '2026-10-31', status: 'open' as const, closedAt: null, closedByName: null }
   const base = {
@@ -456,59 +303,6 @@ describe('la afirmación de «Fin de mes»: los ocho casos', () => {
   })
 })
 
-describe('qué paso toca', () => {
-  const current = (s: readonly string[]) => s.filter((x) => x === 'current').length
-
-  it('uno solo a la vez, en las cuatro situaciones', () => {
-    const cases = [
-      stepStates({ closed: true, canClose: false, hasWork: false }),
-      stepStates({ closed: false, canClose: true, hasWork: false }),
-      stepStates({ closed: false, canClose: true, hasWork: true }),
-      stepStates({ closed: false, canClose: false, hasWork: true }),
-    ]
-    expect(cases).toEqual([
-      ['done', 'done', 'current'],
-      ['done', 'current', 'todo'],
-      ['current', 'todo', 'todo'],
-      ['current', 'todo', 'todo'],
-    ])
-    for (const c of cases) expect(current(c)).toBe(1)
-  })
-
-  it('abierto, no se puede cerrar y sin nada para hacer: el paso 1 queda hecho', () => {
-    expect(stepStates({ closed: false, canClose: false, hasWork: false })).toEqual([
-      'done',
-      'todo',
-      'todo',
-    ])
-  })
-
-  it('por qué todavía no se puede cerrar', () => {
-    const base = { month: '2026-10', earlierOpen: null, openingPending: false, blockersCount: 0 }
-    expect(closeWaitText({ ...base, period: { endsOn: '2026-10-31' }, today: TODAY })).toBe(
-      'Se puede desde el 01/11/2026.',
-    )
-    expect(
-      closeWaitText({
-        ...base,
-        period: { endsOn: '2026-10-31' },
-        today: '2026-11-05',
-        earlierOpen: '2026-09',
-      }),
-    ).toBe('Primero hay que cerrar septiembre.')
-    expect(
-      closeWaitText({
-        ...base,
-        month: '2026-09',
-        period: { endsOn: '2026-09-30' },
-        today: TODAY,
-        openingPending: true,
-        blockersCount: 1,
-      }),
-    ).toBe('Antes falta decir cuánta plata había al arrancar (paso 1).')
-  })
-})
-
 describe('la revisión: un «está bien» nunca sale de que la base calle', () => {
   it('sin ningún cierre y sin aviso de la base, «Cierres del día» NO da «Sin avisos»', () => {
     // HUB: arranca el 12/10, hoy es 13/10 y nunca se cargó un cierre. La base no avisa nada.
@@ -534,7 +328,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
         href: `${BASE}/ventas/cierre?fecha=2026-10-12`,
       },
     ])
-    expect(closes?.showStrip).toBe(true)
     expect(r.hasWork).toBe(true)
   })
 
@@ -563,7 +356,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     expect(inCourse.rows[0]?.tone).toBe('ok')
     expect(inCourse.rows[0]?.pill).toBe('Sin avisos')
     expect(inCourse.rows[0]?.okText).toBe('Vas al día: están los 12 días que van de octubre.')
-    expect(inCourse.rows[0]?.showStrip).toBe(false)
 
     const finished = review({
       month: '2026-09',
@@ -587,7 +379,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
       }),
     })
     expect(withWarning.rows[0]?.items[0]?.detail).toBe('Faltan los del 04/10 y 11/10.')
-    expect(withWarning.rows[0]?.showStrip).toBe(false)
 
     const silent = review({ calendar: null })
     expect(silent.rows[0]?.tone).toBe('muted')
@@ -744,9 +535,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     expect(plain(money?.items[1]?.detail)).toBe(
       '3 cobros por $ 240.000 ya tendrían que haber entrado.',
     )
-
-    // EL botón primario de la pantalla: la primera acción, en el orden de los renglones.
-    expect(firstReviewAction(r)).toEqual(recurring?.recurring?.[0]?.action)
   })
 
   it('cajas sin contar en un mes que ya terminó: dice con qué fecha hay que contarlas', () => {
@@ -778,9 +566,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
       'Contar Caja',
       'Contar Banco Nación',
     ])
-    // Con la fecha de hoy «Contar» no apaga el aviso: nunca es EL botón relleno de la pantalla.
-    expect(finished.row?.items[0]?.quiet).toBe(true)
-    expect(firstReviewAction({ rows: finished.row ? [finished.row] : [] })).toBeNull()
 
     // A la contadora no se le explica cómo cargar.
     const reader = moneyOf({ month: '2026-09', finished: true, canWrite: false })
@@ -810,16 +595,14 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     expect(money?.pill).toBe('Para ir viendo')
     expect(money?.items).toHaveLength(1)
     expect(money?.items[0]).toMatchObject({
-      soft: true,
       tone: 'muted',
       title: 'Las cajas de octubre se cuentan antes de cerrar el mes.',
       detail: 'Todavía sin contar: Caja, Banco Nación.',
       actions: [{ kind: 'href', label: 'Ver cajas', href: `${BASE}/cajas` }],
     })
     expect(JSON.stringify(money?.items)).not.toContain('Hay cajas sin contar')
-    // Sigue habiendo algo para mirar en el paso 1, pero su link no es el botón relleno.
+    // Sigue habiendo algo para mirar.
     expect(r.hasWork).toBe(true)
-    expect(firstReviewAction({ rows: money ? [money] : [] })).toBeNull()
 
     // Con un aviso de verdad al lado, el renglón cuenta ESE aviso (y solo ese).
     const both = review({
@@ -841,7 +624,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
       canWrite: false,
       checklist: checklist({ warnings: [warning] }),
     }).rows.find((row) => row.id === 'money')
-    expect(reader?.items[0]?.soft).toBe(true)
     expect(reader?.items[0]?.actions).toEqual([])
   })
 
@@ -941,7 +723,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
         expect(entry.note).toBe('Lo cargan los dueños.')
       }
     }
-    expect(firstReviewAction(r)).toBeNull()
   })
 
   it('los datos para la contadora van aparte, con el texto de siempre', () => {
@@ -964,58 +745,6 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     })
     expect(r.blockersCount).toBe(1)
     expect(r.blockerWords).toBe('decir cuánta plata había al arrancar')
-  })
-})
-
-describe('el almanaque del paso 1', () => {
-  it('cada día que falta (y hoy) lleva a su cierre; lo demás no', () => {
-    const days = closeStripDays(
-      calendar({
-        monthYm: '2026-10',
-        from: '2026-10-12',
-        serviceDay: TODAY,
-        loaded: [],
-      }),
-      BASE,
-    )
-    const by = new Map(days.map((d) => [d.date, d]))
-    // El bar arrancó el lunes 12: las semanas enteras de antes no se dibujan.
-    expect(days[0]?.date).toBe('2026-10-12')
-    expect(by.has('2026-10-11')).toBe(false)
-    expect(by.get('2026-10-12')).toMatchObject({
-      state: 'missing',
-      href: `${BASE}/ventas/cierre?fecha=2026-10-12`,
-      weekday: 'lu',
-    })
-    expect(by.get('2026-10-13')).toMatchObject({ state: 'today', isToday: true })
-    expect(by.get('2026-10-14')?.href).toBeUndefined()
-  })
-
-  it('si arranca a mitad de semana, esa semana va entera (apagada antes del arranque)', () => {
-    const days = closeStripDays(
-      calendar({ monthYm: '2026-10', from: '2026-10-15', serviceDay: TODAY, loaded: [] }),
-      BASE,
-    )
-    expect(days[0]?.date).toBe('2026-10-12')
-    expect(days.find((d) => d.date === '2026-10-14')?.state).toBe('before')
-    expect(days.find((d) => d.date === '2026-10-15')?.state).not.toBe('before')
-  })
-
-  it('un mes entero de uso arranca el día 1', () => {
-    const days = closeStripDays(
-      calendar({ monthYm: '2026-10', serviceDay: TODAY, loaded: [] }),
-      BASE,
-    )
-    expect(days[0]?.date).toBe('2026-10-01')
-    expect(days).toHaveLength(31)
-  })
-
-  it('para la contadora no hay links de carga', () => {
-    const days = closeStripDays(
-      calendar({ monthYm: '2026-10', serviceDay: TODAY, loaded: [] }),
-      null,
-    )
-    expect(days.every((d) => d.href === undefined)).toBe(true)
   })
 })
 
@@ -1088,7 +817,7 @@ describe('el IVA que toma el cierre: las mismas ramas, otras palabras', () => {
     })
     expect(
       ivaClosePlan({ ...base, mode: 'manual', willGenerate: false }, '2026-09').text?.lead,
-    ).toBe('El IVA de este mes se anota a mano, desde El IVA del mes.')
+    ).toBe('El IVA de este mes se anota a mano, desde la solapa IVA.')
     expect(
       ivaClosePlan({ ...base, willGenerate: false, settlementDocumentId: 'doc' }, '2026-09').text
         ?.lead,
@@ -1101,5 +830,134 @@ describe('el IVA que toma el cierre: las mismas ramas, otras palabras', () => {
       summary: '',
     })
     expect(ivaClosePlan(null, '2026-09').text).toBeNull()
+  })
+})
+
+describe('cómo está cada mes', () => {
+  it('cerrado, falta cerrar, en curso y no empezó', () => {
+    expect(monthState(month('2026-09', 'closed'), TODAY)).toBe('closed')
+    expect(monthState(month('2026-09'), TODAY)).toBe('to_close')
+    expect(monthState(month('2026-10'), TODAY)).toBe('current')
+    expect(monthState(month('2026-11'), TODAY)).toBe('future')
+  })
+})
+
+describe('el checklist del cierre', () => {
+  const input = {
+    month: '2026-09',
+    base: BASE,
+    trial: { balanced: true, differenceCents: 0 },
+    oddAccounts: 0,
+    review: null,
+    payroll: null,
+    iva: null,
+    closed: false,
+  }
+  const finishedReview = (over: Partial<ReviewInput> = {}) =>
+    review({
+      month: '2026-09',
+      finished: true,
+      calendar: calendar({
+        monthYm: '2026-09',
+        serviceDay: TODAY,
+        loaded: eachIsoDay('2026-09-01', '2026-09-30'),
+      }),
+      ...over,
+    })
+
+  it('Debe = Haber abre la lista y lleva a Sumas y saldos del mes', () => {
+    const [first] = closeLines(input)
+    expect(first).toMatchObject({ key: 'balance', tone: 'ok', tag: 'Listo', title: 'Debe = Haber' })
+    expect(first?.actions).toEqual([
+      { kind: 'href', label: 'Ver', href: `${BASE}/libros/sumas-y-saldos?mes=2026-09` },
+    ])
+  })
+
+  it('si no cuadra lo dice con el importe; si no se pudo leer, no afirma nada', () => {
+    const broken = closeLines({ ...input, trial: { balanced: false, differenceCents: 1240 } })[0]
+    expect(broken).toMatchObject({ tone: 'late', tag: 'Falta' })
+    expect(plain(broken?.title)).toBe('El balance no cuadra por $ 12,40')
+    expect(closeLines({ ...input, trial: null }).some((l) => l.key === 'balance')).toBe(false)
+  })
+
+  it('las cuentas con saldo al revés llevan a «Solo lo raro», en singular y en plural', () => {
+    expect(oddAccountsText(1)).toBe('1 cuenta con saldo al revés')
+    expect(oddAccountsText(3)).toBe('3 cuentas con saldo al revés')
+    const odd = closeLines({ ...input, oddAccounts: 2 }).find((l) => l.key === 'odd')
+    expect(odd).toMatchObject({
+      tone: 'warn',
+      tag: 'Revisar',
+      title: '2 cuentas con saldo al revés',
+    })
+    expect(odd?.actions[0]).toMatchObject({
+      href: `${BASE}/libros/sumas-y-saldos?mes=2026-09&raro=1`,
+    })
+    expect(closeLines(input).some((l) => l.key === 'odd')).toBe(false)
+    expect(closeLines({ ...input, oddAccounts: null }).some((l) => l.key === 'odd')).toBe(false)
+  })
+
+  it('«Falta devengar sueldos» sale de la planilla, y reemplaza al recordatorio', () => {
+    expect(payrollLine(null, '2026-09', BASE)).toBeNull()
+    expect(payrollLine({ employees: 0, accrued: false }, '2026-09', BASE)).toBeNull()
+    expect(payrollLine({ employees: 3, accrued: false }, '2026-09', BASE)).toMatchObject({
+      tone: 'late',
+      tag: 'Falta',
+      title: 'Falta devengar sueldos de septiembre',
+      actions: [{ kind: 'href', label: 'Ir a Sueldos', href: `${BASE}/sueldos?mes=2026-09` }],
+    })
+    expect(payrollLine({ employees: 3, accrued: true }, '2026-09', BASE)).toMatchObject({
+      tone: 'ok',
+      title: 'Sueldos de septiembre devengados.',
+    })
+
+    const rows = finishedReview()
+    const reminder = closeLines({ ...input, review: rows }).filter((l) => l.key === 'payroll')
+    expect(reminder).toHaveLength(1)
+    expect(reminder[0]).toMatchObject({ tone: 'muted', tag: 'Para ver' })
+    expect(reminder[0]?.title).toContain('el sistema no sabe si ya los cargaste')
+    const known = closeLines({
+      ...input,
+      review: rows,
+      payroll: { employees: 3, accrued: false },
+    }).filter((l) => l.key === 'payroll')
+    expect(known.map((l) => l.title)).toEqual(['Falta devengar sueldos de septiembre'])
+  })
+
+  it('los avisos de siempre van con su etiqueta y sus acciones', () => {
+    const lines = closeLines({
+      ...input,
+      review: finishedReview({
+        checklist: checklist({ warnings: [item('tickets_without_vendor', { count: 2 })] }),
+      }),
+    })
+    const tickets = lines.find((l) => l.key === 'tickets_without_vendor')
+    expect(tickets).toMatchObject({
+      tag: 'Revisar',
+      title: '2 tiques no dicen de qué comercio son',
+    })
+    expect(tickets?.actions[0]).toMatchObject({ label: 'Ver' })
+    expect(lines.find((l) => l.key === 'closes')).toMatchObject({
+      tag: 'Listo',
+      title: 'Los 30 días de septiembre tienen su cierre.',
+    })
+  })
+
+  it('el IVA va al final, solo con el mes abierto', () => {
+    const iva = { text: 'Al cerrar queda anotado el IVA de septiembre.', href: '/iva' }
+    expect(closeLines({ ...input, iva }).at(-1)).toMatchObject({
+      key: 'iva',
+      tone: 'info',
+      tag: 'IVA',
+      title: iva.text,
+    })
+    expect(closeLines({ ...input, iva, closed: true }).some((l) => l.key === 'iva')).toBe(false)
+  })
+
+  it('con el mes cerrado no queda nada para revisar', () => {
+    const lines = closeLines({ ...input, closed: true })
+    expect(lines.map((l) => l.title)).toEqual([
+      'Mes cerrado: no queda nada para revisar.',
+      'Debe = Haber',
+    ])
   })
 })

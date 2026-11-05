@@ -3,28 +3,20 @@ import {
   arrivalStops,
   groupOpenItems,
   incomingDays,
-  incomingSentence,
-  incomingStrip,
   incomingTitle,
   itemArrival,
   partyCreditSentence,
   partySentence,
-  type ReceivableTranches,
-  receivableMeta,
-  receivableRail,
+  receivableArrival,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/incoming'
 import {
   channelSales,
-  invoicedStamp,
-  invoicedTitle,
-  monthTicket,
+  invoicedSummary,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/invoiced-view'
 import {
-  netRowDetail,
-  netRows,
-  netSentence,
-  netTitle,
+  collectionAmounts,
   netTotals,
+  netVisibleRows,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/net-view'
 import {
   buildCollectionValues,
@@ -37,7 +29,7 @@ import type { NetByMethodRow, SalesSummaryRow } from '@/lib/accounting/queries/b
 import { collectionSchema } from '@/lib/accounting/schemas'
 
 /**
- * «Plata por cobrar», «Lo que llegó», «Facturas» y la hoja «Registrar un
+ * «Por cobrar», «Lo que llegó», «Cobros», «Facturas» y la hoja «Registrar un
  * cobro»: las cuentas y las oraciones. Lo más delicado está al final: la hoja
  * de cobrar se reordenó en tres pasos, pero tiene que mandar EXACTAMENTE lo
  * mismo que antes, así que `buildCollectionValues` se compara contra el objeto
@@ -48,150 +40,64 @@ import { collectionSchema } from '@/lib/accounting/schemas'
 const NB = String.fromCharCode(160)
 const TODAY = '2026-10-13'
 
-const tranches = (over: Partial<ReceivableTranches> = {}): ReceivableTranches => ({
-  totalCents: 0,
-  lateCents: 0,
-  weekCents: 0,
-  laterCents: 0,
-  walletCents: 0,
-  lateParties: 0,
-  ...over,
-})
-
-describe('incomingSentence: la oración del héroe', () => {
-  it('lo atrasado y lo que llega esta semana, cada cifra con su palabra', () => {
-    expect(
-      incomingSentence(
-        tranches({ totalCents: 546_982_800, lateCents: 259_541_900, weekCents: 287_440_900 }),
-      ),
-    ).toBe(`$${NB}2.595.419 ya tendrían que haber llegado. Esta semana llegan $${NB}2.874.409.`)
-  })
-
-  it('una sola de las dos, o nada con fecha todavía', () => {
-    expect(incomingSentence(tranches({ totalCents: 100, lateCents: 100 }))).toBe(
-      `$${NB}1 ya tendrían que haber llegado.`,
-    )
-    expect(incomingSentence(tranches({ totalCents: 500_000, laterCents: 500_000 }))).toBe(
-      'Todavía no llegó la fecha de nada.',
-    )
-    expect(incomingSentence(tranches())).toBe('Todavía no llegó la fecha de nada.')
-  })
-
-  it('lo de Mercado Pago y lo que tienen a favor van aparte', () => {
-    expect(
-      incomingSentence(tranches({ totalCents: 40_000_000, walletCents: 40_000_000 }), {
-        creditCents: 17_460_000,
-      }),
-    ).toBe(
-      `$${NB}400.000 ya están en Mercado Pago: falta contarla. Además hay $${NB}174.600 a favor de ellos.`,
-    )
-  })
-
-  it('lo que tienen a favor se dice con su nombre: «ellos» no dice quiénes', () => {
-    const base = tranches({ totalCents: 100, lateCents: 100 })
-    const late = `$${NB}1 ya tendrían que haber llegado.`
-    expect(
-      incomingSentence(base, {
-        creditCents: 17_460_000,
-        creditors: [{ name: 'Mercado Pago', cents: 17_460_000, isCustomer: false }],
-      }),
-    ).toBe(`${late} Además, a Mercado Pago le debemos $${NB}174.600.`)
-    expect(
-      incomingSentence(base, {
-        creditCents: 5_000_000,
-        creditors: [{ name: 'Eventos SA', cents: 5_000_000, isCustomer: true }],
-      }),
-    ).toBe(`${late} Además, Eventos SA tiene $${NB}50.000 a favor.`)
-    expect(
-      incomingSentence(base, {
-        creditCents: 3_000_000,
-        creditors: [
-          { name: 'Rappi', cents: 1_000_000, isCustomer: false },
-          { name: 'Ana', cents: 2_000_000, isCustomer: true },
-        ],
-      }),
-    ).toBe(`${late} Además hay $${NB}30.000 a favor de Rappi y Ana.`)
-  })
-})
-
-describe('incomingStrip: la franja «En camino» de «El mes»', () => {
-  it('lo atrasado gana; después lo de esta semana; después lo que todavía no tiene fecha', () => {
-    expect(
-      incomingStrip(tranches({ totalCents: 9, lateCents: 259_541_900, weekCents: 5 })),
-    ).toEqual({
-      tone: 'late',
-      word: 'Atrasado',
-      sentence: `Hay $${NB}2.595.419 que ya tendrían que haber llegado.`,
-    })
-    expect(incomingStrip(tranches({ totalCents: 9, weekCents: 287_440_900 }))?.sentence).toBe(
-      `Esta semana te llegan $${NB}2.874.409.`,
-    )
-    expect(incomingStrip(tranches({ totalCents: 546_982_800, laterCents: 546_982_800 }))).toEqual({
-      tone: 'muted',
-      word: 'En camino',
-      sentence: `Tenés $${NB}5.469.828 por cobrar: todavía no llegó la fecha.`,
-    })
-  })
-
-  it('solo lo de la billetera no es rojo; sin nada por cobrar no hay franja', () => {
-    expect(incomingStrip(tranches({ totalCents: 100_000, walletCents: 100_000 }))?.tone).toBe(
-      'muted',
-    )
-    expect(incomingStrip(tranches())).toBeNull()
-  })
-})
-
-describe('el renglón de quien te debe', () => {
+describe('la columna «Llega» de quien te debe', () => {
   const row = {
     debtCents: 253_615_080,
     overdueCents: 147_995_440,
     oldestDueDate: '2026-10-07',
     nextDueDate: '2026-10-13',
-    creditCents: 0,
-    active: true,
   }
+  const dated = { ...row, overdueCents: 0, oldestDueDate: null }
 
-  it('el margen dice desde cuándo o para cuándo, nunca un importe', () => {
-    expect(receivableRail(row, { today: TODAY })).toEqual({
+  it('lo atrasado lo dice, con desde cuándo y, si no es todo, cuánto', () => {
+    expect(receivableArrival(row, { today: TODAY })).toEqual({
       kind: 'late',
-      value: '6',
-      unit: 'días tarde',
-      tone: 'late',
+      text: 'Atrasado',
+      note: `$${NB}1.479.954 · 6 días tarde`,
     })
-    expect(receivableRail({ ...row, oldestDueDate: '2026-10-12' }, { today: TODAY }).unit).toBe(
-      'día tarde',
-    )
     expect(
-      receivableRail({ ...row, overdueCents: 0, oldestDueDate: null }, { today: TODAY }),
-    ).toEqual({ kind: 'today', label: 'llega', value: 'hoy', tone: 'ok' })
-    expect(
-      receivableRail(
-        { ...row, overdueCents: 0, oldestDueDate: null, nextDueDate: '2026-10-15' },
+      receivableArrival(
+        { ...row, overdueCents: row.debtCents, oldestDueDate: '2026-10-12' },
         { today: TODAY },
-      ),
-    ).toEqual({ kind: 'date', label: 'llega', value: '15', unit: 'jue', tone: 'muted' })
+      ).note,
+    ).toBe('1 día tarde')
     expect(
-      receivableRail(
-        { ...row, overdueCents: 0, oldestDueDate: null, nextDueDate: null },
+      receivableArrival(
+        { ...row, overdueCents: row.debtCents, oldestDueDate: null },
         { today: TODAY },
-      ).value,
-    ).toBe('—')
-    expect(receivableRail({ ...row, debtCents: 0 }, { today: TODAY }).kind).toBe('none')
+      ).note,
+    ).toBeNull()
   })
 
-  it('el estado, en palabras', () => {
-    expect(receivableMeta(row, { today: TODAY })).toBe(
-      `$${NB}1.479.954 ya tendría que haber llegado`,
+  it('lo que todavía no llegó: hoy, mañana o en cuántos días', () => {
+    expect(receivableArrival(dated, { today: TODAY })).toEqual({
+      kind: 'date',
+      text: 'Hoy',
+      note: null,
+    })
+    expect(receivableArrival({ ...dated, nextDueDate: '2026-10-14' }, { today: TODAY }).text).toBe(
+      'Mañana',
     )
-    expect(receivableMeta({ ...row, overdueCents: 0 }, { today: TODAY })).toBe(
-      'Lo próximo llega hoy',
+    expect(receivableArrival({ ...dated, nextDueDate: '2026-10-23' }, { today: TODAY }).text).toBe(
+      'En 10 días',
     )
-    expect(
-      receivableMeta({ ...row, overdueCents: 0, nextDueDate: '2026-10-15' }, { today: TODAY }),
-    ).toBe('Lo próximo llega el jue 15/10')
-    expect(
-      receivableMeta({ ...row, debtCents: 0, creditCents: 100, active: false }, { today: TODAY }),
-    ).toBe('No te debe nada · desactivado')
+  })
+
+  it('sin fecha lo dice; sin deuda no llega nada', () => {
+    expect(receivableArrival({ ...dated, nextDueDate: null }, { today: TODAY })).toEqual({
+      kind: 'none',
+      text: 'Sin fecha',
+      note: null,
+    })
+    expect(receivableArrival({ ...row, debtCents: 0 }, { today: TODAY }).kind).toBe('none')
+  })
+
+  it('lo de una billetera nunca es un atraso, aunque la base lo traiga vencido', () => {
+    expect(receivableArrival(row, { today: TODAY, wallet: true })).toEqual({
+      kind: 'wallet',
+      text: 'Falta contarla',
+      note: null,
+    })
   })
 })
 
@@ -372,7 +278,7 @@ function net(over: Partial<NetByMethodRow>): NetByMethodRow {
   }
 }
 
-describe('netRows: de cada $ 100', () => {
+describe('«Lo que llegó»: cada cifra por separado', () => {
   const rows = [
     net({
       methodId: 'ef',
@@ -411,113 +317,59 @@ describe('netRows: de cada $ 100', () => {
     }),
     net({ methodId: 'nada', methodName: 'Sin movimiento' }),
   ]
-  const views = netRows(rows)
 
-  it('del más caro al más barato; los que no liquidaron, al final; sin movimiento, afuera', () => {
-    expect(views.map((v) => v.name)).toEqual(['PedidosYa', 'Crédito', 'Efectivo', 'Rappi'])
+  it('un medio sin movimiento no tiene renglón', () => {
+    expect(netVisibleRows(rows).map((r) => r.methodId)).toEqual(['ef', 'cr', 'pya', 'rappi'])
+    expect(netVisibleRows([])).toEqual([])
   })
 
-  it('cada renglón dice lo que te queda de cada $ 100', () => {
-    expect(views[0]?.line).toBe(`te quedan $${NB}69,75 de cada $ 100`)
-    expect(views[1]?.line).toBe(`te quedan $${NB}89,74 de cada $ 100`)
-    expect(views[2]).toMatchObject({ state: 'whole', line: 'te llega todo' })
-    expect(views[3]).toMatchObject({
-      state: 'pending',
-      line: `Todavía no te liquidó: $${NB}7.525 en camino`,
-      segments: [],
-      discountBp: null,
-    })
-  })
-
-  it('los tramos de la barra suman 100 sobre lo ya liquidado', () => {
-    const credit = views[1]
-    expect(credit?.settledCents).toBe(1_000_000)
-    expect(credit?.segments.map((s) => s.key)).toEqual(['arrived', 'commission', 'withholdings'])
-    expect(credit?.segments.reduce((sum, s) => sum + s.percent, 0)).toBeCloseTo(100, 6)
-    expect(credit?.segments[0]?.percent).toBeCloseTo(89.74, 2)
-  })
-
-  it('debajo de cada barra, cómo te llega: el efectivo no «te liquidó»', () => {
-    const [pedidos, credito, efectivo, rappi] = views
-    if (!pedidos || !credito || !efectivo || !rappi) throw new Error('faltan renglones')
-    expect(
-      netRowDetail(efectivo, { kind: 'treasury', partyName: null, treasuryName: 'Caja' }),
-    ).toBe(`Entró directo a la caja: $${NB}9.000.`)
-    expect(
-      netRowDetail(credito, { kind: 'settled_now', partyName: 'Mercado Pago', treasuryName: null }),
-    ).toBe(`Quedó en Mercado Pago: $${NB}8.974 de $${NB}10.000. Siguen en camino $${NB}10.000.`)
-    // Una tarjeta o una app sí liquida; sin saber el medio, se dice como siempre.
-    expect(
-      netRowDetail(pedidos, { kind: 'receivable', partyName: 'PedidosYa', treasuryName: null }),
-    ).toBe(`De $${NB}10.000 que ya te liquidó, te llegaron $${NB}6.975.`)
-    expect(netRowDetail(pedidos, null)).toBe(
-      `De $${NB}10.000 que ya te liquidó, te llegaron $${NB}6.975.`,
-    )
-    // Lo que todavía no liquidó no lleva aclaración: ya lo dice el renglón.
-    expect(netRowDetail(rappi, null)).toBeNull()
-  })
-
-  it('el título afirma cuál es el que más cuesta', () => {
-    expect(netTitle(views, 'en octubre')).toBe(
-      `PedidosYa es el que más te cuesta: se queda con $${NB}30,25 de cada $ 100`,
-    )
-  })
-
-  it('los otros títulos: todo llegó, sin descuentos todavía, nada liquidado', () => {
-    const cash = netRows([rows[0] as NetByMethodRow])
-    expect(netTitle(cash, 'en septiembre')).toBe('En septiembre te llegó todo lo que vendiste')
-    expect(
-      netTitle(netRows([rows[0] as NetByMethodRow, rows[3] as NetByMethodRow]), 'en octubre'),
-    ).toBe('Lo que ya te llegó en octubre vino sin descuentos')
-    expect(netTitle(netRows([rows[3] as NetByMethodRow]), 'en octubre')).toBe(
-      'Todavía no te liquidaron nada en octubre',
-    )
-    expect(netTitle([], 'en octubre')).toBe('Todavía no te liquidaron nada en octubre')
-  })
-
-  it('la oración dice cada cifra por separado, sin afirmar que sumen', () => {
-    const totals = netTotals(rows)
-    expect(totals).toEqual({
+  it('los totales: lo vendido, lo que llegó, lo descontado y lo que sigue en camino', () => {
+    expect(netTotals(rows)).toEqual({
       soldCents: 4_652_516,
       creditedCents: 2_494_900,
       deductedCents: 405_100,
       pendingCents: 1_752_516,
     })
-    expect(netSentence(totals)).toBe(
-      `Vendiste $${NB}46.525. Ya te llegaron $${NB}24.949, te descontaron $${NB}4.051 entre comisiones, impuestos y retenciones, y $${NB}17.525 siguen en camino.`,
-    )
-    expect(
-      netSentence({
-        soldCents: 100_000,
-        creditedCents: 100_000,
-        deductedCents: 0,
-        pendingCents: 0,
-      }),
-    ).toBe(`Vendiste $${NB}1.000. Ya te llegaron $${NB}1.000.`)
-    expect(
-      netSentence({
-        soldCents: 100_000,
-        creditedCents: 0,
-        deductedCents: 0,
-        pendingCents: 100_000,
-      }),
-    ).toBe(`Vendiste $${NB}1.000. Todo sigue en camino.`)
-    expect(netSentence({ soldCents: 0, creditedCents: 0, deductedCents: 0, pendingCents: 0 })).toBe(
-      `Vendiste $${NB}0.`,
-    )
   })
 
-  it('un descuento negativo de la base no rompe la barra', () => {
-    const [view] = netRows([
-      net({ soldCents: 1_000, creditedCents: 1_000, unexplainedCents: -50, discountBp: 0 }),
-    ])
-    expect(view?.segments).toEqual([{ key: 'arrived', cents: 1_000, percent: 100 }])
+  it('un descuento negativo de la base no resta de lo descontado', () => {
+    expect(netTotals([net({ creditedCents: 1_000, unexplainedCents: -50 })]).deductedCents).toBe(0)
+  })
+})
+
+describe('«Cobros»: lo que entró de cada uno', () => {
+  const means = (...amounts: Array<[string, number]>) =>
+    amounts.map(([label, amountCents]) => ({ label, amountCents })) as never
+
+  it('lo que entró a las cajas, lo descontado y a dónde fue', () => {
+    expect(
+      collectionAmounts({ totalCents: 191_546_500, means: means(['Banco Nación', 178_800_000]) }),
+    ).toEqual({ shown: 178_800_000, discount: 12_746_500, where: 'Banco Nación' })
+    expect(
+      collectionAmounts({
+        totalCents: 300,
+        means: means(['Caja', 100], ['Banco', 100], ['Mercado Pago', 100]),
+      }),
+    ).toEqual({ shown: 300, discount: 0, where: 'Caja, Banco y Mercado Pago' })
+  })
+
+  it('sin el detalle de las cajas, se ve la liquidación entera', () => {
+    expect(collectionAmounts({ totalCents: 500, means: null })).toEqual({
+      shown: 500,
+      discount: 0,
+      where: '',
+    })
+    expect(collectionAmounts({ totalCents: 500, means: [] }).shown).toBe(500)
+  })
+
+  it('si entró de más no es un descuento negativo', () => {
+    expect(collectionAmounts({ totalCents: 100, means: means(['Caja', 150]) }).discount).toBe(0)
   })
 })
 
 // ─── Facturas ────────────────────────────────────────────────────────────────
 
-describe('el ticket del mes', () => {
+describe('los totales de «Facturas»', () => {
   const summary = (over: Partial<SalesSummaryRow>): SalesSummaryRow => ({
     month: '2026-10-01',
     channel: 'salon',
@@ -544,43 +396,32 @@ describe('el ticket del mes', () => {
   ]
 
   it('suma por canal y deja afuera los canales sin ventas', () => {
-    const ticket = monthTicket(rows)
-    expect(ticket?.channels.map((c) => c.label)).toEqual(['Salón', 'Delivery'])
-    expect(ticket?.soldCents).toBe(800_897_000)
-    expect(ticket?.invoicedCents).toBe(610_802_000)
-    expect(ticket?.uninvoicedCents).toBe(190_095_000)
+    const totals = invoicedSummary(rows)
+    expect(totals?.channels.map((c) => c.label)).toEqual(['Salón', 'Delivery'])
+    expect(totals?.soldCents).toBe(800_897_000)
+    expect(totals?.invoicedCents).toBe(610_802_000)
+    expect(totals?.uninvoicedCents).toBe(190_095_000)
     expect(channelSales(rows)).toHaveLength(3)
   })
 
-  it('lleva el mismo sello que el ticket de cada noche', () => {
-    const ticket = monthTicket(rows)
-    if (!ticket) throw new Error('falta el ticket')
-    expect(invoicedStamp(ticket.split)).toEqual({ tone: 'factura', text: '76 % con factura' })
-    expect(invoicedTitle(ticket.split, 'en octubre')).toBe(
-      'El 76 % de lo vendido en octubre fue con factura',
-    )
+  it('el mismo reparto que el cierre de cada noche', () => {
+    const totals = invoicedSummary(rows)
+    if (!totals) throw new Error('faltan los totales')
+    expect(totals.split).toMatchObject({ kind: 'mixed', invoicedPercent: 76 })
   })
 
-  it('sin puntos de venta todo queda sin factura: sello azul, no una alarma', () => {
-    const ticket = monthTicket([summary({ soldCents: 500_000, uninvoicedCents: 500_000 })])
-    if (!ticket) throw new Error('falta el ticket')
-    expect(invoicedStamp(ticket.split)).toEqual({ tone: 'sin', text: 'Sin factura' })
-    expect(invoicedTitle(ticket.split, 'en octubre')).toBe(
-      'Todo lo vendido en octubre quedó como venta sin factura',
-    )
+  it('sin puntos de venta todo queda sin factura', () => {
+    const totals = invoicedSummary([summary({ soldCents: 500_000, uninvoicedCents: 500_000 })])
+    expect(totals?.split.kind).toBe('none')
   })
 
   it('todo con factura, y el período sin ventas', () => {
-    const all = monthTicket([
+    const all = invoicedSummary([
       summary({ soldCents: 121_000, invoicedNetCents: 100_000, vatCents: 21_000 }),
     ])
-    if (!all) throw new Error('falta el ticket')
-    expect(invoicedStamp(all.split)?.text).toBe('Todo con factura')
-    expect(invoicedTitle(all.split, 'en ese período')).toBe(
-      'Todo lo vendido en ese período fue con factura',
-    )
-    expect(monthTicket([])).toBeNull()
-    expect(monthTicket([summary({})])).toBeNull()
+    expect(all?.split.kind).toBe('all')
+    expect(invoicedSummary([])).toBeNull()
+    expect(invoicedSummary([summary({})])).toBeNull()
   })
 })
 

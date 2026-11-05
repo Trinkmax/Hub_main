@@ -307,17 +307,11 @@ describe('WalletCard: la tarjeta de una caja', () => {
     expect(mp).toContain('bg-(--adm-k-wallet-1)')
     // La tarjeta de la empresa no tiene tono: `treasuryTones` no la devuelve.
     expect(visa).toContain('bg-adm-neutral')
-    // El lomo es la misma clase que `treasuryToneSwatch`, y esa es la del héroe del Resumen.
+    // El lomo es la misma clase que `treasuryToneSwatch`.
     expect(caja).toContain(treasuryToneSwatch(tones.caja))
-    const hero = readFileSync(
-      join(process.cwd(), 'app/(manager)/[tenantSlug]/administracion/_resumen/hero-block.tsx'),
-      'utf8',
-    )
     for (const kind of ['bank', 'cash', 'wallet'] as const) {
       for (const step of [1, 2, 3] as const) {
-        const swatch = treasuryToneSwatch({ kind, step })
-        expect(swatch).toBe(`bg-(--adm-k-${kind}-${step})`)
-        expect(hero, swatch).toContain(`'${swatch}'`)
+        expect(treasuryToneSwatch({ kind, step })).toBe(`bg-(--adm-k-${kind}-${step})`)
       }
     }
     expect(treasuryToneSwatch(null)).toBe('bg-adm-neutral')
