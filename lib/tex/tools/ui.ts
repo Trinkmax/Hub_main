@@ -1,11 +1,5 @@
 import { z } from 'zod'
-import {
-  TEX_AJUSTES_TABS,
-  TEX_SCREENS,
-  type TexScreenDef,
-  texScreen,
-  texScreenHref,
-} from '../screens'
+import { TEX_SCREENS, type TexScreenDef, texScreen, texScreenHref } from '../screens'
 import { defineTool, type TexTool } from './types'
 
 /**
@@ -25,12 +19,16 @@ const screenParams = {
   desde: z.string().optional().describe('Fecha yyyy-MM-dd.'),
   hasta: z.string().optional().describe('Fecha yyyy-MM-dd.'),
   semana: z.string().optional().describe('El lunes de la semana, yyyy-MM-dd.'),
-  fecha: z.string().optional().describe('El día del cierre, yyyy-MM-dd.'),
-  tab: z
+  fecha: z
     .string()
     .optional()
-    .describe(`La solapa de Ajustes: ${TEX_AJUSTES_TABS.join(', ')}.`),
+    .describe('El día, yyyy-MM-dd, en las pantallas que abren en un día.'),
+  tab: z.string().optional().describe('La solapa. Cada pantalla dice las suyas.'),
   q: z.string().max(60).optional().describe('Lo que se busca, en las pantallas con buscador.'),
+  chat: z.string().optional().describe('El id de una conversación, para abrir ese chat.'),
+  evento: z.string().optional().describe('El id de un formato de evento.'),
+  etiqueta: z.string().optional().describe('El id de una etiqueta de clientes.'),
+  estrellas: z.string().optional().describe('De 1 a 5, para ver solo esas reseñas.'),
 }
 
 /** Quien llegó hasta Tex: las pantallas ya vienen filtradas por lo que ve cada uno. */

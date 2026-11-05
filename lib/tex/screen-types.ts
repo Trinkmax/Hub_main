@@ -13,6 +13,10 @@ export type TexScreenParam =
   | 'fecha'
   | 'tab'
   | 'q'
+  | 'chat'
+  | 'evento'
+  | 'etiqueta'
+  | 'estrellas'
 
 export type TexScreenDef = {
   /** El nombre que usa Tex: `area.cosa`. */
@@ -28,6 +32,11 @@ export type TexScreenDef = {
   /** Parte de la URL que no cambia (`?tab=clientes`). */
   query?: string
   params?: readonly TexScreenParam[]
+  /**
+   * Cómo llama esta pantalla a un parámetro en su URL, si no es como en el resto: `/reservas` abre un día
+   * con `?day=` y `/operativo` con `?date=`. Tex siempre dice `fecha`.
+   */
+  urlNames?: Partial<Record<Exclude<TexScreenParam, 'id'>, string>>
   /** Los valores que esta pantalla acepta en `?tab=`. Sin esto, no se manda ninguno. */
   tabs?: readonly string[]
   /** Quién la ve, si es menos que quienes llegan a esa ruta. */

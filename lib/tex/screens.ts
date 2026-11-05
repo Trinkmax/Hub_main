@@ -291,7 +291,7 @@ export const TEX_ADMIN_SCREENS: readonly TexScreenDef[] = [
   {
     id: 'ajustes',
     label: 'Ajustes',
-    what: 'Datos del bar, impuestos, cajas, medios de cobro y accesos.',
+    what: `Datos del bar, impuestos, cajas, medios de cobro y accesos. Solapas: ${TEX_AJUSTES_TABS.join(', ')}.`,
     path: '/ajustes',
     params: ['tab'],
     tabs: TEX_AJUSTES_TABS,
@@ -383,7 +383,12 @@ function validParam(name: TexScreenParam, value: string, screen: TexScreenDef): 
   switch (name) {
     case 'id':
     case 'cuenta':
+    case 'chat':
+    case 'evento':
+    case 'etiqueta':
       return UUID_RE.test(value)
+    case 'estrellas':
+      return /^[1-5]$/.test(value)
     case 'mes':
       return isRealYearMonth(value)
     case 'desde':
@@ -416,6 +421,18 @@ const URL_PARAM: Readonly<Record<Exclude<TexScreenParam, 'id'>, string>> = {
   fecha: 'fecha',
   tab: 'tab',
   q: 'q',
+  chat: 'c',
+  evento: 'evento',
+  etiqueta: 'tag',
+  estrellas: 'rating',
+}
+
+/** El nombre de un parámetro en la URL de esta pantalla. */
+export function texScreenUrlName(
+  screen: TexScreenDef,
+  param: Exclude<TexScreenParam, 'id'>,
+): string {
+  return screen.urlNames?.[param] ?? URL_PARAM[param]
 }
 
 export type TexScreenLink = { ok: true; href: string; label: string } | { ok: false; error: string }
@@ -444,7 +461,7 @@ export function texScreenHref(
     if (name === 'id') continue
     if ((name === 'desde' || name === 'hasta') && !validRange(params)) continue
     const value = params[name]
-    if (value && validParam(name, value, screen)) search.set(URL_PARAM[name], value)
+    if (value && validParam(name, value, screen)) search.set(texScreenUrlName(screen, name), value)
   }
   const query = search.toString()
   return {

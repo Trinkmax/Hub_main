@@ -1535,3 +1535,77 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - `ver_mayor` hace un `select` directo a `acc_document_lines` porque `acc_report_ledger` no devuelve el id de línea: conviene pasarlo a `lib/accounting/queries`.
 - `lib/tex/tools/actions/gastos.ts` repite la traducción de `AccActionState` y `UNDO_WINDOW_MS` de `document-action.ts`; `_contabilidad-values.ts` copia el esquema de `saveTaxSettings`, porque un archivo `'use server'` no lo puede exportar.
 - Un posible duplicado puede pedir dos confirmaciones (en el tique y cuando contesta la base): no se probó esa doble vuelta.
+
+## Tex en la Carta y en Estadísticas: lo que se vio de paso (05/11/2026)
+
+- **«Top clientes del mes»** de la portada suma toda la historia de cada cliente (`getTopCustomersBySpent`): el título
+  promete otra cosa.
+- **Estadísticas › Comunicación:** cada destinatario tiene un solo estado, así que «delivery rate» (entregados ÷ enviados) y
+  «open» (leídos ÷ enviados) no miden eso y pueden pasar de 100 %. Tex da solo los conteos.
+- **Carta pública:** pausar una categoría madre hace que sus subcategorías activas suban al primer nivel
+  (`buildCategoryTree` las deja de raíz si el padre no está). Tex lo avisa en el tique; falta decidir si es lo que se quiere.
+- **Buscador de la Carta en el panel:** dice «Buscar ítems o categorías», pero solo busca categorías (`menu-board.tsx`).
+- **`updateMenuItem` y `updateCategory` no escriben en `audit_log`**, aunque cambiar un precio cambia lo que se le cobra al
+  cliente. Por Tex queda el tique; por la pantalla, nada.
+
+## Tex en Reservas, Calendario y Entradas: lo que se vio de paso (05/11/2026)
+
+- **No se puede borrar un evento con reservas caídas sin planta.** `salon_reservations.scheduled_event_id` es `on delete set null`
+  y `salon_reservations_event_floating_requires_event` pide evento si la zona es `event_floating`. Con una cancelada o un «no vino»
+  sin planta, `deleteScheduledEvent` choca con ese check y la persona lee «Algún campo tiene un valor fuera de rango». La acción solo
+  mira las activas. Tex lo dice antes de armar el tique; en la pantalla sigue igual. Se vio leyendo el esquema, sin probarlo en la base.
+- **El formulario del evento mueve la fecha sin mirar las reservas.** `moveScheduledEvent` (arrastrar) frena si hay activas;
+  `upsertScheduledEvent` (la ficha) no, y no hay nada que lleve las reservas a la fecha nueva. Tex pasa por `moveScheduledEvent`.
+- **`scheduled-event-form` toma `event_date` por defecto de `new Date().toISOString()`:** entre las 21 y las 24 de Córdoba abre en el día siguiente.
+- **Las pantallas del área no leen los parámetros de Tex:** `/reservas?day=`, `/operativo?date=`, `/eventos/programados?month=&day=`,
+  `/mis-numeros` y comisiones `?from=&to=`, `/estadisticas/senas?month=`. Por eso Tex lleva a la ficha de lo que cambió, y no al día.
+
+## Tex en Clientes y Club: lo que se vio de paso (05/11/2026)
+
+- **La contadora puede leer clientes por `acc_tex_actions`.** `atxa_readers_select` deja leer todas las acciones del bar a
+  quien lee Administración, y esa política se suma a la nueva. El tique trae nombres de clientes y el `payload` de un alta o
+  una edición trae el teléfono y el mail enteros (el ejecutor los necesita), aunque `customers_no_accountant` la deja afuera
+  de la tabla de clientes. Hoy ninguna pantalla lo muestra: haría falta consultarlo a mano con su sesión. Arreglo: acotar esa
+  política a lo de Administración o a quien lo cargó, y vaciar el `payload` al decidir el tique.
+- **`phoneField` no normaliza lo que arranca con `+`** (`lib/customers/schemas.ts`): si es válido lo deja tal cual, con espacios
+  y guiones, y así se guardaría sin matchear con nadie. El formulario manda E.164 y no se nota; Tex lo normaliza antes.
+- **Canje con nivel insuficiente:** `redeem_reward` tira `tier_locked` y `humanizeRpcError` no lo conoce, así que el cajero lee
+  «No pudimos completar la acción». Tex lo frena antes en el tique.
+- **Ficha › Puntos muestra códigos:** `describeReason` deja pasar `qr_award`, `welcome_bonus` y `event_attendance` tal cual.
+- **Buscador de clientes:** «Juan Pérez» no encuentra a nadie (busca la frase entera en el nombre o en el apellido), «Perez» no
+  encuentra a «Pérez», y un paréntesis rompe el `or` (solo saca `%` y `,`). Tex busca palabra por palabra sin acentos. Además, el
+  filtro por etiqueta de `listCustomers` corre después de paginar: en una base grande da páginas cortas con un total que no cierra.
+- **Dos reglas por monto activas se tratan distinto:** Cerrar mesa suma las dos (`calculatePoints`) y Acreditar usa una sola, la de
+  mayor prioridad. Nada frena crear la segunda desde Club. Tex pausa la anterior en el mismo tique.
+
+## Tex en Mensajería y Marketing: lo que se vio de paso (05/11/2026)
+
+- **Una automatización de tiempo le manda el mensaje una y otra vez a la misma persona.** `customers_for_inactive_flow` y
+  `customers_for_birthday_flow` solo dejan afuera a quien tiene una ejecución `running`, y `evaluate_time_triggers` corre cada
+  15 minutos: quien termina y sigue cumpliendo vuelve a entrar. Con un flow de un solo mensaje, un cumpleañero lo recibiría
+  cada 15 minutos todo el día, y un inactivo, sin fin. `event_starting` igual, dentro de su hora. Se leyó en el código y en
+  las funciones de producción; hoy no pega porque el único flow está apagado y nunca corrió. Arreglo: no volver a enrolar a
+  quien ya terminó en el período. El tique de Tex lo avisa; la pantalla, no.
+- **El conteo de una audiencia no se recalcula solo y Nueva difusión lo muestra como si fuera de hoy.** `customer_count_cached`
+  solo cambia al guardar la audiencia (`recalcAudience` y `refreshAudienceCount` no los llama nadie), no descuenta a los que no
+  aceptan promos y el formulario dice «Hoy son N» y «Se lo vas a mandar a N». En producción las dos audiencias dicen 5 y hoy le
+  llegarían a 159. Tex cuenta en vivo y lo avisa.
+- **Difusiones › Resultados:** cada destinatario está en un solo casillero, así que «Enviados» baja cuando el mensaje se
+  entrega o se lee: los casilleros no son un embudo. Tex da los acumulados y dice por qué no coinciden con la pantalla.
+- **`sendTextMessage` no mira la ventana de 24 horas ni «No contactar»:** los mira solo la pantalla (`composer.tsx`). Tex los
+  replica antes de llamarla, pero la regla debería vivir en la acción.
+- **`sendTemplateMessage` no mira opt-in, «No contactar» ni si la plantilla está aprobada:** el diálogo solo ofrece las
+  aprobadas. Tex lo replica.
+- **`cancelBroadcast` y `sendBroadcastNow` contestan bien aunque ya no hayan podido hacer nada** (filtran por estado y no miran
+  cuántas filas tocaron): en la pantalla, una difusión que ya empezó a salir parece cancelada. Tex lo confirma leyendo.
+- **`toggleFlowActive` no tiene pantalla, no valida nada y no escribe en `audit_log`:** la pantalla prende y apaga guardando
+  todo el grafo. Tex la usa después de pasarle las reglas del editor, y `tex.action.done` deja el rastro.
+- **Automatizaciones › Pasos muestra 0 en las de grafo:** `listFlows` cuenta `flow_steps`, y sus pasos están en `flow_nodes`.
+- **No hay borradores de difusión:** el estado `draft` existe y la pantalla lo contempla, pero nadie lo crea.
+- **Tex no puede abrir un chat puntual:** la bandeja lo elige con `?c=` y `TexScreenParam` no lo tiene; lleva a la bandeja y
+  señala el nombre. Hace falta sumar el parámetro en `lib/tex/screen-types.ts` y `screens.ts`.
+- **El tique en revisión no cambia su botón:** `applyDecisions` actualiza los avisos pero no `confirmLabel` ni `total`. Si la
+  lista cambió mientras esperaba, el aviso trae el número nuevo y el botón sigue con el viejo.
+- **Confirmar un tique no es atómico** (`applyDecisions` lee `pending`, ejecuta y recién después marca): dos pedidos al mismo
+  instante correrían dos veces. Una respuesta o una difusión tienen su control de duplicados en el ejecutor, que no cierra
+  esa ventana: hace falta tomar el tique con un `update … where status = 'pending'`.
