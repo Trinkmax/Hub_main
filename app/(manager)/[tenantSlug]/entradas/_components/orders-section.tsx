@@ -90,7 +90,7 @@ export function OrdersSection({
         />
       ) : (
         <>
-          <ul className="grid gap-2.5 md:hidden">
+          <ul className="grid grid-cols-1 gap-2.5 md:hidden">
             {result.orders.map((order) => (
               <li key={order.id}>
                 <OrderCard
@@ -334,7 +334,7 @@ function OrderCard({
         </div>
       ) : null}
       <div className="mt-1 flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
           {formatOrderMoment(order.created_at, now)}
         </span>
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">

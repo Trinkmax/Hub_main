@@ -49,7 +49,7 @@ export function orderStatusView(
     case 'approved':
       if (transfer) {
         return {
-          label: 'Pagado por transferencia',
+          label: 'Transferencia',
           tone: 'paid',
           hint: 'Alguien del bar confirmó la transferencia y la reserva se cargó sola.',
         }
@@ -62,7 +62,7 @@ export function orderStatusView(
     case 'refunded':
       if (transfer) {
         return {
-          label: 'Transferencia anulada',
+          label: 'Anulada',
           tone: 'refunded',
           hint: 'Se anuló la transferencia confirmada: la entrada ya no vale.',
         }

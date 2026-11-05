@@ -24,11 +24,11 @@ describe('orderStatusView', () => {
   it('una transferencia confirmada o anulada lo dice', () => {
     const base = { hold_expires_at: EARLIER, mp_payment_type: 'manual_transfer' }
     expect(orderStatusView({ ...base, status: 'approved' }, NOW)).toMatchObject({
-      label: 'Pagado por transferencia',
+      label: 'Transferencia',
       tone: 'paid',
     })
     expect(orderStatusView({ ...base, status: 'refunded' }, NOW)).toMatchObject({
-      label: 'Transferencia anulada',
+      label: 'Anulada',
     })
   })
 

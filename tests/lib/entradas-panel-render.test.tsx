@@ -257,7 +257,7 @@ describe('Ventas online', () => {
       )
     const on = render(true)
     expect(on).toContain('Confirmar transferencia')
-    expect(on).toContain('Pagado por transferencia')
+    expect(on).toContain('Transferencia')
     expect(on).toContain('Anular')
     // La pagada por Mercado Pago se sigue devolviendo por Mercado Pago.
     expect(on).toContain('Devolver')
