@@ -11,7 +11,7 @@ import { partySizeError } from './availability'
 import { getMercadoPagoCredentials } from './credentials'
 import { DEFAULT_TZ, formatShortDate, formatTime } from './dates'
 import { centsToMercadoPagoAmount, paymentOptions } from './pricing'
-import { getOrderEntry, isOrderExpired } from './queries'
+import { getOrderEntry, isOrderExpired, orderHasRoom } from './queries'
 import { type CheckoutInput, checkoutSchema, orderIdSchema } from './schemas'
 import { reconcileOrder, reconcilePaymentById } from './settle'
 import type { OrderEntry, OrderStatus, TicketOrderRow } from './types'
@@ -270,6 +270,8 @@ export type OrderRefreshResult =
       ok: true
       status: OrderStatus
       expired: boolean
+      /** Pago rechazado con el lugar vencido: la función todavía tiene lugar (ver PublicOrder). */
+      roomLeft: boolean
       paidCents: number | null
       statusDetail: string | null
       /** Quiénes ya entraron, si la entrada está paga. */
@@ -336,7 +338,7 @@ export async function refreshOrder(input: {
     const { data } = await service
       .from('ticket_orders')
       .select(
-        'status, hold_expires_at, paid_cents, mp_status_detail, created_at, reservation_id, party_size',
+        'status, hold_expires_at, paid_cents, mp_status_detail, created_at, reservation_id, scheduled_event_id, party_size',
       )
       .eq('tenant_id', tenant.id)
       .eq('id', orderId.data)
@@ -349,6 +351,7 @@ export async function refreshOrder(input: {
       | 'mp_status_detail'
       | 'created_at'
       | 'reservation_id'
+      | 'scheduled_event_id'
       | 'party_size'
     > | null
   }
@@ -383,21 +386,23 @@ export async function refreshOrder(input: {
     }
   }
 
+  const tz = tenant.timezone ?? DEFAULT_TZ
+  const expired = isOrderExpired(order.status, order.hold_expires_at)
   return {
     ok: true,
     status: order.status,
-    expired: isOrderExpired(order.status, order.hold_expires_at),
+    expired,
+    // Se le acaba de vencer el lugar con la cuenta para transferir a la vista: si la
+    // función todavía tiene lugar, la cuenta no desaparece.
+    roomLeft:
+      order.status === 'rejected' && expired
+        ? await orderHasRoom(service, tenant.id, order.scheduled_event_id, order.party_size, tz)
+        : false,
     paidCents: order.paid_cents === null ? null : Number(order.paid_cents),
     statusDetail: order.mp_status_detail,
     entry:
       order.status === 'approved'
-        ? await getOrderEntry(
-            service,
-            tenant.id,
-            order.reservation_id,
-            order.party_size,
-            tenant.timezone ?? DEFAULT_TZ,
-          )
+        ? await getOrderEntry(service, tenant.id, order.reservation_id, order.party_size, tz)
         : null,
   }
 }
