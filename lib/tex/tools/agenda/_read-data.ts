@@ -1,13 +1,3 @@
-import {
-  attentionView,
-  formatOrderMoment,
-  orderAmountCents,
-  orderEntryLabel,
-  orderFunctionLabel,
-  orderStatusView,
-  orderUndoLabel,
-  paymentOptionLabel,
-} from '@/app/(manager)/[tenantSlug]/entradas/_lib/orders'
 import { carteleraSummary } from '@/app/(manager)/[tenantSlug]/entradas/_lib/overview'
 import type { CommissionPeriod } from '@/lib/commissions/period'
 import {
@@ -83,6 +73,16 @@ import {
 } from '@/lib/salon/types'
 import { availabilityLabel, functionState, isOnSale, seatsLeft } from '@/lib/ticketing/availability'
 import { formatTime } from '@/lib/ticketing/dates'
+import {
+  attentionView,
+  formatOrderMoment,
+  orderAmountCents,
+  orderEntryLabel,
+  orderFunctionLabel,
+  orderStatusView,
+  orderUndoLabel,
+  paymentOptionLabel,
+} from '@/lib/ticketing/order-view'
 import type { AdminOrder } from '@/lib/ticketing/queries'
 import { cappedBySize, compact, moneyIf, shortText, texPeriod } from '../read/common'
 import { capped, dayText, money } from '../types'

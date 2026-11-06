@@ -197,6 +197,8 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     expect(activeLabels('/hub/eventos/programados', host)).toEqual(['Calendario'])
     expect(activeLabels('/hub/operativo', host)).toEqual(['Operativo'])
     expect(activeLabels('/hub/mis-numeros', host)).toEqual(['Mis números'])
+    expect(activeLabels('/hub/ventas-online', host)).toEqual(['Ventas online'])
+    expect(activeLabels('/hub/ventas-online?hasta=2026-11-01', host)).toEqual(['Ventas online'])
   })
 
   // Todas las páginas del workspace manager (app/(manager)/[tenantSlug]/**/page.tsx,
@@ -230,6 +232,7 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
       '/hub/reservas/nuevo',
       '/hub/reviews',
       '/hub/tareas',
+      '/hub/ventas-online',
       '/hub/visitas/nueva',
     ]
     for (const groups of [owner, ownerHub, host]) {

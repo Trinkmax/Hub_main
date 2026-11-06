@@ -2,7 +2,7 @@ import { TEMPLATE_EDIT_ROLES } from '@/lib/tenant/roles'
 import type { TexScreenDef } from '../screen-types'
 
 /**
- * Reservas, Calendario, Operativo y Entradas.
+ * Reservas, Calendario, Operativo, Entradas y Ventas online.
  *
  * Estas pantallas son anteriores a la convención de Tex y llaman distinto a sus parámetros: `/reservas`
  * abre un día con `?day=`, `/operativo` con `?date=`, el calendario con `?month=&day=` y las comisiones con
@@ -106,7 +106,7 @@ export const agendaScreens: readonly TexScreenDef[] = [
   {
     id: 'entradas.lista',
     label: 'Marketing › Entradas',
-    what: 'La venta online: el link de la cartelera, Mercado Pago, las películas, las ventas (devolver, confirmar transferencias) y la configuración.',
+    what: 'La venta online: el link de la cartelera, Mercado Pago, las películas y la configuración. Las compras están en Ventas online.',
     path: '/entradas',
     root: true,
     roles: ['owner'],
@@ -119,6 +119,16 @@ export const agendaScreens: readonly TexScreenDef[] = [
     root: true,
     params: ['id'],
     roles: ['owner'],
+  },
+  {
+    id: 'ventas.lista',
+    label: 'Ventas online',
+    what: 'Las compras de la cartelera, día por día: quién, para qué función, cuánto pagó, si ya entró y «Confirmar transferencia». Abre la última semana; con hasta, la semana que termina ese día. Devolver y anular, solo el dueño.',
+    path: '/ventas-online',
+    root: true,
+    params: ['hasta'],
+    urlNames: { hasta: 'hasta' },
+    roles: ['owner', 'host'],
   },
   {
     id: 'comisiones.liquidacion',

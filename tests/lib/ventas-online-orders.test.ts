@@ -3,16 +3,17 @@ import {
   attentionView,
   canRefund,
   formatOrderMoment,
+  formatOrderTime,
   holdExpired,
   orderAmountCents,
   orderFunctionLabel,
   orderStatusView,
   paymentOptionLabel,
   peopleLabel,
-} from '@/app/(manager)/[tenantSlug]/entradas/_lib/orders'
+} from '@/lib/ticketing/order-view'
 
 /**
- * Marketing › Entradas › Ventas online: cada compra dice en qué quedó. «Vencido»
+ * Ventas online: cada compra dice en qué quedó. «Vencido»
  * no existe en la base: es pending/rejected con el lugar ya liberado.
  */
 
@@ -174,5 +175,13 @@ describe('formatOrderMoment (reloj de Córdoba)', () => {
 
   it('una fecha ilegible no rompe la fila', () => {
     expect(formatOrderMoment('nada', NOW)).toBe('—')
+  })
+})
+
+describe('formatOrderTime (la hora dentro del día)', () => {
+  it('la hora del bar, sin el día (lo dice el título de la tanda)', () => {
+    expect(formatOrderTime('2026-10-26T20:42:00.000Z')).toBe('17:42')
+    expect(formatOrderTime('2026-10-27T02:30:00.000Z')).toBe('23:30')
+    expect(formatOrderTime('nada')).toBe('—')
   })
 })

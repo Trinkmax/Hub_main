@@ -18,10 +18,28 @@
 | `/e/[código]` | cualquiera | Adonde lleva el QR si lo abre la cámara del teléfono: quien recibe en ese bar va a la puerta; cualquier otra persona, a la entrada. |
 | `/[bar]/salon/puerta` | `owner`, `cashier`, `waiter`, `host` | La puerta: escanear las entradas y dejar pasar. El escáner de «Sumar puntos» también las reconoce. |
 | `/api/webhooks/mercadopago?t=[tenant_id]` | Mercado Pago | Avisos de pago. |
-| `/[bar]/entradas` | `owner` | Panel: la cartelera (link para mandar), la cuenta de Mercado Pago, las películas, las ventas online y la configuración. |
+| `/[bar]/entradas` | `owner` | Panel: la cartelera (link para mandar), la cuenta de Mercado Pago, las películas y la configuración. |
 | `/[bar]/entradas/[id]` | `owner` | El editor de la página de una película. |
+| `/[bar]/ventas-online?hasta=` | `owner`, `host` | Las compras, día por día, con «Confirmar transferencia». Devolver y anular, solo el dueño. |
 
-Entra por **Marketing** en el sidebar (pestaña `Entradas`).
+Entra por **Marketing** en el sidebar (pestaña `Entradas`). Las ventas tienen su propia entrada, **Ventas online**, debajo de Calendario.
+
+### Ventas online (06/11/2026)
+
+Pedido de Nacho por audio: que Luz (la anfitriona) vea las ventas sin entrar a Marketing y confirme
+las transferencias («Chicos, ¿les entró este pago?» → «Sí» → confirma), y que se puedan ver todos
+los días, no solo los últimos. Antes la lista eran las últimas 60 compras: en HUB llegaba al 04/11.
+
+- **Por día de compra**, en el reloj del bar (no el de la función: es lo que se cruza con la cuenta).
+  Cada día es una tarjeta con lo cobrado y cuántas quedaron sin pagar (`lib/ticketing/sales-days.ts`).
+- **Una semana por página** (`?hasta=AAAA-MM-DD`, la semana que termina ese día). «Ver días
+  anteriores» salta a la semana de la venta anterior más nueva, así que nunca abre una página
+  vacía. Una semana entra en una consulta (la API corta en 1.000 filas).
+- **Quién puede qué** (`TICKET_SALES_ROLES`): el dueño y la anfitriona ven todo y confirman
+  transferencias; «Devolver» y «Anular» siguen siendo del dueño, igual que la cartelera, Mercado
+  Pago y la configuración. Ella lee con su sesión (policy `ticket_orders_host_select`, migración
+  `20261106190000`); el «¿hay alias?» se lee con service_role porque la configuración es del dueño
+  y el alias igual es público. Los «Deshacer» de la puerta los ve solo el dueño (`audit_log`).
 
 ---
 
@@ -285,7 +303,7 @@ quedarse tranquilo. En la puerta se corta el talón, como en el cine.
 
 **El teléfono de quien compra** va en `payer.phone` de la preferencia (`mercadoPagoPhone`): es lo único que se le manda además del nombre, para ayudar a su antifraude. Si Mercado Pago responde 400 a una preferencia con teléfono, se vuelve a crear sin él: el pago no depende de ese dato. Casi todos los rechazos son `rejected_high_risk`. La guía de datos por rubro de Mercado Pago también pide `category_descriptor.event_date` en el ítem: todavía no se manda.
 
-**Si Mercado Pago rechaza el pago** (`transfer-slip.tsx`, `RejectedTicket`): la entrada muestra primero cómo transferir, con el alias para copiar, a nombre de quién y cuánto. Se configura en Entradas › Configuración (`transfer_alias`, `transfer_holder`; lo cambia solo el dueño y queda en `audit_log`). Con «WhatsApp para consultas» cargado aparece «Ya transferí: mandar comprobante», con el mensaje armado; sin número, avisa que el bar confirma por WhatsApp al que dejó al comprar. **La transferencia no se detecta sola:** alguien del bar mira la cuenta y toca «Confirmar transferencia» en Ventas online (solo dueños; queda en `audit_log` quién fue). La compra se aprueba por `ticketing_settle_order`, el mismo camino que un pago de Mercado Pago, con `mp_payment_type = 'manual_transfer'` (`lib/ticketing/transfer.ts`): se crea la reserva y la entrada pasa a tener el QR y el comprobante, que dice «Transferencia». Si el lugar ya se había liberado y no queda cupo, la reserva se carga igual y queda marcada «Sobrecupo». «Anular» la deshace si se confirmó por error: la entrada deja de valer y se cancela la reserva; la plata la devuelve el bar desde su cuenta. Antes de pagar, la entrada avisa que si Mercado Pago rechaza hay que volver a la página (`last-order.ts` recuerda la compra en ese celular y ofrece el link). Se ve sin pagar en `/entradas/[bar]/muestra?ver=rechazado`. Si el lugar se vence mientras transfiere, la pantalla de vencido conserva el botón del comprobante.
+**Si Mercado Pago rechaza el pago** (`transfer-slip.tsx`, `RejectedTicket`): la entrada muestra primero cómo transferir, con el alias para copiar, a nombre de quién y cuánto. Se configura en Entradas › Configuración (`transfer_alias`, `transfer_holder`; lo cambia solo el dueño y queda en `audit_log`). Con «WhatsApp para consultas» cargado aparece «Ya transferí: mandar comprobante», con el mensaje armado; sin número, avisa que el bar confirma por WhatsApp al que dejó al comprar. **La transferencia no se detecta sola:** alguien del bar mira la cuenta y toca «Confirmar transferencia» en Ventas online (dueños y, desde el 06/11/2026, la anfitriona; queda en `audit_log` quién fue). La compra se aprueba por `ticketing_settle_order`, el mismo camino que un pago de Mercado Pago, con `mp_payment_type = 'manual_transfer'` (`lib/ticketing/transfer.ts`): se crea la reserva y la entrada pasa a tener el QR y el comprobante, que dice «Transferencia». Si el lugar ya se había liberado y no queda cupo, la reserva se carga igual y queda marcada «Sobrecupo». «Anular» la deshace si se confirmó por error: la entrada deja de valer y se cancela la reserva; la plata la devuelve el bar desde su cuenta. Antes de pagar, la entrada avisa que si Mercado Pago rechaza hay que volver a la página (`last-order.ts` recuerda la compra en ese celular y ofrece el link). Se ve sin pagar en `/entradas/[bar]/muestra?ver=rechazado`. Si el lugar se vence mientras transfiere, la pantalla de vencido conserva el botón del comprobante.
 
 **La función** (`ticket-show.ts`, `data-act` en `.ent-counter`): por actos y con cámara, para que nada pase fuera de la pantalla. Sello de goma que golpea, QR renglón por renglón, comprobante que se imprime mientras la página baja y, al final, las acciones. Si la persona toca la pantalla, la cámara se queda quieta y los actos siguen; con «reducir movimiento» no hay función. Por ahora solo la usa la muestra (prop `show` de `ApprovedTicket`): la compra real sigue con la animación corta hasta que los dueños la aprueben.
 
@@ -341,7 +359,7 @@ del QR o perdieron el link.
 ## 6. Probar
 
 - Unit: `tests/lib/ticketing-*.test.ts`, `tests/lib/mercadopago-*.test.ts`,
-  `tests/lib/entradas-panel-*.test.ts`.
+  `tests/lib/entradas-panel-*.test.ts`, `tests/lib/ventas-online-*.test.ts*`.
 - Funciones SQL: ensayo con rollback (compra, aprobado, aprobado repetido, segundo pago
   aprobado, rechazo con lugar guardado, devolución, GRANTs) — ver la sesión del 26/10.
 - Smoke manual con credenciales de **prueba** de Mercado Pago (usuarios de prueba

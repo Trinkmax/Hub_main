@@ -77,7 +77,7 @@ export type ResolvedNavGroup = {
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
  *   editor     → sólo Carta («Ver carta» es un botón de la página)
- *   host       → Operativo, Reservas, Calendario y Mis números
+ *   host       → Operativo, Reservas, Calendario, Ventas online y Mis números
  *   accountant → sólo Administración
  */
 export const NAV_GROUPS: NavGroup[] = [
@@ -123,6 +123,14 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Calendario',
         href: (s) => `/${s}/eventos/programados`,
         icon: 'CalendarDays',
+        roles: ['owner', 'host'],
+      },
+      {
+        // Las compras de la cartelera, día por día, con «Confirmar transferencia». Aparte de
+        // Marketing para que entre la anfitriona (06/11/2026): ella recibe el «ya transferí».
+        label: 'Ventas online',
+        href: (s) => `/${s}/ventas-online`,
+        icon: 'Ticket',
         roles: ['owner', 'host'],
       },
       {
