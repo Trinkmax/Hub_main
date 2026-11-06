@@ -1,4 +1,5 @@
 import {
+  Boxes,
   CalendarCheck,
   ChefHat,
   ClipboardList,
@@ -9,7 +10,12 @@ import {
   User,
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
-import { REDEMPTION_STAFF_ROLES, TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
+import {
+  PURCHASING_KITCHEN_ROLES,
+  REDEMPTION_STAFF_ROLES,
+  SALON_READ_ROLES,
+  TICKET_DOOR_ROLES,
+} from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 
 /**
@@ -25,6 +31,7 @@ import type { TenantRole } from '@/lib/tenant/types'
  *   2. QR del club  — el mozo lo muestra al cerrar la cuenta.
  *   3. Reservas     — el pase de lista de la noche.
  *   4. Puerta       — las noches de cine: validar las entradas con QR.
+ *   5. Stock        — la cocina cuenta el stock y recibe lo que llega (Compras).
  */
 export type SalonTab = {
   key: string
@@ -67,6 +74,8 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     icon: CalendarCheck,
     href: (s) => `/${s}/salon/reservas-operativo`,
     match: (p, s) => p === `/${s}/salon` || p.startsWith(`/${s}/salon/reservas-operativo`),
+    // Los mismos que la página deja entrar: la cocina no ve las reservas.
+    roles: SALON_READ_ROLES,
   },
   {
     key: 'puerta',
@@ -77,6 +86,17 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     match: (p, s) => p.startsWith(`/${s}/salon/puerta`),
     roles: TICKET_DOOR_ROLES,
     feature: 'ticket_door',
+  },
+  {
+    // Compras: la cocina cuenta el stock y recibe la mercadería (docs/features/compras.md).
+    key: 'stock',
+    label: 'Stock',
+    title: 'Stock y mercadería',
+    icon: Boxes,
+    href: (s) => `/${s}/salon/stock`,
+    match: (p, s) => p.startsWith(`/${s}/salon/stock`),
+    roles: PURCHASING_KITCHEN_ROLES,
+    feature: 'purchasing',
   },
   {
     key: 'mesas',

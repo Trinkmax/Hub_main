@@ -1596,3 +1596,17 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **Confirmar un tique no es atómico** (`applyDecisions` lee `pending`, ejecuta y recién después marca): dos pedidos al mismo
   instante correrían dos veces. Una respuesta o una difusión tienen su control de duplicados en el ejecutor, que no cierra
   esa ventana: hace falta tomar el tique con un `update … where status = 'pending'`.
+
+## Compras — lo que queda (06/11/2026)
+
+- **Recetas de Coraline y de El viaje de Chihiro:** están en los PDF «Pedido – Menú» (33 y 32 productos para 60, con
+  margen del 5 %), no en el Catálogo de eventos. Hay que pasarlas a Compras › Recetas: varias vienen en gramos o en
+  maples y hay que unirlas a los insumos de la lista.
+- **Tex no conoce Compras:** el manual solo nombra la sección. Faltan herramientas para leer los pedidos y armar uno.
+- **La app de Google que se usaba antes deja ver el PIN de la vista de Tomás** en el código de la página, a cualquiera
+  con el link (`config.pin` llega al navegador con `getInicio`). Con Compras andando conviene dar de baja esa
+  implementación o cambiarla a «solo yo».
+- **Los proveedores de HUB no tienen WhatsApp ni días de entrega:** sin eso el pedido se copia a mano y no se calcula
+  cuándo llega. Es lo primero que tiene que completar quien compra («Datos para corregir»).
+- **El pedido no pasa a Administración:** `pur_suppliers.acc_party_id` ya une 28 de los 33 proveedores con su par
+  contable, pero recibir no arma la compra ni espera la factura.

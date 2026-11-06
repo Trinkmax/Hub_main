@@ -3312,6 +3312,744 @@ export type Database = {
           },
         ]
       }
+      pur_count_lines: {
+        Row: {
+          count_id: string
+          created_at: string
+          id: string
+          item_id: string
+          quantity: number | null
+          state: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          count_id: string
+          created_at?: string
+          id?: string
+          item_id: string
+          quantity?: number | null
+          state: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          count_id?: string
+          created_at?: string
+          id?: string
+          item_id?: string
+          quantity?: number | null
+          state?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_count_lines_count_fk"
+            columns: ["count_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_counts"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_count_lines_item_fk"
+            columns: ["item_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_items"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_count_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_counts: {
+        Row: {
+          count_date: string
+          counted_by_name: string
+          created_at: string
+          created_by: string | null
+          events_until: string
+          id: string
+          kind: string
+          sent_at: string | null
+          sent_by: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          count_date: string
+          counted_by_name: string
+          created_at?: string
+          created_by?: string | null
+          events_until: string
+          id?: string
+          kind?: string
+          sent_at?: string | null
+          sent_by?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          count_date?: string
+          counted_by_name?: string
+          created_at?: string
+          created_by?: string | null
+          events_until?: string
+          id?: string
+          kind?: string
+          sent_at?: string | null
+          sent_by?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_counts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_event_plans: {
+        Row: {
+          created_at: string
+          guests: number | null
+          id: string
+          recipe_id: string | null
+          scheduled_event_id: string
+          skip: boolean
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          guests?: number | null
+          id?: string
+          recipe_id?: string | null
+          scheduled_event_id: string
+          skip?: boolean
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          guests?: number | null
+          id?: string
+          recipe_id?: string | null
+          scheduled_event_id?: string
+          skip?: boolean
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_event_plans_event_fk"
+            columns: ["scheduled_event_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_events"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_event_plans_recipe_fk"
+            columns: ["recipe_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_recipes"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_event_plans_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_items: {
+        Row: {
+          active: boolean
+          brand: string | null
+          code: string | null
+          created_at: string
+          created_by: string | null
+          frequency: string
+          id: string
+          name: string
+          notes: string | null
+          pack_label: string | null
+          pack_size: number | null
+          supplier_id: string | null
+          target_qty: number | null
+          tenant_id: string
+          unit: string
+          updated_at: string
+          updated_by: string | null
+          zone_id: string | null
+        }
+        Insert: {
+          active?: boolean
+          brand?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          frequency?: string
+          id?: string
+          name: string
+          notes?: string | null
+          pack_label?: string | null
+          pack_size?: number | null
+          supplier_id?: string | null
+          target_qty?: number | null
+          tenant_id: string
+          unit: string
+          updated_at?: string
+          updated_by?: string | null
+          zone_id?: string | null
+        }
+        Update: {
+          active?: boolean
+          brand?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          frequency?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          pack_label?: string | null
+          pack_size?: number | null
+          supplier_id?: string | null
+          target_qty?: number | null
+          tenant_id?: string
+          unit?: string
+          updated_at?: string
+          updated_by?: string | null
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_items_supplier_fk"
+            columns: ["supplier_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_suppliers"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pur_items_zone_fk"
+            columns: ["zone_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_zones"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      pur_order_lines: {
+        Row: {
+          added_by_hand: boolean
+          confirmed_packs: number | null
+          count_state: string | null
+          counted_qty: number | null
+          created_at: string
+          event_names: string[]
+          event_qty: number
+          id: string
+          in_transit_qty: number
+          item_id: string | null
+          name: string
+          order_id: string
+          ordered_packs: number | null
+          pack_label: string | null
+          pack_size: number | null
+          received_packs: number | null
+          received_state: string | null
+          sort_order: number
+          suggested_packs: number | null
+          target_qty: number | null
+          tenant_id: string
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          added_by_hand?: boolean
+          confirmed_packs?: number | null
+          count_state?: string | null
+          counted_qty?: number | null
+          created_at?: string
+          event_names?: string[]
+          event_qty?: number
+          id?: string
+          in_transit_qty?: number
+          item_id?: string | null
+          name: string
+          order_id: string
+          ordered_packs?: number | null
+          pack_label?: string | null
+          pack_size?: number | null
+          received_packs?: number | null
+          received_state?: string | null
+          sort_order?: number
+          suggested_packs?: number | null
+          target_qty?: number | null
+          tenant_id: string
+          unit: string
+          updated_at?: string
+        }
+        Update: {
+          added_by_hand?: boolean
+          confirmed_packs?: number | null
+          count_state?: string | null
+          counted_qty?: number | null
+          created_at?: string
+          event_names?: string[]
+          event_qty?: number
+          id?: string
+          in_transit_qty?: number
+          item_id?: string | null
+          name?: string
+          order_id?: string
+          ordered_packs?: number | null
+          pack_label?: string | null
+          pack_size?: number | null
+          received_packs?: number | null
+          received_state?: string | null
+          sort_order?: number
+          suggested_packs?: number | null
+          target_qty?: number | null
+          tenant_id?: string
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_order_lines_item_fk"
+            columns: ["item_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_items"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_order_lines_order_fk"
+            columns: ["order_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_orders"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_order_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_orders: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          confirmed_with_changes: boolean
+          count_id: string | null
+          created_at: string
+          created_by: string | null
+          discard_reason: string | null
+          discarded_at: string | null
+          discarded_by: string | null
+          expected_date: string | null
+          id: string
+          kitchen_note: string | null
+          message: string | null
+          received_at: string | null
+          received_by: string | null
+          received_by_name: string | null
+          sent_at: string | null
+          sent_by: string | null
+          status: string
+          supplier_id: string | null
+          supplier_note: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_with_changes?: boolean
+          count_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          discard_reason?: string | null
+          discarded_at?: string | null
+          discarded_by?: string | null
+          expected_date?: string | null
+          id?: string
+          kitchen_note?: string | null
+          message?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          received_by_name?: string | null
+          sent_at?: string | null
+          sent_by?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_note?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_with_changes?: boolean
+          count_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          discard_reason?: string | null
+          discarded_at?: string | null
+          discarded_by?: string | null
+          expected_date?: string | null
+          id?: string
+          kitchen_note?: string | null
+          message?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          received_by_name?: string | null
+          sent_at?: string | null
+          sent_by?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_note?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_orders_count_fk"
+            columns: ["count_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_counts"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_orders_supplier_fk"
+            columns: ["supplier_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_suppliers"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_orders_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_recipe_lines: {
+        Row: {
+          created_at: string
+          id: string
+          in_house: boolean
+          item_id: string | null
+          name: string
+          note: string | null
+          quantity: number | null
+          recipe_id: string
+          sort_order: number
+          tenant_id: string
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          in_house?: boolean
+          item_id?: string | null
+          name: string
+          note?: string | null
+          quantity?: number | null
+          recipe_id: string
+          sort_order?: number
+          tenant_id: string
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          in_house?: boolean
+          item_id?: string | null
+          name?: string
+          note?: string | null
+          quantity?: number | null
+          recipe_id?: string
+          sort_order?: number
+          tenant_id?: string
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_recipe_lines_item_fk"
+            columns: ["item_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_items"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_recipe_lines_recipe_fk"
+            columns: ["recipe_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_recipes"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_recipe_lines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_recipes: {
+        Row: {
+          active: boolean
+          base_guests: number
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          notes: string | null
+          template_id: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          variant: string
+        }
+        Insert: {
+          active?: boolean
+          base_guests?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          template_id?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          variant?: string
+        }
+        Update: {
+          active?: boolean
+          base_guests?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          template_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          variant?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_recipes_template_fk"
+            columns: ["template_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_event_templates"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_recipes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_settings: {
+        Row: {
+          count_weekdays: number[]
+          created_at: string
+          low_fraction: number
+          recipe_base_guests: number
+          reviewer_name: string | null
+          sender_name: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          count_weekdays?: number[]
+          created_at?: string
+          low_fraction?: number
+          recipe_base_guests?: number
+          reviewer_name?: string | null
+          sender_name?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          count_weekdays?: number[]
+          created_at?: string
+          low_fraction?: number
+          recipe_base_guests?: number
+          reviewer_name?: string | null
+          sender_name?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_suppliers: {
+        Row: {
+          acc_party_id: string | null
+          active: boolean
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          delivery_weekdays: number[]
+          id: string
+          lead_days: number
+          name: string
+          notes: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          acc_party_id?: string | null
+          active?: boolean
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivery_weekdays?: number[]
+          id?: string
+          lead_days?: number
+          name: string
+          notes?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          acc_party_id?: string | null
+          active?: boolean
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivery_weekdays?: number[]
+          id?: string
+          lead_days?: number
+          name?: string
+          notes?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_suppliers_party_fk"
+            columns: ["acc_party_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "acc_parties"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_suppliers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_zones: {
+        Row: {
+          active: boolean
+          area: string | null
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          area?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          area?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_zones_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quick_messages: {
         Row: {
           body: string
@@ -5702,6 +6440,26 @@ export type Database = {
       punch_template_allows_customer: {
         Args: { p_customer_id: string; p_template_id: string }
         Returns: boolean
+      }
+      pur_events_between: {
+        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Returns: {
+          capacity: number
+          event_date: string
+          name: string
+          reserved_guests: number
+          scheduled_event_id: string
+          starts_at_local: string
+          template_id: string
+        }[]
+      }
+      pur_receive_order: {
+        Args: { p_lines: Json; p_order_id: string; p_received_by_name: string }
+        Returns: Json
+      }
+      pur_submit_count: {
+        Args: { p_count_id: string; p_orders: Json }
+        Returns: Json
       }
       recalc_event_commissions: {
         Args: { p_scheduled_event_id: string }

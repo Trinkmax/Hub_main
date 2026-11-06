@@ -17,6 +17,7 @@ export type FeatureKey =
   | 'reviews' // panel de reseñas del manager (Fase 4)
   | 'accounting' // Administración: contabilidad de la SAS /administracion (Sprint 1)
   | 'ticket_door' // puerta: validar con QR las entradas compradas online /salon/puerta
+  | 'purchasing' // compras: conteo de stock, pedidos a proveedores y recepción /compras + /salon/stock
 
 export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
 
@@ -77,6 +78,14 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     label: 'Puerta (entradas con QR)',
     description: 'Pestaña del salón para validar con QR las entradas compradas online.',
     group: 'Salón',
+    defaultEnabled: false,
+  },
+  purchasing: {
+    key: 'purchasing',
+    label: 'Compras',
+    description:
+      'La cocina cuenta el stock y recibe la mercadería; el dueño revisa los pedidos y los manda por WhatsApp.',
+    group: 'Administración',
     defaultEnabled: false,
   },
   // El interruptor de emergencia de todo el módulo: apagado, las RLS no

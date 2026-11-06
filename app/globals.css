@@ -1652,3 +1652,20 @@ html[data-tex-drag] [data-tex-ui] {
   html[data-tex-push] main { padding-right: 0; }
 }
 /* ── fin de Tex ── */
+
+/* ── Compras (docs/features/compras.md) ──
+   La marca de «lo pide un evento»: violeta, como la planilla de la cocina, lejos del verde (alcanza), el
+   ámbar (poco) y el naranja (no hay) para que un producto de evento no se confunda con un estado. */
+@theme inline {
+  --color-pur-event: var(--pur-event);
+  --color-pur-event-soft: var(--pur-event-soft);
+}
+:root {
+  --pur-event: oklch(0.43 0.13 292);
+  --pur-event-soft: oklch(0.935 0.035 292);
+}
+.dark {
+  --pur-event: oklch(0.82 0.09 292);
+  --pur-event-soft: oklch(0.3 0.06 292);
+}
+/* ── fin de Compras ── */

@@ -189,6 +189,16 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['host'],
       },
       {
+        // Compras (docs/features/compras.md): los pedidos a proveedores que arma el conteo de la
+        // cocina. Insumos, Recetas y Proveedores son pestañas. La cocina cuenta y recibe desde el
+        // salón (/salon/stock).
+        label: 'Compras',
+        href: (s) => `/${s}/compras`,
+        icon: 'ShoppingBasket',
+        roles: ['owner'],
+        feature: 'purchasing',
+      },
+      {
         // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
         // acceso por persona; la contadora ve SOLO esta entrada. Las seis palabras
         // (Resumen, Compras y pagos, Gastos y sueldos, Ventas, Caja, Contabilidad)

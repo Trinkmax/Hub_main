@@ -2186,7 +2186,8 @@ describe('preparar_capacidad', () => {
 describe('el manual', () => {
   it('es lo que dice el área y entra en lo que se pidió', () => {
     expect(negocioArea.manual).toBe(negocioManual)
-    expect(negocioManual.length).toBeLessThanOrEqual(6250)
+    // 6250 hasta el 06/11/2026: Ventas online y Compras sumaron su lugar en el menú lateral.
+    expect(negocioManual.length).toBeLessThanOrEqual(6500)
   })
 
   it('orienta por todo el menú lateral', () => {

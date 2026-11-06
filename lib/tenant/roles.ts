@@ -22,7 +22,8 @@ export const ROLE_DESCRIPTIONS: Record<TenantRole, string> = {
   owner: 'Acceso total: configuración, estadísticas, equipo y todo lo demás.',
   cashier: 'Opera el salón: cierra mesas, carga consumo y gestiona reservas.',
   waiter: 'Atiende mesas: registra clientes y check-in en eventos.',
-  kitchen: 'Pantalla de cocina: ve y avanza comandas.',
+  kitchen:
+    'Cocina: cuenta el stock, recibe la mercadería y, si está prendida, avanza las comandas.',
   editor: 'Edita la carta: fotos, videos, textos, precios y etiquetas. No ve el resto.',
   host: 'Gestiona reservas y eventos, ve las ventas online y confirma transferencias, y ve sus propias comisiones.',
   accountant:
@@ -103,6 +104,15 @@ export const REDEMPTION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cash
  */
 export const ACCOUNTING_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'accountant']
 export const ACCOUNTING_WRITE_ROLES: ReadonlyArray<TenantRole> = ['owner']
+
+/**
+ * Compras (docs/features/compras.md). La cocina —y la caja, donde la caja cuenta— cuenta el stock y
+ * recibe la mercadería desde el salón (/salon/stock). El dueño revisa y manda los pedidos, y es el único
+ * que edita insumos, recetas y proveedores. Espejan las policies `pur_*` y las RPC `pur_submit_count`,
+ * `pur_receive_order` y `pur_events_between`.
+ */
+export const PURCHASING_KITCHEN_ROLES: ReadonlyArray<TenantRole> = ['owner', 'kitchen', 'cashier']
+export const PURCHASING_MANAGE_ROLES: ReadonlyArray<TenantRole> = ['owner']
 
 /**
  * ¿Puede sumar a alguien como «Contabilidad»? Solo quien administra los accesos
