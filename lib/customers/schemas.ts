@@ -1,20 +1,15 @@
-import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
-import { tryNormalizePhone } from '@/lib/phone'
+import { canonicalPhone } from '@/lib/phone'
 import { SERVICE_ALERTS } from '@/lib/salon/alerts'
 
-// Acepta E.164 nuevo (`+5493515551234`, vía react-phone-number-input) o
-// cualquier formato heredado que pase por tryNormalizePhone (imports viejos,
-// capture link). Conserva un solo punto de validación.
+// Acepta lo que entrega react-phone-number-input (con o sin el 9) o cualquier
+// formato heredado (imports viejos, capture link) y lo guarda siempre con el 9:
+// ver canonicalPhone. Conserva un solo punto de validación.
 const phoneField = z
   .string()
   .min(1, 'Ingresá un teléfono')
   .transform((v, ctx) => {
-    const trimmed = v.trim()
-    if (trimmed.startsWith('+') && isValidPhoneNumber(trimmed)) {
-      return trimmed
-    }
-    const normalized = tryNormalizePhone(trimmed)
+    const normalized = canonicalPhone(v)
     if (!normalized) {
       ctx.addIssue({ code: 'custom', message: 'Teléfono inválido' })
       return z.NEVER

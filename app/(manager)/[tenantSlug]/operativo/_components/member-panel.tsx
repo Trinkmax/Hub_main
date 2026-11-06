@@ -3,10 +3,17 @@
 import { Check, Loader2, Sparkles, Stamp, TriangleAlert, UserPlus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { MissingZerosCheck } from '@/components/loyalty/missing-zeros-check'
 import { Button } from '@/components/ui/button'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import type { EarnRate } from '@/lib/points/earn-rate'
-import { describeEarnRate, pesosToCents, previewPoints } from '@/lib/points/preview'
+import {
+  centsToPesosInput,
+  describeEarnRate,
+  pesosToCents,
+  previewPoints,
+  suggestThousands,
+} from '@/lib/points/preview'
 import type { RecentQrAward } from '@/lib/points/queries'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { PunchStamper } from '../../acreditar/_components/punch-stamper'
@@ -61,6 +68,7 @@ export function MemberPanel({
 
   const cents = useMemo(() => pesosToCents(amount), [amount])
   const points = useMemo(() => previewPoints(cents ?? 0, earnRate), [cents, earnRate])
+  const suggestion = useMemo(() => suggestThousands(cents), [cents])
   const rateLabel = describeEarnRate(earnRate)
   const noRules = earnRate === null
 
@@ -241,27 +249,39 @@ export function MemberPanel({
                   className="h-14 w-full rounded-2xl border border-border/70 bg-card pl-10 pr-4 font-serif text-3xl font-semibold tabular-nums shadow-xs outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/40"
                 />
               </div>
-              <p
-                id={`award-hint-${r.id}`}
-                aria-live="polite"
-                className="flex min-h-6 items-center gap-1.5 text-sm"
-              >
-                {noRules ? (
-                  <span className="inline-flex items-center gap-1.5 text-warning-text">
-                    <TriangleAlert className="size-4 text-warning" aria-hidden />
-                    Este bar todavía no configuró cómo se suman puntos.
-                  </span>
-                ) : points !== null && points > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
-                    <Sparkles className="size-4" aria-hidden />
-                    Suma {points.toLocaleString('es-AR')} {points === 1 ? 'punto' : 'puntos'}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    {rateLabel ?? 'Según las reglas del Club.'}
-                  </span>
-                )}
-              </p>
+              {/* Acá no se cargan visitas sin puntos (el botón se apaga), así que
+                  solo se ofrece corregir: «¿Son $129 o $129.000?». */}
+              {suggestion !== null && cents !== null && !noRules ? (
+                <MissingZerosCheck
+                  id={`award-hint-${r.id}`}
+                  typedCents={cents}
+                  suggestedCents={suggestion}
+                  typedPoints={points}
+                  onFix={() => setAmount(centsToPesosInput(suggestion))}
+                />
+              ) : (
+                <p
+                  id={`award-hint-${r.id}`}
+                  aria-live="polite"
+                  className="flex min-h-6 items-center gap-1.5 text-sm"
+                >
+                  {noRules ? (
+                    <span className="inline-flex items-center gap-1.5 text-warning-text">
+                      <TriangleAlert className="size-4 text-warning" aria-hidden />
+                      Este bar todavía no configuró cómo se suman puntos.
+                    </span>
+                  ) : points !== null && points > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
+                      <Sparkles className="size-4" aria-hidden />
+                      Suma {points.toLocaleString('es-AR')} {points === 1 ? 'punto' : 'puntos'}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {rateLabel ?? 'Según las reglas del Club.'}
+                    </span>
+                  )}
+                </p>
+              )}
               <div className="flex gap-2">
                 <Button
                   type="button"

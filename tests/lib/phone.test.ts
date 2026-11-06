@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canonicalPhone,
   formatPhoneForDisplay,
   InvalidPhoneError,
   normalizePhone,
+  phoneVariants,
   tryNormalizePhone,
 } from '@/lib/phone'
 
@@ -85,5 +87,37 @@ describe('formatPhoneForDisplay', () => {
 
   it('deja otros países como están', () => {
     expect(formatPhoneForDisplay('+15551234567')).toBe('+15551234567')
+  })
+})
+
+// La misma persona tenía dos fichas: la reserva guardaba lo que entregaba el
+// campo de teléfono (+543…, sin el 9) y el club y las entradas guardaban +5493….
+describe('canonicalPhone', () => {
+  it('le pone el 9 a lo que el campo de teléfono entrega sin él', () => {
+    expect(canonicalPhone('+543511234567')).toBe('+5493511234567')
+    expect(canonicalPhone('+541112345678')).toBe('+5491112345678')
+  })
+
+  it('deja igual lo que ya está con el 9 y normaliza lo tipeado a mano', () => {
+    expect(canonicalPhone('+5493511234567')).toBe('+5493511234567')
+    expect(canonicalPhone(' 351 123-4567 ')).toBe('+5493511234567')
+    expect(canonicalPhone('0351 15 123-4567')).toBe('+5493511234567')
+  })
+
+  it('respeta otros países y rechaza lo que no es un teléfono', () => {
+    expect(canonicalPhone('+15551234567')).toBe('+15551234567')
+    expect(canonicalPhone('')).toBeNull()
+    expect(canonicalPhone('hola')).toBeNull()
+  })
+})
+
+describe('phoneVariants', () => {
+  it('busca un celular argentino con y sin el 9, la canónica primero', () => {
+    expect(phoneVariants('+5493511234567')).toEqual(['+5493511234567', '+543511234567'])
+    expect(phoneVariants('+543511234567')).toEqual(['+5493511234567', '+543511234567'])
+  })
+
+  it('no inventa variantes para otros países', () => {
+    expect(phoneVariants('+15551234567')).toEqual(['+15551234567'])
   })
 })

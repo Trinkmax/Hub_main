@@ -95,8 +95,12 @@ export function AwardScreen({
       <div className="space-y-6">
         <div className="card-hairline rounded-2xl border bg-card p-6 text-center">
           <CheckCircle2 className="mx-auto size-12 text-primary" aria-hidden />
+          {/* «+0 puntos» con un tilde verde parecía un éxito a medias que «tarda
+              unos minutos»: los puntos son en el acto, así que si no sumó se dice. */}
           <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight">
-            +{lastResult.points_awarded.toLocaleString('es-AR')} puntos
+            {lastResult.points_awarded > 0
+              ? `+${lastResult.points_awarded.toLocaleString('es-AR')} puntos`
+              : 'Visita cargada, sin puntos'}
           </h2>
           <p className="text-sm text-muted-foreground">
             Para {customer.first_name} {customer.last_name}

@@ -508,3 +508,31 @@ aplicada en Plantillas, Difusiones → Nueva, Flows (nuevo y edición) y la band
 Meta y en la tabla; el botón **"Borrar de WhatsApp las de ejemplo (N)"** en
 Plantillas las elimina de verdad (solo nombres sin ninguna versión en español).
 Test: `tests/lib/template-visibility.test.ts`.
+
+## Addendum 2026-11 — «¿Son $129 o $129.000?»
+
+Un socio reclamó por WhatsApp que su cena del 04/11 no le había sumado puntos.
+La caja había cargado **$129 en vez de $129.000**: con 1 punto cada $1.000 sumó
+0, la pantalla mostró «+0 puntos» con el tilde verde y le dijeron que «podía
+demorar unos minutos». Desde el 26/10 había 8 cargas así, todas del mismo
+usuario («84», «193», «10»…). Se corrigieron por soporte multiplicando por mil
+(`points.amount_corrected` en `audit_log`, transacción con `source: soporte`
+fechada en la visita).
+
+Qué cambió:
+
+- **El aviso** (`components/loyalty/missing-zeros-check.tsx`): si el monto no
+  llega a $1.000 (`MISSING_ZEROS_BELOW_CENTS`), en lugar de la tasa aparece
+  «¿Son $129 o $129.000?» con dos botones. Hasta que se elige, «Sumar» queda
+  apagado. «Son $129.000» corrige el campo; «Son $129» deja cargar la visita
+  sin puntos («Cargar sin puntos»). Está en `AwardForm` (Acreditar y el salón) y
+  en el panel del Operativo (ahí solo corregir: no carga visitas sin puntos).
+- **La coma con tres cifras separa miles** (`pesosToCents`): «129,000» antes se
+  leía como $129 con 0 centavos. Solo son centavos 1 o 2 cifras al final.
+- **La pantalla de éxito ya no festeja un cero**: «Visita cargada, sin puntos» /
+  «Sin puntos» en vez de «+0 puntos». Los puntos son en el acto: si no sumó, no
+  va a sumar después.
+
+Pendiente: no hay forma de corregir un monto mal cargado desde el panel (ver
+BACKLOG). Tests: `tests/lib/points-preview.test.ts`,
+`tests/lib/missing-zeros-check-render.test.tsx`.
