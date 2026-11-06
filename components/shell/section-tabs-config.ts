@@ -16,7 +16,7 @@ import type { SectionTabItem } from './section-tabs'
  * las entradas del sidebar; la página y la base vuelven a decidir todo, esto solo muestra.
  */
 
-export type SectionKey = 'clientes' | 'marketing' | 'estadisticas' | 'administracion'
+export type SectionKey = 'clientes' | 'marketing' | 'estadisticas' | 'administracion' | 'compras'
 
 export type SectionTabDef = {
   value: string
@@ -94,6 +94,42 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       { value: 'comisiones', label: 'Comisiones', path: 'estadisticas/comisiones' },
       // La misma puerta que tenía «Reseñas» en el sidebar: dueño + feature (o superadmin).
       { value: 'resenas', label: 'Reseñas', path: 'reviews', roles: ['owner'], feature: 'reviews' },
+    ],
+  },
+  // Compras: del dueño, con la feature. La ficha de una receta (/compras/recetas/[id]) queda en
+  // «Recetas» por prefijo.
+  compras: {
+    label: 'Secciones de Compras',
+    tabs: [
+      {
+        value: 'pedidos',
+        label: 'Pedidos',
+        path: 'compras',
+        exact: true,
+        roles: ['owner'],
+        feature: 'purchasing',
+      },
+      {
+        value: 'insumos',
+        label: 'Insumos',
+        path: 'compras/insumos',
+        roles: ['owner'],
+        feature: 'purchasing',
+      },
+      {
+        value: 'recetas',
+        label: 'Recetas',
+        path: 'compras/recetas',
+        roles: ['owner'],
+        feature: 'purchasing',
+      },
+      {
+        value: 'proveedores',
+        label: 'Proveedores',
+        path: 'compras/proveedores',
+        roles: ['owner'],
+        feature: 'purchasing',
+      },
     ],
   },
   // Las mismas puertas que tenían los seis ítems del sidebar, más «Importar» y «Gastos fijos».

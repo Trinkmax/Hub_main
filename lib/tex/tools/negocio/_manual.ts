@@ -38,7 +38,7 @@ Cuatro vistas: Por día, Por evento, Pauta y Cumpleaños.
 Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario. Con «Derivar solo las de 5 estrellas», esas van a Google y el resto queda como feedback privado. Sin esa opción, todas van a Google; sin enlace de Google, ninguna. Los puntos por opinar se dan una vez por cliente. El sistema no responde ni marca reseñas. El enlace, el WhatsApp de feedback y los puntos se cambian en su pantalla.
 
 ## Marketing y Configuración
-- Páginas (landings en HTML con link propio) y Link de Instagram (un link para la bio, con botones): se miran acá; se editan y se publican en la pantalla.
+- Páginas (landings en HTML con link propio) y Link de Instagram (un link para la bio, con botones): se miran acá y se editan en la pantalla.
 - No hay una ficha con dirección o teléfono del local: los datos fiscales están en Administración › Ajustes.
 - Capacidad: con tique, la capacidad total y las plantas; las dos plantas suman el cupo de los servicios sin cupo propio. El cupo por servicio y por fecha, en la pantalla.
 - Bienvenida (está en Club › Bienvenida): con tique, título, texto, puntos de regalo y activar o apagar. La recompensa se elige en la pantalla.
@@ -58,6 +58,6 @@ Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario.
 - Estadísticas: Resumen, Cómo nos fue, Señas, Comisiones y Reseñas.
 - Mis números: lo que va ganando quien gestiona reservas.
 - Administración: compras, gastos, sueldos, ventas, caja y contabilidad.
-- Salón en vivo, Cocina, Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
+- Compras (pedidos a proveedores), Salón en vivo, Cocina, Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
 - Configuración (abajo): Equipo, Comisiones, Capacidad, Tortas de cumpleaños, Reseñas, Apariencia y Documentación.
 El rol Contenido solo ve la Carta; Anfitrión, Operativo, Reservas, Calendario, Ventas online (confirma transferencias, no devuelve ni anula) y Mis números; Contabilidad, Administración. Lo demás es del dueño.`
