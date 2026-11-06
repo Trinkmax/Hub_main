@@ -11,11 +11,12 @@ Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 - **Fichas duplicadas por el 9 del celular (06/11/2026).** Las reservas
   guardaban «+543…» y el club, las entradas y WhatsApp «+5493…»: 40 personas de
   HUB con dos fichas. El código ya guarda con el 9 y busca de las dos formas
-  (`canonicalPhone`, `findCustomerIdByPhone`); la unión de las 40 y el trigger
-  están en `20261106160000_customers_celular_con_el_9.sql`, que espera el sí
-  para aplicarse. Las funciones SQL que buscan por teléfono (club, captura,
-  `ticketing_settle_order`) siguen comparando exacto: alcanza una vez aplicada
-  la migración, porque desde ahí todo queda con el 9.
+  (`canonicalPhone`, `findCustomerIdByPhone`). La unión de las 40 y el trigger
+  (`20261106160000_customers_celular_con_el_9.sql`) se aplicaron el 06/11: 0
+  fichas dobles y 0 celulares sin el 9. Queda abierto: las funciones SQL que
+  buscan por teléfono (club, captura, `ticketing_settle_order`) comparan exacto.
+  Hoy alcanza porque todo se guarda con el 9; si algún día entra otro formato,
+  conviene que busquen con y sin el 9 como `phoneVariants`.
 
 - **No hay `error.tsx` en el workspace del manager.** Solo existen en `/salon` y
   en `/mensajeria`. Cualquier excepción no atrapada en `(manager)` se lleva
