@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   daysUntilLabel,
   guestShortName,
+  holdTimeLabel,
   paymentTypeLabel,
+  rejectedHoldLine,
   transferProofMessage,
 } from '@/lib/ticketing/copy'
 import { serviceDayIn } from '@/lib/ticketing/dates'
@@ -37,6 +39,39 @@ describe('transferProofMessage', () => {
       }),
     ).toBe(
       '¡Hola HUB! Mercado Pago me rechazó el pago, así que transferí $ 40.000 al alias mi.bar.pagos. Es para Shrek 2, lunes 1 de diciembre a las 21:00 hs, 2 personas, a nombre de Juan (entrada #E38D8CEB). Te paso el comprobante.',
+    )
+  })
+})
+
+describe('holdTimeLabel', () => {
+  it('la hora del lugar guardado, en el reloj del bar', () => {
+    // 22:23 UTC son las 19:23 en Córdoba.
+    expect(holdTimeLabel('2026-11-06T22:23:00.000Z')).toBe('19:23')
+  })
+  it('una fecha ilegible no rompe la página', () => {
+    expect(holdTimeLabel('cualquier cosa')).toBe('—')
+  })
+})
+
+describe('rejectedHoldLine', () => {
+  const at = '2026-11-06T22:23:00.000Z'
+  it('sin cuenta para transferir: hasta cuándo se guarda el lugar', () => {
+    expect(rejectedHoldLine(at, null)).toBe('Te guardamos el lugar hasta las 19:23 hs.')
+  })
+  it('con cuenta: la hora es el plazo para transferir', () => {
+    expect(rejectedHoldLine(at, { holdOver: false, proof: false })).toBe(
+      'Transferí antes de las 19:23 y el lugar es tuyo.',
+    )
+    expect(rejectedHoldLine(at, { holdOver: false, proof: true })).toBe(
+      'Transferí antes de las 19:23 y el lugar es tuyo.',
+    )
+  })
+  it('vencido y con lugar: qué hacer si ya transfirió, sin hora', () => {
+    expect(rejectedHoldLine(at, { holdOver: true, proof: false })).toBe(
+      'Si ya transferiste, no hagas nada. Si no, todavía hay lugar.',
+    )
+    expect(rejectedHoldLine(at, { holdOver: true, proof: true })).toBe(
+      'Si ya transferiste, mandanos el comprobante. Si no, todavía hay lugar.',
     )
   })
 })

@@ -49,6 +49,7 @@ export function SampleView({
   address,
   door,
   rejected,
+  holdOver = false,
   transfer,
   whatsapp,
   video,
@@ -58,6 +59,8 @@ export function SampleView({
   address: string | null
   door: boolean
   rejected: boolean
+  /** El rechazo después de la hora del lugar guardado, con la función todavía con lugar. */
+  holdOver?: boolean
   transfer: TransferAccount | null
   whatsapp: string | null
   video: boolean
@@ -69,6 +72,7 @@ export function SampleView({
         tenantName={tenantName}
         transfer={transfer}
         whatsapp={whatsapp}
+        holdOver={holdOver}
       />
     )
   }
@@ -85,11 +89,13 @@ function RejectedSample({
   tenantName,
   transfer,
   whatsapp,
+  holdOver,
 }: {
   order: PublicOrder
   tenantName: string
   transfer: TransferAccount | null
   whatsapp: string | null
+  holdOver: boolean
 }) {
   return (
     <main
@@ -108,6 +114,7 @@ function RejectedSample({
           restartUrl="#"
           transfer={transfer ?? { alias: 'alias.del.bar', holder: tenantName }}
           whatsapp={whatsapp}
+          holdOver={holdOver}
         />
       </div>
       <SampleBar>
@@ -254,7 +261,7 @@ function TicketRound({
               expired={false}
               refunded={false}
               reason=""
-              holdUntil={order.holdExpiresAt}
+              note={null}
             />
             <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-sm">
               <Row label="Fecha" value={capitalizeFirst(formatLongDate(order.date))} />

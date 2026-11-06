@@ -212,6 +212,12 @@ export type PublicOrder = {
   /** pending/rejected con el lugar ya vencido. */
   expired: boolean
   holdExpiresAt: string
+  /**
+   * Pago rechazado con el lugar ya vencido: ¿la función todavía tiene lugar para esta
+   * compra? Mientras haya, la entrada sigue mostrando cómo transferir. En los demás
+   * estados es false, porque no se calcula.
+   */
+  roomLeft: boolean
   title: string
   date: string
   time: string

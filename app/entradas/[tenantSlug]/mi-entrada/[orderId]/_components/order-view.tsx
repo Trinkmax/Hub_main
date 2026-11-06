@@ -20,7 +20,9 @@ import { refreshOrder } from '@/lib/ticketing/checkout-actions'
 import {
   daysUntilLabel,
   peopleLabel,
+  rejectedHoldLine,
   rejectionReason,
+  TRANSFERRED_ANYWAY,
   transferProofMessage,
 } from '@/lib/ticketing/copy'
 import { buildIcs, formatLongDate } from '@/lib/ticketing/dates'
@@ -48,6 +50,7 @@ import { saveTicketImage, useTicketImage } from './use-ticket-image'
 type Live = {
   status: OrderStatus
   expired: boolean
+  roomLeft: boolean
   paidCents: number | null
   statusDetail: string | null
   entry: OrderEntry
@@ -105,6 +108,7 @@ export function OrderView({
   const [live, setLive] = useState<Live>({
     status: order.status,
     expired: order.expired,
+    roomLeft: order.roomLeft,
     paidCents: order.paidCents,
     statusDetail: order.mpStatusDetail,
     entry: order.entry,
@@ -156,6 +160,7 @@ export function OrderView({
           const next: Live = {
             status: result.status,
             expired: result.expired,
+            roomLeft: result.roomLeft,
             paidCents: result.paidCents,
             statusDetail: result.statusDetail,
             entry: result.entry ?? order.entry,
@@ -251,6 +256,7 @@ export function OrderView({
           ...current,
           status: result.status,
           expired: result.expired,
+          roomLeft: result.roomLeft,
           paidCents: result.paidCents,
           statusDetail: result.statusDetail,
           entry: result.entry ?? current.entry,
@@ -352,8 +358,13 @@ export function OrderView({
 
   const approved = live.status === 'approved'
   const refunded = live.status === 'refunded'
-  const expired = live.expired && !confirming && !approved
-  const rejected = live.status === 'rejected' && !live.expired && !confirming
+  const past = order.date < order.today
+  // Se venció el lugar de un pago rechazado, pero la función todavía tiene lugar: la
+  // cuenta para transferir sigue a la vista (pudo vencerse mientras transfería).
+  const lateTransfer =
+    live.status === 'rejected' && live.expired && live.roomLeft && transfer !== null && !confirming
+  const expired = live.expired && !confirming && !approved && !lateTransfer
+  const rejected = live.status === 'rejected' && (!live.expired || lateTransfer) && !confirming
   const waiting =
     !approved && !refunded && (confirming || (live.status === 'pending' && !live.expired))
   const retryUrl = order.retryUrl
@@ -361,7 +372,6 @@ export function OrderView({
   const qr = order.qr
   const profile = useMemo(() => tornProfile(order.id), [order.id])
   const torn = approved && allIn && !falling
-  const past = order.date < order.today
   const paidCents = live.paidCents ?? order.totalCents
   const deposit = order.option === 'deposit'
   const image = useTicketImage(
@@ -417,6 +427,7 @@ export function OrderView({
           restartUrl={retryFilmUrl}
           transfer={transfer}
           whatsapp={whatsapp}
+          holdOver={live.expired}
         />
       ) : (
         <article className="ent-paper overflow-hidden rounded-[26px] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)] [--ent-hole:#090d0b]">
@@ -430,7 +441,13 @@ export function OrderView({
               refunded={refunded}
               voided={isManualTransfer(order.mpPaymentType)}
               reason=""
-              holdUntil={order.holdExpiresAt}
+              note={
+                // Ya no se ofrece transferir (no queda lugar), pero quien transfirió no
+                // se tiene que preocupar. Con WhatsApp lo dice el botón del comprobante.
+                expired && live.status === 'rejected' && transfer && !past && !expiredProofUrl
+                  ? TRANSFERRED_ANYWAY
+                  : null
+              }
             />
 
             <div className="mt-6">
@@ -594,6 +611,9 @@ function TicketDetails({ order }: { order: PublicOrder }) {
  * El pago no se aprobó. Si el bar cargó una cuenta, lo primero que se ve es cómo
  * transferir: casi todos los rechazos son del antifraude de Mercado Pago, y ahí
  * reintentar no suele servir.
+ *
+ * `holdOver`: ya se venció el lugar guardado, pero la función todavía tiene lugar. La
+ * cuenta sigue a la vista y Mercado Pago ya no (su link vence con el lugar).
  */
 export function RejectedTicket({
   order,
@@ -604,6 +624,7 @@ export function RejectedTicket({
   restartUrl,
   transfer,
   whatsapp,
+  holdOver = false,
 }: {
   order: PublicOrder
   tenantName: string
@@ -613,7 +634,12 @@ export function RejectedTicket({
   restartUrl: string
   transfer: TransferAccount | null
   whatsapp: string | null
+  holdOver?: boolean
 }) {
+  const note = rejectedHoldLine(
+    order.holdExpiresAt,
+    transfer ? { holdOver, proof: Boolean(whatsapp) } : null,
+  )
   return (
     <article className="ent-paper overflow-hidden rounded-[26px] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)] [--ent-hole:#090d0b]">
       {header}
@@ -625,7 +651,7 @@ export function RejectedTicket({
           expired={false}
           refunded={false}
           reason={reason}
-          holdUntil={order.holdExpiresAt}
+          note={note}
         />
         <div className={transfer ? 'mt-5' : 'mt-6'}>
           {transfer ? (
@@ -647,7 +673,7 @@ export function RejectedTicket({
 
       <div className="px-6 pt-5 pb-6">
         <div className="space-y-3">
-          {retryUrl ? (
+          {retryUrl && !holdOver ? (
             <a
               href={retryUrl}
               className="ent-press ent-btn-pay flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold"
@@ -1012,7 +1038,7 @@ export function StatusBlock({
   refunded,
   voided = false,
   reason,
-  holdUntil,
+  note,
 }: {
   waiting: boolean
   rejected: boolean
@@ -1021,14 +1047,15 @@ export function StatusBlock({
   /** Se pagó por transferencia: el bar la anuló, Mercado Pago no devolvió nada. */
   voided?: boolean
   reason: string
-  holdUntil: string
+  /**
+   * La línea en negrita del rechazo o del lugar vencido: hasta cuándo se guarda el
+   * lugar, o qué hacer si ya transfirió (ver `rejectedHoldLine`).
+   */
+  note: string | null
 }) {
-  const until = new Date(holdUntil).toLocaleTimeString('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'America/Argentina/Cordoba',
-  })
+  const noteLine = note ? (
+    <p className="mt-2 text-sm font-semibold text-(--ent-ink)">{note}</p>
+  ) : null
   if (waiting) {
     return (
       <div aria-live="polite">
@@ -1047,9 +1074,7 @@ export function StatusBlock({
       <div aria-live="polite">
         <h1 className="ent-display text-[2.1rem] leading-[0.95]">El pago no se aprobó.</h1>
         <p className="mt-2 text-sm text-(--ent-ink-2)">{reason}</p>
-        <p className="mt-2 text-sm font-semibold text-(--ent-ink)">
-          Te guardamos el lugar hasta las {until} hs.
-        </p>
+        {noteLine}
       </div>
     )
   }
@@ -1080,6 +1105,7 @@ export function StatusBlock({
         <p className="mt-2 text-sm text-(--ent-ink-2)">
           Liberamos los lugares. Si todavía quedan, podés reservar de nuevo en un minuto.
         </p>
+        {noteLine}
       </div>
     )
   }

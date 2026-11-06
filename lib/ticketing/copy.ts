@@ -1,3 +1,5 @@
+import { formatInTimeZone } from 'date-fns-tz'
+import { DEFAULT_TZ } from './dates'
 import { isManualTransfer, MANUAL_TRANSFER } from './transfer'
 
 /**
@@ -55,6 +57,45 @@ export function transferProofMessage(input: {
     `(entrada #${input.code}). Te paso el comprobante.`
   )
 }
+
+/** «19:23»: hasta cuándo se guarda el lugar, en el reloj del bar. */
+export function holdTimeLabel(holdExpiresAt: string, tz: string = DEFAULT_TZ): string {
+  const at = new Date(holdExpiresAt)
+  if (Number.isNaN(at.getTime())) return '—'
+  return formatInTimeZone(at, tz, 'HH:mm')
+}
+
+/**
+ * La línea en negrita del pago rechazado. Sin cuenta para transferir: hasta cuándo se
+ * guarda el lugar, para reintentar con Mercado Pago. Con cuenta, esa hora es el plazo
+ * para transferir. Y con el lugar ya vencido, si la función todavía tiene lugar, la
+ * cuenta sigue a la vista: primero qué hacer si ya transfirió. Lo que pasa después lo
+ * dice la cuenta, debajo.
+ */
+export function rejectedHoldLine(
+  holdExpiresAt: string,
+  transfer: {
+    /** Ya pasó la hora del lugar guardado. */
+    holdOver: boolean
+    /** El bar tiene WhatsApp: el comprobante se manda con un botón. */
+    proof: boolean
+  } | null,
+  tz: string = DEFAULT_TZ,
+): string {
+  const until = holdTimeLabel(holdExpiresAt, tz)
+  if (!transfer) return `Te guardamos el lugar hasta las ${until} hs.`
+  if (!transfer.holdOver) return `Transferí antes de las ${until} y el lugar es tuyo.`
+  return transfer.proof
+    ? 'Si ya transferiste, mandanos el comprobante. Si no, todavía hay lugar.'
+    : 'Si ya transferiste, no hagas nada. Si no, todavía hay lugar.'
+}
+
+/**
+ * El lugar de un pago rechazado se venció y ya no se ofrece transferir (no queda
+ * lugar): quien ya transfirió no tiene que preocuparse, el bar la confirma igual.
+ */
+export const TRANSFERRED_ANYWAY =
+  'Si ya transferiste, no hagas nada: cuando nos llegue, te confirmamos.'
 
 /** «2 personas» / «1 persona». */
 export function peopleLabel(n: number): string {

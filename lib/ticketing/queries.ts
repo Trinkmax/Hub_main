@@ -351,13 +351,14 @@ export async function getPublicExperience(
 // ──────────────────────────────────────────────
 
 const ORDER_PUBLIC_COLUMNS =
-  'id, tenant_id, experience_id, reservation_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, paid_at, mp_status_detail, mp_preference_id, mp_payment_id, mp_payment_type, terms'
+  'id, tenant_id, experience_id, scheduled_event_id, reservation_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, paid_at, mp_status_detail, mp_preference_id, mp_payment_id, mp_payment_type, terms'
 
 type OrderPublicRow = Pick<
   TicketOrderRow,
   | 'id'
   | 'tenant_id'
   | 'experience_id'
+  | 'scheduled_event_id'
   | 'reservation_id'
   | 'title'
   | 'event_date'
@@ -400,6 +401,51 @@ export function isOrderExpired(
   return (status === 'pending' || status === 'rejected') && new Date(holdExpiresAt) <= now
 }
 
+/**
+ * ¿La función todavía tiene lugar para esta compra? Para el pago rechazado con el lugar
+ * ya vencido: mientras haya, la entrada sigue mostrando cómo transferir. La misma cuenta
+ * que la cartelera (funciones abiertas, sin empezar, con lugar para todo el grupo). Ante
+ * cualquier duda, no: mostrar la cuenta de más termina en sobrecupo.
+ */
+export async function orderHasRoom(
+  service: SBAny,
+  tenantId: string,
+  eventId: string | null,
+  partySize: number,
+  tz: string,
+): Promise<boolean> {
+  if (!eventId) return false
+  const { data: event, error } = await service
+    .from('scheduled_events')
+    .select('event_date, starts_at_local, capacity, private_group')
+    .eq('tenant_id', tenantId)
+    .eq('id', eventId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.orderHasRoom]', { tenantId, code: error.code })
+    return false
+  }
+  const ev = event as {
+    event_date: string
+    starts_at_local: string
+    capacity: number
+    private_group: boolean
+  } | null
+  if (!ev || ev.private_group || !isOnSale(ev.event_date, ev.starts_at_local, nowLocalIn(tz))) {
+    return false
+  }
+  const { data: seats, error: seatsError } = await service.rpc('ticketing_event_seats', {
+    p_tenant_id: tenantId,
+    p_event_ids: [eventId],
+  })
+  if (seatsError) {
+    console.error('[ticketing.orderHasRoom.seats]', { tenantId, code: seatsError.code })
+    return false
+  }
+  const s = (seats as SeatsRow[] | null)?.[0]
+  return seatsLeft(s?.capacity ?? ev.capacity, s?.taken ?? 0, s?.held ?? 0) >= partySize
+}
+
 export type PublicOrderPage = {
   venue: PublicVenue
   order: PublicOrder
@@ -431,26 +477,32 @@ export async function getPublicOrder(
   const order = data as OrderPublicRow | null
   if (!order) return null
 
-  const [venue, { data: exp }, { data: mode }, { data: res, error: resError }] = await Promise.all([
-    loadVenue(service, tenant),
-    order.experience_id
-      ? service
-          .from('event_experiences')
-          .select('slug, poster_url, accent_hex, price_note')
-          .eq('tenant_id', tenant.id)
-          .eq('id', order.experience_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
-    order.reservation_id
-      ? service
-          .from('salon_reservations')
-          .select(ORDER_RESERVATION_COLUMNS)
-          .eq('tenant_id', tenant.id)
-          .eq('id', order.reservation_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-  ])
+  const tz = tenant.timezone ?? DEFAULT_TZ
+  const expired = isOrderExpired(order.status, order.hold_expires_at)
+  const [venue, { data: exp }, { data: mode }, { data: res, error: resError }, roomLeft] =
+    await Promise.all([
+      loadVenue(service, tenant),
+      order.experience_id
+        ? service
+            .from('event_experiences')
+            .select('slug, poster_url, accent_hex, price_note')
+            .eq('tenant_id', tenant.id)
+            .eq('id', order.experience_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
+      order.reservation_id
+        ? service
+            .from('salon_reservations')
+            .select(ORDER_RESERVATION_COLUMNS)
+            .eq('tenant_id', tenant.id)
+            .eq('id', order.reservation_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      order.status === 'rejected' && expired
+        ? orderHasRoom(service, tenant.id, order.scheduled_event_id, order.party_size, tz)
+        : Promise.resolve(false),
+    ])
   const experience = exp as {
     slug: string
     poster_url: string | null
@@ -465,7 +517,6 @@ export async function getPublicOrder(
     })
   }
   const reservation = res as OrderReservationRow | null
-  const tz = tenant.timezone ?? DEFAULT_TZ
   const today = serviceDayIn(tz)
   const entry = orderEntryFrom(reservation, order.party_size, (iso) =>
     formatInTimeZone(new Date(iso), tz, 'HH:mm'),
@@ -478,7 +529,6 @@ export async function getPublicOrder(
   const usable =
     order.status === 'approved' && !entry.cancelled && entry.inside < entry.total && date >= today
 
-  const expired = isOrderExpired(order.status, order.hold_expires_at)
   // Rechazado o a medio pagar con el lugar todavía guardado: se puede volver
   // a la MISMA preferencia (mismo pedido, mismos lugares).
   const retryUrl =
@@ -499,6 +549,7 @@ export async function getPublicOrder(
       status: order.status,
       expired,
       holdExpiresAt: order.hold_expires_at,
+      roomLeft,
       title: order.title,
       date,
       time,
@@ -638,7 +689,9 @@ export async function getSampleOrder(
       shortCode: 'MUESTRA0',
       status: 'approved',
       expired: false,
-      holdExpiresAt: now.toISOString(),
+      // Como una compra recién hecha: el pago rechazado de la muestra dice una hora creíble.
+      holdExpiresAt: new Date(now.getTime() + venue.holdMinutes * 60_000).toISOString(),
+      roomLeft: true,
       title: experience.title,
       date: event?.event_date ?? today,
       time: formatTime(event?.starts_at_local ?? '21:00:00'),

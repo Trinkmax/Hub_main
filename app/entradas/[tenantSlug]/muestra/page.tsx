@@ -11,8 +11,9 @@ import { SampleView } from './_components/sample-view'
  *
  * `?pelicula=<slug>` elige la película, `?nombre=` el nombre, `?personas=` cuántos y
  * `?ver=puerta` abre lo que ve quien recibe y `?ver=rechazado`, lo que ve quien paga si
- * Mercado Pago le rechaza el pago. `?video=1` es para grabar: sin los botones
- * de la muestra, la película entera sigue sola y el talón se corta al final.
+ * Mercado Pago le rechaza el pago (`?ver=rechazado-vencido`: lo mismo pasada la hora
+ * del lugar guardado). `?video=1` es para grabar: sin los botones de la muestra, la
+ * película entera sigue sola y el talón se corta al final.
  */
 export const dynamic = 'force-dynamic'
 
@@ -40,16 +41,18 @@ export default async function MuestraPage({
     people: Number.isFinite(people) ? people : undefined,
   })
   if (!page) notFound()
+  const ver = text('ver')
 
   return (
     <>
-      {text('ver') === 'puerta' ? null : <TopBar venue={page.venue} />}
+      {ver === 'puerta' ? null : <TopBar venue={page.venue} />}
       <SampleView
         order={page.order}
         tenantName={page.venue.tenantName}
         address={page.venue.address}
-        door={text('ver') === 'puerta'}
-        rejected={text('ver') === 'rechazado'}
+        door={ver === 'puerta'}
+        rejected={ver === 'rechazado' || ver === 'rechazado-vencido'}
+        holdOver={ver === 'rechazado-vencido'}
         transfer={page.venue.transfer}
         whatsapp={page.venue.whatsapp}
         video={text('video') === '1'}
