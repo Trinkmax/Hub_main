@@ -33,6 +33,13 @@ describe('canAccessManagerPath', () => {
     expect(canAccessManagerPath('host', ['eventos', 'programados'])).toBe(true)
   })
 
+  it('el host abre Ventas online, pero no la cartelera ni Mercado Pago (Marketing › Entradas)', () => {
+    expect(canAccessManagerPath('host', ['ventas-online'])).toBe(true)
+    expect(canAccessManagerPath('host', ['entradas'])).toBe(false)
+    expect(canAccessManagerPath('editor', ['ventas-online'])).toBe(false)
+    expect(canAccessManagerPath('accountant', ['ventas-online'])).toBe(false)
+  })
+
   it('el host no entra a lo del dueño ni al home del manager', () => {
     expect(canAccessManagerPath('host', ['clientes'])).toBe(false)
     expect(canAccessManagerPath('host', [])).toBe(false)

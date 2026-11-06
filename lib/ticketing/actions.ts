@@ -21,7 +21,8 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import type { CurrentUser } from '@/lib/tenant/current'
-import type { Tenant } from '@/lib/tenant/types'
+import { TICKET_SALES_ROLES } from '@/lib/tenant/roles'
+import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { getMercadoPagoCredentials } from './credentials'
 import { centsToMercadoPagoAmount, formatPesos, pesosToCents } from './pricing'
 import {
@@ -45,8 +46,9 @@ import {
 } from './transfer'
 
 /**
- * Acciones del panel (Marketing → Entradas). Todo es del dueño: es la vidriera
- * pública del bar y es plata.
+ * Acciones del panel (Marketing → Entradas y Ventas online). Casi todo es del
+ * dueño: es la vidriera pública del bar y es plata. La única excepción es
+ * «Confirmar transferencia», que también hace la anfitriona (TICKET_SALES_ROLES).
  *
  * Las películas y la configuración se escriben con la sesión del dueño (RLS
  * owner + GRANTs por columna). La conexión con Mercado Pago va con
@@ -63,9 +65,16 @@ export type TicketingActionState =
   | { ok: false; message: string; field?: string }
 
 async function authorizeOwner(slug: string): Promise<{ tenant: Tenant; user: CurrentUser } | null> {
+  return authorizeRoles(slug, ['owner'])
+}
+
+async function authorizeRoles(
+  slug: string,
+  roles: ReadonlyArray<TenantRole>,
+): Promise<{ tenant: Tenant; user: CurrentUser } | null> {
   try {
     const access = await requireTenantAccess(slug)
-    requireRole(access.role, ['owner'])
+    requireRole(access.role, roles)
     return { tenant: access.tenant, user: access.user }
   } catch (error) {
     if (
@@ -84,8 +93,14 @@ const NO_ACCESS: TicketingActionState = {
   message: 'Solo el dueño puede cambiar las entradas online.',
 }
 
+const NO_TRANSFER_ACCESS: TicketingActionState = {
+  ok: false,
+  message: 'Tu usuario no puede confirmar transferencias. Pedíselo a un dueño.',
+}
+
 function revalidateTicketing(slug: string): void {
   revalidatePath(`/${slug}/entradas`, 'layout')
+  revalidatePath(`/${slug}/ventas-online`)
   revalidatePath(`/entradas/${slug}`, 'layout')
 }
 
@@ -910,13 +925,16 @@ async function rewriteReservationComment(
  * compra se aprueba por el mismo camino que un pago de Mercado Pago, así que se crea la
  * reserva y la entrada pasa a tener el QR. Sin cupo, la reserva se carga igual y queda
  * marcada con sobrecupo, como cuando alguien paga después de que se le venció el lugar.
+ *
+ * La hacen el dueño y la anfitriona: ella recibe el «ya transferí», les pregunta a los socios y
+ * confirma (pedido del 06/11/2026). Queda en audit_log con quién fue. Anular sigue siendo del dueño.
  */
 export async function confirmTicketTransfer(
   slug: string,
   orderId: string,
 ): Promise<TicketingActionState> {
-  const access = await authorizeOwner(slug)
-  if (!access) return NO_ACCESS
+  const access = await authorizeRoles(slug, TICKET_SALES_ROLES)
+  if (!access) return NO_TRANSFER_ACCESS
   if (!orderIdSchema.safeParse(orderId).success) return { ok: false, message: 'Compra inválida.' }
   const tenantId = access.tenant.id
 

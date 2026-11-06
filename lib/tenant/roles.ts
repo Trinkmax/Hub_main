@@ -24,7 +24,7 @@ export const ROLE_DESCRIPTIONS: Record<TenantRole, string> = {
   waiter: 'Atiende mesas: registra clientes y check-in en eventos.',
   kitchen: 'Pantalla de cocina: ve y avanza comandas.',
   editor: 'Edita la carta: fotos, videos, textos, precios y etiquetas. No ve el resto.',
-  host: 'Gestiona reservas y eventos, y ve sus propias comisiones.',
+  host: 'Gestiona reservas y eventos, ve las ventas online y confirma transferencias, y ve sus propias comisiones.',
   accountant:
     'Ve y exporta Administración: libros, IVA, cuentas corrientes y cajas. No carga ni cambia nada y no ve el resto del panel.',
 }
@@ -74,6 +74,15 @@ export const RESERVATION_OPERATOR_ROLES: ReadonlyArray<TenantRole> = [
  * la misma transición. Espeja `private.ticket_door_authorize` de la DB.
  */
 export const TICKET_DOOR_ROLES: ReadonlyArray<TenantRole> = RESERVATION_OPERATOR_ROLES
+
+/**
+ * Ventas online (pedido del 06/11/2026): ver las compras de la cartelera, día por día, y
+ * «Confirmar transferencia» cuando los socios ya vieron la plata. La anfitriona es quien recibe
+ * el «ya transferí» y pregunta. Devolver y anular siguen siendo del dueño (es mover plata), y la
+ * cartelera y Mercado Pago también. Espeja las policies `ticket_orders_owner_select` y
+ * `ticket_orders_host_select`.
+ */
+export const TICKET_SALES_ROLES: ReadonlyArray<TenantRole> = ['owner', 'host']
 
 /** Lecturas operativas del día (capacidad, timeline, eventos del día). */
 export const SALON_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'host']
@@ -159,11 +168,12 @@ export function homePathForRole(role: string, slug: string): string {
  *
  * `canAccessManagerPath` mira solo el primer segmento: 'reservas' abre para el
  * host la lista (su home), el alta (/reservas/nuevo) y la ficha
- * (/reservas/[id]); 'eventos', el calendario, desde donde también reserva.
+ * (/reservas/[id]); 'eventos', el calendario, desde donde también reserva;
+ * 'ventas-online', las compras de la cartelera (TICKET_SALES_ROLES).
  */
 export const MANAGER_SCOPED_PREFIXES: Partial<Record<TenantRole, ReadonlyArray<string>>> = {
   editor: ['menu'],
-  host: ['reservas', 'eventos', 'operativo', 'mis-numeros'],
+  host: ['reservas', 'eventos', 'operativo', 'ventas-online', 'mis-numeros'],
   accountant: ['administracion'],
 } satisfies Record<ScopedManagerRole, ReadonlyArray<string>>
 

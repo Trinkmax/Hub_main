@@ -57,6 +57,7 @@ const OWNER_ENTRIES = [
   'Mensajería',
   'Reservas',
   'Calendario',
+  'Ventas online',
   'Clientes',
   'Carta',
   'Club',
@@ -66,12 +67,17 @@ const OWNER_ENTRIES = [
 ]
 
 describe('resolveNavGroups — una entrada por sección, por rol', () => {
-  it('dueño (flags de HUB): 11 entradas en bloques, Configuración anclada al fondo', () => {
+  it('dueño (flags de HUB): 12 entradas en bloques, Configuración anclada al fondo', () => {
     const groups = resolveNavGroups('owner', SLUG, HUB, false)
     expect(entries(groups)).toEqual(OWNER_ENTRIES)
     expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio', 'Ajustes'])
     expect(itemLabels(groups, 'Hoy')).toEqual(['Resumen', 'Operativo', 'Mensajería'])
-    expect(itemLabels(groups, 'Agenda y clientes')).toEqual(['Reservas', 'Calendario', 'Clientes'])
+    expect(itemLabels(groups, 'Agenda y clientes')).toEqual([
+      'Reservas',
+      'Calendario',
+      'Ventas online',
+      'Clientes',
+    ])
     expect(itemLabels(groups, 'Negocio')).toEqual(['Carta', 'Club', 'Marketing', 'Estadísticas'])
     expect(groups.filter((g) => g.pinned).map((g) => g.label)).toEqual(['Ajustes'])
     expect(itemLabels(groups, 'Ajustes')).toEqual(['Configuración'])
@@ -98,10 +104,17 @@ describe('resolveNavGroups — una entrada por sección, por rol', () => {
     expect(entries(groups)).toHaveLength(OWNER_ENTRIES.length + 1)
   })
 
-  it('host (anfitrión): Operativo, Reservas, Calendario y Mis números — nada del dueño', () => {
+  it('host (anfitrión): Operativo, Reservas, Calendario, Ventas online y Mis números — nada del dueño', () => {
     const groups = resolveNavGroups('host', SLUG, HUB, false)
-    expect(entries(groups)).toEqual(['Operativo', 'Reservas', 'Calendario', 'Mis números'])
+    expect(entries(groups)).toEqual([
+      'Operativo',
+      'Reservas',
+      'Calendario',
+      'Ventas online',
+      'Mis números',
+    ])
     expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio'])
+    expect(entry(groups, 'Ventas online')?.href).toBe('/hub/ventas-online')
     expect(entry(groups, 'Mis números')?.href).toBe('/hub/mis-numeros')
   })
 
@@ -222,6 +235,7 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
       Mensajería: 'MessageCircle',
       Reservas: 'CalendarCheck',
       Calendario: 'CalendarDays',
+      'Ventas online': 'Ticket',
       Clientes: 'Users',
       Carta: 'UtensilsCrossed',
       Club: 'Star',

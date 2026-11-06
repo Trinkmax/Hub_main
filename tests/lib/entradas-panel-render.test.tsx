@@ -2,13 +2,13 @@
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { AdminExperience, AdminOrder } from '@/lib/ticketing/queries'
+import type { AdminExperience } from '@/lib/ticketing/queries'
 import type { TicketingSettingsView } from '@/lib/ticketing/types'
 
 /**
  * Marketing › Entradas en el primer paint (SSR): que cada tarjeta se dibuje sin romper con datos
- * reales de forma, y que diga lo que tiene que decir (estados de las ventas, el link para
- * compartir, la guía de Mercado Pago, el editor en pesos).
+ * reales de forma, y que diga lo que tiene que decir (el link para compartir, la guía de Mercado
+ * Pago, el editor en pesos). Las ventas tienen su página: ventas-online-render.test.tsx.
  */
 
 vi.mock('next/navigation', () => ({
@@ -40,9 +40,6 @@ vi.mock('@/lib/landings/media', () => ({ uploadLandingImage: vi.fn() }))
 const { CarteleraCard } = await import(
   '@/app/(manager)/[tenantSlug]/entradas/_components/cartelera-card'
 )
-const { OrdersSection } = await import(
-  '@/app/(manager)/[tenantSlug]/entradas/_components/orders-section'
-)
 const { ExperiencesSection } = await import(
   '@/app/(manager)/[tenantSlug]/entradas/_components/experiences-section'
 )
@@ -56,7 +53,6 @@ const { ExperienceEditor } = await import(
   '@/app/(manager)/[tenantSlug]/entradas/[experienceId]/_components/experience-editor'
 )
 
-const NOW = new Date('2026-10-26T21:00:00.000Z')
 const text = (html: string) =>
   html
     // Los separadores de texto de React (`<!-- -->`) no son espacios.
@@ -110,32 +106,6 @@ const EXPERIENCE: AdminExperience = {
   updatedAt: '2026-10-26T12:00:00Z',
 }
 
-function order(over: Partial<AdminOrder>): AdminOrder {
-  return {
-    reservation: null,
-    undo: null,
-    mp_payment_type: null,
-    id: 'o1',
-    title: 'Shrek',
-    event_date: '2026-12-01',
-    event_time: '21:00:00',
-    party_size: 2,
-    payment_option: 'deposit',
-    total_cents: 1_000_000,
-    paid_cents: null,
-    guest_name: 'Ana Gómez',
-    guest_phone: '+5493515551234',
-    status: 'pending',
-    hold_expires_at: '2026-10-26T21:10:00.000Z',
-    reservation_id: null,
-    attention: null,
-    mp_status_detail: null,
-    created_at: '2026-10-26T20:42:00.000Z',
-    paid_at: null,
-    ...over,
-  }
-}
-
 const SETTINGS: TicketingSettingsView = {
   tenant_id: 't1',
   mp_user_id: null,
@@ -182,170 +152,6 @@ describe('Tu cartelera', () => {
     expect(text(html)).toContain('Todavía no conectaste Mercado Pago')
     expect(text(html)).toContain('Ninguna película publicada')
     expect(text(html)).toContain('Tenés una apagada: prendela abajo cuando esté lista.')
-  })
-})
-
-describe('Ventas online', () => {
-  it('cada compra con su estado, su aviso y el link a la reserva', () => {
-    const orders = [
-      order({ id: 'a', status: 'approved', paid_cents: 1_000_000, reservation_id: 'r-1' }),
-      order({ id: 'b', status: 'pending' }),
-      order({ id: 'c', status: 'rejected', hold_expires_at: '2026-10-26T20:00:00.000Z' }),
-      order({
-        id: 'd',
-        status: 'approved',
-        paid_cents: 1_000_000,
-        attention: 'event_missing',
-        event_date: '2026-12-15',
-      }),
-      order({
-        id: 'e',
-        status: 'approved',
-        paid_cents: 1_000_000,
-        reservation_id: 'r-2',
-        attention: 'overbooked',
-      }),
-    ]
-    const html = renderToString(
-      createElement(OrdersSection, {
-        tenantSlug: 'hub',
-        appUrl: 'https://hub.test',
-        result: { ok: true, orders },
-        now: NOW,
-      }),
-    )
-    const t = text(html)
-    expect(t).toContain('Pagado')
-    expect(t).toContain('Pagando…')
-    expect(t).toContain('Sin pagar')
-    expect(t).toContain('Sobrecupo')
-    expect(t).toContain('Sin fecha: cargá la reserva a mano')
-    expect(t).toContain('+54 9 351 555-1234')
-    expect(t).toContain('Mar 01 dic 21:00')
-    expect(t).toContain('Hoy 17:42')
-    expect(html).toContain('href="/hub/reservas/r-1"')
-    expect(html).toContain('href="/hub/reservas/nuevo?date=2026-12-15"')
-    // La entrada se le puede mandar a quien pagó, por su WhatsApp, y a nadie más.
-    expect(t).toContain('Mandar entrada')
-    expect(html).toContain('https://wa.me/5493515551234?text=')
-    expect(html).toContain(encodeURIComponent('https://hub.test/entradas/hub/mi-entrada/'))
-  })
-
-  it('con alias cargado: confirmar lo que no se pagó, anular lo que se confirmó', () => {
-    const orders = [
-      order({ id: 'o-1', status: 'rejected', guest_name: 'Rechazada' }),
-      order({
-        id: 'o-2',
-        status: 'approved',
-        paid_cents: 1_000_000,
-        reservation_id: 'r-2',
-        mp_payment_type: 'manual_transfer',
-      }),
-      order({ id: 'o-3', status: 'approved', paid_cents: 1_000_000, reservation_id: 'r-3' }),
-    ]
-    const render = (transferEnabled: boolean) =>
-      text(
-        renderToString(
-          createElement(OrdersSection, {
-            tenantSlug: 'hub',
-            appUrl: 'https://hub.test',
-            result: { ok: true, orders },
-            now: NOW,
-            transferEnabled,
-          }),
-        ),
-      )
-    const on = render(true)
-    expect(on).toContain('Confirmar transferencia')
-    expect(on).toContain('Transferencia')
-    expect(on).toContain('Anular')
-    // La pagada por Mercado Pago se sigue devolviendo por Mercado Pago.
-    expect(on).toContain('Devolver')
-    // Sin alias no hay nada que confirmar.
-    expect(render(false)).not.toContain('Confirmar transferencia')
-  })
-
-  it('un «Deshacer» de la puerta queda a la vista de los dueños', () => {
-    const orders = [
-      order({
-        id: 'o-1',
-        status: 'approved',
-        undo: { by: 'Luz', at: '2026-12-02T00:05:00Z', from: 4, to: 0 },
-      }),
-    ]
-    const t = text(
-      renderToString(
-        createElement(OrdersSection, {
-          tenantSlug: 'hub',
-          appUrl: 'https://hub.test',
-          result: { ok: true, orders },
-          now: NOW,
-        }),
-      ),
-    )
-    expect(t).toContain('Deshizo Luz · 21:05')
-  })
-
-  it('dice si ya entraron: de una o de a partes', () => {
-    const orders = [
-      order({
-        id: 'o-1',
-        status: 'approved',
-        reservation_id: 'r-1',
-        reservation: {
-          status: 'arrived',
-          estimated_guests: 2,
-          actual_guests: 2,
-          arrived_at: '2026-12-02T00:04:00Z',
-        },
-      }),
-      order({
-        id: 'o-2',
-        status: 'approved',
-        party_size: 4,
-        reservation_id: 'r-2',
-        reservation: {
-          status: 'arrived',
-          estimated_guests: 4,
-          actual_guests: 2,
-          arrived_at: '2026-12-02T00:10:00Z',
-        },
-      }),
-    ]
-    const t = text(
-      renderToString(
-        createElement(OrdersSection, {
-          tenantSlug: 'hub',
-          appUrl: 'https://hub.test',
-          result: { ok: true, orders },
-          now: NOW,
-        }),
-      ),
-    )
-    expect(t).toContain('Entraron · 21:04')
-    expect(t).toContain('Entraron 2 de 4 · 21:10')
-  })
-
-  it('vacío y con error, cada uno con su texto', () => {
-    const empty = renderToString(
-      createElement(OrdersSection, {
-        tenantSlug: 'hub',
-        appUrl: 'https://hub.test',
-        result: { ok: true, orders: [] },
-        now: NOW,
-      }),
-    )
-    expect(text(empty)).toContain('Todavía no hubo ventas online')
-    const failed = renderToString(
-      createElement(OrdersSection, {
-        tenantSlug: 'hub',
-        appUrl: 'https://hub.test',
-        result: { ok: false },
-        now: NOW,
-      }),
-    )
-    expect(text(failed)).toContain('No pudimos cargar las ventas')
-    expect(text(failed)).toContain('Reintentar')
   })
 })
 

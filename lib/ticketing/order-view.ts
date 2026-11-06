@@ -11,7 +11,7 @@ import type { OrderAttention, OrderStatus, PaymentOption } from '@/lib/ticketing
  * `isOrderExpired` de lib/ticketing/queries.ts, que no se puede importar acá
  * porque ese archivo es solo del server.
  *
- * Puro: sin DB ni React (lo usan la lista de ventas y los tests).
+ * Puro: sin DB ni React (lo usan Ventas online, Tex y los tests).
  */
 
 export type OrderTone = 'paid' | 'paying' | 'retrying' | 'unpaid' | 'refunded'
@@ -167,6 +167,13 @@ export function formatOrderMoment(iso: string, now: Date = new Date(), tz = DEFA
   if (day === shiftDay(today, -1)) return `Ayer ${time}`
   if (day.slice(0, 4) === today.slice(0, 4)) return `${formatInTimeZone(at, tz, 'dd/MM')} ${time}`
   return `${formatInTimeZone(at, tz, 'dd/MM/yyyy')} ${time}`
+}
+
+/** La hora de la compra, en el reloj del bar: «18:42». El día ya lo dice el título de la tanda. */
+export function formatOrderTime(iso: string, tz = DEFAULT_TZ): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return '—'
+  return formatInTimeZone(at, tz, 'HH:mm')
 }
 
 /**

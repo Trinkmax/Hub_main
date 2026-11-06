@@ -2,7 +2,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 
-/** Mismas tarjetas que la pestaña: cartelera, Mercado Pago, películas, ventas y configuración. */
+/** Mismas tarjetas que la pestaña: cartelera, Mercado Pago, películas y configuración. */
 export default function Loading() {
   return (
     <PageShell width="comfortable">
@@ -30,7 +30,6 @@ export default function Loading() {
           </div>
         ))}
       </div>
-      <Skeleton className="h-56 w-full rounded-xl" />
       <Skeleton className="h-14 w-full rounded-xl" />
     </PageShell>
   )

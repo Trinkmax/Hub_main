@@ -1,4 +1,7 @@
+import { Ticket } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getAppUrl } from '@/lib/app-url'
@@ -8,16 +11,10 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import {
-  getAdminOverview,
-  getTicketingSettings,
-  listActiveManagers,
-  listRecentOrders,
-} from '@/lib/ticketing/queries'
+import { getAdminOverview, getTicketingSettings, listActiveManagers } from '@/lib/ticketing/queries'
 import { CarteleraCard } from './_components/cartelera-card'
 import { ExperiencesSection } from './_components/experiences-section'
 import { MercadoPagoCard } from './_components/mercado-pago-card'
-import { type OrdersResult, OrdersSection } from './_components/orders-section'
 import { SettingsSection } from './_components/settings-section'
 import { carteleraSummary, latestPrices } from './_lib/overview'
 
@@ -45,16 +42,11 @@ export default async function EntradasPage({
   }
 
   const tenantId = access.tenant.id
-  const [overview, settings, managers, appUrl, orders] = await Promise.all([
+  const [overview, settings, managers, appUrl] = await Promise.all([
     getAdminOverview(tenantId),
     getTicketingSettings(tenantId),
     listActiveManagers(tenantId),
     getAppUrl(),
-    // Las ventas son una tarjeta más: si fallan, el resto de la pestaña igual sirve.
-    listRecentOrders(tenantId).then(
-      (rows): OrdersResult => ({ ok: true, orders: rows }),
-      (): OrdersResult => ({ ok: false }),
-    ),
   ])
 
   const publicUrl = `${appUrl}/entradas/${tenantSlug}`
@@ -67,6 +59,15 @@ export default async function EntradasPage({
         eyebrow="Marketing"
         title="Entradas online"
         description="Vendé las funciones con pago por Mercado Pago: cuando alguien paga, la reserva se carga sola."
+        actions={
+          // Las ventas tienen su propia sección (06/11/2026): ahí también entra la anfitriona.
+          <Button asChild variant="outline" className="h-11 sm:h-9">
+            <Link href={`/${tenantSlug}/ventas-online`}>
+              <Ticket className="size-4" aria-hidden />
+              Ver ventas online
+            </Link>
+          </Button>
+        }
       />
 
       <CarteleraCard
@@ -91,14 +92,6 @@ export default async function EntradasPage({
         experiences={overview.experiences}
         availableTemplates={overview.availableTemplates}
         defaults={latestPrices(overview.experiences)}
-      />
-
-      <OrdersSection
-        tenantSlug={tenantSlug}
-        appUrl={appUrl}
-        result={orders}
-        now={new Date()}
-        transferEnabled={Boolean(settings.transfer_alias)}
       />
 
       <SettingsSection tenantSlug={tenantSlug} settings={settings} managers={managers} />

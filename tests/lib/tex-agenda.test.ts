@@ -527,6 +527,7 @@ const READS: Readonly<Record<string, Readonly<Record<string, readonly [string, R
     desde: ['mis-numeros/page.tsx', /typeof sp\.from === 'string'/],
     hasta: ['mis-numeros/page.tsx', /typeof sp\.to === 'string'/],
   },
+  'ventas.lista': { hasta: ['ventas-online/page.tsx', /salesPage\(hasta, now\)/] },
   'comisiones.liquidacion': {
     mes: ['estadisticas/comisiones/page.tsx', /typeof sp\.month === 'string'/],
     desde: ['estadisticas/comisiones/page.tsx', /typeof sp\.from === 'string'/],
@@ -558,6 +559,7 @@ describe('las pantallas', () => {
     '/mis-numeros',
     '/entradas',
     '/entradas/:id',
+    '/ventas-online',
     '/estadisticas/comisiones',
     '/estadisticas/comisiones/:id',
     '/estadisticas/senas',
@@ -704,7 +706,7 @@ describe('la anfitriona', () => {
     expect(agendaArea.visible({ ...CTX, role: 'accountant', isAccountant: true })).toBe(false)
   })
 
-  it('llega solo a reservas, eventos, operativo y mis números', () => {
+  it('llega solo a reservas, eventos, operativo, mis números y ventas online', () => {
     const screens = texScreensFor(viewer('host')).filter((s) => agendaScreens.includes(s))
     expect(screens.map((s) => s.path.split('/')[1])).toEqual([
       'reservas',
@@ -718,6 +720,7 @@ describe('la anfitriona', () => {
       'eventos',
       'eventos',
       'mis-numeros',
+      'ventas-online',
     ])
   })
 

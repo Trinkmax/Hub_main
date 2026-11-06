@@ -50,13 +50,14 @@ Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario.
 - Mensajería: bandeja, difusiones, flows, audiencias y plantillas.
 - Reservas: lista, alta y ficha.
 - Calendario: eventos y formatos.
+- Ventas online: las compras de la cartelera de entradas, día por día, y «Confirmar transferencia».
 - Clientes: personas, Acreditar y el QR del club.
 - Carta.
 - Club: puntos y niveles, aliados, bienvenida y tarjetas de sellos.
-- Marketing: Tareas, Link de Instagram, Páginas y Entradas.
+- Marketing: Tareas, Link de Instagram, Páginas y Entradas (la cartelera, Mercado Pago y las películas).
 - Estadísticas: Resumen, Cómo nos fue, Señas, Comisiones y Reseñas.
 - Mis números: lo que va ganando quien gestiona reservas.
 - Administración: compras, gastos, sueldos, ventas, caja y contabilidad.
 - Salón en vivo, Cocina, Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
 - Configuración (abajo): Equipo, Comisiones, Capacidad, Tortas de cumpleaños, Reseñas, Apariencia y Documentación.
-El rol Contenido solo ve la Carta; Anfitrión, Operativo, Reservas, Calendario y Mis números; Contabilidad, Administración. Lo demás es del dueño.`
+El rol Contenido solo ve la Carta; Anfitrión, Operativo, Reservas, Calendario, Ventas online (confirma transferencias, no devuelve ni anula) y Mis números; Contabilidad, Administración. Lo demás es del dueño.`

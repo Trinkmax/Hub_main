@@ -32,9 +32,9 @@ import type {
  * que sale de acá es solo lo que la página muestra (nada de la cuenta de
  * Mercado Pago, nada de teléfonos).
  *
- * Las del PANEL usan la sesión del dueño (RLS owner); solo el conteo de
- * lugares pasa por service_role porque la función de la base es solo del
- * server.
+ * Las del PANEL usan la sesión de quien mira (RLS: el dueño, y las ventas
+ * también la anfitriona); solo el conteo de lugares y el «¿hay alias?» pasan
+ * por service_role porque son del server o de la configuración del dueño.
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: tablas nuevas, sin tipos generados todavía
@@ -906,14 +906,32 @@ async function loadOrderUndos(
   return undos
 }
 
-/** Las últimas compras (pagadas, en curso y caídas) para la pestaña Entradas. */
+const ADMIN_ORDER_COLUMNS =
+  'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, mp_payment_type, created_at, paid_at, reservation:salon_reservations(status, estimated_guests, actual_guests, arrived_at)'
+
+/**
+ * Le suma a cada compra pagada su «Deshacer» de la puerta. Lo lee solo el dueño (audit_log es
+ * suyo por RLS): para la anfitriona sale vacío, y está bien, porque es lo que los dueños miran.
+ */
+async function withUndos(
+  supabase: SBAny,
+  tenantId: string,
+  orders: Omit<AdminOrder, 'undo'>[],
+): Promise<AdminOrder[]> {
+  const undos = await loadOrderUndos(
+    supabase,
+    tenantId,
+    orders.filter((o) => o.status === 'approved').map((o) => o.id),
+  )
+  return orders.map((o) => ({ ...o, undo: undos.get(o.id) ?? null }))
+}
+
+/** Las últimas compras (pagadas, en curso y caídas): lo que lee Tex. */
 export async function listRecentOrders(tenantId: string, limit = 60): Promise<AdminOrder[]> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('ticket_orders')
-    .select(
-      'id, title, event_date, event_time, party_size, payment_option, total_cents, paid_cents, guest_name, guest_phone, status, hold_expires_at, reservation_id, attention, mp_status_detail, mp_payment_type, created_at, paid_at, reservation:salon_reservations(status, estimated_guests, actual_guests, arrived_at)',
-    )
+    .select(ADMIN_ORDER_COLUMNS)
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(limit)
@@ -921,13 +939,68 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
     console.error('[ticketing.listRecentOrders]', { tenantId, code: error.code })
     throw new Error('No pudimos cargar las ventas.')
   }
-  const orders = (data as Omit<AdminOrder, 'undo'>[] | null) ?? []
-  const undos = await loadOrderUndos(
-    supabase,
-    tenantId,
-    orders.filter((o) => o.status === 'approved').map((o) => o.id),
-  )
-  return orders.map((o) => ({ ...o, undo: undos.get(o.id) ?? null }))
+  return withUndos(supabase, tenantId, (data as Omit<AdminOrder, 'undo'>[] | null) ?? [])
+}
+
+/**
+ * Ventas online, una página (lib/ticketing/sales-days.ts): las compras que entraron entre
+ * `fromIso` (inclusive) y `toIso` (exclusivo), de la más nueva a la más vieja, y cuándo entró la
+ * anterior más nueva, para «Ver días anteriores». Las leen el dueño y la anfitriona, cada uno con
+ * su sesión (policies ticket_orders_owner_select y ticket_orders_host_select).
+ */
+export async function listOrdersBetween(
+  tenantId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<{ orders: AdminOrder[]; olderCreatedAt: string | null }> {
+  const supabase = (await createClient()) as SBAny
+  const [page, older] = await Promise.all([
+    supabase
+      .from('ticket_orders')
+      .select(ADMIN_ORDER_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .gte('created_at', fromIso)
+      .lt('created_at', toIso)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('ticket_orders')
+      .select('created_at')
+      .eq('tenant_id', tenantId)
+      .lt('created_at', fromIso)
+      .order('created_at', { ascending: false })
+      .limit(1),
+  ])
+  if (page.error || older.error) {
+    console.error('[ticketing.listOrdersBetween]', {
+      tenantId,
+      code: page.error?.code ?? older.error?.code,
+    })
+    throw new Error('No pudimos cargar las ventas.')
+  }
+  const olderRows = (older.data as Array<{ created_at: string }> | null) ?? []
+  return {
+    orders: await withUndos(supabase, tenantId, (page.data as Omit<AdminOrder, 'undo'>[]) ?? []),
+    olderCreatedAt: olderRows[0]?.created_at ?? null,
+  }
+}
+
+/**
+ * ¿El bar cargó un alias para transferir? Decide si hay transferencias que confirmar. La
+ * configuración es del dueño por RLS, así que se lee con service_role: el alias no es secreto
+ * (lo ve cualquiera a quien Mercado Pago le rechaza el pago) y de acá sale solo un sí o un no.
+ */
+export async function hasTransferAlias(tenantId: string): Promise<boolean> {
+  const service = createServiceClient() as SBAny
+  const { data, error } = await service
+    .from('ticketing_settings')
+    .select('transfer_alias')
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.hasTransferAlias]', { tenantId, code: error.code })
+    return false
+  }
+  return Boolean((data as { transfer_alias: string | null } | null)?.transfer_alias)
 }
 
 /** Los gestores activos, para «¿A nombre de quién quedan las reservas?». */

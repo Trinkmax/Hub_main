@@ -1490,8 +1490,12 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   [local_smtp]»): muere en `supabase start`, antes del primer test. Los tests de la puerta en
   `tests/rls/ticketing.test.ts` todavía no corrieron en CI (se ensayaron contra la base con
   rollback y con una compra real en el bar demo). Cambiar a `[local_smtp]` o fijar la versión.
-- **«Confirmar transferencia» no mira la cuenta.** Lo confirma un dueño que vio la plata, y por el
-  monto completo. No se cruza con los movimientos de Mercado Pago ni admite un pago parcial.
+- **«Confirmar transferencia» no mira la cuenta.** Lo confirma un dueño o la anfitriona (desde el
+  06/11, después de preguntarles a los socios), y por el monto completo. No se cruza con los
+  movimientos de Mercado Pago ni admite un pago parcial.
+- **Tex todavía no le lee las ventas a la anfitriona.** Desde el 06/11 ella ve Ventas online y Tex
+  la puede llevar ahí, pero `ver_ventas_entradas` sigue siendo solo del dueño. Abrírselo es pasar
+  `need.roles` a `TICKET_SALES_ROLES` y ajustar el test «no mira … las ventas de entradas».
 - **La función de la entrada solo está en la muestra.** Para la compra real falta: pasarle
   `show` desde `OrderView`, celebrar también al volver de Mercado Pago con el pago ya aprobado
   (hoy `firstStatus` aprobado no anima), un resguardo para que el QR no quede oculto si fallan
