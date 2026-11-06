@@ -26,14 +26,16 @@ const TEST_TIMEOUT = 60_000
  *    GRANT de UPDATE por columna lo rechaza). El navegador del dueño NO puede
  *    leer ni escribir el token cifrado de Mercado Pago.
  * 2. Las películas son del dueño y de su bar; el staff y otro bar no las ven.
- * 3. Los pedidos solo los lee el dueño y no los escribe nadie desde la API:
- *    los crea y aplica el server con service_role (funciones de la base).
+ * 3. Los pedidos los leen el dueño y la anfitriona (Ventas online, 20261106190000) y no los
+ *    escribe nadie desde la API: los crea y aplica el server con service_role (funciones de la
+ *    base). El cajero no los ve; la anfitriona tampoco ve la configuración ni las películas.
  * 4. anon no ve nada (las páginas públicas las arma el server).
  */
 describeIfRls('RLS — entradas online (películas, configuración, pedidos)', () => {
   let service: SupabaseClient
   let ownerA: UserClient
   let cashierA: UserClient
+  let hostA: UserClient
   let ownerB: UserClient
   let tenantA: { id: string; slug: string }
   let tenantB: { id: string; slug: string }
@@ -45,6 +47,7 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
     service = getServiceClient()
     ownerA = await createUserClient({ email: uniqueEmail('tix-owner-a') })
     cashierA = await createUserClient({ email: uniqueEmail('tix-cashier-a') })
+    hostA = await createUserClient({ email: uniqueEmail('tix-host-a') })
     ownerB = await createUserClient({ email: uniqueEmail('tix-owner-b') })
     tenantA = await createTenant({
       name: 'Bar Tix A',
@@ -56,9 +59,10 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
       slug: uniqueSlug('tix-b'),
       ownerId: ownerB.userId,
     })
-    await service
-      .from('memberships')
-      .insert({ tenant_id: tenantA.id, user_id: cashierA.userId, role: 'cashier' })
+    await service.from('memberships').insert([
+      { tenant_id: tenantA.id, user_id: cashierA.userId, role: 'cashier' },
+      { tenant_id: tenantA.id, user_id: hostA.userId, role: 'host' },
+    ])
 
     const { data: tpl, error: tplError } = await service
       .from('scheduled_event_templates')
@@ -94,7 +98,7 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
 
   afterAll(async () => {
     await service.from('tenants').delete().in('id', [tenantA?.id, tenantB?.id].filter(Boolean))
-    for (const u of [ownerA, cashierA, ownerB]) if (u) await deleteUser(u.userId)
+    for (const u of [ownerA, cashierA, hostA, ownerB]) if (u) await deleteUser(u.userId)
   }, HOOK_TIMEOUT)
 
   it(
@@ -124,6 +128,13 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
         .maybeSingle()
       expect(second.error).toBeNull()
       expect(second.data).toMatchObject({ hold_minutes: 20 })
+
+      // La anfitriona ve las ventas, no la configuración (la cuenta de Mercado Pago es del dueño).
+      const host = await hostA.client
+        .from('ticketing_settings')
+        .select('tenant_id')
+        .eq('tenant_id', tenantA.id)
+      expect(host.data ?? []).toHaveLength(0)
 
       // El token cifrado no se lee ni se escribe desde el navegador.
       const readToken = await ownerA.client
@@ -165,6 +176,9 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
         .eq('id', experienceA)
       expect(cashier.data ?? []).toHaveLength(0)
 
+      const host = await hostA.client.from('event_experiences').select('id').eq('id', experienceA)
+      expect(host.data ?? []).toHaveLength(0)
+
       const other = await ownerB.client.from('event_experiences').select('id').eq('id', experienceA)
       expect(other.data ?? []).toHaveLength(0)
 
@@ -182,7 +196,7 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
   )
 
   it(
-    'los pedidos los crea el server; el dueño los lee y nadie los escribe por la API',
+    'los pedidos los crea el server; el dueño y la anfitriona los leen y nadie los escribe por la API',
     async () => {
       const { data: order, error } = await service.rpc('ticketing_create_order', {
         p_tenant_id: tenantA.id,
@@ -208,11 +222,23 @@ describeIfRls('RLS — entradas online (películas, configuración, pedidos)', (
       const cashier = await cashierA.client.from('ticket_orders').select('id').eq('id', orderId)
       expect(cashier.data ?? []).toHaveLength(0)
 
+      // Ventas online: la anfitriona ve las compras de su bar, y otro bar no.
+      const host = await hostA.client.from('ticket_orders').select('id').eq('id', orderId)
+      expect(host.data).toEqual([{ id: orderId }])
+      const other = await ownerB.client.from('ticket_orders').select('id').eq('id', orderId)
+      expect(other.data ?? []).toHaveLength(0)
+
       const tamper = await ownerA.client
         .from('ticket_orders')
         .update({ status: 'approved' })
         .eq('id', orderId)
       expect(tamper.error?.code).toBe('42501')
+      // Confirmar una transferencia pasa por el server: ella tampoco escribe por la API.
+      const hostTamper = await hostA.client
+        .from('ticket_orders')
+        .update({ status: 'approved' })
+        .eq('id', orderId)
+      expect(hostTamper.error?.code).toBe('42501')
 
       // Las funciones son solo del server.
       const rpc = await ownerA.client.rpc('ticketing_settle_order', {
