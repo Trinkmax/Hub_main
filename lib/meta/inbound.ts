@@ -1,4 +1,5 @@
 import 'server-only'
+import { findCustomerIdByPhone } from '@/lib/customers/phone-lookup'
 import { conversationKey, tryNormalizePhone } from '@/lib/phone'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, Json } from '@/types/database'
@@ -29,14 +30,9 @@ export async function ingestInboundMessage(args: IngestArgs): Promise<IngestResu
 
   if (args.matchPhone) {
     const e164 = tryNormalizePhone(args.matchPhone) ?? `+${args.matchPhone}`
-    const { data } = await service
-      .from('customers')
-      .select('id')
-      .eq('tenant_id', args.channel.tenant_id)
-      .eq('phone', e164)
-      .is('deleted_at', null)
-      .maybeSingle()
-    customerId = data?.id ?? null
+    // El wa_id llega sin el 9 y se normaliza con él; las fichas de reservas
+    // viejas lo tienen sin el 9. Se busca de las dos formas.
+    customerId = await findCustomerIdByPhone(service, args.channel.tenant_id, e164)
   }
 
   const { data, error } = await service.rpc('ingest_inbound_message', {

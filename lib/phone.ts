@@ -14,6 +14,8 @@
  *  - Cualquier cosa fuera de [8, 15] dígitos resultantes se rechaza.
  */
 
+import { isValidPhoneNumber } from 'libphonenumber-js'
+
 export class InvalidPhoneError extends Error {
   readonly code = 'invalid_phone'
   constructor(message = 'Teléfono inválido.') {
@@ -118,6 +120,38 @@ export function tryNormalizePhone(raw: string): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * El teléfono tal como se guarda: E.164 con el `9` móvil argentino.
+ *
+ * `react-phone-number-input` entrega «+543511234567» cuando el número se tipea
+ * sin el 9 (así lo arma libphonenumber), y los formularios de reservas, clientes
+ * y entradas lo guardaban tal cual porque ya «era válido». La misma persona
+ * terminaba con dos fichas: la de la reserva sin el 9 y la del club o la entrada
+ * con el 9. Ahora primero se normaliza; solo lo que normalizePhone no entiende y
+ * libphonenumber sí (algún número de otro país) pasa como vino.
+ */
+export function canonicalPhone(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const normalized = tryNormalizePhone(trimmed)
+  if (normalized) return normalized
+  return trimmed.startsWith('+') && isValidPhoneNumber(trimmed) ? trimmed : null
+}
+
+/**
+ * Las formas en que puede estar guardado el mismo celular argentino: con el 9
+ * (la canónica, primero) y sin él (fichas viejas de reservas). Es para BUSCAR,
+ * nunca para guardar: el resto de los países vuelve como vino.
+ *   +5493512345678 → [+5493512345678, +543512345678]
+ */
+export function phoneVariants(e164: string): string[] {
+  const withNine = e164.match(/^\+549(\d{10})$/)
+  if (withNine) return [e164, `+${AR_CC}${withNine[1]}`]
+  const withoutNine = e164.match(/^\+54([1-8]\d{9})$/)
+  if (withoutNine) return [`+${AR_CC}9${withoutNine[1]}`, e164]
+  return [e164]
 }
 
 /**

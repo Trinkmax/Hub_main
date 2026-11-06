@@ -13,6 +13,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { findCustomerIdByPhone } from './phone-lookup'
 import {
   createAndAssignTagSchema,
   createCustomerSchema,
@@ -82,21 +83,15 @@ export async function createCustomer(
   const ip = await getRequestIp()
   const nowIso = new Date().toISOString()
 
-  // Dedupe por teléfono primero (la identidad fuerte). Si no, por email.
-  const { data: existingByPhone } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('tenant_id', access.tenant.id)
-    .eq('phone', parsed.data.phone)
-    .is('deleted_at', null)
-    .maybeSingle()
+  // Dedupe por teléfono primero (la identidad fuerte), con o sin el 9. Si no, por email.
+  const existingByPhone = await findCustomerIdByPhone(supabase, access.tenant.id, parsed.data.phone)
 
   if (existingByPhone) {
     revalidatePath(`/${slug}/clientes`)
     return {
       ok: true,
       message: 'Ya existía un cliente con ese teléfono.',
-      customerId: existingByPhone.id,
+      customerId: existingByPhone,
     }
   }
 

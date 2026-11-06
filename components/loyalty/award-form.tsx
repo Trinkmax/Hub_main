@@ -1,14 +1,21 @@
 'use client'
 
 import { Loader2, Sparkles, TriangleAlert } from 'lucide-react'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { awardPointsByAmount } from '@/lib/points/actions'
 import type { EarnRate } from '@/lib/points/earn-rate'
-import { describeEarnRate, pesosToCents, previewPoints } from '@/lib/points/preview'
+import {
+  centsToPesosInput,
+  describeEarnRate,
+  pesosToCents,
+  previewPoints,
+  suggestThousands,
+} from '@/lib/points/preview'
+import { MissingZerosCheck } from './missing-zeros-check'
 
 export type AwardResultData = {
   customer_id: string
@@ -50,10 +57,15 @@ export function AwardForm({
   onCancel: () => void
 }) {
   const [amount, setAmount] = useState('')
+  // «Son $129» dicho a propósito: vale solo para el monto que estaba escrito.
+  const [keptSmall, setKeptSmall] = useState<number | null>(null)
   const [busy, startAward] = useTransition()
+  const submitRef = useRef<HTMLButtonElement>(null)
 
   const cents = useMemo(() => pesosToCents(amount), [amount])
   const points = useMemo(() => previewPoints(cents ?? 0, earnRate), [cents, earnRate])
+  const suggestion = useMemo(() => suggestThousands(cents), [cents])
+  const needsCheck = suggestion !== null && keptSmall !== cents
   const rateLabel = describeEarnRate(earnRate)
   const noRules = earnRate === null
 
@@ -63,6 +75,7 @@ export function AwardForm({
       toast.error('Poné el monto que pagó, en pesos.')
       return
     }
+    if (needsCheck) return
     startAward(async () => {
       const r = await awardPointsByAmount(tenantSlug, {
         customer_id: customerId,
@@ -114,27 +127,44 @@ export function AwardForm({
 
         {/* La devolución en vivo: el mozo ve cuántos puntos suma ANTES de tocar
             nada, así puede decírselo al cliente mientras cobra. */}
-        <div
-          id="award-hint"
-          aria-live="polite"
-          className="flex min-h-[1.75rem] items-center gap-2 text-sm"
-        >
-          {noRules ? (
-            <span className="inline-flex items-center gap-1.5 font-medium text-warning-foreground">
-              <TriangleAlert className="size-4 text-warning" aria-hidden />
-              Este bar todavía no configuró cómo se suman puntos.
-            </span>
-          ) : points !== null && points > 0 ? (
-            <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
-              <Sparkles className="size-4" aria-hidden />
-              Suma {points.toLocaleString('es-AR')} {points === 1 ? 'punto' : 'puntos'}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              {rateLabel ?? 'Los puntos salen de las reglas del Club.'}
-            </span>
-          )}
-        </div>
+        {needsCheck && cents !== null && suggestion !== null && !noRules ? (
+          <MissingZerosCheck
+            id="award-hint"
+            typedCents={cents}
+            suggestedCents={suggestion}
+            typedPoints={points}
+            onFix={() => {
+              setAmount(centsToPesosInput(suggestion))
+              requestAnimationFrame(() => submitRef.current?.focus())
+            }}
+            onKeep={() => {
+              setKeptSmall(cents)
+              requestAnimationFrame(() => submitRef.current?.focus())
+            }}
+          />
+        ) : (
+          <div
+            id="award-hint"
+            aria-live="polite"
+            className="flex min-h-[1.75rem] items-center gap-2 text-sm"
+          >
+            {noRules ? (
+              <span className="inline-flex items-center gap-1.5 font-medium text-warning-text">
+                <TriangleAlert className="size-4 text-warning" aria-hidden />
+                Este bar todavía no configuró cómo se suman puntos.
+              </span>
+            ) : points !== null && points > 0 ? (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
+                <Sparkles className="size-4" aria-hidden />
+                Suma {points.toLocaleString('es-AR')} {points === 1 ? 'punto' : 'puntos'}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                {rateLabel ?? 'Los puntos salen de las reglas del Club.'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -144,22 +174,25 @@ export function AwardForm({
           size="xl"
           onClick={onCancel}
           disabled={busy}
-          className="h-14"
+          className="h-14 px-4"
         >
           Cancelar
         </Button>
         <Button
+          ref={submitRef}
           type="submit"
           size="xl"
-          disabled={busy || cents === null || noRules}
-          className="h-14 flex-1 gap-2 text-base"
+          disabled={busy || cents === null || noRules || needsCheck}
+          className="h-14 min-w-0 flex-1 gap-2 whitespace-normal px-4 text-base leading-tight"
         >
           {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
           {busy
             ? 'Sumando…'
             : points !== null && points > 0
               ? `Sumar ${points.toLocaleString('es-AR')} ${points === 1 ? 'punto' : 'puntos'}`
-              : 'Sumar puntos'}
+              : cents !== null && keptSmall === cents
+                ? 'Cargar sin puntos'
+                : 'Sumar puntos'}
         </Button>
       </div>
     </form>

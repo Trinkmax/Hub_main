@@ -3,6 +3,20 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+- **Una visita mal cargada no se puede corregir desde el panel (06/11/2026).**
+  Si la caja pone $129 por $129.000, hoy lo arregla soporte por SQL (8 casos en
+  HUB entre el 26/10 y el 05/11, ver `docs/sistema-puntos.md`, addendum 2026-11).
+  Falta «Corregir monto» en la ficha del cliente (visitas): cambiar el monto,
+  recalcular los puntos de esa visita y dejarlo en `audit_log`, solo dueños.
+- **Fichas duplicadas por el 9 del celular (06/11/2026).** Las reservas
+  guardaban «+543…» y el club, las entradas y WhatsApp «+5493…»: 40 personas de
+  HUB con dos fichas. El código ya guarda con el 9 y busca de las dos formas
+  (`canonicalPhone`, `findCustomerIdByPhone`); la unión de las 40 y el trigger
+  están en `20261106160000_customers_celular_con_el_9.sql`, que espera el sí
+  para aplicarse. Las funciones SQL que buscan por teléfono (club, captura,
+  `ticketing_settle_order`) siguen comparando exacto: alcanza una vez aplicada
+  la migración, porque desde ahí todo queda con el 9.
+
 - **No hay `error.tsx` en el workspace del manager.** Solo existen en `/salon` y
   en `/mensajeria`. Cualquier excepción no atrapada en `(manager)` se lleva
   puesto el layout entero y muestra la pantalla de error por defecto de Next. Es

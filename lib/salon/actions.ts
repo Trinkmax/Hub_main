@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
 import { formatARS } from '@/lib/commissions/calculate'
 import { payableUpperBound, resolveCommissionPeriod } from '@/lib/commissions/period'
+import { findCustomerIdByPhone } from '@/lib/customers/phone-lookup'
 import { tryNormalizePhone } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -367,16 +368,9 @@ export async function createSalonReservation(
     if (!owned) customerId = null
   }
 
-  // Auto-link cliente existente si el phone matchea uno del tenant.
+  // Auto-link cliente existente si el phone matchea uno del tenant (con o sin el 9).
   if (!customerId && parsed.data.guest_phone) {
-    const { data: existing } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('tenant_id', access.tenant.id)
-      .eq('phone', parsed.data.guest_phone)
-      .is('deleted_at', null)
-      .maybeSingle()
-    if (existing) customerId = (existing as { id: string }).id
+    customerId = await findCustomerIdByPhone(supabase, access.tenant.id, parsed.data.guest_phone)
   }
 
   // Si no existe el cliente, lo creamos desde la reserva (acquisition='reservation')
@@ -1053,15 +1047,8 @@ export async function linkReservationCustomer(slug: string, id: string): Promise
   // Reservas viejas pueden tener el teléfono sin normalizar: el índice único
   // de customers es sobre E.164, así que se compara y se guarda en E.164.
   const phone = tryNormalizePhone(row.guest_phone) ?? row.guest_phone
-  let customerId: string | null = null
-  const { data: existing } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('tenant_id', access.tenant.id)
-    .eq('phone', phone)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (existing) customerId = (existing as { id: string }).id
+  // Con o sin el 9: las fichas viejas de reservas quedaron sin él.
+  let customerId: string | null = await findCustomerIdByPhone(supabase, access.tenant.id, phone)
 
   let created = false
   if (!customerId) {

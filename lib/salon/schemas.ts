@@ -1,6 +1,5 @@
-import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
-import { tryNormalizePhone } from '@/lib/phone'
+import { canonicalPhone } from '@/lib/phone'
 import { SERVICE_ALERTS, type ServiceAlert } from './alerts'
 import { parseInstagramHandle } from './instagram'
 import { TABLE_LABEL_MAX } from './types'
@@ -17,8 +16,8 @@ const optionalPhoneField = z
     if (!v) return null
     const trimmed = String(v).trim()
     if (trimmed === '') return null
-    if (trimmed.startsWith('+') && isValidPhoneNumber(trimmed)) return trimmed
-    const normalized = tryNormalizePhone(trimmed)
+    // Siempre con el 9: «+543…» tal cual dejaba a la misma persona con dos fichas.
+    const normalized = canonicalPhone(trimmed)
     if (!normalized) {
       ctx.addIssue({ code: 'custom', message: 'Teléfono inválido' })
       return z.NEVER

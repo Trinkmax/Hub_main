@@ -1,6 +1,5 @@
-import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
-import { tryNormalizePhone } from '@/lib/phone'
+import { canonicalPhone } from '@/lib/phone'
 import { pesosToCents } from './pricing'
 import type { ExperienceStep, GalleryItem } from './types'
 import { youtubeVideoId } from './video'
@@ -223,8 +222,7 @@ export const createExperienceSchema = z.object({
 const optionalPhoneField = z.union([z.string(), z.null(), z.undefined()]).transform((v, ctx) => {
   const trimmed = (v ?? '').trim()
   if (!trimmed) return null
-  if (trimmed.startsWith('+') && isValidPhoneNumber(trimmed)) return trimmed
-  const normalized = tryNormalizePhone(trimmed)
+  const normalized = canonicalPhone(trimmed)
   if (!normalized) {
     ctx.addIssue({ code: 'custom', message: 'WhatsApp inválido' })
     return z.NEVER
@@ -290,8 +288,8 @@ const guestPhoneField = z
   .trim()
   .min(1, 'Dejanos tu WhatsApp')
   .transform((v, ctx) => {
-    if (v.startsWith('+') && isValidPhoneNumber(v)) return v
-    const normalized = tryNormalizePhone(v)
+    // Con el 9 siempre: así la compra encuentra la ficha de las reservas.
+    const normalized = canonicalPhone(v)
     if (!normalized) {
       ctx.addIssue({ code: 'custom', message: 'Ese WhatsApp no parece válido' })
       return z.NEVER

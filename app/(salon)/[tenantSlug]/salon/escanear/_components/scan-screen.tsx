@@ -151,11 +151,17 @@ export function ScanScreen({
       <div className="space-y-4">
         <div className="card-hairline rounded-2xl border border-primary/40 bg-primary/8 p-6 text-center">
           <CheckCircle2 className="mx-auto size-11 text-primary" aria-hidden />
+          {/* «+0» con un tilde verde parecía un éxito a medias que «tarda unos
+              minutos»: los puntos son en el acto, así que si no sumó se dice. */}
           <p className="mt-3 font-display text-4xl font-semibold tabular-nums leading-none">
-            +{result.points_awarded.toLocaleString('es-AR')}
+            {result.points_awarded > 0
+              ? `+${result.points_awarded.toLocaleString('es-AR')}`
+              : 'Sin puntos'}
           </p>
           <p className="mt-1 text-sm font-medium">
-            {result.points_awarded === 1 ? 'punto' : 'puntos'} para {customer.first_name}
+            {result.points_awarded > 0
+              ? `${result.points_awarded === 1 ? 'punto' : 'puntos'} para ${customer.first_name}`
+              : `La visita de ${customer.first_name} quedó cargada`}
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
             {fmtPesos(result.amount_cents)} · ahora tiene{' '}
