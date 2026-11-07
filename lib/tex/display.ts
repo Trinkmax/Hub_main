@@ -121,3 +121,25 @@ export function plainAnswer(text: string): 'yes' | 'no' | null {
   if (NO.test(clean)) return 'no'
   return null
 }
+
+/**
+ * Lo que decide un «sí» o un «no» escrito sobre los tiques que esperan. Un «sí» no confirma lo que abre
+ * WhatsApp: lo marcaría enviado sin abrir el chat. Ese va con su botón, y `tapToSend` avisa.
+ */
+export function typedDecisions(
+  actions: ReadonlyArray<{
+    id: string
+    toolUseId: string
+    status: string
+    ticket: Pick<TexTicket, 'send'>
+  }>,
+  waiting: readonly string[],
+  answer: 'yes' | 'no',
+): { decisions: Array<{ actionId: string; approve: boolean }>; tapToSend: boolean } {
+  const open = actions.filter((a) => a.status === 'pending' && waiting.includes(a.toolUseId))
+  const typed = answer === 'yes' ? open.filter((a) => !a.ticket.send) : open
+  return {
+    decisions: typed.map((a) => ({ actionId: a.id, approve: answer === 'yes' })),
+    tapToSend: typed.length < open.length,
+  }
+}

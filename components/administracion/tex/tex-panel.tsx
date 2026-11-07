@@ -29,7 +29,7 @@ import {
   useState,
 } from 'react'
 import { Button } from '@/components/ui/button'
-import type { TexDisplayItem } from '@/lib/tex/protocol'
+import { type TexDisplayItem, texTicketNeedsTap } from '@/lib/tex/protocol'
 import { cn } from '@/lib/utils'
 import { texSuggestions } from './suggestions'
 import { TexCheer, useCheering } from './tex-cheer'
@@ -126,7 +126,10 @@ function Conversation() {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [items, busy, error])
 
-  const pending = items.filter((i) => i.kind === 'ticket' && i.ticket.status === 'pending')
+  // Los que abren WhatsApp van de a uno, con su botón: «Hacer los N» los marcaría enviados sin abrir el chat.
+  const pending = items.filter(
+    (i) => i.kind === 'ticket' && i.ticket.status === 'pending' && !texTicketNeedsTap(i.ticket),
+  )
   const last = items.at(-1)
   const quiet = busy && (last?.kind !== 'tex' || (last.text === '' && last.steps.length === 0))
 

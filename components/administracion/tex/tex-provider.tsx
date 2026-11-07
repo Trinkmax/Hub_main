@@ -418,6 +418,25 @@ export function TexProvider({
     [router, slug, goTo],
   )
 
+  /**
+   * Lo que quedó en la base de los tiques. Después de un toque que se cortó (en el celular, abrir WhatsApp
+   * puede dormir la página), el servidor pudo haberlo hecho igual: el botón no puede quedar a mano para
+   * mandarlo dos veces.
+   */
+  const syncTickets = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tex?slug=${encodeURIComponent(slug)}`)
+      if (!res.ok) return
+      const history = (await res.json()) as TexHistory
+      if (history.threadId !== threadRef.current) return
+      for (const item of history.items) {
+        if (item.kind === 'ticket') dispatch({ type: 'ticket', ticket: item.ticket })
+      }
+    } catch {
+      // Sin conexión todavía: queda como estaba.
+    }
+  }, [slug])
+
   const post = useCallback(
     async (body: Record<string, unknown>) => {
       if (busyRef.current) return
@@ -427,6 +446,7 @@ export function TexProvider({
       abortRef.current = controller
       const fresh = freshRef.current && 'message' in body
       if (fresh) freshRef.current = false
+      const decided = Array.isArray(body.decisions) && body.decisions.length > 0
       let again = false
       try {
         const response = await fetch(`/api/tex?slug=${encodeURIComponent(slug)}`, {
@@ -451,6 +471,7 @@ export function TexProvider({
             },
           })
           dispatch({ type: 'server', event: { type: 'mood', mood: 'sad' } })
+          if (decided) void syncTickets()
           return
         }
         const reader = response.body.getReader()
@@ -477,6 +498,7 @@ export function TexProvider({
             },
           })
           dispatch({ type: 'server', event: { type: 'mood', mood: 'sad' } })
+          if (decided) void syncTickets()
         }
       } finally {
         busyRef.current = false
@@ -485,7 +507,7 @@ export function TexProvider({
       }
       if (again) void post({ resume: true })
     },
-    [handle, slug],
+    [handle, slug, syncTickets],
   )
 
   const send = useCallback(
