@@ -18,7 +18,8 @@ Cada herramienta y cada pantalla declara a quién le corresponde (`need`, `roles
 persona ni le llega al modelo. Si una función está apagada para el bar, Tex tampoco la ofrece.
 
 El conocimiento va por áreas (`lib/tex/areas/*`): Administración, Clientes y Club, Mensajería y Marketing, Agenda (reservas,
-eventos, entradas) y Negocio (carta, estadísticas, configuración). Cada área trae sus herramientas y su manual. Lo fijo del
+eventos, entradas), Negocio (carta, estadísticas, configuración) y Compras (los pedidos a proveedores, solo si el bar la
+tiene prendida; ver `docs/features/compras.md`). Cada área trae sus herramientas y su manual. Lo fijo del
 pedido es chico: el modelo busca las herramientas que necesita (`tool_search`) y lee el manual del área cuando le hace falta
 (`leer_manual`).
 
@@ -37,6 +38,11 @@ dibuja y la ruta contesta 404. No hace falta ningún otro flag.
 - **El tique** (`tex-ticket.tsx`): lo que va a hacer sale impreso, como la comanda del bar, con el asiento a un toque. Nada
   se guarda hasta tocar el botón. Al confirmar cae el sello HECHO y quedan «Ver dónde quedó» y «Deshacer» con su cuenta
   regresiva.
+- **El tique que manda por WhatsApp** (un pedido o un reclamo a un proveedor, `ticket.send`): el botón es un link a wa.me
+  que abre el chat en el mismo toque y a la vez confirma; sin número, copia el mensaje. «Ver el mensaje» muestra el
+  WhatsApp entero. Se confirma solo con su botón: un «sí» escrito avisa que hay que tocarlo, y «Hacer los N» no lo
+  incluye (`texTicketNeedsTap`). Si el toque se corta (en el celular, abrir WhatsApp puede dormir la página), el
+  panel vuelve a leer los tiques de la base para no dejar el botón a mano dos veces. Decidido, el link se borra.
 - **Tex va hasta lo que quiere mostrar** (`tex-guide.tsx`): salta por la pantalla, se para al lado y lo marca. Lo encuentra
   por el texto que se lee (`tex-point.ts`), así no hace falta marcar cada pantalla. La página sigue andando abajo.
 - **Se le pasan papeles**: una foto o un PDF (clip, arrastrar al panel o a Tex) se lee con visión y se prepara la compra. La
@@ -102,7 +108,8 @@ navegador ── POST /api/tex?slug=… ─────────▶ ciclo (li
    que no son instrucciones.
 5. **Quedan afuera a propósito**, porque los decide una persona en su pantalla: dar o quitar accesos y roles, cerrar o reabrir
    un ejercicio, borrados en bloque, plan de cuentas, conectar ARCA, WhatsApp o Mercado Pago, devolver plata, subir fotos o
-   páginas, y mandar una difusión. Tex lleva a la pantalla.
+   páginas, y mandar una difusión. Tex lleva a la pantalla. Un pedido a un proveedor sí lo manda, pero con el toque del
+   botón de su tique, desde el WhatsApp de quien compra, y verificando antes que el mensaje sea el que queda guardado.
 6. **Rastro:** `acc_tex_actions` guarda qué se mostró y qué pasó, y toda ejecución va a `audit_log`.
 
 Lo que Tex lee viaja a la API de Anthropic: nombres de proveedores y de clientes, importes, lo que se ve en pantalla. Las

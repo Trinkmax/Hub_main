@@ -1602,7 +1602,10 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **Recetas de Coraline y de El viaje de Chihiro:** están en los PDF «Pedido – Menú» (33 y 32 productos para 60, con
   margen del 5 %), no en el Catálogo de eventos. Hay que pasarlas a Compras › Recetas: varias vienen en gramos o en
   maples y hay que unirlas a los insumos de la lista.
-- **Tex no conoce Compras:** el manual solo nombra la sección. Faltan herramientas para leer los pedidos y armar uno.
+- **Tex ya arma y manda pedidos (07/11):** ver `docs/features/compras.md` › Con Tex. Falta probar en un iPhone de
+  verdad, con WhatsApp instalado, ir y volver de la app con la charla abierta (en el emulador anda). Tex todavía no
+  toca insumos, recetas, la variante ni las personas de un evento: lleva a la pantalla. El panel no tiene un botón
+  «Nuevo pedido»: un pedido a mano a un proveedor sin borrador solo lo arma Tex (`createDraft`).
 - **La app de Google que se usaba antes deja ver el PIN de la vista de Tomás** en el código de la página, a cualquiera
   con el link (`config.pin` llega al navegador con `getInicio`). Con Compras andando conviene dar de baja esa
   implementación o cambiarla a «solo yo».

@@ -136,6 +136,16 @@ const BY_SCREEN: ReadonlyArray<{ path: RegExp; items: readonly string[] }> = [
     ],
   },
   {
+    // Los pedidos a proveedores (/<bar>/compras), no «Compras y pagos» de Administración.
+    path: /^\/[^/]+\/compras(?:\/|$)/,
+    items: [
+      '¿Qué pedidos hay para mandar?',
+      'Mandá los pedidos de hoy',
+      '¿Qué está por llegar?',
+      '¿A qué proveedores les falta el WhatsApp?',
+    ],
+  },
+  {
     path: /\/compras\/semana/,
     items: ['¿Cuánto hay que pagar esta semana?', '¿Alcanza la plata?', 'Explicame esta pantalla'],
   },
