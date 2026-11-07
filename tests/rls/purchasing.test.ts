@@ -233,4 +233,57 @@ describeIfRls('RLS — Compras (conteo, pedidos y recepción)', () => {
     },
     TEST_TIMEOUT,
   )
+
+  it(
+    'un pedido armado a mano (lo arma Tex, `createDraft`): lo crea el dueño; la cocina y otro bar no',
+    async () => {
+      const created = await owner.client
+        .from('pur_orders')
+        .insert({
+          tenant_id: tenant.id,
+          supplier_id: supplierId,
+          status: 'draft',
+          expected_date: '2026-11-11',
+          supplier_note: 'Antes de las 11',
+          created_by: owner.userId,
+        })
+        .select('id')
+        .single()
+      expect(created.error).toBeNull()
+      const orderId = (created.data as { id: string }).id
+      const lines = await owner.client.from('pur_order_lines').insert({
+        tenant_id: tenant.id,
+        order_id: orderId,
+        item_id: itemId,
+        name: 'Bondiola de cerdo',
+        unit: 'kg',
+        pack_label: 'Por kg',
+        pack_size: 1,
+        target_qty: 10,
+        ordered_packs: 4,
+        added_by_hand: true,
+        sort_order: 1,
+      })
+      expect(lines.error).toBeNull()
+
+      const kitchenCreate = await kitchen.client
+        .from('pur_orders')
+        .insert({ tenant_id: tenant.id, supplier_id: supplierId, status: 'draft' })
+      expect(kitchenCreate.error).not.toBeNull()
+      const kitchenLine = await kitchen.client.from('pur_order_lines').insert({
+        tenant_id: tenant.id,
+        order_id: orderId,
+        item_id: itemId,
+        name: 'Bondiola de cerdo',
+        unit: 'kg',
+        ordered_packs: 40,
+      })
+      expect(kitchenLine.error).not.toBeNull()
+      const otherCreate = await otherOwner.client
+        .from('pur_orders')
+        .insert({ tenant_id: tenant.id, supplier_id: supplierId, status: 'draft' })
+      expect(otherCreate.error).not.toBeNull()
+    },
+    TEST_TIMEOUT,
+  )
 })

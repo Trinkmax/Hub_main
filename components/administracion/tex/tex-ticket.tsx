@@ -1,12 +1,83 @@
 'use client'
 
-import { ArrowRight, ChevronDown, Loader, Undo2 } from 'lucide-react'
+import { ArrowRight, ChevronDown, Copy, Loader, MessageCircle, Undo2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Stamp } from '@/components/administracion/planilla/stamp'
-import { Button } from '@/components/ui/button'
-import type { TexTicket as Ticket } from '@/lib/tex/protocol'
+import { Button, buttonVariants } from '@/components/ui/button'
+import type { TexTicketSend, TexTicket as Ticket } from '@/lib/tex/protocol'
 import { cn } from '@/lib/utils'
 import { useTex } from './tex-provider'
+
+const CONFIRM_CLASS = 'h-9 min-w-0 flex-1 gap-1.5 pointer-coarse:h-11'
+
+/**
+ * El botón de un tique que manda por WhatsApp. Es un link de verdad: el chat se abre en el mismo toque
+ * (si esperara al servidor, el celular bloquearía la ventana) y a la vez se confirma el tique. Sin
+ * número, copia el mensaje para pegarlo en el chat.
+ */
+function SendButton({
+  send,
+  label,
+  sending,
+  disabled,
+  onSend,
+}: {
+  send: TexTicketSend
+  label: string
+  sending: boolean
+  disabled: boolean
+  onSend: () => void
+}) {
+  // Solo un chat de WhatsApp: cualquier otra cosa en el tique se trata como «sin número».
+  const href = send.href?.startsWith('https://wa.me/') ? send.href : null
+  const icon = sending ? (
+    <Loader aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+  ) : href ? (
+    <MessageCircle aria-hidden className="size-3.5" />
+  ) : (
+    <Copy aria-hidden className="size-3.5" />
+  )
+  if (!href) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        disabled={disabled}
+        onClick={() => {
+          void navigator.clipboard?.writeText(send.text).catch(() => undefined)
+          onSend()
+        }}
+        className={CONFIRM_CLASS}
+      >
+        {icon}
+        {sending ? 'Haciendo…' : label}
+      </Button>
+    )
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-disabled={disabled}
+      onClick={(event) => {
+        if (disabled) {
+          event.preventDefault()
+          return
+        }
+        onSend()
+      }}
+      className={cn(
+        buttonVariants({ size: 'sm' }),
+        CONFIRM_CLASS,
+        disabled && 'pointer-events-none opacity-50',
+      )}
+    >
+      {icon}
+      {sending ? 'Abriendo WhatsApp…' : label}
+    </a>
+  )
+}
 
 /**
  * El tique de Tex: lo que va a hacer, impreso, como sale la comanda en el bar. Nada se guarda hasta
@@ -44,6 +115,7 @@ const STAMPS: Partial<Record<Ticket['status'], { text: string; tone: 'ok' | 'war
 export function TexTicket({ ticket }: { ticket: Ticket }) {
   const { decide, undo, showWhere, busy } = useTex()
   const [showEntry, setShowEntry] = useState(false)
+  const [showMessage, setShowMessage] = useState(false)
   const countdown = useCountdown(
     ticket.status === 'done' ? (ticket.result?.undoUntil ?? null) : null,
   )
@@ -159,23 +231,61 @@ export function TexTicket({ ticket }: { ticket: Ticket }) {
           </div>
         ) : null}
 
+        {ticket.send && ticket.status === 'pending' ? (
+          <div className="mt-2">
+            <button
+              type="button"
+              aria-expanded={showMessage}
+              onClick={() => setShowMessage((v) => !v)}
+              className="inline-flex min-h-7 items-center gap-1 rounded-sm font-sans text-xs text-muted-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10"
+            >
+              Ver el mensaje
+              <ChevronDown
+                aria-hidden
+                className={cn('size-3 transition-transform', showMessage && 'rotate-180')}
+              />
+            </button>
+            {showMessage ? (
+              <p className="mt-1 rounded-sm bg-current/5 px-2 py-1.5 font-sans text-xs leading-snug text-pretty whitespace-pre-wrap break-words">
+                {ticket.send.text}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {ticket.status === 'pending' ? (
           <div className="mt-3 flex gap-2 font-sans">
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setSending(true)
-                decide([{ actionId: ticket.actionId, approve: true }])
-              }}
-              className="h-9 min-w-0 flex-1 gap-1.5 pointer-coarse:h-11"
-            >
-              {sending ? (
-                <Loader aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
-              ) : null}
-              {sending ? 'Haciendo…' : ticket.confirmLabel}
-            </Button>
+            {ticket.send ? (
+              <SendButton
+                send={ticket.send}
+                label={ticket.confirmLabel}
+                sending={sending}
+                disabled={busy}
+                onSend={() => {
+                  setSending(true)
+                  decide([{ actionId: ticket.actionId, approve: true }])
+                }}
+              />
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setSending(true)
+                  decide([{ actionId: ticket.actionId, approve: true }])
+                }}
+                className={CONFIRM_CLASS}
+              >
+                {sending ? (
+                  <Loader
+                    aria-hidden
+                    className="size-3.5 animate-spin motion-reduce:animate-none"
+                  />
+                ) : null}
+                {sending ? 'Haciendo…' : ticket.confirmLabel}
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"

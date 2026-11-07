@@ -6,6 +6,7 @@ import { agendaArea } from './areas/agenda'
 import { clientesArea } from './areas/clientes'
 import { mensajeriaArea } from './areas/mensajeria'
 import { negocioArea } from './areas/negocio'
+import { pedidosArea } from './areas/pedidos'
 import type { TexArea } from './areas/types'
 import { type TexScreenDef, texScreensFor } from './screens'
 import { defineTool, type TexExecutor, type TexTool, type TexToolContext } from './tools/types'
@@ -21,6 +22,7 @@ export const TEX_AREAS: readonly TexArea[] = [
   mensajeriaArea,
   agendaArea,
   negocioArea,
+  pedidosArea,
 ]
 
 export function texExecutor(name: string): TexExecutor | null {

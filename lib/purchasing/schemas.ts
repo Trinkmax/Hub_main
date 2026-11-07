@@ -69,6 +69,17 @@ export const draftSchema = z.object({
   rememberSupplier: z.boolean(),
 })
 
+/** Un pedido nuevo a un proveedor que no tiene uno para revisar: lo arma Tex, con productos de la lista. */
+export const newDraftSchema = z.object({
+  slug,
+  supplierId: id,
+  lines: z
+    .array(z.object({ itemId: id, packs: qty.positive('Poné una cantidad') }))
+    .min(1, 'Sumale al menos un producto.')
+    .max(50),
+  supplierNote: optionalText(500),
+})
+
 export const confirmChangesSchema = z.object({
   slug,
   orderId: id,

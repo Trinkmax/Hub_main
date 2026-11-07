@@ -12,9 +12,9 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { effectiveDeliveryDate } from './dates'
+import { effectiveDeliveryDate, nextDeliveryDate } from './dates'
 import { toItem, toOrder, toSettings, toSupplier } from './rows'
-import { confirmChangesSchema, draftSchema, orderIdSchema } from './schemas'
+import { confirmChangesSchema, draftSchema, newDraftSchema, orderIdSchema } from './schemas'
 import { orderMessage } from './whatsapp'
 
 /**
@@ -178,6 +178,125 @@ export async function saveDraft(input: unknown): Promise<OrderResult> {
   if (problem) return { ok: false, message: problem }
   revalidateOrders(parsed.data.slug)
   return { ok: true }
+}
+
+/**
+ * Un pedido armado a mano para un proveedor (lo usa Tex: «pedile a Coca 10 packs»). Queda para revisar,
+ * como los que salen del conteo. Si ese proveedor ya tiene uno para revisar no se arma otro: dos
+ * borradores del mismo proveedor terminarían en dos WhatsApp. Los productos se suman a ese.
+ */
+export async function createDraft(input: unknown): Promise<OrderResult<{ orderId: string }>> {
+  const parsed = newDraftSchema.safeParse(input)
+  if (!parsed.success)
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Revisá las cantidades.' }
+  const { slug, supplierId, lines, supplierNote } = parsed.data
+  const auth = await authorize(slug)
+  if (!auth) return { ok: false, message: NO_ACCESS }
+  const db = await createClient()
+
+  const [supplierRes, itemsRes, draftRes] = await Promise.all([
+    db
+      .from('pur_suppliers')
+      .select('*')
+      .eq('tenant_id', auth.tenantId)
+      .eq('id', supplierId)
+      .maybeSingle(),
+    db
+      .from('pur_items')
+      .select('*')
+      .eq('tenant_id', auth.tenantId)
+      .in(
+        'id',
+        lines.map((l) => l.itemId),
+      ),
+    db
+      .from('pur_orders')
+      .select('id')
+      .eq('tenant_id', auth.tenantId)
+      .eq('status', 'draft')
+      .eq('supplier_id', supplierId)
+      .limit(1),
+  ])
+  if (supplierRes.error || itemsRes.error || draftRes.error) {
+    console.error('[purchasing.createDraft]', {
+      code: supplierRes.error?.code ?? itemsRes.error?.code ?? draftRes.error?.code,
+    })
+    return { ok: false, message: GENERIC }
+  }
+  if (!supplierRes.data) return { ok: false, message: 'Ese proveedor ya no está en la lista.' }
+  const supplier = toSupplier(supplierRes.data)
+  if (!supplier.active) {
+    return { ok: false, message: `${supplier.name} está desactivado en Compras.` }
+  }
+  if (draftRes.data.length) {
+    return {
+      ok: false,
+      message: `Ya hay un pedido para revisar de ${supplier.name}: los productos se suman a ese.`,
+    }
+  }
+
+  const items = new Map(itemsRes.data.map((i) => [i.id, toItem(i)]))
+  const seen = new Set<string>()
+  const rows = []
+  for (const [index, line] of lines.entries()) {
+    const item = items.get(line.itemId)
+    if (!item?.active) return { ok: false, message: 'Uno de los productos ya no está en la lista.' }
+    if (seen.has(item.id)) return { ok: false, message: `${item.name} está dos veces.` }
+    seen.add(item.id)
+    rows.push({
+      tenant_id: auth.tenantId,
+      item_id: item.id,
+      name: item.name,
+      unit: item.unit,
+      pack_label: item.packLabel,
+      pack_size: item.packSize,
+      target_qty: item.targetQty,
+      ordered_packs: line.packs,
+      added_by_hand: true,
+      sort_order: index + 1,
+    })
+  }
+
+  const created = await db
+    .from('pur_orders')
+    .insert({
+      tenant_id: auth.tenantId,
+      supplier_id: supplier.id,
+      status: 'draft',
+      expected_date: nextDeliveryDate(
+        todayInCordoba(),
+        supplier.deliveryWeekdays,
+        supplier.leadDays,
+      ),
+      supplier_note: supplierNote,
+      created_by: auth.userId,
+    })
+    .select('id')
+    .single()
+  if (created.error) {
+    console.error('[purchasing.createDraft]', { code: created.error.code })
+    return { ok: false, message: GENERIC }
+  }
+  const orderId = created.data.id
+  const inserted = await db
+    .from('pur_order_lines')
+    .insert(rows.map((row) => ({ ...row, order_id: orderId })))
+  if (inserted.error) {
+    console.error('[purchasing.createDraft]', { code: inserted.error.code })
+    // Un pedido sin renglones no le sirve a nadie: se saca.
+    await db.from('pur_orders').delete().eq('tenant_id', auth.tenantId).eq('id', orderId)
+    return { ok: false, message: GENERIC }
+  }
+  await logAudit({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    action: 'purchasing.order_created',
+    entity: 'pur_order',
+    entityId: orderId,
+    payload: { lines: rows.length },
+  })
+  revalidateOrders(slug)
+  return { ok: true, orderId }
 }
 
 /**

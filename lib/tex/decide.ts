@@ -3,7 +3,7 @@ import 'server-only'
 import { undoDocument } from '@/lib/accounting/actions/documents'
 import { logAudit } from '@/lib/audit'
 import { resultBlock, toolResultContent } from './loop'
-import type { TexDecision, TexEvent, TexTicket } from './protocol'
+import { settledTicket, type TexDecision, type TexEvent, type TexTicket } from './protocol'
 import { texExecutor } from './registry'
 import type { TexActionRow, TexPending, TexStore, TexThread } from './store'
 import type { TexToolContext } from './tools/types'
@@ -50,7 +50,7 @@ async function runDecision(
   const payload = spentPayload(action)
 
   if (!decision.approve) {
-    const ticket: TexTicket = { ...action.ticket, status: 'declined' }
+    const ticket: TexTicket = { ...settledTicket(action.ticket), status: 'declined' }
     await store.updateAction(action.id, {
       status: 'declined',
       ticket,
@@ -75,7 +75,7 @@ async function runDecision(
   const executor = texExecutor(action.payload.executor)
   if (!executor) {
     const ticket: TexTicket = {
-      ...action.ticket,
+      ...settledTicket(action.ticket),
       status: 'failed',
       error: 'Este tique ya no se puede hacer.',
     }
@@ -92,7 +92,7 @@ async function runDecision(
 
   if (execution.ok) {
     const ticket: TexTicket = {
-      ...action.ticket,
+      ...settledTicket(action.ticket),
       status: 'done',
       warnings: [],
       result: {
@@ -153,7 +153,11 @@ async function runDecision(
     return { ticket, result: null, isError: false, wrote: false }
   }
 
-  const ticket: TexTicket = { ...action.ticket, status: 'failed', error: execution.message }
+  const ticket: TexTicket = {
+    ...settledTicket(action.ticket),
+    status: 'failed',
+    error: execution.message,
+  }
   await store.updateAction(action.id, {
     status: 'failed',
     ticket,
@@ -239,7 +243,7 @@ export async function supersedePending(
     )
     const action = actions.find((a) => a.toolUseId === useId)
     if (action) {
-      const ticket: TexTicket = { ...action.ticket, status: 'superseded' }
+      const ticket: TexTicket = { ...settledTicket(action.ticket), status: 'superseded' }
       await store.updateAction(action.id, {
         status: 'superseded',
         ticket,

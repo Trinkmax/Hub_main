@@ -87,6 +87,13 @@ export type TexTicketResult = {
   documentId?: string | null
 }
 
+/**
+ * Lo que el botón del tique abre en el mismo toque: el chat de WhatsApp del proveedor con el mensaje
+ * escrito. Si se abriera al volver del servidor, el celular bloquearía la ventana. Sin número (`href`
+ * null), el botón copia el mensaje. Solo mientras el tique espera: decidido, se borra.
+ */
+export type TexTicketSend = { href: string | null; text: string }
+
 export type TexTicket = {
   actionId: string
   kind: string
@@ -101,9 +108,24 @@ export type TexTicket = {
   warnings: TexTicketWarning[]
   /** El botón: «Cargar la compra». */
   confirmLabel: string
+  /** El botón abre WhatsApp (o copia el mensaje) además de confirmar. */
+  send?: TexTicketSend | null
   status: TexActionStatus
   result: TexTicketResult | null
   error: string | null
+}
+
+/**
+ * Se confirma solo con el botón: abre WhatsApp en el mismo toque. Un «sí» escrito o «Hacer los N» lo
+ * marcarían enviado sin abrir el chat.
+ */
+export function texTicketNeedsTap(ticket: Pick<TexTicket, 'send'>): boolean {
+  return Boolean(ticket.send)
+}
+
+/** Ya decidido: lo que iba a abrir el botón no hace falta, y trae el teléfono del proveedor. */
+export function settledTicket(ticket: TexTicket): TexTicket {
+  return ticket.send ? { ...ticket, send: null } : ticket
 }
 
 // ─── Lo que manda el servidor ────────────────────────────────────────────────

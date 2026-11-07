@@ -5,6 +5,7 @@ import { agendaScreens } from './area-screens/agenda'
 import { clientesScreens } from './area-screens/clientes'
 import { mensajeriaScreens } from './area-screens/mensajeria'
 import { negocioScreens } from './area-screens/negocio'
+import { pedidosScreens } from './area-screens/pedidos'
 import type { TexScreenDef, TexScreenParam } from './screen-types'
 
 /**
@@ -346,6 +347,7 @@ export const TEX_SCREENS: readonly TexScreenDef[] = [
   ...mensajeriaScreens,
   ...agendaScreens,
   ...negocioScreens,
+  ...pedidosScreens,
 ]
 
 export function texScreen(id: string): TexScreenDef | null {

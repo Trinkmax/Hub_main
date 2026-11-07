@@ -70,6 +70,33 @@ pruebas en `tests/lib/purchasing.test.ts`.
 Cada paso es un update condicional sobre el estado: si dos socios tocan el mismo pedido, el segundo ve «Este pedido
 cambió mientras lo mirabas». Contar, mandar, confirmar y recibir quedan en `audit_log` (`purchasing.*`).
 
+## Con Tex (07/11/2026)
+
+Tex tiene el área **Compras: pedidos a proveedores** (`lib/tex/areas/pedidos.ts`), solo para el dueño y solo si el bar
+tiene `purchasing`. Mira los pedidos, los insumos y los proveedores (`ver_pedidos`, `buscar_insumos`,
+`ver_proveedores_compras`) y hace, siempre con un tique que corre la misma acción del panel:
+
+| Herramienta | Acción del panel |
+|---|---|
+| `preparar_pedido`: corregir cantidades (0 saca), sumar insumos, la nota, el proveedor de uno «Sin proveedor» | `saveDraft` |
+| `preparar_pedido` a un proveedor sin pedido para revisar: lo arma nuevo | `createDraft` |
+| `preparar_envio_pedido`: mandarlo por WhatsApp | `approveOrder` |
+| `preparar_confirmacion_pedido`: tal cual o «Hubo cambios» | `confirmOrder` / `confirmWithChanges` |
+| `preparar_reclamo_pedido`: el reclamo por WhatsApp (no cambia el pedido) | — |
+| `preparar_estado_pedido`: «Hoy no pido», volver a borrador, cerrar las diferencias | `skipOrder` / `backToDraft` / `closeDifferences` |
+| `preparar_proveedor_compras`: WhatsApp, contacto, días de entrega, anticipación | `saveSupplier` |
+
+- **Mandar es un toque.** El botón del tique es un link a wa.me: abre el chat en el mismo toque (si esperara al
+  servidor, el celular bloquearía la ventana) y a la vez confirma el tique. Sin WhatsApp cargado, copia el mensaje.
+  Un «sí» escrito y «Hacer los N» no lo mandan (`texTicketNeedsTap`): marcarían enviado sin abrir el chat.
+- **El mensaje que se abre es el que queda guardado.** El tique arma el WhatsApp con la misma cuenta de
+  `approveOrder` (`lib/purchasing/draft.ts`). Al confirmar, el ejecutor la rehace con lo que hay en la base y, si el
+  pedido cambió mientras tanto (lo tocó otra persona, o pasó el día y cambió la entrega), no lo marca enviado.
+- **`createDraft`** (pedido armado a mano) no arma un segundo pedido para un proveedor que ya tiene uno para revisar:
+  los productos se suman a ese. La entrega sale de los días del proveedor. El panel todavía no tiene un botón para esto.
+- A Tex no le llegan los teléfonos de los proveedores: ve «cargado (termina en 1234)». El link con el número vive solo
+  en el tique y se borra cuando se decide.
+
 ## Datos para corregir
 
 `lib/purchasing/checks.ts`: proveedores sin WhatsApp o sin días de entrega, insumos sin proveedor, sin objetivo, sin
@@ -92,8 +119,9 @@ entrega de los proveedores: sin eso no se abre el chat ni se calcula la fecha.
 ## Pendiente
 
 - Las recetas de Coraline y de El viaje de Chihiro (están en los PDF «Pedido – Menú», no en la planilla).
-- Tex todavía no arma ni manda pedidos (solo sabe que la sección existe).
-- Probar con el teclado de un iPhone de verdad.
+- Probar con el teclado de un iPhone de verdad, y el botón de WhatsApp de Tex con WhatsApp instalado (ir y volver de
+  la app con la charla abierta).
+- Un botón «Nuevo pedido» en el panel (hoy un pedido a mano solo lo arma Tex).
 
 ## Smoke manual (06/11/2026, bar de ejemplo, celular 390 × 844 y compu 1440 × 900)
 
@@ -105,3 +133,19 @@ entrega de los proveedores: sin eso no se abre el chat ni se calcula la fecha.
 6. Cocina › ¿Qué llegó? › Dulcar (con «Tiene una nota») › No llegó › Terminar → «Recibido con diferencias».
 7. Panel › Llegaron con diferencias: Azucar, esperado 1 × 10 kg, llegó Nada, −1 → Copiar el reclamo / Cerrar.
 8. Un usuario de Cocina entra al salón y cae en Stock, sin la pestaña de Reservas.
+
+## Smoke con Tex (07/11/2026, bar de ejemplo, modelo de verdad; celular 390 × 844 y compu 1440 × 900)
+
+1. «¿Qué pedidos hay para mandar?» → los 11 para revisar con lo que lleva cada uno, y que ninguno tiene WhatsApp ni días.
+2. «Cargale a Waggon el WhatsApp 351 555-0100, habla con Pablo, y entrega martes y viernes» → tique del proveedor →
+   Guardar → lleva a Proveedores y señala a Waggon.
+3. «Mandale el pedido a Waggon» → tique «Pedido por WhatsApp · para el martes 10/11» con «Mandar por WhatsApp».
+   Escribir «sí» no lo manda: avisa que se toca el botón. Tocarlo → Enviado, y el mensaje guardado es igual, letra por
+   letra, al del link; el tique ya no guarda el link.
+4. «Pablo contestó: no tiene nuez moscada y lo demás llega el viernes» → Confirmado con cambios (1 kg → no lo tiene,
+   mar 10/11 → vie 13/11).
+5. «Armale un pedido a Dulcar: 2 bolsas de azúcar, 12 galletas oreo y 3 de vainilla» → Pedido nuevo para revisar.
+6. «Al de San Jose sumale 2 de manteca y sacale el tomate triturado» → 1 × 2,5 kg → 3 × 2,5 kg, tomate → no se pide.
+7. «Mandá el de Dulcar y el de San Jose» → dos tiques «Copiar y marcar enviado», sin «Hacer los 2»; uno por toque.
+8. «Reclamale a Dulcar…» → reclamo armado; «Ya lo hablé, cerralo» → Cerrar las diferencias.
+9. Al final, «Borrales el WhatsApp…» dejó los proveedores del bar de ejemplo como estaban.

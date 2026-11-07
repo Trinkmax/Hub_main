@@ -9,6 +9,7 @@ import {
   type StoredMessage,
   storedBlocks,
   toDisplayItems,
+  typedDecisions,
 } from '@/lib/tex/display'
 import { texEnabled } from '@/lib/tex/enabled'
 import { resultBlock, runTexLoop, unansweredToolUses } from '@/lib/tex/loop'
@@ -44,6 +45,9 @@ export const maxDuration = 60
 const TURN_BUDGET_MS = 48_000
 /** 40 mensajes cada 5 minutos por persona: alcanza de sobra y frena un error que se repite. */
 const RATE_LIMIT = { limit: 40, windowMs: 5 * 60 * 1000 }
+/** Un «sí» escrito no abre WhatsApp: el pedido se manda con el botón de su tique. */
+const TAP_TO_SEND =
+  'Para mandarlo tocá el botón del tique: así se abre WhatsApp con el mensaje listo. Un «sí» escrito no lo manda.'
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -179,19 +183,23 @@ export async function POST(request: Request) {
     }
 
     let decisions: readonly TexDecision[] = body.decisions
+    /** Contestó «sí» con un tique que abre WhatsApp: ese se confirma con su botón. */
+    let tapToSend = false
     if (body.message && thread.pending) {
       const answer = plainAnswer(body.message)
       if (answer) {
         const actions = await store.threadActions(thread.id)
-        decisions = actions
-          .filter((a) => a.status === 'pending' && thread.pending?.waiting.includes(a.toolUseId))
-          .map((a) => ({ actionId: a.id, approve: answer === 'yes' }))
+        const typed = typedDecisions(actions, thread.pending.waiting, answer)
+        decisions = typed.decisions
+        tapToSend = typed.tapToSend
       }
     }
+    const tapHint: TexEvent = { type: 'error', message: TAP_TO_SEND, retry: false }
 
     if (decisions.length > 0) {
       const outcome = await applyDecisions(decisions, thread, store, ctx)
       early.push(...outcome.events)
+      if (tapToSend) early.push(tapHint)
       if (outcome.stillWaiting) {
         early.push({ type: 'done', waiting: true })
       } else if (outcome.results) {
@@ -200,6 +208,9 @@ export async function POST(request: Request) {
       } else {
         early.push({ type: 'done', waiting: false })
       }
+    } else if (tapToSend) {
+      // No se guarda ni se le pasa a Tex: el tique sigue esperando su botón.
+      early.push(tapHint, { type: 'done', waiting: true })
     } else if (body.message) {
       const leading: unknown[] = []
       if (thread.pending) {

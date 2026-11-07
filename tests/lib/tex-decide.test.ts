@@ -158,6 +158,47 @@ describe('confirmar un tique', () => {
   })
 })
 
+describe('un tique que abre WhatsApp', () => {
+  const withSend = {
+    ...action,
+    ticket: {
+      ...ticket,
+      confirmLabel: 'Mandar por WhatsApp',
+      send: { href: 'https://wa.me/5493515551234?text=Hola', text: 'Hola' },
+    },
+  }
+  const storeWith = () => ({
+    ...fakeStore(),
+    action: vi.fn(async () => withSend),
+    threadActions: vi.fn(async () => [withSend]),
+  })
+
+  it.each([
+    ['hecho', true, 'done'],
+    ['con «No»', false, 'declined'],
+  ] as const)('%s, el link con el teléfono del proveedor no queda guardado', async (_name, yes, status) => {
+    run.mockResolvedValue(done)
+    const store = storeWith()
+    await applyDecisions([{ actionId: 'a1', approve: yes }], thread, store as never, ctx)
+    expect(store.updateAction).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({ status, ticket: expect.objectContaining({ send: null }) }),
+    )
+  })
+
+  it('sin efecto, tampoco', async () => {
+    const store = storeWith()
+    await supersedePending(thread, store as never)
+    expect(store.updateAction).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({
+        status: 'superseded',
+        ticket: expect.objectContaining({ send: null }),
+      }),
+    )
+  })
+})
+
 describe('seguir hablando sin confirmar', () => {
   it('deja el tique sin efecto y sin lo que se iba a hacer', async () => {
     const store = fakeStore()
