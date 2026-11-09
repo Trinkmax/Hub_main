@@ -13,7 +13,7 @@ Se prende por bar con la función `purchasing` (panel de superadmin). Migración
 | Quién | Dónde | Qué hace |
 |---|---|---|
 | Cocina (rol `kitchen`), caja y dueños | Salón › **Stock** (`/[bar]/salon/stock`), en el celular | Contar el stock por zona y recibir lo que llega. La cocina entra directo acá. |
-| Dueños | Panel › **Compras** (`/[bar]/compras`) | Pedidos (revisar, mandar, confirmar, diferencias), Insumos, Recetas y Proveedores. |
+| Dueños | Panel › **Compras** (`/[bar]/compras`) | Pedidos (revisar, mandar, confirmar, diferencias), Insumos (también con una planilla de Excel), Recetas y Proveedores. |
 
 Mozos, anfitriona, contenido y la contadora no ven nada (RLS `pur_*` y `PURCHASING_*_ROLES` en `lib/tenant/roles.ts`).
 
@@ -96,6 +96,43 @@ tiene `purchasing`. Mira los pedidos, los insumos y los proveedores (`ver_pedido
   los productos se suman a ese. La entrega sale de los días del proveedor. El panel todavía no tiene un botón para esto.
 - A Tex no le llegan los teléfonos de los proveedores: ve «cargado (termina en 1234)». El link con el número vive solo
   en el tique y se borra cuando se decide.
+
+## Planilla de insumos (09/11/2026)
+
+Lo pidió Tomás por audio: «el listado de insumos, donde tiene el stock objetivo y esas cosas, me gustaría modificarlo
+desde el Excel»; las recetas, en cambio, las sigue cambiando en el panel. Compras › Insumos › **Planilla**
+(`/[bar]/compras/insumos/planilla`, solo dueños con `purchasing`):
+
+1. **Bajar** (`GET /api/compras/insumos/planilla?slug=`): un `.xlsx` con toda la lista, ordenada por zona como se
+   recorre la cocina. Columnas en el orden de la planilla vieja de Google: Código, Insumo, Marca, Zona, Unidad,
+   Objetivo, Presentación, Cada una trae, Proveedor, Frecuencia, Activo, Notas y la oculta **Clave HUB** (el id).
+   Zona, Proveedor, Frecuencia y Activo se eligen de una lista (hoja oculta «Listas»); la de Unidad sugiere, pero
+   acepta otra. Trae también la hoja «Cómo usarla».
+2. **Cambiarla** en Excel, Google Sheets o Numbers.
+3. **Subirla** (`.xlsx` o CSV, con `openTable` de los importadores): antes de guardar muestra qué cambia en cada
+   insumo («Objetivo: 10 kg → 12 kg»), cuáles se agregan, cuáles se desactivan y qué filas tienen problemas.
+
+Reglas (`lib/purchasing/sheet.ts`, puro; las acciones en `sheet-actions.ts`):
+
+- HUB sigue siendo el dueño de la lista: la planilla no queda conectada, es la forma de corregir muchos juntos.
+- Cada fila va a su insumo por la Clave HUB; si no está (otra planilla, o la vieja de Google con «id, nombre, sector,
+  contenido»), por el código y después por el nombre. Nunca dos filas al mismo insumo.
+- Una **columna que no viene no se toca**. Una **celda vacía borra** el dato (sin objetivo, sin proveedor…), salvo
+  Frecuencia y Activo, que quedan como estaban.
+- **Borrar una fila no borra el insumo.** Para que deje de contarse: «No» en Activo.
+- Zona y proveedor tienen que existir: el parecido se sugiere («¿Es «Matias Mondino»?»), nunca se elige solo. Un
+  proveedor nuevo se carga primero en Proveedores.
+- Una fila con un problema no se carga entera; las demás sí.
+- Guardar vuelve a leer el archivo y lo compara con HUB en ese momento; si alguien cambió uno de esos insumos mientras
+  tanto (la huella incluye cómo estaba cada uno), no guarda y muestra la vista previa nueva. Todo va en un solo
+  `upsert`: entran todos o ninguno. No pisa quién creó cada insumo. Auditoría `purchasing.items_sheet_imported`.
+- El `.xlsx` se escribe sin librería (`lib/xlsx/write.ts`); las pruebas lo vuelven a leer con el lector de los
+  importadores, y se validó con openpyxl y con la vista rápida de macOS.
+
+Smoke (09/11/2026, bar de ejemplo, compu 1440 × 900 y celular 390 × 844 con toques): bajar → 267 insumos, 3 hojas,
+5 listas; cambiar con otro programa (objetivo, proveedor, presentación, desactivar, uno nuevo y un proveedor mal
+escrito) → «4 cambian · 1 se agrega · 1 fila con problemas · 262 quedan igual» → Guardar 5 cambios → la base quedó
+igual que la vista previa; volver a subir la original deshizo todo.
 
 ## Datos para corregir
 

@@ -20,4 +20,5 @@ export const pedidosManual = `## Cómo funciona Compras
 - Antes de mandar tiene que estar todo definido: si hay algo «a definir», preguntá cuánto o sacalo con 0.
 - Confirmar lo que contestó el proveedor (preparar_confirmacion_pedido). Reclamar lo que llegó distinto (preparar_reclamo_pedido, también abre WhatsApp, y no cierra el pedido). «Hoy no pido», volver a borrador y cerrar las diferencias (preparar_estado_pedido).
 - El WhatsApp, el contacto, los días de entrega y la anticipación de un proveedor (preparar_proveedor_compras). Sin WhatsApp el pedido se copia a mano; sin días de entrega el mensaje le pregunta cuándo puede.
-- Solo en la pantalla: contar y recibir (los hace la cocina), los insumos y sus objetivos, las recetas, la variante y las personas de un evento, las zonas y los Ajustes de Compras.`
+- Solo en la pantalla: contar y recibir (los hace la cocina), los insumos y sus objetivos, las recetas, la variante y las personas de un evento, las zonas y los Ajustes de Compras.
+- Para cambiar muchos insumos juntos está la planilla (Compras › Insumos › Planilla): se baja en Excel, se cambia (también en Google Sheets) y se sube; antes de guardar muestra qué cambia. Borrar una fila no borra el insumo: «No» en Activo lo saca de los conteos.`
