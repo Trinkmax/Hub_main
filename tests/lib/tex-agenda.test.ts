@@ -3449,6 +3449,9 @@ describe('de punta a punta', () => {
     })
 
     it('por nombre, si hay más de una, vuelve con las opciones', async () => {
+      // Las dos tienen que ser de hoy en adelante: con el reloj de verdad, desde el 09/11 la del sábado 07
+      // ya pasó y quedaba una sola.
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-07T15:00:00Z') })
       vi.mocked(searchReservationsByGuest).mockResolvedValue([
         {
           id: RES,
