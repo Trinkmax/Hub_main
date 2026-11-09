@@ -1613,3 +1613,8 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   cuándo llega. Es lo primero que tiene que completar quien compra («Datos para corregir»).
 - **El pedido no pasa a Administración:** `pur_suppliers.acc_party_id` ya une 28 de los 33 proveedores con su par
   contable, pero recibir no arma la compra ni espera la factura.
+- **Planilla de insumos (09/11, hecha):** Compras › Insumos › Planilla baja y sube la lista en Excel
+  (`docs/features/compras.md` › Planilla de insumos). Lo que podría seguir: que HUB lea directo una planilla de Google
+  compartida por link (hoy es bajar → cambiar → subir), lo mismo para Proveedores (WhatsApp y días de los 33), y
+  probarla con Excel y Google Sheets de verdad (se validó con openpyxl y la vista rápida de macOS). En el bar de
+  ejemplo quedó desactivado el insumo «Prueba planilla QA» de la prueba.

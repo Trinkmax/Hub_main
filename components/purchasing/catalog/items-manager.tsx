@@ -1,6 +1,16 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Package, Plus, Route, Search, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+  Package,
+  Plus,
+  Route,
+  Search,
+  X,
+} from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -187,14 +197,16 @@ export function ItemsManager({
           )
         }
         actions={
-          <>
+          // Los tres en una fila desde tablet (la descripción se angosta); en un celular chico pasan a dos.
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
             <Button
               type="button"
               onClick={() => openSheet({ nuevo: '1' })}
               className="h-11 flex-1 sm:flex-none md:h-10"
             >
               <Plus className="size-4" aria-hidden />
-              Agregar insumo
+              <span className="sm:hidden">Agregar</span>
+              <span className="hidden sm:inline">Agregar insumo</span>
             </Button>
             <Button
               type="button"
@@ -206,7 +218,13 @@ export function ItemsManager({
               <span className="sm:hidden">Zonas</span>
               <span className="hidden sm:inline">Zonas del recorrido</span>
             </Button>
-          </>
+            <Button asChild variant="outline" className="h-11 flex-1 sm:flex-none md:h-10">
+              <Link href={`/${tenantSlug}/compras/insumos/planilla`}>
+                <FileSpreadsheet className="size-4" aria-hidden />
+                Planilla
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -233,6 +251,12 @@ export function ItemsManager({
               >
                 <Route className="size-4" aria-hidden />
                 Armar las zonas
+              </Button>
+              <Button asChild variant="outline" className="h-11 md:h-10">
+                <Link href={`/${tenantSlug}/compras/insumos/planilla`}>
+                  <FileSpreadsheet className="size-4" aria-hidden />
+                  Cargar con una planilla
+                </Link>
               </Button>
             </div>
           }

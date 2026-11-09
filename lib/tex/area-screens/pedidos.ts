@@ -25,6 +25,15 @@ export const pedidosScreens: readonly TexScreenDef[] = [
     feature: 'purchasing',
   },
   {
+    id: 'pedidos.planilla',
+    label: 'Compras › Insumos › Planilla',
+    what: 'Cambiar muchos insumos juntos con Excel o Google Sheets: se baja la lista, se cambia (objetivo, presentación, proveedor…) y se sube; antes de guardar muestra qué cambia.',
+    path: '/compras/insumos/planilla',
+    root: true,
+    roles: PURCHASING_MANAGE_ROLES,
+    feature: 'purchasing',
+  },
+  {
     id: 'pedidos.recetas',
     label: 'Compras › Recetas',
     what: 'Las recetas de cada formato de evento, con sus variantes y para cuántas personas están.',

@@ -36,6 +36,8 @@ class FakeQuery {
   private filters: Filter[] = []
   private mode: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select'
   private payload: unknown = null
+  /** Las columnas de `onConflict`: con ellas, el upsert pisa la fila que coincide en vez de sumar otra. */
+  private conflict: string[] = []
   private wantCount = false
   private head = false
   private sort: { column: string; ascending: boolean } | null = null
@@ -59,9 +61,13 @@ class FakeQuery {
     this.payload = rows
     return this
   }
-  upsert(rows: unknown) {
+  upsert(rows: unknown, options?: { onConflict?: string }) {
     this.mode = 'upsert'
     this.payload = rows
+    this.conflict = (options?.onConflict ?? '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean)
     return this
   }
   update(patch: unknown) {
@@ -137,13 +143,23 @@ class FakeQuery {
     let rows: FakeRow[]
     if (this.mode === 'insert' || this.mode === 'upsert') {
       const list = (Array.isArray(this.payload) ? this.payload : [this.payload]) as FakeRow[]
-      // Lo que pone la base sola, como `default now()`.
-      rows = list.map((row) => ({
-        id: this.db.nextId(),
-        created_at: new Date().toISOString(),
-        ...row,
-      }))
-      this.db.rows(this.table).push(...rows)
+      const table = this.db.rows(this.table)
+      rows = []
+      for (const row of list) {
+        const existing =
+          this.conflict.length > 0
+            ? table.find((r) => this.conflict.every((c) => r[c] === row[c]))
+            : undefined
+        if (existing) {
+          Object.assign(existing, row)
+          rows.push(existing)
+          continue
+        }
+        // Lo que pone la base sola, como `default now()`.
+        const added = { id: this.db.nextId(), created_at: new Date().toISOString(), ...row }
+        table.push(added)
+        rows.push(added)
+      }
       this.db.writes.push({ table: this.table, kind: this.mode, payload: this.payload })
     } else if (this.mode === 'update') {
       rows = this.matching()
