@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation'
 import { NewCountForm } from '@/components/purchasing/kitchen/new-count-form'
 import { todayInCordoba } from '@/lib/dates'
 import { requirePurchasingPage, viewerFirstName } from '@/lib/purchasing/access'
-import { defaultEventsUntil } from '@/lib/purchasing/dates'
 import { getCatalog, getOpenCount } from '@/lib/purchasing/queries'
 import { PURCHASING_KITCHEN_ROLES } from '@/lib/tenant/roles'
 
@@ -28,7 +27,11 @@ export default async function NewCountPage({
     <NewCountForm
       slug={tenantSlug}
       today={today}
-      defaultUntil={defaultEventsUntil(today, catalog.settings.countWeekdays)}
+      schedule={{
+        countWeekdays: catalog.settings.countWeekdays,
+        countWindows: catalog.settings.countWindows,
+        arriveDaysBefore: catalog.settings.arriveDaysBefore,
+      }}
       defaultName={firstName}
     />
   )

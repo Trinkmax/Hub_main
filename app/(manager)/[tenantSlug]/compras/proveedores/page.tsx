@@ -5,7 +5,13 @@ import { PageShell } from '@/components/ui/page-shell'
 import { todayInCordoba } from '@/lib/dates'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { isFeatureEnabled } from '@/lib/platform/features'
+import {
+  type AccSupplierOption,
+  getAccSupplierOptions,
+  getSupplierParties,
+} from '@/lib/purchasing/parties'
 import { type Catalog, getCatalog } from '@/lib/purchasing/queries'
+import type { SupplierParty } from '@/lib/purchasing/types'
 import {
   PURCHASING_MANAGE_ROLES,
   RoleRequiredError,
@@ -44,21 +50,33 @@ export default async function ProveedoresPage({
   }
   if (!access.isPlatformAdmin && !isFeatureEnabled(access.tenant, 'purchasing')) notFound()
 
-  const catalog = await getCatalog(access.tenant.id)
+  const tenantId = access.tenant.id
+  const [catalog, links] = await Promise.all([getCatalog(tenantId), getSupplierParties(tenantId)])
+  // Los proveedores de Administración solo los ve (y los une) quien tiene acceso allá.
+  const acc = access.accounting
+  const canReadAcc = acc.enabled && acc.read
+  const options: AccSupplierOption[] = canReadAcc
+    ? await getAccSupplierOptions(tenantId, links)
+    : []
 
   return (
     <PageShell width="comfortable">
       <SuppliersManager
         tenantSlug={tenantSlug}
         today={todayInCordoba()}
-        suppliers={supplierViews(catalog)}
+        suppliers={supplierViews(catalog, links)}
+        accounting={{
+          options,
+          canLink: canReadAcc && acc.write,
+          enabled: acc.enabled,
+        }}
       />
     </PageShell>
   )
 }
 
-/** Cada proveedor con su WhatsApp para leer y los insumos activos que se le piden. */
-function supplierViews(catalog: Catalog): SupplierView[] {
+/** Cada proveedor con su WhatsApp para leer, sus razones sociales y los insumos activos que se le piden. */
+function supplierViews(catalog: Catalog, links: readonly SupplierParty[]): SupplierView[] {
   const names = new Map<string, string[]>()
   for (const item of catalog.items) {
     if (!item.active || !item.supplierId) continue
@@ -73,6 +91,9 @@ function supplierViews(catalog: Catalog): SupplierView[] {
       whatsappDisplay: supplier.whatsapp ? formatPhoneForDisplay(`+${supplier.whatsapp}`) : null,
       activeItems: items.length,
       itemNames: items.slice(0, ITEM_NAMES_IN_SHEET),
+      parties: links
+        .filter((l) => l.supplierId === supplier.id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
     }
   })
 }

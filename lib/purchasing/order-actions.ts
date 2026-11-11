@@ -13,8 +13,18 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { effectiveDeliveryDate, nextDeliveryDate } from './dates'
+import { computeEventNeeds } from './events'
+import { getCatalog, getEventsBetween } from './queries'
 import { toItem, toOrder, toSettings, toSupplier } from './rows'
-import { confirmChangesSchema, draftSchema, newDraftSchema, orderIdSchema } from './schemas'
+import {
+  confirmChangesSchema,
+  draftSchema,
+  eventOrderSchema,
+  newDraftSchema,
+  orderIdSchema,
+} from './schemas'
+import type { PurItem } from './types'
+import { packsFor, roundQty } from './units'
 import { orderMessage } from './whatsapp'
 
 /**
@@ -297,6 +307,162 @@ export async function createDraft(input: unknown): Promise<OrderResult<{ orderId
   })
   revalidateOrders(slug)
   return { ok: true, orderId }
+}
+
+/**
+ * «Sumar al pedido» desde la fecha de un evento (lo que ningún conteo trae a tiempo): lo que su receta le pide
+ * a ese proveedor va a su pedido para revisar, y si no tiene uno, se le arma. La cantidad es la del conteo (la
+ * receta por las personas); los renglones quedan con el nombre del evento, así el panel sabe que ya está pedido.
+ */
+export async function addEventToOrder(
+  input: unknown,
+): Promise<OrderResult<{ orderId: string; products: number; supplierName: string }>> {
+  const parsed = eventOrderSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: 'Revisá los datos.' }
+  const { slug, scheduledEventId, supplierId } = parsed.data
+  const auth = await authorize(slug)
+  if (!auth) return { ok: false, message: NO_ACCESS }
+  const today = todayInCordoba()
+
+  const [catalog, calendar] = await Promise.all([
+    getCatalog(auth.tenantId),
+    getEventsBetween(auth.tenantId, today, addDays(today, 30)),
+  ])
+  const supplier = catalog.suppliers.find((s) => s.id === supplierId)
+  if (!supplier?.active) return { ok: false, message: 'Ese proveedor no está activo en Compras.' }
+  const event = calendar.events.find((e) => e.id === scheduledEventId)
+  if (!event) return { ok: false, message: 'Esa fecha ya no está en el calendario.' }
+  const items = new Map(catalog.items.map((i) => [i.id, i]))
+  const needs = computeEventNeeds({
+    events: [event],
+    recipes: catalog.recipes,
+    plans: calendar.plans.filter((p) => p.scheduledEventId === event.id),
+    items,
+    baseGuests: catalog.settings.recipeBaseGuests,
+  })
+  const planned = needs.events[0]
+  if (planned?.status !== 'sums') return { ok: false, message: 'Esa fecha no suma insumos.' }
+  const wanted: { item: PurItem; qty: number; packs: number }[] = []
+  for (const [itemId, need] of needs.needs) {
+    const item = items.get(itemId)
+    if (!item || item.supplierId !== supplier.id) continue
+    const packs = packsFor(need.qty, item.packSize, item.unit)
+    if (packs > 0) wanted.push({ item, qty: need.qty, packs })
+  }
+  if (!wanted.length) {
+    return { ok: false, message: `La receta no le pide nada a ${supplier.name}.` }
+  }
+
+  const db = await createClient()
+  const existing = await db
+    .from('pur_orders')
+    .select('*, pur_order_lines(*)')
+    .eq('tenant_id', auth.tenantId)
+    .eq('status', 'draft')
+    .eq('supplier_id', supplier.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+  if (existing.error) {
+    console.error('[purchasing.addEventToOrder]', { code: existing.error.code })
+    return { ok: false, message: GENERIC }
+  }
+  const draft = existing.data[0] ? toOrder(existing.data[0]) : null
+  const label = planned.label
+  const newLine = (w: (typeof wanted)[number], sort: number) => ({
+    tenant_id: auth.tenantId,
+    item_id: w.item.id,
+    name: w.item.name,
+    unit: w.item.unit,
+    pack_label: w.item.packLabel,
+    pack_size: w.item.packSize,
+    target_qty: w.item.targetQty,
+    event_qty: w.qty,
+    event_names: [label],
+    suggested_packs: w.packs,
+    ordered_packs: w.packs,
+    sort_order: sort,
+  })
+
+  let orderId: string
+  let products = 0
+  if (draft) {
+    orderId = draft.id
+    let sort = Math.max(0, ...draft.lines.map((l) => l.sortOrder))
+    const inserts = []
+    for (const w of wanted) {
+      const line = draft.lines.find((l) => l.itemId === w.item.id)
+      if (!line) {
+        sort += 1
+        inserts.push({ ...newLine(w, sort), order_id: draft.id })
+        products += 1
+        continue
+      }
+      if (line.eventNames.includes(label)) continue
+      const upd = await db
+        .from('pur_order_lines')
+        .update({
+          suggested_packs: roundQty((line.suggestedPacks ?? 0) + w.packs),
+          ordered_packs: roundQty((line.orderedPacks ?? line.suggestedPacks ?? 0) + w.packs),
+          event_qty: roundQty(line.eventQty + w.qty),
+          event_names: [...line.eventNames, label],
+        })
+        .eq('tenant_id', auth.tenantId)
+        .eq('order_id', draft.id)
+        .eq('id', line.id)
+      if (upd.error) {
+        console.error('[purchasing.addEventToOrder]', { code: upd.error.code })
+        return { ok: false, message: GENERIC }
+      }
+      products += 1
+    }
+    if (inserts.length) {
+      const ins = await db.from('pur_order_lines').insert(inserts)
+      if (ins.error) {
+        console.error('[purchasing.addEventToOrder]', { code: ins.error.code })
+        return { ok: false, message: GENERIC }
+      }
+    }
+    if (!products) {
+      return { ok: false, message: `Ya está en el pedido de ${supplier.name} para revisar.` }
+    }
+  } else {
+    const created = await db
+      .from('pur_orders')
+      .insert({
+        tenant_id: auth.tenantId,
+        supplier_id: supplier.id,
+        status: 'draft',
+        expected_date: nextDeliveryDate(today, supplier.deliveryWeekdays, supplier.leadDays),
+        created_by: auth.userId,
+      })
+      .select('id')
+      .single()
+    if (created.error) {
+      console.error('[purchasing.addEventToOrder]', { code: created.error.code })
+      return { ok: false, message: GENERIC }
+    }
+    orderId = created.data.id
+    const inserted = await db
+      .from('pur_order_lines')
+      .insert(wanted.map((w, i) => ({ ...newLine(w, i + 1), order_id: orderId })))
+    if (inserted.error) {
+      console.error('[purchasing.addEventToOrder]', { code: inserted.error.code })
+      await db.from('pur_orders').delete().eq('tenant_id', auth.tenantId).eq('id', orderId)
+      return { ok: false, message: GENERIC }
+    }
+    products = wanted.length
+  }
+
+  await logAudit({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    action: 'purchasing.event_added_to_order',
+    entity: 'pur_order',
+    entityId: orderId,
+    payload: { lines: products, created: !draft },
+  })
+  revalidateOrders(slug)
+  return { ok: true, orderId, products, supplierName: supplier.name }
 }
 
 /**

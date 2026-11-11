@@ -59,7 +59,6 @@ const supplier = (over: Partial<PurSupplier> = {}): PurSupplier => ({
   deliveryWeekdays: [3, 5],
   leadDays: 1,
   notes: null,
-  accPartyId: null,
   active: true,
   ...over,
 })
@@ -181,12 +180,23 @@ describe('fechas', () => {
     expect(nextDeliveryDate('2026-10-27', [])).toBeNull()
   })
 
-  it('los eventos del conteo llegan hasta el día antes del próximo conteo', () => {
-    // Lunes 26/10, se cuenta lunes y miércoles → hasta el martes 27/10.
-    expect(defaultEventsUntil('2026-10-26', [1, 3])).toBe('2026-10-27')
-    // Miércoles 28/10 → hasta el domingo 01/11.
-    expect(defaultEventsUntil('2026-10-28', [1, 3])).toBe('2026-11-01')
-    expect(defaultEventsUntil('2026-10-28', [])).toBe('2026-11-03')
+  it('sin ventana fijada, el conteo cubre hasta que el próximo llegue a tiempo', () => {
+    const lunesYMiercoles = { countWeekdays: [1, 3], countWindows: {}, arriveDaysBefore: 0 }
+    // Si la mercadería puede llegar el mismo día del evento: hasta el día antes del próximo conteo.
+    // Lunes 26/10 → hasta el martes 27/10; miércoles 28/10 → hasta el domingo 01/11.
+    expect(defaultEventsUntil('2026-10-26', lunesYMiercoles)).toBe('2026-10-27')
+    expect(defaultEventsUntil('2026-10-28', lunesYMiercoles)).toBe('2026-11-01')
+    // Con 2 días antes, un día más: lo del próximo conteo no llegaría a tiempo.
+    expect(defaultEventsUntil('2026-10-26', { ...lunesYMiercoles, arriveDaysBefore: 2 })).toBe(
+      '2026-10-29',
+    )
+    expect(
+      defaultEventsUntil('2026-10-28', {
+        countWeekdays: [],
+        countWindows: {},
+        arriveDaysBefore: 2,
+      }),
+    ).toBe('2026-11-03')
   })
 
   it('etiquetas', () => {

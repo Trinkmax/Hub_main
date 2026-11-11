@@ -1,6 +1,7 @@
 'use client'
 
-import { CalendarClock, Loader2 } from 'lucide-react'
+import { CalendarClock, ExternalLink, Link2, Loader2, X } from 'lucide-react'
+import Link from 'next/link'
 import { type FormEvent, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import type { z } from 'zod'
@@ -9,10 +10,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { saveSupplier } from '@/lib/purchasing/catalog-actions'
+import { formatCuit } from '@/lib/fiscal'
+import {
+  linkSupplierParty,
+  type SupplierSynced,
+  saveSupplier,
+  unlinkSupplierParty,
+} from '@/lib/purchasing/catalog-actions'
 import { nextDeliveryDate, relativeDayLabel, weekdaysText } from '@/lib/purchasing/dates'
+import type { AccSupplierOption } from '@/lib/purchasing/parties'
 import type { supplierSchema } from '@/lib/purchasing/schemas'
-import type { PurSupplier } from '@/lib/purchasing/types'
+import type { PurSupplier, SupplierParty } from '@/lib/purchasing/types'
 import { cn } from '@/lib/utils'
 import {
   CatalogSheet,
@@ -33,6 +41,18 @@ export type SupplierView = PurSupplier & {
   activeItems: number
   /** Los primeros, por nombre, para la ficha. */
   itemNames: string[]
+  /** Las razones sociales de Administración con las que factura. */
+  parties: SupplierParty[]
+}
+
+/** Lo de Administración que necesita la ficha: con quién se puede unir y si quien mira puede hacerlo. */
+export type SupplierAccounting = {
+  /** Los proveedores de Administración (vacío si no tiene acceso allá). */
+  options: AccSupplierOption[]
+  /** Puede cargar en Administración: unir le completa datos de allá. */
+  canLink: boolean
+  /** El bar tiene Administración prendida. */
+  enabled: boolean
 }
 
 type SupplierDraft = {
@@ -75,22 +95,55 @@ function deliveryPreview(today: string, days: readonly number[], leadDays: numbe
     : `Si pedís hoy, llega el ${label}.`
 }
 
+/** Sin tildes ni mayúsculas, para comparar nombres. */
+function plain(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+}
+
+/** Primero los de Administración que se llaman parecido al proveedor (San Jose ↔ San José, Markats SRL). */
+function rankOptions(name: string, options: readonly AccSupplierOption[]): AccSupplierOption[] {
+  const target = plain(name)
+  const words = target.split(/\s+/).filter((w) => w.length >= 4)
+  const score = (o: AccSupplierOption) => {
+    const names = [o.name, o.tradeName ?? ''].map(plain)
+    if (names.some((n) => n && (n.includes(target) || target.includes(n)))) return 2
+    return names.some((n) => words.some((w) => n.includes(w))) ? 1 : 0
+  }
+  return [...options].sort(
+    (a, b) =>
+      score(b) - score(a) || (a.tradeName ?? a.name).localeCompare(b.tradeName ?? b.name, 'es'),
+  )
+}
+
+function optionLabel(o: AccSupplierOption): string {
+  const shown = o.tradeName && o.tradeName !== o.name ? `${o.tradeName} (${o.name})` : o.name
+  return o.taxId ? `${shown} · ${formatCuit(o.taxId)}` : shown
+}
+
 /** La ficha del proveedor: a quién se le escribe, por dónde y qué días trae la mercadería. */
 export function SupplierEditorSheet({
   tenantSlug,
   today,
   open,
   supplier,
+  accounting,
   onClose,
   onSaved,
+  onLinked,
 }: {
   tenantSlug: string
   /** Hoy en Córdoba (`yyyy-MM-dd`), para el «si pedís hoy, llega…». */
   today: string
   open: boolean
   supplier: SupplierView | null
+  accounting: SupplierAccounting
   onClose: () => void
   onSaved: () => void
+  /** Se unió o se soltó una razón social: la ficha sigue abierta y la lista se actualiza. */
+  onLinked: () => void
 }) {
   const uid = useId()
   const [draft, setDraft] = useState<SupplierDraft>(() => toDraft(supplier))
@@ -108,6 +161,73 @@ export function SupplierEditorSheet({
       setBaseline(signature(fresh))
       setSubmitted(false)
     }
+  }
+
+  const [linking, startLinking] = useTransition()
+  const [pick, setPick] = useState('')
+
+  /** Lo que quedó en la base después de unir (los días y el WhatsApp pueden venir de Administración). */
+  const applySynced = (synced: SupplierSynced) => {
+    const patch = {
+      days: [...synced.deliveryWeekdays].sort(),
+      leadDays: synced.leadDays,
+      whatsapp: synced.whatsappDisplay ?? '',
+    }
+    setDraft((prev) => ({ ...prev, ...patch }))
+    setBaseline((prev) => signature({ ...(JSON.parse(prev) as SupplierDraft), ...patch }))
+  }
+
+  const link = () => {
+    if (!supplier || !pick) return
+    const before = { days: draft.days.join(','), lead: draft.leadDays, wa: draft.whatsapp }
+    startLinking(async () => {
+      try {
+        const res = await linkSupplierParty({
+          slug: tenantSlug,
+          supplierId: supplier.id,
+          partyId: pick,
+        })
+        if (!res.ok) {
+          toast.error(res.message)
+          return
+        }
+        applySynced(res.supplier)
+        const changed =
+          res.supplier.deliveryWeekdays.join(',') !== before.days ||
+          res.supplier.leadDays !== before.lead ||
+          (res.supplier.whatsappDisplay ?? '') !== before.wa
+        toast.success(
+          changed
+            ? `Unido a ${res.partyName}. Trajimos de Administración lo que faltaba.`
+            : `Unido a ${res.partyName}.`,
+        )
+        setPick('')
+        onLinked()
+      } catch {
+        toast.error('No se pudo unir. Revisá la conexión y probá de nuevo.')
+      }
+    })
+  }
+
+  const unlink = (party: SupplierParty) => {
+    if (!supplier) return
+    startLinking(async () => {
+      try {
+        const res = await unlinkSupplierParty({
+          slug: tenantSlug,
+          supplierId: supplier.id,
+          partyId: party.partyId,
+        })
+        if (!res.ok) {
+          toast.error(res.message)
+          return
+        }
+        toast.success(`Soltamos ${party.name}: los datos quedan como están, de los dos lados.`)
+        onLinked()
+      } catch {
+        toast.error('No se pudo soltar. Revisá la conexión y probá de nuevo.')
+      }
+    })
   }
 
   const id = (field: string) => `${uid}-${field}`
@@ -258,6 +378,116 @@ export function SupplierEditorSheet({
               </p>
             ) : null}
           </div>
+
+          {supplier && accounting.enabled ? (
+            <section aria-labelledby={id('acc')} className="space-y-2">
+              <h3 id={id('acc')} className="text-sm font-medium">
+                En Administración
+              </h3>
+              {supplier.parties.length ? (
+                <>
+                  <ul className="space-y-1.5">
+                    {supplier.parties.map((party) => (
+                      <li
+                        key={party.partyId}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-border/70 px-3 py-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{party.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {[
+                              party.tradeName && party.tradeName !== party.name
+                                ? party.tradeName
+                                : null,
+                              party.taxId ? `CUIT ${formatCuit(party.taxId)}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ') || 'Razón social'}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          <Link
+                            href={`/${tenantSlug}/administracion/compras/proveedores/${party.partyId}?tab=datos`}
+                            className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+                            aria-label={`Ver ${party.name} en Administración`}
+                          >
+                            <ExternalLink className="size-4" aria-hidden />
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => unlink(party)}
+                            disabled={linking}
+                            className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                            aria-label={`Soltar ${party.name}`}
+                          >
+                            <X className="size-4" aria-hidden />
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    {supplier.parties.length > 1
+                      ? 'Factura con estas razones sociales: cada una tiene su cuenta en Administración, y acá es un solo proveedor. '
+                      : ''}
+                    Los días de entrega, la anticipación y el WhatsApp son los mismos que en
+                    Administración: si los cambiás acá, cambian allá.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground text-pretty">
+                  Unilo con su ficha de Administración y los días de entrega, la anticipación y el
+                  teléfono se cargan una sola vez.
+                </p>
+              )}
+              {accounting.canLink ? (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <select
+                    value={pick}
+                    onChange={(e) => setPick(e.target.value)}
+                    aria-label={
+                      supplier.parties.length
+                        ? 'Otra razón social con la que factura'
+                        : 'Proveedor de Administración'
+                    }
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">
+                      {supplier.parties.length
+                        ? 'Sumar otra razón social…'
+                        : 'Elegí el proveedor de Administración…'}
+                    </option>
+                    {rankOptions(
+                      supplier.name,
+                      accounting.options.filter((o) => o.supplierId === null && o.active),
+                    ).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {optionLabel(o)}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={link}
+                    disabled={!pick || linking}
+                    className="h-11 shrink-0"
+                  >
+                    {linking ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Link2 className="size-4" aria-hidden />
+                    )}
+                    Unir
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Para unirlo hace falta poder cargar en Administración.
+                </p>
+              )}
+            </section>
+          ) : null}
 
           <Field id={id('notes')} label="Notas" optional>
             <Textarea

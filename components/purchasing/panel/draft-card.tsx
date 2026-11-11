@@ -20,7 +20,9 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { effectiveDeliveryDate, relativeDayLabel } from '@/lib/purchasing/dates'
+import { effectiveDeliveryDate, onDayLabel, relativeDayLabel } from '@/lib/purchasing/dates'
+import type { SupplierDeadline } from '@/lib/purchasing/deadlines'
+import type { PlannedEvent } from '@/lib/purchasing/events'
 import { approveOrder, saveDraft, skipOrder } from '@/lib/purchasing/order-actions'
 import type { PurItem, PurOrder, PurOrderLine, PurSupplier, PurZone } from '@/lib/purchasing/types'
 import { formatAmount, formatQty, packsText, parseQty } from '@/lib/purchasing/units'
@@ -57,6 +59,7 @@ export function DraftCard({
   zones,
   senderName,
   defaultOpen,
+  eventRows = [],
 }: {
   slug: string
   today: string
@@ -67,6 +70,8 @@ export function DraftCard({
   zones: readonly PurZone[]
   senderName: string
   defaultOpen: boolean
+  /** Los eventos que lleva este pedido, con su plazo: avisa si llega tarde o si hay que mandarlo hoy. */
+  eventRows?: { event: PlannedEvent; row: SupplierDeadline }[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(defaultOpen)
@@ -86,6 +91,11 @@ export function DraftCard({
   const chosen = supplier ?? suppliers.find((s) => s.id === pickSupplier) ?? null
   const packsOf = (l: PurOrderLine) => (qty.has(l.id) ? (qty.get(l.id) ?? null) : l.orderedPacks)
   const expected = effectiveDeliveryDate(order.expectedDate, chosen, today)
+  // Con la entrega de este pedido: ¿llega a tiempo para cada evento que lleva? ¿Hay que mandarlo hoy?
+  const lateFor = eventRows.filter((r) => expected != null && expected > r.row.mustArriveBy)
+  const sendToday = eventRows.filter(
+    (r) => !lateFor.includes(r) && r.row.orderBy != null && r.row.orderBy <= today,
+  )
 
   const effective = [
     ...order.lines.map((l) => ({
@@ -225,6 +235,15 @@ export function DraftCard({
                 : ''}
             {chosen && !chosen.whatsapp ? ' · sin WhatsApp cargado' : ''}
           </span>
+          {lateFor.length ? (
+            <span className="block text-sm font-semibold text-destructive">
+              Llega tarde para {lateFor.map((r) => r.event.event.name).join(', ')}
+            </span>
+          ) : sendToday.length ? (
+            <span className="block text-sm font-semibold text-warning-text">
+              Mandalo hoy: lleva lo de {sendToday.map((r) => r.event.event.name).join(', ')}
+            </span>
+          ) : null}
         </span>
         <span className="inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
           {open ? 'Cerrar' : 'Abrir'}
@@ -237,6 +256,25 @@ export function DraftCard({
 
       {open ? (
         <div className="space-y-4 px-4 pt-1 pb-5 sm:px-5">
+          {lateFor.length || sendToday.length ? (
+            <ul className="space-y-1 rounded-2xl bg-pur-event-soft px-4 py-3 text-[0.95rem] text-pur-event">
+              {lateFor.map(({ event, row }) => (
+                <li key={event.event.id}>
+                  Para <span className="font-semibold">{event.event.name}</span> (
+                  {relativeDayLabel(event.event.date, today)}) tiene que llegar hasta{' '}
+                  {onDayLabel(row.mustArriveBy, today)} y con este pedido llega{' '}
+                  {expected ? onDayLabel(expected, today) : 'después'}: pedile que lo traiga antes.
+                </li>
+              ))}
+              {sendToday.map(({ event }) => (
+                <li key={event.event.id}>
+                  Lleva lo de <span className="font-semibold">{event.event.name}</span> (
+                  {relativeDayLabel(event.event.date, today)}): mandalo hoy para que llegue{' '}
+                  {expected ? onDayLabel(expected, today) : 'a tiempo'}.
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {!supplier ? (
             <div className="rounded-2xl bg-warning/15 p-4 text-[0.95rem] text-warning-text">
               <p className="font-semibold">Estos productos no tienen proveedor.</p>

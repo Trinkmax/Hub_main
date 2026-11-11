@@ -12,6 +12,8 @@ import {
   DEFAULT_SETTINGS,
   FREQUENCIES,
   type Frequency,
+  MAX_ARRIVE_DAYS_BEFORE,
+  MAX_COUNT_WINDOW_DAYS,
   type OrderStatus,
   type PurCount,
   type PurCountLine,
@@ -53,10 +55,33 @@ function oneOf<T extends string>(
   return value && (options as readonly string[]).includes(value) ? (value as T) : fallback
 }
 
+/**
+ * `{"0": 4, "3": 5}` → `{0: 4, 3: 5}`. Lo que no sea un día de la semana con un número de días razonable se
+ * ignora (ese día vuelve a la ventana calculada).
+ */
+export function parseCountWindows(value: unknown): Record<number, number> {
+  const out: Record<number, number> = {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out
+  for (const [key, raw] of Object.entries(value)) {
+    const day = Number(key)
+    const days = typeof raw === 'number' ? raw : Number.NaN
+    if (!/^[0-6]$/.test(key) || !Number.isInteger(days)) continue
+    if (days < 0 || days > MAX_COUNT_WINDOW_DAYS) continue
+    out[day] = days
+  }
+  return out
+}
+
 export function toSettings(row: Row<'pur_settings'> | null | undefined): PurSettings {
   if (!row) return DEFAULT_SETTINGS
+  const arrive = row.arrive_days_before
   return {
     countWeekdays: (row.count_weekdays ?? []).map(Number),
+    countWindows: parseCountWindows(row.count_windows),
+    arriveDaysBefore:
+      typeof arrive === 'number' && arrive >= 0 && arrive <= MAX_ARRIVE_DAYS_BEFORE
+        ? arrive
+        : DEFAULT_SETTINGS.arriveDaysBefore,
     recipeBaseGuests: row.recipe_base_guests ?? DEFAULT_SETTINGS.recipeBaseGuests,
     reviewerName: row.reviewer_name,
     senderName: row.sender_name,
@@ -83,7 +108,6 @@ export function toSupplier(row: Row<'pur_suppliers'>): PurSupplier {
     deliveryWeekdays: (row.delivery_weekdays ?? []).map(Number),
     leadDays: row.lead_days,
     notes: row.notes,
-    accPartyId: row.acc_party_id,
     active: row.active,
   }
 }

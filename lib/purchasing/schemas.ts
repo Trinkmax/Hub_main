@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { COUNT_KINDS, COUNT_STATES, FREQUENCIES } from './types'
+import {
+  COUNT_KINDS,
+  COUNT_STATES,
+  FREQUENCIES,
+  MAX_ARRIVE_DAYS_BEFORE,
+  MAX_COUNT_WINDOW_DAYS,
+} from './types'
 
 /**
  * Bordes de Compras. Las actions reciben objetos (no FormData) desde componentes de cliente, siempre con
@@ -70,6 +76,9 @@ export const draftSchema = z.object({
 })
 
 /** Un pedido nuevo a un proveedor que no tiene uno para revisar: lo arma Tex, con productos de la lista. */
+/** «Sumar al pedido» desde la fecha de un evento: lo de su receta para ese proveedor. */
+export const eventOrderSchema = z.object({ slug, scheduledEventId: id, supplierId: id })
+
 export const newDraftSchema = z.object({
   slug,
   supplierId: id,
@@ -144,6 +153,9 @@ export const supplierSchema = z.object({
   active: z.boolean(),
 })
 
+/** Unir o soltar una razón social de Administración. */
+export const supplierPartySchema = z.object({ slug, supplierId: id, partyId: id })
+
 export const recipeSchema = z.object({
   slug,
   id: id.nullable(),
@@ -182,9 +194,21 @@ export const eventPlanSchema = z.object({
   skip: z.boolean(),
 })
 
+/** `{0: 4, 3: 5}`: por día de conteo, cuántos días después termina su ventana de eventos. */
+const countWindows = z
+  .array(
+    z.object({
+      weekday: z.number().int().min(0).max(6),
+      days: z.number().int().min(0).max(MAX_COUNT_WINDOW_DAYS),
+    }),
+  )
+  .max(7)
+
 export const settingsSchema = z.object({
   slug,
   countWeekdays: weekdays,
+  countWindows,
+  arriveDaysBefore: z.number().int().min(0).max(MAX_ARRIVE_DAYS_BEFORE),
   recipeBaseGuests: z.number().int().min(1).max(1000),
   reviewerName: optionalText(40),
   senderName: optionalText(60),

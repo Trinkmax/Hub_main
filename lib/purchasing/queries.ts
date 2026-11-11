@@ -2,6 +2,13 @@ import 'server-only'
 import { addDays, todayInCordoba } from '@/lib/dates'
 import { createClient } from '@/lib/supabase/server'
 import { dataIssues } from './checks'
+import {
+  type EventDeadline,
+  eventDeadlines,
+  type SentCount,
+  upcomingCounts,
+  weekDeadlines,
+} from './deadlines'
 import { computeEventNeeds, type EventNeeds, type PlannedEvent, planEvent } from './events'
 import {
   toCalendarEvent,
@@ -161,6 +168,25 @@ export async function getOpenCount(tenantId: string): Promise<PurCount | null> {
   return data ? toCount(data) : null
 }
 
+/** Los conteos mandados de las últimas dos semanas, con su ventana de eventos (el más nuevo primero). */
+export async function getRecentSentCounts(tenantId: string): Promise<SentCount[]> {
+  const db = await createClient()
+  const { data, error } = await db
+    .from('pur_counts')
+    .select('id, count_date, events_until')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'sent')
+    .gte('count_date', addDays(todayInCordoba(), -14))
+    .order('count_date', { ascending: false })
+    .limit(10)
+  if (error) fail('los conteos mandados', error)
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    countDate: c.count_date,
+    eventsUntil: c.events_until,
+  }))
+}
+
 export async function getCountWithLines(
   tenantId: string,
   countId: string,
@@ -285,6 +311,8 @@ export type PanelData = {
   differences: PurOrder[]
   closed: PurOrder[]
   upcoming: PlannedEvent[]
+  /** Las fechas de la semana con hasta cuándo pedirle a cada proveedor (y lo de más adelante que hay que pedir ya). */
+  deadlines: EventDeadline[]
   issues: ReturnType<typeof dataIssues>
   openCount: PurCount | null
 }
@@ -292,12 +320,13 @@ export type PanelData = {
 /** El panel de quien compra: los cuatro estados, los próximos 7 días y los datos para corregir. */
 export async function getPanelData(tenantId: string): Promise<PanelData> {
   const today = todayInCordoba()
-  const [catalog, orders, closed, calendar, openCount] = await Promise.all([
+  const [catalog, orders, closed, calendar, openCount, sentCounts] = await Promise.all([
     getCatalog(tenantId),
     getOrders(tenantId, ['draft', 'sent', 'confirmed', 'with_differences']),
     getRecentlyClosed(tenantId),
     getEventsBetween(tenantId, today, addDays(today, 13)),
     getOpenCount(tenantId),
+    getRecentSentCounts(tenantId),
   ])
   const planByEvent = new Map(calendar.plans.map((p) => [p.scheduledEventId, p]))
   const upcoming = calendar.events.map((event) =>
@@ -314,6 +343,24 @@ export async function getPanelData(tenantId: string): Promise<PanelData> {
     recipes: catalog.recipes,
     upcoming,
   })
+  const deadlines = weekDeadlines(
+    eventDeadlines({
+      events: upcoming,
+      items: new Map(catalog.items.map((i) => [i.id, i])),
+      suppliers: new Map(catalog.suppliers.map((s) => [s.id, s])),
+      orders: [...orders, ...closed],
+      sentCounts,
+      counts: upcomingCounts({
+        today,
+        schedule: catalog.settings,
+        openCount,
+        lastSentCountDate: sentCounts[0]?.countDate ?? null,
+      }),
+      arriveDaysBefore: catalog.settings.arriveDaysBefore,
+      today,
+    }),
+    today,
+  )
   return {
     catalog,
     today,
@@ -323,6 +370,7 @@ export async function getPanelData(tenantId: string): Promise<PanelData> {
     differences: orders.filter((o) => o.status === 'with_differences'),
     closed,
     upcoming,
+    deadlines,
     issues,
     openCount,
   }

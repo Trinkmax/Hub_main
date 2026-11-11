@@ -1,4 +1,5 @@
 import { Mail, Phone } from 'lucide-react'
+import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { PaperArt } from '@/components/administracion/acciones/gasto-piezas'
 import { categoryShortName, Panel, PanelSection } from '@/components/administracion/kit'
@@ -6,6 +7,7 @@ import { orderLeadText, WEEKDAYS } from '@/lib/accounting/party-profile'
 import { PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import type { PartyDetail } from '@/lib/accounting/queries/parties'
 import { voucherLabel } from '@/lib/accounting/voucher-types'
+import type { ComprasLink } from '@/lib/purchasing/parties'
 import { cn } from '@/lib/utils'
 import { paperOfVoucher } from '../../../_lib/purchase-paper'
 import { documentText } from '../../../_lib/supplier-ledger'
@@ -90,6 +92,7 @@ export function DataTab({
   canWrite,
   hasBalance,
   verification,
+  compras = null,
 }: {
   tenantSlug: string
   party: PartyDetail
@@ -97,6 +100,8 @@ export function DataTab({
   hasBalance: boolean
   /** «Verificado en ARCA el …», al lado del documento. */
   verification?: ReactNode
+  /** El proveedor de Compras al que está unida esta razón social (y sus otras razones sociales). */
+  compras?: ComprasLink | null
 }) {
   const document = documentText(party.taxIdType, party.taxId)
   const contacts = [
@@ -116,6 +121,37 @@ export function DataTab({
     >
       <PanelSection title="Para pedirle">
         <dl className="grid gap-3.5">
+          {compras ? (
+            <Fact label="En Compras">
+              <Link
+                href={`/${tenantSlug}/compras/proveedores?editar=${compras.supplierId}`}
+                className="font-medium underline decoration-border underline-offset-4 hover:decoration-foreground"
+              >
+                {compras.supplierName}
+              </Link>
+              {compras.siblings.length ? (
+                <span className="mt-0.5 block">
+                  Factura también como{' '}
+                  {compras.siblings.map((sibling, i) => (
+                    <span key={sibling.id}>
+                      {i > 0 ? ' y ' : ''}
+                      <Link
+                        href={`/${tenantSlug}/administracion/compras/proveedores/${sibling.id}?tab=datos`}
+                        className="underline decoration-border underline-offset-4 hover:decoration-foreground"
+                      >
+                        {sibling.name}
+                      </Link>
+                    </span>
+                  ))}
+                  : cada razón social tiene su cuenta.
+                </span>
+              ) : null}
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Los días de entrega, la anticipación y el teléfono se comparten con Compras: si los
+                cambiás acá, cambian allá.
+              </span>
+            </Fact>
+          ) : null}
           <Fact label="A quién llamar" missing={contacts.length === 0}>
             {contacts.length === 0 ? (
               'Sin teléfono cargado'
