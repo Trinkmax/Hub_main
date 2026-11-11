@@ -20,6 +20,7 @@ import {
   salesPageRange,
 } from '@/lib/ticketing/sales-days'
 import { SalesList, type SalesResult } from './_components/sales-list'
+import { SalesTabs } from './_components/sales-tabs'
 
 export const metadata = { title: 'Ventas online' }
 
@@ -76,6 +77,7 @@ export default async function VentasOnlinePage({
         title="Ventas online"
         description="Las compras de la cartelera, día por día. Si alguien pagó por transferencia, confirmala cuando la plata esté en la cuenta: se carga su reserva y la entrada pasa a tener el QR."
       />
+      <SalesTabs tenantSlug={tenantSlug} active="ventas" />
 
       {page.latest ? null : (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/40 px-4 py-2.5 text-sm">

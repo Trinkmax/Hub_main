@@ -62,8 +62,10 @@ describe('rejectedHoldLine', () => {
     expect(rejectedHoldLine(at, { holdOver: false, proof: false })).toBe(
       'Transferí antes de las 19:23 y el lugar es tuyo.',
     )
+  })
+  it('con WhatsApp del bar, el comprobante entra en el trato', () => {
     expect(rejectedHoldLine(at, { holdOver: false, proof: true })).toBe(
-      'Transferí antes de las 19:23 y el lugar es tuyo.',
+      'Transferí antes de las 19:23 y mandanos el comprobante: el lugar es tuyo.',
     )
   })
   it('vencido y con lugar: qué hacer si ya transfirió, sin hora', () => {

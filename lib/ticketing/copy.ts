@@ -84,7 +84,12 @@ export function rejectedHoldLine(
 ): string {
   const until = holdTimeLabel(holdExpiresAt, tz)
   if (!transfer) return `Te guardamos el lugar hasta las ${until} hs.`
-  if (!transfer.holdOver) return `Transferí antes de las ${until} y el lugar es tuyo.`
+  if (!transfer.holdOver) {
+    // Con WhatsApp del bar, el comprobante es parte del trato (11/11/2026): sin él no hay reserva.
+    return transfer.proof
+      ? `Transferí antes de las ${until} y mandanos el comprobante: el lugar es tuyo.`
+      : `Transferí antes de las ${until} y el lugar es tuyo.`
+  }
   return transfer.proof
     ? 'Si ya transferiste, mandanos el comprobante. Si no, todavía hay lugar.'
     : 'Si ya transferiste, no hagas nada. Si no, todavía hay lugar.'

@@ -8,7 +8,7 @@ const DAYS = [
   { id: 'ayer', rows: ['a', 'b'] },
 ] as const
 
-/** Las mismas tarjetas por día que la página: el título del día y sus compras. */
+/** Las pestañas y las mismas tarjetas por día que la página: el título del día y sus compras. */
 export default function Loading() {
   return (
     <PageShell width="comfortable">
@@ -17,6 +17,10 @@ export default function Loading() {
         title="Ventas online"
         description={<Skeleton className="h-4 w-[30rem] max-w-full" />}
       />
+      <div className="flex h-11 items-center gap-4 border-b border-border/60 px-3">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-32" />
+      </div>
       {DAYS.map((day) => (
         <div key={day.id} className="card-hairline overflow-hidden rounded-xl border bg-card">
           <div className="flex items-center justify-between gap-4 border-b border-border/60 px-4 py-3 sm:px-5">

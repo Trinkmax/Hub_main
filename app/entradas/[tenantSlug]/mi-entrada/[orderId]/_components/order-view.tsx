@@ -588,6 +588,7 @@ function OrderTransferSlip({
       amountCents={order.totalCents}
       deposit={order.option === 'deposit'}
       proofUrl={transferProofUrl(order, tenantName, whatsapp, transfer)}
+      proofPhone={whatsapp}
     />
   )
 }

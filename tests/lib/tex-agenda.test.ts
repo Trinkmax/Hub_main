@@ -560,6 +560,7 @@ describe('las pantallas', () => {
     '/entradas',
     '/entradas/:id',
     '/ventas-online',
+    '/ventas-online/funciones',
     '/estadisticas/comisiones',
     '/estadisticas/comisiones/:id',
     '/estadisticas/senas',
@@ -720,6 +721,7 @@ describe('la anfitriona', () => {
       'eventos',
       'eventos',
       'mis-numeros',
+      'ventas-online',
       'ventas-online',
     ])
   })

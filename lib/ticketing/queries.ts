@@ -33,8 +33,9 @@ import type {
  * Mercado Pago, nada de teléfonos).
  *
  * Las del PANEL usan la sesión de quien mira (RLS: el dueño, y las ventas
- * también la anfitriona); solo el conteo de lugares y el «¿hay alias?» pasan
- * por service_role porque son del server o de la configuración del dueño.
+ * también la anfitriona); solo el conteo de lugares, el «¿hay alias?» y el
+ * título de cada película en la pestaña Funciones pasan por service_role
+ * porque son del server o del dueño (y la cartelera ya los muestra).
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: tablas nuevas, sin tipos generados todavía
@@ -122,18 +123,27 @@ async function loadVenue(service: SBAny, tenant: TenantRow): Promise<PublicVenue
   }
 }
 
+/** Una función abierta con sus números crudos: el panel los muestra, la cartelera no. */
+type FunctionSeats = {
+  event: EventRow
+  capacity: number
+  /** Reservas en pie de la función: las de la venta online y las que carga el bar a mano. */
+  taken: number
+  /** Compras que se están pagando: su lugar queda guardado mientras tanto. */
+  held: number
+}
+
 /**
- * Las funciones de los formatos pedidos, desde hoy, con su disponibilidad.
- * Las que ya empezaron (hoy, pasada la hora) no se ofrecen.
+ * Las funciones de los formatos pedidos, desde hoy, con sus lugares. Las que ya
+ * empezaron (hoy, pasada la hora) y las de grupos privados no se ofrecen.
  */
-async function loadFunctions(
+async function loadFunctionSeats(
   service: SBAny,
   tenantId: string,
   templateIds: string[],
   tz: string,
-): Promise<Map<string, PublicFunction[]>> {
-  const byTemplate = new Map<string, PublicFunction[]>()
-  if (templateIds.length === 0) return byTemplate
+): Promise<FunctionSeats[]> {
+  if (templateIds.length === 0) return []
 
   const { data: events, error } = await service
     .from('scheduled_events')
@@ -153,7 +163,7 @@ async function loadFunctions(
   const upcoming = ((events as EventRow[] | null) ?? []).filter((e) =>
     isOnSale(e.event_date, e.starts_at_local, nowLocal),
   )
-  if (upcoming.length === 0) return byTemplate
+  if (upcoming.length === 0) return []
 
   const { data: seats, error: seatsError } = await service.rpc('ticketing_event_seats', {
     p_tenant_id: tenantId,
@@ -167,10 +177,31 @@ async function loadFunctions(
     ((seats as SeatsRow[] | null) ?? []).map((s) => [s.scheduled_event_id, s]),
   )
 
-  for (const e of upcoming) {
-    const s = seatsById.get(e.id)
-    const capacity = s?.capacity ?? e.capacity
-    const left = seatsLeft(capacity, s?.taken ?? 0, s?.held ?? 0)
+  return upcoming.map((event) => {
+    const s = seatsById.get(event.id)
+    return {
+      event,
+      capacity: s?.capacity ?? event.capacity,
+      taken: s?.taken ?? 0,
+      held: s?.held ?? 0,
+    }
+  })
+}
+
+/**
+ * Las funciones de los formatos pedidos, desde hoy, con su disponibilidad.
+ * Las que ya empezaron (hoy, pasada la hora) no se ofrecen.
+ */
+async function loadFunctions(
+  service: SBAny,
+  tenantId: string,
+  templateIds: string[],
+  tz: string,
+): Promise<Map<string, PublicFunction[]>> {
+  const byTemplate = new Map<string, PublicFunction[]>()
+  const rows = await loadFunctionSeats(service, tenantId, templateIds, tz)
+  for (const { event: e, capacity, taken, held } of rows) {
+    const left = seatsLeft(capacity, taken, held)
     const fn: PublicFunction = {
       eventId: e.id,
       date: e.event_date,
@@ -868,6 +899,129 @@ export async function getAdminExperience(
     sortOrder: row.sort_order,
     updatedAt: row.updated_at,
   }
+}
+
+/** Una función que viene, con su cupo y cómo va, para la pestaña Funciones de Ventas online. */
+export type CapacityFunction = {
+  eventId: string
+  /** YYYY-MM-DD */
+  date: string
+  /** HH:MM */
+  time: string
+  capacity: number
+  /** Reservas en pie: las de la venta online y las que carga el bar a mano. */
+  reserved: number
+  /** Compras que se están pagando ahora: su lugar está guardado. */
+  paying: number
+  /** Lo que queda a la venta. */
+  left: number
+  /** La página de la película: sirve para filtrar la lista por película. */
+  slug: string
+  title: string
+  accent: string
+  /** La película está apagada: no se vende, pero el cupo se puede dejar listo. */
+  published: boolean
+}
+
+type FilmRow = {
+  template_id: string
+  slug: string
+  title: string
+  accent_hex: string | null
+  published: boolean
+}
+
+type FilmByTemplate = { slug: string; title: string; accent: string; published: boolean }
+
+/**
+ * Las películas del bar por formato del calendario. Son del dueño por RLS, pero la pestaña
+ * Funciones también la usa la anfitriona: se leen con service_role, como la cartelera, y de acá
+ * sale solo lo que la cartelera ya muestra (título y color).
+ */
+async function loadFilmsByTemplate(
+  service: SBAny,
+  tenantId: string,
+): Promise<Map<string, FilmByTemplate>> {
+  const { data, error } = await service
+    .from('event_experiences')
+    .select('template_id, slug, title, accent_hex, published')
+    .eq('tenant_id', tenantId)
+    .order('sort_order', { ascending: true })
+  if (error) {
+    console.error('[ticketing.loadFilmsByTemplate]', { tenantId, code: error.code })
+    throw new Error('No pudimos cargar las películas.')
+  }
+  const films = new Map<string, FilmByTemplate>()
+  for (const row of (data as FilmRow[] | null) ?? []) {
+    if (films.has(row.template_id)) continue
+    films.set(row.template_id, {
+      slug: row.slug,
+      title: row.title,
+      accent: row.accent_hex ?? DEFAULT_ACCENT,
+      published: row.published,
+    })
+  }
+  return films
+}
+
+/**
+ * Las funciones que vienen de todas las películas, de la más cercana a la más lejana, con su
+ * cupo. Para Ventas online › Funciones: los socios pidieron el 11/11/2026 poder cambiar cuántos
+ * entran sin pedírselo a nadie («normalmente va a ser 54, el del cine»), y que lo pueda hacer
+ * Luz. Las que ya empezaron y las de grupos privados no aparecen, igual que en la cartelera.
+ */
+export async function listCapacityFunctions(tenantId: string): Promise<CapacityFunction[]> {
+  const service = createServiceClient() as SBAny
+  const films = await loadFilmsByTemplate(service, tenantId)
+  const rows = await loadFunctionSeats(service, tenantId, [...films.keys()], DEFAULT_TZ)
+  return rows.flatMap(({ event: e, capacity, taken, held }) => {
+    const film = films.get(e.template_id)
+    if (!film) return []
+    return [
+      {
+        eventId: e.id,
+        date: e.event_date,
+        time: formatTime(e.starts_at_local),
+        capacity,
+        reserved: taken,
+        paying: held,
+        left: seatsLeft(capacity, taken, held),
+        slug: film.slug,
+        title: film.title,
+        accent: film.accent,
+        published: film.published,
+      },
+    ]
+  })
+}
+
+/**
+ * Una función de la cartelera que todavía se puede tocar (es de una película, no es de un grupo
+ * privado y no empezó) con sus lugares, para cambiarle el cupo. `null` si no lo es.
+ */
+export async function getCapacityFunction(
+  tenantId: string,
+  eventId: string,
+): Promise<Pick<CapacityFunction, 'capacity' | 'reserved' | 'paying'> | null> {
+  const service = createServiceClient() as SBAny
+  const { data, error } = await service
+    .from('scheduled_events')
+    .select('template_id')
+    .eq('tenant_id', tenantId)
+    .eq('id', eventId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.getCapacityFunction]', { tenantId, code: error.code })
+    throw new Error('No pudimos leer la función.')
+  }
+  const templateId = (data as { template_id: string | null } | null)?.template_id
+  if (!templateId) return null
+  const films = await loadFilmsByTemplate(service, tenantId)
+  if (!films.has(templateId)) return null
+  const rows = await loadFunctionSeats(service, tenantId, [templateId], DEFAULT_TZ)
+  const row = rows.find((r) => r.event.id === eventId)
+  if (!row) return null
+  return { capacity: row.capacity, reserved: row.taken, paying: row.held }
 }
 
 export type AdminOrder = Pick<

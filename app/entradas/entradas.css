@@ -750,6 +750,40 @@
     user-select: all;
   }
 
+  /* Lo que no se puede saltear (11/11/2026): mandar el comprobante al WhatsApp del bar.
+     Separado de la cuenta por la misma línea punteada, con un sello de tinta como el
+     «AGOTADO» de la cartelera. El óxido oscuro sobre el papel pasa AA (5,9:1). */
+  .ent-transfer-must {
+    border-top: 1.5px dashed rgb(26 37 31 / 0.3);
+    padding-top: 0.85rem;
+  }
+
+  .ent-must {
+    display: inline-block;
+    padding: 0.12rem 0.45rem;
+    border: 1.5px solid var(--ent-rust-deep);
+    border-radius: 5px;
+    color: var(--ent-rust-deep);
+    font-family: var(--ent-mono-font);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    transform: rotate(-2deg);
+    transform-origin: left center;
+  }
+
+  /* El número del bar: se lee entero de un vistazo y se selecciona de un toque.
+     (Ojo: `.ent-phone` ya es el marco de celular del video «Mirá cómo es».) */
+  .ent-proof-phone {
+    font-family: var(--ent-mono-font);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    -webkit-user-select: all;
+    user-select: all;
+  }
+
   /* Contenido del botón mientras cambia (espera → listo): blur para que el
    cambio se lea como una sola transformación. */
   .ent-morph {
