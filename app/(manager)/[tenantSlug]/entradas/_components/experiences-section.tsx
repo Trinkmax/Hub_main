@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowUpRight, CalendarPlus, Clapperboard, Pencil } from 'lucide-react'
+import { ArrowUpRight, CalendarPlus, Clapperboard, Pencil, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useOptimistic, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -107,6 +107,7 @@ function ExperienceRow({
   const switchId = `publicada-${experience.id}`
   const editHref = `/${tenantSlug}/entradas/${experience.id}`
   const publicHref = `/entradas/${tenantSlug}/${experience.slug}`
+  const capacityHref = `/${tenantSlug}/ventas-online/funciones?pelicula=${encodeURIComponent(experience.slug)}`
   const withDeposit = hasDepositOption(experience.depositCents, experience.priceCents)
 
   return (
@@ -211,6 +212,16 @@ function ExperienceRow({
             <span className="sr-only">{experience.title}</span>
           </Link>
         </Button>
+        {experience.functions.length > 0 ? (
+          // El cupo de cada función vive en Ventas online, donde también lo cambia la anfitriona.
+          <Button asChild variant="outline" className="h-11 sm:h-9">
+            <Link href={capacityHref}>
+              <Users className="size-4" aria-hidden />
+              Cupos
+              <span className="sr-only">de las funciones de {experience.title}</span>
+            </Link>
+          </Button>
+        ) : null}
         <Button asChild variant="ghost" className="h-11 sm:h-9">
           <a href={publicHref} target="_blank" rel="noopener noreferrer">
             {experience.published ? 'Ver página' : 'Vista previa'}

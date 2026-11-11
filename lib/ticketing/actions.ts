@@ -23,8 +23,15 @@ import {
 import type { CurrentUser } from '@/lib/tenant/current'
 import { TICKET_SALES_ROLES } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
+import { seatsLeft } from './availability'
+import {
+  capacityBelowReserved,
+  type FunctionCapacityInput,
+  functionCapacitySchema,
+} from './capacity'
 import { getMercadoPagoCredentials } from './credentials'
 import { centsToMercadoPagoAmount, formatPesos, pesosToCents } from './pricing'
+import { getCapacityFunction } from './queries'
 import {
   createExperienceSchema,
   type ExperienceFormInput,
@@ -47,8 +54,9 @@ import {
 
 /**
  * Acciones del panel (Marketing → Entradas y Ventas online). Casi todo es del
- * dueño: es la vidriera pública del bar y es plata. La única excepción es
- * «Confirmar transferencia», que también hace la anfitriona (TICKET_SALES_ROLES).
+ * dueño: es la vidriera pública del bar y es plata. Las excepciones son
+ * «Confirmar transferencia» y el cupo de cada función, que también hace la
+ * anfitriona (TICKET_SALES_ROLES).
  *
  * Las películas y la configuración se escriben con la sesión del dueño (RLS
  * owner + GRANTs por columna). La conexión con Mercado Pago va con
@@ -1078,5 +1086,83 @@ export async function voidTicketTransfer(
           : reservation === 'error'
             ? 'Transferencia anulada. No pudimos cancelar la reserva: cancelala desde Reservas.'
             : 'Transferencia anulada.',
+  }
+}
+
+// ──────────────────────────────────────────────
+// Cupo de las funciones
+// ──────────────────────────────────────────────
+
+const NO_CAPACITY_ACCESS: TicketingActionState = {
+  ok: false,
+  message: 'Tu usuario no puede cambiar el cupo. Pedíselo a un dueño.',
+}
+
+/**
+ * Cuántas personas entran en una función de la cartelera (Ventas online › Funciones). Pedido de
+ * los socios del 11/11/2026: el cine lleva 54, pero a veces van a 100 y a veces a menos, y lo
+ * tiene que poder cambiar Luz sin pedírselo a nadie. Lo hacen el dueño y la anfitriona: es lo
+ * mismo que ella ya puede hacer desde el calendario (RLS `sev_staff_write`), puesto donde se
+ * miran las ventas. La cartelera recalcula sola lo que queda.
+ *
+ * No baja de lo reservado: esa gente entra igual. Queda en audit_log con quién fue y de cuánto a
+ * cuánto.
+ */
+export async function setFunctionCapacity(
+  slug: string,
+  input: FunctionCapacityInput,
+): Promise<TicketingActionState> {
+  const access = await authorizeRoles(slug, TICKET_SALES_ROLES)
+  if (!access) return NO_CAPACITY_ACCESS
+  const parsed = functionCapacitySchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Revisá el cupo.',
+      field: 'capacity',
+    }
+  }
+  const tenantId = access.tenant.id
+  const { event_id: eventId, capacity } = parsed.data
+
+  let fn: Awaited<ReturnType<typeof getCapacityFunction>>
+  try {
+    fn = await getCapacityFunction(tenantId, eventId)
+  } catch {
+    return { ok: false, message: 'No pudimos leer la función. Probá de nuevo.' }
+  }
+  if (!fn) return { ok: false, message: 'Esa función ya empezó o no está en la cartelera.' }
+  const below = capacityBelowReserved(capacity, fn.reserved)
+  if (below) return { ok: false, message: below, field: 'capacity' }
+  if (capacity === fn.capacity) return { ok: true, message: `Ya entraban ${capacity}.` }
+
+  // Con la sesión de quien guarda: la RLS del calendario decide quién puede.
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('scheduled_events')
+    .update({ capacity })
+    .eq('tenant_id', tenantId)
+    .eq('id', eventId)
+    .select('id')
+    .maybeSingle()
+  if (error || !data) {
+    if (error) console.error('[ticketing.setFunctionCapacity]', { tenantId, code: error.code })
+    return { ok: false, message: 'No pudimos guardar el cupo. Probá de nuevo.' }
+  }
+  await logAudit({
+    tenantId,
+    userId: access.user.id,
+    action: 'scheduled_event.capacity_changed',
+    entity: 'scheduled_event',
+    entityId: eventId,
+    payload: { from: fn.capacity, to: capacity, reserved: fn.reserved, source: 'ventas_online' },
+  })
+  revalidateTicketing(slug)
+  revalidatePath(`/${slug}/ventas-online/funciones`)
+  revalidatePath(`/${slug}/eventos`, 'layout')
+  const left = seatsLeft(capacity, fn.reserved, fn.paying)
+  return {
+    ok: true,
+    message: `Ahora entran ${capacity}. ${left === 1 ? 'Queda 1 lugar' : `Quedan ${left} lugares`} a la venta.`,
   }
 }

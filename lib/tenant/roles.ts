@@ -25,7 +25,7 @@ export const ROLE_DESCRIPTIONS: Record<TenantRole, string> = {
   kitchen:
     'Cocina: cuenta el stock, recibe la mercadería y, si está prendida, avanza las comandas.',
   editor: 'Edita la carta: fotos, videos, textos, precios y etiquetas. No ve el resto.',
-  host: 'Gestiona reservas y eventos, ve las ventas online y confirma transferencias, y ve sus propias comisiones.',
+  host: 'Gestiona reservas y eventos, ve las ventas online, confirma transferencias y cambia el cupo de las funciones, y ve sus propias comisiones.',
   accountant:
     'Ve y exporta Administración: libros, IVA, cuentas corrientes y cajas. No carga ni cambia nada y no ve el resto del panel.',
 }
@@ -82,6 +82,10 @@ export const TICKET_DOOR_ROLES: ReadonlyArray<TenantRole> = RESERVATION_OPERATOR
  * el «ya transferí» y pregunta. Devolver y anular siguen siendo del dueño (es mover plata), y la
  * cartelera y Mercado Pago también. Espeja las policies `ticket_orders_owner_select` y
  * `ticket_orders_host_select`.
+ *
+ * Desde el 11/11/2026 también cambian el cupo de cada función (Ventas online › Funciones): los
+ * socios pidieron que Luz lo pueda subir o bajar sola. Es la misma escritura que el calendario
+ * (policy `sev_staff_write`).
  */
 export const TICKET_SALES_ROLES: ReadonlyArray<TenantRole> = ['owner', 'host']
 

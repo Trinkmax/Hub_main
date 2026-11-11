@@ -103,12 +103,27 @@ describe('RejectedTicket', () => {
     expect(html).toContain('Reintentar con Mercado Pago')
   })
 
+  it('con WhatsApp: el comprobante es obligatorio y el número queda a la vista', () => {
+    // Pedido de los socios del 11/11/2026: muchos elegían transferir y no mandaban nada.
+    const html = render({ transfer: ACCOUNT, whatsapp: WHATSAPP })
+    expect(html).toContain('Comprobante obligatorio')
+    expect(html).toContain('Si transferís, tenés que mandar el comprobante')
+    expect(html).toContain('sí o sí')
+    expect(html).toContain('+54 9 351 555-1234')
+    expect(html).toContain('Si no, la reserva no se efectuará.')
+    expect(html).toContain(
+      'Transferí antes de las 21:30 y mandanos el comprobante: el lugar es tuyo.',
+    )
+  })
+
   it('con cuenta y sin WhatsApp: el alias y qué pasa después, sin un botón que no lleva a nada', () => {
     const html = render({ transfer: { alias: 'mi.bar.pagos', holder: null }, whatsapp: null })
     expect(html).toContain('mi.bar.pagos')
     expect(html).toContain('te confirmamos por WhatsApp')
     expect(html).not.toContain('wa.me')
     expect(html).not.toContain('A nombre de')
+    // Sin número no se puede exigir el comprobante.
+    expect(html).not.toContain('Comprobante obligatorio')
   })
 
   it('con cuenta: la hora del lugar guardado es el plazo para transferir', () => {

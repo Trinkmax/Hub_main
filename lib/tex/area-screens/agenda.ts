@@ -131,6 +131,14 @@ export const agendaScreens: readonly TexScreenDef[] = [
     roles: ['owner', 'host'],
   },
   {
+    id: 'ventas.funciones',
+    label: 'Ventas online › Funciones y cupos',
+    what: 'Las funciones que vienen de cada película: cuántos entran, cuántos reservaron y cuánto queda a la venta. El cupo de cada una se cambia ahí, nunca por debajo de lo reservado, y la cartelera se actualiza sola.',
+    path: '/ventas-online/funciones',
+    root: true,
+    roles: ['owner', 'host'],
+  },
+  {
     id: 'comisiones.liquidacion',
     label: 'Estadísticas › Comisiones',
     what: 'Cuánto lleva cada gestor en el período, cuánto se pagó y cuánto falta.',

@@ -2,6 +2,7 @@
 
 import { Check, Copy, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import { formatPesos } from '@/lib/ticketing/pricing'
 
 const COPIED_MS = 2200
@@ -9,6 +10,10 @@ const COPIED_MS = 2200
 /**
  * Cómo pagar por transferencia cuando Mercado Pago rechaza el pago. La transferencia
  * no reserva sola: la persona avisa y el bar le carga la reserva.
+ *
+ * Con WhatsApp del bar, mandar el comprobante es obligatorio y se dice con el número a la
+ * vista (pedido de los socios del 11/11/2026: «muchos ponen transferir y no mandan nada y
+ * no sabemos si es real o no»).
  */
 export function TransferSlip({
   alias,
@@ -16,12 +21,15 @@ export function TransferSlip({
   amountCents,
   deposit,
   proofUrl,
+  proofPhone = null,
 }: {
   alias: string
   holder: string | null
   amountCents: number
   deposit: boolean
   proofUrl: string | null
+  /** El WhatsApp del bar (E.164) al que va el comprobante. */
+  proofPhone?: string | null
 }) {
   const [copied, setCopied] = useState(false)
   const aliasRef = useRef<HTMLElement>(null)
@@ -87,11 +95,27 @@ export function TransferSlip({
 
       {proofUrl ? (
         <>
+          <div className="ent-transfer-must mt-3.5">
+            <p className="ent-must">Comprobante obligatorio</p>
+            <p className="mt-2 text-[0.8rem] leading-snug text-(--ent-ink)">
+              Si transferís, tenés que mandar el comprobante <strong>sí o sí</strong> a nuestro
+              número de reservas
+              {proofPhone ? (
+                <>
+                  :{' '}
+                  <strong className="ent-proof-phone ent-num whitespace-nowrap">
+                    {formatPhoneForDisplay(proofPhone)}
+                  </strong>
+                </>
+              ) : null}
+              . Si no, la reserva no se efectuará.
+            </p>
+          </div>
           <a
             href={proofUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ent-press mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-(--ent-ink) text-sm font-semibold text-(--ent-paper)"
+            className="ent-press mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-(--ent-ink) text-sm font-semibold text-(--ent-paper)"
           >
             <MessageCircle className="size-4" aria-hidden />
             Ya transferí: mandar comprobante
