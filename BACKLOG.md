@@ -1609,10 +1609,20 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
 - **La app de Google que se usaba antes deja ver el PIN de la vista de Tomás** en el código de la página, a cualquiera
   con el link (`config.pin` llega al navegador con `getInicio`). Con Compras andando conviene dar de baja esa
   implementación o cambiarla a «solo yo».
-- **Los proveedores de HUB no tienen WhatsApp ni días de entrega:** sin eso el pedido se copia a mano y no se calcula
-  cuándo llega. Es lo primero que tiene que completar quien compra («Datos para corregir»).
-- **El pedido no pasa a Administración:** `pur_suppliers.acc_party_id` ya une 28 de los 33 proveedores con su par
-  contable, pero recibir no arma la compra ni espera la factura.
+- **Los proveedores de HUB y sus datos (11/11):** desde la migración `20261111222154` los días de entrega, la
+  anticipación y el WhatsApp son los mismos en Compras y en Administración (24 unidos). Quedan 9 sin unir (Mercado,
+  Mercado Libre, Perikos…) y los que no tienen nada cargado en ninguno de los dos lados.
+- **El pedido no pasa a Administración:** `pur_supplier_parties` une los proveedores con sus razones sociales, pero
+  recibir no arma la compra ni espera la factura (ni dice con qué razón social factura cada parte).
+- **Plazos de los eventos (11/11, hecho):** ver `docs/features/compras.md` › Plazos de los eventos. Lo que podría
+  seguir: que Tex pueda «Sumar al pedido» lo de un evento (hoy solo el panel: con `preparar_pedido` los renglones no
+  llevan el nombre del evento y el panel sigue diciendo «Pedilo aparte»); un aviso fuera del panel (hoy se ve al
+  entrar a Compras o preguntándole a Tex); confirmar con Tomás si el conteo del domingo también cuenta la carta (se
+  dejó igual que el del miércoles) y si los eventos de martes y viernes se piden aparte o conviene que el domingo
+  cubra hasta el viernes y el miércoles hasta el martes (con proveedores de un día, así nada queda afuera).
+- **`pur_suppliers.acc_party_id` quedó vacía y sin uso (11/11):** se borra en una migración más adelante (`drop
+  column`, pide confirmación en la terminal). La anticipación de Compras llega hasta 14 días y la de Administración
+  hasta 30: un 14 de Compras no pisa uno mayor de allá, pero Compras calcula con 14.
 - **Planilla de insumos (09/11, hecha):** Compras › Insumos › Planilla baja y sube la lista en Excel
   (`docs/features/compras.md` › Planilla de insumos). Lo que podría seguir: que HUB lea directo una planilla de Google
   compartida por link (hoy es bajar → cambiar → subir), lo mismo para Proveedores (WhatsApp y días de los 33), y

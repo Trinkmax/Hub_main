@@ -1,6 +1,12 @@
 import { formatDayMonth, isoDayInCordoba } from '@/lib/dates'
 import type { DataIssue, IssueGroup } from '@/lib/purchasing/checks'
-import { effectiveDeliveryDate, relativeDayLabel, weekdaysText } from '@/lib/purchasing/dates'
+import {
+  effectiveDeliveryDate,
+  longDayLabel,
+  relativeDayLabel,
+  weekdaysText,
+} from '@/lib/purchasing/dates'
+import type { EventDeadline, SupplierDeadline } from '@/lib/purchasing/deadlines'
 import type { DraftLine } from '@/lib/purchasing/draft'
 import type { PlannedEvent } from '@/lib/purchasing/events'
 import {
@@ -278,16 +284,57 @@ const EVENT_STATUS: Record<PlannedEvent['status'], string> = {
   notice_only: 'la receta es solo un aviso',
 }
 
-export function eventsData(events: readonly PlannedEvent[]) {
-  return events.slice(0, 12).map((e) =>
-    compact({
-      evento: e.label,
-      compras: EVENT_STATUS[e.status],
+/** Qué pasa con lo de un proveedor para un evento, en una frase (lo mismo que dice el panel). */
+export function deadlineText(row: SupplierDeadline, today: string): string {
+  const day = (d: string | null) => (d ? relativeDayLabel(d, today) : '¿?')
+  switch (row.status) {
+    case 'count':
+      return `lo trae el conteo del ${longDayLabel(row.countDate ?? today)} (pedir hasta ${day(row.orderBy)})`
+    case 'counted':
+      return 'lo vio un conteo y alcanzaba con lo que había'
+    case 'draft':
+      return `está en el pedido para revisar: mandarlo hasta ${day(row.orderBy)}`
+    case 'draft_late':
+      return `está en el pedido para revisar, pero llega ${day(row.arrives)}: tarde`
+    case 'ordered':
+      return row.received ? `llegó ${day(row.arrives)}` : `pedido, llega ${day(row.arrives)}`
+    case 'ordered_late':
+      return `pedido, pero llega ${day(row.arrives)}: tarde`
+    case 'today':
+      return 'hay que pedirlo hoy (ningún conteo llega a tiempo)'
+    case 'late':
+      return `tarde: había que pedirlo hasta ${day(row.orderBy)}${row.arrives ? `; pedido hoy llega ${day(row.arrives)}` : ''}`
+    case 'todo':
+      return `pedirlo aparte hasta ${day(row.orderBy)} (ningún conteo llega a tiempo)`
+    default:
+      return 'sin proveedor: asignarle uno en Insumos'
+  }
+}
+
+/**
+ * Los eventos de la semana con hasta cuándo pedirle a cada proveedor para que todo llegue N días antes. Lo
+ * que no es «lo trae un conteo», «alcanzaba» o «pedido a tiempo» es lo que hay que mirar.
+ */
+export function eventsData(deadlines: readonly EventDeadline[], today: string) {
+  return deadlines.slice(0, 12).map((e) => {
+    const p = e.planned
+    return compact({
+      evento: p.label,
+      compras: EVENT_STATUS[p.status],
       variantes:
-        e.status === 'needs_variant' ? e.variants.map((v) => v.variant).join(', ') : undefined,
-      personas: e.status === 'sums' ? e.guests : undefined,
-    }),
-  )
+        p.status === 'needs_variant' ? p.variants.map((v) => v.variant).join(', ') : undefined,
+      personas: p.status === 'sums' ? p.guests : undefined,
+      tiene_que_llegar_hasta:
+        p.status === 'sums' ? relativeDayLabel(e.mustArriveBy, today) : undefined,
+      proveedores: e.suppliers.length
+        ? e.suppliers.map((row) => ({
+            proveedor: row.supplier?.name ?? 'Sin proveedor',
+            insumos: row.items.length,
+            estado: deadlineText(row, today),
+          }))
+        : undefined,
+    })
+  })
 }
 
 export function issuesData(issues: readonly DataIssue[]) {

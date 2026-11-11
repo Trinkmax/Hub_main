@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { addDays } from '@/lib/dates'
+import { type CountSchedule, countWindowsText, defaultEventsUntil } from '@/lib/purchasing/dates'
 import { startCount } from '@/lib/purchasing/kitchen-actions'
 import { COUNT_KIND_LABELS, type CountKind } from '@/lib/purchasing/types'
 import { cn } from '@/lib/utils'
@@ -40,19 +41,22 @@ const KIND_HINT: Record<CountKind, string> = {
 export function NewCountForm({
   slug,
   today,
-  defaultUntil,
+  schedule,
   defaultName,
 }: {
   slug: string
   today: string
-  defaultUntil: string
+  /** Los días de conteo y sus ventanas: «hasta» sigue a la fecha mientras nadie lo toque. */
+  schedule: CountSchedule
   defaultName: string | null
 }) {
   const router = useRouter()
   const [kind, setKind] = useState<CountKind>('order')
   const [name, setName] = useState(defaultName ?? '')
   const [date, setDate] = useState(today)
-  const [until, setUntil] = useState(defaultUntil)
+  const [until, setUntil] = useState(() => defaultEventsUntil(today, schedule))
+  const [untilTouched, setUntilTouched] = useState(false)
+  const windows = countWindowsText(schedule)
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
 
@@ -154,7 +158,12 @@ export function NewCountForm({
             value={date}
             min={addDays(today, -7)}
             max={addDays(today, 7)}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setDate(next)
+              // Otro día, otra ventana (el domingo cubre hasta el jueves, el miércoles hasta el lunes).
+              if (next && !untilTouched) setUntil(defaultEventsUntil(next, schedule))
+            }}
             className="h-12 text-base"
           />
         </div>
@@ -166,11 +175,15 @@ export function NewCountForm({
             type="date"
             value={until}
             min={date}
-            onChange={(e) => setUntil(e.target.value)}
+            onChange={(e) => {
+              setUntil(e.target.value)
+              setUntilTouched(true)
+            }}
             className="h-12 text-base"
           />
           <p className="text-sm text-muted-foreground">
             Lo que piden los eventos hasta ese día se suma al pedido y se cuenta exacto.
+            {windows ? ` ${windows}` : ''}
           </p>
         </div>
 

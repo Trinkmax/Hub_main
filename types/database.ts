@@ -3901,7 +3901,9 @@ export type Database = {
       }
       pur_settings: {
         Row: {
+          arrive_days_before: number
           count_weekdays: number[]
+          count_windows: Json
           created_at: string
           low_fraction: number
           recipe_base_guests: number
@@ -3912,7 +3914,9 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          arrive_days_before?: number
           count_weekdays?: number[]
+          count_windows?: Json
           created_at?: string
           low_fraction?: number
           recipe_base_guests?: number
@@ -3923,7 +3927,9 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          arrive_days_before?: number
           count_weekdays?: number[]
+          count_windows?: Json
           created_at?: string
           low_fraction?: number
           recipe_base_guests?: number
@@ -3936,6 +3942,55 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "pur_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pur_supplier_parties: {
+        Row: {
+          acc_party_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          supplier_id: string
+          tenant_id: string
+        }
+        Insert: {
+          acc_party_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          supplier_id: string
+          tenant_id: string
+        }
+        Update: {
+          acc_party_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          supplier_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pur_supplier_parties_party_fk"
+            columns: ["acc_party_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "acc_parties"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_supplier_parties_supplier_fk"
+            columns: ["supplier_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "pur_suppliers"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "pur_supplier_parties_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

@@ -4,6 +4,7 @@ import { RotateCw, Settings2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { NumberStepper } from '@/components/purchasing/catalog/form-bits'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,11 +16,27 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { WEEKDAY_NAMES_SHORT } from '@/lib/dates'
+import { capitalizeFirst, WEEKDAY_NAMES, WEEKDAY_NAMES_SHORT } from '@/lib/dates'
 import { saveSettings } from '@/lib/purchasing/catalog-actions'
-import { WEEKDAYS_MONDAY_FIRST } from '@/lib/purchasing/dates'
-import type { PurSettings } from '@/lib/purchasing/types'
+import { countWindowDays, WEEKDAYS_MONDAY_FIRST } from '@/lib/purchasing/dates'
+import { MAX_ARRIVE_DAYS_BEFORE, type PurSettings } from '@/lib/purchasing/types'
 import { cn } from '@/lib/utils'
+
+/** Las opciones de «hasta el…» de un día de conteo: los 7 días que siguen (y el que ya tenga, si es más). */
+function windowOptions(weekday: number, current: number): { days: number; label: string }[] {
+  const options = [1, 2, 3, 4, 5, 6, 7]
+  if (!options.includes(current)) options.push(current)
+  return options
+    .sort((a, b) => a - b)
+    .map((days) => {
+      const name = WEEKDAY_NAMES[(weekday + days) % 7] ?? ''
+      return { days, label: days >= 7 ? `el ${name} siguiente` : `el ${name}` }
+    })
+}
+
+function daysText(n: number): string {
+  return n === 1 ? '1 día' : `${n} días`
+}
 
 /** «Actualizar» (otro socio pudo haber mandado algo) y los ajustes de Compras. */
 export function PanelActions({
@@ -80,10 +97,21 @@ function SettingsDialog({
 }) {
   const router = useRouter()
   const [days, setDays] = useState<number[]>(settings.countWeekdays)
+  const [arrive, setArrive] = useState(settings.arriveDaysBefore)
+  // Lo que se eligió a mano para cada día; el resto sigue la cuenta (cambia con los días y los «días antes»).
+  const [windows, setWindows] = useState<Record<number, number>>(settings.countWindows)
   const [guests, setGuests] = useState(String(settings.recipeBaseGuests))
   const [reviewer, setReviewer] = useState(settings.reviewerName ?? '')
   const [sender, setSender] = useState(settings.senderName ?? '')
   const [pending, start] = useTransition()
+
+  const windowOf = (weekday: number) =>
+    countWindowDays(weekday, {
+      countWeekdays: days,
+      countWindows: windows,
+      arriveDaysBefore: arrive,
+    })
+  const countDays = WEEKDAYS_MONDAY_FIRST.filter((d) => days.includes(d))
 
   const save = () => {
     const n = Number.parseInt(guests, 10)
@@ -95,6 +123,8 @@ function SettingsDialog({
       const res = await saveSettings({
         slug,
         countWeekdays: days,
+        countWindows: days.map((weekday) => ({ weekday, days: windowOf(weekday) })),
+        arriveDaysBefore: arrive,
         recipeBaseGuests: n,
         reviewerName: reviewer.trim() || null,
         senderName: sender.trim() || null,
@@ -144,10 +174,62 @@ function SettingsDialog({
                 )
               })}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Sirve para sugerir hasta qué día cuentan los eventos de cada conteo.
-            </p>
           </fieldset>
+          {countDays.length ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Cada conteo cubre los eventos hasta</legend>
+              <ul className="space-y-2">
+                {countDays.map((d) => {
+                  const current = windowOf(d)
+                  return (
+                    <li key={d} className="flex items-center justify-between gap-3">
+                      <Label htmlFor={`pur-window-${d}`} className="font-normal">
+                        {capitalizeFirst(WEEKDAY_NAMES[d] ?? '')}
+                      </Label>
+                      <select
+                        id={`pur-window-${d}`}
+                        value={current}
+                        onChange={(e) =>
+                          setWindows((prev) => ({ ...prev, [d]: Number(e.target.value) }))
+                        }
+                        className="h-11 w-48 rounded-xl border border-input bg-background px-3 text-sm"
+                      >
+                        {windowOptions(d, current).map((o) => (
+                          <option key={o.days} value={o.days}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </li>
+                  )
+                })}
+              </ul>
+              <p className="text-sm text-muted-foreground">
+                Es lo que la cocina ve al empezar el conteo; lo puede cambiar para ese conteo.
+              </p>
+            </fieldset>
+          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="pur-arrive">La mercadería tiene que llegar</Label>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <NumberStepper
+                id="pur-arrive"
+                value={arrive}
+                min={0}
+                max={MAX_ARRIVE_DAYS_BEFORE}
+                onChange={setArrive}
+                format={daysText}
+                decreaseLabel="Un día menos"
+                increaseLabel="Un día más"
+                describedById="pur-arrive-hint"
+              />
+              <span className="text-sm">antes del evento</span>
+            </div>
+            <p id="pur-arrive-hint" className="text-sm text-muted-foreground">
+              Con los días de entrega de cada proveedor, el panel dice hasta cuándo pedirle lo de
+              cada evento y avisa si algo llega tarde.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="pur-base">Para cuántas personas están las recetas</Label>
             <Input

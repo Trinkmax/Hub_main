@@ -13,6 +13,7 @@ import {
 import { getArcaLookupStatus, getPadronVerification } from '@/lib/arca/queries'
 import { todayInCordoba } from '@/lib/dates'
 import { formatCuit, normalizeCuit } from '@/lib/fiscal'
+import { getComprasLinkForParty } from '@/lib/purchasing/parties'
 import { SupplierAccountProvider } from '../../_components/supplier-account-picker'
 import { isPurchaseImputation } from '../../_lib/accounts'
 import { firstParam, isUuidLike, supplierHref } from '../../_lib/links'
@@ -69,13 +70,16 @@ export default async function SupplierPage({
       : null
   // El plan y ARCA, para quien carga y en las dos vistas: la categoría y «Editar datos» se abren
   // también desde el totalizador. Si fallan, la página se ve igual, sin esos dos botones.
-  const [positionOutcome, verificationOutcome, accounts, arcaLookup, settingsOutcome] =
+  const [positionOutcome, verificationOutcome, accounts, arcaLookup, settingsOutcome, compras] =
     await Promise.all([
       settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
       cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
       canWrite ? settleQuery(listAccounts(tenantId)) : null,
       canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
       settleQuery(getAccountingSettings(tenantId)),
+      // En la ficha: el proveedor de Compras con el que comparte los datos para pedirle. Solo lo ve quien
+      // ve Compras (la RLS); si falla, la ficha se ve igual.
+      ficha ? getComprasLinkForParty(tenantId, id).catch(() => null) : null,
     ])
   // Sin los saldos iniciales, «al día» es por lo cargado: el totalizador lo aclara.
   const openingPending = settingsOutcome.ok && settingsOutcome.data?.openingStatus === 'pending'
@@ -134,6 +138,7 @@ export default async function SupplierPage({
           canWrite={canWrite}
           hasBalance={hasBalance}
           verification={verification ? <ArcaVerification verification={verification} /> : null}
+          compras={compras}
         />
       ) : (
         <>

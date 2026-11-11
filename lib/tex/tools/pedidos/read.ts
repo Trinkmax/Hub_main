@@ -89,7 +89,7 @@ export const pedidosReadTools = [
           ...(general
             ? {
                 cocina_contando: openCountData(panel.openCount) ?? 'no hay un conteo abierto',
-                proximos_eventos: eventsData(panel.upcoming),
+                eventos_de_la_semana: eventsData(panel.deadlines, ctx.today),
                 datos_para_corregir: issuesData(panel.issues) ?? 'nada',
               }
             : {}),

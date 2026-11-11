@@ -50,6 +50,13 @@ export type ReceivedState = 'ok' | 'partial' | 'missing'
 export type PurSettings = {
   /** 0 = domingo … 6 = sábado. */
   countWeekdays: number[]
+  /**
+   * Por día de conteo, cuántos días después termina su ventana de eventos: domingo → 4 (hasta el jueves).
+   * Un día sin ventana fijada cubre hasta que el próximo conteo llegue a tiempo (`defaultEventsUntil`).
+   */
+  countWindows: Record<number, number>
+  /** La mercadería tiene que llegar estos días antes del evento (HUB: 2). */
+  arriveDaysBefore: number
   recipeBaseGuests: number
   reviewerName: string | null
   senderName: string | null
@@ -59,11 +66,18 @@ export type PurSettings = {
 
 export const DEFAULT_SETTINGS: PurSettings = {
   countWeekdays: [1, 3],
+  countWindows: {},
+  arriveDaysBefore: 2,
   recipeBaseGuests: 60,
   reviewerName: null,
   senderName: null,
   lowFraction: 0.5,
 }
+
+/** Los días de la ventana de un conteo: de 0 (solo ese día) a 13. */
+export const MAX_COUNT_WINDOW_DAYS = 13
+/** Cuántos días antes del evento puede pedirse que llegue la mercadería, como mucho. */
+export const MAX_ARRIVE_DAYS_BEFORE = 7
 
 export type PurZone = {
   id: string
@@ -82,7 +96,22 @@ export type PurSupplier = {
   deliveryWeekdays: number[]
   leadDays: number
   notes: string | null
-  accPartyId: string | null
+  active: boolean
+}
+
+/**
+ * Una razón social de Administración unida a un proveedor de Compras (`pur_supplier_parties`). Un proveedor
+ * puede facturar con más de una (Vittis); cada razón social va con un solo proveedor.
+ */
+export type SupplierParty = {
+  supplierId: string
+  partyId: string
+  /** La razón social. */
+  name: string
+  /** El nombre de fantasía, si tiene. */
+  tradeName: string | null
+  /** El CUIT tal como está guardado (11 dígitos), o null. */
+  taxId: string | null
   active: boolean
 }
 

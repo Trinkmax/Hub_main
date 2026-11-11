@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/ui/page-header'
 import { cn } from '@/lib/utils'
 import { FIELD_INPUT, matchesSearch } from './form-bits'
-import { SupplierEditorSheet, type SupplierView } from './supplier-editor'
+import { type SupplierAccounting, SupplierEditorSheet, type SupplierView } from './supplier-editor'
 import { useSheetUrl } from './use-sheet-url'
 import { WeekdayDots } from './weekdays'
 
@@ -43,10 +43,13 @@ export function SuppliersManager({
   tenantSlug,
   today,
   suppliers,
+  accounting,
 }: {
   tenantSlug: string
   today: string
   suppliers: readonly SupplierView[]
+  /** Los proveedores de Administración para unir (vacío sin acceso allá) y si se puede unir. */
+  accounting: SupplierAccounting
 }) {
   const router = useRouter()
   const { params, open: openSheet, close: closeSheet } = useSheetUrl(SHEET_KEYS)
@@ -241,11 +244,13 @@ export function SuppliersManager({
         today={today}
         open={sheetOpen}
         supplier={mode === 'edit' ? shown : null}
+        accounting={accounting}
         onClose={closeSheet}
         onSaved={() => {
           closeSheet()
           router.refresh()
         }}
+        onLinked={() => router.refresh()}
       />
     </>
   )
@@ -393,6 +398,11 @@ function SupplierCard({ supplier, onOpen }: { supplier: SupplierView; onOpen: ()
           <WeekdayDots days={supplier.deliveryWeekdays} />
           <span className="text-xs text-muted-foreground">{leadText(supplier.leadDays)}</span>
         </span>
+        {supplier.parties.length > 1 ? (
+          <span className="text-xs text-muted-foreground">
+            Factura como {supplier.parties.map((p) => p.name).join(' y ')}
+          </span>
+        ) : null}
         {noDays ? <MissingLine>Sin días de entrega no se calcula cuándo llega.</MissingLine> : null}
       </button>
     </li>

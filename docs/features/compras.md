@@ -6,7 +6,8 @@ mismo:
 > la cocina cuenta → el sistema calcula → quien compra revisa y manda por WhatsApp → el proveedor confirma → la
 > cocina recibe → quien compra resuelve las diferencias.
 
-Se prende por bar con la función `purchasing` (panel de superadmin). Migración: `20261106224328_compras.sql`.
+Se prende por bar con la función `purchasing` (panel de superadmin). Migraciones: `20261106224328_compras.sql` y
+`20261111222154_compras_plazos_razones_sociales.sql` (plazos de los eventos y razones sociales).
 
 ## Dónde está
 
@@ -53,6 +54,75 @@ pruebas en `tests/lib/purchasing.test.ts`.
 - Las líneas «Se hace en el local» (caldos, salsas) aparecen como recordatorio y no se piden.
 - Si la receta usa otra unidad que el insumo: kg↔g y L↔ml se pasan solos; si no hay cuenta segura (unidad contra
   kg), suma como viene y queda en «Datos para corregir».
+
+## Plazos de los eventos (11/11/2026)
+
+Lo pidió Tomás: «linkear los eventos de la semana con los días antes que tenés que pedir los insumos, con los días
+de entrega, y como regla general te tiene que avisar para que esa cuenta te dé que la mercadería ingrese dos días
+antes del evento». Y: los conteos se hacen **domingo y miércoles**; el del domingo incluye los eventos **hasta el
+jueves** de esa semana y el del miércoles, la carta y los eventos **hasta el lunes** inclusive.
+
+- **Ajustes de Compras**: los días de conteo, hasta qué día cubre los eventos cada uno (`pur_settings.count_windows`,
+  `{"0": 4, "3": 5}`: días después del conteo) y cuántos días antes del evento tiene que llegar la mercadería
+  (`arrive_days_before`, 2). Un día de conteo sin ventana fijada cubre hasta el día antes de que el próximo conteo
+  pueda traer la mercadería a tiempo (`defaultEventsUntil`: con 2 días, da lo mismo que pidió Tomás).
+- **Nuevo conteo**: «Contar para los eventos hasta» sale de esa ventana y cambia con la fecha (mientras no lo
+  toquen). Debajo dice «Los domingos cubre los eventos hasta el jueves; los miércoles, hasta el lunes.».
+- **La cuenta** (`lib/purchasing/deadlines.ts`, puro, con pruebas en `tests/lib/purchasing-deadlines.test.ts`). Para
+  cada fecha que suma insumos y cada proveedor que trae algo de su receta:
+
+  ```
+  tiene que llegar hasta = la fecha − 2
+  llega                  = el último día de entrega del proveedor que no pasa de eso
+  pedir hasta            = ese día − la anticipación del proveedor
+  ```
+
+  Y después: si ya está en un pedido (un renglón con el nombre del evento) mandado o para revisar, y si llega a
+  tiempo; si lo vio un conteo ya mandado (alcanzaba con lo que había); si lo trae a tiempo un conteo que viene (el
+  primero cuya ventana llega a la fecha, si se hace antes de «pedir hasta»); o si hay que **pedirlo aparte**: más
+  adelante, hoy o, si ya es tarde, cuándo llegaría pidiéndolo hoy. Un proveedor sin días de entrega se calcula como
+  si trajera cualquier día, y se avisa.
+- **Panel › Pedidos › Eventos de la semana** (reemplaza a «Próximos 7 días»): cada fecha con un renglón por
+  proveedor («Lo trae el conteo del domingo · pedir hasta el lun 16/11 · llega el mar 17/11», «Pedilo aparte hasta el
+  mar 17/11», «Tarde: pedido hoy llega mañana»). Arriba, un aviso con lo que hay que resolver hoy. Lo de más adelante
+  aparece si hay que pedirlo aparte dentro de la semana. «Editar» abre la variante y las personas, como antes.
+- **Sumar al pedido** (`addEventToOrder`): lo que ningún conteo trae a tiempo va al pedido para revisar de ese
+  proveedor (o a uno nuevo), con la cantidad de la receta por las personas y el nombre del evento en el renglón. El
+  botón aparece desde el día antes de «pedir hasta» (y si ya es tarde): sumado antes, saldría con el próximo pedido
+  de ese proveedor y llegaría días antes del evento.
+- **Pedido para revisar**: si lleva algo para un evento y con su entrega llega tarde, lo dice («Llega tarde para
+  Ramen»); si hay que mandarlo hoy para que llegue, también.
+- **Tex**: `ver_pedidos` trae `eventos_de_la_semana` con el estado de cada proveedor; el manual explica la regla.
+
+Con las ventanas de Tomás y un proveedor que pide con un día, los eventos de martes y de viernes no llegan dos días
+antes con ningún conteo (el del domingo llega el lunes; el del miércoles, el jueves): el panel los marca «Pedilo
+aparte» para que se pidan a mano.
+
+## Proveedores: una sola ficha con Administración (11/11/2026)
+
+Lo pidió Tomás por audio: «me puse a avanzar con los datos de los proveedores en Compras y me hace repetir datos de los
+que tengo en Administración… ¿se pueden llevar de un lado para el otro?». Y: «¿qué hacer con los proveedores que me
+facturan con distintas razones sociales? Tengo el caso de Vittis».
+
+- Un proveedor de Compras se une a una o más **razones sociales** de Administración (`pur_supplier_parties`, que
+  reemplaza a `pur_suppliers.acc_party_id`). Cada razón social va con un solo proveedor.
+- **Los datos para pedirle se cargan una vez**: los días de entrega y la anticipación quedan iguales en Compras y en
+  todas sus razones sociales, cambien donde cambien (triggers `pur_suppliers_sync_parties` y
+  `acc_parties_sync_supplier`). El WhatsApp de Compras y el teléfono de Administración se completan uno con otro y
+  se siguen mientras sean el mismo número; si Administración tiene otro a propósito (el de quien factura), no se
+  pisa. El teléfono se pasa a WhatsApp con la misma cuenta de `canonicalPhone` (`private.pur_whatsapp_from_phone`;
+  la prueba `tests/rls/purchasing-supplier-parties.test.ts` compara las dos).
+- **Al unir**, se completa lo que falta: si los dos tienen días, manda Administración cuando es la primera razón
+  social (es donde se cargó la ficha) y Compras cuando ya había otras.
+- Unir es del dueño que carga en Administración (policy de la tabla). En **Compras › Proveedores**, la ficha muestra
+  «En Administración»: las razones sociales unidas (con su CUIT y un link a su ficha), «Sumar otra razón social» y
+  «Soltar». En la ficha de **Administración**, «Para pedirle» dice a qué proveedor de Compras está unida y con qué
+  otras razones sociales factura.
+- **Varias razones sociales (Vittis)**: cada una va como su propio proveedor en Administración, con su CUIT, sus
+  comprobantes y su cuenta corriente (cada una factura y cobra por separado). En Compras es uno solo: un WhatsApp, un
+  pedido, los mismos días de entrega.
+- La migración pasó las 24 uniones que había en HUB: 19 proveedores de Compras tomaron los días, la anticipación o el
+  WhatsApp de Administración, y Barracuda le completó el teléfono a Debelius SAS.
 
 ## Estados de un pedido
 
@@ -142,7 +212,7 @@ fechas que necesitan elegir la variante. Cada línea lleva a donde se arregla y 
 
 ## Tablas
 
-`pur_settings` · `pur_zones` · `pur_suppliers` (con `acc_party_id`, el mismo proveedor en Administración) ·
+`pur_settings` · `pur_zones` · `pur_suppliers` · `pur_supplier_parties` (sus razones sociales en Administración) ·
 `pur_items` · `pur_recipes` + `pur_recipe_lines` · `pur_event_plans` · `pur_counts` + `pur_count_lines` ·
 `pur_orders` + `pur_order_lines`. RPC: `pur_events_between`, `pur_submit_count`, `pur_receive_order`.
 

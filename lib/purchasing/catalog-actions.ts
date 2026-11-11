@@ -1,7 +1,8 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { canonicalPhone } from '@/lib/phone'
+import { logAudit } from '@/lib/audit'
+import { canonicalPhone, formatPhoneForDisplay } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import {
   PURCHASING_MANAGE_ROLES,
@@ -18,6 +19,7 @@ import {
   recipeLinesSchema,
   recipeSchema,
   settingsSchema,
+  supplierPartySchema,
   supplierSchema,
   zoneDeleteSchema,
   zoneOrderSchema,
@@ -242,6 +244,114 @@ export async function saveSupplier(input: unknown): Promise<CatalogResult<{ id: 
   return { ok: true, id: res.data.id }
 }
 
+/** Lo que queda en la ficha después de unir: los días, la anticipación y el WhatsApp pueden venir de allá. */
+export type SupplierSynced = {
+  deliveryWeekdays: number[]
+  leadDays: number
+  whatsappDisplay: string | null
+}
+
+/**
+ * Une una razón social de Administración al proveedor (Vittis factura con dos). Al unir, la base completa lo
+ * que falte de cada lado (trigger `pur_supplier_parties_linked`) y desde ahí los días de entrega, la
+ * anticipación y el teléfono quedan iguales. Hace falta poder editar Administración (policy de la tabla).
+ */
+export async function linkSupplierParty(
+  input: unknown,
+): Promise<CatalogResult<{ supplier: SupplierSynced; partyName: string }>> {
+  const parsed = supplierPartySchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: firstIssue(parsed.error) }
+  const v = parsed.data
+  const auth = await authorize(v.slug)
+  if (!auth) return { ok: false, message: NO_ACCESS }
+  const db = await createClient()
+  const party = await db
+    .from('acc_parties')
+    .select('id, name')
+    .eq('tenant_id', auth.tenantId)
+    .eq('id', v.partyId)
+    .maybeSingle()
+  if (party.error) return dbError('linkSupplierParty', party.error)
+  if (!party.data) {
+    return {
+      ok: false,
+      message: 'No encontramos ese proveedor en Administración (o no tenés acceso).',
+    }
+  }
+  const ins = await db.from('pur_supplier_parties').insert({
+    tenant_id: auth.tenantId,
+    supplier_id: v.supplierId,
+    acc_party_id: v.partyId,
+    created_by: auth.userId,
+  })
+  if (ins.error) {
+    if (ins.error.code === '42501') {
+      return { ok: false, message: 'Para unirlo tenés que poder cargar en Administración.' }
+    }
+    return dbError(
+      'linkSupplierParty',
+      ins.error,
+      'Esa razón social ya está unida a otro proveedor de Compras: soltala de ese primero.',
+    )
+  }
+  const row = await db
+    .from('pur_suppliers')
+    .select('delivery_weekdays, lead_days, whatsapp')
+    .eq('tenant_id', auth.tenantId)
+    .eq('id', v.supplierId)
+    .single()
+  if (row.error) return dbError('linkSupplierParty', row.error)
+  await logAudit({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    action: 'purchasing.supplier_party_linked',
+    entity: 'pur_supplier',
+    entityId: v.supplierId,
+    payload: { acc_party_id: v.partyId },
+  })
+  revalidateAll(v.slug)
+  revalidatePath(`/${v.slug}/administracion`, 'layout')
+  return {
+    ok: true,
+    partyName: party.data.name,
+    supplier: {
+      deliveryWeekdays: (row.data.delivery_weekdays ?? []).map(Number),
+      leadDays: row.data.lead_days,
+      whatsappDisplay: row.data.whatsapp ? formatPhoneForDisplay(`+${row.data.whatsapp}`) : null,
+    },
+  }
+}
+
+/** Suelta una razón social: los datos quedan como están, de los dos lados; solo dejan de seguirse. */
+export async function unlinkSupplierParty(input: unknown): Promise<CatalogResult> {
+  const parsed = supplierPartySchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: firstIssue(parsed.error) }
+  const v = parsed.data
+  const auth = await authorize(v.slug)
+  if (!auth) return { ok: false, message: NO_ACCESS }
+  const db = await createClient()
+  const { data, error } = await db
+    .from('pur_supplier_parties')
+    .delete()
+    .eq('tenant_id', auth.tenantId)
+    .eq('supplier_id', v.supplierId)
+    .eq('acc_party_id', v.partyId)
+    .select('id')
+  if (error) return dbError('unlinkSupplierParty', error)
+  if (!data.length) return { ok: false, message: 'Esa razón social ya no estaba unida.' }
+  await logAudit({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    action: 'purchasing.supplier_party_unlinked',
+    entity: 'pur_supplier',
+    entityId: v.supplierId,
+    payload: { acc_party_id: v.partyId },
+  })
+  revalidateAll(v.slug)
+  revalidatePath(`/${v.slug}/administracion`, 'layout')
+  return { ok: true }
+}
+
 // ─── Recetas ─────────────────────────────────────────────────────────────────
 
 export async function saveRecipe(input: unknown): Promise<CatalogResult<{ id: string }>> {
@@ -385,6 +495,13 @@ export async function saveSettings(input: unknown): Promise<CatalogResult> {
     {
       tenant_id: auth.tenantId,
       count_weekdays: [...new Set(v.countWeekdays)].sort(),
+      // Solo los días que se cuentan: el resto vuelve a la ventana calculada si algún día se prende.
+      count_windows: Object.fromEntries(
+        v.countWindows
+          .filter((w) => v.countWeekdays.includes(w.weekday))
+          .map((w) => [String(w.weekday), w.days]),
+      ),
+      arrive_days_before: v.arriveDaysBefore,
       recipe_base_guests: v.recipeBaseGuests,
       reviewer_name: v.reviewerName,
       sender_name: v.senderName,

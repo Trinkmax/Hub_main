@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import {
-  addDays,
   capitalizeFirst,
   formatDayMonth,
   isoDayInCordoba,
@@ -19,7 +18,7 @@ import { DifferencesCard } from './differences-card'
 import { DraftCard } from './draft-card'
 import { PanelActions } from './panel-actions'
 import { SentCard } from './sent-card'
-import { UpcomingEvents } from './upcoming-events'
+import { WeekEvents } from './upcoming-events'
 
 function Metric({
   href,
@@ -134,8 +133,13 @@ export function OrdersPanel({
     (n, o) => n + o.lines.filter((l) => (l.orderedPacks ?? 1) > 0).length,
     0,
   )
-  const week = data.upcoming.filter((e) => e.event.date <= addDays(today, 6))
   const count = data.openCount
+  const arrive = catalog.settings.arriveDaysBefore
+  // Lo de cada pedido para revisar que lleva algo para un evento: si llega tarde o hay que mandarlo hoy.
+  const eventRowsOf = (o: PurOrder) =>
+    data.deadlines.flatMap((e) =>
+      e.suppliers.filter((r) => r.orderId === o.id).map((row) => ({ event: e.planned, row })),
+    )
 
   return (
     <PageShell className="space-y-7">
@@ -194,10 +198,21 @@ export function OrdersPanel({
       ) : null}
 
       <section id="pur-upcoming" className="scroll-mt-24 space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Próximos 7 días
-        </h2>
-        <UpcomingEvents slug={slug} today={today} events={week} />
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Eventos de la semana
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            La mercadería tiene que llegar {arrive === 1 ? '1 día' : `${arrive} días`} antes.
+          </p>
+        </div>
+        <WeekEvents
+          slug={slug}
+          today={today}
+          deadlines={data.deadlines}
+          arriveDaysBefore={arrive}
+          openCountDate={count?.countDate ?? null}
+        />
       </section>
 
       <DataIssues slug={slug} issues={data.issues} />
@@ -222,6 +237,7 @@ export function OrdersPanel({
               zones={catalog.zones}
               senderName={senderName}
               defaultOpen={i === 0}
+              eventRows={eventRowsOf(o)}
             />
           ))
         ) : (
