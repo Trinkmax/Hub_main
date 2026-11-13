@@ -1,0 +1,2125 @@
+/* ── Editor del plano del salón ──────────────────────────────────────────────
+   El mundo «papel» de docs/features/pos.md § Diseño, aplicado al editor del dueño:
+   un tablero de paño verde, el piso de cartón crema apoyado encima, mesas de
+   cartón blanco con el número en tinta, y las herramientas como hojas de papel.
+
+   Los colores salen de los tokens `--pos-*` (final de app/globals.css), que
+   cuelgan de la clase `.pos`. Todo lo de acá lleva el prefijo `fpe-`.
+
+   PALETA FIJA: el panel de gestión tiene tema claro y oscuro, pero el editor es
+   un objeto (un tablero con papeles encima) y se ve igual en los dos, como el
+   salón. Por eso `.fpe-scope` vuelve a apuntar los tokens del panel (`--card`,
+   `--foreground`, `--border`…) a los de papel: lo que se dibuja adentro, y los
+   diálogos y hojas que llevan la clase, quedan en papel aunque el panel esté en
+   oscuro. */
+
+.fpe-scope {
+  --fpe-select: oklch(0.56 0.19 256);
+  --fpe-select-soft: oklch(0.56 0.19 256 / 0.18);
+  --fpe-guide: oklch(0.62 0.23 12);
+  --fpe-danger: oklch(0.5 0.19 27);
+  --fpe-shadow-paper:
+    0 1px 0 oklch(1 0 0 / 0.7) inset, 0 16px 34px -16px oklch(0.12 0.04 165 / 0.75),
+    0 3px 8px -3px oklch(0.12 0.04 165 / 0.45);
+  --fpe-line: oklch(0.2 0.03 165 / 0.22);
+
+  /* Los tokens del panel, en papel (ver la nota de arriba). */
+  --background: var(--pos-paper);
+  --foreground: var(--pos-ink);
+  --card: var(--pos-card);
+  --card-foreground: var(--pos-ink);
+  --popover: var(--pos-paper);
+  --popover-foreground: var(--pos-ink);
+  --primary: var(--pos-ink);
+  --primary-foreground: var(--pos-paper);
+  --secondary: var(--pos-paper-2);
+  --secondary-foreground: var(--pos-ink);
+  --muted: var(--pos-paper-2);
+  --muted-foreground: var(--pos-ink-soft);
+  --accent: var(--pos-paper-2);
+  --accent-foreground: var(--pos-ink);
+  --cream-tint: var(--pos-paper-2);
+  --border: var(--pos-rule);
+  --input: var(--pos-rule);
+  --ring: var(--fpe-select);
+  --destructive: var(--fpe-danger);
+  --destructive-foreground: var(--pos-paper);
+  --success: oklch(0.47 0.12 155);
+  --success-foreground: var(--pos-paper);
+  /* Lo que además toma del panel el plano de siempre («En vivo» en un bar sin el
+     punto de venta) y sus fichas: fondo del lienzo, paredes y estados. Sin esto,
+     con el panel en oscuro quedaba a medio teñir (el lienzo gris y las mesas
+     libres casi sin leerse). Son los valores del tema claro.
+     `--surface` va con su valor del tema claro y NO con un token de papel: el
+     lienzo lo mezcla con `--background` en oklch, y Chrome trata a los cremas casi
+     sin croma (los `--pos-paper*`) como sin matiz; dos de esos mezclados dan un
+     rosado. Con uno de los dos bien crema, la mezcla queda crema. */
+  --surface: oklch(0.952 0.026 88);
+  --surface-foreground: var(--pos-ink);
+  --warning: oklch(0.71 0.135 70);
+  --warning-foreground: oklch(0.225 0.05 70);
+  --warning-text: oklch(0.46 0.12 62);
+  --info: oklch(0.55 0.075 215);
+  --info-foreground: var(--pos-paper);
+  --wall: oklch(0.32 0.02 165);
+  --wall-foreground: oklch(0.96 0.012 88);
+  --wall-border: oklch(0.24 0.025 165);
+  --seat: var(--pos-seat);
+  --seat-border: oklch(0.2 0.03 165 / 0.3);
+  --tenant-accent: var(--primary);
+  --tenant-accent-foreground: var(--primary-foreground);
+  /* Sillas y banquetas del plano (components/floor-plan/table-glyph.tsx). */
+  --fp-seat: var(--pos-seat);
+  --fp-seat-border: oklch(0.2 0.03 165 / 0.3);
+  color-scheme: light;
+}
+
+/* El contenedor mide al editor: el diseño responde al ancho que le queda (con o
+   sin la barra lateral del panel), no al de la ventana. */
+.fpe-host {
+  container: fpe / inline-size;
+}
+
+.fpe {
+  --branch: var(--pos-board);
+  --fpe-focus: var(--fpe-select);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 5rem);
+  min-height: 620px;
+  border-radius: 22px;
+  background: var(--pos-board-2);
+  color: var(--pos-board-ink);
+  box-shadow:
+    0 0 0 1px oklch(0.16 0.03 165 / 0.5),
+    0 28px 60px -32px oklch(0.1 0.04 165 / 0.8);
+  overflow: clip;
+  isolation: isolate;
+  font-family: var(--pos-font);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+.fpe button,
+.fpe-pop button,
+.fpe-dialog button {
+  font: inherit;
+  cursor: pointer;
+}
+.fpe button:disabled,
+.fpe-pop button:disabled,
+.fpe-dialog button:disabled {
+  cursor: not-allowed;
+}
+
+.fpe :focus-visible,
+.fpe-pop :focus-visible,
+.fpe-dialog :focus-visible {
+  outline: 3px solid var(--fpe-focus, var(--fpe-select));
+  outline-offset: 2px;
+}
+
+/* ── Franja: el título, la sucursal y qué se está mirando ── */
+.fpe-band {
+  --fpe-focus: var(--pos-paper);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.1rem;
+  padding: 0.7rem 0.85rem 0.7rem 1.15rem;
+  background: color-mix(in oklch, var(--branch) 86%, black);
+  color: var(--pos-on-dark);
+}
+/* Un color de sucursal claro (lo elige el dueño) lleva tinta y no se oscurece. */
+.fpe[data-ink="dark"] .fpe-band {
+  --fpe-focus: var(--pos-ink);
+  background: var(--branch);
+  color: var(--pos-ink);
+}
+.fpe-title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.fpe-branches {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: oklch(0 0 0 / 0.22);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fpe-branches::-webkit-scrollbar {
+  display: none;
+}
+.fpe-branch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.9rem 0 0.65rem;
+  border-radius: 999px;
+  color: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  text-decoration: none;
+  opacity: 0.88;
+  transition:
+    background-color 160ms var(--pos-ease),
+    opacity 160ms var(--pos-ease);
+}
+.fpe-branch[aria-current="page"] {
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  opacity: 1;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+}
+.fpe-branch[data-pending="true"] {
+  opacity: 0.6;
+}
+.fpe-swatch {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--swatch, var(--pos-board));
+  box-shadow: 0 0 0 2px oklch(1 0 0 / 0.85);
+}
+.fpe-branch[aria-current="page"] .fpe-swatch {
+  box-shadow:
+    0 0 0 2px var(--pos-paper),
+    0 0 0 3px oklch(0.2 0.03 165 / 0.3);
+}
+
+.fpe-modes {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 3px;
+  border-radius: 0.85rem;
+  background: oklch(0 0 0 / 0.24);
+}
+.fpe-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.8rem 0 0.65rem;
+  border-radius: 0.65rem;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  opacity: 0.9;
+  transition: background-color 160ms var(--pos-ease);
+}
+.fpe-mode svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+.fpe-mode[aria-pressed="true"] {
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  opacity: 1;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+}
+
+/* ── Sectores: solapas de fichero pegadas al paño ── */
+.fpe-tabs-row {
+  --fpe-focus: var(--pos-paper);
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem 0;
+  background: var(--pos-board-2);
+}
+.fpe-tabs {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  gap: 0.3rem;
+  min-width: 0;
+  /* Aire para que el foco de una solapa no se recorte. */
+  margin: -4px -4px 0;
+  padding: 4px 4px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fpe-tabs::-webkit-scrollbar {
+  display: none;
+}
+.fpe-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.65rem;
+  padding: 0 0.95rem;
+  border-radius: 0.7rem 0.7rem 0 0;
+  background: oklch(1 0 0 / 0.07);
+  color: var(--pos-board-soft);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  white-space: nowrap;
+  transition:
+    background-color 160ms var(--pos-ease),
+    color 160ms var(--pos-ease);
+}
+.fpe-tab.is-active {
+  background: var(--pos-board);
+  color: var(--pos-board-ink);
+}
+.fpe-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.12);
+  font-size: 0.76rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.fpe-tab.is-active .fpe-tab-count {
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+.fpe-tab .fpe-tab-count.is-pending {
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+}
+.fpe-tab-add {
+  gap: 0.35rem;
+  padding: 0 0.85rem 0 0.7rem;
+  border: 1.5px dashed oklch(1 0 0 / 0.32);
+  border-bottom: 0;
+  background: transparent;
+  color: var(--pos-board-ink);
+}
+.fpe-tab-add svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.fpe-tabs-side {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+.fpe-boardbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem 0 0.6rem;
+  border-radius: 0.65rem;
+  background: oklch(1 0 0 / 0.09);
+  color: var(--pos-board-ink);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 160ms var(--pos-ease);
+}
+.fpe-boardbtn svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+/* ── Cuerpo: el paño ── */
+.fpe-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  padding: 0.75rem;
+  background: radial-gradient(
+    130% 80% at 50% 0%,
+    var(--pos-board) 0%,
+    var(--pos-board) 35%,
+    var(--pos-board-2) 100%
+  );
+}
+
+/* ── Hojas de papel: barra, paleta, panel ── */
+.fpe-paper {
+  border-radius: 1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: var(--fpe-shadow-paper);
+}
+
+.fpe-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+  padding: 0.4rem;
+}
+.fpe-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.fpe-toolbar-sep {
+  width: 1.5px;
+  height: 1.6rem;
+  margin: 0 0.15rem;
+  border-radius: 1px;
+  background: var(--pos-rule);
+}
+.fpe-toolbar-spacer {
+  flex: 1;
+}
+
+/* Botones */
+.fpe-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--pos-ink);
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  user-select: none;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease),
+    box-shadow 140ms var(--pos-ease);
+}
+.fpe-btn svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.fpe-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.fpe-btn:disabled {
+  opacity: 0.5;
+}
+.fpe-btn-primary {
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.14) inset,
+    0 8px 14px -8px oklch(0.2 0.04 165 / 0.7);
+}
+.fpe-btn-quiet {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.fpe-btn-danger {
+  color: var(--fpe-danger);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--fpe-danger) 38%, var(--pos-paper));
+}
+.fpe-btn-danger-solid {
+  background: var(--fpe-danger);
+  color: var(--pos-paper);
+}
+.fpe-btn-sm {
+  min-height: 2.35rem;
+  padding: 0 0.75rem;
+  border-radius: 0.65rem;
+  font-size: 0.86rem;
+}
+.fpe-btn-sm svg {
+  width: 1rem;
+  height: 1rem;
+}
+.fpe-btn-icon {
+  width: 2.75rem;
+  padding: 0;
+}
+.fpe-btn-sm.fpe-btn-icon {
+  width: 2.35rem;
+}
+.fpe-btn-block {
+  width: 100%;
+}
+/* «Agregar mesa» también se arrastra al plano. */
+.fpe-btn-drag {
+  cursor: grab;
+  touch-action: none;
+}
+.fpe-btn-drag:active {
+  cursor: grabbing;
+}
+
+/* Control de vista: Plano / Plano y maqueta / Maqueta */
+.fpe-seg {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 0;
+  min-inline-size: auto;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.fpe-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem 0 0.6rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--pos-ink-soft);
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  transition:
+    background-color 160ms var(--pos-ease),
+    color 160ms var(--pos-ease);
+}
+.fpe-seg button svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+.fpe-seg button[aria-pressed="true"] {
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow:
+    0 1px 2px oklch(0.2 0.03 165 / 0.22),
+    0 0 0 1px oklch(0.2 0.03 165 / 0.08);
+}
+/* La vista partida solo existe cuando hay ancho (ver el final). */
+.fpe-seg .fpe-only-split {
+  display: none;
+}
+
+/* Campos */
+.fpe-field {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.fpe-label {
+  color: var(--pos-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-stretch: 92%;
+}
+.fpe-input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: box-shadow 140ms var(--pos-ease);
+}
+.fpe-input::placeholder {
+  color: var(--pos-ink-soft);
+  font-weight: 500;
+  opacity: 1;
+}
+.fpe .fpe-input:focus-visible,
+.fpe-pop .fpe-input:focus-visible,
+.fpe-dialog .fpe-input:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--pos-ink),
+    0 0 0 4px var(--fpe-select-soft);
+}
+.fpe-input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 2px var(--fpe-danger);
+}
+.fpe-input-num {
+  font-variant-numeric: tabular-nums;
+}
+.fpe-hint {
+  margin: 0;
+  color: var(--pos-ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.fpe-error {
+  margin: 0;
+  color: var(--fpe-danger);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Contador de lugares: − 4 + */
+.fpe-stepper {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.2rem;
+  padding: 3px;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.fpe-stepper button {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.35rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow: 0 1px 2px oklch(0.2 0.03 165 / 0.22);
+  transition: transform 140ms var(--pos-ease);
+}
+.fpe-stepper button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.fpe-stepper button:disabled {
+  opacity: 0.45;
+}
+.fpe-stepper button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.fpe-stepper output {
+  min-width: 2.6ch;
+  padding: 0 0.15rem;
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+.fpe-stepper-unit {
+  padding-right: 0.55rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ── Área de trabajo ── */
+.fpe-pane-plan {
+  grid-area: plan;
+}
+.fpe-pane-model {
+  grid-area: model;
+}
+.fpe-work {
+  display: grid;
+  flex: 1;
+  grid-template-columns: auto minmax(0, 1fr) 19.5rem;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "rail plan side";
+  gap: 0.75rem;
+  min-height: 0;
+}
+.fpe-work[data-view="model"] {
+  grid-template-areas: "rail model side";
+}
+.fpe-work[data-view="plan"] .fpe-pane-model,
+.fpe-work[data-view="split"] .fpe-pane-model,
+.fpe-work[data-view="model"] .fpe-pane-plan {
+  display: none;
+}
+
+/* Paleta de elementos */
+.fpe-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 5.1rem;
+  margin: 0;
+  padding: 0.4rem;
+  border: 0;
+  min-inline-size: auto;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.fpe-rail::-webkit-scrollbar {
+  display: none;
+}
+.fpe-rail-title {
+  padding: 0.3rem 0 0.35rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.7rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  letter-spacing: 0.07em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.fpe-tool {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3.55rem;
+  padding: 0.25rem 0.1rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
+  color: var(--pos-ink);
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.1;
+  cursor: grab;
+  touch-action: none;
+  transition:
+    background-color 140ms var(--pos-ease),
+    transform 140ms var(--pos-ease);
+}
+.fpe .fpe-tool {
+  cursor: grab;
+}
+.fpe .fpe-tool:active {
+  cursor: grabbing;
+  transform: scale(0.95);
+}
+.fpe-tool svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+/* Los dos tableros: el plano y la maqueta */
+.fpe-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 1rem;
+  background: oklch(0.17 0.035 165 / 0.5);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.07),
+    inset 0 2px 12px oklch(0 0 0 / 0.28);
+  overflow: hidden;
+}
+.fpe-pane-tag {
+  position: absolute;
+  top: 0.65rem;
+  left: 0.8rem;
+  z-index: 3000;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--pos-board-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  pointer-events: none;
+}
+.fpe-pane-tag svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+/* ── El lienzo ── */
+.fpe-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.fpe-canvas:active {
+  cursor: grabbing;
+}
+/* El piso: cartón crema con la cuadrícula de papel milimetrado. */
+.fpe-stage {
+  --fpe-inv: 1;
+  position: relative;
+  border-radius: 26px;
+  background-color: var(--pos-floor);
+  background-image:
+    linear-gradient(to right, oklch(0.21 0.032 165 / 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.21 0.032 165 / 0.1) 1px, transparent 1px),
+    linear-gradient(to right, oklch(0.21 0.032 165 / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.21 0.032 165 / 0.045) 1px, transparent 1px);
+  background-size:
+    var(--fp-grid-major, 100px) var(--fp-grid-major, 100px),
+    var(--fp-grid-major, 100px) var(--fp-grid-major, 100px),
+    var(--fp-grid, 20px) var(--fp-grid, 20px),
+    var(--fp-grid, 20px) var(--fp-grid, 20px);
+  box-shadow:
+    0 0 0 1px oklch(0.2 0.03 165 / 0.2),
+    0 26px 44px -22px oklch(0.08 0.03 165 / 0.75),
+    0 4px 10px -4px oklch(0.08 0.03 165 / 0.5);
+  cursor: default;
+}
+
+/* Controles que flotan sobre el lienzo (no se agrandan con el zoom). */
+.fpe-zoom {
+  position: absolute;
+  bottom: 0.7rem;
+  left: 0.7rem;
+  z-index: 3000;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 0.8rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: var(--fpe-shadow-paper);
+}
+.fpe-zoom button {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--pos-ink);
+  transition: background-color 140ms var(--pos-ease);
+}
+.fpe-zoom button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.fpe-zoom-value {
+  min-width: 3.3rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.fpe-zoom-sep {
+  width: 1.5px;
+  height: 1.3rem;
+  margin: 0 0.15rem;
+  background: var(--pos-rule);
+}
+
+/* Lo elegido: qué se puede hacer con eso */
+.fpe-selbar {
+  position: absolute;
+  top: 0.7rem;
+  left: 50%;
+  z-index: 3000;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 1.4rem);
+  padding: 3px;
+  border-radius: 0.85rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: var(--fpe-shadow-paper);
+  transform: translateX(-50%);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fpe-selbar::-webkit-scrollbar {
+  display: none;
+}
+.fpe-selbar-what {
+  flex: none;
+  padding: 0 0.6rem 0 0.7rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  white-space: nowrap;
+}
+.fpe-selbar button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 2.35rem;
+  height: 2.35rem;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--pos-ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  transition: background-color 140ms var(--pos-ease);
+}
+.fpe-selbar button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.fpe-selbar button.is-danger {
+  color: var(--fpe-danger);
+}
+.fpe-selbar-sep {
+  flex: none;
+  width: 1.5px;
+  height: 1.3rem;
+  margin: 0 0.2rem;
+  background: var(--pos-rule);
+}
+
+/* Guías de alineación */
+.fpe-guide {
+  position: absolute;
+  z-index: 2500;
+  background: var(--fpe-guide);
+  pointer-events: none;
+}
+
+/* Sector vacío: una nota apoyada en el piso */
+.fpe-canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2900;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  pointer-events: none;
+}
+.fpe-note {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  max-width: 24rem;
+  padding: 1.4rem 1.5rem 1.35rem;
+  border-radius: 1.1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: var(--fpe-shadow-paper);
+  text-align: center;
+  pointer-events: auto;
+}
+.fpe-note h3 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.fpe-note p {
+  margin: 0;
+  color: var(--pos-ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.fpe-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* ── Elementos del plano ── */
+.fpe-el-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+}
+.fpe-el-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  color: var(--pos-ink);
+  text-align: center;
+  touch-action: none;
+  overflow: hidden;
+  transition:
+    box-shadow 180ms var(--pos-ease),
+    filter 180ms var(--pos-ease);
+}
+.fpe .fpe-el-body {
+  cursor: grab;
+}
+.fpe .fpe-el-body:active {
+  cursor: grabbing;
+}
+.fpe .fpe-el-body:focus-visible {
+  outline: calc(3px * var(--fpe-inv, 1)) solid var(--fpe-select);
+  outline-offset: calc(3px * var(--fpe-inv, 1));
+}
+
+/* Mesa: cartón blanco, número impreso en tinta */
+.fpe-el--table {
+  background: var(--pos-card);
+  box-shadow:
+    0 0 0 1px var(--fpe-line),
+    0 5px 9px -3px oklch(0.18 0.04 165 / 0.38),
+    0 1px 2px oklch(0.18 0.04 165 / 0.2);
+}
+.fpe-el-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 2px;
+  line-height: 1;
+  pointer-events: none;
+}
+.fpe-el-num {
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 0.9;
+  white-space: nowrap;
+}
+.fpe-el-cap {
+  color: var(--pos-carbon);
+  font-size: 10px;
+  font-weight: 700;
+  font-stretch: 88%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* El respaldo de la banquette: un borde más oscuro del lado de la pared. */
+.fpe-el-backrest {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  left: 4px;
+  height: 6px;
+  border-radius: 0 0 4px 4px;
+  background: var(--pos-card-4);
+  pointer-events: none;
+}
+
+/* Lo construido: paredes y columnas (verde gris), barra (kraft), islas (cartón) */
+.fpe-el--wall,
+.fpe-el--pillar {
+  background: var(--pos-wall);
+  box-shadow: inset 0 0 0 1px oklch(0.2 0.03 165 / 0.28);
+}
+.fpe-el--bar {
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  box-shadow:
+    inset 0 0 0 1px oklch(0.2 0.04 70 / 0.32),
+    0 4px 8px -3px oklch(0.18 0.04 165 / 0.35);
+}
+.fpe-el--island,
+.fpe-el--booth,
+.fpe-el--stage {
+  background: var(--pos-card-2);
+  box-shadow:
+    inset 0 0 0 1px var(--fpe-line),
+    0 4px 8px -3px oklch(0.18 0.04 165 / 0.3);
+}
+/* Levantada: mientras se arrastra, la pieza se despega del piso. */
+.floor-element.is-dragging .fpe-el--table,
+.floor-element.is-dragging .fpe-el--bar,
+.floor-element.is-dragging .fpe-el--island,
+.floor-element.is-dragging .fpe-el--stage,
+.floor-element.is-dragging .fpe-el--booth {
+  box-shadow:
+    0 0 0 1px var(--fpe-line),
+    0 24px 28px -12px oklch(0.18 0.04 165 / 0.5),
+    0 8px 12px -6px oklch(0.18 0.04 165 / 0.35);
+}
+/* Carteles sobre el piso: puerta y texto no tienen volumen. */
+.fpe-el--door,
+.fpe-el--text {
+  background: transparent;
+  color: color-mix(in oklch, var(--pos-ink) 64%, var(--pos-floor));
+  /* El cartel puede ser más ancho que su caja (que es solo de dónde se lo agarra). */
+  overflow: visible;
+}
+.fpe-el--door {
+  border: 1.5px dashed color-mix(in oklch, var(--pos-ink) 45%, var(--pos-floor));
+  border-radius: 8px;
+}
+.fpe-el--text {
+  border-radius: 6px;
+}
+.fpe-el--text.is-blank {
+  border: 1.5px dashed color-mix(in oklch, var(--pos-ink) 35%, var(--pos-floor));
+}
+.fpe-el-decal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 4px;
+  /* Con el plano alejado no se achican: miden lo mismo que en la maqueta del salón. */
+  font-size: max(11px, calc(11px * var(--fpe-inv, 1)));
+  font-weight: 700;
+  font-stretch: 80%;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.fpe-el-decal svg {
+  width: max(16px, calc(16px * var(--fpe-inv, 1)));
+  height: max(16px, calc(16px * var(--fpe-inv, 1)));
+  flex: none;
+}
+.fpe-el-tag {
+  max-width: 100%;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  font-stretch: 84%;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Elegido: marco azul con manijas. Miden lo mismo en pantalla con cualquier zoom. */
+.fpe-el-ring {
+  position: absolute;
+  inset: calc(-5px * var(--fpe-inv, 1));
+  border: calc(2px * var(--fpe-inv, 1)) solid var(--fpe-select);
+  border-radius: calc(10px * var(--fpe-inv, 1));
+  box-shadow: 0 0 0 calc(4px * var(--fpe-inv, 1)) var(--fpe-select-soft);
+  pointer-events: none;
+}
+.fpe-handle {
+  position: absolute;
+  z-index: 20;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--pos-card);
+  box-shadow:
+    0 0 0 2px var(--fpe-select),
+    0 2px 5px oklch(0 0 0 / 0.35);
+  touch-action: none;
+}
+/* Zona de agarre más grande que la manija (dedos y zoom alejado). */
+.fpe-handle::before {
+  position: absolute;
+  inset: -9px;
+  content: "";
+}
+.fpe-handle--se {
+  right: calc(-5px * var(--fpe-inv, 1) - 6px);
+  bottom: calc(-5px * var(--fpe-inv, 1) - 6px);
+  cursor: nwse-resize;
+  transform: scale(var(--fpe-inv, 1));
+}
+.fpe-handle--e {
+  top: calc(50% - 6px);
+  right: calc(-5px * var(--fpe-inv, 1) - 6px);
+  cursor: ew-resize;
+  transform: scale(var(--fpe-inv, 1));
+}
+.fpe-handle--s {
+  bottom: calc(-5px * var(--fpe-inv, 1) - 6px);
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+  transform: scale(var(--fpe-inv, 1));
+}
+.fpe-rotate {
+  position: absolute;
+  top: calc(-5px * var(--fpe-inv, 1));
+  left: 50%;
+  z-index: 30;
+  width: 0;
+  height: 0;
+  transform: scale(var(--fpe-inv, 1));
+}
+.fpe-rotate-stem {
+  position: absolute;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  height: 14px;
+  background: var(--fpe-select);
+}
+.fpe .fpe-rotate-knob {
+  position: absolute;
+  bottom: 12px;
+  left: -12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pos-card);
+  color: var(--fpe-select);
+  box-shadow:
+    0 0 0 2px var(--fpe-select),
+    0 2px 5px oklch(0 0 0 / 0.35);
+  cursor: grab;
+  touch-action: none;
+}
+.fpe .fpe-rotate-knob:active {
+  cursor: grabbing;
+}
+.fpe-rotate-knob svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Lo que se arrastra desde la paleta: la huella de lo que va a caer. */
+.fpe-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 4000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--fpe-select);
+  border-radius: 10px;
+  background: oklch(0.56 0.19 256 / 0.14);
+  color: var(--pos-ink);
+  font-family: var(--pos-font);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+/* El nombre va arriba, afuera: la huella queda a la vista para ver dónde cae. */
+.fpe-ghost span {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--pos-paper);
+  box-shadow: 0 2px 6px oklch(0 0 0 / 0.3);
+  transform: translateX(-50%);
+}
+
+/* ── La maqueta ── */
+.fpe-pane .fpe-model.pos-board {
+  position: absolute;
+  inset: 0;
+  background: none;
+}
+.fpe-model-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.4rem;
+  padding: 1.5rem;
+  color: var(--pos-board-soft);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ── Panel de la derecha ── */
+.fpe-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* El panel sabe cuánto mide: ancho, reparte sus grupos en dos columnas. */
+  container: fpe-side / inline-size;
+}
+.fpe-side-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.9rem 0.6rem 0.6rem 1rem;
+}
+.fpe-side-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+.fpe-side-sub {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-stretch: 100%;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.fpe-side-body {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 1rem;
+  min-height: 0;
+  /* Aire abajo: el asistente del panel flota en esa esquina y taparía lo último. */
+  padding: 0.2rem 1rem 5.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fpe-group {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+/* Corte de talonario entre grupos. */
+.fpe-group + .fpe-group {
+  padding-top: 1rem;
+  border-top: 1.5px dashed var(--pos-rule);
+}
+.fpe-group-title {
+  margin: 0;
+  color: var(--pos-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 90%;
+}
+.fpe-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.fpe-row-split {
+  justify-content: space-between;
+}
+.fpe-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+/* Panel ancho y bajo (vista partida): los grupos van de a dos y se scrollea menos. */
+@container fpe-side (min-width: 33rem) {
+  .fpe-side-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.75rem;
+    row-gap: 1.25rem;
+  }
+  .fpe-side-body > .fpe-group + .fpe-group {
+    padding-top: 0;
+    border-top: 0;
+  }
+}
+
+/* Forma de la mesa */
+.fpe-shapes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.fpe-shapes[data-cols="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.fpe-shape {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 4.1rem;
+  padding: 0.5rem 0.2rem 0.45rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: var(--pos-paper-2);
+  color: var(--pos-ink-soft);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  transition:
+    background-color 160ms var(--pos-ease),
+    box-shadow 160ms var(--pos-ease);
+}
+.fpe-shape svg {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+.fpe-shape[aria-pressed="true"] {
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+
+/* Mesas sin ubicar */
+.fpe-tray {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fpe-tray-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.4rem 0.4rem 0.45rem;
+  border-radius: 0.85rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.fpe-numchip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0 0.35rem;
+  border-radius: 0.6rem;
+  background: var(--pos-card);
+  box-shadow:
+    0 0 0 1px var(--fpe-line),
+    0 2px 4px -1px oklch(0.18 0.04 165 / 0.3);
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.fpe-tray-meta {
+  flex: 1;
+  min-width: 0;
+  color: var(--pos-ink-soft);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+/* Atajos */
+.fpe-tips {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.88rem;
+}
+.fpe-tips li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.fpe-tips span:first-child {
+  color: var(--pos-ink);
+  font-weight: 600;
+}
+.fpe-keys {
+  display: inline-flex;
+  flex: none;
+  gap: 0.2rem;
+}
+.fpe-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.55rem;
+  height: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 0.4rem;
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow:
+    inset 0 0 0 1.5px var(--pos-rule),
+    0 1px 2px oklch(0.2 0.03 165 / 0.18);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Código del QR */
+.fpe-code {
+  display: block;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.5rem;
+  background: var(--pos-paper-2);
+  color: var(--pos-carbon);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Color de un elemento */
+.fpe-color {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.fpe-color input[type="color"] {
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  padding: 3px;
+  border: 0;
+  border-radius: 0.7rem;
+  background: var(--pos-card);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  cursor: pointer;
+}
+
+/* ── Ventanitas y diálogos (se dibujan fuera del árbol: llevan .pos + .fpe-scope) ── */
+.fpe-pop {
+  width: min(22.5rem, calc(100vw - 1.5rem));
+  padding: 1.1rem;
+  border: 0;
+  border-radius: 1.15rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 0 0 1px oklch(0.2 0.03 165 / 0.1),
+    0 24px 48px -16px oklch(0.12 0.04 165 / 0.6);
+  font-family: var(--pos-font);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+.fpe-pop-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.fpe-form {
+  display: grid;
+  gap: 0.85rem;
+}
+.fpe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.fpe-chip {
+  min-height: 2rem;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 90%;
+}
+.fpe-dialog {
+  gap: 1.1rem;
+  border: 0;
+  border-radius: 1.3rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: 0 30px 70px -20px oklch(0.1 0.04 165 / 0.7);
+  font-family: var(--pos-font);
+}
+.fpe-dialog [data-slot="alert-dialog-title"],
+.fpe-dialog [data-slot="dialog-title"],
+.fpe-dialog [data-slot="sheet-title"] {
+  font-family: var(--pos-font);
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.fpe-dialog [data-slot="alert-dialog-description"],
+.fpe-dialog [data-slot="dialog-description"],
+.fpe-dialog [data-slot="sheet-description"] {
+  color: var(--pos-ink-soft);
+  font-size: 0.97rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+/* ── En vivo ── */
+.fpe-live {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+.fpe-live-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  padding: 0.55rem 0.55rem 0.55rem 0.9rem;
+}
+.fpe-live-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  height: 1.7rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fpe-live-pill svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.fpe-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--pos-ink-soft);
+  opacity: 0.6;
+}
+.fpe-live-pill.is-live .fpe-live-dot {
+  background: oklch(0.62 0.19 148);
+  box-shadow: 0 0 0 3px oklch(0.62 0.19 148 / 0.22);
+  opacity: 1;
+}
+.fpe-live-pill.is-off {
+  background: var(--fpe-danger);
+  color: var(--pos-paper);
+  box-shadow: none;
+}
+.fpe-live-summary {
+  flex: 1;
+  min-width: 12rem;
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.fpe-live-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.fpe-live-card {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  z-index: 3000;
+  display: grid;
+  gap: 0.55rem;
+  width: min(20rem, calc(100% - 1.5rem));
+  padding: 0.9rem 0.6rem 0.9rem 1rem;
+}
+.fpe-live-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.fpe-live-card h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+}
+.fpe-live-facts {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-right: 0.4rem;
+  font-size: 0.92rem;
+}
+.fpe-live-facts div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.fpe-live-facts dt {
+  color: var(--pos-ink-soft);
+  font-weight: 600;
+}
+.fpe-live-facts dd {
+  margin: 0;
+  color: var(--pos-carbon);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* El estado: color + ícono + palabra, como en el salón. */
+.fpe-statechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-self: start;
+  height: 1.9rem;
+  padding: 0 0.7rem 0 0.55rem;
+  border-radius: 0.6rem;
+  background: var(--st, var(--pos-paper-2));
+  color: var(--pos-on-dark);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  white-space: nowrap;
+}
+.fpe-statechip svg {
+  width: 1rem;
+  height: 1rem;
+}
+.fpe-statechip.pos-st-free {
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.fpe-statechip.pos-st-kitchen,
+.fpe-statechip.pos-st-ready {
+  color: var(--pos-on-light);
+}
+.fpe-statechip.pos-urg-late {
+  color: var(--pos-on-dark);
+}
+.fpe-legacy-live {
+  flex: 1;
+  min-height: 0;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+/* ── Lista ── */
+.fpe-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0.5rem 1rem 1rem;
+  overflow: auto;
+}
+.fpe-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  padding: 0.6rem 0.25rem 0.75rem;
+}
+.fpe-list-head h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+}
+.fpe-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.fpe-list caption {
+  caption-side: bottom;
+  padding-top: 0.85rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.84rem;
+  text-align: left;
+}
+.fpe-list thead th {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1.5px solid var(--pos-ink);
+  color: var(--pos-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 90%;
+  text-align: left;
+  white-space: nowrap;
+}
+.fpe-list tbody th,
+.fpe-list td {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1.5px dashed var(--pos-rule);
+  text-align: left;
+  vertical-align: middle;
+}
+.fpe-list tr.is-off td {
+  color: var(--pos-ink-soft);
+}
+.fpe-list tbody .fpe-list-num {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+}
+.fpe-list-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+.fpe-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 1.55rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fpe-tag.is-on {
+  background: color-mix(in oklch, var(--success) 14%, var(--pos-paper));
+  color: oklch(0.36 0.1 155);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--success) 40%, var(--pos-paper));
+}
+
+/* ── Sucursal sin sectores: se enseña a dibujar el primero ── */
+.fpe-empty {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  justify-items: center;
+  gap: 0.85rem;
+  min-height: 24rem;
+  padding: 2rem 1.25rem;
+  color: var(--pos-board-ink);
+  text-align: center;
+}
+.fpe-empty-art {
+  width: 9.5rem;
+  height: auto;
+  margin-bottom: 0.25rem;
+}
+.fpe-empty h2 {
+  max-width: 22ch;
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.fpe-empty > p {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--pos-board-soft);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.fpe-empty-form {
+  display: grid;
+  gap: 0.75rem;
+  width: min(24rem, 100%);
+  margin-top: 0.4rem;
+  padding: 1.1rem;
+  text-align: left;
+}
+.fpe-loading {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 16rem;
+  color: var(--pos-board-soft);
+  font-weight: 600;
+}
+
+/* Aviso cuando el editor visual falla y queda la lista */
+.fpe-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.fpe-alert svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--pos-st-kitchen);
+}
+
+.fpe-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── Con mouse: lo que responde al pasar por arriba ── */
+@media (hover: hover) and (pointer: fine) {
+  .fpe-branch:not([aria-current="page"]):hover,
+  .fpe-mode:not([aria-pressed="true"]):hover {
+    background: oklch(1 0 0 / 0.14);
+    opacity: 1;
+  }
+  .fpe[data-ink="dark"] .fpe-branch:not([aria-current="page"]):hover,
+  .fpe[data-ink="dark"] .fpe-mode:not([aria-pressed="true"]):hover {
+    background: oklch(0 0 0 / 0.1);
+  }
+  .fpe-tab:not(.is-active):hover {
+    background: oklch(1 0 0 / 0.13);
+    color: var(--pos-board-ink);
+  }
+  .fpe-boardbtn:hover {
+    background: oklch(1 0 0 / 0.17);
+  }
+  .fpe-btn-primary:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--pos-ink) 86%, white);
+  }
+  .fpe-btn-quiet:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--pos-paper-2) 82%, var(--pos-rule));
+  }
+  .fpe-btn-ghost:hover:not(:disabled),
+  .fpe-tool:hover,
+  .fpe-zoom button:hover,
+  .fpe-selbar button:hover {
+    background: var(--pos-paper-2);
+  }
+  .fpe-btn-danger:hover:not(:disabled),
+  .fpe-selbar button.is-danger:hover {
+    background: color-mix(in oklch, var(--fpe-danger) 10%, var(--pos-paper));
+  }
+  .fpe-btn-danger-solid:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--fpe-danger) 88%, black);
+  }
+  .fpe-seg button:not([aria-pressed="true"]):hover,
+  .fpe-shape:not([aria-pressed="true"]):hover {
+    color: var(--pos-ink);
+  }
+  .fpe-chip:hover {
+    background: color-mix(in oklch, var(--pos-paper-2) 80%, var(--pos-rule));
+  }
+  /* Una pieza que se puede agarrar se insinúa antes de tocarla. */
+  .floor-element:not(.is-selected) .fpe-el-body:hover {
+    filter: brightness(0.97);
+    box-shadow:
+      0 0 0 calc(2px * var(--fpe-inv, 1)) color-mix(in oklch, var(--fpe-select) 55%, transparent),
+      0 5px 9px -3px oklch(0.18 0.04 165 / 0.38);
+  }
+}
+
+/* Sin teclado a mano (celular, tablet), los atajos no vienen al caso. */
+@media (hover: none) and (pointer: coarse) {
+  .fpe-keys-only {
+    display: none;
+  }
+}
+
+/* ── Con dedo: todo lo que se toca mide al menos 48 px ── */
+@media (pointer: coarse) {
+  .fpe-btn,
+  .fpe-input {
+    min-height: 3rem;
+  }
+  .fpe-btn-sm,
+  .fpe-seg button,
+  .fpe-mode,
+  .fpe-branch,
+  .fpe-boardbtn {
+    min-height: 2.75rem;
+  }
+  .fpe-zoom button,
+  .fpe-selbar button {
+    width: auto;
+    min-width: 2.75rem;
+    height: 2.75rem;
+  }
+  .fpe-stepper button {
+    width: 3rem;
+    height: 2.75rem;
+  }
+  .fpe-handle::before {
+    inset: -18px;
+  }
+}
+
+/* ── Según el ancho que le queda al editor ── */
+
+/* Vista partida: el plano a la izquierda, la maqueta viva a la derecha. */
+@container fpe (min-width: 960px) {
+  .fpe-seg .fpe-only-split {
+    display: inline-flex;
+  }
+  /* La maqueta va arriba a la derecha, apaisada (así el salón la mira de tres
+     cuartos y en la misma orientación que el plano), y la ficha debajo. */
+  .fpe-work[data-view="split"] {
+    grid-template-columns: auto minmax(0, 1.12fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 0.86fr) minmax(0, 1fr);
+    grid-template-areas:
+      "rail plan model"
+      "rail plan side";
+  }
+  .fpe-work[data-view="split"] .fpe-pane-model {
+    display: block;
+  }
+}
+/* Sin lugar para tres columnas: todo apilado y la página scrollea. */
+@container fpe (max-width: 859.98px) {
+  .fpe {
+    height: auto;
+    min-height: 0;
+  }
+  .fpe-title {
+    font-size: 1.35rem;
+  }
+  .fpe-work,
+  .fpe-work[data-view="split"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "rail"
+      "plan"
+      "side";
+  }
+  .fpe-work[data-view="model"] {
+    grid-template-areas:
+      "rail"
+      "model"
+      "side";
+  }
+  .fpe-rail {
+    flex-direction: row;
+    align-items: stretch;
+    width: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .fpe-rail-title {
+    display: none;
+  }
+  .fpe-tool {
+    min-width: 4.5rem;
+  }
+  /* El tablero acompaña la forma del piso: en un celular no queda un pozo vacío arriba y abajo. */
+  .fpe-pane {
+    aspect-ratio: 5 / 4;
+    min-height: 17rem;
+    max-height: min(34rem, 72dvh);
+  }
+  .fpe-side {
+    max-height: none;
+  }
+  .fpe-side-body {
+    overflow-y: visible;
+  }
+  .fpe-live-stage {
+    flex: none;
+    height: min(64dvh, 36rem);
+    min-height: 22rem;
+  }
+  .fpe-list {
+    overflow: visible;
+  }
+}
+@container fpe (max-width: 559.98px) {
+  .fpe-band {
+    padding: 0.7rem 0.75rem;
+  }
+  /* En un celular el control de zoom se achica: no tapa el piso. */
+  .fpe-zoom-value,
+  .fpe-zoom-sep {
+    display: none;
+  }
+  .fpe-zoom {
+    bottom: 0.5rem;
+    left: 0.5rem;
+  }
+  .fpe-modes {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+  .fpe-mode {
+    flex: 1;
+    justify-content: center;
+    padding: 0 0.4rem;
+  }
+  .fpe-branches {
+    order: 2;
+    width: 100%;
+  }
+  .fpe-branch {
+    flex: 1;
+    justify-content: center;
+  }
+  .fpe-boardbtn span,
+  .fpe-seg button span {
+    display: none;
+  }
+  .fpe-boardbtn,
+  .fpe-seg button {
+    padding: 0 0.7rem;
+  }
+  .fpe-toolbar-sep,
+  .fpe-toolbar-spacer {
+    display: none;
+  }
+  .fpe-toolbar-group:first-child {
+    flex: 1 1 100%;
+  }
+  .fpe-toolbar-group:first-child .fpe-btn {
+    flex: 1;
+  }
+  .fpe-list th:nth-child(3),
+  .fpe-list td:nth-child(3) {
+    display: none;
+  }
+}
+
+/* Con «reducir movimiento» queda el color y se va el movimiento (apretar ya no achica). */
+@media (prefers-reduced-motion: reduce) {
+  .fpe-btn:active:not(:disabled),
+  .fpe-stepper button:active:not(:disabled),
+  .fpe .fpe-tool:active {
+    transform: none;
+  }
+}

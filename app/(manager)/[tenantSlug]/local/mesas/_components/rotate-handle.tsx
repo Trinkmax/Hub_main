@@ -10,24 +10,25 @@ export type RotateHandleProps = {
   onRotate: (deg: number) => void
   /** Rotación final al soltar (commit). Shift snapea a múltiplos de 15°. */
   onRotateEnd: (deg: number) => void
+  /** Con teclado (Enter / Espacio sobre la manija): un paso de 15°. */
+  onStep: () => void
 }
 
 /**
- * Handle de rotación: un botón circular sobre el borde superior de la caja.
- * Calcula el ángulo centro→puntero (independiente de zoom/pan) y rota en vivo;
- * con Shift snapea a 15°. Mismo patrón de gesto que ResizeHandles
+ * Manija de giro: un botón redondo sobre el borde de arriba de la caja.
+ * Calcula el ángulo centro→puntero (independiente de zoom/pan) y gira en vivo;
+ * con Shift salta de a 15°. Mismo patrón de gesto que ResizeHandles
  * (setPointerCapture + listeners en window).
  */
-export function RotateHandle({ boxRef, onRotate, onRotateEnd }: RotateHandleProps) {
-  let last = 0
-  // Solo commiteamos si el puntero se movió (un click sin arrastre NO debe
-  // resetear la rotación a 0° — espejo del DRAG_THRESHOLD del body-drag).
-  let moved = false
-
+export function RotateHandle({ boxRef, onRotate, onRotateEnd, onStep }: RotateHandleProps) {
   const onPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation()
     e.preventDefault()
     ;(e.target as Element).setPointerCapture(e.pointerId)
+    let last = 0
+    // Solo commiteamos si el puntero se movió (un click sin arrastre NO debe
+    // resetear la rotación a 0° — espejo del DRAG_THRESHOLD del body-drag).
+    let moved = false
 
     function move(ev: PointerEvent) {
       const node = boxRef.current
@@ -56,21 +57,20 @@ export function RotateHandle({ boxRef, onRotate, onRotateEnd }: RotateHandleProp
   }
 
   return (
-    <div className="absolute -top-8 left-1/2 z-30 -translate-x-1/2">
-      {/* Tallo que conecta el handle con la caja. */}
-      <span
-        aria-hidden
-        className="absolute left-1/2 top-5 h-3 w-px -translate-x-1/2 bg-primary/60"
-      />
+    <div className="fpe-rotate">
+      {/* Tallo que conecta la manija con la caja. */}
+      <span aria-hidden className="fpe-rotate-stem" />
       <button
         type="button"
         onPointerDown={onPointerDown}
-        aria-label="Rotar"
-        title="Rotar (Shift = 15°)"
-        className="grid size-5 cursor-grab place-items-center rounded-full border border-primary bg-background text-primary shadow-sm transition-colors hover:bg-primary hover:text-primary-foreground active:cursor-grabbing"
-        style={{ touchAction: 'none' }}
+        onClick={(e) => {
+          if (e.detail === 0) onStep()
+        }}
+        aria-label="Girar (arrastrá; con Enter gira 15 grados)"
+        title="Girar (con Shift, de a 15°)"
+        className="fpe-rotate-knob"
       >
-        <RotateCw className="size-3" aria-hidden />
+        <RotateCw aria-hidden />
       </button>
     </div>
   )

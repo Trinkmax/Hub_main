@@ -1,7 +1,19 @@
 'use client'
 
-import { ArrowDownToLine, ArrowUpToLine, Copy, RefreshCw, Trash2, X } from 'lucide-react'
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Copy,
+  Minus,
+  Plus,
+  PowerOff,
+  QrCode,
+  RefreshCw,
+  RotateCw,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -14,131 +26,229 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import {
   mergeTablesAction,
-  removeFromPlanAction,
   setElementShapeAction,
-  setElementZIndexAction,
   setTableActiveAction,
   splitTableAction,
 } from '@/lib/floor-plan/actions'
-import type { ElementRow } from '@/lib/floor-plan/queries'
+import { DEFAULT_SEATS, type ElementPatch } from '@/lib/floor-plan/model'
+import type { ElementRow, FloorShape } from '@/lib/floor-plan/queries'
 import { regenerateQrToken, updateTable } from '@/lib/tables/actions'
-import { PrintQrButton } from './print-qr-button'
+import { cn } from '@/lib/utils'
+import { BanquetteGlyph, RoundTableGlyph, TableGlyph } from './glyphs'
+import { PAPEL } from './papel'
 
-type TableInspectorProps = {
+export type TableInspectorProps = {
   slug: string
   element: ElementRow
-  allTables: { id: string; label: string }[]
-  onChanged: () => void
+  /** Las otras mesas dibujadas en la sucursal (para juntar). */
+  others: { id: string; label: string }[]
+  /** El bar tiene prendidos los QR de mesa. */
+  qrEnabled: boolean
+  /** Cambia al instante lo que se ve en el plano y en la maqueta. */
+  onPatch: (elementId: string, patch: ElementPatch) => void
+  /**
+   * Mientras un cambio de nombre o lugares viaja al servidor, el editor lo
+   * sostiene por encima de lo que llegue de un refresco (`null` = ya llegó).
+   */
+  onHold: (elementId: string, patch: ElementPatch | null) => void
+  /** Guarda lo que haya pendiente de posición antes de hablar con el servidor. */
+  flushGeometry: () => Promise<void>
+  onRotate: () => void
+  onDuplicate: () => void
+  onFront: () => void
+  onBack: () => void
+  /** Quitar del plano (se puede deshacer). */
+  onRemove: () => void
+  /** Algo cambió en el servidor; `keepSelection` deja la mesa elegida. */
+  onChanged: (keepSelection?: boolean) => void
   onClose: () => void
 }
 
-const initialUpdate = { ok: false as const, message: '' }
+const SAVE_DELAY_MS = 450
+const NO_STATE = { ok: false as const, message: '' }
 
+const SHAPES: {
+  value: FloorShape
+  label: string
+  Glyph: (props: { className?: string }) => React.ReactNode
+}[] = [
+  { value: 'rect', label: 'Recta', Glyph: TableGlyph },
+  { value: 'circle', label: 'Redonda', Glyph: RoundTableGlyph },
+  { value: 'banquette', label: 'Banquette', Glyph: BanquetteGlyph },
+]
+
+/**
+ * La ficha de una mesa. Nombre, lugares y forma cambian al toque (se ven en el
+ * plano y en la maqueta antes de que conteste el servidor); solo se confirma lo
+ * que no tiene vuelta fácil.
+ *
+ * Se monta con `key` = id del elemento: otra mesa, otra ficha.
+ */
 export function TableInspector({
   slug,
   element,
-  allTables,
+  others,
+  qrEnabled,
+  onPatch,
+  onHold,
+  flushGeometry,
+  onRotate,
+  onDuplicate,
+  onFront,
+  onBack,
+  onRemove,
   onChanged,
   onClose,
 }: TableInspectorProps) {
+  const id = useId()
   const tableId = element.physical_table_id as string
   const meta = element.table
-  const [active, setActive] = useState(meta?.active ?? true)
-  const [mergeTarget, setMergeTarget] = useState<string>('')
+  const [label, setLabel] = useState(meta?.label ?? '')
+  const [capacity, setCapacity] = useState<number | null>(meta?.capacity ?? null)
+  const [mergeTarget, setMergeTarget] = useState('')
   const [pending, start] = useTransition()
 
-  // Editar nombre/capacidad → updateTable (FormData id,label,capacity; NUNCA active).
-  const [updateState, updateAction, updatePending] = useActionState(
-    (prev: Awaited<ReturnType<typeof updateTable>>, fd: FormData) => updateTable(slug, prev, fd),
-    initialUpdate,
+  // Lo último que el servidor aceptó, lo que falta mandar y el reloj que lo manda.
+  const saved = useRef({ label: meta?.label ?? '', capacity: meta?.capacity ?? null })
+  const queued = useRef<{ label: string; capacity: number | null } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latest = useRef({ slug, tableId, elementId: element.id, onPatch, onHold, flushGeometry })
+  latest.current = { slug, tableId, elementId: element.id, onPatch, onHold, flushGeometry }
+  const mounted = useRef(true)
+
+  const send = useCallback(async (): Promise<void> => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+    const next = queued.current
+    if (!next) return
+    queued.current = null
+    const ctx = latest.current
+    // La posición pendiente va primero: guardar la mesa refresca el plano desde
+    // el servidor y pisaría un movimiento que todavía no se guardó.
+    await ctx.flushGeometry()
+    const form = new FormData()
+    form.set('id', ctx.tableId)
+    form.set('label', next.label)
+    form.set('capacity', next.capacity === null ? '' : String(next.capacity))
+    const result = await updateTable(ctx.slug, NO_STATE, form)
+    if (result.ok) {
+      saved.current = next
+    } else {
+      // No se guardó: el plano y la ficha vuelven a lo último que sí quedó.
+      toast.error(result.message)
+      ctx.onPatch(ctx.elementId, { table: saved.current })
+      if (mounted.current && !queued.current) {
+        setLabel(saved.current.label)
+        setCapacity(saved.current.capacity)
+      }
+    }
+    // Si mientras tanto llegó otro cambio, sigue en espera; si no, se suelta.
+    if (!queued.current) ctx.onHold(ctx.elementId, null)
+  }, [])
+
+  const queue = useCallback(
+    (next: { label: string; capacity: number | null }, delay: number) => {
+      queued.current = next
+      const ctx = latest.current
+      ctx.onPatch(ctx.elementId, { table: next })
+      ctx.onHold(ctx.elementId, { table: next })
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => {
+        void send()
+      }, delay)
+    },
+    [send],
   )
 
+  // Si la ficha se cierra con algo sin mandar, se manda igual.
   useEffect(() => {
-    if (updateState.ok && updateState.tableId) {
-      toast.success('Mesa actualizada.')
-      onChanged()
-    } else if (!updateState.ok && updateState.message) {
-      toast.error(updateState.message)
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (queued.current) void send()
     }
-  }, [updateState, onChanged])
+  }, [send])
 
-  // Sincroniza el switch local si cambia la mesa seleccionada.
-  useEffect(() => {
-    setActive(meta?.active ?? true)
-  }, [meta?.active])
+  const shown = capacity ?? DEFAULT_SEATS
+  const setSeats = (next: number) => {
+    const clean = Math.max(1, Math.min(50, next))
+    setCapacity(clean)
+    queue({ label: queued.current?.label ?? saved.current.label, capacity: clean }, SAVE_DELAY_MS)
+  }
 
-  const onToggleActive = (next: boolean) => {
-    const prev = active
-    setActive(next)
+  const commitLabel = () => {
+    const clean = label.trim()
+    const current = queued.current?.label ?? saved.current.label
+    if (!clean) {
+      setLabel(current)
+      return
+    }
+    if (clean === current) return
+    setLabel(clean)
+    queue({ label: clean, capacity: queued.current?.capacity ?? saved.current.capacity }, 0)
+  }
+
+  const setShape = (shape: FloorShape) => {
+    if (shape === element.shape) return
+    const previous = element.shape
+    onPatch(element.id, { shape })
     start(async () => {
-      const r = await setTableActiveAction(slug, tableId, next)
-      if (r.ok) {
-        toast.success(next ? 'Mesa activada.' : 'Mesa desactivada.')
-        onChanged()
-      } else {
-        setActive(prev)
+      await flushGeometry()
+      const r = await setElementShapeAction(slug, element.id, shape)
+      if (!r.ok) {
+        onPatch(element.id, { shape: previous })
         toast.error(r.message)
       }
     })
   }
 
-  const onRegenerate = () => {
+  const regenerate = () => {
     start(async () => {
       const r = await regenerateQrToken(slug, tableId)
       if (r.ok) {
-        toast.success('QR regenerado.')
-        onChanged()
+        toast.success('QR nuevo listo. Imprimilo y cambiá el de la mesa.')
+        onChanged(true)
       } else {
         toast.error(r.message)
       }
     })
   }
 
-  const onSplit = () => {
+  const split = () => {
     start(async () => {
       const r = await splitTableAction(slug, element.id)
       if (r.ok) {
-        toast.success('Mesa dividida.')
-        onChanged()
+        toast.success('Listo: hay una mesa nueva al lado.')
+        onChanged(true)
       } else {
         toast.error(r.message)
       }
     })
   }
 
-  const onMerge = () => {
+  const merge = () => {
     if (!mergeTarget) return
     start(async () => {
       const r = await mergeTablesAction(slug, tableId, mergeTarget)
       if (r.ok) {
-        toast.success('Mesas combinadas.')
+        toast.success('Mesas juntadas.')
         setMergeTarget('')
-        onChanged()
+        onChanged(true)
       } else {
         toast.error(r.message)
       }
     })
   }
 
-  const onRemove = () => {
+  const deactivate = () => {
     start(async () => {
-      const r = await removeFromPlanAction(slug, element.id)
+      const r = await setTableActiveAction(slug, tableId, false)
       if (r.ok) {
-        toast.success('Mesa quitada del plano.')
+        toast.success(`Mesa ${saved.current.label} desactivada. La reactivás desde Lista.`)
         onChanged()
       } else {
         toast.error(r.message)
@@ -146,236 +256,285 @@ export function TableInspector({
     })
   }
 
-  const onZIndex = (zIndex: number) => {
-    start(async () => {
-      const r = await setElementZIndexAction(slug, element.id, zIndex)
-      if (r.ok) onChanged()
-      else toast.error(r.message)
-    })
+  const printQr = () => {
+    const token = meta?.qr_token
+    if (!token) return
+    window.open(`/print/qr/${encodeURIComponent(token)}`, '_blank', 'width=600,height=800')
   }
 
-  const onSetShape = (shape: 'rect' | 'circle' | 'banquette') => {
-    if (shape === element.shape) return
-    start(async () => {
-      const r = await setElementShapeAction(slug, element.id, shape)
-      if (r.ok) onChanged()
-      else toast.error(r.message)
-    })
-  }
-
-  const busy = pending || updatePending
-  const mergeOptions = allTables.filter((t) => t.id !== tableId)
+  const mergeLabel = others.find((t) => t.id === mergeTarget)?.label ?? ''
+  const shownLabel = label.trim() || saved.current.label
+  const tableName = `Mesa ${shownLabel}`
+  // En medio de una frase: «la mesa 12» (sin tocar las mayúsculas de un nombre).
+  const theTable = `mesa ${shownLabel}`
 
   return (
-    <aside
-      aria-label="Panel de mesa"
-      className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-card p-4"
-    >
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-sm font-semibold">Mesa</h2>
-        <Button size="icon" variant="ghost" onClick={onClose} aria-label="Cerrar panel">
-          <X className="size-4" />
-        </Button>
+    <>
+      <div className="fpe-side-head">
+        <h2 className="fpe-side-title">{tableName}</h2>
+        <button
+          type="button"
+          className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+          onClick={onClose}
+          aria-label="Cerrar la ficha de la mesa"
+          title="Cerrar (Esc)"
+        >
+          <X aria-hidden />
+        </button>
       </div>
 
-      {/* Editar nombre / capacidad */}
-      <form action={updateAction} className="grid gap-3">
-        <input type="hidden" name="id" value={tableId} />
-        <div className="grid gap-1.5">
-          <Label htmlFor="ti-label">Nombre</Label>
-          <Input
-            id="ti-label"
-            name="label"
-            required
-            maxLength={40}
-            defaultValue={meta?.label ?? ''}
-          />
+      <div className="fpe-side-body">
+        <div className="fpe-group">
+          <div className="fpe-field">
+            <label className="fpe-label" htmlFor={`${id}-label`}>
+              Número o nombre
+            </label>
+            <input
+              id={`${id}-label`}
+              className="fpe-input"
+              value={label}
+              maxLength={40}
+              autoComplete="off"
+              onChange={(e) => setLabel(e.target.value)}
+              onBlur={commitLabel}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+            />
+          </div>
+          <div className="fpe-field">
+            <span className="fpe-label" id={`${id}-seats`}>
+              Lugares
+            </span>
+            {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
+            <div className="fpe-stepper" role="group" aria-labelledby={`${id}-seats`}>
+              <button
+                type="button"
+                aria-label="Un lugar menos"
+                disabled={shown <= 1}
+                onClick={() => setSeats(shown - 1)}
+              >
+                <Minus aria-hidden />
+              </button>
+              <output aria-live="polite" aria-label={`${shown} lugares`}>
+                {shown}
+              </output>
+              <button
+                type="button"
+                aria-label="Un lugar más"
+                disabled={shown >= 50}
+                onClick={() => setSeats(shown + 1)}
+              >
+                <Plus aria-hidden />
+              </button>
+              <span className="fpe-stepper-unit">{shown === 1 ? 'persona' : 'personas'}</span>
+            </div>
+            {capacity === null ? (
+              <p className="fpe-hint">Todavía sin cargar: el salón la dibuja de {DEFAULT_SEATS}.</p>
+            ) : null}
+          </div>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="ti-capacity">Capacidad</Label>
-          <Input
-            id="ti-capacity"
-            name="capacity"
-            type="number"
-            min={1}
-            max={50}
-            defaultValue={meta?.capacity ?? ''}
-            placeholder="Sin definir"
-          />
+
+        <div className="fpe-group">
+          <h3 className="fpe-group-title" id={`${id}-shape`}>
+            Forma
+          </h3>
+          {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
+          <div className="fpe-shapes" role="group" aria-labelledby={`${id}-shape`}>
+            {SHAPES.map(({ value, label: shapeLabel, Glyph }) => (
+              <button
+                key={value}
+                type="button"
+                className="fpe-shape"
+                aria-pressed={element.shape === value}
+                onClick={() => setShape(value)}
+              >
+                <Glyph />
+                {shapeLabel}
+              </button>
+            ))}
+          </div>
         </div>
-        <Button type="submit" size="sm" disabled={busy}>
-          {updatePending ? 'Guardando…' : 'Guardar'}
-        </Button>
-      </form>
 
-      <Separator />
-
-      {/* Forma de la mesa (las sillas se redibujan según forma + capacidad) */}
-      <div className="grid gap-1.5">
-        <Label>Forma</Label>
-        <div className="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/40 p-0.5">
-          {(
-            [
-              { value: 'circle', label: 'Redonda' },
-              { value: 'rect', label: 'Rectangular' },
-              { value: 'banquette', label: 'Banquette' },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              disabled={busy}
-              onClick={() => onSetShape(opt.value)}
-              aria-pressed={element.shape === opt.value}
-              className={
-                element.shape === opt.value
-                  ? 'rounded-md bg-card px-2 py-1.5 text-center font-medium text-xs shadow-sm'
-                  : 'rounded-md px-2 py-1.5 text-center text-muted-foreground text-xs transition-colors hover:text-foreground'
-              }
-            >
-              {opt.label}
+        <div className="fpe-group">
+          <h3 className="fpe-group-title">Acomodar</h3>
+          <div className="fpe-grid-2">
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onRotate}>
+              <RotateCw aria-hidden />
+              Girar
             </button>
-          ))}
+            <button
+              type="button"
+              className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+              onClick={onDuplicate}
+            >
+              <Copy aria-hidden />
+              Duplicar
+            </button>
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onFront}>
+              <ArrowUpToLine aria-hidden />
+              Al frente
+            </button>
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onBack}>
+              <ArrowDownToLine aria-hidden />
+              Al fondo
+            </button>
+          </div>
         </div>
-      </div>
 
-      <Separator />
+        {qrEnabled && meta?.qr_token ? (
+          <div className="fpe-group">
+            <h3 className="fpe-group-title">QR de la mesa</h3>
+            <code className="fpe-code" title={meta.qr_token}>
+              {meta.qr_token}
+            </code>
+            <div className="fpe-grid-2">
+              <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={printQr}>
+                <QrCode aria-hidden />
+                Imprimir QR
+              </button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+                    disabled={pending}
+                  >
+                    <RefreshCw aria-hidden />
+                    Cambiar QR
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>¿Cambiar el QR de la {theTable}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      El QR que está pegado en la mesa deja de funcionar. Vas a tener que imprimir
+                      el nuevo y cambiarlo.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="fpe-btn fpe-btn-quiet">Dejarlo</AlertDialogCancel>
+                    <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={regenerate}>
+                      Cambiar el QR
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
+        ) : null}
 
-      {/* QR */}
-      <div className="grid gap-2">
-        <Label>Código QR</Label>
-        <code className="block truncate rounded-md bg-muted px-2 py-1 text-xs">
-          {meta?.qr_token}
-        </code>
-        <div className="flex items-center gap-1">
-          <PrintQrButton qrToken={meta?.qr_token ?? ''} />
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" variant="ghost" disabled={busy}>
-                <RefreshCw className="size-3.5" />
-                Regenerar
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>¿Regenerar el QR?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  El QR impreso anterior dejará de funcionar. Vas a tener que imprimir y pegar el
-                  nuevo en la mesa.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={onRegenerate}>Regenerar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+        <div className="fpe-group">
+          <h3 className="fpe-group-title">Juntar y dividir</h3>
+          <button
+            type="button"
+            className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+            disabled={pending}
+            onClick={split}
+          >
+            <Copy aria-hidden />
+            Dividir: sumar otra al lado
+          </button>
+          {others.length > 0 ? (
+            <div className="fpe-row">
+              <div className="fpe-field" style={{ flex: 1 }}>
+                <label className="fpe-sr" htmlFor={`${id}-merge`}>
+                  Juntar con otra mesa
+                </label>
+                <select
+                  id={`${id}-merge`}
+                  className="fpe-input"
+                  value={mergeTarget}
+                  disabled={pending}
+                  onChange={(e) => setMergeTarget(e.target.value)}
+                >
+                  <option value="">Juntar con…</option>
+                  {others.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      Mesa {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="fpe-btn fpe-btn-quiet"
+                    disabled={pending || !mergeTarget}
+                  >
+                    Juntar
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      ¿Juntar la mesa {mergeLabel} con la {theTable}?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      La {theTable} se queda y absorbe a la otra: la mesa {mergeLabel} sale del
+                      plano y queda desactivada. No pierde su historial y la podés reactivar desde
+                      Lista.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                      Dejarlas
+                    </AlertDialogCancel>
+                    <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={merge}>
+                      Juntar las mesas
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          ) : null}
         </div>
-      </div>
 
-      <Separator />
-
-      {/* Activar / desactivar (RPC-only, NUNCA updateTable) */}
-      <div className="flex items-center justify-between">
-        <Label htmlFor="ti-active">Mesa activa</Label>
-        <Switch id="ti-active" checked={active} onCheckedChange={onToggleActive} disabled={busy} />
-      </div>
-
-      <Separator />
-
-      {/* Dividir / combinar */}
-      <div className="grid gap-2">
-        <Button size="sm" variant="outline" onClick={onSplit} disabled={busy}>
-          <Copy className="size-3.5" />
-          Dividir
-        </Button>
-
-        {mergeOptions.length > 0 ? (
-          <div className="grid gap-2">
-            <Select value={mergeTarget} onValueChange={setMergeTarget} disabled={busy}>
-              <SelectTrigger aria-label="Mesa a absorber">
-                <SelectValue placeholder="Combinar con…" />
-              </SelectTrigger>
-              <SelectContent>
-                {mergeOptions.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="fpe-group">
+          <div className="fpe-grid-2">
+            <button
+              type="button"
+              className="fpe-btn fpe-btn-danger fpe-btn-sm"
+              onClick={onRemove}
+              title="Vuelve a «Mesas sin ubicar» (Supr)"
+            >
+              <Trash2 aria-hidden />
+              Quitar
+            </button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="outline" disabled={busy || !mergeTarget}>
-                  Combinar
-                </Button>
+                <button
+                  type="button"
+                  className="fpe-btn fpe-btn-danger fpe-btn-sm"
+                  disabled={pending}
+                >
+                  <PowerOff aria-hidden />
+                  Desactivar
+                </button>
               </AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>¿Combinar las mesas?</AlertDialogTitle>
+                  <AlertDialogTitle>¿Desactivar la {theTable}?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    La mesa seleccionada absorbe a la otra. El QR de la mesa absorbida se desactiva
-                    (no se pierde el historial). Esta acción no se puede deshacer.
+                    Sale del plano y el salón deja de verla. No se puede si está abierta. No pierde
+                    su historial y la reactivás cuando quieras desde Lista.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={onMerge}>Combinar</AlertDialogAction>
+                  <AlertDialogCancel className="fpe-btn fpe-btn-quiet">Dejarla</AlertDialogCancel>
+                  <AlertDialogAction className="fpe-btn fpe-btn-danger-solid" onClick={deactivate}>
+                    Desactivar la mesa
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           </div>
-        ) : null}
+          <p className="fpe-hint">
+            «Quitar» la saca del plano y la deja en «Mesas sin ubicar». «Desactivar» la saca de uso.
+          </p>
+        </div>
       </div>
-
-      <Separator />
-
-      {/* z-index */}
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onZIndex(element.z_index + 1)}
-          disabled={busy}
-        >
-          <ArrowUpToLine className="size-3.5" />
-          Al frente
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onZIndex(element.z_index - 1)}
-          disabled={busy}
-        >
-          <ArrowDownToLine className="size-3.5" />
-          Al fondo
-        </Button>
-      </div>
-
-      <Separator />
-
-      {/* Quitar del plano (la mesa sigue activa; vuelve a la bandeja) */}
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button size="sm" variant="destructive" disabled={busy}>
-            <Trash2 className="size-3.5" />
-            Quitar del plano
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Quitar la mesa del plano?</AlertDialogTitle>
-            <AlertDialogDescription>
-              La mesa sigue activa y se puede volver a colocar desde la bandeja. Si tiene una sesión
-              abierta no se podrá quitar.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={onRemove}>Quitar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </aside>
+    </>
   )
 }

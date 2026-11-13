@@ -1,4 +1,5 @@
 import 'server-only'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 
 export type AreaRow = {
@@ -57,9 +58,13 @@ export type UnplacedTable = {
 }
 
 export type FloorPlanData = {
+  /** Los sectores (pisos, ambientes) de la sucursal, en su orden. */
   areas: AreaRow[]
   elements: ElementRow[]
+  /** Mesas activas de la sucursal que todavía no están en ningún sector. */
   unplacedTables: UnplacedTable[]
+  /** Mesas desactivadas de la sucursal: no están en el plano, se reactivan desde la lista. */
+  inactiveTables: UnplacedTable[]
 }
 
 // Forma cruda de la fila de elemento con el join embebido a physical_tables.
@@ -87,44 +92,76 @@ type RawElementRow = {
   } | null
 }
 
-const EMPTY: FloorPlanData = { areas: [], elements: [], unplacedTables: [] }
+type RawTableRow = {
+  id: string
+  label: string
+  capacity: number | null
+  qr_token: string
+  active: boolean
+}
 
-export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
-  const supabase = await createClient()
+const EMPTY: FloorPlanData = { areas: [], elements: [], unplacedTables: [], inactiveTables: [] }
 
-  // Las tres queries dependen solo de tenantId: en paralelo (3 hops → 1).
+const AREA_COLUMNS = 'id, name, position, width, height, number_start'
+const ELEMENT_COLUMNS =
+  'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity, qr_token, active)'
+
+/**
+ * `branch_id` (migración `pos_sucursales`) todavía no está en `types/database.ts`
+ * (se regenera aparte): lo que filtra por sucursal va por un cliente sin tipar y
+ * se tipa acá, igual que `lib/pos/queries.ts`.
+ */
+async function untyped(): Promise<SupabaseClient> {
+  return (await createClient()) as unknown as SupabaseClient
+}
+
+/**
+ * El plano que edita el dueño. Con `branchId` devuelve lo de ESA sucursal: sus
+ * sectores, lo que hay dibujado en ellos y sus mesas sin ubicar (el mapa y las
+ * mesas son de cada sucursal). Sin `branchId` devuelve todo el bar.
+ */
+export async function getFloorPlan(
+  tenantId: string,
+  branchId?: string | null,
+): Promise<FloorPlanData> {
+  const supabase = await untyped()
+
+  // 1) Sectores, en su orden.
+  let areasQuery = supabase.from('floor_plan_areas').select(AREA_COLUMNS).eq('tenant_id', tenantId)
+  if (branchId) areasQuery = areasQuery.eq('branch_id', branchId)
+
+  // 2) Elementos + join a physical_tables (solo poblado en kind='table'). Un
+  // elemento es de la sucursal de su sector: se filtra por el sector (inner join).
+  let elementsQuery = supabase
+    .from('floor_plan_elements')
+    .select(branchId ? `${ELEMENT_COLUMNS}, floor_plan_areas!inner(branch_id)` : ELEMENT_COLUMNS)
+    .eq('tenant_id', tenantId)
+  if (branchId) elementsQuery = elementsQuery.eq('floor_plan_areas.branch_id', branchId)
+
+  // 3) Mesas (activas y desactivadas). PostgREST no soporta NOT EXISTS declarativo,
+  // así que se traen todas y se restan las ya ubicadas.
+  let tablesQuery = supabase
+    .from('physical_tables')
+    .select('id, label, capacity, qr_token, active')
+    .eq('tenant_id', tenantId)
+  if (branchId) tablesQuery = tablesQuery.eq('branch_id', branchId)
+
+  // Las tres dependen solo de tenant y sucursal: en paralelo (3 hops → 1).
   // Los chequeos de error se mantienen en el mismo orden (areas → elements → tables).
   const [
     { data: areasData, error: areasError },
     { data: elementsData, error: elementsError },
     { data: tablesData, error: tablesError },
   ] = await Promise.all([
-    // 1) Áreas del tenant, orden canónico.
-    supabase
-      .from('floor_plan_areas')
-      .select('id, name, position, width, height, number_start')
-      .eq('tenant_id', tenantId)
+    areasQuery
       .order('position', { ascending: true })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true }),
-    // 2) Elementos del tenant + join a physical_tables (solo poblado en kind='table').
-    supabase
-      .from('floor_plan_elements')
-      .select(
-        'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity, qr_token, active)',
-      )
-      .eq('tenant_id', tenantId)
+    elementsQuery
       .order('z_index', { ascending: true })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true }),
-    // 3) Mesas activas sin elemento (anti-join). PostgREST no soporta NOT EXISTS
-    // declarativo, así que traemos las activas y restamos las ya ubicadas.
-    supabase
-      .from('physical_tables')
-      .select('id, label, capacity, qr_token')
-      .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .order('label', { ascending: true }),
+    tablesQuery.order('label', { ascending: true }),
   ])
 
   if (areasError) {
@@ -170,21 +207,33 @@ export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
         : null,
   }))
 
-  // Ids de mesas ya ubicadas (tienen elemento).
+  // Ids de mesas ya ubicadas (tienen elemento). Una mesa ubicada es siempre de la
+  // sucursal de su sector (lo mantiene un disparador), así que alcanza con los
+  // elementos de esta sucursal.
   const placedTableIds = new Set(
     rawElements.map((row) => row.physical_table_id).filter((id): id is string => id !== null),
   )
 
-  const unplacedTables: UnplacedTable[] = (tablesData ?? [])
-    .filter((t) => !placedTableIds.has(t.id))
-    .map((t) => ({
-      id: t.id,
-      label: t.label,
-      capacity: t.capacity,
-      qr_token: t.qr_token,
-    }))
+  const byLabel = (a: UnplacedTable, b: UnplacedTable) =>
+    a.label.localeCompare(b.label, 'es', { numeric: true })
+  const toTable = (t: RawTableRow): UnplacedTable => ({
+    id: t.id,
+    label: t.label,
+    capacity: t.capacity,
+    qr_token: t.qr_token,
+  })
+  const tables = (tablesData ?? []) as unknown as RawTableRow[]
 
-  const areas: AreaRow[] = (areasData ?? []).map((a) => ({
+  const unplacedTables = tables
+    .filter((t) => t.active && !placedTableIds.has(t.id))
+    .map(toTable)
+    .sort(byLabel)
+  const inactiveTables = tables
+    .filter((t) => !t.active)
+    .map(toTable)
+    .sort(byLabel)
+
+  const areas: AreaRow[] = ((areasData ?? []) as unknown as AreaRow[]).map((a) => ({
     id: a.id,
     name: a.name,
     position: a.position,
@@ -193,7 +242,7 @@ export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
     number_start: a.number_start,
   }))
 
-  return { areas, elements, unplacedTables }
+  return { areas, elements, unplacedTables, inactiveTables }
 }
 
 // ─── Tipos para la vista en vivo ─────────────────────────────────────────────

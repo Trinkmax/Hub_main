@@ -65,7 +65,9 @@ export function useGeometryQueue(
     [flushNow],
   )
 
-  // Flush best-effort al salir / esconder la pestaña.
+  // Flush best-effort al salir / esconder la pestaña, y también al desmontar: al
+  // cambiar de sucursal el editor se vuelve a montar, y un movimiento hecho en el
+  // último medio segundo se perdería si solo se cancelara el reloj.
   useEffect(() => {
     const handler = () => {
       void flushNow()
@@ -73,7 +75,7 @@ export function useGeometryQueue(
     window.addEventListener('beforeunload', handler)
     return () => {
       window.removeEventListener('beforeunload', handler)
-      if (timerRef.current) clearTimeout(timerRef.current)
+      void flushNow()
     }
   }, [flushNow])
 

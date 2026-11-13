@@ -1,6 +1,6 @@
 'use client'
 
-import { Power, RefreshCw, Trash2 } from 'lucide-react'
+import { QrCode, RefreshCw, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -15,54 +15,51 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Switch } from '@/components/ui/switch'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { deleteTablePermanentlyAction, setTableActiveAction } from '@/lib/floor-plan/actions'
+import type { ListedTable } from '@/lib/floor-plan/model'
 import { regenerateQrToken } from '@/lib/tables/actions'
-import { PrintQrButton } from './print-qr-button'
+import { cn } from '@/lib/utils'
+import { PAPEL } from './papel'
 
-type FallbackTable = {
-  id: string
-  label: string
-  capacity: number | null
-  qr_token: string
-  active: boolean
-}
+type FallbackTable = ListedTable
 
 type TablesListFallbackProps = {
   slug: string
   tables: FallbackTable[]
+  /** El bar tiene prendidos los QR de mesa (imprimir, cambiar). */
+  qrEnabled: boolean
+  /** La sucursal cuyas mesas se listan (solo si el bar tiene más de una). */
+  branchName?: string | null
 }
 
 /**
- * Camino accesible canónico (no solo respaldo del ErrorBoundary): una <table>
- * HTML real con todas las acciones por mesa, sin canvas ni drag. Se monta SIEMPRE
- * como tab secundaria del editor y como fallback de render.
+ * Todas las mesas de la sucursal en una tabla de verdad, con sus acciones, sin
+ * lienzo ni arrastre. Es el camino para quien usa teclado o lector de pantalla
+ * (no un respaldo de segunda): la pestaña «Lista» del editor, y lo que queda en
+ * pie si el editor visual falla. También es donde se reactiva una mesa
+ * desactivada.
  */
-export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
+export function TablesListFallback({
+  slug,
+  tables,
+  qrEnabled,
+  branchName,
+}: TablesListFallbackProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const handleToggleActive = (table: FallbackTable) => {
+  const run = (
+    table: FallbackTable,
+    action: () => Promise<{ ok: true } | { ok: false; message: string }>,
+    done: string,
+  ) => {
     setBusyId(table.id)
     startTransition(async () => {
-      const result = await setTableActiveAction(slug, table.id, !table.active)
+      const result = await action()
       if (result.ok) {
-        toast.success(
-          table.active ? `Mesa "${table.label}" desactivada` : `Mesa "${table.label}" activada`,
-        )
+        toast.success(done)
         router.refresh()
       } else {
         toast.error(result.message)
@@ -71,161 +68,188 @@ export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
     })
   }
 
-  const handleRegenerate = (table: FallbackTable) => {
-    setBusyId(table.id)
-    startTransition(async () => {
-      const result = await regenerateQrToken(slug, table.id)
-      if (result.ok) {
-        toast.success(`QR de "${table.label}" regenerado`)
-        router.refresh()
-      } else {
-        toast.error(result.message)
-      }
-      setBusyId(null)
-    })
-  }
-
-  const handleDeletePermanently = (table: FallbackTable) => {
-    setBusyId(table.id)
-    startTransition(async () => {
-      const result = await deleteTablePermanentlyAction(slug, table.id)
-      if (result.ok) {
-        toast.success(`Mesa "${table.label}" eliminada`)
-        router.refresh()
-      } else {
-        toast.error(result.message)
-      }
-      setBusyId(null)
-    })
-  }
+  const title = branchName ? `Las mesas de ${branchName}` : 'Todas las mesas'
 
   if (tables.length === 0) {
     return (
-      <EmptyState
-        title="Todavía no hay mesas"
-        description="Creá la primera mesa desde el editor de plano para imprimir su QR y empezar a recibir pedidos."
-      />
+      <div className="fpe-paper fpe-list">
+        <div className="fpe-list-head">
+          <h2>{title}</h2>
+        </div>
+        <p className="fpe-hint">
+          Todavía no hay mesas. Pasá a Editar y tocá «Agregar mesa» para dibujar la primera.
+        </p>
+      </div>
     )
   }
 
   return (
-    <Table>
-      <TableCaption>
-        Lista accesible de todas las mesas físicas. Cada mesa conserva su QR y sus acciones.
-      </TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">Mesa</TableHead>
-          <TableHead scope="col">Capacidad</TableHead>
-          <TableHead scope="col">QR</TableHead>
-          <TableHead scope="col">Estado</TableHead>
-          <TableHead scope="col" className="text-right">
-            Acciones
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tables.map((table) => {
-          const rowBusy = pending && busyId === table.id
-          return (
-            <TableRow key={table.id}>
-              <TableCell className="font-medium">{table.label}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {table.capacity ?? 'sin definir'}
-              </TableCell>
-              <TableCell>
-                <code className="block max-w-[12rem] overflow-hidden text-ellipsis whitespace-nowrap rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                  {table.qr_token}
-                </code>
-              </TableCell>
-              <TableCell>
-                {table.active ? (
-                  <Badge variant="success">Activa</Badge>
-                ) : (
-                  <Badge variant="secondary">Inactiva</Badge>
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center justify-end gap-1.5">
-                  <PrintQrButton qrToken={table.qr_token} />
+    <div className="fpe-paper fpe-list">
+      <div className="fpe-list-head">
+        <h2>{title}</h2>
+        <p className="fpe-hint">
+          {tables.length} {tables.length === 1 ? 'mesa' : 'mesas'}, con las mismas acciones que el
+          plano.
+        </p>
+      </div>
+      <table>
+        <caption>
+          Una mesa desactivada no aparece en el plano: se reactiva con su interruptor.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Mesa</th>
+            <th scope="col">Lugares</th>
+            <th scope="col">Sector</th>
+            <th scope="col">Estado</th>
+            <th scope="col" style={{ textAlign: 'right' }}>
+              Acciones
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {tables.map((table) => {
+            const busy = pending && busyId === table.id
+            return (
+              <tr key={table.id} className={cn(!table.active && 'is-off')}>
+                <th scope="row" className="fpe-list-num">
+                  {table.label}
+                </th>
+                <td>{table.capacity ?? 'Sin cargar'}</td>
+                <td>{table.sector ?? (table.active ? 'Sin ubicar' : '—')}</td>
+                <td>
+                  <span className={cn('fpe-tag', table.active && 'is-on')}>
+                    {table.active ? 'Activa' : 'Desactivada'}
+                  </span>
+                </td>
+                <td>
+                  <div className="fpe-list-actions">
+                    {qrEnabled ? (
+                      <>
+                        <button
+                          type="button"
+                          className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+                          aria-label={`Imprimir el QR de la mesa ${table.label}`}
+                          title="Imprimir QR"
+                          onClick={() =>
+                            window.open(
+                              `/print/qr/${encodeURIComponent(table.qr_token)}`,
+                              '_blank',
+                              'width=600,height=800',
+                            )
+                          }
+                        >
+                          <QrCode aria-hidden />
+                        </button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button
+                              type="button"
+                              className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+                              disabled={busy}
+                              aria-label={`Cambiar el QR de la mesa ${table.label}`}
+                              title="Cambiar QR"
+                            >
+                              <RefreshCw aria-hidden />
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                ¿Cambiar el QR de la mesa {table.label}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                El QR que está pegado en la mesa deja de funcionar. Vas a tener que
+                                imprimir el nuevo y cambiarlo.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                                Dejarlo
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                className="fpe-btn fpe-btn-primary"
+                                onClick={() =>
+                                  run(
+                                    table,
+                                    () => regenerateQrToken(slug, table.id),
+                                    `QR nuevo para la mesa ${table.label}.`,
+                                  )
+                                }
+                              >
+                                Cambiar el QR
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </>
+                    ) : null}
 
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={rowBusy}
-                        aria-label={`Regenerar QR de ${table.label}`}
-                      >
-                        <RefreshCw className="size-3.5" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Regenerar QR de "{table.label}"</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          El QR actual queda inservible. Tenés que reimprimir y reemplazar el QR
-                          físico de la mesa. Las sesiones abiertas siguen funcionando para los
-                          celulares ya conectados.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleRegenerate(table)}>
-                          Sí, regenerar
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-
-                  <div className="flex items-center gap-1.5">
                     <Switch
                       checked={table.active}
-                      disabled={rowBusy}
-                      onCheckedChange={() => handleToggleActive(table)}
+                      disabled={busy}
+                      onCheckedChange={() =>
+                        run(
+                          table,
+                          () => setTableActiveAction(slug, table.id, !table.active),
+                          table.active
+                            ? `Mesa ${table.label} desactivada.`
+                            : `Mesa ${table.label} activa de nuevo: está en «Mesas sin ubicar».`,
+                        )
+                      }
                       aria-label={
                         table.active
-                          ? `Desactivar mesa ${table.label}`
-                          : `Activar mesa ${table.label}`
+                          ? `Desactivar la mesa ${table.label}`
+                          : `Reactivar la mesa ${table.label}`
                       }
                     />
-                    <Power className="size-3.5 text-muted-foreground" aria-hidden />
-                  </div>
 
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={rowBusy}
-                        aria-label={`Eliminar permanentemente la mesa ${table.label}`}
-                      >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Eliminar "{table.label}"</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Solo se puede borrar definitivamente una mesa sin historial de sesiones.
-                          Si la mesa tiene historial, la acción se bloquea y conviene desactivarla
-                          con el interruptor.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleDeletePermanently(table)}>
-                          Eliminar
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+                          disabled={busy}
+                          aria-label={`Borrar la mesa ${table.label}`}
+                          title="Borrar la mesa"
+                        >
+                          <Trash2 aria-hidden />
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>¿Borrar la mesa {table.label}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Se borra y no tiene vuelta. Solo se puede si nunca se usó en el salón:
+                            si tiene historial, desactivala con el interruptor.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                            Dejarla
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            className="fpe-btn fpe-btn-danger-solid"
+                            onClick={() =>
+                              run(
+                                table,
+                                () => deleteTablePermanentlyAction(slug, table.id),
+                                `Mesa ${table.label} borrada.`,
+                              )
+                            }
+                          >
+                            Borrar la mesa
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

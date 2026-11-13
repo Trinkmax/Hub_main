@@ -2,18 +2,21 @@
 
 import { type CSSProperties, memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
-import {
-  bodyRadius,
-  ChairsSvg,
-  DecorContent,
-  decorSurfaceClass,
-  decorSurfaceStyle,
-} from '@/components/floor-plan/table-glyph'
+import { bodyRadius, ChairsSvg } from '@/components/floor-plan/table-glyph'
+import { inkOn } from '@/lib/floor-plan/branches'
+import { MAX_CHAIRS } from '@/lib/floor-plan/chairs'
 import { clampToAreaRotated, freeDragPosition, snapToGrid } from '@/lib/floor-plan/grid'
+import {
+  DEFAULT_SEATS,
+  elementName,
+  type LiveGeometry,
+  tableNumberSize,
+} from '@/lib/floor-plan/model'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { type Box, computeSnap, type Guide } from '@/lib/floor-plan/snap'
+import { readStageTransform } from '@/lib/floor-plan/stage-transform'
 import { cn } from '@/lib/utils'
-import { readStageTransform } from './pan-zoom-stage'
+import { DoorGlyph } from './glyphs'
 import { ResizeHandles } from './resize-handles'
 import { RotateHandle } from './rotate-handle'
 
@@ -39,24 +42,17 @@ export type FloorElementProps = {
   onResizeEnd: (id: string, size: { width: number; height: number }) => void
   /** Commit de la rotación al soltar el handle (grados 0..359). */
   onRotateEnd: (id: string, rotation: number) => void
+  /** Tamaño o giro «en el aire» mientras dura el gesto: lo sigue la maqueta. */
+  onLive?: (id: string, geometry: LiveGeometry) => void
   /** Guías de alineación vivas (se dibujan en el stage); [] al terminar. */
   onGuides: (guides: Guide[]) => void
-  /** Inicio/fin de gesto: el editor frena el re-seed del RSC y asegura la selección. */
-  onDragStart?: (id: string) => void
+  /**
+   * Inicio de gesto: el editor frena el re-seed del RSC y asegura la selección
+   * (`additive` = con Shift/Cmd se suma a lo elegido en vez de reemplazarlo).
+   * Devuelve `true` si el elemento quedó elegido recién ahora, al apretar.
+   */
+  onDragStart?: (id: string, additive: boolean) => boolean
   onDragEnd?: () => void
-}
-
-// Etiquetas es-AR por tipo (para aria-label de decoración).
-const KIND_LABELS: Record<ElementRow['kind'], string> = {
-  table: 'Mesa',
-  wall: 'Pared',
-  pillar: 'Columna',
-  island: 'Isla',
-  bar: 'Barra',
-  door: 'Puerta',
-  text: 'Texto',
-  stage: 'Escenario',
-  booth: 'Box',
 }
 
 // Umbral (px de pantalla) para distinguir click (selección) de drag (mover).
@@ -72,8 +68,20 @@ type DragState = {
   lastDx: number
   lastDy: number
   siblings: Box[]
+  /** Con Shift/Cmd apretado: el toque suma o saca de la selección. */
+  additive: boolean
+  /** Quedó elegido recién al apretar (no hay que volver a alternarlo al soltar). */
+  selectedOnPress: boolean
 }
 
+/**
+ * Un elemento del plano, en papel: la mesa es cartón blanco con el número en
+ * tinta y sus sillas; lo construido (paredes, barra, islas) va en los mismos
+ * materiales que la maqueta del salón, visto desde arriba.
+ *
+ * El arrastre mueve el nodo a mano (`translate3d`) y recién al soltar avisa al
+ * editor: nada pasa por el estado de React mientras dura el gesto.
+ */
 function FloorElementImpl({
   element,
   selected,
@@ -87,6 +95,7 @@ function FloorElementImpl({
   onMoveEnd,
   onResizeEnd,
   onRotateEnd,
+  onLive,
   onGuides,
   onDragStart,
   onDragEnd,
@@ -129,7 +138,8 @@ function FloorElementImpl({
     }
   }, [])
 
-  const isTable = element.kind === 'table'
+  const kind = element.kind
+  const isTable = kind === 'table'
   const isBanquette = element.shape === 'banquette'
 
   const displayWidth = liveSize?.width ?? element.width
@@ -139,6 +149,8 @@ function FloorElementImpl({
     element.shape,
     isTable ? element.corner_radius || 8 : element.corner_radius,
   )
+  // Sin lugares cargados se dibuja como la ve el salón: con cuatro sillas.
+  const seats = isTable ? (element.table?.capacity ?? DEFAULT_SEATS) : null
 
   // Posición imantada vigente (free + snap-a-objeto). Devuelve {x,y,guides}.
   const resolveSnap = (state: DragState) => {
@@ -175,7 +187,8 @@ function FloorElementImpl({
     if (e.button !== 0) return
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    onDragStart?.(element.id)
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey
+    const selectedOnPress = onDragStart?.(element.id, additive) ?? false
     drag.current = {
       startClientX: e.clientX,
       startClientY: e.clientY,
@@ -186,6 +199,8 @@ function FloorElementImpl({
       lastDx: 0,
       lastDy: 0,
       siblings: getSiblings(element.id),
+      additive,
+      selectedOnPress,
     }
     if (wrapperRef.current) wrapperRef.current.style.willChange = 'transform'
   }
@@ -196,6 +211,7 @@ function FloorElementImpl({
     const dx = e.clientX - state.startClientX
     const dy = e.clientY - state.startClientY
     if (!state.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    if (!state.moved) wrapperRef.current?.classList.add('is-dragging')
     state.moved = true
     state.lastDx = dx
     state.lastDy = dy
@@ -251,9 +267,15 @@ function FloorElementImpl({
       onGuides([])
       onMoveEnd(element.id, c.x - state.origX, c.y - state.origY)
     } else if (state) {
-      onSelect(element.id, e.shiftKey || e.metaKey || e.ctrlKey)
+      // Toque sin arrastrar. Solo: queda elegido este. Con Shift/Cmd: se suma a lo
+      // elegido (eso ya pasó al apretar) o, si ya estaba, se saca.
+      if (!state.additive) onSelect(element.id, false)
+      else if (!state.selectedOnPress) onSelect(element.id, true)
     }
-    if (node) node.style.willChange = 'auto'
+    if (node) {
+      node.style.willChange = 'auto'
+      node.classList.remove('is-dragging')
+    }
     onDragEnd?.()
   }
 
@@ -267,41 +289,42 @@ function FloorElementImpl({
     touchAction: 'none',
   }
 
-  const decorStyle: CSSProperties = isTable
+  // El color que eligió el dueño pisa al material (y el texto se acomoda a ese fondo).
+  const bodyStyle: CSSProperties = isTable
     ? { borderRadius: radius }
     : {
-        ...decorSurfaceStyle(element.kind, element.color),
-        // La decoración redonda (columna, isla circular) se dibuja como círculo
-        // también en el editor (espejo de la vista en vivo).
-        ...(element.shape === 'circle' ? { borderRadius: '50%' } : null),
+        borderRadius: element.shape === 'circle' ? '50%' : kind === 'bar' ? 6 : 4,
+        ...(element.color && kind !== 'text' && kind !== 'door'
+          ? {
+              backgroundColor: element.color,
+              color: inkOn(element.color) === 'light' ? 'var(--pos-on-dark)' : 'var(--pos-ink)',
+            }
+          : null),
       }
 
-  const ariaLabel = isTable
-    ? `Mesa ${element.table?.label ?? element.label ?? ''}`.trim()
-    : `${KIND_LABELS[element.kind]}${element.label ? ` ${element.label}` : ''}`
+  const counterRotate = rotation ? { transform: `rotate(${-rotation}deg)` } : undefined
+  const tableLabel = element.table?.label ?? element.label ?? '—'
+  const number = tableNumberSize(displayWidth, displayHeight, tableLabel, rotation)
 
   return (
-    <div ref={setWrapper} className="floor-element" style={wrapperStyle}>
+    <div
+      ref={setWrapper}
+      className={cn('floor-element', selected && 'is-selected')}
+      style={wrapperStyle}
+    >
       {/* Capa que rota: cuerpo + sillas giran juntos; el número se contra-rota. */}
       <div
         ref={contentRef}
-        className="relative h-full w-full"
-        style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }}
+        className="fpe-el-layer"
+        style={{ transform: `rotate(${rotation}deg)` }}
       >
-        {(isTable || element.kind === 'bar') && (
+        {(isTable || kind === 'bar') && (
           <ChairsSvg
             shape={element.shape}
-            kind={element.kind}
+            kind={kind}
             width={displayWidth}
             height={displayHeight}
-            capacity={element.table?.capacity ?? null}
-          />
-        )}
-
-        {isBanquette && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute top-0 right-1 left-1 h-1.5 rounded-full bg-primary/45"
+            capacity={seats}
           />
         )}
 
@@ -311,49 +334,55 @@ function FloorElementImpl({
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          aria-label={ariaLabel}
-          style={decorStyle}
+          // Con teclado (Enter / Espacio) no hay puntero: el click sin detalle elige.
+          onClick={(e) => {
+            if (e.detail === 0) onSelect(element.id, e.shiftKey || e.metaKey || e.ctrlKey)
+          }}
+          aria-label={elementName(element)}
+          aria-pressed={selected}
+          style={bodyStyle}
           className={cn(
-            'absolute inset-0 flex cursor-grab touch-none items-center justify-center overflow-hidden text-center transition-shadow active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            isTable
-              ? 'border border-primary/35 bg-card text-card-foreground shadow-sm'
-              : decorSurfaceClass(element.kind),
-            selected && 'shadow-[var(--shadow-glow)]',
+            'fpe-el-body',
+            `fpe-el--${kind}`,
+            kind === 'text' && !element.label && 'is-blank',
           )}
         >
+          {isBanquette && isTable ? <span aria-hidden className="fpe-el-backrest" /> : null}
           {isTable ? (
-            <span
-              ref={labelRef}
-              className="flex flex-col items-center justify-center gap-0.5 px-1 leading-none"
-              style={rotation ? { transform: `rotate(${-rotation}deg)` } : undefined}
-            >
-              <span className="font-serif text-sm font-semibold tabular-nums">
-                {element.table?.label ?? element.label ?? '—'}
+            <span ref={labelRef} className="fpe-el-label" style={counterRotate}>
+              <span
+                className="fpe-el-num"
+                // Con el plano alejado el número no baja de 12 px en pantalla (como en el
+                // salón), salvo que así ya no entre en la mesa: una etiqueta larga se achica.
+                style={{
+                  fontSize: `min(${number.cap}px, max(${number.size}px, calc(12px * var(--fpe-inv, 1))))`,
+                }}
+              >
+                {tableLabel}
               </span>
-              {element.table?.capacity != null && (
-                <span className="text-[10px] text-muted-foreground tabular-nums">
-                  {element.table.capacity}
-                </span>
-              )}
+              {/* Más lugares que sillas dibujadas: se dice con número. */}
+              {seats !== null && seats > MAX_CHAIRS ? (
+                <span className="fpe-el-cap">{seats} lugares</span>
+              ) : null}
             </span>
-          ) : (
-            <span
-              ref={labelRef}
-              style={rotation ? { transform: `rotate(${-rotation}deg)` } : undefined}
-            >
-              <DecorContent kind={element.kind} label={element.label} />
+          ) : kind === 'door' ? (
+            <span ref={labelRef} className="fpe-el-decal" style={counterRotate}>
+              <DoorGlyph />
+              {element.label ? <span>{element.label}</span> : null}
             </span>
-          )}
+          ) : kind === 'text' ? (
+            <span ref={labelRef} className="fpe-el-decal" style={counterRotate}>
+              {element.label || 'Texto'}
+            </span>
+          ) : element.label || kind === 'stage' ? (
+            <span ref={labelRef} className="fpe-el-tag" style={counterRotate}>
+              {element.label || 'Escenario'}
+            </span>
+          ) : null}
         </button>
 
-        {/* Ring + handles DENTRO de la capa que rota → siguen la rotación del
-            elemento (antes quedaban desalineados con el cuerpo rotado). */}
-        {selected && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -inset-px rounded-[10px] ring-2 ring-primary"
-          />
-        )}
+        {/* Marco + manijas DENTRO de la capa que rota → siguen el giro del elemento. */}
+        {selected && <span aria-hidden className="fpe-el-ring" />}
 
         {selected && (
           <>
@@ -362,7 +391,10 @@ function FloorElementImpl({
               height={displayHeight}
               transformRef={transformRef}
               rotation={rotation}
-              onResize={setLiveSize}
+              onResize={(size) => {
+                setLiveSize(size)
+                onLive?.(element.id, size)
+              }}
               onResizeEnd={(size) => {
                 setLiveSize(null)
                 onResizeEnd(element.id, size)
@@ -374,8 +406,10 @@ function FloorElementImpl({
                 if (contentRef.current) contentRef.current.style.transform = `rotate(${deg}deg)`
                 // Mantener la etiqueta derecha durante el gesto (contra-rotación viva).
                 if (labelRef.current) labelRef.current.style.transform = `rotate(${-deg}deg)`
+                onLive?.(element.id, { rotation: deg })
               }}
               onRotateEnd={(deg) => onRotateEnd(element.id, deg)}
+              onStep={() => onRotateEnd(element.id, (rotation + 15) % 360)}
             />
           </>
         )}
@@ -399,6 +433,7 @@ export const FloorElement = memo(FloorElementImpl, (a, b) => {
     a.onMoveEnd === b.onMoveEnd &&
     a.onResizeEnd === b.onResizeEnd &&
     a.onRotateEnd === b.onRotateEnd &&
+    a.onLive === b.onLive &&
     a.onGuides === b.onGuides &&
     a.onDragStart === b.onDragStart &&
     a.onDragEnd === b.onDragEnd &&

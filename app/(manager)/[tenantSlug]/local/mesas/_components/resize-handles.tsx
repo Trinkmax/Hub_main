@@ -3,8 +3,7 @@
 import { useRef } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { RESIZE_MIN, snapToGrid } from '@/lib/floor-plan/grid'
-import { cn } from '@/lib/utils'
-import { readStageTransform } from './pan-zoom-stage'
+import { readStageTransform } from '@/lib/floor-plan/stage-transform'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
 
@@ -30,6 +29,10 @@ type DragState = {
   last: { width: number; height: number }
 }
 
+/**
+ * Manijas para estirar el elemento elegido (esquina, borde derecho, borde de
+ * abajo). Con teclado se estira con Alt + flechas (lo maneja el editor).
+ */
 export function ResizeHandles({
   width,
   height,
@@ -107,8 +110,6 @@ export function ResizeHandles({
     }
   }
 
-  const base = 'absolute z-20 rounded-sm border border-primary bg-background shadow-sm'
-
   return (
     <>
       {/* Esquina inferior-derecha (ancho + alto) */}
@@ -116,24 +117,21 @@ export function ResizeHandles({
         role="presentation"
         aria-hidden
         onPointerDown={startResize('se')}
-        className={cn(base, 'size-3 -bottom-1.5 -right-1.5 cursor-nwse-resize')}
-        style={{ touchAction: 'none' }}
+        className="fpe-handle fpe-handle--se"
       />
       {/* Borde derecho (solo ancho) */}
       <div
         role="presentation"
         aria-hidden
         onPointerDown={startResize('e')}
-        className={cn(base, 'h-3 w-2.5 top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize')}
-        style={{ touchAction: 'none' }}
+        className="fpe-handle fpe-handle--e"
       />
       {/* Borde inferior (solo alto) */}
       <div
         role="presentation"
         aria-hidden
         onPointerDown={startResize('s')}
-        className={cn(base, 'h-2.5 w-3 left-1/2 -bottom-1.5 -translate-x-1/2 cursor-ns-resize')}
-        style={{ touchAction: 'none' }}
+        className="fpe-handle fpe-handle--s"
       />
     </>
   )

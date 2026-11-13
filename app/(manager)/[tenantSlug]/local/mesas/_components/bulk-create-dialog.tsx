@@ -1,39 +1,92 @@
 'use client'
 
-import { Rows3 } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { bulkCreateTablesAction } from '@/lib/floor-plan/actions'
 import { cn } from '@/lib/utils'
+import {
+  BanquetteGlyph,
+  LongTableGlyph,
+  RoundTableGlyph,
+  TableGlyph,
+  TablesGridGlyph,
+} from './glyphs'
+import { PAPEL } from './papel'
 
 type Preset = 'round' | 'square' | 'rect' | 'banquette'
 
-const PRESETS: { value: Preset; label: string }[] = [
-  { value: 'square', label: 'Cuadrada' },
-  { value: 'round', label: 'Redonda' },
-  { value: 'rect', label: 'Rectangular' },
-  { value: 'banquette', label: 'Banquette' },
+const PRESETS: {
+  value: Preset
+  label: string
+  Glyph: (props: { className?: string }) => React.ReactNode
+}[] = [
+  { value: 'square', label: 'Cuadrada', Glyph: TableGlyph },
+  { value: 'round', label: 'Redonda', Glyph: RoundTableGlyph },
+  { value: 'rect', label: 'Larga', Glyph: LongTableGlyph },
+  { value: 'banquette', label: 'Banquette', Glyph: BanquetteGlyph },
 ]
 
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+
+function Counter({
+  label,
+  value,
+  unit,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: number
+  unit: string
+  min: number
+  max: number
+  onChange: (next: number) => void
+}) {
+  return (
+    <div className="fpe-field">
+      <span className="fpe-label">{label}</span>
+      <div className="fpe-stepper">
+        <button
+          type="button"
+          aria-label={`${label}: uno menos`}
+          disabled={value <= min}
+          onClick={() => onChange(clamp(value - 1, min, max))}
+        >
+          <Minus aria-hidden />
+        </button>
+        <output aria-live="polite" aria-label={`${label}: ${value} ${unit}`}>
+          {value}
+        </output>
+        <button
+          type="button"
+          aria-label={`${label}: uno más`}
+          disabled={value >= max}
+          onClick={() => onChange(clamp(value + 1, min, max))}
+        >
+          <Plus aria-hidden />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * «Varias mesas»: arma una tanda de mesas iguales, numeradas, debajo de lo que
+ * ya está dibujado. Es una ventanita pegada al botón (no un diálogo): son tres
+ * datos y no hace falta frenar al dueño para pedírselos.
+ */
 export function BulkCreateDialog({
   slug,
   areaId,
+  areaName,
   onCreated,
 }: {
   slug: string
   areaId: string
+  areaName: string
   onCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -47,12 +100,14 @@ export function BulkCreateDialog({
       const r = await bulkCreateTablesAction(slug, {
         area_id: areaId,
         count,
-        capacity: capacity > 0 ? capacity : null,
+        capacity,
         preset,
       })
       if (r.ok) {
         toast.success(
-          `${r.data.created} ${r.data.created === 1 ? 'mesa creada' : 'mesas creadas'}.`,
+          r.data.created === 1
+            ? `Listo: 1 mesa nueva en ${areaName}.`
+            : `Listo: ${r.data.created} mesas nuevas en ${areaName}.`,
         )
         setOpen(false)
         onCreated()
@@ -63,83 +118,77 @@ export function BulkCreateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="gap-1.5">
-          <Rows3 className="size-4" aria-hidden />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="fpe-btn fpe-btn-quiet">
+          <TablesGridGlyph />
           Varias mesas
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="font-serif">Crear varias mesas</DialogTitle>
-          <DialogDescription>
-            Se crean en grilla, auto-numeradas desde el inicio del área, cada una con su propio QR.
-            Después las acomodás arrastrando.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="bulk-count">Cantidad</Label>
-              <Input
-                id="bulk-count"
-                type="number"
-                min={1}
-                max={50}
-                value={count}
-                onChange={(e) => setCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="bulk-capacity">Capacidad c/u</Label>
-              <Input
-                id="bulk-capacity"
-                type="number"
-                min={1}
-                max={50}
-                value={capacity}
-                onChange={(e) =>
-                  setCapacity(Math.max(0, Math.min(50, Number(e.target.value) || 0)))
-                }
-                placeholder="Sin definir"
-              />
-            </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>
+        <form
+          className="fpe-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submit()
+          }}
+        >
+          <div className="fpe-field">
+            <h2 className="fpe-pop-title">Varias mesas de una</h2>
+            <p className="fpe-hint">
+              Quedan en fila debajo de lo que ya dibujaste, numeradas. Después las acomodás
+              arrastrando.
+            </p>
           </div>
 
-          <div className="grid gap-1.5">
-            <Label>Forma</Label>
-            <div className="grid grid-cols-4 gap-1 rounded-lg border border-border/60 bg-muted/40 p-0.5">
-              {PRESETS.map((p) => (
+          <div className="fpe-row fpe-row-split">
+            <Counter
+              label="Cuántas"
+              unit="mesas"
+              value={count}
+              min={1}
+              max={50}
+              onChange={setCount}
+            />
+            <Counter
+              label="Lugares en cada una"
+              unit="lugares"
+              value={capacity}
+              min={1}
+              max={50}
+              onChange={setCapacity}
+            />
+          </div>
+
+          <fieldset className="fpe-field" style={{ border: 0, margin: 0, padding: 0 }}>
+            <legend className="fpe-label" style={{ padding: 0, marginBottom: '0.3rem' }}>
+              Forma
+            </legend>
+            <div className="fpe-shapes" data-cols="4">
+              {PRESETS.map(({ value, label, Glyph }) => (
                 <button
-                  key={p.value}
+                  key={value}
                   type="button"
-                  onClick={() => setPreset(p.value)}
-                  aria-pressed={preset === p.value}
-                  className={cn(
-                    'rounded-md px-2 py-1.5 text-center text-xs transition-colors',
-                    preset === p.value
-                      ? 'bg-card font-medium shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
+                  className="fpe-shape"
+                  aria-pressed={preset === value}
+                  onClick={() => setPreset(value)}
                 >
-                  {p.label}
+                  <Glyph />
+                  {label}
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+          </fieldset>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={submit} disabled={pending}>
-            {pending ? 'Creando…' : `Crear ${count} ${count === 1 ? 'mesa' : 'mesas'}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <button
+            type="submit"
+            className="fpe-btn fpe-btn-primary fpe-btn-block"
+            disabled={pending}
+          >
+            {pending ? 'Creando…' : count === 1 ? 'Crear 1 mesa' : `Crear ${count} mesas`}
+          </button>
+        </form>
+      </PopoverContent>
+    </Popover>
   )
 }

@@ -28,3 +28,35 @@ export function readStageTransform(transformRef: StageRef): {
     positionY: ts?.positionY ?? 0,
   }
 }
+
+export type StageTransform = { scale: number; positionX: number; positionY: number }
+
+/**
+ * La transformación que encaja una caja del plano (en coordenadas lógicas)
+ * centrada en el visor, con margen. Es lo que hacen «Ver todo el piso» y
+ * «Encajar las mesas», y cómo arranca el lienzo al abrir un sector.
+ *
+ * El stage se dibuja con `translate(positionX, positionY) scale(scale)` desde su
+ * esquina, así que un punto lógico `(x, y)` queda en `positionX + x · scale`.
+ * Nunca agranda más allá de `maxScale` (un sector chico no se infla) ni achica
+ * por debajo de `minScale` (el límite del zoom). Pura.
+ */
+export function fitTransform(
+  viewport: { width: number; height: number },
+  box: { x: number; y: number; width: number; height: number },
+  options: { padding?: number; minScale?: number; maxScale?: number } = {},
+): StageTransform {
+  const padding = options.padding ?? 0
+  const minScale = options.minScale ?? 0
+  const maxScale = options.maxScale ?? Number.POSITIVE_INFINITY
+  const boxW = Math.max(1, box.width)
+  const boxH = Math.max(1, box.height)
+  const roomW = Math.max(1, viewport.width - padding * 2)
+  const roomH = Math.max(1, viewport.height - padding * 2)
+  const scale = Math.max(minScale, Math.min(roomW / boxW, roomH / boxH, maxScale))
+  return {
+    scale,
+    positionX: (viewport.width - boxW * scale) / 2 - box.x * scale,
+    positionY: (viewport.height - boxH * scale) / 2 - box.y * scale,
+  }
+}

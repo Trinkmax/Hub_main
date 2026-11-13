@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapPgError, PG_ERROR_MESSAGES } from '@/lib/floor-plan/errors'
+import { mapPgError, PG_ERROR_MESSAGES, SECTOR_NAME_TAKEN } from '@/lib/floor-plan/errors'
 
 describe('mapPgError', () => {
   it('mapea table_has_open_session a su mensaje accionable', () => {
@@ -53,6 +53,31 @@ describe('mapPgError', () => {
         message: 'duplicate key value violates unique constraint "floor_plan_elements_pt_uidx"',
       }),
     ).toBe('La mesa ya está ubicada en el plano.')
+  })
+
+  it('nombre de sector repetido: el índice único ahora es por sucursal', () => {
+    expect(
+      mapPgError({
+        message:
+          'duplicate key value violates unique constraint "floor_plan_areas_branch_name_uidx"',
+      }),
+    ).toBe(SECTOR_NAME_TAKEN)
+    expect(SECTOR_NAME_TAKEN).toContain('Ya existe un sector con ese nombre')
+  })
+
+  it('nombre de sector repetido: también reconoce el índice viejo (por bar)', () => {
+    expect(
+      mapPgError({
+        message:
+          'duplicate key value violates unique constraint "floor_plan_areas_tenant_name_uidx"',
+      }),
+    ).toBe(SECTOR_NAME_TAKEN)
+  })
+
+  it('los mensajes hablan de «sector», no de «área»', () => {
+    for (const message of [...Object.values(PG_ERROR_MESSAGES), SECTOR_NAME_TAKEN]) {
+      expect(message.toLowerCase()).not.toContain('área')
+    }
   })
 
   it('mensaje desconocido devuelve el genérico', () => {
