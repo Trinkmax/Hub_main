@@ -27,8 +27,13 @@ lo prende un superadmin por bar).
 | Abrir mesa (dos toques, con reserva) | `open-table-sheet.tsx`, RPC `pos_open_table` | hecho |
 | Comanda del mozo | `/[bar]/salon/mesa/[sesión]`, `components/pos/order/*`, `lib/pos/order/*` | hecho |
 | Pantalla de cocina | `/[bar]/salon/tele`, `components/pos/kitchen/*`, `lib/pos/kitchen/*` | hecho |
-| Cobro, caja por turno | — | sigue |
-| Tablero del dueño, carta rápida, QR del cliente | — | sigue |
+| Cambiar una mesa de lugar | `floor-model.tsx` (mantener y arrastrar), `floor-live.tsx`, RPC `pos_move_table` | hecho |
+| «¿Dónde trabajás hoy?» | `components/pos/ui/branch-chooser.tsx` | hecho |
+| Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`) | hecho |
+| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho |
+| Cobro y caja por turno: base y capa de servidor | migración `pos_cobro_y_caja` (**sin aplicar**), `lib/pos/cash/*` | diseñado y ensayado |
+| Cobro y caja por turno: pantallas | `/[bar]/salon/mesa/[sesión]/cuenta`, `/[bar]/salon/caja` | en construcción |
+| Tablero del dueño, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
 
@@ -79,6 +84,42 @@ el canal se cae, la pantalla lo dice y al volver se pone al día sola.
 - Lo urgente se mueve: la mesa con comida lista late; la demorada se pone roja.
 - Arriba, el salón en una línea. Cada pestaña de sector avisa cuántas mesas tienen algo pendiente.
 - Una reserva toma su mesa desde 45 minutos antes; antes de eso la mesa está libre pero avisa la hora.
+- **Cambiar de mesa:** mantener apretada una mesa ocupada la levanta; las libres quedan marcadas y se
+  arrastra hasta una (la ficha en el dedo dice «7 → 10») o se toca el destino. El cambio se ve al instante y
+  el aviso trae «Deshacer». Soltar sin haber arrastrado solo deja la mesa levantada. Desde la comanda,
+  «Cambiar de mesa» (en «¿Cuántos son?») lleva al mapa con `?mover=<sesión>`. Juntar dos mesas ocupadas
+  todavía no está.
+- **Lo único que tiene color es el estado.** La decoración (barra, paredes, islas) va en su material aunque en
+  el editor tenga un color elegido.
+- El nombre de una mesa entra en su tapa: los de una o dos cifras usan el tamaño de siempre, los largos se
+  achican (`labelSize`).
+- Con más de una sucursal, la primera vez que entra un dispositivo se le pregunta dónde está
+  («¿Dónde trabajás hoy?»). Después no pregunta más.
+
+## La barra de abajo del salón
+
+`components/shell/salon/salon-nav.ts`. Entran cinco pestañas; con más, la quinta es «Más» y abre el resto en
+una hoja. Con el punto de venta el orden es salón, caja, reservas, cocina; el club (sumar puntos, QR) y lo de
+algunas noches quedan detrás de «Más». La comanda (`/salon/mesa/*`) no lleva pestañas: se vuelve con la
+flecha. El punto de venta trae el plano del salón: prender `pos` alcanza (`getEffectiveFeatures`).
+
+## Cobro y caja por turno (diseñado, sin aplicar)
+
+Migración `supabase/migrations/20261113030000_pos_cobro_y_caja.sql`: ocho tablas nuevas (`pos_registers`,
+`pos_shifts`, `pos_payments`, `pos_payment_edits`, `pos_cash_movements`, `pos_approvals`, `pos_discounts`,
+`pos_closed_bills`) y 28 funciones. No toca la estructura de nada que ya existe.
+
+- La cuenta: consumo − descuentos − la seña = lo que falta. Se paga en partes y cada parte con su medio.
+- El recargo de crédito y la propina van aparte: no son venta. La propina no entra en el efectivo que tiene
+  que haber en el cajón.
+- Cuando no queda nada por cobrar la mesa se cierra sola y el socio suma sus puntos.
+- Descuentos y bajas: quien puede aprobar los aplica directo; el resto los pide.
+- Nada se borra: un cobro se anula o se corrige y queda quién y cuándo. Con el turno cerrado, solo un dueño.
+- La plata la leen dueño y caja; nadie escribe directo en las tablas (todo entra por las funciones).
+
+Pendiente antes de usarlo con plata de verdad: las funciones viejas del servicio de mesa
+(`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`, el cierre automático de las 2 de la mañana)
+todavía no conocen los cobros y hay que ajustarlas.
 
 ## Diseño: el mundo «papel»
 
