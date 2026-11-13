@@ -6,6 +6,7 @@
 const MESSAGES: Record<string, string> = {
   unauthenticated: 'Se cerró tu sesión. Volvé a entrar.',
   forbidden: 'No tenés permiso para hacer esto.',
+  pos_disabled: 'El punto de venta no está prendido en este bar.',
   table_not_found: 'Esa mesa ya no existe o está desactivada.',
   table_busy: 'Esa mesa ya está ocupada.',
   party_size_invalid: 'Decime cuántos son (entre 1 y 100).',
@@ -26,7 +27,8 @@ const MESSAGES: Record<string, string> = {
   ticket_cancelled: 'Esa tanda está cancelada.',
   ticket_not_in_kitchen: 'Esa tanda todavía no salió a cocina.',
   item_not_found: 'No encontré ese producto en la mesa.',
-  needs_approval: 'Cocina ya lo empezó: la baja la tiene que dar el encargado.',
+  item_already_paid: 'Ese producto ya está cobrado: no se puede dar de baja.',
+  needs_approval: 'Esa baja la tiene que dar el encargado.',
   reason_required: 'Contame por qué se da de baja.',
   branch_not_found: 'No encontré esa sucursal.',
   invalid_status: 'No se puede pasar a ese estado.',

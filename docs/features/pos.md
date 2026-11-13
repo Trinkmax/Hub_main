@@ -199,11 +199,26 @@ mesas de práctica; cualquiera que mirara la cola marcaba «cocina lo vio»; un 
 llegaba durante una lectura (`lib/pos/live-reload.ts`); una tanda sin enviar salía con la sesión de otra
 persona (`mayAutoSend`).
 
-**En la migración `pos_endurecer` (escrita aparte, va junto con cobro):** `pos_cancel_item` no mira la mesa,
-la cuenta ni los cobros; `pos_require_role` no mira el interruptor del bar; `pos_open_table` acepta la
-práctica de cualquier rol; `pos_send_order` mira la mesa antes que la clave; permisos de tabla de más en
-`menu_stockouts` y `menu_price_changes`; una reserva con el socio borrado no se puede sentar; cambiar el
-socio de una mesa no deja evento; la cola de cocina muestra tandas de mesas cerradas.
+**Cerrado en la base con la migración `20261113121745_pos_endurecer` (aplicada el 13/11):**
+- `pos_cancel_item` tiene las mismas reglas que `pos_request_void`: la mesa abierta, nada ya cobrado por
+  producto, y con la cuenta pedida o un cobro hecho la baja la da quien puede aprobar (antes un mozo podía
+  dar de baja lo que faltaba pagar y la mesa se cerraba en cero).
+- Todas las funciones `pos_*` miran el interruptor del bar (`pos_disabled` si está apagado; un superadmin
+  que además trabaja en el bar entra igual).
+- `pos_open_table`: la práctica solo vale si abre un dueño; una reserva con el socio borrado se sienta sin socio.
+- `pos_send_order`: primero la clave del pedido, después si la mesa está abierta (el reintento de una tanda
+  que ya entró no falla si la mesa se cerró en el medio).
+- `pos_update_table`: cambiar el socio de la mesa deja un evento (`guest_registered`, `change: customer`).
+- `pos_kitchen_queue`: no arrastra tandas de mesas cerradas de otros días.
+- `menu_stockouts` y `menu_price_changes`: solo lectura para `authenticated` (se escriben por su función y
+  por los disparadores de precio).
+
+Probada en una base local con 103 comprobaciones (cada punto de arriba) y, ya aplicada, con una pasada en el
+bar de ejemplo: cocina, tanda con la misma clave dos veces, baja, baja repetida, escritura directa rechazada.
+
+**Anotado al probar:** los renglones de una tanda nacen todos con la misma hora (`created_at` es la de la
+transacción), así que dentro de la tanda el orden lo termina decidiendo el id y no el orden en que el mozo
+los cargó. Falta una posición explícita en `ticket_items`.
 
 **Pendiente antes de usarlo con plata de verdad (otra tanda):**
 - Las funciones viejas del servicio de mesa (`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`,
