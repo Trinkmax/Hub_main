@@ -22,7 +22,12 @@ export function useLiveReload(
     () => createLiveReload(() => readRef.current(), { settleMs, minGapMs }),
     [settleMs, minGapMs],
   )
-  useEffect(() => () => reload.stop(), [reload])
+  // Parar tiene vuelta: React puede desmontar y volver a montar la pantalla conservando este mismo
+  // objeto (en desarrollo lo hace siempre). Al volver, se prende de nuevo.
+  useEffect(() => {
+    reload.start()
+    return () => reload.stop()
+  }, [reload])
 
   return useMemo(() => ({ poke: reload.poke, now: reload.now }), [reload])
 }

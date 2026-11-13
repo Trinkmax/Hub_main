@@ -21,8 +21,14 @@ export type LiveReload = {
   poke: () => void
   /** Leer ya (al entrar, al volver la conexión, la red de seguridad). Si hay una lectura en curso, se encola. */
   now: () => Promise<void>
-  /** La pantalla se fue: no se lee más. */
+  /** La pantalla se fue: no se lee más (hasta `start`). */
   stop: () => void
+  /**
+   * La pantalla está (de nuevo) a la vista. Hace falta que parar tenga vuelta: React desmonta y vuelve a
+   * montar una pantalla sin tirar su estado (en desarrollo siempre; en producción, al esconderla y
+   * mostrarla), y una lectura apagada para siempre dejaba la pantalla sin actualizarse nunca.
+   */
+  start: () => void
 }
 
 export function createLiveReload(
@@ -87,8 +93,12 @@ export function createLiveReload(
     now: run,
     stop: () => {
       stopped = true
+      again = false
       if (timer !== null) clock.clearTimer(timer)
       timer = null
+    },
+    start: () => {
+      stopped = false
     },
   }
 }

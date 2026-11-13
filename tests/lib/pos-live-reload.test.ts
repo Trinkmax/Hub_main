@@ -172,4 +172,33 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
     await advance(1000)
     expect(reads).toBe(0)
   })
+
+  it('parar tiene vuelta: si la pantalla vuelve, sigue leyendo', async () => {
+    // React desmonta y vuelve a montar una pantalla conservando su estado (en desarrollo, siempre).
+    // Con un «parar» sin vuelta la pantalla quedaba «en vivo» pero no se actualizaba nunca.
+    const { clock, advance } = fakeClock()
+    let reads = 0
+    const live = createLiveReload(() => void (reads += 1), { clock })
+    live.start()
+    live.stop()
+    live.start()
+    live.poke()
+    await advance(220)
+    expect(reads).toBe(1)
+    await live.now()
+    expect(reads).toBe(2)
+  })
+
+  it('lo que quedó pendiente al irse no se dispara al volver', async () => {
+    const { clock, advance } = fakeClock()
+    const slow = slowRead()
+    const live = createLiveReload(slow.read, { clock })
+    void live.now()
+    live.poke() // se encola otra lectura…
+    live.stop() // …pero la pantalla se va
+    await slow.finish()
+    live.start()
+    await advance(2000)
+    expect(slow.count()).toBe(1)
+  })
 })
