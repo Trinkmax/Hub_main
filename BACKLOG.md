@@ -1637,3 +1637,18 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   compartida por link (hoy es bajar → cambiar → subir), lo mismo para Proveedores (WhatsApp y días de los 33), y
   probarla con Excel y Google Sheets de verdad (se validó con openpyxl y la vista rápida de macOS). En el bar de
   ejemplo quedó desactivado el insumo «Prueba planilla QA» de la prueba.
+- **Punto de venta (13/11), fuera del alcance de lo que se estaba haciendo:**
+  - `ticket_items` no tiene `tenant_id` (cuelga de `tickets`). Es de antes del punto de venta; la regla del
+    proyecto pide `tenant_id` en toda tabla de negocio. Agregarla es una migración con relleno.
+  - Las funciones viejas del servicio de mesa (`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`,
+    `mark_session_abandoned` y el cierre automático de las 2 de la mañana) no conocen los cobros del punto de
+    venta: hay que ajustarlas antes de usarlo con plata de verdad (ver `docs/features/pos.md`).
+  - El asistente (Tex) queda debajo de los avisos de abajo a la derecha en el panel, y tapa filas en el celular
+    en listas largas (se vio en Carta › Precios). En el editor del plano ya se corre.
+  - La carta de HUB tiene dos categorías raíz que se llaman «Bebidas» (2 y 67 productos): en «Aumentar
+    precios» aparecen dos pastillas con el mismo nombre.
+  - Un aumento de precios en bloque no es una sola transacción (son varias escrituras agrupadas); falta una
+    función en la base que lo aplique entero y lo marque como una tanda (`pos.price_batch`).
+  - `types/database.ts` no conoce `branches`, `menu_item_branches`, `menu_price_changes`, `kitchen_stations`, los
+    `menu_modifier_*` ni las `pos_*`: `lib/pos`, `lib/floor-plan` y `lib/menu/prices` usan clientes sin tipar.
+
