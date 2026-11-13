@@ -42,7 +42,8 @@ lo prende un superadmin por bar).
 | Ventas día por día | `pos_sales_days`, la tira de «Hoy en vivo» | hecho |
 | Juntar dos mesas | `pos_merge_tables`, el mapa (mover una mesa y tocar una ocupada) | hecho |
 | La Proyección de Administración toma estas ventas | `withPosSales`, `projectionUsesPos` (sin cambios en la base) | hecho |
-| Cierre del día precargado, QR del cliente, vincular la tele, PIN | — | sigue |
+| El cierre del día arranca precargado con lo cobrado | `posCloseFill`, `getPosCloseDay` (sin cambios en la base) | hecho |
+| QR del cliente, vincular la tele, PIN | — | sigue |
 
 ## Modelo de datos
 
@@ -306,8 +307,30 @@ salía solo de los cierres del día que alguien carga a mano en Administración.
 3. **Es del bar entero**, las dos sucursales juntas, igual que los objetivos. Una proyección por sucursal
    necesita objetivos por sucursal.
 
-**El paso que sigue** (sin hacer): que «Cargar cierre» venga precargado con lo del punto de venta, para que
-confirmar el cierre sea un toque. Ahí sí se escribe en los libros, y lo decide quien carga.
+### El cierre del día arranca precargado
+
+El paso que seguía, hecho el 13/11. En un bar con `pos`, «Cargar cierre» (Administración › Ventas) ya no
+arranca en blanco: cada medio trae lo que se cobró por su par del salón ese día de servicio.
+
+- Arriba de los importes dice de dónde salen («Precargado con lo que cobró el punto de venta: $ X en N
+  mesas»), con un toque para ver ese día en «Hoy en vivo» y otro para empezar en blanco.
+- **No guarda nada solo.** La persona revisa y toca «Cargar cierre», que es la acción de siempre con sus
+  validaciones: recién ahí va a los libros. El efectivo contado, los rangos de tiques y lo facturado se
+  siguen cargando a mano.
+- El par de cada medio sale de su `system_key` (el bar puede haberlo renombrado). Lo cobrado por un medio
+  sin par activo («Otro», o uno desactivado en Ajustes) no se reparte: se dice cuánto es.
+- **Las señas y las propinas no entran:** las señas ya se habían cobrado y las propinas no son venta. La
+  nota lo dice cuando las hay.
+- Solo el **primer cierre del día**: si ese día ya tiene uno, no se precarga (lo del punto de venta es del
+  día entero y se contaría dos veces).
+- Si después de escribir a mano se pide «Traer lo del punto de venta», pregunta antes de pisar.
+
+Código: `lib/accounting/pos-close.ts` (puro: `posCloseFill`, `posCloseWords`, `posCloseChanges`),
+`getPosCloseDay` en `lib/accounting/queries/projection.ts`, la nota en
+`ventas/cierre/_components/pos-close-note.tsx`. Pruebas: `tests/lib/administracion-cierre-pos.test.ts`.
+
+**Lo que sigue de esto** (sin hacer): precargar también el efectivo contado con lo que contó la caja al
+cerrar el turno, y lo facturado con lo que el punto de venta marcó «con factura».
 
 ## Auditoría del 13/11 y lo que falta cerrar
 

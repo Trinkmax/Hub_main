@@ -12,9 +12,12 @@ import { PillLink } from '@/components/administracion/kit/pill'
 import { SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
+import { projectionUsesPos } from '@/lib/accounting/access'
 import { loadPostingCatalog, loadPostingContext } from '@/lib/accounting/context'
+import { posCloseFill } from '@/lib/accounting/pos-close'
 import { listDocuments } from '@/lib/accounting/queries/documents'
 import { getSalesRangeDefaults } from '@/lib/accounting/queries/forms'
+import { getPosCloseDay } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { CHANNELS, type Channel } from '@/lib/accounting/types'
@@ -242,7 +245,7 @@ export default async function CierreDelDiaPage({
   }
 
   // Ya se sabe qué día es: lo de ese día se pide junto (antes iba una lectura atrás de la otra).
-  const [dayCloses, ranges] = await Promise.all([
+  const [dayCloses, ranges, posDay] = await Promise.all([
     // Los cierres ya cargados de ese día (un día puede tener varios turnos).
     settleQuery(
       listDocuments(tenantId, {
@@ -255,6 +258,8 @@ export default async function CierreDelDiaPage({
     ),
     // El último «hasta» de cada tipo y punto de venta (la base lo trae desde la #13).
     settleQuery(getSalesRangeDefaults(tenantId)),
+    // En un bar con punto de venta: lo que cobró ese día, para que el cierre arranque precargado.
+    projectionUsesPos(access) ? getPosCloseDay(tenantId, date) : null,
   ])
   const existing: ExistingClose[] = dayCloses.ok
     ? dayCloses.data.rows.map((d) => ({
@@ -342,6 +347,18 @@ export default async function CierreDelDiaPage({
       active: p.active,
     }))
 
+  // El primer cierre del día arranca con lo que cobró el punto de venta. Con un cierre ya cargado no:
+  // lo del punto de venta es del día entero, y precargarlo en un segundo turno lo contaría dos veces.
+  const posFill =
+    posDay && dayCloses.ok && existing.length === 0
+      ? posCloseFill(
+          posDay,
+          catalog.methods
+            .filter((m) => m.active)
+            .map((m) => ({ id: m.id, name: m.name, systemKey: m.systemKey, channel: m.channel })),
+        )
+      : null
+
   // Después de guardar: el próximo día que falta (o la lista de cierres si no falta ninguno).
   const after = missing.find((d) => d !== date) ?? null
 
@@ -379,6 +396,7 @@ export default async function CierreDelDiaPage({
         }
         afterSaveLabel={after ? `${weekdayName(after)} ${formatDayMonth(after)}` : null}
         mercadoPago={mercadoPago}
+        pos={posFill ? { ...posFill, dayHref: `/${tenantSlug}/local/hoy?dia=${date}` } : null}
       />
     </SimplePage>
   )
