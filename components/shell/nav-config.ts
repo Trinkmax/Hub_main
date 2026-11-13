@@ -232,6 +232,14 @@ export const NAV_GROUPS: NavGroup[] = [
         feature: 'kitchen',
       },
       {
+        // Punto de venta: cómo va el día en el salón (ventas, medios de pago, per cápita, cajas).
+        label: 'Hoy en vivo',
+        href: (s) => `/${s}/local/hoy`,
+        icon: 'Activity',
+        roles: ['owner'],
+        feature: 'pos',
+      },
+      {
         // Punto de venta: los locales del bar, su lista de apertura y los ajustes de cobro.
         label: 'Sucursales',
         href: (s) => `/${s}/local/sucursales`,

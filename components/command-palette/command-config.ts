@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowLeftRight,
   Banknote,
   BarChart3,
@@ -1100,6 +1101,17 @@ export const commandEntries: CommandEntry[] = [
     href: (s) => `/${s}/menu/tags`,
     keywords: ['etiquetas'],
     roles: ['owner', 'editor'],
+  },
+  {
+    id: 'pos-today',
+    label: 'Hoy en vivo',
+    icon: Activity,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/local/hoy`,
+    keywords: ['ventas', 'vendido', 'hoy', 'salón', 'per cápita', 'medios de pago', 'caja'],
+    roles: ['owner'],
+    feature: 'pos',
   },
   {
     id: 'pos-branches',
