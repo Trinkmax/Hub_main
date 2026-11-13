@@ -5,6 +5,14 @@
  * proyectados y ordenados de atrás para adelante, listos para dibujar. No sabe
  * de colores ni de estados: eso lo decide quien dibuja. Con la cámara cenital
  * devuelve el plano de siempre (los volúmenes no tienen caras laterales).
+ *
+ * EL ORDEN. Cada cosa suelta apoyada en el piso (una mesa, cada silla, cada
+ * banqueta, la barra, un tramo de pared) es una «pieza». Dos piezas solo se
+ * pueden tapar si caen en la misma columna de pantalla, y ahí va adelante la que
+ * está más cerca de quien mira: eso se pregunta de a pares (`comparePieces`) y
+ * con las respuestas se arma el orden (`paintOrder`). Ordenar por un solo punto
+ * de cada pieza, que es lo que se hacía, falla con todo lo largo: en una barra,
+ * las banquetas pasaban atrás a partir de la cuarta.
  */
 import { computeBarStools, computeChairs } from '@/lib/floor-plan/chairs'
 import type { FloorElement } from '@/lib/pos/types'
@@ -17,6 +25,7 @@ import {
   ellipseFootprint,
   extrude,
   fitBounds,
+  floorView,
   lift,
   mergeBounds,
   polygonPath,
@@ -68,6 +77,7 @@ export type Solid = {
   top: string
   /** Caras laterales agrupadas por cuánta luz reciben: 0 = sombra, 1 = media, 2 = luz. */
   sides: [string, string, string]
+  /** Su lugar en el orden de pintado: 0 es lo primero que se dibuja (lo del fondo). */
   depth: number
   /** Solo comensales: centro y radio de la cabeza, en pantalla. */
   head?: { x: number; y: number; r: number }
@@ -89,6 +99,7 @@ export type TableAnchor = {
   topWidth: number
   /** Caja de la mesa con sus sillas, para la zona de toque. */
   bounds: Bounds
+  /** El lugar de su tapa en el orden de pintado: cuanto mayor, más adelante (para apilar lo que flota). */
   depth: number
   /** Sillas dibujadas (para saber cuántos comensales entran sentados). */
   seats: number
@@ -144,7 +155,6 @@ function solidFrom(
   footprint: readonly Vec2[],
   z0: number,
   z1: number,
-  depthBias = 0,
 ): { solid: Solid; bounds: Bounds } {
   const prism = extrude(camera, footprint, z0, z1)
   return {
@@ -154,7 +164,8 @@ function solidFrom(
       tableId,
       top: polygonPath(prism.top),
       sides: bucketSides(prism.sides),
-      depth: prism.depth + depthBias,
+      // El orden de pintado lo pone `layoutScene` al final.
+      depth: 0,
     },
     bounds: prism.bounds,
   }
@@ -193,23 +204,179 @@ function rotateAround(cx: number, cy: number, x: number, y: number, deg: number)
   return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
 }
 
+// ─── El orden de pintado ────────────────────────────────────────────────────
+
+/** Una cosa suelta apoyada en el piso: lo que se ordena contra las demás. */
+type Piece = {
+  key: string
+  /** Su huella en el piso ya girado (`floorView`): columna de pantalla y profundidad. */
+  poly: Vec2[]
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+  /** Hasta dónde sube. Solo cuenta cuando dos huellas se pisan: decide cuál hace de piso de la otra. */
+  height: number
+  /** Sus volúmenes, ya en el orden en que se dibujan entre ellos (la pata antes que la tapa). */
+  parts: Solid[]
+}
+
+type PieceShape = Pick<Piece, 'poly' | 'minX' | 'maxX' | 'minY' | 'maxY' | 'height'>
+
+/** Lo que dos piezas tienen que compartir (en unidades del piso) para que valga la pena compararlas. */
+const TOUCH = 0.01
+
+/** De dónde a dónde llega una huella sobre la columna `x`, hacia quien mira. `null` si no la cruza. */
+function spanAt(poly: readonly Vec2[], x: number): [number, number] | null {
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]
+    const q = poly[(i + 1) % poly.length]
+    if (!p || !q) continue
+    if ((p.x - x) * (q.x - x) > 0) continue
+    if (Math.abs(q.x - p.x) < 1e-9) {
+      lo = Math.min(lo, p.y, q.y)
+      hi = Math.max(hi, p.y, q.y)
+      continue
+    }
+    const y = p.y + ((x - p.x) / (q.x - p.x)) * (q.y - p.y)
+    if (y < lo) lo = y
+    if (y > hi) hi = y
+  }
+  return hi >= lo ? [lo, hi] : null
+}
+
+/**
+ * ¿Quién va primero? −1: `a` se dibuja antes que `b` (queda detrás); 1: al revés; 0: no se tapan.
+ *
+ * La pantalla no mueve nada de costado al subirlo, así que dos piezas que no comparten columna no se
+ * pueden tapar. Si la comparten, alcanza con mirar una sola (la del medio de lo que comparten): dos
+ * huellas convexas que no se pisan guardan el mismo orden en todas.
+ */
+export function comparePieces(a: PieceShape, b: PieceShape): -1 | 0 | 1 {
+  const lo = Math.max(a.minX, b.minX)
+  const hi = Math.min(a.maxX, b.maxX)
+  if (hi - lo <= TOUCH) return 0
+  if (a.maxY <= b.minY + TOUCH) return -1
+  if (b.maxY <= a.minY + TOUCH) return 1
+  const x = (lo + hi) / 2
+  const sa = spanAt(a.poly, x)
+  const sb = spanAt(b.poly, x)
+  if (!sa || !sb) return 0
+  if (sa[1] <= sb[0] + TOUCH) return -1
+  if (sb[1] <= sa[0] + TOUCH) return 1
+  // Las huellas se pisan: ya no hay una respuesta exacta, hay que elegir la que mejor se ve.
+  const aInside = sa[0] >= sb[0] - TOUCH && sa[1] <= sb[1] + TOUCH
+  const bInside = sb[0] >= sa[0] - TOUCH && sb[1] <= sa[1] + TOUCH
+  if (aInside !== bInside) {
+    // Una queda adentro de la otra. Si es más alta, está apoyada encima o la atraviesa (una mesa sobre
+    // el escenario, una columna en medio de una pared) y se dibuja después; si es más baja, quedó
+    // tapada adentro y va antes.
+    const inner = aInside ? a : b
+    const outer = aInside ? b : a
+    if (Math.abs(inner.height - outer.height) > TOUCH) {
+      const innerLast = inner.height > outer.height
+      return aInside === innerLast ? 1 : -1
+    }
+    // Igual de altas (dos paredes que se encuentran en una esquina): adelante la que llega más cerca.
+    return a.maxY < b.maxY ? -1 : a.maxY > b.maxY ? 1 : 0
+  }
+  // Se pisan a medias (una silla contra la pared): adelante la que está más cerca.
+  const ca = sa[0] + sa[1]
+  const cb = sb[0] + sb[1]
+  return ca < cb ? -1 : ca > cb ? 1 : 0
+}
+
+/**
+ * Las piezas, de atrás para adelante. Arranca del orden de siempre (por el punto más cercano de cada
+ * una, que entre piezas que no se tapan da lo mismo) y lo corrige con lo que dice `comparePieces`: nadie
+ * se dibuja antes que algo que tiene detrás. Si dos huellas pisadas arman un círculo vicioso, se corta
+ * por la del fondo.
+ */
+function paintOrder(pieces: readonly Piece[]): Piece[] {
+  const sorted = [...pieces].sort((a, b) => a.maxY - b.maxY || a.key.localeCompare(b.key))
+  const n = sorted.length
+  if (n < 2) return sorted
+  const inFront: number[][] = sorted.map(() => [])
+  const behind = new Array<number>(n).fill(0)
+  // Recorridas de izquierda a derecha, cada una se compara solo con las que arrancan antes de que ella
+  // termine: el resto no comparte columna y no hay nada que preguntar.
+  const byColumn = sorted
+    .map((_, index) => index)
+    .sort((i, j) => (sorted[i]?.minX ?? 0) - (sorted[j]?.minX ?? 0))
+  for (let u = 0; u < n; u++) {
+    const i = byColumn[u] ?? -1
+    const a = sorted[i]
+    if (!a) continue
+    for (let v = u + 1; v < n; v++) {
+      const j = byColumn[v] ?? -1
+      const b = sorted[j]
+      if (!b) continue
+      if (b.minX >= a.maxX - TOUCH) break
+      const order = comparePieces(a, b)
+      if (order < 0) {
+        inFront[i]?.push(j)
+        behind[j] = (behind[j] ?? 0) + 1
+      } else if (order > 0) {
+        inFront[j]?.push(i)
+        behind[i] = (behind[i] ?? 0) + 1
+      }
+    }
+  }
+  const out: Piece[] = []
+  const done = new Array<boolean>(n).fill(false)
+  for (let step = 0; step < n; step++) {
+    let pick = -1
+    for (let i = 0; i < n; i++) {
+      if (!done[i] && behind[i] === 0) {
+        pick = i
+        break
+      }
+    }
+    if (pick < 0) pick = done.indexOf(false)
+    const piece = sorted[pick]
+    if (!piece) break
+    done[pick] = true
+    out.push(piece)
+    for (const j of inFront[pick] ?? []) behind[j] = (behind[j] ?? 1) - 1
+  }
+  return out
+}
+
 /** Arma la maqueta de los elementos de UN sector. */
 export function buildScene(
   camera: Camera,
   elements: readonly FloorElement[],
   options: SceneOptions = {},
 ): Scene {
+  return layoutScene(camera, elements, options, true)
+}
+
+/** `ordered = false` saltea el orden de pintado: para quien solo quiere saber cuánto ocupa. */
+function layoutScene(
+  camera: Camera,
+  elements: readonly FloorElement[],
+  options: SceneOptions,
+  ordered: boolean,
+): Scene {
   const withChairs = options.chairs ?? true
   const occupancy = options.occupancy ?? {}
-  const solids: Solid[] = []
+  const pieces: Piece[] = []
   const anchors: TableAnchor[] = []
   const decals: FloorDecal[] = []
   let bounds: Bounds | null = null
   let plan: Bounds | null = null
 
-  const push = (entry: { solid: Solid; bounds: Bounds }) => {
-    solids.push(entry.solid)
+  /** Anota lo que ocupa un volumen en pantalla y lo devuelve para armar su pieza. */
+  const track = (entry: { solid: Solid; bounds: Bounds }): Solid => {
     bounds = bounds ? mergeBounds(bounds, entry.bounds) : entry.bounds
+    return entry.solid
+  }
+  const piece = (key: string, footprint: readonly Vec2[], height: number, parts: Solid[]) => {
+    const poly = floorView(camera, footprint)
+    const box = boundsOf(poly)
+    pieces.push({ key, poly, ...box, height, parts })
   }
 
   for (const el of elements) {
@@ -230,13 +397,12 @@ export function buildScene(
       const pedestal = round
         ? ellipseFootprint(cx, cy, el.w * 0.42, el.h * 0.42, el.rotation, 16)
         : rectFootprint(cx, cy, Math.max(10, el.w - 26), Math.max(10, el.h - 26), el.rotation, 4, 2)
-      const depth = extrude(camera, footprint, 0, 0).depth
       const slabBottom = HEIGHTS.tableTop - HEIGHTS.tableSlab
 
       let tableBounds: Bounds | null = null
-      const add = (entry: { solid: Solid; bounds: Bounds }) => {
-        push(entry)
+      const add = (entry: { solid: Solid; bounds: Bounds }): Solid => {
         tableBounds = tableBounds ? mergeBounds(tableBounds, entry.bounds) : entry.bounds
+        return track(entry)
       }
 
       const seats = withChairs ? computeChairs(el.shape, 'table', el.w, el.h, el.capacity ?? 4) : []
@@ -245,35 +411,40 @@ export function buildScene(
         // Las sillas vienen en coordenadas del cuerpo sin rotar: se llevan al piso girando con la mesa.
         const at = rotateAround(cx, cy, el.x + chair.cx, el.y + chair.cy, el.rotation)
         const turn = el.rotation + chair.angle
-        // La silla, quien está sentado y el respaldo se ordenan entre sí a mano: el asiento siempre va
-        // debajo de la persona, y el respaldo la tapa solo si queda del lado de quien mira.
+        // Cada silla es una pieza: se ordena contra su mesa y contra todo lo demás por su huella. Adentro,
+        // el asiento, quien está sentado y el respaldo van a mano: el asiento siempre debajo de la persona,
+        // y el respaldo la tapa solo si queda del lado de quien mira.
         const here = depthOf(camera, at.x, at.y)
-        const seat = solidFrom(
-          camera,
-          `${el.id}:c${index}`,
-          'chair',
-          el.table_id,
-          rectFootprint(at.x, at.y, 17, 15, turn, 4, 2),
-          0,
-          HEIGHTS.chairSeat,
+        const seatFootprint = rectFootprint(at.x, at.y, 17, 15, turn, 4, 2)
+        const seat = add(
+          solidFrom(
+            camera,
+            `${el.id}:c${index}`,
+            'chair',
+            el.table_id,
+            seatFootprint,
+            0,
+            HEIGHTS.chairSeat,
+          ),
         )
-        seat.solid.depth = here
-        add(seat)
         // El respaldo va del lado de afuera: alejándose del centro de la mesa.
         const away = Math.hypot(at.x - cx, at.y - cy) || 1
         const bx = at.x + ((at.x - cx) / away) * 6.5
         const by = at.y + ((at.y - cy) / away) * 6.5
-        const back = solidFrom(
-          camera,
-          `${el.id}:b${index}`,
-          'chairback',
-          el.table_id,
-          rectFootprint(bx, by, 17, 3.5, turn, 1.5, 1),
-          0,
-          HEIGHTS.chairBack,
+        const backFootprint = rectFootprint(bx, by, 17, 3.5, turn, 1.5, 1)
+        const back = add(
+          solidFrom(
+            camera,
+            `${el.id}:b${index}`,
+            'chairback',
+            el.table_id,
+            backFootprint,
+            0,
+            HEIGHTS.chairBack,
+          ),
         )
-        back.solid.depth = here + (depthOf(camera, bx, by) > here ? 0.04 : -0.02)
-        add(back)
+        const backInFront = depthOf(camera, bx, by) > here
+        let pawn: Solid | null = null
         if (taken.has(index)) {
           const entry = solidFrom(
             camera,
@@ -284,7 +455,6 @@ export function buildScene(
             HEIGHTS.chairSeat,
             HEIGHTS.pawnBody,
           )
-          entry.solid.depth = here + 0.02
           const head = project(camera, at.x, at.y, HEIGHTS.pawnHead)
           entry.solid.head = { x: head.x, y: head.y, r: 5.2 }
           entry.bounds = mergeBounds(entry.bounds, {
@@ -293,12 +463,21 @@ export function buildScene(
             maxX: head.x + 6,
             maxY: head.y + 6,
           })
-          add(entry)
+          pawn = add(entry)
         }
+        const sitting = pawn ? [pawn] : []
+        piece(
+          `${el.id}:c${index}`,
+          convexHull([...seatFootprint, ...backFootprint]),
+          pawn ? HEIGHTS.pawnHead : HEIGHTS.chairBack,
+          backInFront ? [seat, ...sitting, back] : [back, seat, ...sitting],
+        )
       })
 
-      add(solidFrom(camera, `${el.id}:leg`, 'pedestal', el.table_id, pedestal, 0, slabBottom, 0))
-      // La tapa se dibuja sobre su pata: misma profundidad, un pelo adelante.
+      // La mesa es una pieza sola: la tapa se dibuja sobre su pata.
+      const leg = add(
+        solidFrom(camera, `${el.id}:leg`, 'pedestal', el.table_id, pedestal, 0, slabBottom),
+      )
       const top = solidFrom(
         camera,
         `${el.id}:top`,
@@ -307,13 +486,9 @@ export function buildScene(
         footprint,
         slabBottom,
         HEIGHTS.tableTop,
-        0,
       )
-      top.solid.depth = depth + 0.001
       top.solid.shadow = shadowOf(camera, footprint, HEIGHTS.tableTop)
-      const leg = solids[solids.length - 1]
-      if (leg) leg.depth = depth
-      add(top)
+      piece(el.id, footprint, HEIGHTS.tableTop, [leg, add(top)])
 
       const center = project(camera, cx, cy, HEIGHTS.tableTop)
       const safeBounds: Bounds = tableBounds ?? top.bounds
@@ -327,7 +502,8 @@ export function buildScene(
         topY: top.bounds.minY,
         topWidth: top.bounds.maxX - top.bounds.minX,
         bounds: safeBounds,
-        depth,
+        // Se completa al final, con el orden de pintado ya resuelto.
+        depth: 0,
         seats: seats.length,
       })
       continue
@@ -361,7 +537,7 @@ export function buildScene(
           HEIGHTS.wall,
         )
         part3d.solid.shadow = shadowOf(camera, footprint, HEIGHTS.wall * 0.6)
-        push(part3d)
+        piece(`${el.id}:w${index}`, footprint, HEIGHTS.wall, [track(part3d)])
       })
       continue
     }
@@ -373,7 +549,7 @@ export function buildScene(
           : rectFootprint(cx, cy, el.w, el.h, el.rotation, el.corner_radius)
       const pillar = solidFrom(camera, el.id, 'pillar', null, footprint, 0, HEIGHTS.pillar)
       pillar.solid.shadow = shadowOf(camera, footprint, HEIGHTS.pillar * 0.6)
-      push(pillar)
+      piece(el.id, footprint, HEIGHTS.pillar, [track(pillar)])
       continue
     }
 
@@ -406,18 +582,28 @@ export function buildScene(
           )
     const block = solidFrom(camera, el.id, role, null, footprint, 0, height)
     block.solid.shadow = shadowOf(camera, footprint, height)
-    push(block)
+    piece(el.id, footprint, height, [track(block)])
 
     if (role === 'bar' && withChairs) {
+      // Cada banqueta es una pieza: todas quedan del mismo lado de su barra, por larga que sea.
       computeBarStools(el.w, el.h).forEach((stool, index) => {
         const at = rotateAround(cx, cy, el.x + stool.cx, el.y + stool.cy, el.rotation)
         const seat = ellipseFootprint(at.x, at.y, 15, 15, 0, 12)
-        push(solidFrom(camera, `${el.id}:s${index}`, 'stool', null, seat, 0, HEIGHTS.stool))
+        const key = `${el.id}:s${index}`
+        piece(key, seat, HEIGHTS.stool, [
+          track(solidFrom(camera, key, 'stool', null, seat, 0, HEIGHTS.stool)),
+        ])
       })
     }
   }
 
-  solids.sort((a, b) => a.depth - b.depth || a.key.localeCompare(b.key))
+  const solids = (ordered ? paintOrder(pieces) : pieces).flatMap((p) => p.parts)
+  const tops = new Map<string, number>()
+  solids.forEach((solid, index) => {
+    solid.depth = index
+    if (solid.role === 'tabletop' && solid.tableId) tops.set(solid.tableId, index)
+  })
+  for (const anchor of anchors) anchor.depth = tops.get(anchor.tableId) ?? 0
 
   // La losa: el rectángulo del piso que contiene todo, con un borde de aire.
   const planBounds: Bounds = plan ?? { minX: 0, minY: 0, maxX: 400, maxY: 300 }
@@ -483,8 +669,12 @@ export function chooseCamera(
   const fallback: CameraChoice = { turns: 0, camera: MODEL_POSES[0] as Camera, scale: 1 }
   if (viewport.width <= 0 || viewport.height <= 0) return fallback
   const scaleFor = (camera: Camera) =>
-    fitBounds(buildScene(camera, elements, { chairs: false }).bounds, viewport, padding, maxScale)
-      .scale
+    fitBounds(
+      layoutScene(camera, elements, { chairs: false }, false).bounds,
+      viewport,
+      padding,
+      maxScale,
+    ).scale
 
   let best: { turns: number; scales: number[]; top: number } | null = null
   for (const turns of allowTurn ? [0, 1] : [0]) {
