@@ -58,6 +58,6 @@ Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario.
 - Estadísticas: Resumen, Cómo nos fue, Señas, Comisiones y Reseñas.
 - Mis números: lo que va ganando quien gestiona reservas.
 - Administración: compras, gastos, sueldos, ventas, caja y contabilidad.
-- Compras (pedidos a proveedores), Salón en vivo, Cocina, Sucursales (los locales del bar y los ajustes del punto de venta), Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
+- Compras (pedidos a proveedores), Salón en vivo, Cocina, Hoy en vivo (las ventas del salón en el día), Sucursales (los locales del bar y los ajustes del punto de venta), Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
 - Configuración (abajo): Equipo, Comisiones, Capacidad, Tortas de cumpleaños, Reseñas, Apariencia y Documentación.
 El rol Contenido solo ve la Carta; Anfitrión, Operativo, Reservas, Calendario, Ventas online (confirma transferencias y cambia el cupo de cada función, no devuelve ni anula) y Mis números; Contabilidad, Administración. Lo demás es del dueño.`

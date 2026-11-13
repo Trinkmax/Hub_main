@@ -36,7 +36,8 @@ lo prende un superadmin por bar).
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
 | Sucursales, lista de apertura y ajustes del punto de venta | `/[bar]/local/sucursales`, `lib/pos/branches/*`, `lib/pos/settings/*` | hecho |
 | Cocina y aclaraciones (estaciones y a dónde va cada cosa; aclaraciones de cada producto) | `/[bar]/menu/cocina`, `lib/menu/kitchen/*` | hecho |
-| Tablero del dueño, QR del cliente, modo práctica | — | sigue |
+| «Hoy en vivo» para los dueños | `/[bar]/local/hoy`, `lib/pos/today/*` | hecho |
+| Ventas por período, proyección de Administración, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
 
@@ -233,6 +234,25 @@ lleva la cola y la lista de «Deshacer»; `lib/menu/kitchen/ops.ts` aplica cada 
 
 Probado contra la base real en el bar de ejemplo (13/11): Vinos a Fríos con el marcador y deshacer; marcador
 con el teclado; estación «Parrilla QA» creada y borrada; opción «Vuelta y vuelta» sumada y sacada.
+
+## Hoy en vivo (los dueños)
+
+`/[bar]/local/hoy` (solo el dueño, con `pos`). Cómo va el día en el salón, pensado para mirarlo desde el
+celular. Sale todo de lo que el salón ya cargó: lee con el cliente de la persona las tablas que el dueño ya
+puede ver (`pos_payments`, `pos_closed_bills`, `pos_shifts`, mesas y comandas), sin funciones nuevas en la
+base, y las cuentas se hacen en `lib/pos/today/summary.ts` con las mismas reglas que el resumen de la caja.
+
+- **El número grande** es lo vendido (lo que bajó de las cuentas); el recargo de crédito y las propinas se
+  dicen aparte. Con más de una sucursal, se ven todas juntas o de a una, cada una con su vidriera.
+- **Por dónde entró** (medios de pago, con y sin factura), **el salón** (por persona, mesas abiertas y lo
+  que falta cobrar, mesas con socio, señas descontadas), **lo que más salió** y **los turnos de caja**.
+- **Para mirar:** descuentos, productos dados de baja, cobros anulados o corregidos y cajas que no cuadraron.
+- El día es el de servicio, como ventana de tiempo (de 5 a 5): una mesa abierta ayer y cobrada hoy es venta
+  de hoy. `?dia=AAAA-MM-DD` mira un día anterior y `?sucursal=` una sola. Mientras es hoy, se relee sola cada
+  30 segundos.
+
+Falta: las ventas por período (semana, mes) piden una función de la base que sume por día, y la Proyección
+de Administración todavía no se completa sola con estas ventas.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 

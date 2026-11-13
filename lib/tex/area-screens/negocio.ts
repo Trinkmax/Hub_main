@@ -180,6 +180,15 @@ export const negocioScreens: readonly TexScreenDef[] = [
     feature: 'auto_accept',
   },
   {
+    id: 'local.hoy',
+    label: 'Hoy en vivo',
+    what: 'Cómo va el día en el salón: lo vendido por sucursal y por medio de pago, el consumo por persona, las mesas abiertas, los turnos de caja y lo que conviene mirar (descuentos, bajas, cobros corregidos). Se puede mirar un día anterior.',
+    path: '/local/hoy',
+    root: true,
+    roles: OWNER,
+    feature: 'pos',
+  },
+  {
     id: 'local.sucursales',
     label: 'Sucursales',
     what: 'Los locales del bar: qué le falta a cada uno para abrir (plano, carta, cocina, caja, equipo y cobro) y los ajustes del punto de venta: recargo de crédito, propinas, alias de transferencia y quién aprueba descuentos y bajas.',

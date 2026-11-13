@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowUpRight,
   BarChart3,
   CalendarCheck,
@@ -41,6 +42,7 @@ import {
  * íconos directo de lucide-react.
  */
 export const NAV_ICONS = {
+  Activity,
   ArrowUpRight,
   BarChart3,
   CalendarCheck,
