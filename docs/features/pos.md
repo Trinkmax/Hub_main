@@ -109,6 +109,9 @@ el canal se cae, la pantalla lo dice y al volver se pone al día sola.
   todavía no está.
 - **Lo único que tiene color es el estado.** La decoración (barra, paredes, islas) va en su material aunque en
   el editor tenga un color elegido.
+- **Una mesa de práctica se nota:** su chapa va con el borde punteado y arriba dice «Práctica» (y lo lee el
+  lector de pantalla). Con la práctica prendida conviven mesas de verdad (las abiertas antes) y de prueba:
+  quien cobra tiene que ver cuál es cuál sin acordarse.
 - El nombre de una mesa entra en su tapa: los de una o dos cifras usan el tamaño de siempre, los largos se
   achican (`labelSize`).
 - Con más de una sucursal, la primera vez que entra un dispositivo se le pregunta dónde está

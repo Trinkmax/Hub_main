@@ -88,7 +88,13 @@ export function toFloorElements(
 }
 
 /** Lo que la maqueta necesita saber de cada mesa. */
-export type ModelTable = { state: TableState; partySize: number | null; alias: string | null }
+export type ModelTable = {
+  state: TableState
+  partySize: number | null
+  alias: string | null
+  /** Abierta en modo práctica (solo en vivo; en el editor no hay). */
+  practice?: boolean
+}
 
 const FREE_TABLE: ModelTable = { state: deriveFreeState(null), partySize: null, alias: null }
 

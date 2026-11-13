@@ -29,6 +29,7 @@ import {
 import type { FloorElement } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
 import './floor-move.css'
+import '../ui/pos-practice.css'
 
 /**
  * La maqueta de un sector.
@@ -56,6 +57,8 @@ export type FloorTable = {
   state: TableState
   partySize: number | null
   alias: string | null
+  /** Abierta en modo práctica: lo que se cargue no llega a la cocina de verdad ni a la caja. */
+  practice?: boolean
 }
 
 type Props = {
@@ -194,6 +197,7 @@ function describe(label: string, table: FloorTable | undefined): string {
     parts.push(`hace ${formatMinutes(state.minutes)}`)
   if (state.urgency === 'late') parts.push('demorada')
   if (state.nextCourseDue) parts.push('hay una tanda para marchar')
+  if (table.practice && state.key !== 'free' && state.key !== 'reserved') parts.push('de práctica')
   return parts.join(', ')
 }
 
@@ -578,17 +582,21 @@ export function FloorModel({
                 ? STATE_LABEL[state.key]
                 : null
             const time = reservation || !showTime ? '' : formatMinutesTight(state.minutes)
-            const note = state.nextCourseDue
+            // Una mesa de práctica lo dice siempre: quien cobra tiene que saber que esa cuenta no es de verdad.
+            const practice = table?.practice === true && !reservation
+            const todo = state.nextCourseDue
               ? 'Marchar tanda'
               : state.heldTickets > 0
                 ? `En espera · ${state.heldTickets}`
                 : null
+            const note = practice ? (todo ? `Práctica · ${todo}` : 'Práctica') : todo
             return (
               <span
                 key={`f:${anchor.tableId}`}
                 className={cn(
                   'pos-flag',
                   stateClasses(state),
+                  practice && 'is-practice',
                   !word && !time && 'is-icon',
                   dimmed?.has(anchor.tableId) && 'pos-dim',
                   move?.from === anchor.tableId && 'pos-lifted',
@@ -607,7 +615,7 @@ export function FloorModel({
                   <Icon aria-hidden strokeWidth={2.4} />
                   {word ? <span>{word}</span> : null}
                   {time ? <span className="pos-flag-time">{time}</span> : null}
-                  {note && !showWord ? <i className="pos-flag-dot" /> : null}
+                  {todo && !showWord ? <i className="pos-flag-dot" /> : null}
                 </span>
                 <span className="pos-flag-pole" />
               </span>
