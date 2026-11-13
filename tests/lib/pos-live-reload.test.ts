@@ -62,7 +62,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
   it('varios avisos juntos son una sola lectura', async () => {
     const { clock, advance } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     live.poke()
     live.poke()
     live.poke()
@@ -74,7 +79,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
   it('un chorro continuo de avisos no posterga la lectura para siempre', async () => {
     const { clock, advance } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     // Un aviso cada 100 ms durante 3 segundos: con un retardo que se reinicia nunca leería.
     for (let i = 0; i < 30; i += 1) {
       live.poke()
@@ -86,7 +96,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
   it('por más avisos que lleguen, no lee más de una vez cada 900 ms', async () => {
     const { clock, advance } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     for (let i = 0; i < 100; i += 1) {
       live.poke()
       await advance(50)
@@ -132,7 +147,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
   it('«leer ya» cancela la lectura que estaba por salir (no lee dos veces seguidas)', async () => {
     const { clock, advance, pending } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     live.poke()
     expect(pending()).toBe(1)
     await live.now()
@@ -163,7 +183,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
   it('después de irse la pantalla no lee más', async () => {
     const { clock, advance } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     live.poke()
     live.stop()
     await advance(1000)
@@ -178,7 +203,12 @@ describe('createLiveReload — volver a leer cuando llega un aviso', () => {
     // Con un «parar» sin vuelta la pantalla quedaba «en vivo» pero no se actualizaba nunca.
     const { clock, advance } = fakeClock()
     let reads = 0
-    const live = createLiveReload(() => void (reads += 1), { clock })
+    const live = createLiveReload(
+      () => {
+        reads += 1
+      },
+      { clock },
+    )
     live.start()
     live.stop()
     live.start()
