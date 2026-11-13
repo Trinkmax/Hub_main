@@ -30,7 +30,7 @@ lo prende un superadmin por bar).
 | Cambiar una mesa de lugar | `floor-model.tsx` (mantener y arrastrar), `floor-live.tsx`, RPC `pos_move_table` | hecho |
 | «¿Dónde trabajás hoy?» | `components/pos/ui/branch-chooser.tsx` | hecho |
 | Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`) | hecho |
-| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho |
+| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho (se ve con `pos` prendido) |
 | Cobro y caja por turno: base y capa de servidor | migraciones `pos_cobro_tablas`, `pos_cobro_cuenta_y_cobrar` y `pos_cobro_descuentos_y_caja`, `lib/pos/cash/*` | hecho |
 | La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |

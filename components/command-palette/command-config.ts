@@ -1020,6 +1020,7 @@ export const commandEntries: CommandEntry[] = [
     href: (s) => `/${s}/menu/precios`,
     keywords: ['precio', 'precios', 'aumento', 'aumentar', 'subir', 'inflación', 'porcentaje'],
     roles: ['owner', 'editor'],
+    feature: 'pos',
   },
   {
     id: 'club',

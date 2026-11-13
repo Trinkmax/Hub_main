@@ -3,6 +3,7 @@ import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { PanelError } from '@/components/administracion/kit/panel-states'
 import { getPriceSnapshot } from '@/lib/menu/prices/queries'
 import type { PriceSnapshot } from '@/lib/menu/prices/types'
+import { requireFeature } from '@/lib/platform/guards'
 import {
   MENU_EDIT_ROLES,
   RoleRequiredError,
@@ -37,6 +38,9 @@ export default async function PreciosPage({
     if (error instanceof TenantNotFoundError || error instanceof RoleRequiredError) notFound()
     throw error
   }
+  // Por ahora viene con el punto de venta (precios por sucursal, historial): los bares que no lo
+  // tienen prendido siguen cambiando precios desde la carta, como siempre.
+  await requireFeature(access.tenant, 'pos')
 
   let snapshot: PriceSnapshot
   try {
