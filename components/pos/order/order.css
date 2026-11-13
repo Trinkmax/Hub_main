@@ -1,0 +1,2071 @@
+/* ============================================================
+   La comanda del mozo — el mundo «papel» (docs/features/pos.md)
+   ============================================================
+   El mozo está parado al lado de la mesa, con el celular en una mano. Cada tanda es una comanda de
+   papel apoyada sobre el paño; lo que todavía no se mandó es un papel sin arrancar (borde punteado);
+   la carta es el otro papel, el que se abre para cargar.
+
+   Tinta (`--pos-ink`) para lo que se pidió; carbónico (`--pos-carbon`) para lo que escribe el
+   sistema: horas, montos, aclaraciones. El estado nunca va solo en color: color + ícono + palabra.
+   Lo principal va abajo y mide 52–68 px; nada que se toque mide menos de 48.
+
+   Todo cuelga de `.cmd` (la pantalla) y `.cmd-sheet` (las hojas, que se dibujan fuera del árbol).
+   ============================================================ */
+
+.cmd,
+.cmd-sheet {
+  /* Los colores de estado, oscurecidos hasta que se pueden leer como texto sobre papel (≥ 4,5:1). */
+  --cmd-ready-ink: color-mix(in oklch, var(--pos-st-ready) 58%, var(--pos-ink));
+  --cmd-kitchen-ink: color-mix(in oklch, var(--pos-st-kitchen) 58%, var(--pos-ink));
+  --cmd-late-ink: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
+  --cmd-stamp: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  /* Texto de apoyo sobre papel: el más claro que todavía se lee. */
+  --cmd-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
+  --cmd-focus: var(--pos-st-bill);
+  /* Lo que se achica un botón al tocarlo. */
+  --cmd-press: 0.97;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── La pantalla ── */
+.cmd {
+  --cmd-pad: 0.75rem;
+  position: relative;
+  /* La carta (en el celular) tapa todo, la barra de arriba incluida, sin escaparse sobre las hojas. */
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100dvh - var(--salon-tabbar-h));
+  min-height: 26rem;
+  background: var(--pos-board);
+  color: var(--pos-ink);
+  touch-action: manipulation;
+}
+
+.cmd :focus-visible,
+.cmd-sheet :focus-visible {
+  outline: 3px solid var(--cmd-focus);
+  outline-offset: 2px;
+}
+
+/* ── La barra de arriba: una fila ── */
+.cmd-back {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  margin-left: -0.3rem;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.cmd-back svg {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+.cmd-back:active {
+  transform: scale(var(--cmd-press));
+  background: var(--pos-paper-2);
+}
+.cmd-title {
+  flex: none;
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-practice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  border-radius: 0.35rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* Cuántos son: se toca para cambiarlo. El botón mide 48; la ficha que se ve, 40. */
+.cmd-people {
+  display: inline-flex;
+  min-width: 3rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: 3rem;
+  border-radius: 0.8rem;
+}
+.cmd-people > span {
+  display: inline-flex;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 0.7rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-carbon);
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.cmd-people:not(:disabled):active > span {
+  transform: scale(var(--cmd-press));
+  background: var(--pos-rule);
+}
+/* El nombre se queda con el lugar que sobra. Si sobra tan poco que no entran ni cuatro letras, no
+   se muestra: mejor nada que «Cu…» (el de la reserva está igual en la ficha de la mesa, abajo). */
+.cmd-name {
+  min-width: 0;
+  flex: 1 1 0;
+  container-type: inline-size;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.cmd-name > span {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container (min-width: 4.5rem) {
+  .cmd-name > span {
+    display: block;
+  }
+}
+
+/* ── La comanda: lo que se pidió, de arriba (lo primero) hacia abajo (lo último) ── */
+.cmd-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.cmd-offline {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem var(--cmd-pad);
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.cmd-offline svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+/* Como una conversación: arranca mostrando lo último y, si ya se estaba mirando el final, se queda
+   pegada al final cuando entra un renglón. `column-reverse` lo da gratis, sin esperar al código. */
+.cmd-scroll {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+}
+.cmd-flow {
+  display: grid;
+  flex: none;
+  gap: 1rem;
+  /* Cuando sobra lugar, todo queda arriba (con `column-reverse`, el sobrante se va para abajo). */
+  margin-bottom: auto;
+  padding: 0.75rem var(--cmd-pad) 1.15rem;
+}
+.cmd-flow > * {
+  width: 100%;
+  max-width: 35rem;
+  margin-inline: auto;
+}
+
+/* ── La ficha de la mesa: lo que el sistema ya sabe, en chico, sobre el paño ── */
+.cmd-strip {
+  display: grid;
+  gap: 0.5rem;
+  color: var(--pos-board-ink);
+}
+.cmd-strip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pos-board-soft);
+  font-variant-numeric: tabular-nums;
+}
+.cmd-strip-meta b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+.cmd-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.cmd-live i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.45);
+}
+.cmd-live.is-live i {
+  background: oklch(0.85 0.19 148);
+  box-shadow: 0 0 0 3px oklch(0.85 0.19 148 / 0.22);
+}
+.cmd-live.is-off {
+  color: var(--pos-board-ink);
+  font-weight: 700;
+}
+.cmd-live.is-off i {
+  background: var(--pos-st-late);
+  box-shadow: 0 0 0 2px var(--pos-board-ink);
+}
+.cmd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.cmd-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  max-width: 100%;
+  padding: 0.2rem 0.65rem 0.2rem 0.5rem;
+  border-radius: 0.6rem;
+  background: oklch(0.14 0.03 165 / 0.62);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+  color: var(--pos-board-ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-tag svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--pos-board-soft);
+}
+.cmd-tag i {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--tier, var(--pos-board-soft));
+  box-shadow: 0 0 0 1.5px oklch(1 0 0 / 0.7);
+}
+.cmd-tag.is-bill {
+  background: var(--pos-st-bill);
+  color: var(--pos-on-dark);
+  box-shadow: none;
+}
+.cmd-tag.is-bill svg {
+  color: inherit;
+}
+.cmd-strip-note {
+  max-width: 60ch;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--pos-board-ink);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.cmd-strip-note b {
+  font-weight: 700;
+  color: var(--pos-board-soft);
+}
+/* Los avisos de servicio no se pierden de vista: quedan arriba aunque se recorra la comanda. */
+.cmd-alerts {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+.cmd-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0 0.75rem 0 0.55rem;
+  border-radius: 0.65rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  box-shadow:
+    0 8px 16px -8px oklch(0.1 0.04 165 / 0.8),
+    0 0 0 1.5px var(--pos-board);
+}
+.cmd-alert svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.cmd-alert.is-critical {
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+}
+.cmd-alert.is-info {
+  background: var(--pos-st-kitchen);
+  color: var(--pos-on-light);
+}
+
+/* ── Una tanda: una comanda de papel ── */
+.cmd-ticket {
+  --paper: var(--pos-paper);
+  position: relative;
+  display: grid;
+  padding: 0.95rem 0.9rem 0.7rem;
+  border-radius: 0.3rem 0.3rem 0 0;
+  background: var(--paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 16px 22px -18px oklch(0.1 0.04 165 / 0.95),
+    0 2px 6px -3px oklch(0.1 0.04 165 / 0.5);
+}
+/* El troquelado de arriba: de dónde se arrancó del talonario. */
+.cmd-ticket::before {
+  content: "";
+  position: absolute;
+  top: 0.32rem;
+  right: 0.7rem;
+  left: 0.7rem;
+  height: 3px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in oklch, var(--pos-ink) 26%, var(--paper)) 1.1px,
+      transparent 1.5px
+    )
+    0 0 / 8px 3px repeat-x;
+}
+/* El borde de abajo, cortado en serrucho. */
+.cmd-ticket::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 0.375rem;
+  background:
+    linear-gradient(135deg, var(--paper) 25%, transparent calc(25% + 0.6px)),
+    linear-gradient(225deg, var(--paper) 25%, transparent calc(25% + 0.6px));
+  background-size: 0.75rem 0.75rem;
+  background-position: 0.375rem 0;
+  filter: drop-shadow(0 3px 2px oklch(0.1 0.04 165 / 0.35));
+}
+.cmd-ticket.is-served {
+  /* Lo que ya se llevó queda atrás: el mismo papel, apenas más apagado. Se sigue leyendo entero. */
+  --paper: color-mix(in oklch, var(--pos-paper) 88%, var(--pos-board));
+}
+.cmd-ticket-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  min-height: 2rem;
+  margin-bottom: 0.3rem;
+}
+.cmd-ticket-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+}
+.cmd-ticket-time {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+
+/* El estado de la tanda: color + ícono + palabra (+ reloj). */
+.cmd-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2rem;
+  margin-left: auto;
+  padding: 0 0.7rem 0 0.55rem;
+  border-radius: 0.6rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-stage svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.cmd-stage b {
+  font-weight: 600;
+}
+.cmd-stage.is-seen {
+  background: color-mix(in oklch, var(--pos-st-kitchen) 26%, var(--pos-paper));
+  box-shadow: none;
+}
+.cmd-stage.is-preparing {
+  background: var(--pos-st-kitchen);
+  box-shadow: none;
+  color: var(--pos-on-light);
+}
+.cmd-stage.is-ready,
+.cmd-stage.is-partly_ready {
+  background: var(--pos-st-ready);
+  box-shadow: none;
+  color: var(--pos-on-light);
+}
+.cmd-stage.is-late {
+  background: var(--pos-st-late);
+  box-shadow: none;
+  color: var(--pos-on-dark);
+}
+.cmd-stage.is-held,
+.cmd-stage.is-draft,
+.cmd-stage.is-sending {
+  background: transparent;
+  box-shadow: none;
+  outline: 1.5px dashed color-mix(in oklch, var(--pos-ink) 55%, var(--paper, var(--pos-paper)));
+  outline-offset: -1.5px;
+}
+/* Lo listo late: es lo único de la comanda que se mueve. */
+.cmd-stage.is-ready::after,
+.cmd-stage.is-partly_ready::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--pos-st-ready);
+  opacity: 0;
+  animation: cmd-pulse 1.7s var(--pos-ease) infinite;
+  pointer-events: none;
+}
+@keyframes cmd-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.14, 1.55);
+  }
+}
+.cmd-spin {
+  animation: cmd-spin 0.9s linear infinite;
+}
+@keyframes cmd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sello: solo para lo que terminó. */
+.cmd-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.8rem;
+  margin-left: auto;
+  padding: 0 0.55rem 0 0.45rem;
+  border: 2px solid currentColor;
+  border-radius: 0.3rem;
+  color: var(--cmd-stamp);
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+}
+.cmd-stamp svg {
+  width: 1rem;
+  height: 1rem;
+}
+.cmd-void {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border: 1.5px solid currentColor;
+  border-radius: 0.25rem;
+  color: var(--cmd-late-ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+}
+
+/* Renglones: cantidad grande, nombre, y abajo lo que escribió el sistema, en carbónico. */
+.cmd-lines {
+  display: grid;
+}
+.cmd-lines > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.cmd-line {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 0.7rem;
+  min-height: 3.25rem;
+  padding: 0.6rem 0.15rem 0.55rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+button.cmd-line:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.cmd-qty {
+  min-width: 1.85rem;
+  flex: none;
+  font-size: 1.65rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-line-body {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.12rem;
+  padding-top: 0.14rem;
+}
+.cmd-line-name {
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.cmd-line-mods,
+.cmd-line-note {
+  font-size: 0.96rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-carbon);
+  overflow-wrap: anywhere;
+}
+.cmd-line-note {
+  font-weight: 500;
+  font-style: italic;
+}
+.cmd-line-why {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--cmd-late-ink);
+}
+.cmd-line-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.5rem;
+  margin-top: 0.12rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1;
+  white-space: nowrap;
+}
+.cmd-line-state svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+.cmd-line.is-queued .cmd-line-state {
+  color: var(--cmd-faint);
+}
+.cmd-line.is-preparing .cmd-line-state {
+  color: var(--cmd-kitchen-ink);
+}
+.cmd-line.is-ready .cmd-line-state {
+  color: var(--cmd-ready-ink);
+}
+.cmd-line.is-served .cmd-line-state {
+  color: var(--cmd-stamp);
+}
+.cmd-line.is-cancelled .cmd-qty,
+.cmd-line.is-cancelled .cmd-line-name,
+.cmd-line.is-cancelled .cmd-line-mods,
+.cmd-line.is-cancelled .cmd-line-note {
+  color: var(--pos-ink-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+/* Aviso dentro de una tanda que todavía no llegó. Va escrito sobre el mismo papel (no es otra
+   tarjeta adentro de la comanda), separado de los renglones por una línea de corte. */
+.cmd-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem 0.6rem;
+  padding: 0.15rem 0 0.7rem;
+  border-bottom: 1.5px dashed color-mix(in oklch, var(--pos-ink) 45%, var(--pos-paper));
+  color: var(--pos-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.cmd-note svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  margin-top: 0.1rem;
+}
+.cmd-note span {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.cmd-note small {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+.cmd-note-btn {
+  min-height: 3rem;
+  margin-left: auto;
+  padding: 0 0.95rem;
+  border-radius: 0.7rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.cmd-note-btn:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-fire {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3.5rem;
+  margin: 0.45rem 0 0.2rem;
+  border-radius: 0.9rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.cmd-fire svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+.cmd-fire:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-fire:disabled {
+  opacity: 0.6;
+}
+/* Si el botón de abajo ya dice «Marchar tanda N», el de la comanda acompaña sin competirle. */
+.cmd-fire.is-quiet {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+  color: var(--pos-ink);
+}
+
+/* El pie de la comanda: total con puntos guía, como en el talonario. */
+.cmd-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1.5px solid var(--pos-ink);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.cmd-dots {
+  min-width: 1rem;
+  flex: 1;
+  border-bottom: 2px dotted color-mix(in oklch, currentColor 45%, transparent);
+  transform: translateY(-0.22em);
+}
+.cmd-total b {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Lo que todavía no se mandó: papel sin arrancar, con la línea de corte ── */
+.cmd-ticket.is-draft {
+  --paper: color-mix(in oklch, var(--pos-paper) 93%, var(--pos-kraft));
+  border-radius: 0.5rem;
+  box-shadow: none;
+  outline: 2px dashed color-mix(in oklch, var(--pos-ink) 62%, var(--paper));
+  outline-offset: -2px;
+}
+.cmd-ticket.is-draft::before,
+.cmd-ticket.is-draft::after,
+.cmd-ticket.is-pending::after {
+  content: none;
+}
+.cmd-ticket.is-pending {
+  border-radius: 0.3rem;
+}
+.cmd-dline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 3.5rem;
+  padding: 0.25rem 0;
+}
+.cmd-dline-main {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  flex: 1;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.5rem;
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+.cmd-dline-main:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.cmd-dline-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-ink-soft);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+.cmd-dline-hint svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.cmd-dline.is-out .cmd-line-name {
+  color: var(--pos-ink-soft);
+  text-decoration: line-through;
+}
+.cmd-line-out {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--cmd-late-ink);
+}
+.cmd-step {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.cmd-step svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+.cmd-step:active {
+  transform: scale(var(--cmd-press));
+  background: var(--pos-rule);
+}
+/* El «+»: un aro de tinta. Se llena cuando ese producto ya está en el pedido. */
+.cmd-step.is-plus {
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.cmd-step.is-plus:active {
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+}
+.cmd-step:disabled {
+  opacity: 0.4;
+}
+/* La cantidad salta cuando cambia: dice cuál renglón se movió. Solo después de abrir la pantalla
+   (`data-live`): al entrar, nada se mueve. */
+.cmd-bump {
+  animation: var(--cmd-bump, none) 200ms var(--pos-ease);
+}
+.cmd-sheet,
+.cmd[data-live] {
+  --cmd-bump: cmd-bump;
+}
+@keyframes cmd-bump {
+  0% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Mesa sin pedido, y el total de la mesa. */
+.cmd-empty {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: 1.5rem 0.25rem 0.5rem;
+  color: var(--pos-board-ink);
+}
+.cmd-empty h2 {
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.cmd-empty p {
+  max-width: 34ch;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.cmd-empty b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+.cmd-grand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0.2rem 0;
+  color: var(--pos-board-soft);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.cmd-grand b {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  color: var(--pos-board-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── La barra de abajo: una sola cosa manda ── */
+.cmd-bar {
+  display: grid;
+  flex: none;
+  gap: 0.5rem;
+  padding: 0.6rem var(--cmd-pad) 0.7rem;
+  background: var(--pos-board-2);
+  box-shadow: 0 -1px 0 oklch(1 0 0 / 0.08);
+}
+.cmd-bar-row {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.cmd-bar-note {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-board-ink);
+  text-wrap: pretty;
+}
+.cmd-bar-note b {
+  font-weight: 800;
+}
+/* Lo que hay para llevar, dicho en una línea: la tanda puede estar arriba, fuera de la vista. */
+.cmd-bar-ready {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.3rem;
+  border-radius: 0.7rem;
+  color: var(--pos-board-ink);
+  text-align: left;
+}
+.cmd-bar-ready:active {
+  background: oklch(1 0 0 / 0.1);
+}
+.cmd-bar-ready > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  color: var(--pos-board-soft);
+}
+.cmd-bar-ready > svg:first-child {
+  color: var(--pos-st-ready);
+}
+.cmd-bar-ready > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-bar-ready b {
+  font-weight: 800;
+}
+/* Lo que siempre está: Cuenta y Agregar. Ícono arriba, palabra abajo; siempre en el mismo lugar. */
+.cmd-util {
+  display: inline-flex;
+  min-width: 4.5rem;
+  min-height: 3.75rem;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0 0.6rem;
+  border-radius: 1rem;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
+  color: var(--pos-board-ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.cmd-util svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+.cmd-util:active {
+  transform: scale(var(--cmd-press));
+  background: oklch(1 0 0 / 0.16);
+}
+.cmd-util:disabled {
+  opacity: 0.55;
+}
+.cmd-util[aria-pressed="true"] {
+  background: var(--pos-st-bill);
+  box-shadow: none;
+  color: var(--pos-on-dark);
+}
+/* El botón que manda. */
+.cmd-go {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 3.75rem;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0 1rem;
+  border-radius: 1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  font-size: 1.16rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.cmd-go svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex: none;
+}
+.cmd-go:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-go:disabled {
+  opacity: 0.5;
+}
+.cmd-go.is-ready {
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+}
+.cmd-go.is-quiet {
+  flex: 0 0 auto;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.26);
+  color: var(--pos-board-ink);
+}
+.cmd-go b {
+  font-weight: 800;
+}
+.cmd-bar :focus-visible,
+.cmd-tray :focus-visible {
+  outline-color: var(--pos-paper);
+}
+.cmd-closed {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  padding: 0.75rem var(--cmd-pad) 0.85rem;
+  background: var(--pos-board-2);
+  color: var(--pos-board-ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.cmd-closed .cmd-go {
+  flex: 1 1 12rem;
+}
+
+/* ── La carta: el otro papel ── */
+.cmd-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(0.4rem);
+  transition:
+    opacity 150ms var(--pos-ease),
+    transform 150ms var(--pos-ease),
+    visibility 0s linear 150ms;
+}
+.cmd[data-picker="open"] .cmd-picker {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+.cmd-picker-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: calc(var(--salon-topbar-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 0.6rem 0;
+  border-bottom: 1px solid var(--pos-rule);
+}
+.cmd-search {
+  display: flex;
+  min-width: 0;
+  height: 3rem;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.8rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: box-shadow 140ms var(--pos-ease);
+}
+.cmd-search:focus-within {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.cmd-search > svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  color: var(--pos-ink-soft);
+}
+.cmd-search input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding-right: 0.8rem;
+  background: transparent;
+  color: var(--pos-ink);
+  font-family: inherit;
+  /* 16 px o más: con menos, el iPhone hace zoom al enfocar. */
+  font-size: 1.06rem;
+  font-weight: 600;
+  outline: none;
+  appearance: none;
+}
+.cmd-search input::placeholder {
+  color: var(--cmd-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+.cmd-search input::-webkit-search-cancel-button,
+.cmd-search input::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+.cmd-search-clear {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  margin-left: -0.8rem;
+  border-radius: 0.9rem;
+  color: var(--pos-ink-soft);
+}
+.cmd-search-clear svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+.cmd-search-clear:active {
+  background: var(--pos-rule);
+}
+.cmd-picker-off {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.cmd-picker-off svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.cmd-picker-scroll {
+  /* Para medir contra ella dónde están las fichas de categoría. */
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pos-rule) transparent;
+}
+.cmd-sec {
+  padding: 0.85rem 0.9rem 0.25rem;
+}
+.cmd-h {
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1.15;
+  color: var(--pos-ink);
+}
+.cmd-h.is-sub {
+  padding: 0.95rem 0.9rem 0.3rem;
+  font-size: 0.95rem;
+  color: var(--pos-ink-soft);
+}
+
+/* Lo que más sale: fichas grandes, un toque = uno más. */
+.cmd-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+.cmd-tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 4.1rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: transform 140ms var(--pos-ease);
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.cmd-tile:has(.cmd-tile-main:active) {
+  transform: scale(var(--cmd-press));
+}
+.cmd-tile.has-qty {
+  background: color-mix(in oklch, var(--pos-ink) 7%, var(--pos-paper));
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.cmd-tile-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  align-content: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: inherit;
+  text-align: left;
+}
+.cmd-tile-name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.15;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.cmd-tile-price {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.cmd-tile-minus {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  flex: none;
+  border-radius: 0 0.9rem 0.9rem 0;
+  box-shadow: inset 1.5px 0 0 color-mix(in oklch, var(--pos-ink) 22%, transparent);
+  color: var(--pos-ink);
+}
+.cmd-tile-minus svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.cmd-tile-minus:active {
+  background: color-mix(in oklch, var(--pos-ink) 14%, transparent);
+}
+.cmd-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* La cantidad va en la esquina, encima del «−»: nunca tapa el nombre. */
+.cmd-tile .cmd-badge {
+  position: absolute;
+  top: -0.5rem;
+  right: -0.35rem;
+  box-shadow: 0 0 0 2px var(--pos-paper);
+  pointer-events: none;
+}
+
+/* Repetir la ronda: un toque. */
+.cmd-round {
+  display: flex;
+  width: calc(100% - 1.8rem);
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 3.75rem;
+  margin: 0.7rem 0.9rem 0.2rem;
+  padding: 0.5rem 0.6rem 0.5rem 0.8rem;
+  border-radius: 0.9rem;
+  background: color-mix(in oklch, var(--pos-carbon) 6%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-carbon) 26%, var(--pos-paper));
+  color: var(--pos-ink);
+  text-align: left;
+  transition: transform 140ms var(--pos-ease);
+}
+.cmd-round:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-round > svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+  color: var(--pos-carbon);
+}
+.cmd-round > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+.cmd-round b {
+  font-size: 1.04rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  line-height: 1.1;
+}
+.cmd-round small {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pos-carbon);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-round > i {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+}
+.cmd-round > i svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+/* Las fichas de categoría quedan pegadas arriba al recorrer. */
+.cmd-cats {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  margin-top: 0.6rem;
+  padding: 0.25rem 0 0.3rem;
+  border-bottom: 1px solid var(--pos-rule);
+  background: var(--pos-paper);
+}
+.cmd-chips {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0 0.9rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cmd-chips::-webkit-scrollbar {
+  display: none;
+}
+/* El botón mide 48 de alto; la ficha que se ve, 40. */
+.cmd-chip {
+  display: inline-flex;
+  height: 3rem;
+  flex: none;
+  align-items: center;
+}
+.cmd-chip > span {
+  display: inline-flex;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease),
+    color 140ms var(--pos-ease);
+}
+.cmd-chip:active > span {
+  transform: scale(var(--cmd-press));
+}
+.cmd-chip[aria-pressed="true"] > span {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.cmd-chips.is-sub .cmd-chip > span {
+  height: 2.35rem;
+  background: transparent;
+  font-size: 0.93rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.cmd-chips.is-sub .cmd-chip[aria-pressed="true"] > span {
+  background: color-mix(in oklch, var(--pos-ink) 12%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px var(--pos-ink);
+  color: var(--pos-ink);
+}
+.cmd-cat-body {
+  /* Que siempre se pueda subir las fichas hasta arriba, aunque la categoría tenga dos productos. */
+  min-height: 100%;
+  padding-bottom: 1.25rem;
+}
+.cmd-hint {
+  max-width: 32ch;
+  padding: 1.1rem 0.9rem;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.cmd-hint b {
+  font-weight: 700;
+  color: var(--pos-ink);
+}
+.cmd-hint p + p {
+  margin-top: 0.5rem;
+}
+.cmd-chips > * {
+  display: flex;
+  flex: none;
+}
+
+/* Un producto de la carta: nombre, precio y el «+» grande. */
+.cmd-rows {
+  display: grid;
+}
+.cmd-prod {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 3.75rem;
+  padding: 0.3rem 0.75rem 0.3rem 0.9rem;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.cmd-prod + .cmd-prod {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--pos-rule) 65%, transparent);
+}
+.cmd-prod.has-qty {
+  background: color-mix(in oklch, var(--pos-ink) 6%, var(--pos-paper));
+}
+.cmd-prod.has-qty .cmd-step.is-plus {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.cmd-prod-main {
+  display: grid;
+  min-width: 0;
+  min-height: 3.15rem;
+  flex: 1;
+  align-content: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.3rem 0.2rem 0;
+  border-radius: 0.5rem;
+  text-align: left;
+}
+.cmd-prod-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.cmd-prod-sub {
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pos-ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-prod-sub b {
+  font-weight: 700;
+  color: var(--pos-carbon);
+}
+.cmd-prod-main:active .cmd-prod-name {
+  color: var(--pos-ink-soft);
+}
+.cmd-prod-qty {
+  min-width: 1.6rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-more {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border-radius: 999px;
+  color: var(--cmd-faint);
+}
+.cmd-more svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.cmd-more:active {
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+}
+/* Lo agotado: sigue a la vista (para saber que no hay), apagado y tachado. */
+.cmd-tile.is-out,
+.cmd-prod.is-out {
+  background: transparent;
+}
+.cmd-tile.is-out .cmd-tile-name,
+.cmd-prod.is-out .cmd-prod-name {
+  color: var(--cmd-faint);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, currentColor 60%, transparent);
+}
+.cmd-out {
+  font-size: 0.88rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--cmd-late-ink);
+}
+/* Con teclado: Enter agrega este. */
+.cmd-enter {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  box-shadow: inset 0 0 0 1px var(--pos-rule);
+  color: var(--pos-ink-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+  vertical-align: 0.1em;
+}
+.cmd-enter svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cmd-enter {
+    display: inline-flex;
+  }
+  .cmd-prod-main:hover .cmd-prod-name,
+  .cmd-tile-main:hover .cmd-tile-name {
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+  }
+  .cmd-chip:hover > span,
+  .cmd-step:not(.is-plus):hover,
+  .cmd-more:hover,
+  .cmd-back:hover {
+    background: var(--pos-rule);
+  }
+  .cmd-chip[aria-pressed="true"]:hover > span {
+    background: var(--pos-ink-soft);
+  }
+  .cmd-step.is-plus:hover {
+    background: var(--pos-ink);
+    color: var(--pos-paper);
+  }
+  button.cmd-line:hover,
+  .cmd-dline-main:hover {
+    background: color-mix(in oklch, var(--pos-rule) 40%, var(--paper));
+  }
+  .cmd-util:hover {
+    background: oklch(1 0 0 / 0.14);
+  }
+  .cmd-util[aria-pressed="true"]:hover {
+    background: color-mix(in oklch, var(--pos-st-bill) 88%, white);
+  }
+  .cmd-go:not(:disabled):hover {
+    filter: brightness(0.95);
+  }
+  .cmd-go.is-quiet:not(:disabled):hover {
+    background: oklch(1 0 0 / 0.14);
+    filter: none;
+  }
+}
+
+/* La bandeja del pedido, abajo de la carta (en el celular): qué llevás cargado y el botón de enviar. */
+.cmd-tray {
+  display: grid;
+  flex: none;
+  gap: 0.45rem;
+  padding: 0.5rem var(--cmd-pad) 0.7rem;
+  background: var(--pos-board-2);
+  color: var(--pos-board-ink);
+}
+.cmd-tray-sum {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.15rem;
+  border-radius: 0.7rem;
+  text-align: left;
+}
+.cmd-tray-sum:active {
+  background: oklch(1 0 0 / 0.1);
+}
+.cmd-tray .cmd-badge {
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+.cmd-tray-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-tray-sum > b {
+  flex: none;
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-tray-sum > svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  color: var(--pos-board-soft);
+}
+
+/* ── Hojas ── */
+.cmd-sheet-body {
+  display: grid;
+  gap: 1.1rem;
+}
+.cmd-sheet-head {
+  display: grid;
+  gap: 0.3rem;
+  padding-right: 0.5rem;
+}
+.pos-sheet-title.cmd-sheet-title {
+  font-size: 1.7rem;
+  line-height: 1.05;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.cmd-sheet-sub {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.cmd-sheet-sub.is-ink {
+  color: var(--pos-ink-soft);
+}
+.cmd-group {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.cmd-group legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  padding: 0;
+}
+.cmd-group legend small {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.cmd-group legend small.is-need {
+  color: var(--cmd-late-ink);
+  font-weight: 700;
+}
+.cmd-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.cmd-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 3.1rem;
+  padding: 0 1rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: left;
+  transition:
+    transform 120ms var(--pos-ease),
+    background-color 120ms var(--pos-ease),
+    color 120ms var(--pos-ease);
+}
+.cmd-opt svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.cmd-opt small {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-opt:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-opt[aria-pressed="true"] {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.cmd-opt[aria-pressed="true"] small {
+  color: color-mix(in oklch, var(--pos-paper) 82%, var(--pos-ink));
+}
+.cmd-opt:disabled {
+  opacity: 0.55;
+}
+.cmd-reasons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.cmd-reasons .cmd-opt {
+  min-height: 3.5rem;
+  justify-content: center;
+  padding: 0.4rem 0.7rem;
+  text-align: center;
+  text-wrap: balance;
+}
+.cmd-field {
+  display: grid;
+  gap: 0.4rem;
+}
+.cmd-field label {
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+.cmd-input {
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-size: 1.06rem;
+  font-weight: 600;
+  outline: none;
+}
+.cmd-input::placeholder {
+  color: var(--cmd-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+.cmd-input:focus {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.cmd-count {
+  justify-self: end;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.cmd-sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+/* Pegado abajo de la hoja, fuera de lo que se desliza: el botón siempre a la vista. */
+.cmd-sheet > .cmd-sheet-foot {
+  flex: none;
+  padding: 0.7rem 1.1rem calc(0.9rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--pos-rule);
+}
+.cmd-sheet .cmd-sheet-body.has-foot {
+  padding-bottom: 1.1rem;
+}
+.cmd-sheet .pos-btn-quiet.cmd-danger {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 42%, var(--pos-paper));
+  color: var(--cmd-late-ink);
+}
+.cmd-sheet-foot .pos-btn {
+  min-width: 0;
+  min-height: 3.75rem;
+  flex: 1;
+  border-radius: 1rem;
+  font-size: 1.12rem;
+  white-space: normal;
+  text-wrap: balance;
+}
+/* Todavía no se puede: el botón dice qué falta, así que se tiene que poder leer. */
+.cmd-sheet-foot .pos-btn:disabled {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink-soft);
+  opacity: 1;
+}
+.cmd-sheet-foot .pos-btn.is-ready {
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+}
+.cmd-qty-step {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.2rem;
+}
+.cmd-qty-step output {
+  min-width: 2.1rem;
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-sheet-error {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--pos-st-late) 12%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 40%, var(--pos-paper));
+  color: var(--cmd-late-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.cmd-party {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  padding: 0.3rem 0;
+}
+.cmd-party .pos-step {
+  width: 3.75rem;
+  height: 3.75rem;
+  transition: transform 140ms var(--pos-ease);
+}
+.cmd-party .pos-step:active {
+  transform: scale(var(--cmd-press));
+}
+.cmd-party .pos-step-value {
+  min-width: 2.4ch;
+  font-size: 3.4rem;
+  line-height: 1;
+  color: var(--pos-carbon);
+}
+
+/* ── Mientras carga, y cuando la mesa ya no está ── */
+.cmd-skeleton .cmd-title {
+  color: var(--cmd-faint);
+}
+.cmd-ghost {
+  height: 11rem;
+  opacity: 0.16;
+}
+.cmd-ghost.is-short {
+  height: 6.5rem;
+  opacity: 0.1;
+}
+.cmd-gone {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.8rem;
+  padding: 2rem 1.5rem;
+  color: var(--pos-board-ink);
+  text-align: center;
+}
+.cmd-gone h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.cmd-gone p {
+  max-width: 32ch;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.cmd-gone .pos-btn {
+  margin-top: 0.4rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+
+/* ── Con ancho: la comanda a la izquierda y la carta siempre a la derecha ── */
+@media (min-width: 900px) {
+  .cmd {
+    --cmd-pad: 1.25rem;
+    grid-template-columns: minmax(0, 1fr) clamp(23.5rem, 38vw, 31rem);
+  }
+  /* Mesa ya cerrada: no hay carta, la comanda ocupa todo. */
+  .cmd[data-closed] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cmd > .pos-topbar {
+    grid-column: 1 / -1;
+  }
+  .cmd-main {
+    grid-row: 2;
+    grid-column: 1;
+  }
+  .cmd-picker {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    grid-row: 2;
+    grid-column: 2;
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    transition: none;
+    box-shadow: -1px 0 0 oklch(0 0 0 / 0.25);
+  }
+  .cmd-picker-head {
+    min-height: 4.25rem;
+    padding: 0 0.9rem;
+  }
+  .cmd-picker-back,
+  .cmd-tray {
+    display: none;
+  }
+  .cmd-flow {
+    gap: 1.15rem;
+    padding-top: 1rem;
+  }
+  /* Entra todo en una fila: Cuenta, Agregar, Después y Enviar. */
+  .cmd-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .cmd-bar-row {
+    display: contents;
+  }
+  .cmd-bar-note,
+  .cmd-bar-ready {
+    flex: 1 0 100%;
+  }
+  .cmd-go {
+    max-width: 26rem;
+    margin-left: auto;
+  }
+  .cmd-go.is-quiet {
+    margin-left: auto;
+  }
+  .cmd-go.is-quiet + .cmd-go {
+    margin-left: 0;
+  }
+  .cmd-sheet.pos-sheet {
+    right: auto;
+    left: 50%;
+    width: min(34rem, 100vw - 2rem);
+    translate: -50% 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+}
+
+/* ── Celular: la carta tapa la comanda; lo de atrás no se puede tocar ni leer ── */
+@media (max-width: 899.98px) {
+  .cmd[data-picker="open"] > .pos-topbar,
+  .cmd[data-picker="open"] > .cmd-main {
+    visibility: hidden;
+  }
+  /* Con algo sin enviar, la barra tiene dos filas: abajo manda «Enviar a cocina»; arriba, Cuenta y
+     Agregar se reparten el ancho (más bajos, la palabra al lado del ícono). */
+  .cmd-bar[data-primary="send"] .cmd-util {
+    min-height: 3rem;
+    flex: 1;
+    flex-direction: row;
+    gap: 0.5rem;
+    font-size: 0.98rem;
+  }
+  .cmd-bar[data-primary="send"] .cmd-util svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
+/* «Reducir movimiento»: queda el color y se va el movimiento. */
+@media (prefers-reduced-motion: reduce) {
+  .cmd,
+  .cmd-sheet {
+    --cmd-press: 1;
+  }
+  .cmd-picker {
+    transform: none;
+    transition: none;
+  }
+  .cmd-sheet,
+  .cmd[data-live] {
+    --cmd-bump: none;
+  }
+  /* Sin el latido, lo listo se queda con el aro puesto. */
+  .cmd-stage.is-ready::after,
+  .cmd-stage.is-partly_ready::after {
+    animation: none;
+    opacity: 0.7;
+  }
+  /* El que gira dice «sigo en eso»: se queda, más lento. */
+  .cmd-spin {
+    animation-duration: 1.8s;
+  }
+}

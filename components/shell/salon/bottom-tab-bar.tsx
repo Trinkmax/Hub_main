@@ -31,6 +31,8 @@ export function BottomTabBar({
   const pathname = usePathname()
   const tabs = visibleSalonTabs({ role, features, isPlatformAdmin })
   if (tabs.length === 0 || BARE.test(pathname)) return null
+  // Con más de cinco pestañas cada una queda angosta: van los nombres cortos, nunca cortados con «…».
+  const compact = tabs.length > 5
 
   return (
     <nav
@@ -50,6 +52,7 @@ export function BottomTabBar({
               <Link
                 href={tab.href(tenantSlug)}
                 aria-current={active ? 'page' : undefined}
+                aria-label={compact && tab.short ? tab.label : undefined}
                 className={cn(
                   'flex h-[4.25rem] flex-col items-center justify-center gap-1 px-1 transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
                   active ? 'text-primary' : 'text-muted-foreground active:text-foreground',
@@ -73,7 +76,7 @@ export function BottomTabBar({
                     active ? 'font-semibold' : 'font-medium',
                   )}
                 >
-                  {tab.label}
+                  {compact ? (tab.short ?? tab.label) : tab.label}
                 </span>
               </Link>
             </li>

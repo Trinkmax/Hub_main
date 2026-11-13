@@ -25,8 +25,8 @@ lo prende un superadmin por bar).
 | Sucursales | `branches`, `lib/pos/queries.ts` (`getActiveBranch`) | hecho |
 | Mapa en vivo (maqueta) | `/[bar]/salon/mapa`, `components/pos/floor/*` | hecho |
 | Abrir mesa (dos toques, con reserva) | `open-table-sheet.tsx`, RPC `pos_open_table` | hecho |
-| Comanda del mozo | `/[bar]/salon/mesa/[sesión]`, `components/pos/order/*` | en construcción |
-| Pantalla de cocina | `/[bar]/tele`, `components/pos/kitchen/*` | en construcción |
+| Comanda del mozo | `/[bar]/salon/mesa/[sesión]`, `components/pos/order/*`, `lib/pos/order/*` | hecho |
+| Pantalla de cocina | `/[bar]/salon/tele`, `components/pos/kitchen/*`, `lib/pos/kitchen/*` | hecho |
 | Cobro, caja por turno | — | sigue |
 | Tablero del dueño, carta rápida, QR del cliente | — | sigue |
 
@@ -112,4 +112,28 @@ El bar de ejemplo (`demo-administracion`) tiene dos sucursales (Alta Córdoba y 
 tres sectores y la carta de HUB copiada. Las mesas «en plena noche» se arman con un guion que se puede correr
 las veces que haga falta (vive fuera del repo, en el espacio de trabajo de la sesión).
 
-Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta) y `tests/lib/pos-table-state.test.ts` (estados).
+Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta), `tests/lib/pos-table-state.test.ts` (estados),
+`tests/lib/pos-order-*.test.ts` (carrito, búsqueda, tandas, bandeja de salida) y `tests/lib/pos-kitchen*.test.ts`
+(tarjetas, totales, selección con dos botones).
+
+## La comanda del mozo
+
+- Arriba, una sola fila: volver, la mesa, cuántos son y el nombre. Lo demás (seña, alertas, evento, socio) va
+  dentro de la comanda.
+- Cada tanda es un tique de papel con sus tildes: enviada, «cocina lo vio», en preparación, lista, servida.
+  Lo que no tiene vuelta lleva sello (SERVIDA, ANULADO con el motivo).
+- Se pide buscando. Sin escribir: lo que más sale a esa hora, «repetir la ronda» y las categorías.
+- Las aclaraciones son fichas para tocar; el texto libre es la última opción.
+- Abajo, una acción obvia según el momento: enviar (o dejar para después), servir, marchar la tanda, agregar.
+- Un pedido nunca se pierde ni se duplica: cada tanda lleva su clave, se guarda en el teléfono hasta que la base
+  la confirma y se reintenta sola; lo que quedó sin enviar también sale desde el mapa (`PosOutboxRunner`).
+
+## La pantalla de cocina
+
+- Una tarjeta por tanda, colgada del riel por orden de llegada; nunca se reacomoda sola.
+- Arriba, el total que se está preparando («8 Bacon · 5 Lomito»).
+- Dos botones: Siguiente mueve el marco, Avanzar pasa de Nuevo a En preparación y a Listo; mantenerlo deshace.
+  Llegan como teclas (flecha derecha / Enter), así sirve cualquier botonera que se presente como teclado.
+- Cada pantalla elige qué estaciones muestra (`?estaciones=`); lo de las otras queda de pie de tarjeta.
+- Con un evento, la pantalla se parte: el evento con totales por plato a un lado, las mesas a la carta al otro.
+- Sin conexión, la franja de arriba es el aviso, con la hora del último dato.

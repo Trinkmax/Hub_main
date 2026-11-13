@@ -225,9 +225,16 @@ export function canAccessManagerPath(role: string, rest: ReadonlyArray<string>):
  * Sub-rutas de /salon accesibles para roles que NO viven en el salón. El host
  * usa el panel operativo (vista en vivo de reservas) durante el servicio —
  * misma capacidad de lectura que SALON_READ_ROLES — y la puerta, porque quien
- * recibe a la gente es quien valida las entradas.
+ * recibe a la gente es quien valida las entradas. Con el punto de venta suma el
+ * mapa del salón y la mesa.
  */
 export function canAccessSalonPath(role: string, rest: ReadonlyArray<string>): boolean {
-  if (role === 'host') return rest[1] === 'reservas-operativo' || rest[1] === 'puerta'
+  if (role === 'host') {
+    // Con el punto de venta, la anfitriona también sienta a la gente: el mapa y la mesa (POS_FLOOR_ROLES).
+    // Si el bar no lo tiene prendido, la página misma responde que no existe.
+    return (
+      rest[1] === 'reservas-operativo' || rest[1] === 'puerta' || rest[1] === 'mapa' || rest[1] === 'mesa'
+    )
+  }
   return false
 }

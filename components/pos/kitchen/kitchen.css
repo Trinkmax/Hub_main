@@ -1,0 +1,1661 @@
+/* ── Pantalla de cocina: «el riel de comandas» (docs/features/pos.md) ──
+   Comandas de papel crema colgadas de un riel de cartón, sobre un tablero verde casi negro.
+   En el tablero va lo que el sistema suma (la tira de totales, el evento); en papel, cada comanda.
+   Lo único que tiene color es el estado, y siempre va con ícono y palabra.
+
+   Todo está medido en `--u`, que vale 1 px en la tele de 1920×1080 vista a tres metros: número de
+   mesa 112, cantidades 60, productos 42, aclaraciones 32. En otra pantalla la unidad se estira o se
+   achica (ver lib/pos/kitchen/layout.ts); lo interactivo nunca mide menos de 48 px reales. */
+
+.kds {
+  --u: clamp(0.6px, min(calc(100vw / 1920), calc(100vh / 1080)), 2.4px);
+  /* el tablero */
+  --kds-board: color-mix(in oklch, var(--pos-board-2) 62%, black);
+  --kds-band: color-mix(in oklch, var(--pos-board-2) 92%, black);
+  --kds-edge: color-mix(in oklch, var(--pos-board-ink) 16%, transparent);
+  --kds-ink: var(--pos-board-ink);
+  --kds-soft: var(--pos-board-soft);
+  /* el resaltador de las aclaraciones y el ámbar del reloj */
+  --kds-marker: oklch(0.9 0.165 97);
+  --kds-warn: oklch(0.84 0.155 80);
+  /* el marco de selección: lo único celeste de la pantalla */
+  --kds-frame: oklch(0.87 0.085 232);
+  --kds-frame-ink: oklch(0.23 0.06 250);
+  /* tinta del sello LISTO, y el papel de lo que ya salió */
+  --kds-ready-ink: color-mix(in oklch, var(--pos-st-ready) 46%, black);
+  --kds-paper-dim: color-mix(in oklch, var(--pos-paper) 68%, var(--kds-board));
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--kds-board);
+  color: var(--kds-ink);
+  font-family: var(--pos-font);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Donde se puede, el alto que de verdad se ve (la barra del navegador del celular sube y baja) y un
+   recorte que no deja que nada corra la pantalla por su cuenta. */
+@supports (height: 100dvh) {
+  .kds {
+    height: 100dvh;
+  }
+}
+@supports (overflow: clip) {
+  .kds {
+    overflow: clip;
+  }
+}
+
+/* El salón es claro; esta pantalla no. Que al rebotar el scroll no asome crema por los bordes. */
+html:has(.kds),
+body:has(.kds) {
+  background: oklch(0.14 0.026 165);
+}
+
+.kds svg {
+  flex: none;
+  width: 1em;
+  height: 1em;
+}
+
+.kds :focus-visible {
+  outline: max(calc(var(--u) * 5), 3px) solid var(--kds-frame);
+  outline-offset: max(calc(var(--u) * 3), 2px);
+}
+
+/* ── Arriba: la hora y lo que hay que hacer ── */
+.kds-top {
+  position: relative;
+  z-index: 20;
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: calc(var(--u) * 40);
+  min-height: calc(var(--u) * 132);
+  padding: 0 calc(var(--u) * 28);
+  background: var(--kds-band);
+  box-shadow: 0 1px 0 var(--kds-edge);
+}
+/* Sin conexión: toda la franja se vuelve el cartel, con la letra más grande de la pantalla. No empuja
+   nada: las comandas quedan donde estaban, que es de donde se sigue cocinando. */
+.kds-top[data-down] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+  box-shadow: none;
+}
+.kds-down {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 26);
+  min-width: 0;
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.96;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* La letra se mide contra el ancho del cartel, así entra en una línea en cualquier tele. */
+.kds-down > svg,
+.kds-down > p {
+  font-size: min(calc(var(--u) * 112), 5vw);
+}
+.kds-down span {
+  font-weight: 700;
+}
+.kds-down small {
+  display: block;
+  margin-top: calc(var(--u) * 6);
+  font-size: 0.36em;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: normal;
+}
+.kds-down:has(small) > svg,
+.kds-down:has(small) > p {
+  font-size: min(calc(var(--u) * 84), 4vw);
+}
+@supports (width: 1cqw) {
+  .kds-down > svg,
+  .kds-down > p {
+    font-size: min(calc(var(--u) * 112), 6.1cqw);
+  }
+  .kds-down:has(small) > svg,
+  .kds-down:has(small) > p {
+    font-size: min(calc(var(--u) * 84), 6.1cqw);
+  }
+}
+.kds-now-time {
+  font-size: calc(var(--u) * 76);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+}
+.kds-now-place {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 16);
+  margin-top: calc(var(--u) * 8);
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 26), 12px);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+}
+.kds-now-place > span:first-child {
+  max-width: calc(var(--u) * 220);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kds-totals {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  column-gap: calc(var(--u) * 44);
+  height: calc(var(--u) * 124);
+  overflow: hidden;
+}
+.kds-totals.is-empty {
+  align-items: center;
+  color: var(--kds-soft);
+  font-size: calc(var(--u) * 40);
+  font-weight: 600;
+  font-stretch: 88%;
+}
+.kds-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 12);
+  height: calc(var(--u) * 62);
+  white-space: nowrap;
+}
+.kds-total b {
+  font-size: calc(var(--u) * 58);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: calc(var(--u) * 62);
+}
+.kds-total span {
+  font-size: calc(var(--u) * 40);
+  font-weight: 600;
+  font-stretch: 86%;
+}
+.kds-total.is-more {
+  position: absolute;
+  visibility: hidden;
+  color: var(--kds-soft);
+}
+.kds-total.is-more[data-shown] {
+  position: static;
+  visibility: visible;
+}
+
+.kds-tools {
+  display: flex;
+  align-items: center;
+  gap: max(calc(var(--u) * 12), 8px);
+}
+.kds-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 max(calc(var(--u) * 18), 12px);
+  border-radius: max(calc(var(--u) * 14), 10px);
+  background: oklch(1 0 0 / 0.08);
+  color: var(--kds-ink);
+  font-size: max(calc(var(--u) * 24), 14px);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+}
+.kds-tool-short {
+  display: none;
+}
+.kds-tool:active {
+  background: oklch(1 0 0 / 0.2);
+}
+.kds-tool:disabled {
+  opacity: 0.6;
+}
+.kds-tool[data-state="muted"] {
+  background: var(--kds-ink);
+  color: var(--kds-board);
+}
+.kds-tool[data-state="locked"] svg {
+  opacity: 0.6;
+}
+@media (hover: hover) and (pointer: fine) {
+  .kds-tool:not(:disabled):hover {
+    background: oklch(1 0 0 / 0.14);
+  }
+  .kds-tool[data-state="muted"]:hover {
+    background: color-mix(in oklch, var(--kds-ink) 88%, black);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kds-tool {
+    transition: background-color 140ms var(--pos-ease);
+  }
+}
+.kds-top[data-down] .kds-tool {
+  background: oklch(0 0 0 / 0.24);
+  color: var(--pos-on-dark);
+}
+.kds-top[data-down] .kds-tool > span {
+  display: none;
+}
+/* El aviso del sonido: una etiqueta sobre el tablero, que no le saca lugar a nada. */
+.kds-sound-note {
+  position: absolute;
+  right: calc(var(--u) * 24);
+  bottom: calc(var(--u) * 14);
+  z-index: 15;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: calc(var(--u) * 10) calc(var(--u) * 20);
+  border-radius: 999px;
+  background: var(--kds-band);
+  color: var(--kds-ink);
+  font-size: max(calc(var(--u) * 24), 13px);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.1;
+  box-shadow:
+    inset 0 0 0 max(calc(var(--u) * 2), 1px) var(--kds-edge),
+    0 calc(var(--u) * 10) calc(var(--u) * 26) oklch(0 0 0 / 0.5);
+  pointer-events: none;
+}
+.kds-sound-note svg {
+  color: var(--kds-marker);
+  font-size: 1.2em;
+}
+.kds-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: max(calc(var(--u) * 22), 12px);
+}
+.kds-live-dot {
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.5;
+}
+.kds-live[data-state="live"] .kds-live-dot {
+  background: var(--pos-st-ready);
+  opacity: 1;
+}
+.kds-live[data-state="offline"] {
+  color: var(--kds-warn);
+}
+
+/* Qué estaciones muestra esta pantalla. */
+.kds-stations {
+  position: relative;
+}
+.kds-stations-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  min-width: 17rem;
+  max-width: calc(100vw - 24px);
+  padding: 0.5rem;
+  border-radius: 1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 22px 48px -14px oklch(0 0 0 / 0.7),
+    0 0 0 1px oklch(0.2 0.03 165 / 0.1);
+}
+.kds-stations-title {
+  padding: 0.5rem 0.75rem 0.4rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.kds-stations-menu li button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0 0.85rem;
+  border-radius: 0.7rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: left;
+}
+.kds-stations-menu li button span:nth-child(2) {
+  flex: 1;
+}
+.kds-stations-menu li button[aria-pressed="true"] {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.kds-stations-menu li button:active {
+  background: var(--pos-rule);
+}
+.kds-stations-menu ul {
+  display: grid;
+  gap: 0.25rem;
+}
+.kds-stations-menu svg {
+  font-size: 1.3rem;
+}
+.kds-station-dot {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+}
+.kds-station-dot.is-all {
+  background: var(--pos-ink);
+}
+.kds-stations-done {
+  width: 100%;
+  min-height: 3.25rem;
+  margin-top: 0.5rem;
+  border-radius: 0.7rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 86%;
+}
+.kds-stations-menu :focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+
+/* ── El riel ── */
+.kds-floor {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.kds-rail {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 0 calc(var(--u) * 24);
+}
+/* El riel es una tira de cartón, como la barra de la maqueta: tapa clara y canto oscuro. */
+.kds-rail-bar {
+  position: absolute;
+  top: calc(var(--u) * 8);
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: calc(var(--u) * 20);
+  border-bottom: calc(var(--u) * 6) solid color-mix(in oklch, var(--pos-kraft) 58%, black);
+  background: var(--pos-kraft);
+  box-shadow: 0 calc(var(--u) * 8) calc(var(--u) * 12) oklch(0 0 0 / 0.42);
+}
+.kds-rail-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
+  gap: calc(var(--u) * 20);
+  height: 100%;
+  /* arriba, lo que queda metido en el riel; abajo, lugar para los dientes y el pie del marco */
+  padding: calc(var(--u) * 16) 0 calc(var(--u) * 70);
+}
+.kds-slot {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+}
+.kds-ghost {
+  border-radius: calc(var(--u) * 3);
+  background: color-mix(in oklch, var(--pos-paper) 9%, var(--kds-board));
+}
+
+/* ── La comanda ── */
+.kds-ticket {
+  --paper: var(--pos-paper);
+  --s: calc(var(--u) * var(--k, 1));
+  position: relative;
+  color: var(--pos-ink);
+}
+.kds-paper {
+  position: relative;
+  /* lo que queda metido adentro del riel */
+  padding-top: calc(var(--u) * 20);
+  border-radius: calc(var(--u) * 3) calc(var(--u) * 3) 0 0;
+  background: var(--paper);
+  box-shadow: 0 calc(var(--u) * 12) calc(var(--u) * 22) oklch(0 0 0 / 0.5);
+}
+/* El borde de abajo, cortado con la sierra de la comandera. */
+.kds-paper::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 0.5px);
+  right: 0;
+  left: 0;
+  height: calc(var(--u) * 12);
+  background:
+    conic-gradient(from -45deg at 50% 100%, var(--paper) 89.5deg, transparent 90.5deg) 0 0 /
+    calc(var(--u) * 24) 100% repeat-x;
+}
+
+/* La franja del estado: el encabezado impreso de la comanda. */
+.kds-band {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 10);
+  height: calc(var(--u) * 42);
+  padding: 0 calc(var(--u) * 20);
+  border-bottom: calc(var(--u) * 2) solid var(--pos-rule);
+  color: var(--pos-ink-soft);
+  font-size: max(calc(var(--u) * 26), 13px);
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.kds-ticket.is-preparing .kds-band {
+  border-bottom-color: transparent;
+  background: var(--pos-st-kitchen);
+  color: var(--pos-on-light);
+}
+.kds-ticket.is-ready .kds-band {
+  border-bottom-color: transparent;
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+}
+
+/* Avisos de la mesa: no se pueden pasar por alto. */
+.kds-alert {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 14);
+  min-height: calc(var(--u) * 50);
+  padding: calc(var(--u) * 6) calc(var(--u) * 20);
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: max(calc(var(--u) * 36), 15px);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1.02;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.kds-alert.is-critical {
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+}
+.kds-alert + .kds-alert {
+  border-top: calc(var(--u) * 2) solid var(--paper);
+}
+.kds-practice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--u) * 46);
+  /* rayas a los costados, la palabra sobre liso */
+  background:
+    linear-gradient(var(--pos-carbon), var(--pos-carbon)) center / 46% 100% no-repeat,
+    repeating-linear-gradient(
+      -45deg,
+      var(--pos-carbon) 0 calc(var(--u) * 14),
+      color-mix(in oklch, var(--pos-carbon) 55%, var(--paper)) calc(var(--u) * 14)
+        calc(var(--u) * 28)
+    );
+  color: var(--pos-on-dark);
+  font-size: max(calc(var(--u) * 32), 14px);
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
+  text-transform: uppercase;
+}
+
+.kds-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: calc(var(--u) * 14);
+  padding: calc(var(--u) * 12) calc(var(--u) * 20) calc(var(--u) * 10);
+  border-bottom: calc(var(--u) * 3) solid var(--pos-ink);
+}
+.kds-table {
+  overflow: hidden;
+  font-size: calc(var(--u) * 112);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.84;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kds-table[data-fit="mid"] {
+  padding-top: calc(var(--u) * 8);
+  font-size: calc(var(--u) * 84);
+  line-height: 1;
+}
+.kds-table[data-fit="small"] {
+  display: -webkit-box;
+  padding-top: calc(var(--u) * 4);
+  font-size: calc(var(--u) * 56);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* El reloj: tinta de carbónico (lo escribe el sistema). Ámbar al «miralo», rojo cuando está demorada. */
+.kds-clock {
+  display: grid;
+  justify-items: end;
+  gap: calc(var(--u) * 2);
+  margin-top: calc(var(--u) * -2);
+  padding: calc(var(--u) * 6) calc(var(--u) * 12) calc(var(--u) * 7);
+  border-radius: calc(var(--u) * 8);
+  color: var(--pos-carbon);
+  line-height: 1;
+  white-space: nowrap;
+}
+.kds-clock-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 7);
+}
+.kds-clock b {
+  font-size: calc(var(--u) * 64);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.9;
+}
+.kds-clock-time span {
+  font-size: max(calc(var(--u) * 28), 12px);
+  font-weight: 700;
+  font-stretch: 86%;
+}
+.kds-clock em {
+  font-size: max(calc(var(--u) * 22), 11px);
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 84%;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.kds-clock[data-level="warn"] {
+  background: var(--kds-warn);
+  color: var(--pos-on-light);
+}
+.kds-clock[data-level="late"] {
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+}
+
+.kds-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--u) * 4) calc(var(--u) * 16);
+  margin-top: calc(var(--u) * 6);
+  color: var(--pos-ink-soft);
+  font-size: max(calc(var(--u) * 28), 13px);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.1;
+}
+.kds-meta:empty {
+  display: none;
+}
+.kds-people {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  color: var(--pos-carbon);
+  font-weight: 800;
+}
+.kds-course {
+  padding: calc(var(--u) * 2) calc(var(--u) * 10);
+  border-radius: calc(var(--u) * 6);
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-stretch: 82%;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kds-course.is-event {
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--pos-carbon);
+  color: var(--pos-on-dark);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kds-alias {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Los renglones. `--s` es la unidad achicada cuando la comanda es más alta que el riel. */
+.kds-body {
+  padding: calc(var(--s) * 2) calc(var(--u) * 20) calc(var(--s) * 8);
+}
+.kds-station {
+  margin-top: calc(var(--s) * 9);
+  color: var(--pos-ink-soft);
+  font-size: max(calc(var(--s) * 24), 11px);
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.kds-line {
+  display: grid;
+  grid-template-columns: calc(var(--s) * 76) minmax(0, 1fr);
+  align-items: start;
+  column-gap: calc(var(--s) * 14);
+  padding: calc(var(--s) * 6) 0;
+  border-top: 1px solid var(--pos-rule);
+}
+.kds-lines > .kds-line:first-child {
+  border-top: 0;
+}
+.kds-qty {
+  justify-self: start;
+  min-width: calc(var(--s) * 58);
+  padding: calc(var(--s) * 4) calc(var(--s) * 7) calc(var(--s) * 2);
+  border-radius: calc(var(--s) * 8);
+  font-size: calc(var(--s) * 60);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.9;
+  text-align: center;
+}
+/* Más de uno: en negativo, como cuando el cocinero le hace un círculo a la cantidad. */
+.kds-qty[data-many] {
+  background: var(--pos-ink);
+  color: var(--paper);
+}
+.kds-name {
+  padding-top: calc(var(--s) * 7);
+  font-size: calc(var(--s) * 42);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.06;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.kds-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--s) * 6) calc(var(--s) * 8);
+  margin-top: calc(var(--s) * 7);
+}
+/* Las aclaraciones, pasadas con resaltador. */
+.kds-mod {
+  padding: calc(var(--s) * 2) calc(var(--s) * 9) calc(var(--s) * 1);
+  border-radius: calc(var(--s) * 3);
+  background: var(--kds-marker);
+  color: var(--pos-on-light);
+  font-size: calc(var(--s) * 32);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.14;
+  overflow-wrap: anywhere;
+}
+.kds-line-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-top: calc(var(--s) * 6);
+  color: var(--kds-ready-ink);
+  font-size: max(calc(var(--s) * 24), 11px);
+  font-weight: 800;
+  font-stretch: 84%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kds-line[data-status="served"] .kds-name {
+  color: var(--pos-ink-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: calc(var(--s) * 3);
+}
+.kds-line[data-status="served"] .kds-qty {
+  background: none;
+  color: var(--pos-ink-soft);
+}
+
+/* La comanda larga ocupa dos lugares del riel y reparte sus renglones en dos columnas. */
+.kds-ticket[data-wide] .kds-body {
+  column-count: 2;
+  column-gap: calc(var(--u) * 40);
+  column-rule: 1px solid var(--pos-rule);
+}
+.kds-ticket[data-wide] .kds-line {
+  break-inside: avoid;
+}
+.kds-ticket[data-wide] .kds-station {
+  break-after: avoid;
+}
+
+/* Lo que la mesa espera de otras estaciones. */
+.kds-others {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 calc(var(--u) * 22);
+  margin: 0 calc(var(--u) * 20);
+  padding: calc(var(--u) * 10) 0 calc(var(--u) * 4);
+  border-top: calc(var(--u) * 2) dashed var(--pos-rule);
+  color: var(--pos-ink-soft);
+  font-size: max(calc(var(--u) * 26), 12px);
+  font-weight: 600;
+  font-stretch: 88%;
+  line-height: 1.25;
+}
+.kds-paper > :last-child {
+  padding-bottom: calc(var(--u) * 12);
+}
+
+/* Toda la comanda se puede tocar para enmarcarla. */
+.kds-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  cursor: pointer;
+}
+.kds-hit:focus-visible {
+  outline-offset: max(calc(var(--u) * 6), 4px);
+}
+
+/* El marco: grueso, separado del papel, con un pie que dice qué hace «Avanzar». */
+.kds-ticket[data-selected]::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--u) * -14) calc(var(--u) * -14) calc(var(--u) * -63);
+  z-index: 4;
+  border: calc(var(--u) * 8) solid var(--kds-frame);
+  border-bottom-width: calc(var(--u) * 46);
+  border-radius: calc(var(--u) * 16);
+  pointer-events: none;
+}
+.kds-ticket[data-ack]::before,
+.kds-stub[data-ack]::before,
+.kds-chip[data-ack]::before {
+  border-color: white;
+}
+.kds-hint {
+  position: absolute;
+  top: calc(100% + var(--u) * 17);
+  right: calc(var(--u) * -14);
+  left: calc(var(--u) * -14);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 12);
+  height: calc(var(--u) * 46);
+  padding: 0 calc(var(--u) * 22);
+  overflow: hidden;
+  border-radius: 0 0 calc(var(--u) * 16) calc(var(--u) * 16);
+  color: var(--kds-frame-ink);
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.kds-hint-main {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: max(calc(var(--u) * 28), 12px);
+  font-weight: 800;
+  font-stretch: 80%;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.kds-hint-alt {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: max(calc(var(--u) * 24), 11px);
+  font-weight: 700;
+  font-stretch: 86%;
+}
+/* Mientras se mantiene «Avanzar»: el pie se llena, y al completarse deshace. */
+.kds-hint[data-holding]::before,
+.kds-action[data-holding]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--kds-frame-ink);
+  opacity: 0.26;
+  transform-origin: left center;
+  animation: kds-hold var(--hold-ms, 530ms) linear forwards;
+}
+@keyframes kds-hold {
+  from {
+    transform: scaleX(var(--hold-from, 0.24));
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Recién entró: un trazo de resaltador alrededor (dientes incluidos), que se va solo. */
+.kds-ticket[data-arriving]::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--u) * -10) calc(var(--u) * -10) calc(var(--u) * -22);
+  z-index: 1;
+  border: calc(var(--u) * 10) solid var(--kds-marker);
+  border-radius: calc(var(--u) * 6);
+  pointer-events: none;
+  animation: kds-arrive 1.3s var(--pos-ease) 2 forwards;
+}
+.kds-stub[data-arriving],
+.kds-chip[data-arriving] {
+  outline: calc(var(--u) * 8) solid var(--kds-marker);
+  animation: kds-arrive-ring 1.3s var(--pos-ease) 2 forwards;
+}
+@keyframes kds-arrive {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes kds-arrive-ring {
+  0%,
+  45% {
+    outline-color: var(--kds-marker);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
+/* ── Sin comandas ── */
+.kds-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: calc(var(--u) * 40);
+  text-align: center;
+}
+.kds-empty-time {
+  color: color-mix(in oklch, var(--kds-ink) 56%, var(--kds-board));
+  font-size: calc(var(--u) * 230);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.86;
+  letter-spacing: -0.02em;
+}
+.kds-empty-title {
+  margin-top: calc(var(--u) * 30);
+  font-size: max(calc(var(--u) * 64), 26px);
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+}
+.kds-empty-hint {
+  margin-top: calc(var(--u) * 10);
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 40), 17px);
+  font-weight: 600;
+  font-stretch: 90%;
+}
+
+/* ── Abajo: los talones ── */
+.kds-shelf {
+  position: relative;
+  z-index: 10;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 32);
+  height: max(calc(var(--u) * 94), 66px);
+  padding: 0 calc(var(--u) * 24);
+  background: var(--kds-band);
+  box-shadow: 0 -1px 0 var(--kds-edge);
+}
+.kds-shelf-group {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 6);
+  min-width: 0;
+}
+.kds-shelf-group.is-done {
+  flex-shrink: 0;
+  max-width: 52%;
+}
+.kds-shelf-group.is-waiting {
+  margin-left: auto;
+}
+.kds-shelf-label {
+  flex: none;
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 26), 12px);
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.kds-shelf-label b {
+  margin-left: 0.2em;
+  color: var(--kds-ink);
+  font-weight: 800;
+}
+.kds-shelf-list {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 14);
+  min-width: 0;
+  /* lugar para el marco del talón elegido */
+  padding: calc(var(--u) * 14) calc(var(--u) * 14);
+  position: relative;
+  overflow: hidden;
+}
+/* El talón que no entra entero no se muestra por la mitad: se cuenta en el «+N» de al lado. */
+.kds-shelf-list > [data-clipped] {
+  visibility: hidden;
+}
+.kds-shelf-more {
+  flex: none;
+  margin-right: calc(var(--u) * 10);
+  color: var(--kds-ink);
+  font-size: calc(var(--u) * 44);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 1;
+}
+.kds-stub {
+  --paper: var(--pos-paper);
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 14);
+  height: max(calc(var(--u) * 66), 48px);
+  padding: 0 calc(var(--u) * 16);
+  border-radius: calc(var(--u) * 4);
+  background: var(--paper);
+  color: var(--pos-ink);
+  white-space: nowrap;
+}
+.kds-stub-num,
+.kds-chip-num {
+  font-size: calc(var(--u) * 52);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.kds-stub-num[data-fit="small"],
+.kds-chip-num[data-fit="small"] {
+  max-width: calc(var(--u) * 200);
+  overflow: hidden;
+  font-size: max(calc(var(--u) * 30), 13px);
+  text-overflow: ellipsis;
+}
+.kds-stub .kds-course {
+  font-size: max(calc(var(--u) * 20), 11px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+.kds-stub.is-done {
+  --paper: var(--kds-paper-dim);
+  border-top: calc(var(--u) * 8) solid var(--pos-st-ready);
+}
+/* El sello: solo para lo que terminó. */
+.kds-stamp {
+  padding: calc(var(--u) * 3) calc(var(--u) * 9) calc(var(--u) * 1);
+  border: calc(var(--u) * 3) solid currentColor;
+  border-radius: calc(var(--u) * 6);
+  color: var(--kds-ready-ink);
+  font-size: max(calc(var(--u) * 26), 12px);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+}
+.kds-stub-time {
+  font-size: max(calc(var(--u) * 22), 11px);
+  font-weight: 700;
+  font-stretch: 88%;
+}
+.kds-stub.is-waiting.is-preparing {
+  border-top: calc(var(--u) * 8) solid var(--pos-st-kitchen);
+}
+.kds-stub-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: color-mix(in oklch, var(--pos-st-kitchen) 52%, black);
+  font-size: max(calc(var(--u) * 20), 11px);
+  font-weight: 800;
+  font-stretch: 84%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kds-stub .kds-clock {
+  margin: 0;
+  padding: calc(var(--u) * 4) calc(var(--u) * 9);
+}
+.kds-stub .kds-clock b {
+  font-size: calc(var(--u) * 38);
+}
+.kds-stub .kds-clock-time span {
+  font-size: max(calc(var(--u) * 20), 11px);
+}
+.kds-stub .kds-clock em {
+  display: none;
+}
+/* En el talón no entra la palabra: «miralo» va en contorno y «demorada» en lleno, para que no dependa
+   solo del color. */
+.kds-stub .kds-clock[data-level="warn"] {
+  background: none;
+  box-shadow: inset 0 0 0 max(calc(var(--u) * 4), 2px) var(--kds-warn);
+}
+.kds-stub[data-selected]::before,
+.kds-chip[data-selected]::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--u) * -11);
+  z-index: 3;
+  border: calc(var(--u) * 6) solid var(--kds-frame);
+  border-radius: calc(var(--u) * 12);
+  pointer-events: none;
+}
+/* El pie del marco, cuando lo enmarcado es un talón: una etiqueta al lado. */
+.kds-shelf .kds-hint {
+  position: relative;
+  inset: auto;
+  flex: none;
+  border-radius: calc(var(--u) * 10);
+  background: var(--kds-frame);
+}
+.kds-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(var(--u) * 6) calc(var(--u) * 48);
+  width: 100%;
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 26), 12px);
+  font-weight: 600;
+  font-stretch: 90%;
+  line-height: 1.2;
+}
+.kds-legend b {
+  color: var(--kds-ink);
+  font-weight: 800;
+  font-stretch: 84%;
+}
+
+/* ── El evento: lo que falta de cada plato, escrito en el tablero ── */
+.kds-event {
+  flex: none;
+  width: calc(var(--u) * 570);
+  min-height: 0;
+  padding: calc(var(--u) * 26) calc(var(--u) * 26) calc(var(--u) * 20);
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--kds-band);
+  box-shadow: 1px 0 0 var(--kds-edge);
+}
+.kds-event::-webkit-scrollbar {
+  display: none;
+}
+.kds-event-block + .kds-event-block {
+  margin-top: calc(var(--u) * 30);
+  padding-top: calc(var(--u) * 24);
+  border-top: calc(var(--u) * 3) solid var(--kds-edge);
+}
+.kds-event-title {
+  font-size: calc(var(--u) * 60);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 0.96;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.kds-event-sub {
+  margin-top: calc(var(--u) * 8);
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 28), 13px);
+  font-weight: 700;
+  font-stretch: 88%;
+}
+.kds-dishes {
+  width: 100%;
+  margin-top: calc(var(--u) * 18);
+  border-collapse: collapse;
+}
+.kds-dishes thead th {
+  padding-bottom: calc(var(--u) * 8);
+  border-bottom: calc(var(--u) * 3) solid var(--kds-ink);
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 22), 11px);
+  font-weight: 800;
+  font-stretch: 84%;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.kds-dishes thead th:last-child {
+  text-align: right;
+}
+.kds-dishes tbody tr {
+  border-bottom: 1px solid var(--kds-edge);
+}
+.kds-dishes tbody :is(td, th) {
+  vertical-align: top;
+}
+.kds-dish-left {
+  width: calc(var(--u) * 104);
+  padding: calc(var(--u) * 12) 0 calc(var(--u) * 8);
+  font-size: calc(var(--u) * 62);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.95;
+}
+.kds-dish-name {
+  padding: calc(var(--u) * 20) calc(var(--u) * 14) calc(var(--u) * 10) 0;
+  font-size: calc(var(--u) * 42);
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.06;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.kds-dish-done {
+  padding: calc(var(--u) * 28) 0 calc(var(--u) * 10);
+  color: var(--kds-soft);
+  font-size: max(calc(var(--u) * 28), 13px);
+  font-weight: 700;
+  font-stretch: 88%;
+  text-align: right;
+  white-space: nowrap;
+}
+.kds-dishes tr[data-done] .kds-dish-left {
+  color: var(--pos-st-ready);
+  font-size: calc(var(--u) * 52);
+}
+.kds-dishes tr[data-done] .kds-dish-name {
+  color: var(--kds-soft);
+}
+/* Las mesas del evento: fichas de papel, como los talones. */
+.kds-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(calc(var(--u) * 118), 64px), 1fr));
+  gap: calc(var(--u) * 16);
+  margin-top: calc(var(--u) * 24);
+  padding: calc(var(--u) * 12) calc(var(--u) * 12);
+}
+.kds-chip {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: calc(var(--u) * 4);
+  min-height: max(calc(var(--u) * 84), 52px);
+  padding: calc(var(--u) * 6);
+  border-top: calc(var(--u) * 8) solid var(--pos-paper);
+  border-radius: calc(var(--u) * 4);
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+.kds-chip-num {
+  font-size: calc(var(--u) * 44);
+}
+.kds-chip-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--pos-ink-soft);
+  font-size: max(calc(var(--u) * 18), 10px);
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.kds-chip-state svg {
+  color: var(--pos-st-late);
+}
+.kds-chip.is-preparing {
+  border-top-color: var(--pos-st-kitchen);
+}
+.kds-chip.is-preparing .kds-chip-state {
+  color: color-mix(in oklch, var(--pos-st-kitchen) 52%, black);
+}
+.kds-chip.is-ready {
+  border-top-color: var(--pos-st-ready);
+  background: var(--kds-paper-dim);
+}
+.kds-chip.is-ready .kds-chip-state {
+  color: var(--kds-ready-ink);
+}
+.kds-chip[data-level="late"]:not(.is-ready) .kds-chip-num {
+  color: var(--pos-st-late);
+}
+/* ── Los dos botones en pantalla (tablet y celular) ── */
+.kds-actions {
+  display: none;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--kds-band);
+  box-shadow: 0 -1px 0 var(--kds-edge);
+}
+.kds[data-touch] .kds-actions {
+  display: grid;
+}
+@media (any-pointer: coarse) {
+  .kds-actions {
+    display: grid;
+  }
+}
+.kds-action {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 3px;
+  min-height: 68px;
+  padding: 6px 14px;
+  overflow: hidden;
+  border-radius: 16px;
+  line-height: 1;
+}
+.kds-action:not(:disabled):active {
+  transform: scale(0.97);
+}
+.kds-action:disabled {
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kds-action {
+    transition: transform 140ms var(--pos-ease);
+  }
+}
+.kds-action.is-next {
+  background: oklch(1 0 0 / 0.1);
+  color: var(--kds-ink);
+}
+.kds-action.is-go {
+  background: var(--kds-frame);
+  color: var(--kds-frame-ink);
+}
+.kds-action-main {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: 1.45rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.kds-action-sub {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── No se pudo: en grande, encima de todo ── */
+.kds-failure {
+  position: absolute;
+  bottom: max(calc(var(--u) * 140), 96px);
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 26);
+  width: max-content;
+  max-width: min(calc(100% - 24px), calc(var(--u) * 1500));
+  padding: calc(var(--u) * 26) calc(var(--u) * 38);
+  border-radius: max(calc(var(--u) * 20), 14px);
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+  box-shadow: 0 calc(var(--u) * 26) calc(var(--u) * 64) oklch(0 0 0 / 0.6);
+  transform: translateX(-50%);
+}
+.kds-failure > svg {
+  font-size: max(calc(var(--u) * 84), 34px);
+}
+.kds-failure strong {
+  display: block;
+  font-size: max(calc(var(--u) * 64), 24px);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  text-wrap: balance;
+}
+.kds-failure span {
+  display: block;
+  margin-top: calc(var(--u) * 8);
+  font-size: max(calc(var(--u) * 40), 16px);
+  font-weight: 600;
+  font-stretch: 90%;
+  line-height: 1.15;
+}
+
+/* ── Celular, o una pantalla muy baja: una sola columna que se recorre con el dedo ── */
+@media (max-width: 719.98px), (max-height: 479.98px) {
+  .kds {
+    display: block;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+  @supports (height: 100dvh) {
+    .kds {
+      min-height: 100dvh;
+    }
+  }
+  .kds-top {
+    position: sticky;
+    top: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+    min-height: 0;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 10px;
+  }
+  .kds-top[data-down] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kds-top[data-down] .kds-tools {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .kds-down {
+    gap: 12px;
+    padding: 4px 0;
+    white-space: normal;
+    text-wrap: balance;
+  }
+  .kds-down > svg,
+  .kds-down > p,
+  .kds-down:has(small) > svg,
+  .kds-down:has(small) > p {
+    font-size: 1.85rem;
+  }
+  .kds-now {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+  .kds-now-time {
+    font-size: 2.1rem;
+  }
+  .kds-now-place {
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .kds-now-place > span:first-child {
+    max-width: none;
+    min-width: 0;
+  }
+  .kds-tools {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .kds-tool > span {
+    display: none;
+  }
+  .kds-stations .kds-tool > span {
+    display: inline;
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* «Todas las estaciones» no entra al lado de la hora: queda «Todas». */
+  .kds-stations .kds-tool[data-short] > .kds-tool-long {
+    display: none;
+  }
+  .kds-live {
+    display: none;
+  }
+  .kds-live[data-state="offline"] {
+    display: inline-flex;
+  }
+  .kds-sound-note {
+    position: fixed;
+    right: 12px;
+    bottom: calc(104px + env(safe-area-inset-bottom));
+    left: 12px;
+    justify-content: center;
+    padding: 10px 14px;
+    border-radius: 14px;
+  }
+  .kds-totals {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    column-gap: 22px;
+    height: auto;
+    margin: 0 -12px;
+    padding: 0 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .kds-totals::-webkit-scrollbar {
+    display: none;
+  }
+  .kds-totals.is-empty {
+    font-size: 1rem;
+  }
+  .kds-total {
+    flex: none;
+    gap: 7px;
+    height: 2.2rem;
+  }
+  .kds-total b {
+    font-size: 1.75rem;
+    line-height: 2.2rem;
+  }
+  .kds-total span {
+    font-size: 1.15rem;
+  }
+  .kds-total.is-more {
+    display: none;
+  }
+
+  .kds-floor {
+    display: block;
+  }
+  .kds-rail {
+    padding: 0 14px;
+  }
+  .kds-rail-bar {
+    display: none;
+  }
+  .kds-rail-track {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: calc(var(--u) * 86);
+    height: auto;
+    padding: 22px 0 calc(var(--u) * 100);
+  }
+  .kds-slot {
+    height: auto;
+  }
+  .kds-paper {
+    padding-top: 0;
+  }
+  .kds-ticket,
+  .kds-stub,
+  .kds-chip {
+    scroll-margin: 170px 0 150px;
+  }
+  .kds-empty {
+    position: static;
+    min-height: 56vh;
+  }
+  .kds-empty-time {
+    font-size: 6rem;
+  }
+
+  .kds-event {
+    width: auto;
+    padding: 18px 14px 14px;
+    overflow: visible;
+    box-shadow: 0 1px 0 var(--kds-edge);
+  }
+
+  .kds-shelf {
+    display: block;
+    height: auto;
+    padding: 4px 14px 18px;
+    background: none;
+    box-shadow: none;
+  }
+  .kds-shelf[data-empty] {
+    display: none;
+  }
+  .kds-shelf-group,
+  .kds-shelf-group.is-done {
+    display: block;
+    max-width: none;
+  }
+  .kds-shelf-label {
+    font-size: 0.85rem;
+  }
+  /* Acá los talones bajan de renglón: no hay nada que esconder ni que contar. */
+  .kds-shelf-list {
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 12px 6px;
+    overflow: visible;
+  }
+  .kds-shelf-list > [data-clipped] {
+    visibility: visible;
+  }
+  .kds-shelf-more {
+    display: none;
+  }
+  .kds-shelf .kds-hint {
+    margin-top: 4px;
+  }
+  .kds-stub {
+    padding: 0 12px;
+  }
+  .kds-stub-num,
+  .kds-chip-num {
+    font-size: 1.9rem;
+  }
+
+  .kds-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 25;
+  }
+  .kds-failure {
+    position: fixed;
+    bottom: calc(108px + env(safe-area-inset-bottom));
+    padding: 16px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Queda el trazo quieto mientras dura el aviso, y el progreso avanza a saltos. */
+  .kds-ticket[data-arriving]::after,
+  .kds-stub[data-arriving],
+  .kds-chip[data-arriving] {
+    animation: none;
+  }
+  .kds-hint[data-holding]::before,
+  .kds-action[data-holding]::before {
+    animation-timing-function: steps(4, end);
+  }
+}
+/* ── fin de la pantalla de cocina ── */
+
+/* Volver al salón: solo se anuncia con el dedo (celular, tablet). En la tele es el nombre de la sucursal y nada más. */
+.kds-back {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 0.4em;
+}
+.kds-back:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}
+.kds-back-arrow {
+  display: none;
+  margin-right: 0.25em;
+  font-weight: 800;
+}
+@media (pointer: coarse) {
+  .kds-back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-right: 0.5em;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .kds-back-arrow {
+    display: inline;
+  }
+}

@@ -30,6 +30,7 @@ import { usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
+import { PosOutboxRunner } from '../order/outbox-runner'
 import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
@@ -528,6 +529,9 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
           </fieldset>
         </div>
       )}
+
+      {/* Las tandas que quedaron sin enviar (sin señal) se siguen mandando desde el mapa. */}
+      <PosOutboxRunner slug={slug} />
 
       <OpenTableSheet
         slug={slug}

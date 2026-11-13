@@ -12,7 +12,8 @@ import {
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import {
-  POS_VIEW_ROLES,
+  POS_FLOOR_ROLES,
+  POS_KITCHEN_ROLES,
   PURCHASING_KITCHEN_ROLES,
   REDEMPTION_STAFF_ROLES,
   SALON_READ_ROLES,
@@ -39,6 +40,11 @@ export type SalonTab = {
   key: string
   /** Label de la tab bar. Corto: entra en ~5rem. */
   label: string
+  /**
+   * Label para cuando la barra tiene más de cinco pestañas (cada una baja a ~4rem en un
+   * celular y «Sumar puntos» se cortaba en «Sumar p…»). Si falta, se usa `label`.
+   */
+  short?: string
   /** Título que muestra el topbar. Puede ser más descriptivo que el label. */
   title: string
   icon: LucideIcon
@@ -57,12 +63,24 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     icon: LayoutGrid,
     href: (s) => `/${s}/salon/mapa`,
     match: (p, s) => p.startsWith(`/${s}/salon/mapa`) || p.startsWith(`/${s}/salon/mesa/`),
-    roles: POS_VIEW_ROLES,
+    roles: POS_FLOOR_ROLES,
+    feature: 'pos',
+  },
+  {
+    // La pantalla de cocina del punto de venta: la misma que va en la tele, desde cualquier celular.
+    key: 'tele',
+    label: 'Cocina',
+    title: 'Cocina',
+    icon: ChefHat,
+    href: (s) => `/${s}/salon/tele`,
+    match: (p, s) => p.startsWith(`/${s}/salon/tele`),
+    roles: POS_KITCHEN_ROLES,
     feature: 'pos',
   },
   {
     key: 'escanear',
     label: 'Sumar puntos',
+    short: 'Puntos',
     title: 'Sumar puntos',
     icon: ScanLine,
     href: (s) => `/${s}/salon/escanear`,
@@ -74,6 +92,7 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
   {
     key: 'qr-club',
     label: 'QR del club',
+    short: 'QR club',
     title: 'QR del club',
     icon: QrCode,
     href: (s) => `/${s}/salon/qr-club`,
