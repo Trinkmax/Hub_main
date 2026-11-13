@@ -1907,6 +1907,12 @@ export const skipRecurringDueSchema = obj({
   dueDate: isoDay,
 })
 
+/** El proveedor de la factura con que se pagó un gasto fijo sin proveedor queda en el gasto fijo. */
+export const rememberRecurringSupplierSchema = obj({
+  recurringId: uuidField('Falta el gasto fijo.'),
+  documentId: uuidField('Falta el comprobante.'),
+})
+
 // ─── Períodos y ejercicio (C.5) ──────────────────────────────────────────────
 
 /** Las cifras de la posición de IVA que vio la persona (si cambian: `preview_stale`). */

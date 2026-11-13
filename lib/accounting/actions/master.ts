@@ -41,6 +41,7 @@ import {
   partySchema,
   recurringBulkSchema,
   recurringSchema,
+  rememberRecurringSupplierSchema,
   salesMethodSchema,
   salesPointSchema,
   settingsSchema,
@@ -947,6 +948,77 @@ export async function skipRecurringDue(
       ok: true,
       data: row,
       message: `Listo: el próximo vencimiento es el ${formatIsoDay(row.nextDueDate)}.`,
+    }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/**
+ * Después de pagar con factura un gasto fijo que no tenía proveedor (la tira de la planilla): el
+ * proveedor de esa factura queda en el gasto fijo, así el mes que viene ya viene elegido. Solo mira
+ * un comprobante de ese mismo gasto fijo y no pisa un proveedor que ya tenga. `data: null`: no había
+ * nada para guardar.
+ */
+export async function rememberRecurringSupplier(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<{ partyName: string } | null>> {
+  const op = 'master.rememberRecurringSupplier'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = rememberRecurringSupplierSchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+    const { recurringId, documentId } = parsed.data
+
+    const supabase = await createClient()
+    const [doc, recurring] = await Promise.all([
+      supabase
+        .from('acc_documents')
+        .select('party_id, recurring_expense_id')
+        .eq('tenant_id', auth.tenantId)
+        .eq('id', documentId)
+        .maybeSingle(),
+      supabase
+        .from('acc_recurring_expenses')
+        .select('party_id, updated_at, archived_at')
+        .eq('tenant_id', auth.tenantId)
+        .eq('id', recurringId)
+        .maybeSingle(),
+    ])
+    if (doc.error) return rpcFailure(op, doc.error)
+    if (recurring.error) return rpcFailure(op, recurring.error)
+    const docRow = asRecord(doc.data)
+    const recurringRowRead = asRecord(recurring.data)
+    const partyId =
+      docRow && textOf(docRow.recurring_expense_id) === recurringId ? textOf(docRow.party_id) : null
+    const updatedAt = recurringRowRead ? textOf(recurringRowRead.updated_at) : null
+    const nothing = { ok: true as const, data: null, message: '' }
+    if (!partyId || !recurringRowRead || !updatedAt) return nothing
+    if (recurringRowRead.party_id !== null || recurringRowRead.archived_at !== null) return nothing
+
+    const { error } = await supabase.rpc('acc_save_recurring_expense', {
+      p_tenant_id: auth.tenantId,
+      p_expense: { id: recurringId, party_id: partyId },
+      p_expected_updated_at: updatedAt,
+    })
+    if (error) return rpcFailure(op, error)
+    const party = await supabase
+      .from('acc_parties')
+      .select('name, trade_name')
+      .eq('tenant_id', auth.tenantId)
+      .eq('id', partyId)
+      .maybeSingle()
+    const partyRead = asRecord(party.data)
+    const partyName =
+      (partyRead && (textOf(partyRead.trade_name) ?? textOf(partyRead.name))) ?? 'El proveedor'
+
+    revalidateAccounting(slug)
+    return {
+      ok: true,
+      data: { partyName },
+      message: `${partyName} queda como proveedor del gasto fijo: el mes que viene ya viene elegido.`,
     }
   } catch (error) {
     return unexpectedFailure(op, error)

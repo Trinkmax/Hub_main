@@ -6,7 +6,10 @@ import {
   paymentOutcome,
   payTicketRows,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-summary'
-import { QUICK_VOUCHER_LABELS } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
+import {
+  isInvoiceVoucher,
+  QUICK_VOUCHER_LABELS,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import {
   autoTaxPlan,
   papelLabel,
@@ -534,6 +537,12 @@ export const gastosActionTools = [
           hasNumber,
         })
         if (block) {
+          // Tex no elige proveedores: la planilla sí (y lo deja guardado en el gasto fijo).
+          if (built.target?.kind === 'account' && isInvoiceVoucher(built.voucher)) {
+            return fail(
+              `«${row.name}» no tiene proveedor y una factura lo pide. Con factura se carga desde la planilla de gastos fijos: al tildarlo y elegir el papel aparece «Proveedor» (de la lista o uno nuevo con su CUIT) y queda guardado para el mes que viene. Si no tiene factura, mandá papel sin_factura.`,
+            )
+          }
           return fail(
             `${block} Pedile lo que falta, o mandá papel sin_factura si no tiene ese papel.`,
           )

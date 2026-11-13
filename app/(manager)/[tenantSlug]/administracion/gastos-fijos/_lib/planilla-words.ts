@@ -26,6 +26,7 @@ import {
   quickVoucherFromType,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import { dueInMonth } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/recurring'
+import type { SheetParty } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
 import type { FixedProgress } from '@/lib/accounting/home'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import type { PayrollTotals } from '@/lib/accounting/payroll'
@@ -35,7 +36,8 @@ import type {
   RecurringInstallment,
   RecurringLine,
 } from '@/lib/accounting/recurring-status'
-import { voucherLabel } from '@/lib/accounting/voucher-types'
+import type { IvaCondition } from '@/lib/accounting/types'
+import { isVoucherType, VOUCHER_CATALOG, voucherLabel } from '@/lib/accounting/voucher-types'
 import {
   capitalizeFirst,
   daysBetween,
@@ -44,6 +46,7 @@ import {
   monthName,
   monthOf,
 } from '@/lib/dates'
+import { formatCuit, normalizeCuit, parseCuit } from '@/lib/fiscal'
 import { formatCentsShort } from '@/lib/money'
 
 // ─── La hoja ─────────────────────────────────────────────────────────────────
@@ -595,32 +598,146 @@ export function morePayOptionsHref(slug: string, recurringId: string, month: str
   })
 }
 
+/** Lo que la tira mira de un proveedor (los de la hoja, `SheetParty`). */
+export type StripParty = Pick<SheetParty, 'id' | 'name' | 'tradeName' | 'taxId' | 'active' | 'kind'>
+
 /**
- * Lo que la tira no puede resolver sola, en palabras. `null` = se puede cargar. Una factura pide
- * proveedor y número: el número lo trae el QR de ARCA, y si no se puede leer, eso se completa en «Más
- * opciones».
+ * De quién es la factura de un gasto fijo que no tiene proveedor: uno que ya existe o uno nuevo. Con
+ * un proveedor en el gasto fijo, la tira no pregunta.
+ */
+export type StripSupplier =
+  | { kind: 'party'; partyId: string }
+  | { kind: 'new'; name: string; taxId: string; ivaCondition: IvaCondition }
+
+/** El gasto fijo, como lo precarga la tira (`recurringPrefill`). */
+type FixedTarget = Extract<ExpenseTarget, { kind: 'party' | 'account' }>
+
+/** Se le puede cargar un gasto (lo mismo que `payableParties` de «Nuevo gasto»). */
+function isPayableParty(p: StripParty): boolean {
+  return p.active && (p.kind === 'supplier' || p.kind === 'other')
+}
+
+/** El activo que ya tiene ese CUIT (son únicos entre los activos de un bar). */
+function cuitOwner(parties: readonly StripParty[], cuit: string): StripParty | null {
+  return (
+    parties.find((p) => p.active && p.taxId !== null && normalizeCuit(p.taxId) === cuit) ?? null
+  )
+}
+
+/** Con factura y un gasto fijo sin proveedor, la tira pregunta de quién es. */
+export function stripAsksSupplier(fixed: FixedTarget | null, voucher: QuickVoucher): boolean {
+  return fixed?.kind === 'account' && isInvoiceVoucher(voucher)
+}
+
+/**
+ * Con qué se carga el pago: el gasto fijo tal cual o, si la tira preguntó el proveedor, ese proveedor
+ * con la categoría del gasto fijo (la de la planilla). Una factura A la hace un responsable inscripto.
+ */
+export function stripTarget(input: {
+  fixed: FixedTarget | null
+  voucher: QuickVoucher
+  supplier: StripSupplier | null
+}): ExpenseTarget | null {
+  const { fixed, supplier } = input
+  if (fixed === null || supplier === null || !stripAsksSupplier(fixed, input.voucher)) return fixed
+  if (supplier.kind === 'party') {
+    return { kind: 'party', partyId: supplier.partyId, accountId: fixed.accountId }
+  }
+  return {
+    kind: 'new',
+    name: supplier.name,
+    taxId: supplier.taxId,
+    ivaCondition: input.voucher === 'a' ? 'responsable_inscripto' : supplier.ivaCondition,
+    accountId: fixed.accountId,
+  }
+}
+
+/**
+ * Lo que la tira no puede resolver todavía, en palabras. `null` = se puede cargar. Una factura pide
+ * proveedor y número: la tira los pregunta, y el QR de ARCA los completa.
  */
 export function payStripBlock(input: {
   amountCents: number | null
-  target: Extract<ExpenseTarget, { kind: 'party' | 'account' }> | null
+  target: ExpenseTarget | null
   voucher: QuickVoucher
-  /** Ya se sabe el punto de venta y el número (los leyó el QR). */
+  /** Ya se sabe el punto de venta y el número (los leyó el QR o se escribieron). */
   hasNumber: boolean
+  /** Para avisar si el CUIT de un proveedor nuevo ya es de otro. */
+  parties?: readonly StripParty[]
 }): string | null {
   if (input.amountCents === null || input.amountCents <= 0) {
     return 'Falta el monto: escribilo en la columna Monto.'
   }
-  if (input.target === null) return 'Este gasto fijo no tiene proveedor ni categoría que sirvan.'
-  if (input.target.accountId === null) return 'Este gasto fijo no tiene una categoría que sirva.'
-  if (isInvoiceVoucher(input.voucher)) {
-    if (input.target.kind !== 'party') {
-      return input.hasNumber
-        ? 'Una factura pide proveedor.'
-        : 'Una factura pide proveedor y número.'
-    }
-    if (!input.hasNumber) return 'Una factura pide el número.'
+  const { target } = input
+  if (target === null) return 'Este gasto fijo no tiene proveedor ni categoría que sirvan.'
+  if (target.accountId === null) return 'Este gasto fijo no tiene una categoría que sirva.'
+  if (!isInvoiceVoucher(input.voucher)) return null
+  if (target.kind === 'account') {
+    return input.hasNumber
+      ? 'Para la factura falta el proveedor.'
+      : 'Para la factura falta el proveedor y el número.'
   }
+  if (target.kind === 'new') {
+    if (target.name.trim().length < 2) return 'Escribí el nombre del proveedor nuevo.'
+    const cuit = parseCuit(target.taxId)
+    if (!cuit.ok) {
+      return cuit.reason === 'vacio'
+        ? 'Para la factura falta el CUIT del proveedor nuevo.'
+        : 'El CUIT del proveedor nuevo no es válido: revisalo.'
+    }
+    const owner = cuitOwner(input.parties ?? [], cuit.cuit)
+    if (owner) {
+      const name = owner.tradeName ?? owner.name
+      return isPayableParty(owner)
+        ? `Ese CUIT ya es de «${name}»: elegilo en Proveedor.`
+        : `Ese CUIT es de «${name}», que no es un proveedor: revisalo.`
+    }
+  }
+  if (!input.hasNumber) return 'Para la factura falta el número.'
   return null
+}
+
+/**
+ * El proveedor que trae el QR de ARCA (el CUIT de quien facturó): el activo que ya tiene ese CUIT o
+ * uno nuevo con ese CUIT, con `name` y la condición que dice la letra (la C la hace un monotributista).
+ * `null`: el CUIT no sirve, o es de alguien a quien no se le carga un gasto (un medio de cobro).
+ */
+export function stripSupplierFromQr(
+  qr: { cuit: string; voucherType: string | null },
+  parties: readonly StripParty[],
+  name: string,
+): StripSupplier | null {
+  const cuit = parseCuit(qr.cuit)
+  if (!cuit.ok) return null
+  const owner = cuitOwner(parties, cuit.cuit)
+  if (owner) return isPayableParty(owner) ? { kind: 'party', partyId: owner.id } : null
+  const letter = isVoucherType(qr.voucherType) ? VOUCHER_CATALOG[qr.voucherType].letter : null
+  return {
+    kind: 'new',
+    name: name.trim(),
+    taxId: formatCuit(cuit.cuit),
+    ivaCondition: letter === 'C' ? 'monotributo' : 'responsable_inscripto',
+  }
+}
+
+/**
+ * Lo que queda elegido después de leer el QR. Lo que se eligió a mano de la lista no se toca; un
+ * proveedor nuevo pasa a ser el que ya tiene ese CUIT, o toma el CUIT y la letra si todavía no tenía.
+ */
+export function supplierAfterQr(
+  current: StripSupplier | null,
+  qr: { cuit: string; voucherType: string | null },
+  parties: readonly StripParty[],
+  fallbackName: string,
+): StripSupplier | null {
+  const name = current?.kind === 'new' && current.name.trim() !== '' ? current.name : fallbackName
+  const read = stripSupplierFromQr(qr, parties, name)
+  if (read === null || current === null) return current ?? read
+  if (current.kind === 'party') return current
+  if (read.kind === 'party') return read
+  return current.taxId.trim() === ''
+    ? { ...current, taxId: read.taxId, ivaCondition: read.ivaCondition }
+    : current
 }
 
 /** Lo que el QR de ARCA le completa a la tira. Un comprobante que no se carga no cambia el papel. */

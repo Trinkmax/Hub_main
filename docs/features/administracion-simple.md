@@ -125,6 +125,7 @@ teclas de verdad por CDP y verificando en la base. Compu, celular y oscuro.
   `bank_expense` en un solo paquete, y el impuesto (0,6 %) partido en computable y gasto.
 - Tique sin número: guarda y no pide punto de venta. Repetido: avisa «Ya hay un comprobante de $ X… ¿Es otro?».
 - Tildar un gasto fijo: tira con Salió de, Papel, QR e impuesto al cheque; cae el sello PAGADO y el totalizador cuenta.
+  Con factura pide el número y, si el gasto fijo no tiene proveedor, el proveedor (que queda guardado; 12/11/2026).
 - Gasto fijo con cuenta de Ingresos Brutos: tildar abre el Pago a Rentas con lo devengado y la fila queda Pagado.
 
 **Sueldos**

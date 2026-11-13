@@ -112,3 +112,53 @@ Ajustes › Plataformas y organismos y en el asistente:
    cero) → «2 deudas por $ …», avisa el que se crea y el que está en cero; al cargar quedan dos
    renglones con su proveedor y su monto.
 3. En un monto de los saldos, Enter → no guarda.
+
+## Addendum 12/11/2026 — Pagar un gasto fijo con factura desde la planilla
+
+Reclamo de HUB: «No me deja cargar este gasto como pago cuando pongo factura A». «Thinkion» tiene
+Factura A como papel habitual pero no tiene proveedor (ninguno de los 49 gastos fijos de HUB lo tenía).
+La tira de la planilla decía «Una factura pide proveedor y número» y no tenía dónde ponerlos: solo
+quedaba «Más opciones».
+
+**Qué cambió** (`gastos-fijos/_components/pay-strip.tsx`, lo puro en `_lib/planilla-words.ts`):
+
+- Con «Factura A» o «Factura B o C», la tira pide **N.º de la factura** (punto de venta – número).
+- Si el gasto fijo no tiene proveedor, también pide **Proveedor**:
+  - Puede ser uno de la lista (primero los que se parecen al nombre del gasto fijo) o uno nuevo con
+    «Crear proveedor «…»».
+  - El nuevo pide **CUIT**: con factura es obligatorio, y si ya es de otro proveedor activo, avisa.
+  - Con «Factura B o C», el nuevo pide también la **letra**: C es monotributo y B es responsable
+    inscripto. La Factura A siempre es de un responsable inscripto.
+- La categoría es siempre la del gasto fijo, no la habitual del proveedor.
+- La **foto del QR** de ARCA completa el papel, el número, el monto y el proveedor por su CUIT: el que ya
+  existe o uno nuevo con ese CUIT y el nombre del gasto fijo. Lo elegido de la lista no se toca.
+- Enter en el número o el CUIT paga, igual que el botón.
+- **El proveedor queda guardado en el gasto fijo** después de pagar (`rememberRecurringSupplier` en
+  `lib/accounting/actions/master.ts`):
+  - Lee el proveedor de la compra recién cargada y lo guarda con `acc_save_recurring_expense` (con
+    `{ id, party_id }` y queda auditado).
+  - Solo lo hace si el comprobante es de ese gasto fijo y el gasto fijo no tenía proveedor.
+  - La tira lo avisa antes de pagar: «X queda como proveedor de «…»: el mes que viene ya viene elegido».
+  - El mes siguiente, la tira arranca en Factura A con ese proveedor y solo pide el número.
+- Tex (`pagar_gasto_fijo`): con un gasto fijo sin proveedor no carga una factura y explica que se
+  carga desde la planilla.
+- No hubo cambios en la base de datos.
+
+### Smoke manual (bar demo, 12/11/2026)
+
+Los gastos fijos de prueba fueron «Thinkion QA», «Hosting QA» y «Mantenimiento QA».
+
+1. «Thinkion QA», sin proveedor, con Factura A y $ 242.000:
+   - Al tildarlo y elegir Factura A aparecen Proveedor y N.º, y «Cargar pago» queda esperando.
+   - Se eligió «Crear proveedor «Thinkion QA»»: pidió el CUIT y el foco quedó ahí.
+   - Un CUIT con el último número mal avisó «no es válido».
+   - Con 30-71876543-5 y el número 3–1290, «Cargar pago» se habilitó.
+   - Resultado: compra Factura A 0003-00001290, con el pago y el proveedor nuevo como responsable
+     inscripto. El gasto fijo quedó con ese proveedor y con el vencimiento del 10/12.
+2. «Hosting QA», sin proveedor: la foto de un QR de ARCA completó Factura A, 0004-00001234 y
+   «Sistemas Gastronómicos del Sur SA», que ya existía y se encontró por su CUIT.
+   - No pidió CUIT y la foto quedó adjunta.
+   - Resultado: la compra quedó pagada y el gasto fijo quedó con ese proveedor.
+3. Con «Factura B o C» y un proveedor nuevo, la tira pide la letra y arranca en C.
+4. «Mantenimiento QA», con proveedor: arranca en Factura A, no pide proveedor y Enter en el número paga.
+5. En el celular (390 px, con el dedo), los campos van uno debajo del otro y nada se sale de la pantalla.

@@ -1529,6 +1529,15 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   panel lateral del Mayor. Se puede simplificar si no la usan.
 - **`/favicon.ico` cae en `[tenantSlug]`** y loguea `TenantNotFoundError` en cada carga: falta el ícono en `app/` o excluirlo del matcher.
 
+## Gastos fijos: pagar con factura desde la planilla (12/11/2026)
+
+- **Tex no elige ni crea el proveedor** de la factura de un gasto fijo que no tiene: dice que se cargue desde la planilla.
+- **La tira usa la fecha de hoy** aunque el QR traiga la de la factura: la compra va al Libro IVA del mes en que se paga.
+  «Más opciones» deja cambiar la fecha. A confirmar con Silvia si hace falta usar la de la factura.
+- **Los otros 48 gastos fijos de HUB siguen sin proveedor**: cada uno lo toma la primera vez que se paga con factura (o
+  desde su ficha).
+- **Leer el QR guarda el total como monto del gasto fijo** aunque sea el mismo: queda un `acc_recurring.saved` sin campos.
+
 ## Tex (05/11/2026)
 
 - Mirar el consumo: cada charla guarda sus tokens en `acc_tex_threads`; todavía no hay pantalla que lo muestre.
