@@ -55,11 +55,17 @@ export function UnplacedTray({ tables, areaName, onPlace, onDelete }: UnplacedTr
       <ul className="fpe-tray">
         {tables.map((table) => (
           <li key={table.id} className="fpe-tray-item">
-            <span className="fpe-numchip">{table.label}</span>
-            <span className="fpe-tray-meta">
-              {table.capacity != null
-                ? `${table.capacity} ${table.capacity === 1 ? 'lugar' : 'lugares'}`
-                : 'Sin lugares cargados'}
+            {/* El número y los lugares van juntos: si el nombre es largo, los lugares bajan a un
+                segundo renglón en vez de pisar los botones. */}
+            <span className="fpe-tray-main">
+              <span className="fpe-numchip" title={`Mesa ${table.label}`}>
+                {table.label}
+              </span>
+              <span className="fpe-tray-meta">
+                {table.capacity != null
+                  ? `${table.capacity} ${table.capacity === 1 ? 'lugar' : 'lugares'}`
+                  : 'Sin lugares'}
+              </span>
             </span>
             <button
               type="button"
