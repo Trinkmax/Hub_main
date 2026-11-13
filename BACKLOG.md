@@ -1647,8 +1647,8 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
     en listas largas (se vio en Carta › Precios). En el editor del plano ya se corre.
   - La carta de HUB tiene dos categorías raíz que se llaman «Bebidas» (2 y 67 productos): en «Aumentar
     precios» aparecen dos pastillas con el mismo nombre.
-  - Un aumento de precios en bloque no es una sola transacción (son varias escrituras agrupadas); falta una
-    función en la base que lo aplique entero y lo marque como una tanda (`pos.price_batch`).
+  - ~~Un aumento de precios en bloque no es una sola transacción~~ Hecho el 13/11: `menu_apply_price_changes`
+    lo aplica entero o no lo aplica, y lo marca como una tanda (`pos.price_batch`).
   - `types/database.ts` no conoce `branches`, `menu_item_branches`, `menu_price_changes`, `kitchen_stations`, los
     `menu_modifier_*` ni las `pos_*`: `lib/pos`, `lib/floor-plan` y `lib/menu/prices` usan clientes sin tipar.
   - «Cambiar de mesa» del servicio de mesa de siempre (`components/floor-plan/move-table-sheet.tsx`,

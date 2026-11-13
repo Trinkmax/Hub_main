@@ -1,18 +1,21 @@
 /**
- * Qué se escribe y qué no cuando llega un pedido de cambio de precios, puro. El servidor lee
- * lo que hay AHORA en la base y con eso decide, precio por precio:
+ * El viaje de un cambio de precios a la base, puro.
  *
- * - si el producto ya no está → no se cambia (`missing`);
- * - si ya vale lo que se pidió → no hay nada que escribir;
+ * Los precios se cambian con UNA sola operación (`menu_apply_price_changes`, en la base): entra entera
+ * o no entra. La base es la que decide, precio por precio, con lo que hay en ese instante:
+ *
+ * - si el producto ya no está (o es de otro bar) → no se cambia (`missing`);
+ * - si ya vale lo que se pidió → no hay nada que escribir (ni se aplica ni falla);
  * - si vale otra cosa que la que la persona estaba viendo → no se pisa (`changed`): dos socios
  *   cambiando precios a la vez no se borran el trabajo sin enterarse;
  * - si no, se escribe.
  *
- * Los precios de la carta se agrupan por «de cuánto a cuánto»: un aumento de 230 productos se
- * escribe en unas pocas decenas de idas a la base, no en 230.
+ * Antes esa cuenta se hacía acá, leyendo primero y escribiendo después en decenas de idas a la base:
+ * si una fallaba por la mitad, la carta quedaba a medio aumentar. Acá queda lo que es de este lado:
+ * armar el pedido, leer la respuesta sin confiar en su forma y entender por qué falló.
  */
 
-import { type PriceWriteFailure, pointKey } from './types'
+import type { PriceChange, PriceFailureReason, PriceWriteFailure } from './types'
 
 export type RequestedChange = {
   itemId: string
@@ -23,77 +26,108 @@ export type RequestedChange = {
   expectedCents: number | null
 }
 
-export type CurrentPrices = {
-  /** Producto → precio de la carta. Lo que no está acá no existe (o es de otro bar). */
-  menu: ReadonlyMap<string, number>
-  /** `pointKey(sucursal, producto)` → precio propio. Sin fila = `null`. */
-  own: ReadonlyMap<string, number | null>
+/** Una fila del pedido, con los nombres que espera la función de la base. */
+export type RpcChange = {
+  item_id: string
+  branch_id: string | null
+  expected_cents: number | null
+  price_cents: number | null
 }
 
-export type MenuWrite = { expectedCents: number; priceCents: number; itemIds: string[] }
-export type BranchWrite = {
-  branchId: string
-  itemId: string
-  priceCents: number | null
-  fromCents: number | null
+export function toRpcChanges(changes: ReadonlyArray<RequestedChange>): RpcChange[] {
+  return changes.map((change) => ({
+    item_id: change.itemId,
+    branch_id: change.branchId,
+    expected_cents: change.expectedCents,
+    price_cents: change.priceCents,
+  }))
 }
 
-export type WritePlan = {
-  menuWrites: MenuWrite[]
-  branchWrites: BranchWrite[]
+export type ApplyOutcome = {
+  /** Con un aumento (o su deshacer): la tanda que comparten sus renglones del historial. */
+  batchId: string | null
+  applied: PriceChange[]
   failed: PriceWriteFailure[]
 }
 
-export function planPriceWrites(
-  requested: ReadonlyArray<RequestedChange>,
-  current: CurrentPrices,
-): WritePlan {
-  const groups = new Map<string, MenuWrite>()
-  const branchWrites: BranchWrite[] = []
-  const failed: PriceWriteFailure[] = []
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
-  for (const change of requested) {
-    const { itemId, branchId } = change
-    const menuCents = current.menu.get(itemId)
-    if (menuCents === undefined) {
-      failed.push({ itemId, branchId, reason: 'missing' })
-      continue
-    }
+const isId = (value: unknown): value is string => typeof value === 'string' && value !== ''
 
-    if (branchId === null) {
-      // El precio de la carta nunca queda vacío (el borde ya lo rechaza; acá no se escribe).
-      if (change.priceCents === null) {
-        failed.push({ itemId, branchId, reason: 'error' })
-        continue
-      }
-      if (menuCents === change.priceCents) continue
-      if (menuCents !== change.expectedCents) {
-        failed.push({ itemId, branchId, reason: 'changed', currentCents: menuCents })
-        continue
-      }
-      const key = `${menuCents}:${change.priceCents}`
-      const group = groups.get(key)
-      if (group) group.itemIds.push(itemId)
-      else {
-        groups.set(key, {
-          expectedCents: menuCents,
-          priceCents: change.priceCents,
-          itemIds: [itemId],
-        })
-      }
-      continue
-    }
+/** Centavos enteros, o vacío. La base los manda como número; un texto con dígitos también vale. */
+function centsOrNull(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) return null
+  const cents = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value
+  return typeof cents === 'number' && Number.isSafeInteger(cents) && cents >= 0 ? cents : undefined
+}
 
-    const ownCents = current.own.get(pointKey(branchId, itemId)) ?? null
-    if (ownCents === change.priceCents) continue
-    if (ownCents !== change.expectedCents) {
-      failed.push({ itemId, branchId, reason: 'changed', currentCents: ownCents })
-      continue
-    }
-    branchWrites.push({ branchId, itemId, priceCents: change.priceCents, fromCents: ownCents })
+const REASONS: ReadonlySet<string> = new Set<PriceFailureReason>(['missing', 'changed', 'error'])
+
+/**
+ * Lee lo que contestó la base sin confiar en su forma. `null` si no es lo que tenía que venir: en ese
+ * caso no se le dice a nadie «listo» por las dudas (los precios pudieron haberse escrito: se pide
+ * recargar para ver la verdad).
+ */
+export function parseApplyResult(data: unknown): ApplyOutcome | null {
+  if (!isRecord(data) || !Array.isArray(data.applied) || !Array.isArray(data.failed)) return null
+  const batchId = data.batch_id === null || data.batch_id === undefined ? null : data.batch_id
+  if (batchId !== null && !isId(batchId)) return null
+
+  const applied: PriceChange[] = []
+  for (const row of data.applied) {
+    if (!isRecord(row) || !isId(row.item_id)) return null
+    const branchId = row.branch_id ?? null
+    if (branchId !== null && !isId(branchId)) return null
+    const fromCents = centsOrNull(row.from_cents)
+    const toCents = centsOrNull(row.to_cents)
+    if (fromCents === undefined || toCents === undefined) return null
+    // El precio de la carta nunca está vacío, ni antes ni después.
+    if (branchId === null && (fromCents === null || toCents === null)) return null
+    applied.push({ itemId: row.item_id, branchId, fromCents, toCents })
   }
 
-  return { menuWrites: [...groups.values()], branchWrites, failed }
+  const failed: PriceWriteFailure[] = []
+  for (const row of data.failed) {
+    if (!isRecord(row) || !isId(row.item_id)) return null
+    const branchId = row.branch_id ?? null
+    if (branchId !== null && !isId(branchId)) return null
+    if (typeof row.reason !== 'string' || !REASONS.has(row.reason)) return null
+    const reason = row.reason as PriceFailureReason
+    if (reason === 'changed') {
+      const currentCents = centsOrNull(row.current_cents)
+      if (currentCents === undefined) return null
+      failed.push({ itemId: row.item_id, branchId, reason, currentCents })
+    } else {
+      failed.push({ itemId: row.item_id, branchId, reason })
+    }
+  }
+  return { batchId, applied, failed }
+}
+
+/** Por qué la base no aplicó nada. */
+export type ApplyErrorKind =
+  /** Quien llama no puede cambiar precios en ese bar (o se quedó sin sesión). */
+  | 'forbidden'
+  /** Una sucursal del pedido ya no es de este bar. */
+  | 'branch'
+  /** El pedido no tiene la forma que se espera. */
+  | 'invalid'
+  /** Cualquier otra cosa (un corte, un tiempo de espera, dos aumentos a la vez). */
+  | 'failed'
+
+/** La base avisa con un mensaje corto y un código; con cualquiera de los dos alcanza. */
+export function applyErrorKind(error: {
+  code?: string | null
+  message?: string | null
+}): ApplyErrorKind {
+  const message = error.message ?? ''
+  if (message.includes('forbidden') || message.includes('unauthenticated')) return 'forbidden'
+  if (error.code === '42501' || error.code === '28000') return 'forbidden'
+  if (message.includes('branch_not_found')) return 'branch'
+  if (message.includes('invalid_changes')) return 'invalid'
+  return 'failed'
 }
 
 /** Parte una lista en tandas de a lo sumo `size`. */

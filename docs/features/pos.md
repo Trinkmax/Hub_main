@@ -30,7 +30,7 @@ lo prende un superadmin por bar).
 | Cambiar una mesa de lugar | `floor-model.tsx` (mantener y arrastrar), `floor-live.tsx`, RPC `pos_move_table` | hecho |
 | «¿Dónde trabajás hoy?» | `components/pos/ui/branch-chooser.tsx` | hecho |
 | Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`): tablero a sangre con ficha flotante, juntar arrastrando, mesas nuevas en fila | hecho |
-| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho (se ve con `pos` prendido) |
+| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*`, `menu_apply_price_changes` (entero o nada, un aumento = una tanda) | hecho (se ve con `pos` prendido) |
 | Cobro y caja por turno: base y capa de servidor | migraciones `pos_cobro_tablas`, `pos_cobro_cuenta_y_cobrar` y `pos_cobro_descuentos_y_caja`, `lib/pos/cash/*` | hecho |
 | La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
@@ -69,9 +69,26 @@ Todo lo que cambia el estado va por RPC `pos_*` (chequean el rol contra el bar d
 las tablas de mesa y comanda no tienen escritura directa. Las lecturas también son una RPC por pantalla
 (`pos_floor_snapshot`, `pos_session_detail`, `pos_menu`, `pos_kitchen_queue`).
 
-**En vivo:** cada RPC que cambia algo manda un aviso sin datos al canal público `pos:<sucursal>`
+**En vivo:** cada RPC que cambia algo manda un aviso sin datos al canal `pos:<sucursal>`
 (`private.pos_poke` → `realtime.send`). Las pantallas escuchan con `usePosPoke` y vuelven a leer lo suyo. Si
 el canal se cae, la pantalla lo dice y al volver se pone al día sola.
+
+El canal es **privado** (migración `20261113195644_pos_canal_privado`, aplicada el 13/11). Antes era público: no llevaba datos, pero
+cualquiera con la clave pública del proyecto y el id de una sucursal podía escucharlo (y saber cuándo se
+mueve un salón) o mandarle avisos falsos. Ahora:
+
+- la base manda al canal privado (`realtime.send(..., true)`);
+- Realtime deja entrar solo a quien pasa la política `pos_live_listen` de `realtime.messages`: alguien con
+  un rol en el bar de esa sucursal (lee `branches` con los permisos de quien pregunta y además pide
+  `user_role_in_tenant`). Un nombre de canal que no es `pos:<id>` no entra y no rompe;
+- nadie manda desde el navegador: no hay política de escritura;
+- `usePosPoke` le pasa al socket la sesión de ese momento (`authorizeSocket`) y recién después se une con
+  `{ config: { private: true } }`: los permisos se fijan al entrar.
+
+Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
+del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
+contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de
+cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy no existe ninguna.
 
 **Día de servicio:** hasta las 5 de la mañana sigue siendo la noche anterior (igual que el tablero operativo).
 
@@ -341,6 +358,18 @@ y las mostraba sin sesión (`public/sw.js` las borra al llegar a la pantalla de 
 mesas de práctica; cualquiera que mirara la cola marcaba «cocina lo vio»; un aviso en vivo se perdía si
 llegaba durante una lectura (`lib/pos/live-reload.ts`); una tanda sin enviar salía con la sesión de otra
 persona (`mayAutoSend`).
+
+**Cerrado en la base el 13/11, segunda tanda** (dos migraciones, cada una con su ensayo en producción que se
+deshace solo y sus candados de entrada y de salida):
+- `20261113195644_pos_canal_privado`: el canal en vivo dejó de ser público (ver «En vivo», arriba).
+- `20261113195633_menu_precios_de_una`: `menu_apply_price_changes` cambia precios en una sola operación. Entra
+  entera o no entra; cada precio se cambia solo si sigue valiendo lo que la persona veía (lo que otro cambió,
+  o ya no está, vuelve en `failed` con lo que vale ahora); un aumento y su deshacer quedan marcados como una
+  tanda (`batch_id`, que los disparadores leen de `pos.price_batch`). Corre con los permisos de quien llama:
+  mandan las mismas políticas de `menu_items` y `menu_item_branches` (dueño y editor), y además pide el rol
+  para contestar «no podés». En el ensayo, un aumento a los 233 productos del bar de ejemplo entró en 163 ms.
+  `lib/menu/prices/actions.ts` ya no lee, planea y escribe de a tandas: arma el pedido y lee la respuesta
+  (`plan.ts`). Probada en `tests/rls/menu-price-changes.test.ts` y con 72 comprobaciones en la base local.
 
 **Cerrado en la base con la migración `20261113121745_pos_endurecer` (aplicada el 13/11):**
 - `pos_cancel_item` tiene las mismas reglas que `pos_request_void`: la mesa abierta, nada ya cobrado por

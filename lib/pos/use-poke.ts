@@ -22,7 +22,10 @@ type StatusListener = (status: LiveStatus) => void
  */
 type Shared = {
   supabase: SupabaseClient
-  channel: RealtimeChannel
+  /** `null` mientras el socket todavía no tiene la sesión de quien mira (ver `join`). */
+  channel: RealtimeChannel | null
+  /** Se soltó antes de llegar a entrar: cuando la sesión esté lista, ya no hay que abrir nada. */
+  gone: boolean
   listeners: Set<Listener>
   statusListeners: Set<StatusListener>
   status: LiveStatus
@@ -35,6 +38,22 @@ const shared = new Map<string, Shared>()
 /** Cuánto se espera, sin nadie escuchando, antes de soltar el canal. */
 const RELEASE_AFTER_MS = 1500
 
+/**
+ * Le pasa al socket la sesión de AHORA. No alcanza con `realtimeAuthReady()` (se resuelve una sola vez
+ * por página): si la persona inició sesión después, sin recargar, el socket seguiría como anónimo y el
+ * canal privado la dejaría afuera. Sin sesión no hace nada: Realtime contesta que no y la pantalla lo
+ * muestra como «sin conexión».
+ */
+async function authorizeSocket(supabase: SupabaseClient): Promise<void> {
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
+    if (token) await supabase.realtime.setAuth(token)
+  } catch {
+    // Sin sesión legible: se intenta entrar igual y manda lo que conteste Realtime.
+  }
+}
+
 function setShared(entry: Shared, status: LiveStatus) {
   entry.status = status
   for (const notify of [...entry.statusListeners]) notify(status)
@@ -46,31 +65,44 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
     const supabase = createClient() as unknown as SupabaseClient
     const created: Shared = {
       supabase,
-      channel: supabase.channel(`pos:${branchId}`),
+      channel: null,
+      gone: false,
       listeners: new Set(),
       statusListeners: new Set(),
       status: 'connecting',
       wasDown: false,
       release: null,
     }
-    created.channel
-      .on('broadcast', { event: 'poke' }, (message) => {
-        const payload = (message.payload ?? {}) as { what?: PokeWhat; session_id?: string | null }
-        for (const each of [...created.listeners]) {
-          each(payload.what ?? 'floor', payload.session_id ?? null)
-        }
-      })
-      .subscribe((state) => {
-        if (state === 'SUBSCRIBED') {
-          const recovered = created.wasDown
-          created.wasDown = false
-          setShared(created, 'live')
-          if (recovered) for (const each of [...created.listeners]) each('floor', null)
-        } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
-          created.wasDown = true
-          setShared(created, 'offline')
-        }
-      })
+    // El canal es PRIVADO: Realtime deja entrar solo a quien tiene un rol en el bar de esa sucursal (la
+    // política `pos_live_listen` de `realtime.messages`), y lo decide con la sesión que tenga el socket
+    // en el momento de entrar. Por eso primero se le pasa la sesión de quien mira y recién después se
+    // une: entrar un instante antes, todavía como anónimo, sería quedarse afuera.
+    void authorizeSocket(supabase).then(() => {
+      if (created.gone) return
+      const channel = supabase.channel(`pos:${branchId}`, { config: { private: true } })
+      created.channel = channel
+      channel
+        .on('broadcast', { event: 'poke' }, (message) => {
+          const payload = (message.payload ?? {}) as {
+            what?: PokeWhat
+            session_id?: string | null
+          }
+          for (const each of [...created.listeners]) {
+            each(payload.what ?? 'floor', payload.session_id ?? null)
+          }
+        })
+        .subscribe((state) => {
+          if (state === 'SUBSCRIBED') {
+            const recovered = created.wasDown
+            created.wasDown = false
+            setShared(created, 'live')
+            if (recovered) for (const each of [...created.listeners]) each('floor', null)
+          } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
+            created.wasDown = true
+            setShared(created, 'offline')
+          }
+        })
+    })
     shared.set(branchId, created)
     entry = created
   }
@@ -92,14 +124,16 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
       current.release = null
       if (current.listeners.size > 0) return
       if (shared.get(branchId) === current) shared.delete(branchId)
-      void current.supabase.removeChannel(current.channel)
+      current.gone = true
+      if (current.channel) void current.supabase.removeChannel(current.channel)
     }, RELEASE_AFTER_MS)
   }
 }
 
 /**
- * Avisos en vivo de una sucursal. La base manda un «algo cambió» sin datos (canal `pos:<sucursal>`)
- * cada vez que una mesa, una tanda o la carta se mueven, y cada pantalla vuelve a leer lo suyo.
+ * Avisos en vivo de una sucursal. La base manda un «algo cambió» sin datos (canal privado
+ * `pos:<sucursal>`: solo lo escucha el equipo de ese bar) cada vez que una mesa, una tanda o la carta se
+ * mueven, y cada pantalla vuelve a leer lo suyo.
  *
  * Devuelve el estado real del canal para poder decirlo en pantalla: si se corta, se nota. Al volver,
  * llama a `onPoke` una vez (lo que pasó mientras estuvo caído no se reenvía).
