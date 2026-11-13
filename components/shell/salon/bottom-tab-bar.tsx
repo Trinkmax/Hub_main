@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import type { TenantFeatures } from '@/lib/platform/features'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
+import { BARE } from './salon-main'
 import { visibleSalonTabs } from './salon-nav'
 
 /**
@@ -29,7 +30,7 @@ export function BottomTabBar({
 }) {
   const pathname = usePathname()
   const tabs = visibleSalonTabs({ role, features, isPlatformAdmin })
-  if (tabs.length === 0) return null
+  if (tabs.length === 0 || BARE.test(pathname)) return null
 
   return (
     <nav

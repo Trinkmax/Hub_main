@@ -59,6 +59,10 @@ type Props = {
   className?: string
   /** Texto para lectores de pantalla: «Salón, 12 mesas». */
   label: string
+  /** Píxeles de abajo que tapa un control flotante: la maqueta se encuadra sin meterse ahí. */
+  insetBottom?: number
+  /** Mesas que se apagan (cuando se está mirando solo un grupo: «las que tienen comida lista»). */
+  dimmed?: ReadonlySet<string> | null
 }
 
 const TRANSITION_MS = 460
@@ -163,9 +167,23 @@ function describe(label: string, table: FloorTable | undefined): string {
   return parts.join(', ')
 }
 
-export function FloorModel({ elements, tables, view, onTable, className, label }: Props) {
+export function FloorModel({
+  elements,
+  tables,
+  view,
+  onTable,
+  className,
+  label,
+  insetBottom = 0,
+  dimmed = null,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null)
-  const size = useSize(ref)
+  const full = useSize(ref)
+  // El espacio donde entra la maqueta: todo el tablero menos lo que tapa el control flotante.
+  const size = useMemo(
+    () => ({ width: full.width, height: Math.max(0, full.height - insetBottom) }),
+    [full, insetBottom],
+  )
   const mix = useCameraMix(view)
 
   // Cómo mirar este sector en esta pantalla: girado o no, y con cuánta inclinación (ver chooseCamera).
@@ -222,7 +240,7 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
 
   // Cuánto detalle entra según el tamaño real de una mesa en pantalla.
   const tablePx = 80 * scale
-  const showWord = tablePx >= 96
+  const showWord = tablePx >= 66
   const showTime = tablePx >= 34
   const flagSize = Math.max(11, Math.min(14, 9 + tablePx * 0.05))
   const numSize = Math.max(12, Math.min(30, tablePx * 0.38))
@@ -233,9 +251,9 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
       {fit ? (
         <>
           <svg
-            width={size.width}
-            height={size.height}
-            viewBox={`0 0 ${size.width} ${size.height}`}
+            width={full.width}
+            height={full.height}
+            viewBox={`0 0 ${full.width} ${full.height}`}
             role="img"
             aria-label={label}
             className="absolute inset-0 block"
@@ -268,6 +286,7 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
               {scene.anchors.map((anchor) => {
                 const state = tables[anchor.tableId]?.state
                 if (!state || (state.key !== 'ready' && state.urgency !== 'late')) return null
+                if (dimmed?.has(anchor.tableId)) return null
                 const w = anchor.bounds.maxX - anchor.bounds.minX
                 const h = anchor.bounds.maxY - anchor.bounds.minY
                 return (
@@ -289,6 +308,7 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
                     'pos-solid',
                     `pos-r-${solid.role}`,
                     solid.tableId ? stateClasses(tables[solid.tableId]?.state) : null,
+                    solid.tableId && dimmed?.has(solid.tableId) ? 'pos-dim' : null,
                   )}
                 />
               ))}
@@ -314,7 +334,11 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
             return (
               <span
                 key={`n:${anchor.tableId}`}
-                className={cn('pos-num', !open && 'pos-is-free')}
+                className={cn(
+                  'pos-num',
+                  !open && 'pos-is-free',
+                  dimmed?.has(anchor.tableId) && 'pos-dim',
+                )}
                 style={{
                   left: sx(anchor.x),
                   top: sy(anchor.y),
@@ -378,7 +402,12 @@ export function FloorModel({ elements, tables, view, onTable, className, label }
             return (
               <span
                 key={`f:${anchor.tableId}`}
-                className={cn('pos-flag', stateClasses(state), !word && !time && 'is-icon')}
+                className={cn(
+                  'pos-flag',
+                  stateClasses(state),
+                  !word && !time && 'is-icon',
+                  dimmed?.has(anchor.tableId) && 'pos-dim',
+                )}
                 style={{
                   left: sx(anchor.x),
                   top,

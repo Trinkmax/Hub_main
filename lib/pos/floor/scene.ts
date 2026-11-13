@@ -13,6 +13,7 @@ import {
   boundsOf,
   type Camera,
   convexHull,
+  depthOf,
   ellipseFootprint,
   extrude,
   fitBounds,
@@ -242,39 +243,46 @@ export function buildScene(
         // Las sillas vienen en coordenadas del cuerpo sin rotar: se llevan al piso girando con la mesa.
         const at = rotateAround(cx, cy, el.x + chair.cx, el.y + chair.cy, el.rotation)
         const turn = el.rotation + chair.angle
-        const seat = rectFootprint(at.x, at.y, 17, 15, turn, 4, 2)
-        add(
-          solidFrom(camera, `${el.id}:c${index}`, 'chair', el.table_id, seat, 0, HEIGHTS.chairSeat),
+        // La silla, quien está sentado y el respaldo se ordenan entre sí a mano: el asiento siempre va
+        // debajo de la persona, y el respaldo la tapa solo si queda del lado de quien mira.
+        const here = depthOf(camera, at.x, at.y)
+        const seat = solidFrom(
+          camera,
+          `${el.id}:c${index}`,
+          'chair',
+          el.table_id,
+          rectFootprint(at.x, at.y, 17, 15, turn, 4, 2),
+          0,
+          HEIGHTS.chairSeat,
         )
+        seat.solid.depth = here
+        add(seat)
         // El respaldo va del lado de afuera: alejándose del centro de la mesa.
         const away = Math.hypot(at.x - cx, at.y - cy) || 1
         const bx = at.x + ((at.x - cx) / away) * 6.5
         const by = at.y + ((at.y - cy) / away) * 6.5
-        const back = rectFootprint(bx, by, 17, 3.5, turn, 1.5, 1)
-        add(
-          solidFrom(
-            camera,
-            `${el.id}:b${index}`,
-            'chairback',
-            el.table_id,
-            back,
-            0,
-            HEIGHTS.chairBack,
-            0.01,
-          ),
+        const back = solidFrom(
+          camera,
+          `${el.id}:b${index}`,
+          'chairback',
+          el.table_id,
+          rectFootprint(bx, by, 17, 3.5, turn, 1.5, 1),
+          0,
+          HEIGHTS.chairBack,
         )
+        back.solid.depth = here + (depthOf(camera, bx, by) > here ? 0.04 : -0.02)
+        add(back)
         if (taken.has(index)) {
-          const body = ellipseFootprint(at.x, at.y, 12, 12, 0, 12)
           const entry = solidFrom(
             camera,
             `${el.id}:p${index}`,
             'pawn',
             el.table_id,
-            body,
+            ellipseFootprint(at.x, at.y, 12, 12, 0, 12),
             HEIGHTS.chairSeat,
             HEIGHTS.pawnBody,
-            0.02,
           )
+          entry.solid.depth = here + 0.02
           const head = project(camera, at.x, at.y, HEIGHTS.pawnHead)
           entry.solid.head = { x: head.x, y: head.y, r: 5.2 }
           entry.bounds = mergeBounds(entry.bounds, {

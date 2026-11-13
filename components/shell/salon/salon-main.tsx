@@ -9,9 +9,14 @@ import { PullToRefresh } from './pull-to-refresh'
  * maqueta, no una lista, y se actualiza sola en vivo.
  */
 const FULL_BLEED = /^\/[^/]+\/salon\/(mapa|mesa|caja)(\/|$)/
+/** El mapa y la mesa traen su propia barra de arriba (una sola, con la sucursal, los sectores o la mesa). */
+export const OWN_TOPBAR = /^\/[^/]+\/salon\/(mapa|mesa)(\/|$)/
+/** La tele de cocina no lleva nada alrededor: ni barra de arriba ni pestañas. */
+export const BARE = /^\/[^/]+\/salon\/tele(\/|$)/
 
 export function SalonMain({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  if (BARE.test(pathname)) return <main className="flex-1">{children}</main>
   if (FULL_BLEED.test(pathname)) {
     return <main className="flex-1 pb-[var(--salon-tabbar-h)]">{children}</main>
   }

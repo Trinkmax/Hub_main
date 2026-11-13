@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { BrandWordmark } from '@/components/shell/brand-mark'
 import type { Tenant } from '@/lib/tenant/types'
+import { BARE, OWN_TOPBAR } from './salon-main'
 import { salonTitleFor } from './salon-nav'
 
 /**
@@ -26,6 +27,7 @@ export function SalonTopbar({
 }) {
   const pathname = usePathname()
   const title = salonTitleFor(pathname, tenant.slug)
+  if (BARE.test(pathname) || OWN_TOPBAR.test(pathname)) return null
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">

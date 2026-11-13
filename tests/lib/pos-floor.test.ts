@@ -154,6 +154,22 @@ describe('maqueta', () => {
     expect(three.solids.find((s) => s.role === 'pawn')?.head).toBeDefined()
   })
 
+  it('quien está sentado se dibuja sobre su asiento, y el respaldo lo tapa solo si queda adelante', () => {
+    const scene = buildScene({ tilt: 55 * DEG, yaw: 0 }, [table()], { occupancy: { 't-1': 4 } })
+    const order = scene.solids.map((s) => s.key)
+    const at = (key: string) => order.indexOf(key)
+    for (let i = 0; i < 4; i++) {
+      expect(at(`el-1:p${i}`)).toBeGreaterThan(at(`el-1:c${i}`))
+    }
+    // Silla 0: del lado del fondo (arriba). Su respaldo queda detrás de la persona.
+    expect(at('el-1:b0')).toBeLessThan(at('el-1:p0'))
+    // Silla 1: del lado de quien mira (abajo). Su respaldo tapa a la persona.
+    expect(at('el-1:b1')).toBeGreaterThan(at('el-1:p1'))
+    // Y los de adelante van después de la tapa de la mesa; los del fondo, antes.
+    expect(at('el-1:p1')).toBeGreaterThan(at('el-1:top'))
+    expect(at('el-1:p0')).toBeLessThan(at('el-1:top'))
+  })
+
   it('sin sillas (maqueta chica) quedan solo las mesas', () => {
     const scene = buildScene(MODEL_CAMERA, [table()], { chairs: false, occupancy: { 't-1': 3 } })
     expect(scene.solids.map((s) => s.role).sort()).toEqual(['pedestal', 'tabletop'])

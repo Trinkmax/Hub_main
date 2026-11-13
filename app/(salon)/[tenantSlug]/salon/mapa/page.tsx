@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { FloorLive } from '@/components/pos/floor/floor-live'
+import { AccountSheet } from '@/components/shell/salon/account-sheet'
+import { signOutAction } from '@/components/shell/sign-out-action'
 import { requireFeature } from '@/lib/platform/guards'
 import { posFont } from '@/lib/pos/font'
 import { getActiveBranch, getFloorSnapshot } from '@/lib/pos/queries'
@@ -55,6 +57,15 @@ export default async function PosFloorPage({
         branches={branches}
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         canEditPlan={access.role === 'owner'}
+        account={
+          <AccountSheet
+            email={access.user.email ?? ''}
+            role={access.role}
+            tenantName={access.tenant.name}
+            tenantSlug={tenantSlug}
+            signOut={signOutAction}
+          />
+        }
       />
     </div>
   )

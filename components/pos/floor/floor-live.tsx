@@ -1,6 +1,13 @@
 'use client'
 
-import { ChevronDown, LayoutList, Map as MapIcon, SquareDashed, WifiOff } from 'lucide-react'
+import {
+  AlarmClock,
+  ChevronDown,
+  LayoutList,
+  Map as MapIcon,
+  SquareDashed,
+  WifiOff,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
@@ -23,6 +30,7 @@ import { usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
+import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
 
@@ -52,6 +60,15 @@ type Props = {
   branches: PosBranch[]
   timeZone: string
   canEditPlan: boolean
+  /** El botón de la cuenta, armado en la página. */
+  account?: React.ReactNode
+}
+
+/** Lo que se puede aislar tocando una ficha del resumen. */
+type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late'
+
+function matchesFocus(state: TableState, key: FocusKey): boolean {
+  return key === 'late' ? state.urgency === 'late' : state.key === key
 }
 
 function useNow(serverNow: string): number {
@@ -69,19 +86,7 @@ function useNow(serverNow: string): number {
   return now
 }
 
-function summaryLine(s: ReturnType<typeof summarize>): string {
-  const parts = [
-    `${s.open} de ${s.tables} mesas`,
-    `${s.people} ${s.people === 1 ? 'persona' : 'personas'}`,
-  ]
-  if (s.ready > 0) parts.push(`${s.ready} para llevar`)
-  if (s.waitingFood > 0) parts.push(`${s.waitingFood} esperando comida`)
-  if (s.bill > 0) parts.push(`${s.bill} ${s.bill === 1 ? 'pidió' : 'pidieron'} la cuenta`)
-  if (s.late > 0) parts.push(`${s.late} con demora`)
-  return parts.join(' · ')
-}
-
-export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Props) {
+export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, account }: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
   const [view, setView] = useState<View>('model')
@@ -89,6 +94,7 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
   const [opening, setOpening] = useState<TableEntry | null>(null)
   const [switching, startSwitch] = useTransition()
   const [branchMenu, setBranchMenu] = useState(false)
+  const [focus, setFocus] = useState<FocusKey | null>(null)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(initial), [initial])
@@ -183,6 +189,10 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
     return out
   }, [entries])
 
+  const areaName = useMemo(
+    () => Object.fromEntries(snapshot.areas.map((a) => [a.id, a.name])) as Record<string, string>,
+    [snapshot.areas],
+  )
   const byId = useMemo(() => new Map(entries.map((e) => [e.tableId, e])), [entries])
   const onTable = useCallback(
     (tableId: string) => {
@@ -228,58 +238,141 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
   )
   const empty = entries.length === 0
 
+  const chips = (
+    [
+      { key: 'ready', count: summary.ready, label: 'para llevar', icon: STATE_ICON.ready },
+      {
+        key: 'bill',
+        count: summary.bill,
+        label: summary.bill === 1 ? 'pidió la cuenta' : 'pidieron la cuenta',
+        icon: STATE_ICON.bill,
+      },
+      {
+        key: 'kitchen',
+        count: summary.waitingFood,
+        label: 'esperando comida',
+        icon: STATE_ICON.kitchen,
+      },
+      { key: 'late', count: summary.late, label: 'con demora', icon: AlarmClock },
+    ] as const
+  ).filter((chip) => chip.count > 0)
+
+  // Si lo que estaba filtrando ya se resolvió, el filtro se va solo.
+  const focusAlive = focus !== null && chips.some((chip) => chip.key === focus)
+  useEffect(() => {
+    if (focus !== null && !focusAlive) setFocus(null)
+  }, [focus, focusAlive])
+
+  const toggleFocus = (key: FocusKey) => {
+    const next = focus === key ? null : key
+    setFocus(next)
+    if (!next || view === 'list') return
+    // Si en este sector no hay ninguna, salta al primero que tenga.
+    const here = entries.some((e) => e.areaId === activeArea?.id && matchesFocus(e.state, next))
+    if (here) return
+    const first = entries.find((e) => e.areaId && matchesFocus(e.state, next))
+    if (first?.areaId) setAreaId(first.areaId)
+  }
+
+  const dimmed = useMemo(() => {
+    if (!focusAlive || focus === null) return null
+    return new Set(entries.filter((e) => !matchesFocus(e.state, focus)).map((e) => e.tableId))
+  }, [entries, focus, focusAlive])
+
+  const focusChip = focusAlive ? (chips.find((chip) => chip.key === focus) ?? null) : null
+  const visibleList =
+    focusAlive && focus !== null ? listed.filter((e) => matchesFocus(e.state, focus)) : listed
+  const occupancy = `${summary.people} ${summary.people === 1 ? 'persona' : 'personas'} · ${summary.open} de ${summary.tables} mesas`
+
   return (
     <div className="pos-floor-screen" style={{ ['--branch' as string]: snapshot.branch.color }}>
-      <header className="pos-band">
-        <div className="flex items-center gap-2.5">
+      <PosTopbar account={account}>
+        <div className="pos-top-branch-wrap">
           <button
             type="button"
-            className="pos-band-branch"
+            className="pos-top-branch"
             onClick={() => branches.length > 1 && setBranchMenu((v) => !v)}
             aria-haspopup={branches.length > 1 ? 'true' : undefined}
             aria-expanded={branches.length > 1 ? branchMenu : undefined}
             disabled={switching}
           >
-            <span className="truncate">{snapshot.branch.name}</span>
+            <span
+              className={cn(
+                'pos-top-dot',
+                live === 'live' && 'is-live',
+                live === 'offline' && 'is-off',
+              )}
+              aria-hidden
+            />
+            <span className="truncate">{snapshot.branch.short_name ?? snapshot.branch.name}</span>
             {branches.length > 1 ? (
-              <ChevronDown className="size-4 shrink-0 opacity-70" aria-hidden />
+              <ChevronDown className="size-4 shrink-0 opacity-80" aria-hidden />
             ) : null}
+            <span className="sr-only">
+              {live === 'live'
+                ? ', en vivo'
+                : live === 'offline'
+                  ? ', sin conexión'
+                  : ', conectando'}
+            </span>
           </button>
-          <span
-            className={cn('pos-live', live === 'live' && 'is-live', live === 'offline' && 'is-off')}
-            role="status"
-          >
-            {live === 'offline' ? (
-              <WifiOff className="size-3.5" aria-hidden />
-            ) : (
-              <span className="pos-live-dot" aria-hidden />
-            )}
-            {live === 'live' ? 'En vivo' : live === 'offline' ? 'Sin conexión' : 'Conectando'}
-          </span>
-          <span className="ml-auto text-sm font-semibold tabular-nums opacity-90">{clock}</span>
+          {branchMenu ? (
+            <ul className="pos-branch-menu" aria-label="Sucursal">
+              {branches.map((branch) => (
+                <li key={branch.id}>
+                  <button
+                    type="button"
+                    aria-current={branch.id === snapshot.branch.id ? 'true' : undefined}
+                    onClick={() => switchBranch(branch)}
+                    style={{ ['--branch' as string]: branch.color }}
+                  >
+                    <span className="pos-band-swatch" aria-hidden />
+                    {branch.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
-        <p className="pos-band-summary">
-          {empty ? 'Todavía no hay mesas en esta sucursal.' : summaryLine(summary)}
-        </p>
 
-        {branchMenu ? (
-          <ul className="pos-branch-menu" aria-label="Sucursal">
-            {branches.map((branch) => (
-              <li key={branch.id}>
+        {empty ? (
+          <span className="pos-top-meta is-always">Sin mesas todavía</span>
+        ) : (
+          <div className="pos-top-tabs" role="tablist" aria-label="Sectores">
+            {snapshot.areas.map((area) => {
+              const selected = view !== 'list' && area.id === activeArea?.id
+              const pending = pendingByArea[area.id] ?? 0
+              return (
                 <button
+                  key={area.id}
                   type="button"
-                  aria-current={branch.id === snapshot.branch.id ? 'true' : undefined}
-                  onClick={() => switchBranch(branch)}
-                  style={{ ['--branch' as string]: branch.color }}
+                  role="tab"
+                  aria-selected={selected}
+                  className={cn('pos-top-tab', selected && 'is-active')}
+                  onClick={() => {
+                    setAreaId(area.id)
+                    if (view === 'list') chooseView('model')
+                  }}
                 >
-                  <span className="pos-band-swatch" aria-hidden />
-                  {branch.name}
+                  {area.name}
+                  {pending > 0 ? (
+                    <span className="pos-tab-count">
+                      {pending}
+                      <span className="sr-only"> con algo pendiente</span>
+                    </span>
+                  ) : null}
                 </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </header>
+              )
+            })}
+          </div>
+        )}
+
+        {empty ? null : (
+          <span className="pos-top-meta">
+            {occupancy} · <b>{clock}</b>
+          </span>
+        )}
+      </PosTopbar>
 
       {empty ? (
         <div className="pos-empty">
@@ -298,38 +391,10 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
           )}
         </div>
       ) : (
-        <>
-          <div className="pos-tabs" role="tablist" aria-label="Sectores">
-            {snapshot.areas.map((area) => {
-              const selected = view !== 'list' && area.id === activeArea?.id
-              const pending = pendingByArea[area.id] ?? 0
-              return (
-                <button
-                  key={area.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  className={cn('pos-tab', selected && 'is-active')}
-                  onClick={() => {
-                    setAreaId(area.id)
-                    if (view === 'list') chooseView('model')
-                  }}
-                >
-                  {area.name}
-                  {pending > 0 ? (
-                    <span className="pos-tab-count">
-                      {pending}
-                      <span className="sr-only"> con algo pendiente</span>
-                    </span>
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
-
+        <div className="pos-stage">
           {view === 'list' ? (
             <ul className="pos-list">
-              {listed.map((entry) => {
+              {visibleList.map((entry) => {
                 const Icon = STATE_ICON[entry.state.key]
                 const who =
                   entry.session?.alias ??
@@ -351,7 +416,10 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
                       <span className="pos-row-num">{entry.label}</span>
                       <span className="min-w-0 flex-1">
                         <span className="pos-row-who">
-                          {who ?? (entry.state.key === 'free' ? 'Libre' : 'Mesa abierta')}
+                          {who ??
+                            (entry.state.key === 'free'
+                              ? 'Libre'
+                              : (areaName[entry.areaId ?? ''] ?? 'Sin nombre'))}
                           {people ? <em> ×{people}</em> : null}
                         </span>
                         {entry.state.nextCourseDue ? (
@@ -379,9 +447,51 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
               tables={tables}
               view={view}
               onTable={onTable}
+              insetBottom={68}
+              dimmed={dimmed}
               label={`${activeArea?.name ?? 'Salón'}: ${areaElements.filter((e) => e.kind === 'table').length} mesas`}
             />
           )}
+
+          {live === 'offline' ? (
+            <p className="pos-offline" role="status">
+              <WifiOff className="size-4" aria-hidden />
+              Sin conexión: lo que ves puede estar viejo. Se pone al día sola cuando vuelva.
+            </p>
+          ) : null}
+
+          {/* El resumen del salón, sobre el mapa: cada ficha cuenta y además filtra. */}
+          <p className={cn('pos-caption', focusChip && 'is-focus')}>
+            {focusChip
+              ? `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
+              : occupancy}
+          </p>
+          <div className="pos-hud">
+            {chips.length > 0 ? (
+              <div className="pos-hud-chips">
+                {chips.map((chip) => {
+                  const Icon = chip.icon
+                  return (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      className={cn(
+                        'pos-hud-chip',
+                        `is-${chip.key}`,
+                        focus === chip.key && 'is-on',
+                      )}
+                      aria-pressed={focus === chip.key}
+                      onClick={() => toggleFocus(chip.key)}
+                    >
+                      <Icon aria-hidden strokeWidth={2.4} />
+                      <b>{chip.count}</b>
+                      <span>{chip.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
 
           <fieldset className="pos-view">
             <legend className="sr-only">Cómo ver el salón</legend>
@@ -416,7 +526,7 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan }: Pr
               <span className="sr-only">Lista</span>
             </button>
           </fieldset>
-        </>
+        </div>
       )}
 
       <OpenTableSheet
