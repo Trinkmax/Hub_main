@@ -168,6 +168,21 @@ describe('liveTables', () => {
     expect(tables.t2).toMatchObject({ partySize: null, alias: null })
     expect(Object.keys(tables)).toHaveLength(5)
   })
+
+  it('una mesa abierta en modo práctica lo lleva dicho: el mapa la marca', () => {
+    const entries = buildLiveEntries(
+      snapshot({
+        sessions: [session('t1', { is_practice: true }), session('t2', { is_practice: false })],
+      }),
+      NOW,
+      21 * 60,
+    )
+    const tables = liveTables(entries)
+    expect(tables.t1?.practice).toBe(true)
+    expect(tables.t2?.practice).toBe(false)
+    // Una mesa libre no es de práctica ni de verdad.
+    expect(tables.t3?.practice).toBe(false)
+  })
 })
 
 describe('pendingByArea', () => {

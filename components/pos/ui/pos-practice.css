@@ -23,3 +23,19 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Una mesa de práctica en el mapa: la chapa del estado va con el borde punteado (el mismo gesto que una
+   pieza «en borrador») y arriba dice «Práctica». Así no hay que acordarse de cuáles se abrieron con el
+   modo práctica prendido: quien cobra ve que esa cuenta no es de verdad. Nunca solo el borde: con
+   lugar va la palabra, y el lector de pantalla lo dice siempre. */
+.pos-flag.is-practice .pos-flag-plate {
+  outline: 2px dashed var(--pos-paper);
+  outline-offset: -4px;
+}
+.pos-flag.is-practice .pos-flag-note {
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-weight: 800;
+  font-stretch: 88%;
+  letter-spacing: 0.03em;
+}

@@ -70,6 +70,7 @@ export function liveTables(entries: readonly LiveEntry[]): Record<string, ModelT
       state: entry.state,
       partySize: entry.session?.party_size ?? null,
       alias: entry.session?.alias ?? null,
+      practice: entry.session?.is_practice === true,
     }
   }
   return out
