@@ -20,7 +20,13 @@ import {
   summarizeToday,
   todaySentence,
 } from '@/lib/pos/today/summary'
-import type { TodayBranch, TodayData, TodayShift, TodaySummary } from '@/lib/pos/today/types'
+import type {
+  SalesPeriod,
+  TodayBranch,
+  TodayData,
+  TodayShift,
+  TodaySummary,
+} from '@/lib/pos/today/types'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { Storefront } from '../../sucursales/_components/storefront'
@@ -55,12 +61,15 @@ const capital = (text: string) => text.charAt(0).toLocaleUpperCase('es') + text.
 export function TodayBoard({
   tenantSlug,
   data,
+  recent,
   branchSlug,
   today,
   timeZone,
 }: {
   tenantSlug: string
   data: TodayData
+  /** Los últimos días, para ver este en contexto. `null` = no se pudo leer. */
+  recent: SalesPeriod | null
   /** `?sucursal=`: una sola. Sin dato, todas. */
   branchSlug: string | null
   /** El día de servicio en curso. */
@@ -392,7 +401,88 @@ export function TodayBoard({
           </Panel>
         </div>
       )}
+
+      {recent && recent.days.length > 0 ? (
+        <RecentDays
+          recent={recent}
+          current={data.day}
+          today={today}
+          hrefOf={(day) => href({ day })}
+        />
+      ) : null}
     </AdmPage>
+  )
+}
+
+/** Los últimos días como una tira de barras: cada una lleva a su día. */
+function RecentDays({
+  recent,
+  current,
+  today,
+  hrefOf,
+}: {
+  recent: SalesPeriod
+  current: string
+  today: string
+  hrefOf: (day: string) => string
+}) {
+  const top = Math.max(1, ...recent.days.map((day) => day.salesCents))
+  const weekday = (day: string) =>
+    new Intl.DateTimeFormat('es-AR', { weekday: 'narrow', timeZone: 'UTC' }).format(
+      new Date(`${day}T12:00:00.000Z`),
+    )
+  return (
+    <Panel
+      title={`Los últimos ${recent.days.length} días`}
+      description={
+        recent.activeDays === 0
+          ? 'Todavía no hay ventas en estos días.'
+          : `${money(recent.salesCents)} en ${count(recent.activeDays, 'día con ventas', 'días con ventas')}${recent.averageCents === null ? '' : `: ${money(recent.averageCents)} por día`}${recent.perPersonCents === null ? '' : ` y ${money(recent.perPersonCents)} por persona`}.${recent.best ? ` El mejor fue el ${dayWords(recent.best.day)}, con ${money(recent.best.salesCents)}.` : ''}`
+      }
+    >
+      <ol className="flex h-40 items-end gap-1 sm:gap-1.5" data-testid="hoy-ultimos-dias">
+        {recent.days.map((day) => {
+          const selected = day.day === current
+          const height =
+            day.salesCents > 0 ? Math.max(6, Math.round((day.salesCents / top) * 100)) : 0
+          return (
+            <li key={day.day} className="flex h-full min-w-0 flex-1 flex-col justify-end">
+              <Link
+                href={hrefOf(day.day)}
+                scroll={false}
+                aria-current={selected ? 'date' : undefined}
+                aria-label={`${capital(dayWords(day.day))}: ${day.salesCents > 0 ? money(day.salesCents) : 'sin ventas'}`}
+                title={`${capital(dayWords(day.day))}: ${day.salesCents > 0 ? money(day.salesCents) : 'sin ventas'}`}
+                className="group flex h-full flex-col justify-end gap-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'block w-full rounded-t-sm transition-colors duration-(--duration-fast)',
+                    height === 0 && 'h-px bg-border',
+                    height > 0 &&
+                      (selected
+                        ? 'bg-foreground'
+                        : 'bg-foreground/35 group-hover:bg-foreground/60'),
+                  )}
+                  style={height > 0 ? { height: `${height}%` } : undefined}
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    'text-center text-[11px] uppercase leading-none tabular-nums',
+                    selected ? 'font-semibold text-foreground' : 'text-muted-foreground',
+                    day.day === today && 'underline underline-offset-2',
+                  )}
+                >
+                  {weekday(day.day)}
+                </span>
+              </Link>
+            </li>
+          )
+        })}
+      </ol>
+    </Panel>
   )
 }
 

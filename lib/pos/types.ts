@@ -132,6 +132,11 @@ export type FloorSnapshot = {
   loose_tables: { id: string; label: string; capacity: number | null }[]
   sessions: FloorSession[]
   reservations: FloorReservation[]
+  /**
+   * Hasta cuándo la sucursal está en modo práctica (`null` = no está). No viene de la RPC: lo suma la
+   * capa de servidor (`getFloorSnapshot`) leyendo la sucursal.
+   */
+  practice_until?: string | null
 }
 
 export type ItemModifier = {

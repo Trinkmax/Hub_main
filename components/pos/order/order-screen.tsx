@@ -13,6 +13,7 @@ import {
   markServed,
   refreshMenu,
   refreshSession,
+  releaseTable,
   requestBill,
   setStockout,
   updateTable,
@@ -378,6 +379,28 @@ export function OrderScreen({
     )
   }
 
+  // Una mesa que se abrió por error: si no tiene nada vivo cargado se puede liberar. Que no tenga
+  // cobros lo mira la base.
+  const nothingLoaded = server.tickets.every((ticket) =>
+    ticket.items.every((item) => item.cancelled_at !== null),
+  )
+  const release = () => {
+    void (async () => {
+      let result: Awaited<ReturnType<typeof releaseTable>> | Failure
+      try {
+        result = await releaseTable(slug, sessionId)
+      } catch {
+        result = { ok: false, message: 'No hay señal: la mesa no se liberó.', code: 'network' }
+      }
+      if (!result.ok) {
+        toast.error(result.message)
+        return
+      }
+      toast.success(`${title} quedó libre`)
+      router.push(mapHref)
+    })()
+  }
+
   const toggleStock = (item: MenuItem, soldOut: boolean) => {
     const set = (value: boolean) =>
       setMenu((m) => ({
@@ -729,6 +752,7 @@ export function OrderScreen({
                 )
             : undefined
         }
+        onRelease={session.status === 'open' && nothingLoaded ? release : undefined}
       />
       <StockSheet item={stockItem} onClose={() => setStockItem(null)} onToggle={toggleStock} />
       {/* Lo que haya quedado sin enviar de OTRAS mesas sale desde acá también. */}

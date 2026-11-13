@@ -153,3 +153,33 @@ export type TodaySummary = {
   closedShifts: number
   topProducts: ProductTotal[]
 }
+
+/** Lo vendido en un día de servicio (de `pos_sales_days`). */
+export type SalesDay = {
+  /** `2026-11-13`. */
+  day: string
+  salesCents: number
+  surchargeCents: number
+  tipCents: number
+  payments: number
+  tables: number
+  people: number
+  /** Consumo de las mesas cerradas, menos descuentos. */
+  consumptionCents: number
+  discountCents: number
+  depositCents: number
+}
+
+/** Un tramo de días, con sus cuentas. */
+export type SalesPeriod = {
+  days: SalesDay[]
+  salesCents: number
+  /** Días con al menos un cobro. */
+  activeDays: number
+  /** Venta promedio de los días con cobros. `null` si no hubo ninguno. */
+  averageCents: number | null
+  /** El mejor día del tramo. `null` si no hubo ventas. */
+  best: SalesDay | null
+  /** Consumo por persona de todo el tramo, al peso. `null` sin personas anotadas. */
+  perPersonCents: number | null
+}

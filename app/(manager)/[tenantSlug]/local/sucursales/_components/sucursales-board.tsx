@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { setPractice } from '@/lib/pos/actions'
 import {
   createBranch,
   deleteBranch,
@@ -77,6 +78,7 @@ import type {
   BranchField,
   BranchWriteResult,
 } from '@/lib/pos/branches/types'
+import { clockAt } from '@/lib/pos/order/clock'
 import { savePosSettings } from '@/lib/pos/settings/actions'
 import { describeChanges } from '@/lib/pos/settings/describe'
 import {
@@ -162,7 +164,11 @@ export function SucursalesBoard({
   const [settingErrors, setSettingErrors] = useState<Readonly<Partial<Record<SettingKey, string>>>>(
     {},
   )
-  const [busy, setBusy] = useState<'create' | 'default' | 'order' | 'delete' | null>(null)
+  const [busy, setBusy] = useState<'create' | 'default' | 'order' | 'delete' | 'practice' | null>(
+    null,
+  )
+  // Lo que se acaba de prender o apagar, hasta que la próxima lectura lo traiga.
+  const [practiceNow, setPracticeNow] = useState<Readonly<Record<string, string | null>>>({})
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
@@ -437,6 +443,31 @@ export function SucursalesBoard({
     router.refresh()
   }
 
+  const togglePractice = async (branch: Branch, on: boolean) => {
+    if (busy) return
+    setBusy('practice')
+    try {
+      const result = await setPractice(tenantSlug, branch.id, on)
+      if (result.ok) {
+        const { practiceUntil, cleared } = result.data
+        setPracticeNow((current) => ({ ...current, [branch.id]: practiceUntil }))
+        notify.ok(
+          on
+            ? `${branch.name} está en modo práctica: lo que se abra ahora no cuenta. Se apaga solo a las 5 de la mañana.`
+            : cleared > 0
+              ? `Práctica terminada en ${branch.name}. Se ${cleared === 1 ? 'levantó 1 mesa' : `levantaron ${cleared} mesas`} de prueba.`
+              : `Práctica terminada en ${branch.name}.`,
+        )
+      } else {
+        notify.error(result.message)
+      }
+    } catch {
+      notify.error(OFFLINE)
+    }
+    setBusy(null)
+    router.refresh()
+  }
+
   const remove = async (branch: Branch) => {
     if (busy) return
     setBusy('delete')
@@ -665,6 +696,14 @@ export function SucursalesBoard({
               }
               onDefault={() => void makeDefault(selected)}
               onMove={(direction) => void move(selected, direction)}
+              practiceUntil={
+                selected.id in practiceNow
+                  ? (practiceNow[selected.id] ?? null)
+                  : (selected.practiceUntil ?? null)
+              }
+              now={snapshot.loadedAt}
+              timeZone={timeZone}
+              onPractice={(on) => void togglePractice(selected, on)}
               onAskDelete={() => {
                 notify.clear()
                 setConfirmDelete(true)
@@ -719,6 +758,10 @@ function BranchSheet({
   onDefault,
   onMove,
   onAskDelete,
+  practiceUntil,
+  now,
+  timeZone,
+  onPractice,
 }: {
   tenantSlug: string
   branch: Branch
@@ -735,6 +778,12 @@ function BranchSheet({
   onDefault: () => void
   onMove: (direction: -1 | 1) => void
   onAskDelete: () => void
+  /** Hasta cuándo está en práctica; `null` = no está. */
+  practiceUntil: string | null
+  /** Reloj del servidor de la última lectura (ms). */
+  now: number
+  timeZone: string
+  onPractice: (on: boolean) => void
 }) {
   const headline = opening ? openingHeadline(opening, branch, alone) : null
   const open = opening && opening.counted > 0 ? opening.done / opening.counted : 0
@@ -743,6 +792,7 @@ function BranchSheet({
   const erase = canDelete(branch, facts)
   const moves = moveOptions(branches, branch.id)
   const error = (field: BranchField) => errors[fieldKey(branch.id, field)] ?? null
+  const inPractice = practiceUntil !== null && new Date(practiceUntil).getTime() > now
 
   return (
     // En el teléfono la lista de apertura va justo después de la vidriera (es lo que hay que hacer);
@@ -861,8 +911,32 @@ function BranchSheet({
           </div>
         </Panel>
 
+        <Panel
+          title="Modo práctica"
+          description="Para enseñar a usar el sistema sin ensuciar los números."
+          className="order-4"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <p
+              className="min-w-0 text-sm text-muted-foreground text-pretty"
+              data-testid="practica-texto"
+            >
+              {inPractice
+                ? `Prendido hasta las ${clockAt(practiceUntil, timeZone)}. Cada mesa que se abra ahora es de prueba: se carga, sale en cocina con su cinta de «Prueba» y se cobra, pero no entra en la caja ni suma puntos. Al apagarlo, las mesas de prueba se levantan.`
+                : 'Con la práctica prendida, cada mesa que se abra en esta sucursal es de prueba: se carga, sale en cocina y se cobra, pero no entra en la caja, no suma puntos y no toca las reservas. Se apaga sola a las 5 de la mañana.'}
+            </p>
+            <Switch
+              checked={inPractice}
+              disabled={busy !== null || !branch.active}
+              aria-label={`Modo práctica en ${branch.name}`}
+              data-testid="sucursal-practica"
+              onCheckedChange={onPractice}
+            />
+          </div>
+        </Panel>
+
         {alone ? null : (
-          <Panel title="Su lugar en el bar" className="order-4">
+          <Panel title="Su lugar en el bar" className="order-5">
             <div className="divide-y divide-border/60">
               <Row
                 title="Principal"

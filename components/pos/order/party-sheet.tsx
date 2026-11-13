@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeftRight, Minus, Plus } from 'lucide-react'
+import { ArrowLeftRight, DoorOpen, Minus, Plus } from 'lucide-react'
 import { useState } from 'react'
 import {
   Sheet,
@@ -25,6 +25,7 @@ export function PartySheet({
   onClose,
   onSave,
   onMove,
+  onRelease,
 }: {
   open: boolean
   title: string
@@ -35,6 +36,8 @@ export function PartySheet({
   onSave: (change: { partySize?: number; alias?: string }) => void
   /** «Cambiar de mesa»: lleva al mapa con esta mesa levantada. Sin esto, no se ofrece. */
   onMove?: () => void
+  /** «Liberar la mesa»: se abrió por error y no tiene nada cargado. Sin esto, no se ofrece. */
+  onRelease?: () => void
 }) {
   // Cada vez que se abre arranca de lo que la mesa tiene en ese momento (`from`), y al cerrar se
   // guarda solo lo que el mozo cambió: abrir y cerrar no toca la mesa, ni pisa lo que cambió otro.
@@ -134,6 +137,21 @@ export function PartySheet({
             >
               <ArrowLeftRight className="size-5" aria-hidden />
               Cambiar de mesa
+            </button>
+          ) : null}
+
+          {onRelease ? (
+            <button
+              type="button"
+              className="pos-btn pos-btn-quiet"
+              onClick={() => {
+                close()
+                onRelease()
+              }}
+              data-testid="party-release"
+            >
+              <DoorOpen className="size-5" aria-hidden />
+              Liberar la mesa (se abrió por error)
             </button>
           ) : null}
 

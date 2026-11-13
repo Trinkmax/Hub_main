@@ -32,6 +32,12 @@ const MESSAGES: Record<string, string> = {
   reason_required: 'Contame por qué se da de baja.',
   branch_not_found: 'No encontré esa sucursal.',
   invalid_status: 'No se puede pasar a ese estado.',
+  table_has_payments: 'Esa mesa ya tiene cobros: no se libera, se termina de cobrar.',
+  table_has_consumption: 'Esa mesa tiene productos cargados: dalos de baja o cobrala.',
+  pos_session_has_payments: 'Esa mesa tiene cobros: se cierra desde su cuenta.',
+  pos_session_needs_bill: 'Esa mesa se cobra desde su cuenta, en el punto de venta.',
+  pos_session_has_consumption: 'Esa mesa tiene consumo sin cobrar: se cierra desde su cuenta.',
+  range_invalid: 'Ese rango de fechas no se puede pedir.',
 }
 
 export type PosError = { code: string; message: string; detail: string | null }

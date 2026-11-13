@@ -5,9 +5,9 @@ import { PanelError } from '@/components/administracion/kit/panel-states'
 import { requireFeature } from '@/lib/platform/guards'
 import { POS_SETUP_ROLES } from '@/lib/pos/branches/authorize'
 import { serviceDayAt } from '@/lib/pos/cash/screen'
-import { getToday } from '@/lib/pos/today/queries'
-import { isDay } from '@/lib/pos/today/summary'
-import type { TodayData } from '@/lib/pos/today/types'
+import { getSalesDays, getToday } from '@/lib/pos/today/queries'
+import { isDay, salesPeriod, shiftDay } from '@/lib/pos/today/summary'
+import type { SalesPeriod, TodayData } from '@/lib/pos/today/types'
 import {
   RoleRequiredError,
   requireRole,
@@ -17,6 +17,9 @@ import {
 import { TodayBoard } from './_components/today-board'
 
 export const metadata: Metadata = { title: 'Hoy en vivo' }
+
+/** Cuántos días muestra la tira de abajo. */
+const RECENT_DAYS = 14
 
 /**
  * «Hoy en vivo» (docs/features/pos.md): cómo va el día en el salón, para los dueños. Sale todo de lo
@@ -65,11 +68,19 @@ export default async function HoyPage({
     )
   }
 
+  // Los últimos catorce días, para ver el de hoy en contexto. Si no se puede leer, la pantalla va sin la tira.
+  const branchSlug = typeof query.sucursal === 'string' ? query.sucursal : null
+  const branch = data.branches.find((item) => item.slug === branchSlug) ?? null
+  const since = shiftDay(today, -(RECENT_DAYS - 1))
+  const rows = await getSalesDays(access.tenant.id, since, today, branch?.id ?? null)
+  const recent: SalesPeriod | null = rows === null ? null : salesPeriod(rows, since, today)
+
   return (
     <TodayBoard
       tenantSlug={tenantSlug}
       data={data}
-      branchSlug={typeof query.sucursal === 'string' ? query.sucursal : null}
+      recent={recent}
+      branchSlug={branchSlug}
       today={today}
       timeZone={timeZone}
     />

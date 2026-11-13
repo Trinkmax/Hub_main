@@ -306,6 +306,68 @@ export async function requestBill(
   return result.ok ? { ok: true } : result
 }
 
+/**
+ * Liberar una mesa que se abrió por error. La base solo deja si no tiene nada vivo cargado ni
+ * cobros: lo demás se da de baja o se cobra.
+ */
+export async function releaseTable(
+  slug: string,
+  sessionId: string,
+): Promise<ActionResult<{ duplicate: boolean }>> {
+  const access = await authorize(slug, POS_FLOOR_ROLES)
+  if (isDenied(access)) return access
+  if (!id.safeParse(sessionId).success) return invalid
+  const result = await call<{ released: boolean; duplicate: boolean }>(
+    access,
+    'pos_release_table',
+    { p_session_id: sessionId },
+  )
+  if (!result.ok) return result
+  if (!result.data.duplicate) {
+    await logAudit({
+      tenantId: access.tenantId,
+      userId: access.userId,
+      action: 'pos.table_released',
+      entity: 'table_session',
+      entityId: sessionId,
+    })
+  }
+  return { ok: true, data: { duplicate: result.data.duplicate } }
+}
+
+/**
+ * Prender o apagar el modo práctica de una sucursal (solo un dueño). Prendido dura hasta las 5 de la
+ * mañana; al apagarlo, la base levanta las mesas de práctica que hayan quedado abiertas.
+ */
+export async function setPractice(
+  slug: string,
+  branchId: string,
+  on: boolean,
+): Promise<ActionResult<{ practiceUntil: string | null; cleared: number }>> {
+  const access = await authorize(slug, ['owner'])
+  if (isDenied(access)) return access
+  // `on` llega del navegador: un texto «false» sería verdadero para la base.
+  if (!id.safeParse(branchId).success || typeof on !== 'boolean') return invalid
+  const result = await call<{ practice_until: string | null; cleared: number }>(
+    access,
+    'pos_set_practice',
+    { p_branch_id: branchId, p_on: on },
+  )
+  if (!result.ok) return result
+  await logAudit({
+    tenantId: access.tenantId,
+    userId: access.userId,
+    action: on ? 'pos.practice_on' : 'pos.practice_off',
+    entity: 'branch',
+    entityId: branchId,
+    payload: { until: result.data.practice_until, cleared: result.data.cleared },
+  })
+  return {
+    ok: true,
+    data: { practiceUntil: result.data.practice_until, cleared: result.data.cleared },
+  }
+}
+
 // ─── Las tandas ─────────────────────────────────────────────────────────────
 
 const orderSchema = z.object({

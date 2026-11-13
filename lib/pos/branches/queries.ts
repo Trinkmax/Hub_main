@@ -60,7 +60,7 @@ async function readAll<Row>(
 }
 
 export const BRANCH_COLUMNS =
-  'id, name, short_name, slug, color, address, position, is_default, active, updated_at'
+  'id, name, short_name, slug, color, address, position, is_default, active, updated_at, practice_until'
 
 export type BranchRow = {
   id: string
@@ -73,6 +73,7 @@ export type BranchRow = {
   is_default: boolean | null
   active: boolean | null
   updated_at: string
+  practice_until?: string | null
 }
 
 export function branchFromRow(row: BranchRow): Branch {
@@ -87,6 +88,7 @@ export function branchFromRow(row: BranchRow): Branch {
     isDefault: row.is_default === true,
     active: row.active !== false,
     updatedAt: row.updated_at,
+    practiceUntil: row.practice_until ?? null,
   }
 }
 
