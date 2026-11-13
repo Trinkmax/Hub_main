@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { planHref } from '@/lib/floor-plan/branches'
-import { refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import { moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
 import {
   attentionRank,
   deriveFreeState,
@@ -35,6 +35,7 @@ import { PosOutboxRunner } from '../order/outbox-runner'
 import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
+import '../ui/pos-toast.css'
 
 /**
  * El salón en vivo de una sucursal: la pantalla de inicio del mozo.
@@ -62,9 +63,16 @@ type Props = {
   branches: PosBranch[]
   timeZone: string
   canEditPlan: boolean
+  /** Puede abrir y mover mesas (el salón); la cocina solo mira. */
+  canOperate: boolean
+  /** Mesa (sesión) que llega pidiendo cambiar de lugar: «Cambiar de mesa» desde la comanda. */
+  initialMove?: string | null
   /** El botón de la cuenta, armado en la página. */
   account?: React.ReactNode
 }
+
+/** Una mesa levantada, esperando a dónde va. */
+type Moving = { sessionId: string; fromTableId: string; label: string }
 
 /** Lo que se puede aislar tocando una ficha del resumen. */
 type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late'
@@ -88,7 +96,16 @@ function useNow(serverNow: string): number {
   return now
 }
 
-export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, account }: Props) {
+export function FloorLive({
+  slug,
+  initial,
+  branches,
+  timeZone,
+  canEditPlan,
+  canOperate,
+  initialMove = null,
+  account,
+}: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
   const [view, setView] = useState<View>('model')
@@ -97,6 +114,7 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
   const [switching, startSwitch] = useTransition()
   const [branchMenu, setBranchMenu] = useState(false)
   const [focus, setFocus] = useState<FocusKey | null>(null)
+  const [moving, setMoving] = useState<Moving | null>(null)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(initial), [initial])
@@ -196,14 +214,109 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
     [snapshot.areas],
   )
   const byId = useMemo(() => new Map(entries.map((e) => [e.tableId, e])), [entries])
+
+  // ── Cambiar una mesa de lugar ──
+  // Se levanta manteniéndola apretada (o con «Cambiar de mesa» desde la comanda) y va a una libre.
+  const holdable = useMemo(
+    () => (canOperate ? new Set(entries.filter((e) => e.session).map((e) => e.tableId)) : null),
+    [entries, canOperate],
+  )
+  const moveTargets = useMemo(
+    () =>
+      moving
+        ? new Set(entries.filter((e) => !e.session && e.state.key === 'free').map((e) => e.tableId))
+        : null,
+    [entries, moving],
+  )
+  const startMove = useCallback(
+    (tableId: string) => {
+      const entry = byId.get(tableId)
+      if (!entry?.session) return
+      setFocus(null)
+      setMoving({ sessionId: entry.session.id, fromTableId: tableId, label: entry.label })
+    },
+    [byId],
+  )
+  const sendTo = useCallback(
+    async (sessionId: string, toTableId: string) => {
+      // Se ve al instante; si la base dice que no, vuelve a como estaba.
+      setSnapshot((current) => ({
+        ...current,
+        sessions: current.sessions.map((session) =>
+          session.id === sessionId ? { ...session, table_id: toTableId } : session,
+        ),
+      }))
+      const result = await moveTable(slug, sessionId, toTableId)
+      if (!result.ok) {
+        toast.error(result.message)
+        void reload()
+      }
+      return result.ok
+    },
+    [slug, reload],
+  )
+  const finishMove = useCallback(
+    async (toTableId: string) => {
+      if (!moving) return
+      const target = byId.get(toTableId)
+      if (!target || target.session || target.state.key !== 'free') return
+      const { sessionId, fromTableId, label } = moving
+      setMoving(null)
+      const moved = await sendTo(sessionId, toTableId)
+      if (!moved) return
+      toast(`La mesa ${label} pasó a la ${target.label}`, {
+        action: { label: 'Deshacer', onClick: () => void sendTo(sessionId, fromTableId) },
+      })
+    },
+    [moving, byId, sendTo],
+  )
+  // La lista no tiene mesas para elegir con el dedo, y con Escape se sale.
+  useEffect(() => {
+    if (moving && view === 'list') setMoving(null)
+  }, [moving, view])
+  useEffect(() => {
+    if (!moving) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoving(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [moving])
+  // Si la mesa que se estaba moviendo se cerró o la movió otro, se suelta.
+  useEffect(() => {
+    if (!moving) return
+    const still = byId.get(moving.fromTableId)?.session?.id === moving.sessionId
+    if (!still) setMoving(null)
+  }, [moving, byId])
+  // «Cambiar de mesa» desde la comanda: llega con la mesa ya levantada, en su sector.
+  const askedMove = useRef(initialMove)
+  useEffect(() => {
+    const sessionId = askedMove.current
+    if (!sessionId || !canOperate) return
+    askedMove.current = null
+    const entry = entries.find((e) => e.session?.id === sessionId)
+    if (!entry) return
+    if (entry.areaId) setAreaId(entry.areaId)
+    setView((current) => (current === 'list' ? 'model' : current))
+    setMoving({ sessionId, fromTableId: entry.tableId, label: entry.label })
+    // Que al recargar no vuelva a levantarla.
+    router.replace(`/${slug}/salon/mapa`, { scroll: false })
+  }, [entries, canOperate, router, slug])
+
   const onTable = useCallback(
     (tableId: string) => {
       const entry = byId.get(tableId)
       if (!entry) return
+      if (moving) {
+        if (tableId === moving.fromTableId) setMoving(null)
+        else if (moveTargets?.has(tableId)) void finishMove(tableId)
+        else toast('Esa mesa no está libre. Elegí una de las marcadas.')
+        return
+      }
       if (entry.session) router.push(`/${slug}/salon/mesa/${entry.session.id}`)
-      else setOpening(entry)
+      else if (canOperate) setOpening(entry)
     },
-    [byId, router, slug],
+    [byId, router, slug, moving, moveTargets, finishMove, canOperate],
   )
 
   const switchBranch = (branch: PosBranch) => {
@@ -277,9 +390,17 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
   }
 
   const dimmed = useMemo(() => {
+    // Moviendo una mesa, todo lo que no es la mesa ni un destino se apaga.
+    if (moving && moveTargets) {
+      return new Set(
+        entries
+          .filter((e) => e.tableId !== moving.fromTableId && !moveTargets.has(e.tableId))
+          .map((e) => e.tableId),
+      )
+    }
     if (!focusAlive || focus === null) return null
     return new Set(entries.filter((e) => !matchesFocus(e.state, focus)).map((e) => e.tableId))
-  }, [entries, focus, focusAlive])
+  }, [entries, focus, focusAlive, moving, moveTargets])
 
   const focusChip = focusAlive ? (chips.find((chip) => chip.key === focus) ?? null) : null
   const visibleList =
@@ -451,6 +572,12 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
               onTable={onTable}
               insetBottom={68}
               dimmed={dimmed}
+              holdable={holdable}
+              onHold={startMove}
+              move={
+                moving && moveTargets ? { from: moving.fromTableId, targets: moveTargets } : null
+              }
+              onDrop={(tableId) => void finishMove(tableId)}
               label={`${activeArea?.name ?? 'Salón'}: ${areaElements.filter((e) => e.kind === 'table').length} mesas`}
             />
           )}
@@ -463,11 +590,25 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
           ) : null}
 
           {/* El resumen del salón, sobre el mapa: cada ficha cuenta y además filtra. */}
-          <p className={cn('pos-caption', focusChip && 'is-focus')}>
-            {focusChip
-              ? `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
-              : occupancy}
-          </p>
+          {moving ? (
+            <div className="pos-move" role="status">
+              <p className="pos-move-text">
+                <b>Mesa {moving.label}:</b>{' '}
+                {moveTargets && moveTargets.size > 0
+                  ? 'tocá la mesa libre a la que pasa, o arrastrala hasta ahí.'
+                  : 'no hay ninguna mesa libre. Probá en otro sector.'}
+              </p>
+              <button type="button" className="pos-move-cancel" onClick={() => setMoving(null)}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <p className={cn('pos-caption', focusChip && 'is-focus')}>
+              {focusChip
+                ? `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
+                : occupancy}
+            </p>
+          )}
           <div className="pos-hud">
             {chips.length > 0 ? (
               <div className="pos-hud-chips">

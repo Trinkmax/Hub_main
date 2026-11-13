@@ -1,0 +1,154 @@
+/* Cambiar una mesa de lugar: se mantiene apretada, «se levanta» y las mesas libres se ofrecen.
+   Va en su propio archivo (y no al final de globals.css) porque solo lo usa el mapa. */
+
+/* Las mesas que se pueden levantar no dejan que el navegador tome el gesto (lupa, menú, selección). */
+.pos-hit.is-holdable {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* La mesa que se está moviendo: levantada del piso, con su sombra más lejos. */
+.pos-solid.pos-lifted {
+  transform: translateY(-7px);
+  filter: drop-shadow(0 9px 6px oklch(0.15 0.04 165 / 0.35));
+}
+.pos-num.pos-lifted,
+.pos-flag.pos-lifted {
+  margin-top: -7px;
+}
+
+/* A dónde puede ir: el borde de la tapa (solo la tapa, no las sillas) marcado, caminando despacio. */
+.pos-solid.pos-r-tabletop.pos-target .pos-top {
+  stroke: var(--pos-st-bill);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+  animation: pos-target-march 900ms linear infinite;
+}
+.pos-solid.pos-r-tabletop.pos-target-hot .pos-top {
+  fill: color-mix(in oklab, var(--pos-st-bill) 26%, var(--pos-card));
+  stroke-dasharray: none;
+  stroke-width: 3.5;
+  animation: none;
+}
+@keyframes pos-target-march {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* Lo que va en el dedo mientras se arrastra: la ficha de la mesa, un poco arriba para que se vea. */
+.pos-ghost {
+  position: absolute;
+  z-index: 3000;
+  display: inline-flex;
+  min-width: 3.25rem;
+  height: 3.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0 0.8rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  box-shadow:
+    0 16px 26px -10px oklch(0 0 0 / 0.6),
+    0 0 0 2px var(--pos-st-bill);
+}
+.pos-ghost small {
+  font-size: 0.6em;
+  font-weight: 600;
+  font-stretch: 88%;
+  color: var(--pos-carbon);
+}
+/* Sobre una mesa libre: la ficha se pone del color de «ir» y dice a cuál va. */
+.pos-ghost.is-hot {
+  background: var(--pos-st-bill);
+  color: var(--pos-on-dark);
+  transform: translate(-50%, -50%) rotate(0deg) scale(1.06);
+  box-shadow:
+    0 16px 26px -10px oklch(0 0 0 / 0.6),
+    0 0 0 3px var(--pos-paper);
+}
+.pos-ghost.is-hot small {
+  font-size: 0.72em;
+  font-weight: 800;
+  color: inherit;
+}
+
+/* El cartel del modo «mover»: qué mesa, qué hacer y cómo salir. Ocupa el lugar del resumen. */
+.pos-move {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.6rem;
+  right: 0.6rem;
+  z-index: 2001;
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.9rem;
+  border-radius: 1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 14px 30px -14px oklch(0 0 0 / 0.65),
+    0 0 0 2px var(--pos-st-bill);
+}
+.pos-move-text {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.pos-move-text b {
+  font-weight: 800;
+  font-stretch: 84%;
+}
+.pos-move-cancel {
+  display: inline-flex;
+  min-height: 2.75rem;
+  flex: none;
+  align-items: center;
+  padding: 0 0.9rem;
+  border-radius: 0.75rem;
+  background: var(--pos-paper-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-move-cancel:active {
+  transform: scale(0.97);
+}
+.pos-move-cancel:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+@media (min-width: 900px) {
+  .pos-move {
+    right: auto;
+    max-width: 34rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-solid.pos-r-tabletop.pos-target .pos-top {
+    animation: none;
+  }
+  .pos-solid.pos-lifted {
+    transform: none;
+  }
+  .pos-num.pos-lifted,
+  .pos-flag.pos-lifted {
+    margin-top: 0;
+  }
+}

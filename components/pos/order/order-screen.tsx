@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight, WifiOff } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
@@ -51,6 +52,7 @@ import { useLocalOrder } from './use-local-order'
 import { useNow } from './use-now'
 import { useOnline } from './use-online'
 import './order.css'
+import '../ui/pos-toast.css'
 
 /**
  * La comanda de una mesa: la pantalla del mozo parado al lado, con el celular en una mano.
@@ -120,6 +122,7 @@ function useCoalesced(task: () => Promise<boolean>): () => Promise<boolean> {
 }
 
 export function OrderScreen({ slug, initial, initialMenu, timeZone, startAdding, account }: Props) {
+  const router = useRouter()
   const sessionId = initial.session.id
   const branchId = initial.session.branch_id
 
@@ -682,6 +685,11 @@ export function OrderScreen({ slug, initial, initialMenu, timeZone, startAdding,
         alias={session.alias}
         onClose={() => setPartyOpen(false)}
         onSave={saveParty}
+        onMove={
+          session.status === 'open'
+            ? () => router.push(`/${slug}/salon/mapa?mover=${session.id}`)
+            : undefined
+        }
       />
       <StockSheet item={stockItem} onClose={() => setStockItem(null)} onToggle={toggleStock} />
       {/* Lo que haya quedado sin enviar de OTRAS mesas sale desde acá también. */}

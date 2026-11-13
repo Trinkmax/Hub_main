@@ -1,6 +1,6 @@
 'use client'
 
-import { Minus, Plus } from 'lucide-react'
+import { ArrowLeftRight, Minus, Plus } from 'lucide-react'
 import { useState } from 'react'
 import {
   Sheet,
@@ -24,6 +24,7 @@ export function PartySheet({
   alias,
   onClose,
   onSave,
+  onMove,
 }: {
   open: boolean
   title: string
@@ -32,6 +33,8 @@ export function PartySheet({
   alias: string | null
   onClose: () => void
   onSave: (change: { partySize?: number; alias?: string }) => void
+  /** «Cambiar de mesa»: lleva al mapa con esta mesa levantada. Sin esto, no se ofrece. */
+  onMove?: () => void
 }) {
   // Cada vez que se abre arranca de lo que la mesa tiene en ese momento (`from`), y al cerrar se
   // guarda solo lo que el mozo cambió: abrir y cerrar no toca la mesa, ni pisa lo que cambió otro.
@@ -118,6 +121,21 @@ export function PartySheet({
               autoCapitalize="words"
             />
           </div>
+
+          {onMove ? (
+            <button
+              type="button"
+              className="pos-btn pos-btn-quiet"
+              onClick={() => {
+                close()
+                onMove()
+              }}
+              data-testid="party-move"
+            >
+              <ArrowLeftRight className="size-5" aria-hidden />
+              Cambiar de mesa
+            </button>
+          ) : null}
 
           <div className="cmd-sheet-foot">
             <button type="submit" className="pos-btn pos-btn-primary" data-testid="party-done">

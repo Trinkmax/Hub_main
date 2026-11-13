@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { z } from 'zod'
 import { FloorLive } from '@/components/pos/floor/floor-live'
 import { BranchChooser } from '@/components/pos/ui/branch-chooser'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
@@ -8,6 +9,7 @@ import { requireFeature } from '@/lib/platform/guards'
 import { posFont } from '@/lib/pos/font'
 import { getActiveBranch, getFloorSnapshot } from '@/lib/pos/queries'
 import {
+  POS_FLOOR_ROLES,
   POS_VIEW_ROLES,
   RoleRequiredError,
   requireRole,
@@ -21,15 +23,16 @@ export const metadata: Metadata = { title: 'Salón' }
 /**
  * El salón en vivo: la pantalla de inicio del punto de venta.
  * `?sucursal=<slug>` entra directo a una sucursal (links, tele); si no, la que eligió este dispositivo.
+ * `?mover=<sesión>` llega desde la comanda («Cambiar de mesa») con esa mesa ya levantada.
  */
 export default async function PosFloorPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<{ sucursal?: string }>
+  searchParams: Promise<{ sucursal?: string; mover?: string }>
 }) {
-  const [{ tenantSlug }, { sucursal }] = await Promise.all([params, searchParams])
+  const [{ tenantSlug }, { sucursal, mover }] = await Promise.all([params, searchParams])
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -70,6 +73,8 @@ export default async function PosFloorPage({
         branches={branches}
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         canEditPlan={access.role === 'owner'}
+        canOperate={POS_FLOOR_ROLES.includes(access.role)}
+        initialMove={mover && z.uuid().safeParse(mover).success ? mover : null}
         account={
           <AccountSheet
             email={access.user.email ?? ''}
