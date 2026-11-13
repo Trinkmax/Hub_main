@@ -1416,6 +1416,9 @@
 /* Mesas sin ubicar */
 .fpe-tray {
   display: grid;
+  /* Una columna que se achica: sin esto, una mesa de nombre largo ensanchaba TODOS los renglones y
+     los botones se salían de la ficha. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   margin: 0;
   padding: 0;
@@ -1448,13 +1451,41 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.fpe-tray-meta {
+/* El número y los lugares, juntos: con un nombre largo («52 TERRAZA VIP») los lugares bajan a un segundo
+   renglón, y si ni así entra, el nombre se corta con puntos suspensivos. */
+.fpe-tray-main {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.45rem;
   min-width: 0;
+}
+.fpe-tray-item .fpe-numchip {
+  display: block;
+  max-width: 100%;
+  line-height: 2.25rem;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fpe-tray-item .fpe-btn {
+  flex: none;
+}
+/* El tacho, un poco más chico: así un número de mesa y sus lugares entran en un solo renglón. */
+.fpe-tray-item .fpe-btn-icon {
+  width: 2rem;
+}
+.fpe-tray-meta {
+  flex: 1 1 3.9rem;
+  min-width: 0;
+  padding-left: 0.1rem;
   color: var(--pos-ink-soft);
   font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 /* Atajos */

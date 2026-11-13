@@ -1333,7 +1333,9 @@ export function FloorPlanEditor({
                       overlay={
                         <>
                           <ContextualToolbar
-                            count={selectedCount}
+                            // Recién soltada, una pieza está elegida pero todavía viaja al servidor: hasta
+                            // que llega no hay nada que hacerle (la barra aparecía sin nombre).
+                            count={selectedCount === 1 && !selectedSingle ? 0 : selectedCount}
                             name={selectedSingle ? elementName(selectedSingle) : ''}
                             canPrintQr={qrEnabled && selectedSingle?.kind === 'table'}
                             onRotate90={rotate90}
