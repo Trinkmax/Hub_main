@@ -120,9 +120,16 @@ export function BulkCreateDialog({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className="fpe-btn fpe-btn-quiet">
+        <button
+          type="button"
+          className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+          title="Varias mesas iguales de una vez"
+        >
           <TablesGridGlyph />
-          Varias mesas
+          {/* Un solo texto: suelto, el espacio entre las dos palabras lo pondría el botón (y de más). */}
+          <span>
+            Varias<span className="fpe-wide-only"> mesas</span>
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>

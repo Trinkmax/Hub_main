@@ -6,7 +6,11 @@ import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import { GRID } from '@/lib/floor-plan/grid'
 import type { PlanBox } from '@/lib/floor-plan/model'
-import { fitTransform, type StageTransform } from '@/lib/floor-plan/stage-transform'
+import {
+  fitTransform,
+  type StageInset,
+  type StageTransform,
+} from '@/lib/floor-plan/stage-transform'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
 
@@ -15,6 +19,8 @@ const MAX_SCALE = 4
 /** Al encajar no se agranda más que esto: un sector chico no se infla. */
 const MAX_FIT_SCALE = 1.4
 const FIT_PADDING = 28
+/** Con las herramientas flotando alrededor, el aire ya lo ponen ellas. */
+const FIT_PADDING_INSET = 14
 /** Por debajo de esto el tablero está oculto o todavía sin medir. */
 const MIN_FRAME = 40
 /** Tablero angosto (celular): el control de zoom ocupa casi todo el ancho. */
@@ -35,6 +41,11 @@ export type EditorStageProps = {
   label: string
   /** Lo que flota sobre el lienzo sin agrandarse con el zoom. */
   overlay?: React.ReactNode
+  /**
+   * Las franjas del tablero que tapan las herramientas que flotan encima (la barra de agregar, la
+   * paleta, el zoom): el piso se encaja en lo que queda libre. `null` = nada flota (celular).
+   */
+  inset?: StageInset | null
   children: React.ReactNode
 }
 
@@ -59,6 +70,7 @@ export function EditorStage({
   onBackground,
   label,
   overlay,
+  inset = null,
   children,
 }: EditorStageProps) {
   const frameRef = useRef<HTMLElement>(null)
@@ -70,6 +82,8 @@ export function EditorStage({
   sizeRef.current = { width, height }
   const contentRef = useRef(content)
   contentRef.current = content
+  const insetRef = useRef(inset)
+  insetRef.current = inset
   // El lienzo se monta ya encajado: primero se mide el tablero (sin pintar nada).
   const [initial, setInitial] = useState<StageTransform | null>(null)
 
@@ -80,6 +94,15 @@ export function EditorStage({
     if (rect.width < MIN_FRAME || rect.height < MIN_FRAME) return null
     const floor = { x: 0, y: 0, width: sizeRef.current.width, height: sizeRef.current.height }
     const box = mode === 'content' ? (contentRef.current ?? floor) : floor
+    const free = insetRef.current
+    if (free) {
+      return fitTransform({ width: rect.width, height: rect.height }, box, {
+        padding: FIT_PADDING_INSET,
+        inset: free,
+        minScale: MIN_SCALE,
+        maxScale: MAX_FIT_SCALE,
+      })
+    }
     // En un tablero angosto (celular) se deja libre la franja de abajo, donde va el control de zoom.
     const reserve = rect.width < NARROW_FRAME ? ZOOM_BAR_SPACE : 0
     return fitTransform({ width: rect.width, height: rect.height - reserve }, box, {
@@ -109,6 +132,14 @@ export function EditorStage({
   useEffect(() => {
     fitTo('floor', 0)
   }, [fitTo, fitKey, width, height])
+
+  // Cambió lo que flota encima (de celular a pantalla grande): se vuelve a encajar, igual que abajo.
+  const insetKey = inset ? `${inset.top}:${inset.right}:${inset.bottom}:${inset.left}` : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: insetKey es el disparador
+  useEffect(() => {
+    const mode = fitModeRef.current
+    if (mode !== 'manual') fitTo(mode, 0)
+  }, [fitTo, insetKey])
 
   // Cambió el tamaño del tablero: se mantiene encajado mientras nadie lo haya acomodado a mano.
   useEffect(() => {

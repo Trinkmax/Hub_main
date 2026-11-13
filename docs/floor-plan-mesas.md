@@ -159,6 +159,30 @@ La sección "Local" fue eliminada de `configuracion/_components/settings-nav.tsx
 
 ## Editor (modo Editar)
 
+### El encuadre: el dibujo manda (13/11/2026)
+
+Pedido de Nacho al verlo en una notebook (ventana de 1190 × 660): «hay muchísimos márgenes y está todo
+super comprimido, es incómodo». Tenía razón: antes de llegar al plano había tres franjas (título, solapas y
+barra de herramientas), el editor era un cuadro con margen y sombra adentro de la página, y «plano y
+maqueta» partía la pantalla en dos. El plano quedaba en un recuadro de 470 × 340. Ahora:
+
+- **El editor es la página.** Va de borde a borde y mide justo lo que queda debajo de la barra del panel
+  (`calc(100dvh - 3.5rem)`): no hay que bajar con la página para ver el final del plano.
+- **Una sola barra fina** (`fpe-bar`): sucursal, solapas de sector (con «+» y los ajustes del sector) y
+  «Editar · En vivo · Lista». El título quedó solo para lectores de pantalla.
+- **Las herramientas flotan sobre el tablero** (`fpe-board`): agregar y deshacer arriba a la izquierda, cómo
+  mirar arriba a la derecha, la paleta en una tira al costado, el zoom abajo a la izquierda y lo que se
+  puede hacer con lo elegido abajo a la derecha. El piso se encaja en lo que queda libre
+  (`fitTransform` con `inset`, `FLOAT_INSET` en el editor), así nada arranca tapado.
+- **«Los dos» (plano y maqueta) recién desde 1180 px de editor** (`SPLIT_MIN_WIDTH`): la maqueta va arriba
+  de la ficha, en la columna de la derecha. Con menos ancho se mira de a uno (la opción ni se ofrece).
+- **Celular (menos de 860 px):** nada flota. Las herramientas vuelven a ser filas y la página scrollea.
+
+Con la misma ventana, el plano pasó a 620 × 480. La ficha de la derecha mide 17,5 rem.
+
+Trampa que apareció al hacerlo: `.fpe button { font: inherit }` le ganaba por especificidad a cada clase
+(`.fpe-btn`, `.fpe-tab`, `.fpe-tool`) y les borraba el tamaño y el grosor. Va con `:where()`.
+
 ### Canvas con `react-zoom-pan-pinch` v3.7
 
 ```tsx
