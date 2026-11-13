@@ -1,4 +1,5 @@
 import 'server-only'
+import type { PosCloseDay } from '@/lib/accounting/pos-close'
 import {
   POS_METHOD_SYSTEM_KEY,
   type PosCommissionRates,
@@ -211,6 +212,45 @@ export async function listSalesTargets(
     if (day) out.push({ day, targetCents: centsOrNull(row.target_cents) })
   }
   return out
+}
+
+/** Un día de `pos_sales_days` → lo que necesita el cierre precargado. `null` si no trae el día. */
+export function parsePosCloseDay(row: UnknownRecord): PosCloseDay | null {
+  const sales = parsePosSalesDay(row)
+  if (!sales) return null
+  return {
+    day: sales.day,
+    byMethod: sales.byMethod,
+    depositCents: sales.depositCents,
+    tipCents: Math.max(0, cents(row.tip_cents)),
+    tables: Math.max(0, int(row.tables)),
+  }
+}
+
+/**
+ * Lo que cobró el punto de venta UN día de servicio, para precargar su cierre (`posCloseFill`).
+ *
+ * `null` si ese día no cobró nada o si no se pudo leer: el cierre arranca en blanco, como siempre, y
+ * queda anotado (la función y el código, sin datos de nadie). Quién puede pedirlo lo decide quien
+ * llama (`projectionUsesPos`); la base lo vuelve a decidir en `pos_sales_days`.
+ */
+export async function getPosCloseDay(tenantId: string, day: string): Promise<PosCloseDay | null> {
+  const { from, to } = requireRange(day, day)
+  const supabase = await readerClient()
+  const { data, error } = await supabase.rpc('pos_sales_days', {
+    p_tenant_id: tenantId,
+    p_from: from,
+    p_to: to,
+  })
+  if (error) {
+    console.error('[acc.close.pos] pos_sales_days', error.code ?? 'sin-codigo')
+    return null
+  }
+  for (const row of asRecords(asRecord(data).days)) {
+    const parsed = parsePosCloseDay(row)
+    if (parsed && parsed.day === from) return parsed
+  }
+  return null
 }
 
 // ─── Lo que entró en cada caja ───────────────────────────────────────────────

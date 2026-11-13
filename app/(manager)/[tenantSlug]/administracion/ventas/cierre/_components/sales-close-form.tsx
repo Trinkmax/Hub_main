@@ -94,6 +94,7 @@ import {
   ExistingCloses,
 } from './close-pieces'
 import { type CloseMercadoPago, MpCloseFill } from './mp-close-fill'
+import { type ClosePos, PosCloseNote } from './pos-close-note'
 
 // ─── Lo que arma la página ───────────────────────────────────────────────────
 
@@ -256,6 +257,7 @@ export function SalesCloseForm({
   afterSaveHref,
   afterSaveLabel,
   mercadoPago,
+  pos = null,
 }: {
   tenantSlug: string
   /** El día que se cierra (`yyyy-MM-dd`). */
@@ -276,6 +278,11 @@ export function SalesCloseForm({
   afterSaveLabel: string | null
   /** «Completar con Mercado Pago» (QR y transferencias). `null`: no se ofrece. */
   mercadoPago: CloseMercadoPago | null
+  /**
+   * Lo que cobró el punto de venta ese día, ya repartido por medio: el cierre arranca precargado.
+   * `null`: el bar no lo usa, ese día no cobró nada o ya tiene un cierre.
+   */
+  pos?: ClosePos | null
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -342,7 +349,10 @@ export function SalesCloseForm({
       manual: false,
     }))
   })
-  const [amounts, setAmounts] = useState<Record<string, number | null>>({})
+  // En un bar con punto de venta el cierre arranca con lo que se cobró: revisar y guardar.
+  const [amounts, setAmounts] = useState<Record<string, number | null>>(() =>
+    pos ? { ...pos.fills } : {},
+  )
   const [accounts, setAccounts] = useState<Record<string, AccountRow[]>>({})
   // Sin importe contado viaja `null`: es lo mismo que no haber contado la caja.
   const [cashCounted, setCashCounted] = useState<number | null>(null)
@@ -537,6 +547,21 @@ export function SalesCloseForm({
     for (const methodId of Object.keys(fills)) {
       clear(`methods.${methodIndex.get(methodId) ?? -1}.amountCents`)
     }
+    clear('methods')
+  }
+
+  /** Los importes del punto de venta, en sus medios (precargados al abrir, o vueltos a traer). */
+  function applyPos(fills: Readonly<Record<string, number>>) {
+    applyMercadoPago(fills)
+  }
+
+  /** «Empezar en blanco»: se vacían los medios que venían precargados. */
+  function clearPos(methodIds: readonly string[]) {
+    setAmounts((prev) => {
+      const next = { ...prev }
+      for (const methodId of methodIds) next[methodId] = null
+      return next
+    })
     clear('methods')
   }
 
@@ -1314,6 +1339,16 @@ export function SalesCloseForm({
                 </Button>
               }
             />
+
+            {pos ? (
+              <PosCloseNote
+                pos={pos}
+                methodNames={methodNames}
+                amounts={amounts}
+                onApply={applyPos}
+                onClear={clearPos}
+              />
+            ) : null}
 
             {needsShift ? (
               <div className="border-b border-border/70 p-3">
