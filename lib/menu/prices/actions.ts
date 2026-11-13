@@ -11,7 +11,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { type HistoryEntry, shapeHistory } from './history'
-import { chunk, planPriceWrites, runLimited } from './plan'
+import { applyErrorKind, chunk, parseApplyResult, runLimited, toRpcChanges } from './plan'
 import {
   readBranchNames,
   readItemNames,
@@ -20,28 +20,24 @@ import {
   untypedClient,
 } from './queries'
 import { applyPriceChangesSchema, priceHistorySchema, setAvailabilitySchema } from './schemas'
-import {
-  type ApplyPricesResult,
-  type PriceChange,
-  type PriceWriteFailure,
-  pointKey,
-  type SetAvailabilityResult,
-} from './types'
+import { type ApplyPricesResult, pointKey, type SetAvailabilityResult } from './types'
 
 /**
  * Lo que «Precios» escribe. Cada acción vuelve a comprobar quién es y qué rol tiene, valida
  * con zod, confirma que cada producto y cada sucursal sean de este bar y deja su renglón en la
  * auditoría (sin datos de personas: ids, importes y cantidades).
  *
- * El historial de precios (`menu_price_changes`) no se escribe desde acá: lo anota la base
- * sola, con un trigger, cada vez que cambia `price_cents`.
+ * Los precios se cambian con una sola operación en la base (`menu_apply_price_changes`): entra
+ * entera o no entra, y un aumento queda marcado como una tanda. El historial de precios
+ * (`menu_price_changes`) no se escribe desde acá: lo anota la base sola, con un trigger, cada vez
+ * que cambia `price_cents`.
  */
 
 /** Cuántos ids entran en un `in.(…)` sin pasarse del largo de una URL. */
 const IDS_PER_REQUEST = 100
 /** Filas por `upsert`. */
 const ROWS_PER_UPSERT = 500
-/** Escrituras a la vez. */
+/** Lecturas a la vez. */
 const WRITE_CONCURRENCY = 6
 
 const NOT_ALLOWED = 'No tenés permiso para cambiar precios. Pedile al dueño que te dé acceso.'
@@ -49,6 +45,11 @@ const ACCESS_FAILED = 'No pudimos comprobar tu acceso. Probá de nuevo en un mom
 const INVALID = 'No pudimos leer lo que mandó la pantalla. Recargá la página y probá de nuevo.'
 const READ_FAILED = 'No pudimos leer los precios de la base. Probá de nuevo en un momento.'
 const BRANCH_GONE = 'Esa sucursal ya no existe. Recargá la página.'
+/** La base no aplicó nada: se dice así, para que nadie se quede pensando que quedó a medias. */
+const NOT_SAVED = 'No se cambió ningún precio. Revisá la conexión y probá de nuevo.'
+/** La base contestó algo que no se entiende: puede haber escrito. Que se vea la verdad. */
+const UNKNOWN_RESULT =
+  'No pudimos confirmar si los precios se guardaron. Recargá la página para ver cómo quedaron.'
 
 type Authorized =
   | { ok: true; tenantId: string; userId: string; timezone: string }
@@ -160,8 +161,11 @@ async function branchesBelong(
 
 /**
  * Cambia precios: uno (tipeado en la lista), varios (un aumento) o los devuelve (deshacer).
- * Cada precio se escribe solo si sigue valiendo lo que la persona veía; lo que no se pudo
- * cambiar vuelve en `failed`, uno por uno, para decirlo sin vueltas.
+ *
+ * Todo el pedido viaja a la base en una sola operación (`menu_apply_price_changes`): si algo falla
+ * no queda nada escrito. Cada precio se cambia solo si sigue valiendo lo que la persona veía; los
+ * que alguien cambió en el medio, o que ya no están, vuelven en `failed`, uno por uno, para decirlo
+ * sin vueltas. Un aumento y su deshacer quedan marcados como una tanda en el historial.
  */
 export async function applyPriceChanges(slug: string, input: unknown): Promise<ApplyPricesResult> {
   const auth = await authorize(slug)
@@ -172,80 +176,38 @@ export async function applyPriceChanges(slug: string, input: unknown): Promise<A
   const { tenantId, userId } = auth
 
   const supabase = await untypedClient()
-  const itemIds = [...new Set(changes.map((change) => change.itemId))]
+  const { data, error } = await supabase.rpc('menu_apply_price_changes', {
+    p_tenant_id: tenantId,
+    p_changes: toRpcChanges(changes),
+    p_batch: reason === 'bulk' || reason === 'bulk_undo',
+  })
+  if (error) {
+    console.error('[menu.prices.apply]', error.code, error.message)
+    const kind = applyErrorKind(error)
+    return {
+      ok: false,
+      message:
+        kind === 'forbidden'
+          ? NOT_ALLOWED
+          : kind === 'branch'
+            ? BRANCH_GONE
+            : kind === 'invalid'
+              ? INVALID
+              : NOT_SAVED,
+    }
+  }
+  const outcome = parseApplyResult(data)
+  if (!outcome) {
+    console.error('[menu.prices.apply] respuesta inesperada de menu_apply_price_changes')
+    revalidatePath(`/${slug}/menu`)
+    revalidatePath(`/${slug}/menu/precios`)
+    return { ok: false, message: UNKNOWN_RESULT }
+  }
+  const { applied, failed, batchId } = outcome
+  const savedAt = Date.now()
   const branchIds = [
     ...new Set(changes.flatMap((change) => (change.branchId === null ? [] : [change.branchId]))),
   ]
-
-  const [belong, current] = await Promise.all([
-    branchesBelong(supabase, tenantId, branchIds),
-    readCurrentPrices(supabase, tenantId, itemIds, branchIds),
-  ])
-  if (belong === 'error' || current === null) return { ok: false, message: READ_FAILED }
-  if (!belong) return { ok: false, message: BRANCH_GONE }
-
-  const plan = planPriceWrites(changes, current)
-  const applied: PriceChange[] = []
-  const failed: PriceWriteFailure[] = [...plan.failed]
-
-  // El precio de la carta: una escritura por cada «de cuánto a cuánto», y solo sobre las filas
-  // que siguen valiendo lo esperado (la base decide, no lo que leímos hace un instante).
-  const menuWrites = plan.menuWrites.flatMap((write) =>
-    chunk(write.itemIds, IDS_PER_REQUEST).map((ids) => ({ ...write, itemIds: ids })),
-  )
-  await runLimited(menuWrites, WRITE_CONCURRENCY, async (write) => {
-    const { data, error } = await supabase
-      .from('menu_items')
-      .update({ price_cents: write.priceCents })
-      .eq('tenant_id', tenantId)
-      .eq('price_cents', write.expectedCents)
-      .in('id', write.itemIds)
-      .select('id')
-    if (error) console.error('[menu.prices.apply] menu_items', error.code, error.message)
-    const written = new Set(
-      error ? [] : ((data ?? []) as Array<{ id: string }>).map((row) => row.id),
-    )
-    for (const itemId of write.itemIds) {
-      if (written.has(itemId)) {
-        applied.push({
-          itemId,
-          branchId: null,
-          fromCents: write.expectedCents,
-          toCents: write.priceCents,
-        })
-      } else {
-        failed.push({ itemId, branchId: null, reason: error ? 'error' : 'changed' })
-      }
-    }
-  })
-
-  // El precio propio de una sucursal: la fila se crea si no estaba. `null` = volver a la carta
-  // (se actualiza, no se borra: así el cambio queda en el historial).
-  for (const rows of chunk(plan.branchWrites, ROWS_PER_UPSERT)) {
-    const { error } = await supabase.from('menu_item_branches').upsert(
-      rows.map((row) => ({
-        branch_id: row.branchId,
-        menu_item_id: row.itemId,
-        tenant_id: tenantId,
-        price_cents: row.priceCents,
-        updated_by: userId,
-      })),
-      { onConflict: 'branch_id,menu_item_id' },
-    )
-    if (error) console.error('[menu.prices.apply] menu_item_branches', error.code, error.message)
-    for (const row of rows) {
-      if (error) failed.push({ itemId: row.itemId, branchId: row.branchId, reason: 'error' })
-      else {
-        applied.push({
-          itemId: row.itemId,
-          branchId: row.branchId,
-          fromCents: row.fromCents,
-          toCents: row.priceCents,
-        })
-      }
-    }
-  }
-  const savedAt = Date.now()
 
   if (applied.length > 0) {
     const only = changes.length === 1 ? applied[0] : undefined
@@ -275,6 +237,7 @@ export async function applyPriceChanges(slug: string, input: unknown): Promise<A
           applied: applied.length,
           failed: failed.length,
           branch_ids: branchIds,
+          batch_id: batchId,
           percent_bp: bulk?.percentBp ?? null,
           rounding_cents: bulk?.roundingCents ?? null,
           scope: bulk?.scope ?? null,

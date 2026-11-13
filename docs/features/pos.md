@@ -30,7 +30,7 @@ lo prende un superadmin por bar).
 | Cambiar una mesa de lugar | `floor-model.tsx` (mantener y arrastrar), `floor-live.tsx`, RPC `pos_move_table` | hecho |
 | «¿Dónde trabajás hoy?» | `components/pos/ui/branch-chooser.tsx` | hecho |
 | Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`): tablero a sangre con ficha flotante, juntar arrastrando, mesas nuevas en fila | hecho |
-| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho (se ve con `pos` prendido) |
+| Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*`, `menu_apply_price_changes` (entero o nada, un aumento = una tanda) | hecho (se ve con `pos` prendido) |
 | Cobro y caja por turno: base y capa de servidor | migraciones `pos_cobro_tablas`, `pos_cobro_cuenta_y_cobrar` y `pos_cobro_descuentos_y_caja`, `lib/pos/cash/*` | hecho |
 | La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
@@ -69,9 +69,26 @@ Todo lo que cambia el estado va por RPC `pos_*` (chequean el rol contra el bar d
 las tablas de mesa y comanda no tienen escritura directa. Las lecturas también son una RPC por pantalla
 (`pos_floor_snapshot`, `pos_session_detail`, `pos_menu`, `pos_kitchen_queue`).
 
-**En vivo:** cada RPC que cambia algo manda un aviso sin datos al canal público `pos:<sucursal>`
+**En vivo:** cada RPC que cambia algo manda un aviso sin datos al canal `pos:<sucursal>`
 (`private.pos_poke` → `realtime.send`). Las pantallas escuchan con `usePosPoke` y vuelven a leer lo suyo. Si
 el canal se cae, la pantalla lo dice y al volver se pone al día sola.
+
+El canal es **privado** (migración `pos_canal_privado`, 13/11). Antes era público: no llevaba datos, pero
+cualquiera con la clave pública del proyecto y el id de una sucursal podía escucharlo (y saber cuándo se
+mueve un salón) o mandarle avisos falsos. Ahora:
+
+- la base manda al canal privado (`realtime.send(..., true)`);
+- Realtime deja entrar solo a quien pasa la política `pos_live_listen` de `realtime.messages`: alguien con
+  un rol en el bar de esa sucursal (lee `branches` con los permisos de quien pregunta y además pide
+  `user_role_in_tenant`). Un nombre de canal que no es `pos:<id>` no entra y no rompe;
+- nadie manda desde el navegador: no hay política de escritura;
+- `usePosPoke` le pasa al socket la sesión de ese momento (`authorizeSocket`) y recién después se une con
+  `{ config: { private: true } }`: los permisos se fijan al entrar.
+
+Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
+del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
+contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de
+cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy no existe ninguna.
 
 **Día de servicio:** hasta las 5 de la mañana sigue siendo la noche anterior (igual que el tablero operativo).
 
