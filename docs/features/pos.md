@@ -35,6 +35,7 @@ lo prende un superadmin por bar).
 | La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
 | Sucursales, lista de apertura y ajustes del punto de venta | `/[bar]/local/sucursales`, `lib/pos/branches/*`, `lib/pos/settings/*` | hecho |
+| Cocina y aclaraciones (estaciones y a dónde va cada cosa; aclaraciones de cada producto) | `/[bar]/menu/cocina`, `lib/menu/kitchen/*` | hecho |
 | Tablero del dueño, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
@@ -210,6 +211,28 @@ la última lectura; cada escritura viaja con lo que la persona veía y no pisa l
 
 Probado contra la base real en el bar de ejemplo (13/11): nombre corto que se guarda solo y se deshace; crear
 «Prueba QA» (persiana a medias, «Faltan tres pasos») y borrarla; recargo de 10 % a 12 % y deshacer.
+
+## Cocina y aclaraciones
+
+`/[bar]/menu/cocina` (dueño y contenido, con `pos`; se entra desde la Carta). Dos pestañas, las dos sobre las
+mismas tablas que leen la comanda y la pantalla de cocina (`kitchen_stations`, `station_id` en categorías y
+productos, `menu_modifier_*`). Todo se guarda solo, en orden, y se puede deshacer (`use-kitchen-writes.ts`
+lleva la cola y la lista de «Deshacer»; `lib/menu/kitchen/ops.ts` aplica cada cambio encima de lo leído).
+
+- **Estaciones:** el número de arriba dice si cada producto tiene a dónde salir, con la barra del reparto.
+  Se marca como con un resaltador: se elige una estación (con un toque o con su número; `0` es la goma, `Esc`
+  la suelta) y se toca en la carta lo que va ahí. Marcar una categoría alcanza: lo de adentro la sigue, salvo
+  lo que tenga su propia marca («Todo a Barra, menos Postres (Fríos)»). También se puede cambiar un renglón
+  solo desde su etiqueta. «Lo que falta» lista lo que quedó sin estación o va a una apagada, y si los nombres
+  lo dejan claro se ofrece marcar por nombre. «Editar estaciones» abre la hoja para crearlas, renombrarlas,
+  cambiarles el color, ordenarlas, apagarlas o borrarlas (una que ya recibió pedidos queda apagada).
+- **Aclaraciones:** cada una es una pregunta con sus opciones («Punto de la carne»: jugoso, a punto, bien
+  cocido). Se elige cómo se contesta (una si hace falta, una sí o sí, las que hagan falta, al menos una),
+  cada opción puede sumar al precio (en pesos) y se ofrece en categorías enteras o en productos sueltos. El
+  estado dice si el mozo la ve y en cuántos productos. Hay cuatro de arranque para no empezar de cero.
+
+Probado contra la base real en el bar de ejemplo (13/11): Vinos a Fríos con el marcador y deshacer; marcador
+con el teclado; estación «Parrilla QA» creada y borrada; opción «Vuelta y vuelta» sumada y sacada.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 

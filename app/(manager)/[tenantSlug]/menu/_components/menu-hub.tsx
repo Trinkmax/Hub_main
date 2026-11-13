@@ -1,6 +1,6 @@
 'use client'
 
-import { CircleDollarSign, Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
+import { ChefHat, CircleDollarSign, Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -19,7 +19,7 @@ export type MenuHubProps = {
   role: TenantRole
   menu: Awaited<ReturnType<typeof listMenu>>
   tags: Awaited<ReturnType<typeof listItemTags>>
-  /** Mostrar el acceso a «Precios» (viene con el punto de venta). */
+  /** Mostrar los accesos a «Precios» y «Cocina y aclaraciones» (vienen con el punto de venta). */
   showPrices?: boolean
 }
 
@@ -80,6 +80,15 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
               <Link href={`/${tenantSlug}/menu/precios`} data-testid="menu-precios-link">
                 <CircleDollarSign className="size-4" />
                 Precios
+              </Link>
+            </Button>
+          ) : null}
+          {/* A qué estación de la cocina va cada cosa, y las aclaraciones de cada producto. */}
+          {showPrices ? (
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`/${tenantSlug}/menu/cocina`} data-testid="menu-cocina-link">
+                <ChefHat className="size-4" />
+                Cocina y aclaraciones
               </Link>
             </Button>
           ) : null}

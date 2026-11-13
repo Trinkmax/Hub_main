@@ -1,0 +1,273 @@
+/* ============================================================
+   «Cocina y aclaraciones» — lo propio de esta pantalla
+   ============================================================
+   El resto sale de los tokens y los componentes del panel. Acá vive solo lo que no tienen:
+   el color de cada estación (de día y de noche), el trazo de marcador al marcar una rama de la
+   carta, la barra de reparto y el teléfono del mozo.
+
+   Todo cuelga de clases `kc-*`.
+   ============================================================ */
+
+/* ── El color de una estación ──
+   Cada cosa que lleva color de estación trae dos variables puestas en línea: `--st-l` (para el
+   fondo claro) y `--st-d` (para el oscuro). `--st` es la que se usa. */
+.kc-ink {
+  --st: var(--st-l, var(--muted-foreground));
+}
+.dark .kc-ink {
+  --st: var(--st-d, var(--muted-foreground));
+}
+
+/* El punto de color: siempre va con el nombre de la estación al lado. */
+.kc-dot {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--st);
+}
+/* Heredada: el mismo punto, hueco. */
+.kc-dot[data-hollow] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--st);
+}
+
+/* ── La etiqueta de estación de cada renglón ── */
+.kc-slot {
+  position: relative;
+  isolation: isolate;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+/* Propia: rellena con la tinta de la estación, como una pasada de marcador. */
+.kc-slot[data-source="own"] {
+  background: color-mix(in oklch, var(--st) 15%, var(--card));
+  border-color: color-mix(in oklch, var(--st) 42%, transparent);
+}
+.dark .kc-slot[data-source="own"] {
+  background: color-mix(in oklch, var(--st) 24%, var(--card));
+  border-color: color-mix(in oklch, var(--st) 55%, transparent);
+}
+/* Sin estación y con productos adentro: falta marcar. */
+.kc-slot[data-source="none"][data-warn] {
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--warning) 70%, transparent);
+  background: color-mix(in oklch, var(--warning) 9%, transparent);
+}
+
+/* El trazo: al marcar, la tinta entra de izquierda a derecha. */
+.kc-slot[data-flash]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--st) 38%, transparent);
+  animation: kc-stroke 420ms var(--ease-out) both;
+}
+@keyframes kc-stroke {
+  0% {
+    clip-path: inset(0 100% 0 0 round 999px);
+    opacity: 1;
+  }
+  55% {
+    clip-path: inset(0 0 0 0 round 999px);
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 0 round 999px);
+    opacity: 0;
+  }
+}
+
+/* Con un marcador en la mano, cada etiqueta dice a dónde iría si se la toca. */
+.kc-slot-ghost {
+  position: absolute;
+  inset: -1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem;
+  border-radius: inherit;
+  border: 1.5px dashed var(--st);
+  background: color-mix(in oklch, var(--st) 16%, var(--card));
+  color: var(--foreground);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.kc-slot:focus-visible .kc-slot-ghost {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .kc-slot:hover .kc-slot-ghost {
+    opacity: 1;
+  }
+}
+
+/* ── La barra de reparto: la carta, cortada por estación ── */
+.kc-bar {
+  display: flex;
+  gap: 2px;
+  height: 0.5rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.kc-bar-part {
+  min-width: 0.375rem;
+  height: 100%;
+  background: var(--st);
+  transition: flex-grow var(--duration-slow) var(--ease-out);
+}
+.kc-bar-part:first-child {
+  border-radius: 999px 0 0 999px;
+}
+.kc-bar-part:last-child {
+  border-radius: 0 999px 999px 0;
+}
+.kc-bar-part:only-child {
+  border-radius: 999px;
+}
+/* Lo que no tiene estación (o va a una apagada): rayado, no un color más. */
+.kc-bar-part[data-kind="problem"] {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--warning) 85%, var(--foreground)) 0 2px,
+      transparent 2px 5px
+    ),
+    color-mix(in oklch, var(--warning) 24%, transparent);
+}
+.kc-bar-part[data-kind="off"] {
+  background:
+    repeating-linear-gradient(135deg, var(--st) 0 2px, transparent 2px 5px),
+    color-mix(in oklch, var(--st) 22%, transparent);
+}
+
+/* ── El marcador que está en la mano ── */
+.kc-marker {
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.kc-marker:active {
+  transform: scale(0.985);
+}
+.kc-marker[aria-pressed="true"] {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--background);
+}
+.kc-marker[aria-pressed="true"] .kc-dot {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--background) 80%, transparent);
+}
+.kc-marker[aria-pressed="true"] .kc-marker-soft {
+  color: color-mix(in oklch, var(--background) 78%, var(--foreground));
+}
+/* La tecla, sobre el marcador elegido: mismo dibujo, tinta al revés. */
+.kc-marker[aria-pressed="true"] kbd {
+  border-color: color-mix(in oklch, var(--background) 35%, transparent);
+  background: color-mix(in oklch, var(--background) 14%, transparent);
+  color: color-mix(in oklch, var(--background) 85%, var(--foreground));
+  box-shadow: none;
+}
+
+/* ── El teléfono del mozo ──
+   Adentro va la hoja de aclaraciones de verdad (las clases `pos` y `cmd-*` de la comanda): acá
+   solo se dibuja el aparato. Es papel claro también en modo oscuro, como en el salón. */
+.kc-phone {
+  position: relative;
+  width: 100%;
+  max-width: 23.5rem;
+  margin-inline: auto;
+  padding: 0.6rem;
+  border-radius: 2.4rem;
+  background: oklch(0.2 0.02 165);
+  box-shadow:
+    inset 0 0 0 1.5px oklch(0.42 0.02 165),
+    0 1px 2px oklch(0.18 0.04 165 / 0.3),
+    0 22px 38px -18px oklch(0.18 0.04 165 / 0.55);
+}
+.kc-phone-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: min(42rem, calc(100dvh - 15rem));
+  min-height: 26rem;
+  overflow: hidden;
+  border-radius: 1.85rem;
+  /* La comanda de atrás, oscurecida por la hoja que se abrió encima. */
+  background: color-mix(in oklch, var(--pos-board) 55%, black);
+}
+.kc-phone-back {
+  flex: none;
+  height: 3.4rem;
+}
+/* La hoja: los mismos tokens y medidas que `.pos-sheet` en el celular. */
+.kc-phone-sheet {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border-radius: 1rem 1rem 0 0;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+.kc-phone-sheet .pos-sheet-body {
+  min-height: 0;
+  flex: 1;
+}
+.kc-phone-grabber {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  z-index: 2;
+  width: 2.5rem;
+  height: 0.375rem;
+  translate: -50% 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--pos-ink) 25%, transparent);
+}
+/* Dentro del teléfono no hay barra de inicio del iPhone que esquivar. */
+.kc-phone-sheet > .cmd-sheet-foot {
+  padding-bottom: 0.9rem;
+}
+/* Cuando la vista previa se abre como hoja en un celular de verdad, ocupa el ancho y no dibuja
+   el aparato: ya está en uno. */
+.kc-phone[data-bare] {
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.kc-phone[data-bare] .kc-phone-screen {
+  height: min(40rem, 78dvh);
+  border-radius: 0;
+  background: transparent;
+}
+.kc-phone[data-bare] .kc-phone-back {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kc-slot,
+  .kc-slot-ghost,
+  .kc-marker,
+  .kc-bar-part {
+    transition: none;
+  }
+  .kc-slot[data-flash]::after {
+    animation: none;
+    opacity: 0;
+  }
+  .kc-marker:active {
+    transform: none;
+  }
+}
