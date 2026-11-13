@@ -112,12 +112,6 @@ import './sucursales.css'
 
 const OFFLINE = 'No hay conexión: no se guardó. Probá de nuevo cuando vuelva.'
 
-/**
- * «Carta › Cocina y aclaraciones» todavía no está: mientras tanto, la lista de apertura no ofrece
- * ese atajo (no se manda a nadie a una pantalla que no existe). Cuando esté, esto pasa a `true`.
- */
-const KITCHEN_SETUP_READY = false
-
 type TeleLink = { url: string; qr: string | null }
 
 const readName = (text: string): FieldRead<string> => {
@@ -1031,9 +1025,7 @@ function Step({
   branchSlug: string
   tele: TeleLink | null
 }) {
-  const links = stepLinks(step, { tenantSlug, branchSlug }).filter(
-    (link) => KITCHEN_SETUP_READY || !link.href.endsWith('/menu/cocina'),
-  )
+  const links = stepLinks(step, { tenantSlug, branchSlug })
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return

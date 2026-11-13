@@ -1025,6 +1025,28 @@ export const commandEntries: CommandEntry[] = [
     feature: 'pos',
   },
   {
+    // Carta › Cocina y aclaraciones: a qué estación va cada cosa y qué se le aclara a cada producto.
+    id: 'menu-kitchen',
+    label: 'Cocina y aclaraciones',
+    icon: ChefHat,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/menu/cocina`,
+    keywords: [
+      'estación',
+      'estaciones',
+      'cocina',
+      'barra',
+      'fríos',
+      'aclaración',
+      'punto',
+      'extras',
+      'sin',
+    ],
+    roles: ['owner', 'editor'],
+    feature: 'pos',
+  },
+  {
     id: 'club',
     label: 'Club de beneficios',
     icon: Star,
