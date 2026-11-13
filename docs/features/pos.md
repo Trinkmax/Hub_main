@@ -32,7 +32,8 @@ lo prende un superadmin por bar).
 | Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`) | hecho |
 | Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho |
 | Cobro y caja por turno: base y capa de servidor | migración `pos_cobro_y_caja` (**sin aplicar**), `lib/pos/cash/*` | diseñado y ensayado |
-| Cobro y caja por turno: pantallas | `/[bar]/salon/mesa/[sesión]/cuenta`, `/[bar]/salon/caja` | en construcción |
+| La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho con datos de ejemplo |
+| La caja por turno | `/[bar]/salon/caja` | en construcción |
 | Tablero del dueño, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
@@ -116,6 +117,45 @@ Migración `supabase/migrations/20261113030000_pos_cobro_y_caja.sql`: ocho tabla
 - Descuentos y bajas: quien puede aprobar los aplica directo; el resto los pide.
 - Nada se borra: un cobro se anula o se corrige y queda quién y cuándo. Con el turno cerrado, solo un dueño.
 - La plata la leen dueño y caja; nadie escribe directo en las tablas (todo entra por las funciones).
+
+## La cuenta (cobrar una mesa)
+
+`/[bar]/salon/mesa/[sesión]/cuenta` · `components/pos/pay/*` · `lib/pos/pay/*` · pruebas `tests/lib/pos-pay-*.test.ts`.
+
+- **«Cuenta» es un toque.** Desde la comanda pide la cuenta (la mesa cambia de estado en el mapa) y abre esta
+  pantalla; la flecha vuelve a la comanda. «Todavía no la pidieron» lo deshace mientras no haya cobros.
+- **Lo que falta, siempre arriba y grande**, escrito sobre el paño (no es otra franja). Al lado, cuántos son y
+  cuánto le toca a cada uno; después de un cobro, cuánto se lleva cobrado.
+- **La cuenta es la cuenta de papel del bar:** membrete, renglones con puntos guía (lo mismo de distintas
+  tandas va junto: «4 Mojito»), lo que se descuenta, el total abajo y, debajo de la línea de corte, los cobros.
+  «Documento no válido como factura».
+- **El talón de cobro** (abajo en el celular, a la derecha con ancho) pregunta de a una cosa: «¿Cómo paga?»
+  (seis teclas) y lo mínimo de cada medio. Efectivo: con cuánto paga y el vuelto enorme. Transferencia: el
+  alias. Crédito: el recargo antes de cobrar. «Facturar» viene según el medio; la propina va aparte.
+- **Dividir** es otra pregunta: todo junto, partes iguales (arranca en los comensales; el plan se lee de los
+  rótulos «Parte 2 de 4», así cualquier celular lo sigue), por producto (se marca en la cuenta) u otro monto.
+- **El último cobro cierra la mesa sola:** sello COBRADO, vuelto si hubo, puntos del socio y «Volver al salón».
+- **Un cobro nunca se encola.** Sin señal se dice que no se registró y se reintenta con la misma clave; «No
+  cobrar» primero relee la cuenta para saber si había entrado.
+- **Plata escrita a mano** (otro monto, con cuánto paga, propina, descuento en pesos): en pesos, y si no es
+  razonable para ese campo pregunta «¿$ 129 o $ 129.000?» (`lib/pos/pay/typed.ts`).
+- **Descuentos y bajas** se piden con motivo. Quien puede aprobar los aplica directo; el resto deja un pedido
+  que se ve punteado en la cuenta sin cambiar el total.
+- La pantalla sigue `can` (lo que la base dice que puede cada uno) y el momento de la cuenta
+  (`lib/pos/pay/mode.ts`): cobrando, caja cerrada, cubierta por la seña, cobrada de más, cobrada.
+
+## La bandeja de pedidos
+
+`components/pos/approvals/*`. Una campanita en la barra de arriba del mapa y de la cuenta. A quien puede dar
+el OK le cuenta cuántos pedidos esperan (late y avisa cuando entra uno); a quien pidió, le avisa qué le
+contestaron. Si no hay nada para esa persona, no se dibuja.
+
+- Aprobar un descuento: un toque, y se puede deshacer (se quita el descuento).
+- Rechazar o retirar: un toque; viaja a los cinco segundos (o al cerrar la hoja) y hasta entonces se deshace.
+- Aprobar una baja no tiene vuelta: se pregunta una vez.
+- No abre su propio canal en vivo: la pantalla que la aloja le pasa `signal`.
+
+Probado con datos de ejemplo: la prueba de punta a punta espera que se aplique la migración de cobro.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 
