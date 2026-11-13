@@ -88,6 +88,8 @@ export function MaquetaPane({
         elements={model}
         tables={tables}
         view={raised ? 'model' : 'plan'}
+        // Al lado del plano, la maqueta queda orientada igual que él: lo de arriba, arriba.
+        turn="never"
         onTable={onTable}
         label={`Maqueta de ${areaName}: ${tableCount} ${tableCount === 1 ? 'mesa' : 'mesas'}`}
       />

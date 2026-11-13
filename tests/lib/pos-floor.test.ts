@@ -14,7 +14,14 @@ import {
   splitLongRect,
   unproject,
 } from '@/lib/pos/floor/projection'
-import { buildScene, HEIGHTS, nearestAnchor, occupiedSeats } from '@/lib/pos/floor/scene'
+import {
+  buildScene,
+  chooseCamera,
+  HEIGHTS,
+  labelSize,
+  nearestAnchor,
+  occupiedSeats,
+} from '@/lib/pos/floor/scene'
 import type { FloorElement } from '@/lib/pos/types'
 
 const DEG = Math.PI / 180
@@ -272,5 +279,79 @@ describe('soltar una mesa sobre otra', () => {
     )
     expect(nearestAnchor(scene.anchors, 430, 150, 60)?.tableId).toBe('t-2')
     expect(nearestAnchor(scene.anchors, 900, 900, 60)).toBeNull()
+  })
+})
+
+describe('labelSize — el número de la mesa entra en su tapa', () => {
+  it('los números de siempre usan el tamaño de siempre', () => {
+    expect(labelSize('7', 60, 24)).toBe(24)
+    expect(labelSize('12', 20, 24)).toBe(24)
+  })
+
+  it('un nombre largo se achica hasta entrar', () => {
+    const size = labelSize('52 TERRAZA VIP', 70, 24)
+    expect(size).toBeLessThan(24)
+    // 14 caracteres a 0,52 del cuerpo no pasan del 86 % de la tapa.
+    expect(14 * 0.52 * size).toBeLessThanOrEqual(70 * 0.86 + 1e-9)
+  })
+
+  it('nunca baja del mínimo legible ni sube del tamaño base', () => {
+    expect(labelSize('MESA LARGUÍSIMA DEL FONDO', 30, 24)).toBe(8)
+    expect(labelSize('101', 400, 24)).toBe(24)
+  })
+
+  it('sin ancho conocido no inventa: usa la base', () => {
+    expect(labelSize('BARRA', 0, 24)).toBe(24)
+  })
+})
+
+describe('chooseCamera — al lado del plano no gira', () => {
+  const wide = [
+    {
+      id: 'a',
+      area_id: 's',
+      kind: 'table',
+      shape: 'rect',
+      x: 0,
+      y: 0,
+      w: 80,
+      h: 80,
+      rotation: 0,
+      corner_radius: 8,
+      z: 0,
+      label: null,
+      color: null,
+      table_id: 't1',
+      table_label: '1',
+      capacity: 4,
+    },
+    {
+      id: 'b',
+      area_id: 's',
+      kind: 'table',
+      shape: 'rect',
+      x: 900,
+      y: 0,
+      w: 80,
+      h: 80,
+      rotation: 0,
+      corner_radius: 8,
+      z: 0,
+      label: null,
+      color: null,
+      table_id: 't2',
+      table_label: '2',
+      capacity: 4,
+    },
+  ] as const
+
+  it('un sector apaisado en una pantalla parada se gira solo…', () => {
+    expect(chooseCamera(wide, { width: 360, height: 700 }).turns).toBe(1)
+  })
+
+  it('…salvo que se pida que no', () => {
+    expect(chooseCamera(wide, { width: 360, height: 700 }, undefined, undefined, false).turns).toBe(
+      0,
+    )
   })
 })

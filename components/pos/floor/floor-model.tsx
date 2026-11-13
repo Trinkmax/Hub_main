@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { fitBounds, mixCamera, PLAN_CAMERA, turned } from '@/lib/pos/floor/projection'
-import { buildScene, chooseCamera, type Scene, type Solid } from '@/lib/pos/floor/scene'
+import { buildScene, chooseCamera, labelSize, type Scene, type Solid } from '@/lib/pos/floor/scene'
 import {
   formatMinutes,
   formatMinutesTight,
@@ -63,6 +63,11 @@ type Props = {
   insetBottom?: number
   /** Mesas que se apagan (cuando se está mirando solo un grupo: «las que tienen comida lista»). */
   dimmed?: ReadonlySet<string> | null
+  /**
+   * `auto` gira el sector un cuarto de vuelta si así entra más grande (el salón, en un celular).
+   * `never` lo deja como está dibujado: la maqueta al lado del plano, en el editor.
+   */
+  turn?: 'auto' | 'never'
 }
 
 const TRANSITION_MS = 460
@@ -176,6 +181,7 @@ export function FloorModel({
   label,
   insetBottom = 0,
   dimmed = null,
+  turn = 'auto',
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const full = useSize(ref)
@@ -187,7 +193,10 @@ export function FloorModel({
   const mix = useCameraMix(view)
 
   // Cómo mirar este sector en esta pantalla: girado o no, y con cuánta inclinación (ver chooseCamera).
-  const choice = useMemo(() => chooseCamera(elements, size), [elements, size])
+  const choice = useMemo(
+    () => chooseCamera(elements, size, undefined, undefined, turn === 'auto'),
+    [elements, size, turn],
+  )
   const camera = useMemo(
     () => mixCamera(turned(PLAN_CAMERA, choice.turns), choice.camera, mix),
     [mix, choice],
@@ -350,7 +359,7 @@ export function FloorModel({
                 style={{
                   left: sx(anchor.x),
                   top: sy(anchor.y),
-                  fontSize: numSize,
+                  fontSize: labelSize(anchor.label, anchor.topWidth * scale, numSize),
                   zIndex: Math.round(anchor.depth),
                 }}
                 aria-hidden

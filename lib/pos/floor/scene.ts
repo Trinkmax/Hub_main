@@ -85,6 +85,8 @@ export type TableAnchor = {
   y: number
   /** El punto más alto de la mesa en pantalla: de ahí sale la bandera. */
   topY: number
+  /** Ancho de la tapa en pantalla (sin escala): cuánto lugar tiene el número. */
+  topWidth: number
   /** Caja de la mesa con sus sillas, para la zona de toque. */
   bounds: Bounds
   depth: number
@@ -323,6 +325,7 @@ export function buildScene(
         x: center.x,
         y: center.y,
         topY: top.bounds.minY,
+        topWidth: top.bounds.maxX - top.bounds.minX,
         bounds: safeBounds,
         depth,
         seats: seats.length,
@@ -474,6 +477,8 @@ export function chooseCamera(
   viewport: { width: number; height: number },
   padding = 14,
   maxScale = 1.7,
+  /** `false` cuando la maqueta va al lado del plano (el editor): tiene que quedar orientada igual que él. */
+  allowTurn = true,
 ): CameraChoice {
   const fallback: CameraChoice = { turns: 0, camera: MODEL_POSES[0] as Camera, scale: 1 }
   if (viewport.width <= 0 || viewport.height <= 0) return fallback
@@ -482,7 +487,7 @@ export function chooseCamera(
       .scale
 
   let best: { turns: number; scales: number[]; top: number } | null = null
-  for (const turns of [0, 1]) {
+  for (const turns of allowTurn ? [0, 1] : [0]) {
     const scales = MODEL_POSES.map((pose) => scaleFor(turned(pose, turns)))
     const top = Math.max(...scales)
     // Sin girar gana salvo que girar agrande de verdad: la orientación de siempre es la que la gente conoce.
@@ -496,6 +501,23 @@ export function chooseCamera(
     camera: turned(pose, best.turns),
     scale: best.scales[index < 0 ? 0 : index] ?? best.top,
   }
+}
+
+/**
+ * El tamaño del número de una mesa. Casi todas se llaman «7» o «12» y usan el tamaño de siempre; un nombre
+ * largo («52 TERRAZA VIP») se achica hasta entrar en su tapa en vez de salirse y pisar a la de al lado.
+ * `advance` es lo que ocupa cada carácter respecto del cuerpo (Archivo angosta y pesada ≈ 0,52).
+ */
+export function labelSize(
+  label: string,
+  topWidthPx: number,
+  base: number,
+  { min = 8, advance = 0.52, fill = 0.86 }: { min?: number; advance?: number; fill?: number } = {},
+): number {
+  const chars = label.trim().length
+  if (chars <= 2 || !(topWidthPx > 0)) return base
+  const fits = (topWidthPx * fill) / (chars * advance)
+  return Math.max(min, Math.min(base, fits))
 }
 
 /** Dónde queda en pantalla la punta de la bandera de una mesa. */
