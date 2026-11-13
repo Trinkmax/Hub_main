@@ -5,7 +5,8 @@
   align-items: center;
   gap: 0.55rem;
   margin: 0;
-  padding: 0.5rem max(1rem, env(safe-area-inset-right, 0px)) 0.5rem max(1rem, env(safe-area-inset-left, 0px));
+  padding: 0.5rem max(1rem, env(safe-area-inset-right, 0px)) 0.5rem
+    max(1rem, env(safe-area-inset-left, 0px));
   background: var(--pos-kraft);
   color: var(--pos-on-light);
   font-size: 0.86rem;
