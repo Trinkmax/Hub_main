@@ -299,9 +299,11 @@ export function FloorLive({
     if (entry.areaId) setAreaId(entry.areaId)
     setView((current) => (current === 'list' ? 'model' : current))
     setMoving({ sessionId, fromTableId: entry.tableId, label: entry.label })
-    // Que al recargar no vuelva a levantarla.
-    router.replace(`/${slug}/salon/mapa`, { scroll: false })
-  }, [entries, canOperate, router, slug])
+    // Que al recargar no vuelva a levantarla (sin cambiar de sucursal).
+    router.replace(`/${slug}/salon/mapa?sucursal=${encodeURIComponent(snapshot.branch.slug)}`, {
+      scroll: false,
+    })
+  }, [entries, canOperate, router, slug, snapshot.branch.slug])
 
   const onTable = useCallback(
     (tableId: string) => {

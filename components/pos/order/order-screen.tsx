@@ -72,6 +72,8 @@ type Props = {
   timeZone: string
   /** Mesa recién abierta o sin pedido: derecho a cargar. */
   startAdding: boolean
+  /** La sucursal de la mesa, para volver al mapa parado en ella («Cambiar de mesa»). */
+  branchSlug?: string | null
   /** El botón de la cuenta de quien trabaja, armado en la página. */
   account?: React.ReactNode
 }
@@ -121,7 +123,15 @@ function useCoalesced(task: () => Promise<boolean>): () => Promise<boolean> {
   }, [])
 }
 
-export function OrderScreen({ slug, initial, initialMenu, timeZone, startAdding, account }: Props) {
+export function OrderScreen({
+  slug,
+  initial,
+  initialMenu,
+  timeZone,
+  startAdding,
+  branchSlug = null,
+  account,
+}: Props) {
   const router = useRouter()
   const sessionId = initial.session.id
   const branchId = initial.session.branch_id
@@ -687,7 +697,10 @@ export function OrderScreen({ slug, initial, initialMenu, timeZone, startAdding,
         onSave={saveParty}
         onMove={
           session.status === 'open'
-            ? () => router.push(`/${slug}/salon/mapa?mover=${session.id}`)
+            ? () =>
+                router.push(
+                  `/${slug}/salon/mapa?${branchSlug ? `sucursal=${encodeURIComponent(branchSlug)}&` : ''}mover=${session.id}`,
+                )
             : undefined
         }
       />

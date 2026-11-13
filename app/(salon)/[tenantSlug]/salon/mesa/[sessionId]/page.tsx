@@ -69,6 +69,7 @@ export default async function PosOrderPage({
         initialMenu={menu.data}
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         startAdding={session.status === 'open' && (nueva === '1' || tickets.length === 0)}
+        branchSlug={branches.find((branch) => branch.id === session.branch_id)?.slug ?? null}
         account={
           <AccountSheet
             email={access.user.email ?? ''}
