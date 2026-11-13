@@ -4,6 +4,7 @@ import {
   ChefHat,
   ClipboardList,
   DoorOpen,
+  LayoutGrid,
   type LucideIcon,
   QrCode,
   ScanLine,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import {
+  POS_VIEW_ROLES,
   PURCHASING_KITCHEN_ROLES,
   REDEMPTION_STAFF_ROLES,
   SALON_READ_ROLES,
@@ -47,6 +49,17 @@ export type SalonTab = {
 }
 
 export const SALON_TABS: ReadonlyArray<SalonTab> = [
+  {
+    // Punto de venta: el mapa en vivo es el inicio del salón (docs/features/pos.md).
+    key: 'mapa',
+    label: 'Salón',
+    title: 'Salón',
+    icon: LayoutGrid,
+    href: (s) => `/${s}/salon/mapa`,
+    match: (p, s) => p.startsWith(`/${s}/salon/mapa`) || p.startsWith(`/${s}/salon/mesa/`),
+    roles: POS_VIEW_ROLES,
+    feature: 'pos',
+  },
   {
     key: 'escanear',
     label: 'Sumar puntos',

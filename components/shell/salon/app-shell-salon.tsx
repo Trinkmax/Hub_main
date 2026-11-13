@@ -4,7 +4,7 @@ import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { AccountSheet } from './account-sheet'
 import { BottomTabBar } from './bottom-tab-bar'
 import { PwaInstallPrompt } from './install-prompt'
-import { PullToRefresh } from './pull-to-refresh'
+import { SalonMain } from './salon-main'
 import { SalonTopbar } from './salon-topbar'
 import { ServiceWorkerRegistration } from './service-worker-registration'
 
@@ -56,11 +56,7 @@ export function AppShellSalon({
         }
       />
 
-      <main className="flex-1 pb-[calc(var(--salon-tabbar-h)+1rem)] pt-3">
-        <PullToRefresh>
-          <div className="mx-auto w-full max-w-screen-md px-4">{children}</div>
-        </PullToRefresh>
-      </main>
+      <SalonMain>{children}</SalonMain>
 
       <BottomTabBar
         tenantSlug={tenant.slug}

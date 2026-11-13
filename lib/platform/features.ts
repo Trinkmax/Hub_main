@@ -18,6 +18,7 @@ export type FeatureKey =
   | 'accounting' // Administración: contabilidad de la SAS /administracion (Sprint 1)
   | 'ticket_door' // puerta: validar con QR las entradas compradas online /salon/puerta
   | 'purchasing' // compras: conteo de stock, pedidos a proveedores y recepción /compras + /salon/stock
+  | 'pos' // punto de venta: mapa en vivo, comanda, cocina, cobro y caja (docs/features/pos.md)
 
 export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
 
@@ -86,6 +87,14 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     description:
       'La cocina cuenta el stock y recibe la mercadería; el dueño revisa los pedidos y los manda por WhatsApp.',
     group: 'Administración',
+    defaultEnabled: false,
+  },
+  pos: {
+    key: 'pos',
+    label: 'Punto de venta',
+    description:
+      'El salón en vivo: mapa de mesas por sucursal, comanda del mozo, pantalla de cocina, cobro y caja por turno.',
+    group: 'Salón',
     defaultEnabled: false,
   },
   // El interruptor de emergencia de todo el módulo: apagado, las RLS no

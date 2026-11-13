@@ -101,6 +101,27 @@ export const SALON_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 
 export const REDEMPTION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter']
 
 /**
+ * Punto de venta (docs/features/pos.md). Espejan las RPC `pos_*` de la base.
+ *   · salón: abrir mesas, cargar tandas, servir, pedir la cuenta, cambiar de mesa;
+ *   · cocina: avanzar comandas (el mozo también, para el bar sin pantalla de cocina);
+ *   · ver: el mapa en vivo, que la cocina también mira.
+ */
+export const POS_FLOOR_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'host']
+export const POS_KITCHEN_ROLES: ReadonlyArray<TenantRole> = [
+  'owner',
+  'kitchen',
+  'cashier',
+  'waiter',
+]
+export const POS_VIEW_ROLES: ReadonlyArray<TenantRole> = [
+  'owner',
+  'cashier',
+  'waiter',
+  'kitchen',
+  'host',
+]
+
+/**
  * Administración: prerrequisito de ROL. No alcanza con el rol: además hace
  * falta el acceso por persona (`acc_access`, que llega en
  * `TenantAccess.accounting`) y el flag del bar. La contadora lee y exporta; no
