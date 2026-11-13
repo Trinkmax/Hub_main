@@ -4,19 +4,39 @@ import './floor-editor.css'
 import { LayoutList, Loader2, PencilRuler, Plus, Radio } from 'lucide-react'
 import Link, { useLinkStatus } from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   addDecorAction,
   createTableInPlanAction,
   deleteDecorAction,
   deleteTablePermanentlyAction,
   duplicateElementAction,
+  mergeTablesAction,
   placeTableAction,
   removeFromPlanAction,
   saveGeometryAction,
 } from '@/lib/floor-plan/actions'
+import {
+  type Box,
+  findFreeSpot,
+  type MergeCandidate,
+  mergedTable,
+  mergeTargetAt,
+  rowContinuation,
+  turnedBounds,
+} from '@/lib/floor-plan/arrange'
 import {
   hasBranchChoice,
   type PlanBranch,
@@ -50,24 +70,24 @@ import {
   unplacedWithRemoved,
 } from '@/lib/floor-plan/model'
 import { suggestNextLabel } from '@/lib/floor-plan/numbering'
-import type { ElementRow, FloorPlanData } from '@/lib/floor-plan/queries'
+import type { ElementRow, FloorPlanData, UnplacedTable } from '@/lib/floor-plan/queries'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
 import { type AlignKind, alignBoxes, type Guide } from '@/lib/floor-plan/snap'
 import { readStageTransform, type StageInset } from '@/lib/floor-plan/stage-transform'
+import { updateTable } from '@/lib/tables/actions'
 import { cn } from '@/lib/utils'
 import { BulkCreateDialog } from './bulk-create-dialog'
-import { ContextualToolbar } from './contextual-toolbar'
 import { DecorInspector } from './decor-inspector'
-import { EditorStage } from './editor-stage'
+import { EditorStage, type StageApi } from './editor-stage'
 import { EditorToolbar, type EditorView } from './editor-toolbar'
 import { ElementPalette } from './element-palette'
 import { FloorElement } from './floor-element'
 import { EmptyFloorArt } from './glyphs'
-import { LegacyLive } from './legacy-live'
 import { LivePane } from './live-pane'
 import { MaquetaPane } from './maqueta-pane'
+import { PAPEL } from './papel'
 import { SectorCreateForm, SectorTabs } from './sector-tabs'
-import { GroupPanel, SectorPanel } from './side-panel'
+import { GroupPanel } from './side-panel'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
 import { useGeometryQueue } from './use-geometry-queue'
@@ -83,7 +103,10 @@ export type FloorPlanEditorProps = {
   branches: PlanBranch[]
   /** El plano de ESA sucursal: sus sectores, lo dibujado y sus mesas sin ubicar. */
   initial: FloorPlanData
-  /** Punto de venta prendido: «En vivo» es la maqueta del salón con los estados reales. */
+  /**
+   * Punto de venta prendido. «En vivo» es siempre la maqueta del salón con los estados reales; esto
+   * dice de dónde salen (las comandas del punto de venta, o el servicio de mesa de siempre).
+   */
   posEnabled: boolean
   /** QR de mesa prendidos: se ofrece imprimirlos y cambiarlos. */
   qrEnabled: boolean
@@ -102,10 +125,28 @@ const SPLIT_MIN_WIDTH = 1180
 /** Desde este ancho las herramientas flotan sobre el tablero; por debajo (celular) van en filas. */
 const FLOAT_MIN_WIDTH = 860
 /**
- * Lo que tapan las herramientas que flotan sobre el plano, en píxeles: la barra de agregar arriba, la
- * paleta a la izquierda y el zoom abajo. El piso se encaja en lo que queda libre.
+ * Lo que tapan las herramientas que flotan sobre el plano, en píxeles: la fila de arriba y la paleta de
+ * la izquierda. El piso se encaja en lo que queda libre. Abajo y a la derecha no hay nada fijo: la
+ * ficha aparece solo con algo elegido, y del lado donde no lo tapa.
  */
-const FLOAT_INSET: StageInset = { top: 52, right: 8, bottom: 52, left: 68 }
+const FLOAT_INSET: StageInset = { top: 52, right: 8, bottom: 10, left: 68 }
+/** Ancho de la ficha flotante (18 rem) más su aire, para saber si taparía lo elegido. */
+const INSPECTOR_REACH = 308
+const NO_STATE = { ok: false as const, message: '' }
+
+/** Algo que se está creando: su lugar ya está tomado aunque el servidor todavía no contestó. */
+type PendingSpot = Box & {
+  key: number
+  areaId: string
+  round: boolean
+  /** Solo las mesas: el número que se les pidió (para no repetirlo en la siguiente). */
+  label: string | null
+  /** Cuando el servidor contesta: el elemento que la va a reemplazar al refrescar. */
+  elementId: string | null
+}
+
+/** Dos mesas que se soltaron una encima de la otra y esperan el «sí» para juntarse. */
+type MergePrompt = { draggedId: string; targetId: string }
 
 // Geometría sin id (para snapshots de undo/redo).
 type GeomFields = {
@@ -248,8 +289,12 @@ export function FloorPlanEditor({
   const [guides, setGuides] = useState<Guide[]>([])
 
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
+  // El zoom se maneja desde la fila de arriba: el lienzo expone cómo y escribe el porcentaje.
+  const stageApiRef = useRef<StageApi | null>(null)
+  const zoomLabelRef = useRef<HTMLSpanElement | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
-  // El tablero del plano: ahí se sueltan las piezas que vienen de la paleta.
+  // El tablero entero (plano + lo que flota encima) y, adentro, el plano: ahí se sueltan las piezas.
+  const boardRef = useRef<HTMLDivElement>(null)
   const planRef = useRef<HTMLDivElement>(null)
   // Nodos DOM de cada FloorElement (para mover los pares durante el group-drag).
   const nodesRef = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -267,6 +312,36 @@ export function FloorPlanEditor({
   const removingRef = useRef<Set<string>>(new Set())
   // Mesas recién quitadas del plano: aparecen en «sin ubicar» sin esperar al servidor.
   const [removedTables, setRemovedTables] = useState<RemovedTable[]>([])
+  // Lo que se está creando: se dibuja su hueco al toque y nada más cae ahí (ni repite su número).
+  const pendingSpotsRef = useRef<PendingSpot[]>([])
+  const [pendingSpots, setPendingSpotsState] = useState<PendingSpot[]>([])
+  const pendingKeyRef = useRef(0)
+  const setPendingSpots = useCallback((next: PendingSpot[]) => {
+    pendingSpotsRef.current = next
+    setPendingSpotsState(next)
+  }, [])
+  // Mesas de la bandeja que ya se ubicaron o se borraron: salen de «sin ubicar» sin esperar al
+  // servidor (si no, el renglón quedaba unos segundos a la vista y se lo podía tocar de nuevo).
+  const [goneTables, setGoneTables] = useState<ReadonlySet<string>>(new Set())
+  const markGone = useCallback((tableId: string, gone: boolean) => {
+    setGoneTables((current) => {
+      if (current.has(tableId) === gone) return current
+      const next = new Set(current)
+      if (gone) next.add(tableId)
+      else next.delete(tableId)
+      return next
+    })
+  }, [])
+  // Juntar arrastrando: sobre qué mesa se está por soltar, y la pregunta al soltar.
+  const mergeHoverRef = useRef<string | null>(null)
+  const mergePromptRef = useRef<MergePrompt | null>(null)
+  const [mergePrompt, setMergePromptState] = useState<MergePrompt | null>(null)
+  const setMergePrompt = useCallback((next: MergePrompt | null) => {
+    mergePromptRef.current = next
+    setMergePromptState(next)
+  }, [])
+  // De qué lado flota la ficha: donde no tape lo elegido.
+  const [inspectorSide, setInspectorSide] = useState<'right' | 'left'>('right')
 
   // Re-sync de elements cuando cambian los datos del server.
   const initialSig = useMemo(() => planSignature(initial.elements), [initial.elements])
@@ -292,6 +367,23 @@ export function FloorPlanEditor({
       current.length === 0 ? current : pruneRemoved(current, initial, removingRef.current),
     )
   }, [initial])
+  // Lo mismo con lo que se estaba creando: cuando llega el elemento de verdad, se va su hueco.
+  useEffect(() => {
+    const spots = pendingSpotsRef.current
+    if (spots.length === 0) return
+    const arrived = new Set(initial.elements.map((el) => el.id))
+    const left = spots.filter((spot) => spot.elementId === null || !arrived.has(spot.elementId))
+    if (left.length !== spots.length) setPendingSpots(left)
+  }, [initial.elements, setPendingSpots])
+  // Y con las de la bandeja: cuando el servidor ya no las manda como «sin ubicar», se olvidan.
+  useEffect(() => {
+    setGoneTables((current) => {
+      if (current.size === 0) return current
+      const still = new Set(initial.unplacedTables.map((table) => table.id))
+      const next = new Set([...current].filter((id) => still.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [initial.unplacedTables])
 
   // El sector activo sigue existiendo; y si se acaba de crear uno, se salta a ese.
   const wantedAreaRef = useRef<string | null>(null)
@@ -308,6 +400,8 @@ export function FloorPlanEditor({
   // ── Cómo se mira: plano, maqueta o los dos (recuerda la última elección) ──
   const [canSplit, setCanSplit] = useState(false)
   const [floating, setFloating] = useState(false)
+  const floatingRef = useRef(false)
+  floatingRef.current = floating
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -340,7 +434,7 @@ export function FloorPlanEditor({
       // idem
     }
   }, [])
-  // Partida, la maqueta va arriba de la ficha; sola, ocupa el tablero entero.
+  // Partida, la maqueta va al lado del plano; sola, ocupa el tablero entero.
   const splitShown = view === 'split' && canSplit
 
   const prevGeomRef = useRef<Map<string, ElementGeometry>>(new Map())
@@ -394,6 +488,8 @@ export function FloorPlanEditor({
   // Refs vivos para closures estables (gestos / teclado).
   const elementsRef = useRef(elements)
   elementsRef.current = elements
+  // La bandeja de «sin ubicar» tal como se está mostrando (se llena más abajo, al derivarla).
+  const unplacedRef = useRef<UnplacedTable[]>([])
   const areaElementsRef = useRef(areaElements)
   areaElementsRef.current = areaElements
   const activeAreaRef = useRef(activeArea)
@@ -532,12 +628,56 @@ export function FloorPlanEditor({
   )
   const onDragEnd = useCallback(() => {
     draggingRef.current = false
+    boardRef.current?.removeAttribute('data-dragging')
+  }, [])
+
+  /**
+   * Juntar arrastrando. La mesa sobre la que quedaría apoyada la que se arrastra (su centro adentro de
+   * la otra): `null` si se arrastra un grupo, algo que no es una mesa, o si cae en el piso.
+   */
+  const mergeTargetFor = useCallback((id: string, dx: number, dy: number): ElementRow | null => {
+    const sel = selectedIdsRef.current
+    if (sel.has(id) && sel.size > 1) return null
+    const el = elementsRef.current.find((e) => e.id === id)
+    if (!el || el.kind !== 'table' || !el.physical_table_id) return null
+    const tables = areaElementsRef.current
+      .filter((e) => e.kind === 'table' && e.physical_table_id)
+      // En el orden en que se pintan: si dos se pisan, gana la que se ve arriba.
+      .sort((a, b) => a.z_index - b.z_index)
+    const candidates: MergeCandidate[] = tables.map((e) => ({
+      id: e.id,
+      x: e.x,
+      y: e.y,
+      width: e.width,
+      height: e.height,
+      rotation: e.rotation,
+      shape: e.shape,
+    }))
+    const targetId = mergeTargetAt(
+      { x: el.x + dx + el.width / 2, y: el.y + dy + el.height / 2 },
+      candidates,
+      id,
+    )
+    return targetId ? (tables.find((e) => e.id === targetId) ?? null) : null
+  }, [])
+
+  // Marca (a mano, sin pasar por React) la mesa destino y la que se arrastra.
+  const markMergeTarget = useCallback((draggedId: string, targetId: string | null) => {
+    const previous = mergeHoverRef.current
+    if (previous === targetId) return
+    if (previous) nodesRef.current.get(previous)?.classList.remove('is-merge-target')
+    mergeHoverRef.current = targetId
+    if (targetId) nodesRef.current.get(targetId)?.classList.add('is-merge-target')
+    nodesRef.current.get(draggedId)?.classList.toggle('is-merging', targetId !== null)
   }, [])
 
   // Move vivo: la maqueta acompaña el gesto y, si hay un grupo elegido, sus pares
   // se mueven con el que se arrastra (a mano, sin pasar por React).
   const onMoveLive = useCallback(
     (id: string, dx: number, dy: number) => {
+      // Mientras se arrastra, la ficha se corre de adelante (se puede soltar debajo de ella).
+      boardRef.current?.setAttribute('data-dragging', '')
+      markMergeTarget(id, mergeTargetFor(id, dx, dy)?.id ?? null)
       const sel = selectedIdsRef.current
       const ids = sel.has(id) && sel.size > 1 ? [...sel] : [id]
       const entries: [string, LiveGeometry][] = []
@@ -551,7 +691,7 @@ export function FloorPlanEditor({
       }
       liveStore.setMany(entries)
     },
-    [liveStore],
+    [liveStore, markMergeTarget, mergeTargetFor],
   )
 
   // Commit del move: aplica el delta al grupo (o al único) + limpia transforms de pares.
@@ -559,6 +699,15 @@ export function FloorPlanEditor({
     (id: string, dx: number, dy: number) => {
       const sel = selectedIdsRef.current
       const ids = sel.has(id) && sel.size > 1 ? [...sel] : [id]
+      const target = mergeTargetFor(id, dx, dy)
+      markMergeTarget(id, null)
+      if (target) {
+        // Soltada encima de otra mesa: no es un lugar donde quedarse, es el gesto de juntarlas. Se
+        // pregunta (desactiva una mesa: no es un paso más de «deshacer») y, hasta la respuesta, la
+        // mesa queda apoyada donde se soltó: su nodo conserva el corrimiento del arrastre.
+        setMergePrompt({ draggedId: id, targetId: target.id })
+        return
+      }
       applyDelta(ids, dx, dy)
       liveStore.clear()
       // Limpiar transforms imperativos de los pares tras el commit de React.
@@ -570,7 +719,7 @@ export function FloorPlanEditor({
         }
       })
     },
-    [applyDelta, liveStore],
+    [applyDelta, liveStore, markMergeTarget, mergeTargetFor, setMergePrompt],
   )
 
   const onLive = useCallback(
@@ -691,18 +840,6 @@ export function FloorPlanEditor({
       if (newIds.length) selectSet(new Set(newIds))
     })()
   }, [slug, router, selectSet, queue])
-
-  const printQrSelected = useCallback(() => {
-    const ids = [...selectedIdsRef.current]
-    if (ids.length !== 1) return
-    const el = elementsRef.current.find((e) => e.id === ids[0])
-    const token = el?.table?.qr_token
-    if (!token) {
-      toast.error('Esta mesa no tiene QR.')
-      return
-    }
-    window.open(`/print/qr/${encodeURIComponent(token)}`, '_blank', 'width=600,height=800')
-  }, [])
 
   // Volver a poner lo que se quitó, donde estaba y como estaba.
   const restore = useCallback(
@@ -897,31 +1034,117 @@ export function FloorPlanEditor({
     redo,
   ])
 
-  // Centro lógico del área activa (fallback no-drag de la paleta).
-  const areaCenter = useCallback(
-    (w: number, h: number) => {
-      if (!activeArea) return { x: 0, y: 0 }
-      return clampToArea(
-        snapToGrid(activeArea.width / 2 - w / 2),
-        snapToGrid(activeArea.height / 2 - h / 2),
-        w,
-        h,
-        activeArea.width,
-        activeArea.height,
-      )
+  /**
+   * Dónde apoyar algo nuevo de `width` × `height`, sin que caiga encima de otra cosa ni de algo que
+   * todavía se está creando (antes, cada «Agregar mesa» la apilaba sobre la anterior en el medio del
+   * piso).
+   *
+   * - Una mesa (`asTable`) sigue la fila de la última: tocar «Mesa» varias veces arma una fila pareja.
+   *   Solo si ese lugar está a la vista: con el plano acercado en otra parte, no aparece donde no se ve.
+   * - Lo demás (y la mesa, si no hay fila que seguir) va al centro de lo que se está mirando.
+   */
+  const freeSpot = useCallback((width: number, height: number, asTable: boolean) => {
+    const area = activeAreaRef.current
+    if (!area) return { x: 0, y: 0 }
+    // Lo que se ve del piso, en sus propias medidas. Mirando solo la maqueta el plano está guardado
+    // (no mide nada): se ve «todo».
+    let seen: Box = { x: 0, y: 0, width: area.width, height: area.height }
+    const rect = planRef.current?.getBoundingClientRect()
+    if (rect && rect.width > 40 && rect.height > 40) {
+      const { scale, positionX, positionY } = readStageTransform(transformRef)
+      const inset = floatingRef.current ? FLOAT_INSET : null
+      const left = inset?.left ?? 0
+      const top = inset?.top ?? 0
+      seen = {
+        x: (left - positionX) / scale,
+        y: (top - positionY) / scale,
+        width: (rect.width - left - (inset?.right ?? 0)) / scale,
+        height: (rect.height - top - (inset?.bottom ?? 0)) / scale,
+      }
+    }
+    const pending = pendingSpotsRef.current.filter((spot) => spot.areaId === area.id)
+    const drawn = areaElementsRef.current
+    let preferred = {
+      x: seen.x + seen.width / 2 - width / 2,
+      y: seen.y + seen.height / 2 - height / 2,
+    }
+    if (asTable) {
+      const next = rowContinuation({
+        area,
+        tables: [
+          ...drawn.filter((el) => el.kind === 'table').map((el) => turnedBounds(el)),
+          ...pending.filter((spot) => spot.label !== null),
+        ],
+        width,
+        height,
+      })
+      const inSight =
+        next !== null &&
+        next.x >= seen.x &&
+        next.y >= seen.y &&
+        next.x + width <= seen.x + seen.width &&
+        next.y + height <= seen.y + seen.height
+      if (next && inSight) preferred = next
+    }
+    return findFreeSpot({
+      area,
+      others: [...drawn.map((el) => turnedBounds(el)), ...pending],
+      width,
+      height,
+      preferred,
+      // Las mesas piden aire para sus sillas; lo construido puede quedar pegado a otra cosa.
+      gap: asTable ? undefined : 0,
+    })
+  }, [])
+
+  /**
+   * Toma un lugar del piso para algo que se está creando. El hueco aparece ya (se ve dónde va a quedar
+   * y lo próximo no cae encima) y devuelve cómo cerrarlo: con el id del elemento cuando el servidor lo
+   * creó (el hueco se va cuando llega la pieza de verdad), o con `null` si no se pudo.
+   */
+  const reserveSpot = useCallback(
+    (areaId: string, box: Box, round: boolean, label: string | null) => {
+      const key = ++pendingKeyRef.current
+      setPendingSpots([
+        ...pendingSpotsRef.current,
+        { key, areaId, ...box, round, label, elementId: null },
+      ])
+      return (elementId: string | null) =>
+        setPendingSpots(
+          elementId
+            ? pendingSpotsRef.current.map((spot) =>
+                spot.key === key ? { ...spot, elementId } : spot,
+              )
+            : pendingSpotsRef.current.filter((spot) => spot.key !== key),
+        )
     },
-    [activeArea],
+    [setPendingSpots],
   )
 
   const insertAt = useCallback(
     (kind: PaletteKind, x: number, y: number) => {
       if (!activeArea) return
+      const def = ELEMENT_DEFAULTS[kind]
+      const reserve = (label: string | null) =>
+        reserveSpot(
+          activeArea.id,
+          { x, y, width: def.width, height: def.height },
+          def.shape === 'circle',
+          label,
+        )
+
       if (kind === 'table') {
-        const areaLabels = elements
-          .filter((el) => el.area_id === activeArea.id && el.kind === 'table' && el.table)
-          .map((el) => el.table?.label ?? '')
-          .filter((l) => l.length > 0)
+        const areaLabels = [
+          ...elements
+            .filter((el) => el.area_id === activeArea.id && el.kind === 'table' && el.table)
+            .map((el) => el.table?.label ?? ''),
+          // Las que se están creando ya tienen su número: la siguiente no lo repite.
+          ...pendingSpotsRef.current
+            .filter((spot) => spot.areaId === activeArea.id)
+            .map((spot) => spot.label ?? ''),
+        ].filter((l) => l.length > 0)
         const label = suggestNextLabel(activeArea.number_start, areaLabels)
+        const settle = reserve(label)
         void (async () => {
           await queue.flushNow()
           const r = await createTableInPlanAction(slug, {
@@ -934,15 +1157,17 @@ export function FloorPlanEditor({
             y,
           })
           if (r.ok) {
+            settle(r.elementId)
             selectSet(new Set([r.elementId]))
             router.refresh()
           } else {
+            settle(null)
             toast.error(r.message)
           }
         })()
         return
       }
-      const def = ELEMENT_DEFAULTS[kind]
+      const settle = reserve(null)
       void (async () => {
         await queue.flushNow()
         const r = await addDecorAction(slug, {
@@ -957,15 +1182,17 @@ export function FloorPlanEditor({
           color: null,
         })
         if (r.ok) {
-          const id = (r.data as { id?: string } | undefined)?.id
+          const id = (r.data as { id?: string } | undefined)?.id ?? null
+          settle(id)
           if (id) selectSet(new Set([id]))
           router.refresh()
         } else {
+          settle(null)
           toast.error(r.message)
         }
       })()
     },
-    [activeArea, slug, router, elements, selectSet, queue],
+    [activeArea, slug, router, elements, selectSet, queue, reserveSpot],
   )
 
   const handleDropKind = useCallback(
@@ -1003,53 +1230,196 @@ export function FloorPlanEditor({
     footprint,
   })
 
+  // Tocar una pieza de la paleta: cae en un lugar libre (la mesa, siguiendo la fila de la última).
   const handleQuickAdd = useCallback(
     (kind: PaletteKind) => {
       const def = ELEMENT_DEFAULTS[kind]
-      const center = areaCenter(def.width, def.height)
-      insertAt(kind, center.x, center.y)
+      const spot = freeSpot(def.width, def.height, kind === 'table')
+      insertAt(kind, spot.x, spot.y)
     },
-    [areaCenter, insertAt],
+    [freeSpot, insertAt],
   )
 
+  // «Ubicar» una mesa de la bandeja: su hueco aparece ya, con su número, y el renglón se va.
   const onPlace = useCallback(
     async (tableId: string) => {
       if (!activeArea) return
       const def = ELEMENT_DEFAULTS.table
-      const center = areaCenter(def.width, def.height)
+      const spot = freeSpot(def.width, def.height, true)
+      const label = unplacedRef.current.find((table) => table.id === tableId)?.label ?? ''
+      const settle = reserveSpot(
+        activeArea.id,
+        { ...spot, width: def.width, height: def.height },
+        false,
+        label,
+      )
+      markGone(tableId, true)
       const r = await placeTableAction(slug, {
         table_id: tableId,
         area_id: activeArea.id,
-        x: center.x,
-        y: center.y,
+        x: spot.x,
+        y: spot.y,
       })
       if (r.ok) {
-        const id = (r.data as { id?: string } | undefined)?.id
+        const id = (r.data as { id?: string } | undefined)?.id ?? null
+        settle(id)
         if (id) selectSet(new Set([id]))
         onChanged(true)
       } else {
+        settle(null)
+        markGone(tableId, false)
         toast.error(r.message)
       }
     },
-    [activeArea, areaCenter, slug, onChanged, selectSet],
+    [activeArea, freeSpot, reserveSpot, markGone, slug, onChanged, selectSet],
   )
 
-  // Borra una mesa de la bandeja de forma definitiva (mesa + QR). El RPC bloquea
-  // si la mesa tuvo sesiones → mensaje "desactivala en su lugar".
+  // Borra una mesa de la bandeja de forma definitiva (mesa + QR). El renglón se va al toque y, si
+  // la base no la deja borrar (tuvo sesiones: «desactivala en su lugar»), vuelve.
   const onDeleteTrayTable = useCallback(
     (tableId: string) => {
+      markGone(tableId, true)
       void (async () => {
         const r = await deleteTablePermanentlyAction(slug, tableId)
         if (r.ok) {
           toast.success('Mesa borrada.')
           onChanged()
         } else {
+          markGone(tableId, false)
           toast.error(r.message)
         }
       })()
     },
-    [slug, onChanged],
+    [slug, onChanged, markGone],
   )
+
+  // ── Juntar dos mesas (se soltó una encima de la otra) ──────────────────────
+
+  // «Dejarlas separadas»: la que se arrastró vuelve a donde estaba.
+  const cancelMerge = useCallback(() => {
+    const prompt = mergePromptRef.current
+    if (!prompt) return
+    setMergePrompt(null)
+    const node = nodesRef.current.get(prompt.draggedId)
+    if (node) node.style.transform = ''
+    liveStore.clear()
+  }, [setMergePrompt, liveStore])
+
+  /**
+   * «Juntar las mesas»: queda la mesa sobre la que se soltó (con su número), más larga y con los
+   * lugares de las dos; la que se arrastró sale del plano y queda desactivada (`fp_merge_tables`).
+   */
+  const confirmMerge = useCallback(() => {
+    const prompt = mergePromptRef.current
+    if (!prompt) return
+    // Ya no hay pregunta pendiente: el cierre del diálogo no la toma por un «no».
+    setMergePrompt(null)
+    const dragged = elementsRef.current.find((e) => e.id === prompt.draggedId)
+    const target = elementsRef.current.find((e) => e.id === prompt.targetId)
+    const area = activeAreaRef.current
+    const release = () => {
+      const node = nodesRef.current.get(prompt.draggedId)
+      if (node) node.style.transform = ''
+      liveStore.clear()
+    }
+    const survivorTableId = target?.physical_table_id
+    const absorbedTableId = dragged?.physical_table_id
+    if (!dragged || !target || !area || !survivorTableId || !absorbedTableId || !target.table) {
+      release()
+      return
+    }
+    const targetLabel = target.table.label
+    // Mientras viaja al servidor se dice: la mesa queda apoyada encima de la otra un momento.
+    const busy = toast.loading(
+      `Juntando la mesa ${dragged.table?.label ?? ''} con la ${targetLabel}…`,
+    )
+    void (async () => {
+      // La posición pendiente va primero: juntar refresca el plano desde el servidor.
+      await queue.flushNow()
+      const merged = await mergeTablesAction(slug, survivorTableId, absorbedTableId)
+      if (!merged.ok) {
+        toast.error(merged.message, { id: busy })
+        release()
+        return
+      }
+      // La que se arrastró ya no está en el plano.
+      removingRef.current.add(dragged.id)
+      setElements((current) => current.filter((e) => e.id !== dragged.id))
+      liveStore.clear()
+      // La otra crece: suma los lugares y se alarga para que entren, sin moverse de su centro.
+      const survivor = elementsRef.current.find((e) => e.id === target.id) ?? target
+      const grown = mergedTable(
+        {
+          x: survivor.x,
+          y: survivor.y,
+          width: survivor.width,
+          height: survivor.height,
+          shape: survivor.shape,
+          capacity: survivor.table?.capacity ?? null,
+        },
+        {
+          x: dragged.x,
+          y: dragged.y,
+          width: dragged.width,
+          height: dragged.height,
+          shape: dragged.shape,
+          capacity: dragged.table?.capacity ?? null,
+        },
+        area,
+      )
+      const placed = clampToAreaRotated(
+        grown.x,
+        grown.y,
+        grown.width,
+        grown.height,
+        survivor.rotation,
+        area.width,
+        area.height,
+      )
+      commitGeometry(survivor, {
+        ...geomOf(survivor),
+        x: placed.x,
+        y: placed.y,
+        width: grown.width,
+        height: grown.height,
+      })
+      const table = { label: targetLabel, capacity: grown.capacity }
+      patchElement(survivor.id, { table })
+      holdPatch(survivor.id, { table })
+      selectSet(new Set([survivor.id]))
+      await queue.flushNow()
+      const form = new FormData()
+      form.set('id', survivorTableId)
+      form.set('label', table.label)
+      form.set('capacity', String(table.capacity))
+      const saved = await updateTable(slug, NO_STATE, form)
+      holdPatch(survivor.id, null)
+      removingRef.current.delete(dragged.id)
+      if (saved.ok) {
+        toast.success(
+          `Mesas juntadas: la ${targetLabel} ahora es de ${grown.capacity} ${grown.capacity === 1 ? 'lugar' : 'lugares'}.`,
+          { id: busy },
+        )
+      } else {
+        patchElement(survivor.id, { table: { capacity: survivor.table?.capacity ?? null } })
+        toast.error(
+          'Las mesas se juntaron, pero no pude guardar los lugares. Cambialos en la ficha.',
+          { id: busy },
+        )
+      }
+      router.refresh()
+    })()
+  }, [
+    slug,
+    router,
+    queue,
+    liveStore,
+    commitGeometry,
+    patchElement,
+    holdPatch,
+    selectSet,
+    setMergePrompt,
+  ])
 
   // ── Lo que se deriva para dibujar ──────────────────────────────────────────
 
@@ -1060,9 +1430,10 @@ export function FloorPlanEditor({
         initial.unplacedTables,
         removedTables,
         new Set(elements.map((e) => e.physical_table_id).filter((id): id is string => id !== null)),
-      ),
-    [initial.unplacedTables, removedTables, elements],
+      ).filter((table) => !goneTables.has(table.id)),
+    [initial.unplacedTables, removedTables, elements, goneTables],
   )
+  unplacedRef.current = unplaced
   const fitBox = useMemo(() => contentBox(areaElements), [areaElements])
   const extent = useMemo(
     () =>
@@ -1101,6 +1472,7 @@ export function FloorPlanEditor({
   )
   const areaTables = areaElements.filter((el) => el.kind === 'table' && el.physical_table_id)
   const areaSeats = areaTables.reduce((sum, el) => sum + (el.table?.capacity ?? DEFAULT_SEATS), 0)
+  const areaPending = pendingSpots.filter((spot) => spot.areaId === activeArea?.id)
   const canUndo = undoStackRef.current.length > 0
   const canRedo = redoStackRef.current.length > 0
 
@@ -1113,11 +1485,47 @@ export function FloorPlanEditor({
     [selectSet],
   )
 
-  const liveModelOn = posEnabled && branch !== null
+  // Lo que dice la pregunta de juntar.
+  const mergeDragged = mergePrompt ? elements.find((e) => e.id === mergePrompt.draggedId) : null
+  const mergeTarget = mergePrompt ? elements.find((e) => e.id === mergePrompt.targetId) : null
+  const mergeSeats =
+    (mergeDragged?.table?.capacity ?? DEFAULT_SEATS) +
+    (mergeTarget?.table?.capacity ?? DEFAULT_SEATS)
+
+  // La ficha flota sobre el plano, del lado donde no tapa lo elegido: se cambia de lado solo cuando lo
+  // taparía (y no al revés), así no salta de un costado al otro con cada mesa que se toca.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `elements`, `view` y `splitShown` mueven lo elegido en pantalla
+  useLayoutEffect(() => {
+    if (!floating || selectedIds.size === 0) return
+    const plan = planRef.current?.getBoundingClientRect()
+    // Mirando solo la maqueta no hay plano que tapar.
+    if (!plan || plan.width < 40) {
+      setInspectorSide('right')
+      return
+    }
+    let left = Number.POSITIVE_INFINITY
+    let right = Number.NEGATIVE_INFINITY
+    for (const id of selectedIds) {
+      const rect = nodesRef.current.get(id)?.getBoundingClientRect()
+      if (!rect) continue
+      left = Math.min(left, rect.left)
+      right = Math.max(right, rect.right)
+    }
+    if (left > right) return
+    const coversRight = right > plan.right - INSPECTOR_REACH
+    const coversLeft = left < plan.left + FLOAT_INSET.left + INSPECTOR_REACH
+    setInspectorSide((side) => {
+      if (side === 'right') return coversRight && !coversLeft ? 'left' : 'right'
+      return coversLeft && !coversRight ? 'right' : 'left'
+    })
+  }, [floating, selectedIds, elements, view, splitShown])
+
   const live = useLiveModel({
-    enabled: mode === 'vivo' && liveModelOn,
+    enabled: mode === 'vivo' && branch !== null,
     slug,
+    tenantId,
     branchId: branch?.id ?? null,
+    posEnabled,
     timeZone,
   })
 
@@ -1136,7 +1544,7 @@ export function FloorPlanEditor({
 
   const frameStyle = branch ? ({ '--branch': branch.color } as React.CSSProperties) : undefined
 
-  // La misma maqueta en sus dos lugares: el tablero entero («Maqueta») o arriba de la ficha («Los dos»).
+  // La misma maqueta en sus dos lugares: el tablero entero («Maqueta») o al lado del plano («Los dos»).
   const maquetaPane = activeArea ? (
     <MaquetaPane
       elements={areaElements}
@@ -1186,7 +1594,7 @@ export function FloorPlanEditor({
                 areas={areas}
                 activeAreaId={activeArea?.id ?? ''}
                 counts={counts}
-                pending={mode === 'vivo' && liveModelOn ? live.pending : null}
+                pending={mode === 'vivo' ? live.pending : null}
                 editable={mode === 'editar'}
                 suggestedStart={suggestedStart}
                 extent={extent}
@@ -1235,7 +1643,9 @@ export function FloorPlanEditor({
             </div>
           </header>
 
-          <div className="fpe-body">
+          {/* Con el tablero a la vista (editando o en vivo) el cuerpo no tiene margen: el dibujo llega a
+              los bordes. La lista y la pantalla del primer sector sí lo llevan. */}
+          <div className="fpe-body" data-bleed={mode !== 'lista' && activeArea ? 'on' : undefined}>
             {mode === 'lista' ? (
               <TablesListFallback
                 slug={slug}
@@ -1269,31 +1679,22 @@ export function FloorPlanEditor({
                 </div>
               </div>
             ) : mode === 'vivo' ? (
-              liveModelOn ? (
-                <LivePane
-                  slug={slug}
-                  branch={branch}
-                  areaId={activeArea.id}
-                  areaName={activeArea.name}
-                  live={live}
-                />
-              ) : (
-                <LegacyLive key={activeArea.id} slug={slug} tenantId={tenantId} area={activeArea} />
-              )
+              <LivePane
+                slug={slug}
+                branch={branch}
+                areaId={activeArea.id}
+                areaName={activeArea.name}
+                live={live}
+                posEnabled={posEnabled}
+              />
             ) : (
               <div className="fpe-work" data-view={view} data-split={splitShown ? 'on' : undefined}>
-                {/* El tablero: el plano (o la maqueta) ocupa todo y las herramientas flotan encima. */}
-                <div className="fpe-board">
-                  <EditorToolbar
-                    view={view}
-                    canSplit={canSplit}
-                    onView={chooseView}
-                    canUndo={canUndo}
-                    canRedo={canRedo}
-                    onUndo={undo}
-                    onRedo={redo}
-                    onAddTable={() => handleQuickAdd('table')}
-                    onAddTablePointerDown={(e) => onChipPointerDown('table', 'Mesa', e)}
+                {/* El tablero: el plano (o la maqueta) ocupa todo y las herramientas flotan encima. Con
+                    algo elegido aparece su ficha, también flotando: nada le saca lugar al dibujo. */}
+                <div ref={boardRef} className="fpe-board">
+                  <ElementPalette
+                    onQuickAdd={handleQuickAdd}
+                    onChipPointerDown={onChipPointerDown}
                     shouldSuppressClick={shouldSuppressClick}
                     bulk={
                       <BulkCreateDialog
@@ -1303,6 +1704,24 @@ export function FloorPlanEditor({
                         onCreated={() => onChanged()}
                       />
                     }
+                  />
+
+                  <EditorToolbar
+                    view={view}
+                    canSplit={canSplit}
+                    onView={chooseView}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                    onUndo={undo}
+                    onRedo={redo}
+                    areaName={activeArea.name}
+                    tables={areaTables.length}
+                    seats={areaSeats}
+                    unplaced={unplaced}
+                    onPlace={onPlace}
+                    onDeleteTable={onDeleteTrayTable}
+                    stage={stageApiRef}
+                    zoomLabelRef={zoomLabelRef}
                     qr={
                       qrEnabled
                         ? {
@@ -1314,61 +1733,40 @@ export function FloorPlanEditor({
                     }
                   />
 
-                  <ElementPalette
-                    onQuickAdd={handleQuickAdd}
-                    onChipPointerDown={onChipPointerDown}
-                    shouldSuppressClick={shouldSuppressClick}
-                  />
-
                   <div ref={planRef} className="fpe-pane fpe-pane-plan">
                     <EditorStage
                       width={activeArea.width}
                       height={activeArea.height}
                       transformRef={transformRef}
+                      apiRef={stageApiRef}
+                      zoomLabelRef={zoomLabelRef}
                       content={fitBox}
                       fitKey={activeArea.id}
                       onBackground={clearSelection}
                       label={`Plano de ${activeArea.name}`}
                       inset={floating ? FLOAT_INSET : null}
                       overlay={
-                        <>
-                          <ContextualToolbar
-                            // Recién soltada, una pieza está elegida pero todavía viaja al servidor: hasta
-                            // que llega no hay nada que hacerle (la barra aparecía sin nombre).
-                            count={selectedCount === 1 && !selectedSingle ? 0 : selectedCount}
-                            name={selectedSingle ? elementName(selectedSingle) : ''}
-                            canPrintQr={qrEnabled && selectedSingle?.kind === 'table'}
-                            onRotate90={rotate90}
-                            onBringFront={() => bringTo('front')}
-                            onBringBack={() => bringTo('back')}
-                            onDuplicate={duplicateSelected}
-                            onQr={printQrSelected}
-                            onAlign={alignSelected}
-                            onDelete={removeSelected}
-                          />
-                          {areaElements.length === 0 ? (
-                            <div className="fpe-canvas-empty">
-                              <div className="fpe-note fpe-ui">
-                                <h3>Empezá a dibujar {activeArea.name}</h3>
-                                <p>
-                                  Tocá «Agregar mesa» y aparece en el medio del piso, o arrastrala
-                                  desde la barra de arriba hasta su lugar. La maqueta se arma sola
-                                  mientras dibujás.
-                                </p>
-                                <div className="fpe-note-actions">
-                                  <button
-                                    type="button"
-                                    className="fpe-btn fpe-btn-primary"
-                                    onClick={() => handleQuickAdd('table')}
-                                  >
-                                    <Plus aria-hidden />
-                                    Agregar mesa
-                                  </button>
-                                </div>
+                        areaElements.length === 0 && areaPending.length === 0 ? (
+                          <div className="fpe-canvas-empty">
+                            <div className="fpe-note fpe-ui">
+                              <h3>Empezá a dibujar {activeArea.name}</h3>
+                              <p>
+                                Tocá «Mesa» y aparece en el piso, o arrastrala desde la izquierda
+                                hasta su lugar. La maqueta se arma sola mientras dibujás.
+                              </p>
+                              <div className="fpe-note-actions">
+                                <button
+                                  type="button"
+                                  className="fpe-btn fpe-btn-primary"
+                                  onClick={() => handleQuickAdd('table')}
+                                >
+                                  <Plus aria-hidden />
+                                  Agregar mesa
+                                </button>
                               </div>
                             </div>
-                          ) : null}
-                        </>
+                          </div>
+                        ) : null
                       }
                     >
                       <SnapGuides guides={guides} />
@@ -1393,80 +1791,90 @@ export function FloorPlanEditor({
                           onDragEnd={onDragEnd}
                         />
                       ))}
+                      {/* Lo que se está creando: su hueco, hasta que llega la pieza de verdad. */}
+                      {areaPending.map((spot) => (
+                        <span
+                          key={spot.key}
+                          aria-hidden
+                          className="fpe-pending-spot"
+                          style={{
+                            left: spot.x,
+                            top: spot.y,
+                            width: spot.width,
+                            height: spot.height,
+                            borderRadius: spot.round ? '50%' : undefined,
+                          }}
+                        >
+                          {spot.label}
+                        </span>
+                      ))}
                     </EditorStage>
                   </div>
 
                   {view === 'model' ? (
                     <div className="fpe-pane fpe-pane-model">{maquetaPane}</div>
                   ) : null}
+
+                  {selectedSingle || selectedCount > 1 ? (
+                    <div className="fpe-inspector" data-side={inspectorSide}>
+                      <aside
+                        className="fpe-side fpe-paper"
+                        aria-label={
+                          selectedSingle
+                            ? `Ficha de ${elementName(selectedSingle)}`
+                            : 'Varios elementos elegidos'
+                        }
+                      >
+                        {selectedSingle && selectedSingle.kind === 'table' ? (
+                          <TableInspector
+                            key={selectedSingle.id}
+                            slug={slug}
+                            element={selectedSingle}
+                            others={mergeCandidates}
+                            qrEnabled={qrEnabled}
+                            onPatch={patchElement}
+                            onHold={holdPatch}
+                            flushGeometry={queue.flushNow}
+                            onRotate={rotate90}
+                            onDuplicate={duplicateSelected}
+                            onFront={() => bringTo('front')}
+                            onBack={() => bringTo('back')}
+                            onRemove={removeSelected}
+                            onChanged={onChanged}
+                            onClose={clearSelection}
+                          />
+                        ) : selectedSingle ? (
+                          <DecorInspector
+                            key={selectedSingle.id}
+                            slug={slug}
+                            element={selectedSingle}
+                            onPatch={patchElement}
+                            onHold={holdPatch}
+                            flushGeometry={queue.flushNow}
+                            onRotate={rotate90}
+                            onDuplicate={duplicateSelected}
+                            onFront={() => bringTo('front')}
+                            onBack={() => bringTo('back')}
+                            onRemove={removeSelected}
+                            onClose={clearSelection}
+                          />
+                        ) : (
+                          <GroupPanel
+                            count={selectedCount}
+                            onAlign={alignSelected}
+                            onRemove={removeSelected}
+                            onClose={clearSelection}
+                          />
+                        )}
+                      </aside>
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="fpe-aside">
-                  {splitShown ? (
-                    <div className="fpe-pane fpe-pane-model fpe-pane-mini">{maquetaPane}</div>
-                  ) : null}
-                  <aside
-                    className={cn('fpe-side fpe-paper')}
-                    aria-label={
-                      selectedSingle
-                        ? `Ficha de ${elementName(selectedSingle)}`
-                        : selectedCount > 1
-                          ? 'Varios elementos elegidos'
-                          : `Sector ${activeArea.name}`
-                    }
-                  >
-                    {selectedSingle && selectedSingle.kind === 'table' ? (
-                      <TableInspector
-                        key={selectedSingle.id}
-                        slug={slug}
-                        element={selectedSingle}
-                        others={mergeCandidates}
-                        qrEnabled={qrEnabled}
-                        onPatch={patchElement}
-                        onHold={holdPatch}
-                        flushGeometry={queue.flushNow}
-                        onRotate={rotate90}
-                        onDuplicate={duplicateSelected}
-                        onFront={() => bringTo('front')}
-                        onBack={() => bringTo('back')}
-                        onRemove={removeSelected}
-                        onChanged={onChanged}
-                        onClose={clearSelection}
-                      />
-                    ) : selectedSingle ? (
-                      <DecorInspector
-                        key={selectedSingle.id}
-                        slug={slug}
-                        element={selectedSingle}
-                        onPatch={patchElement}
-                        onHold={holdPatch}
-                        flushGeometry={queue.flushNow}
-                        onRotate={rotate90}
-                        onDuplicate={duplicateSelected}
-                        onFront={() => bringTo('front')}
-                        onBack={() => bringTo('back')}
-                        onRemove={removeSelected}
-                        onClose={clearSelection}
-                      />
-                    ) : selectedCount > 1 ? (
-                      <GroupPanel
-                        count={selectedCount}
-                        onAlign={alignSelected}
-                        onRemove={removeSelected}
-                        onClose={clearSelection}
-                      />
-                    ) : (
-                      <SectorPanel
-                        areaName={activeArea.name}
-                        tables={areaTables.length}
-                        seats={areaSeats}
-                        unplaced={unplaced}
-                        onPlace={onPlace}
-                        onDeleteTable={onDeleteTrayTable}
-                      />
-                    )}
-                  </aside>
-                </div>
+                {/* Mirando «los dos»: la maqueta al lado del plano, armándose mientras se dibuja. */}
+                {splitShown ? (
+                  <div className="fpe-pane fpe-pane-model fpe-pane-side">{maquetaPane}</div>
+                ) : null}
               </div>
             )}
           </div>
@@ -1475,6 +1883,35 @@ export function FloorPlanEditor({
 
       {/* Fuera del contenedor medido: ahí adentro `position: fixed` no sigue a la ventana. */}
       {ghostNode}
+
+      <AlertDialog
+        open={mergePrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) cancelMerge()
+        }}
+      >
+        <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Juntar la mesa {mergeDragged?.table?.label ?? ''} con la{' '}
+              {mergeTarget?.table?.label ?? ''}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Queda la mesa {mergeTarget?.table?.label ?? ''}, más grande y con los lugares de las
+              dos ({mergeSeats}). La mesa {mergeDragged?.table?.label ?? ''} sale del plano y queda
+              desactivada: no pierde su historial y la reactivás cuando quieras desde Lista.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+              Dejarlas separadas
+            </AlertDialogCancel>
+            <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={confirmMerge}>
+              Juntar las mesas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

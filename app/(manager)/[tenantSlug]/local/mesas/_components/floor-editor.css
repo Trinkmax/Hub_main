@@ -17,6 +17,9 @@
   --fpe-select: oklch(0.56 0.19 256);
   --fpe-select-soft: oklch(0.56 0.19 256 / 0.18);
   --fpe-guide: oklch(0.62 0.23 12);
+  /* Juntar dos mesas: la que recibe a la otra se marca en verde. */
+  --fpe-merge: oklch(0.5 0.14 155);
+  --fpe-merge-soft: oklch(0.5 0.14 155 / 0.22);
   --fpe-danger: oklch(0.5 0.19 27);
   --fpe-shadow-paper:
     0 1px 0 oklch(1 0 0 / 0.7) inset, 0 16px 34px -16px oklch(0.12 0.04 165 / 0.75),
@@ -352,6 +355,11 @@
     var(--pos-board-2) 100%
   );
 }
+/* Con el tablero a la vista (editando o en vivo) no hay marco: el dibujo llega a los cuatro bordes.
+   Antes el tablero era un recuadro redondeado adentro del paño: un margen más que no dibujaba nada. */
+.fpe-body[data-bleed="on"] {
+  padding: 0;
+}
 
 /* ── Hojas de papel: barra, paleta, panel ── */
 .fpe-paper {
@@ -361,14 +369,79 @@
   box-shadow: var(--fpe-shadow-paper);
 }
 
-/* Arriba a la izquierda, agregar y deshacer; arriba a la derecha, cómo mirar. Flotan sobre el
-   tablero (ver «Área de trabajo»): el plano llega hasta arriba y pasa por debajo. */
+/* Las hojitas de la fila de arriba (ver «Área de trabajo»): a la izquierda lo que se sabe del sector,
+   a la derecha cómo mirarlo. Flotan sobre el tablero: el plano llega hasta arriba y pasa por debajo. */
 .fpe-float {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   padding: 3px;
   border-radius: 0.75rem;
+  pointer-events: auto;
+}
+/* El sector de un vistazo: «12 mesas · 46 lugares». Si no entra, se corta: nunca empuja a lo demás. */
+.fpe-caption {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0.55rem 0 0.35rem;
+  color: var(--pos-ink);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* «3 sin ubicar»: mesas que existen y no están dibujadas. En kraft, para que se note sin gritar. */
+.fpe-pending {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.25rem;
+  padding: 0 0.7rem 0 0.55rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: color-mix(in oklch, var(--pos-kraft) 42%, var(--pos-paper));
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-kraft) 80%, var(--pos-ink));
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.fpe-pending svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+.fpe-pending:active {
+  transform: scale(0.97);
+}
+/* «Abrir el salón» (en vivo): una hojita que es un enlace. */
+.fpe-float-link {
+  flex: none;
+  gap: 0.4rem;
+  min-height: calc(2.25rem + 6px);
+  padding: 0 0.85rem 0 0.7rem;
+  color: var(--pos-ink);
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.fpe-float-link svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
 }
 .fpe-toolbar-sep {
   flex: none;
@@ -621,51 +694,70 @@
   font-size: 0.82rem;
   font-weight: 600;
 }
+/* En la ficha va al lado del número de la mesa: mide lo mismo de alto que el campo. */
+.fpe-pair .fpe-stepper {
+  min-height: 2.75rem;
+}
+.fpe-pair .fpe-stepper button {
+  width: 2.2rem;
+}
+.fpe-pair .fpe-stepper output {
+  min-width: 2.2ch;
+}
 
 /* ── Área de trabajo ──
-   El tablero (el plano, o la maqueta) ocupa todo lo que hay y las herramientas flotan encima: agregar
-   arriba a la izquierda, cómo mirar arriba a la derecha, la paleta al costado, el zoom abajo. A la
-   derecha, la ficha de lo elegido. Así el dibujo usa el alto entero: antes había una barra de
-   herramientas y una columna de paleta comiéndole lugar por dos lados. */
+   El tablero (el plano, o la maqueta) ocupa TODO lo que hay y lo demás flota encima: la paleta a la
+   izquierda, una fila fina arriba y, solo con algo elegido, su ficha. Nada le saca lugar al dibujo:
+   antes había una columna fija a la derecha que casi siempre mostraba texto de ayuda, y en una
+   notebook dejaba el plano en dos tercios de la pantalla. */
 .fpe-work {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 17.5rem;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "board side";
-  gap: var(--fpe-gap);
   min-height: 0;
 }
 .fpe-board {
   position: relative;
-  grid-area: board;
   min-width: 0;
   min-height: 0;
 }
-.fpe-float,
-.fpe-rail {
+.fpe-top,
+.fpe-rail,
+.fpe-inspector {
   position: absolute;
   z-index: 3100;
 }
-.fpe-float-add {
-  top: 0.45rem;
-  left: 0.45rem;
-}
-.fpe-float-view {
+/* La fila de arriba: empieza donde termina la paleta. No ataja los toques: entre sus dos hojitas se
+   sigue arrastrando el plano. */
+.fpe-top {
   top: 0.45rem;
   right: 0.45rem;
+  left: 4.35rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.fpe-float-status {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.fpe-float-view {
+  flex: none;
 }
 
-/* Paleta de elementos: una tira angosta al costado del tablero */
+/* La paleta: una tira angosta al costado del tablero, con la mesa arriba */
 .fpe-rail {
-  top: 3.5rem;
+  top: 0.45rem;
   left: 0.45rem;
   display: flex;
   flex-direction: column;
   gap: 1px;
   width: 3.5rem;
-  /* Deja libre la esquina de abajo, donde va el zoom: en una ventana baja la tira se scrollea. */
-  max-height: calc(100% - 7rem);
+  /* En una ventana baja la tira se scrollea. */
+  max-height: calc(100% - 0.9rem);
   margin: 0;
   padding: 3px;
   border: 0;
@@ -676,8 +768,12 @@
 .fpe-rail::-webkit-scrollbar {
   display: none;
 }
-.fpe-rail-title {
-  display: none;
+.fpe-rail-sep {
+  flex: none;
+  height: 1.5px;
+  margin: 0.25rem 0.4rem;
+  border-radius: 1px;
+  background: var(--pos-rule);
 }
 .fpe-tool {
   display: flex;
@@ -713,6 +809,22 @@
   width: 1.35rem;
   height: 1.35rem;
 }
+/* La mesa es lo que más se agrega: va en tinta, es lo primero que se ve de la paleta. */
+.fpe-tool-main {
+  min-height: 3.1rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 0.72rem;
+  font-weight: 800;
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.14) inset,
+    0 6px 10px -6px oklch(0.2 0.04 165 / 0.7);
+}
+.fpe-tool-main svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  stroke-width: 2.6;
+}
 
 /* Los dos tableros: el plano y la maqueta */
 .fpe-pane {
@@ -730,6 +842,15 @@
 .fpe-board > .fpe-pane {
   position: absolute;
   inset: 0;
+}
+/* A sangre: sin esquinas ni marco propio (ver `.fpe-body[data-bleed]`). */
+.fpe-body[data-bleed="on"] .fpe-pane {
+  border-radius: 0;
+  box-shadow: none;
+}
+/* «Los dos»: la maqueta, al lado del plano. */
+.fpe-body[data-bleed="on"] .fpe-pane-side {
+  box-shadow: inset 1px 0 0 oklch(1 0 0 / 0.1);
 }
 .fpe-work[data-view="model"] .fpe-pane-plan {
   display: none;
@@ -787,26 +908,19 @@
   cursor: default;
 }
 
-/* Controles que flotan sobre el lienzo (no se agrandan con el zoom). */
+/* El zoom: un grupo adentro de la hojita de la derecha. El número, además, encaja el plano. */
 .fpe-zoom {
-  position: absolute;
-  bottom: 0.45rem;
-  left: 0.45rem;
-  z-index: 3000;
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 0.8rem;
-  background: var(--pos-paper);
-  color: var(--pos-ink);
-  box-shadow: var(--fpe-shadow-paper);
+  gap: 1px;
 }
 .fpe-zoom button {
   display: grid;
   place-items: center;
-  width: 2.1rem;
-  height: 2.1rem;
+  width: 2rem;
+  height: 2.25rem;
+  padding: 0;
   border: 0;
   border-radius: 0.55rem;
   background: transparent;
@@ -817,85 +931,14 @@
   width: 1.05rem;
   height: 1.05rem;
 }
-.fpe-zoom-value {
-  min-width: 3.3rem;
+.fpe-zoom .fpe-zoom-value {
+  width: auto;
+  min-width: 3.1rem;
+  padding: 0 0.2rem;
   color: var(--pos-ink-soft);
   font-size: 0.82rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-.fpe-zoom-sep {
-  width: 1.5px;
-  height: 1.3rem;
-  margin: 0 0.15rem;
-  background: var(--pos-rule);
-}
-
-/* Lo elegido: qué se puede hacer con eso */
-/* Abajo a la derecha: arriba están las herramientas y abajo a la izquierda, el zoom. */
-.fpe-selbar {
-  position: absolute;
-  right: 0.45rem;
-  bottom: 0.45rem;
-  z-index: 3000;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  /* Lo que queda al lado del zoom. */
-  max-width: calc(100% - 15.5rem);
-  padding: 3px;
-  border-radius: 0.75rem;
-  background: var(--pos-paper);
-  color: var(--pos-ink);
-  box-shadow: var(--fpe-shadow-paper);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.fpe-selbar::-webkit-scrollbar {
-  display: none;
-}
-.fpe-selbar-what {
-  flex: none;
-  padding: 0 0.5rem 0 0.6rem;
-  font-size: 0.86rem;
-  font-weight: 800;
-  font-stretch: 84%;
-  white-space: nowrap;
-}
-.fpe-selbar button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-width: 2.1rem;
-  height: 2.1rem;
-  padding: 0 0.5rem;
-  border: 0;
-  border-radius: 0.55rem;
-  background: transparent;
-  color: var(--pos-ink);
-  font-size: 0.84rem;
-  font-weight: 700;
-  font-stretch: 88%;
-  white-space: nowrap;
-  transition: background-color 140ms var(--pos-ease);
-}
-.fpe-selbar button svg {
-  width: 1.05rem;
-  height: 1.05rem;
-  flex: none;
-}
-.fpe-selbar button.is-danger {
-  color: var(--fpe-danger);
-}
-.fpe-selbar-sep {
-  flex: none;
-  width: 1.5px;
-  height: 1.3rem;
-  margin: 0 0.2rem;
-  background: var(--pos-rule);
 }
 
 /* Guías de alineación */
@@ -904,6 +947,33 @@
   z-index: 2500;
   background: var(--fpe-guide);
   pointer-events: none;
+}
+
+/* Lo que se está creando: su hueco aparece al toque, mientras el servidor contesta. */
+.fpe-pending-spot {
+  position: absolute;
+  z-index: 2400;
+  display: grid;
+  place-items: center;
+  border: calc(2px * var(--fpe-inv, 1)) dashed var(--fpe-select);
+  border-radius: 10px;
+  background: oklch(0.56 0.19 256 / 0.1);
+  color: color-mix(in oklch, var(--fpe-select) 70%, var(--pos-ink));
+  font-size: 22px;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  animation: fpe-pending 900ms var(--pos-ease) infinite alternate;
+}
+@keyframes fpe-pending {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Sector vacío: una nota apoyada en el piso */
@@ -1208,6 +1278,48 @@
   height: 13px;
 }
 
+/* Mientras se mueve, las manijas no vienen al caso: queda el marco. */
+.floor-element.is-dragging .fpe-handle,
+.floor-element.is-dragging .fpe-rotate {
+  visibility: hidden;
+}
+
+/* Juntar arrastrando: la mesa que recibe a la otra se marca en verde, y la que se arrastra se
+   transparenta (se ve sobre cuál está) y lo dice. */
+.floor-element.is-merge-target .fpe-el-body {
+  box-shadow:
+    0 0 0 calc(3px * var(--fpe-inv, 1)) var(--fpe-merge),
+    0 0 0 calc(10px * var(--fpe-inv, 1)) var(--fpe-merge-soft);
+}
+.floor-element.is-merging .fpe-el-layer {
+  opacity: 0.72;
+}
+.floor-element.is-merging .fpe-el-ring {
+  border-color: var(--fpe-merge);
+  box-shadow: 0 0 0 calc(4px * var(--fpe-inv, 1)) var(--fpe-merge-soft);
+}
+.floor-element.is-merging::after {
+  position: absolute;
+  bottom: calc(100% + 10px * var(--fpe-inv, 1));
+  left: 50%;
+  z-index: 40;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: var(--fpe-merge);
+  color: oklch(0.99 0.01 155);
+  box-shadow: 0 4px 10px -3px oklch(0.2 0.06 155 / 0.6);
+  content: "Soltá para juntarlas";
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  /* Mide lo mismo en pantalla con cualquier zoom. */
+  transform: translateX(-50%) scale(var(--fpe-inv, 1));
+  transform-origin: 50% 100%;
+}
+
 /* Lo que se arrastra desde la paleta: la huella de lo que va a caer. */
 .fpe-ghost {
   position: fixed;
@@ -1252,6 +1364,10 @@
 .fpe-board > .fpe-pane-model .fpe-model.pos-board {
   inset: 3.25rem 0.5rem 1.9rem 4.25rem;
 }
+/* Al lado del plano no tiene nada encima: solo su rótulo, abajo. */
+.fpe-pane-side .fpe-model.pos-board {
+  inset: 0.5rem 0.5rem 1.9rem;
+}
 .fpe-model-empty {
   position: absolute;
   inset: 0;
@@ -1268,40 +1384,69 @@
   pointer-events: none;
 }
 
-/* ── La columna de la derecha: la ficha y, mirando «los dos», la maqueta arriba ── */
-.fpe-aside {
-  grid-area: side;
+/* ── La ficha de lo elegido: una hojita que flota sobre el plano ──
+   Aparece solo con algo elegido y del lado donde no lo tapa (`data-side`, lo decide el editor). Mide
+   lo que mide su contenido; si no entra en el alto del tablero, scrollea adentro. */
+.fpe-inspector {
+  top: 3.5rem;
+  bottom: 0.45rem;
+  z-index: 3050;
   display: flex;
   flex-direction: column;
-  gap: var(--fpe-gap);
-  min-width: 0;
-  min-height: 0;
+  width: 18rem;
+  pointer-events: none;
+  transition: opacity 140ms var(--pos-ease);
 }
-.fpe-pane-mini {
-  flex: 0 0 44%;
-  min-height: 11rem;
+.fpe-inspector[data-side="right"] {
+  right: 0.45rem;
+  animation: fpe-in-right 180ms var(--pos-ease);
+}
+.fpe-inspector[data-side="left"] {
+  left: 4.35rem;
+  animation: fpe-in-left 180ms var(--pos-ease);
+}
+@keyframes fpe-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@keyframes fpe-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
 }
 .fpe-side {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  max-height: 100%;
   overflow: hidden;
-  /* El panel sabe cuánto mide: ancho, reparte sus grupos en dos columnas. */
-  container: fpe-side / inline-size;
+  pointer-events: auto;
+}
+/* Mientras se arrastra algo, la ficha se corre de adelante: se puede soltar debajo de ella. */
+.fpe-board[data-dragging] .fpe-inspector {
+  opacity: 0.25;
+}
+.fpe-board[data-dragging] .fpe-inspector .fpe-side {
+  pointer-events: none;
 }
 .fpe-side-head {
   display: flex;
+  flex: none;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.7rem 0.5rem 0.5rem 0.85rem;
+  padding: 0.6rem 0.45rem 0.4rem 0.85rem;
 }
 .fpe-side-title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 1.4rem;
+  padding-top: 0.3rem;
+  font-size: 1.3rem;
   font-weight: 800;
   font-stretch: 78%;
   letter-spacing: -0.01em;
@@ -1310,9 +1455,9 @@
 }
 .fpe-side-sub {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
   color: var(--pos-ink-soft);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   font-weight: 600;
   font-stretch: 100%;
   letter-spacing: 0;
@@ -1320,9 +1465,9 @@
 }
 .fpe-side-body {
   display: grid;
-  flex: 1;
+  flex: 0 1 auto;
   align-content: start;
-  gap: 0.85rem;
+  gap: 0.7rem;
   min-height: 0;
   /* Sin aire de más abajo: en esta pantalla el asistente del panel se corre (`data-tex-away`). */
   padding: 0.15rem 0.85rem 0.85rem;
@@ -1337,7 +1482,7 @@
 }
 /* Corte de talonario entre grupos. */
 .fpe-group + .fpe-group {
-  padding-top: 0.85rem;
+  padding-top: 0.7rem;
   border-top: 1.5px dashed var(--pos-rule);
 }
 .fpe-group-title {
@@ -1362,17 +1507,107 @@
   gap: 0.4rem;
 }
 
-/* Panel ancho y bajo (vista partida): los grupos van de a dos y se scrollea menos. */
-@container fpe-side (min-width: 33rem) {
-  .fpe-side-body {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 1.75rem;
-    row-gap: 1.25rem;
-  }
-  .fpe-side-body > .fpe-group + .fpe-group {
-    padding-top: 0;
-    border-top: 0;
-  }
+/* Dos campos en un renglón: el número de la mesa y sus lugares. */
+.fpe-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+}
+.fpe-hint-inline {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Lo que se le hace a lo elegido: cuatro teclas con su palabra (girar, duplicar, al frente, al fondo). */
+.fpe-acts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+.fpe-acts[data-cols="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* De a cinco entran justo: la letra, un punto más chica. */
+.fpe-acts[data-cols="5"] {
+  --fpe-act-size: 0.66rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.fpe-act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  min-height: 3rem;
+  padding: 0.3rem 0.1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: var(--fpe-act-size, 0.7rem);
+  font-weight: 700;
+  font-stretch: 84%;
+  line-height: 1.1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.fpe-act svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.fpe-act:active {
+  transform: scale(0.96);
+}
+/* Quitar: la misma tecla, en rojo. */
+.fpe-act.is-danger {
+  background: color-mix(in oklch, var(--fpe-danger) 7%, var(--pos-paper));
+  color: var(--fpe-danger);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--fpe-danger) 34%, var(--pos-paper));
+}
+
+/* «Más opciones»: lo de vez en cuando, plegado. */
+.fpe-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2rem;
+  margin: -0.2rem 0;
+  padding: 0 0.1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--pos-ink-soft);
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-stretch: 90%;
+  text-align: left;
+}
+.fpe-more svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  transition: transform 180ms var(--pos-ease);
+}
+.fpe-more[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.fpe-more-body {
+  display: grid;
+  gap: 0.8rem;
+  padding-top: 0.35rem;
+}
+.fpe-more-body > .fpe-btn,
+.fpe-more-body .fpe-field > .fpe-btn {
+  justify-self: start;
 }
 
 /* Forma de la mesa */
@@ -1411,6 +1646,22 @@
   background: var(--pos-card);
   color: var(--pos-ink);
   box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+/* En la ficha: bajitas, del mismo alto que las teclas de abajo. */
+.fpe-shapes-row {
+  gap: 0.3rem;
+}
+.fpe-shapes-row .fpe-shape {
+  gap: 0.1rem;
+  min-height: 3rem;
+  padding: 0.3rem 0.1rem 0.3rem;
+  border-radius: 0.6rem;
+  font-size: 0.7rem;
+}
+.fpe-shapes-row .fpe-shape svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: none;
 }
 
 /* Mesas sin ubicar */
@@ -1634,21 +1885,26 @@
   text-wrap: pretty;
 }
 
-/* ── En vivo ── */
+/* ── En vivo ──
+   La maqueta del salón, a sangre, con lo que pasa ahora en una fila que flota arriba (igual que las
+   herramientas al editar). */
 .fpe-live {
-  position: relative;
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 0.75rem;
   min-height: 0;
 }
-.fpe-live-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.85rem;
-  padding: 0.55rem 0.55rem 0.55rem 0.9rem;
+.fpe-live .fpe-top {
+  left: 0.45rem;
+}
+.fpe-live .fpe-float-status {
+  gap: 0.4rem;
+  padding: 3px 0.35rem 3px 0.4rem;
+  min-height: calc(2.25rem + 6px);
+}
+.fpe-live .fpe-caption {
+  font-size: 0.9rem;
+}
+.fpe-live .fpe-model.pos-board {
+  inset: 3.4rem 0.5rem 0.5rem;
 }
 .fpe-live-pill {
   display: inline-flex;
@@ -1685,30 +1941,19 @@
   color: var(--pos-paper);
   box-shadow: none;
 }
-.fpe-live-summary {
-  flex: 1;
-  min-width: 12rem;
-  margin: 0;
-  font-size: 0.98rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.3;
-  text-wrap: pretty;
-}
-.fpe-live-stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
 .fpe-live-card {
   position: absolute;
-  bottom: 0.75rem;
-  left: 0.75rem;
+  bottom: 0.6rem;
+  left: 0.6rem;
   z-index: 3000;
   display: grid;
   gap: 0.55rem;
-  width: min(20rem, calc(100% - 1.5rem));
+  width: min(20rem, calc(100% - 1.2rem));
   padding: 0.9rem 0.6rem 0.9rem 1rem;
+}
+.fpe-live-card > .fpe-btn {
+  justify-self: start;
+  margin-top: 0.15rem;
 }
 .fpe-live-card-head {
   display: flex;
@@ -1778,13 +2023,6 @@
 .fpe-statechip.pos-urg-late {
   color: var(--pos-on-dark);
 }
-.fpe-legacy-live {
-  flex: 1;
-  min-height: 0;
-  padding: 1rem;
-  overflow-y: auto;
-}
-
 /* ── Lista ── */
 .fpe-list {
   flex: 1;
@@ -1970,13 +2208,20 @@
     background: color-mix(in oklch, var(--pos-paper-2) 82%, var(--pos-rule));
   }
   .fpe-btn-ghost:hover:not(:disabled),
-  .fpe-tool:hover,
+  .fpe-tool:not(.fpe-tool-main):hover,
   .fpe-zoom button:hover,
-  .fpe-selbar button:hover {
+  .fpe-more:hover,
+  .fpe-float-link:hover {
     background: var(--pos-paper-2);
   }
-  .fpe-btn-danger:hover:not(:disabled),
-  .fpe-selbar button.is-danger:hover {
+  .fpe-tool-main:hover {
+    background: color-mix(in oklch, var(--pos-ink) 86%, white);
+  }
+  .fpe-act:hover,
+  .fpe-pending:hover {
+    filter: brightness(0.96);
+  }
+  .fpe-btn-danger:hover:not(:disabled) {
     background: color-mix(in oklch, var(--fpe-danger) 10%, var(--pos-paper));
   }
   .fpe-btn-danger-solid:hover:not(:disabled) {
@@ -2018,11 +2263,17 @@
   .fpe-boardbtn {
     min-height: 2.75rem;
   }
-  .fpe-zoom button,
-  .fpe-selbar button {
+  .fpe-zoom button {
     width: auto;
     min-width: 2.75rem;
     height: 2.75rem;
+  }
+  .fpe-pending,
+  .fpe-more {
+    min-height: 2.75rem;
+  }
+  .fpe-act {
+    min-height: 3.25rem;
   }
   .fpe-stepper button {
     width: 3rem;
@@ -2042,10 +2293,10 @@
   }
 }
 /* Con lugar para los dos (el mismo ancho que `SPLIT_MIN_WIDTH`): el plano a la izquierda y, a la
-   derecha, la maqueta viva arriba de la ficha. La columna se ensancha para que la maqueta se lea. */
+   derecha, la maqueta viva, armándose mientras se dibuja. */
 @container fpe (min-width: 1180px) {
   .fpe-work[data-split="on"] {
-    grid-template-columns: minmax(0, 1fr) clamp(22rem, 32%, 30rem);
+    grid-template-columns: minmax(0, 1fr) clamp(21rem, 36%, 34rem);
   }
 }
 /* Notebook: el control de vista queda en íconos (el nombre aparece al pasar por arriba). */
@@ -2066,8 +2317,14 @@
     padding: 0 0.6rem;
   }
 }
-/* Sin lugar para dos columnas (celular, tablet parada): nada flota. Las herramientas vuelven a ser
-   filas, el tablero toma la forma del piso y la página scrollea. */
+/* Angosto: el porcentaje del zoom se va (queda − y +) y lo de la izquierda cede lugar. */
+@container fpe (max-width: 979.98px) {
+  .fpe-zoom .fpe-zoom-value {
+    min-width: 2.7rem;
+  }
+}
+/* Sin lugar para que floten (celular, tablet parada): nada flota. La paleta y la fila de arriba
+   vuelven a ser renglones, el tablero toma la forma del piso, la ficha va abajo y la página scrollea. */
 @container fpe (max-width: 859.98px) {
   .fpe {
     height: auto;
@@ -2076,32 +2333,37 @@
   .fpe-bar {
     flex-wrap: wrap;
   }
+  .fpe-body[data-bleed="on"] {
+    padding: var(--fpe-gap);
+  }
+  .fpe-body[data-bleed="on"] .fpe-pane {
+    border-radius: 0.8rem;
+    box-shadow:
+      inset 0 0 0 1px oklch(1 0 0 / 0.07),
+      inset 0 2px 12px oklch(0 0 0 / 0.28);
+  }
   .fpe-work {
-    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;
-    grid-template-areas:
-      "board"
-      "side";
   }
   .fpe-board {
     display: flex;
     flex-direction: column;
     gap: var(--fpe-gap);
   }
-  .fpe-float,
-  .fpe-rail {
+  .fpe-board > .fpe-top,
+  .fpe-rail,
+  .fpe-inspector {
     position: static;
+  }
+  .fpe-board > .fpe-top {
+    flex-wrap: wrap;
+    pointer-events: auto;
   }
   .fpe-float {
     flex-wrap: wrap;
   }
-  /* Cómo mirar son dos íconos: no merecen un renglón. Quedan en la esquina de abajo del tablero
-     (que es lo último de la pila), enfrente del zoom. */
-  .fpe-float-view {
-    position: absolute;
-    top: auto;
-    right: 0.45rem;
-    bottom: 0.45rem;
+  .fpe-float-status {
+    flex: 1 1 auto;
   }
   .fpe-rail {
     flex-direction: row;
@@ -2110,6 +2372,11 @@
     max-height: none;
     overflow-x: auto;
     overflow-y: hidden;
+  }
+  .fpe-rail-sep {
+    width: 1.5px;
+    height: auto;
+    margin: 0.4rem 0.25rem;
   }
   .fpe-tool {
     min-width: 4rem;
@@ -2129,29 +2396,53 @@
   .fpe-board > .fpe-pane-model .fpe-model.pos-board {
     inset: 1.6rem 0 0;
   }
-  .fpe-selbar {
-    max-width: calc(100% - 0.9rem);
-    /* Arriba: abajo, en un tablero angosto, está el zoom de lado a lado. */
-    top: 0.45rem;
-    bottom: auto;
+  .fpe-inspector {
+    width: auto;
+    animation: none;
+  }
+  .fpe-inspector .fpe-side {
+    max-height: none;
   }
   .fpe-side-body {
     overflow-y: visible;
   }
-  .fpe-live-stage {
+  .fpe-live {
     flex: none;
-    height: min(64dvh, 36rem);
-    min-height: 22rem;
+    height: min(68dvh, 38rem);
+    min-height: 24rem;
+  }
+  /* En vivo la fila sigue flotando sobre la maqueta. En un celular el resumen no entra en un renglón:
+     baja debajo de «En vivo» y se parte en dos en vez de cortarse, y la maqueta empieza más abajo. */
+  .fpe-live .fpe-float-status {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    row-gap: 0.2rem;
+    padding: 0.4rem 0.5rem;
+  }
+  .fpe-live .fpe-caption {
+    flex: 1 1 100%;
+    padding: 0 0.15rem;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .fpe-live .fpe-model.pos-board {
+    inset: 6.6rem 0 0;
   }
   .fpe-list {
     overflow: visible;
   }
 }
 @container fpe (max-width: 559.98px) {
-  /* En un celular el control de zoom se achica: no tapa el piso. */
-  .fpe-zoom-value,
-  .fpe-zoom-sep {
+  /* En un celular el plano se acerca con los dedos: los botones de zoom sobran. */
+  .fpe-zoom,
+  .fpe-zoom + .fpe-toolbar-sep {
     display: none;
+  }
+  .fpe-float-link span {
+    display: none;
+  }
+  .fpe-float-link {
+    padding: 0 0.7rem;
   }
   /* La barra en dos renglones: arriba la sucursal y qué se hace, abajo los sectores. */
   .fpe-bar {
@@ -2168,10 +2459,7 @@
   .fpe-boardbtn {
     order: 2;
   }
-  .fpe-float-add .fpe-btn-primary {
-    flex: 1;
-  }
-  .fpe-toolbar-sep {
+  .fpe-float-status .fpe-toolbar-sep {
     display: none;
   }
   .fpe-list th:nth-child(3),
@@ -2184,7 +2472,13 @@
 @media (prefers-reduced-motion: reduce) {
   .fpe-btn:active:not(:disabled),
   .fpe-stepper button:active:not(:disabled),
-  .fpe .fpe-tool:active {
+  .fpe .fpe-tool:active,
+  .fpe-act:active,
+  .fpe-pending:active {
     transform: none;
+  }
+  .fpe-inspector,
+  .fpe-pending-spot {
+    animation: none;
   }
 }

@@ -84,10 +84,17 @@ type Props = {
    * ocupadas); `onHold` avisa cuál se levantó. Mientras `move` está puesto, la mesa de origen se ve
    * levantada y las de destino se ofrecen; soltar la ficha sobre una llama a `onDrop`. Tocar un destino
    * sigue llegando por `onTable`: arrastrar es un atajo, no el único camino.
+   *
+   * `joins` son las mesas ocupadas sobre las que también se puede soltar: es el gesto de juntarlas. No
+   * se ofrecen todas a la vez (son muchas y ya tienen su color): se marca la que queda debajo de la ficha.
    */
   holdable?: ReadonlySet<string> | null
   onHold?: (tableId: string) => void
-  move?: { from: string; targets: ReadonlySet<string> } | null
+  move?: {
+    from: string
+    targets: ReadonlySet<string>
+    joins?: ReadonlySet<string> | null
+  } | null
   onDrop?: (tableId: string) => void
 }
 
@@ -325,7 +332,9 @@ export function FloorModel({
   }
   const dropTargetAt = (x: number, y: number): string | null => {
     if (!move || !fit) return null
-    const candidates = scene.anchors.filter((anchor) => move.targets.has(anchor.tableId))
+    const candidates = scene.anchors.filter(
+      (anchor) => move.targets.has(anchor.tableId) || move.joins?.has(anchor.tableId),
+    )
     // La ficha apunta con su centro, que va arriba del dedo.
     const hit = nearestAnchor(
       candidates,
@@ -430,7 +439,9 @@ export function FloorModel({
         ? 'pos-lifted'
         : move.targets.has(tableId)
           ? cn('pos-target', hot === tableId && 'pos-target-hot')
-          : null
+          : hot === tableId
+            ? 'pos-join-hot'
+            : null
 
   return (
     <div ref={ref} className={cn('pos-board', className)}>

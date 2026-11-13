@@ -21,14 +21,15 @@ Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/m
 >   en los menús (`getEffectiveFeatures`).
 > - **Vistas:** plano, plano y maqueta, maqueta. La maqueta es la del salón (`components/pos/floor/floor-model`),
 >   se alimenta del estado en memoria y sigue el arrastre; al lado del plano no gira (`turn="never"`).
-> - **Modos:** editar, en vivo (la maqueta con estados reales si el bar tiene `pos`; si no, el plano de
->   siempre) y lista.
+> - **Modos:** editar, en vivo (siempre la maqueta con estados reales: con `pos` salen de sus comandas; sin
+>   `pos`, del servicio de mesa de siempre, ver «En vivo, igual en cualquier bar») y lista.
 > - **Edición:** quitar no pide confirmación, se deshace; bandeja optimista; teclado completo (flechas, Shift,
 >   Alt, R, Ctrl+Z, Ctrl+D, Supr, Enter).
 > - El asistente no se para encima del editor (`data-tex-away="always"`).
 > - Archivos nuevos en `_components/`: `editor-stage`, `editor-toolbar`, `sector-tabs`, `maqueta-pane`,
->   `side-panel`, `live-pane`, `use-live-model`, `legacy-live`, `glyphs`, `shortcut-list`, `papel.ts`,
->   `floor-editor.css`. En `lib/floor-plan/`: `access`, `branches`, `model`, `live-geometry`, `live-model`.
+>   `side-panel`, `live-pane`, `use-live-model`, `glyphs`, `shortcut-list`, `papel.ts`,
+>   `floor-editor.css`. En `lib/floor-plan/`: `access`, `branches`, `model`, `live-geometry`, `live-model`,
+>   `arrange`. (`legacy-live` y `contextual-toolbar` se retiraron el 13/11/2026.)
 > - Pendiente: los QR de mesa siguen detrás de `table_qr` (falta decidir si `pos` los trae); reordenar
 >   sectores no se probó en el navegador; `lib/tables/actions.ts › createTable` no pasa sucursal y no se usa.
 
@@ -182,6 +183,86 @@ Con la misma ventana, el plano pasó a 620 × 480. La ficha de la derecha mide 1
 
 Trampa que apareció al hacerlo: `.fpe button { font: inherit }` le ganaba por especificidad a cada clase
 (`.fpe-btn`, `.fpe-tab`, `.fpe-tool`) y les borraba el tamaño y el grosor. Va con `:where()`.
+
+### Segunda vuelta: nada le saca lugar al dibujo (13/11/2026)
+
+El mismo día Nacho pidió ir más lejos: «interfaz más limpia», «unir mesas arrastrando», «acá en vivo
+cambia al mapa común» y, sobre todo, «no quiero que te aferres a lo que yo hice». Lo que cambió respecto
+del encuadre de arriba (que queda como historia):
+
+- **Se fue la columna de la derecha.** Casi siempre mostraba texto de ayuda y le sacaba un tercio al plano.
+  Ahora el tablero ocupa todo y va **a sangre** (`.fpe-body[data-bleed]`: sin margen, sin esquinas).
+- **La ficha de lo elegido flota** (`.fpe-inspector`, 18 rem). Aparece solo con algo elegido y del lado
+  donde no lo tapa: el editor mide lo elegido y la cambia de lado **solo cuando lo taparía**
+  (`inspectorSide`, `INSPECTOR_REACH`), así no salta con cada toque. Mientras se arrastra algo se
+  transparenta y no ataja el puntero (`.fpe-board[data-dragging]`): se puede soltar debajo de ella.
+- **La ficha es corta.** Arriba, lo de siempre: número, lugares, forma y tres o cuatro teclas (girar,
+  duplicar, imprimir QR, quitar). Lo de vez en cuando (juntar eligiendo de una lista, dividir, al frente o
+  al fondo, cambiar el QR, desactivar) espera plegado en «Más opciones». Entra entera en 607 px de alto.
+- **La paleta tiene la mesa arriba** (`fpe-tool-main`, en tinta) y «Varias» al lado; abajo, lo construido.
+  Ya no hay un botón «Agregar mesa» aparte.
+- **Una fila fina arriba** (`.fpe-top`): a la izquierda deshacer, «12 mesas · 46 lugares» y, si hay,
+  «3 sin ubicar» (abre la bandeja en una ventanita); a la derecha el zoom (el porcentaje, además, encaja:
+  un toque el piso entero, otro las mesas), cómo mirar, los QR y los atajos. `EditorStage` ya no dibuja su
+  barra de zoom: expone `StageApi` (`apiRef`) y escribe el porcentaje donde le digan (`zoomLabelRef`).
+- **«Los dos»** pone la maqueta al lado del plano (`.fpe-pane-side`), no arriba de una ficha.
+- Se fue la barra de «lo elegido» de abajo a la derecha (`contextual-toolbar.tsx`): repetía la ficha.
+
+En la ventana de 1190 × 660 el plano pasó de 620 × 480 a **930 × 555** (todo el ancho del editor).
+
+### Acomodar solo (`lib/floor-plan/arrange.ts`, puro y testeado)
+
+Tres decisiones que antes había que corregir a mano:
+
+- **Una mesa nueva sigue la fila de la última** (`rowContinuation`): a la derecha de la de más abajo y más
+  a la derecha, alineada con ella y con la separación que ya traía esa fila; si no entra, empieza otra
+  fila debajo. Tocar «Mesa» cinco veces deja cinco mesas en fila. Solo si ese lugar está a la vista: con
+  el plano acercado en otra parte, va al centro de lo que se mira.
+- **Nada cae encima de otra cosa** (`findFreeSpot`): desde el lugar preferido da vueltas cada vez más
+  lejos hasta encontrar uno libre, dejando aire para las sillas (`SEAT_GAP`). Antes «Agregar mesa» y
+  «Ubicar» apilaban todo en el centro del sector.
+- **El hueco aparece al toque** (`pendingSpots` en el editor): mientras el servidor crea la pieza se dibuja
+  su contorno con el número que va a llevar. Sirve además para que dos toques seguidos no repitan ni el
+  lugar ni el número (los dos se calculaban con lo que ya había llegado del servidor).
+
+### Juntar dos mesas arrastrando
+
+Arrastrar una mesa hasta dejar su centro adentro de otra es el gesto de juntarlas (`mergeTargetAt`; no
+vale con un grupo elegido). En el aire, la que recibe se marca en verde y la que se arrastra dice «Soltá
+para juntarlas» (clases `is-merge-target` / `is-merging`, puestas a mano en el nodo: nada pasa por React
+mientras dura el gesto). Al soltar **se pregunta** (desactiva una mesa: no es un paso de «deshacer»), y
+mientras tanto la mesa queda apoyada donde se soltó (su nodo conserva el corrimiento); con «Dejarlas
+separadas» vuelve a su lugar.
+
+Con el sí: `fp_merge_tables` (queda la mesa sobre la que se soltó, con su número; la otra sale del plano y
+se desactiva) y después el editor agranda la que queda con `mergedTable` (suma los lugares, hasta 50, y la
+alarga por su lado largo sin moverla de su centro; una redonda crece en superficie) y guarda los lugares
+con `updateTable`. La lista de «Juntar con…» sigue en «Más opciones», para quien usa teclado.
+
+En el **mapa del salón** el gesto es el mismo con mesas abiertas: se levanta una manteniéndola apretada
+y, soltada sobre otra ocupada, pregunta si juntar las cuentas (`FloorModel` › `move.joins`,
+`floor-live.tsx` › `joinTargets`; antes solo se podía tocándola).
+
+### En vivo, igual en cualquier bar
+
+«En vivo» es siempre `LivePane`: la maqueta del salón, a sangre, con lo que pasa ahora en una fila que
+flota arriba. Antes, un bar sin `pos` veía ahí otro plano (el de `live-floor.tsx`, plano y con tarjetas).
+
+- La foto llega siempre con la forma de `FloorSnapshot` (`refreshLiveModelAction`): con `pos` es
+  `pos_floor_snapshot`; sin `pos` la arma `getLegacyFloorSnapshot` con las mesas abiertas del servicio de
+  mesa de siempre, convertidas una por una con `legacyFloorSession` (testeado en
+  `floor-plan-live-model.test.ts`).
+- Ese servicio sabe menos de cada mesa (si hay algo en cocina, si hay algo listo, si pidieron la cuenta):
+  alcanza para el estado, y lo que no registra **no se inventa**: esos estados van sin reloj y una mesa
+  esperando comida no figura como demorada.
+- Los avisos: con `pos`, el canal de la sucursal (`usePosPoke`); sin `pos`, los cambios de
+  `table_sessions` y `tickets` del bar (`subscribeChanges`, canal `plan-live-<bar>`). Lo decide
+  `useLiveModel` según `posEnabled`.
+- Sin `pos`, la ficha de una mesa abierta ofrece «Cambiar de mesa» (`MoveTableSheet`): era lo único que el
+  dueño hacía desde la vista anterior. Con `pos` eso se hace en el salón.
+
+`live-floor.tsx` y sus piezas siguen existiendo: las usa el salón de siempre (`/salon/mesas`, pestaña
+«Plano»).
 
 ### Canvas con `react-zoom-pan-pinch` v3.7
 
@@ -400,8 +481,9 @@ Realtime (ver arriba).
 
 ### Dónde vive
 
-- **Dueño** (`/local/mesas`): toggle **Editar / En vivo** en el header del editor. En
-  modo "En vivo" monta `<LiveFloor>`.
+- **Dueño** (`/local/mesas`): desde el 13/11/2026 «En vivo» ya no monta `<LiveFloor>` sino la maqueta
+  (`LivePane`, ver «En vivo, igual en cualquier bar»). Lo que sigue describe `<LiveFloor>`, que queda
+  para el staff.
 - **Staff** (`/salon/mesas`): tab "Plano" renderiza `<LiveFloor>` con `interactive={false}`
   y `onTableOpen` navegando a `/salon/mesas/[sessionId]`.
 
@@ -436,7 +518,8 @@ bandeja).
 ### Retirados
 
 `create-table-dialog.tsx` (reemplazado por drop-from-palette + inspector),
-`lib/floor-plan/a11y.ts` (era de dnd-kit).
+`lib/floor-plan/a11y.ts` (era de dnd-kit), `contextual-toolbar.tsx` (la barra de «lo elegido»: repetía
+la ficha) y `legacy-live.tsx` («En vivo» para bares sin `pos`: ahora es la misma maqueta).
 
 ---
 

@@ -28,8 +28,9 @@ type UnplacedTrayProps = {
 
 /**
  * Mesas que existen pero no están dibujadas en ningún sector de la sucursal
- * (se las quitó del plano, o se reactivaron). «Ubicar» las apoya en el centro
- * del sector que se está mirando.
+ * (se las quitó del plano, o se reactivaron). «Ubicar» las apoya en un lugar
+ * libre del sector que se está mirando. Se abre desde «N sin ubicar», en la fila
+ * de arriba del tablero.
  */
 export function UnplacedTray({ tables, areaName, onPlace, onDelete }: UnplacedTrayProps) {
   const [doomed, setDoomed] = useState<UnplacedTable | null>(null)
@@ -48,10 +49,16 @@ export function UnplacedTray({ tables, areaName, onPlace, onDelete }: UnplacedTr
   if (tables.length === 0) return null
 
   return (
-    <div className="fpe-group">
-      <h3 className="fpe-group-title">
-        {tables.length === 1 ? '1 mesa sin ubicar' : `${tables.length} mesas sin ubicar`}
-      </h3>
+    <div className="fpe-form">
+      <div className="fpe-field">
+        <h2 className="fpe-pop-title">
+          {tables.length === 1 ? '1 mesa sin ubicar' : `${tables.length} mesas sin ubicar`}
+        </h2>
+        <p className="fpe-hint">
+          Existen, pero no están dibujadas en ningún sector. «Ubicar» las apoya en un lugar libre de{' '}
+          {areaName}.
+        </p>
+      </div>
       <ul className="fpe-tray">
         {tables.map((table) => (
           <li key={table.id} className="fpe-tray-item">
@@ -89,7 +96,6 @@ export function UnplacedTray({ tables, areaName, onPlace, onDelete }: UnplacedTr
           </li>
         ))}
       </ul>
-      <p className="fpe-hint">«Ubicar» la apoya en el centro de {areaName}.</p>
 
       <AlertDialog
         open={doomed !== null}

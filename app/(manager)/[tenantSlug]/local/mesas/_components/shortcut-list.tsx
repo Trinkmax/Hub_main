@@ -14,6 +14,7 @@ const SHORTCUTS: { what: string; keys: string[] }[] = [
   { what: 'Rehacer', keys: ['Ctrl', 'Shift', 'Z'] },
   { what: 'Al frente / al fondo', keys: [']', '['] },
   { what: 'Elegir varias', keys: ['Shift', 'clic'] },
+  { what: 'Juntar dos mesas', keys: ['arrastrar una sobre otra'] },
   { what: 'Soltar sin imán', keys: ['Alt'] },
   { what: 'Soltar la selección', keys: ['Esc'] },
 ]

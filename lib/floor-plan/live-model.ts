@@ -101,3 +101,56 @@ export function liveSummaryLine(summary: FloorSummary): string {
   if (summary.late > 0) parts.push(`${summary.late} con demora`)
   return parts.join(' · ')
 }
+
+// ─── Bares sin punto de venta ────────────────────────────────────────────────
+
+/**
+ * Lo que se sabe de una mesa abierta en un bar SIN punto de venta: las sesiones del servicio de mesa
+ * anterior no llevan el detalle por renglón, solo si hay algo en cocina, si hay algo listo y si pidieron
+ * la cuenta.
+ */
+export type LegacySessionFacts = {
+  id: string
+  tableId: string
+  openedAt: string
+  partySize: number | null
+  alias: string | null
+  totalCents: number
+  kitchen: 'none' | 'preparing' | 'ready'
+  /** Cuándo pidió la cuenta; `null` si no la pidió. */
+  billRequestedAt: string | null
+}
+
+/**
+ * Esa mesa, con la forma que usa la maqueta (`FloorSession`), para que «En vivo» se vea igual en
+ * cualquier bar: sentada, esperando comida, lista para llevar, comiendo o con la cuenta pedida. Lo que
+ * el servicio viejo no registra (desde cuándo espera, cuándo se sirvió) va en `null`: el estado se
+ * muestra sin reloj en vez de inventar uno.
+ */
+export function legacyFloorSession(facts: LegacySessionFacts): FloorSession {
+  const ready = facts.kitchen === 'ready'
+  const preparing = facts.kitchen === 'preparing'
+  return {
+    id: facts.id,
+    table_id: facts.tableId,
+    opened_at: facts.openedAt,
+    party_size: facts.partySize,
+    alias: facts.alias,
+    reservation_id: null,
+    bill_requested_at: facts.billRequestedAt,
+    total_cents: facts.totalCents,
+    is_practice: false,
+    kind: 'table',
+    customer: null,
+    held_tickets: 0,
+    items_queued: 0,
+    items_preparing: preparing ? 1 : 0,
+    items_ready: ready ? 1 : 0,
+    // Con consumo y nada en cocina: ya comieron (o están comiendo).
+    items_served: !ready && !preparing && facts.totalCents > 0 ? 1 : 0,
+    waiting_since: null,
+    ready_since: null,
+    last_served_at: null,
+    first_order_at: null,
+  }
+}

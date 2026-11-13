@@ -75,8 +75,8 @@ function Counter({
 
 /**
  * «Varias mesas»: arma una tanda de mesas iguales, numeradas, debajo de lo que
- * ya está dibujado. Es una ventanita pegada al botón (no un diálogo): son tres
- * datos y no hace falta frenar al dueño para pedírselos.
+ * ya está dibujado. Es una ventanita pegada a su pieza de la paleta (no un
+ * diálogo): son tres datos y no hace falta frenar al dueño para pedírselos.
  */
 export function BulkCreateDialog({
   slug,
@@ -122,17 +122,15 @@ export function BulkCreateDialog({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+          className="fpe-tool"
           title="Varias mesas iguales de una vez"
+          aria-label="Agregar varias mesas"
         >
           <TablesGridGlyph />
-          {/* Un solo texto: suelto, el espacio entre las dos palabras lo pondría el botón (y de más). */}
-          <span>
-            Varias<span className="fpe-wide-only"> mesas</span>
-          </span>
+          Varias
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>
+      <PopoverContent side="right" align="start" sideOffset={10} className={cn(PAPEL, 'fpe-pop')}>
         <form
           className="fpe-form"
           onSubmit={(e) => {

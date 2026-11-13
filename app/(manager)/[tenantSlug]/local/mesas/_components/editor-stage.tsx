@@ -1,7 +1,13 @@
 'use client'
 
-import { Maximize, Minus, Plus, Scan } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import { GRID } from '@/lib/floor-plan/grid'
@@ -23,9 +29,19 @@ const FIT_PADDING = 28
 const FIT_PADDING_INSET = 14
 /** Por debajo de esto el tablero está oculto o todavía sin medir. */
 const MIN_FRAME = 40
-/** Tablero angosto (celular): el control de zoom ocupa casi todo el ancho. */
+/** Tablero angosto (celular): menos aire alrededor del piso. */
 const NARROW_FRAME = 480
-const ZOOM_BAR_SPACE = 52
+
+/** Lo que se le puede pedir al lienzo desde afuera (los botones de zoom viven en la fila del tablero). */
+export type StageApi = {
+  zoomIn: () => void
+  zoomOut: () => void
+  /**
+   * Encajar: muestra el piso entero y, si ya se lo estaba viendo entero, se acerca a lo dibujado. Un
+   * solo botón para las dos cosas (antes eran dos íconos que nadie distinguía).
+   */
+  fit: () => void
+}
 
 export type EditorStageProps = {
   /** Tamaño lógico del piso del sector. */
@@ -41,6 +57,10 @@ export type EditorStageProps = {
   label: string
   /** Lo que flota sobre el lienzo sin agrandarse con el zoom. */
   overlay?: React.ReactNode
+  /** Para manejar el zoom desde afuera. */
+  apiRef?: React.Ref<StageApi>
+  /** Dónde escribir el porcentaje de zoom (a mano, sin render por cuadro). */
+  zoomLabelRef?: React.RefObject<HTMLSpanElement | null>
   /**
    * Las franjas del tablero que tapan las herramientas que flotan encima (la barra de agregar, la
    * paleta, el zoom): el piso se encaja en lo que queda libre. `null` = nada flota (celular).
@@ -70,12 +90,13 @@ export function EditorStage({
   onBackground,
   label,
   overlay,
+  apiRef,
+  zoomLabelRef,
   inset = null,
   children,
 }: EditorStageProps) {
   const frameRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
-  const zoomRef = useRef<HTMLSpanElement>(null)
   // Qué se está mostrando: el piso entero, lo dibujado, o lo que el dueño acomodó a mano.
   const fitModeRef = useRef<'floor' | 'content' | 'manual'>('floor')
   const sizeRef = useRef({ width, height })
@@ -103,10 +124,8 @@ export function EditorStage({
         maxScale: MAX_FIT_SCALE,
       })
     }
-    // En un tablero angosto (celular) se deja libre la franja de abajo, donde va el control de zoom.
-    const reserve = rect.width < NARROW_FRAME ? ZOOM_BAR_SPACE : 0
-    return fitTransform({ width: rect.width, height: rect.height - reserve }, box, {
-      padding: reserve ? 14 : FIT_PADDING,
+    return fitTransform({ width: rect.width, height: rect.height }, box, {
+      padding: rect.width < NARROW_FRAME ? FIT_PADDING_INSET : FIT_PADDING,
       minScale: MIN_SCALE,
       maxScale: MAX_FIT_SCALE,
     })
@@ -153,14 +172,37 @@ export function EditorStage({
     return () => observer.disconnect()
   }, [fitTo])
 
-  const publish = useCallback((scale: number) => {
-    if (zoomRef.current) zoomRef.current.textContent = `${Math.round(scale * 100)} %`
-    stageRef.current?.style.setProperty('--fpe-inv', String(1 / scale))
-  }, [])
+  const publish = useCallback(
+    (scale: number) => {
+      const label = zoomLabelRef?.current
+      if (label) label.textContent = `${Math.round(scale * 100)} %`
+      stageRef.current?.style.setProperty('--fpe-inv', String(1 / scale))
+    },
+    [zoomLabelRef],
+  )
 
   const manual = useCallback(() => {
     fitModeRef.current = 'manual'
   }, [])
+
+  useImperativeHandle(
+    apiRef,
+    () => ({
+      zoomIn: () => {
+        manual()
+        transformRef.current?.zoomIn(0.3)
+      },
+      zoomOut: () => {
+        manual()
+        transformRef.current?.zoomOut(0.3)
+      },
+      fit: () => {
+        const closer = fitModeRef.current === 'floor' && contentRef.current !== null
+        fitTo(closer ? 'content' : 'floor', 260)
+      },
+    }),
+    [manual, fitTo, transformRef],
+  )
 
   return (
     <section
@@ -215,52 +257,6 @@ export function EditorStage({
       ) : null}
 
       {overlay}
-
-      <div className="fpe-zoom fpe-ui">
-        <button
-          type="button"
-          aria-label="Alejar"
-          title="Alejar"
-          onClick={() => {
-            manual()
-            transformRef.current?.zoomOut(0.3)
-          }}
-        >
-          <Minus aria-hidden />
-        </button>
-        <span ref={zoomRef} className="fpe-zoom-value" aria-hidden>
-          {initial ? `${Math.round(initial.scale * 100)} %` : ''}
-        </span>
-        <button
-          type="button"
-          aria-label="Acercar"
-          title="Acercar"
-          onClick={() => {
-            manual()
-            transformRef.current?.zoomIn(0.3)
-          }}
-        >
-          <Plus aria-hidden />
-        </button>
-        <span className="fpe-zoom-sep" aria-hidden />
-        <button
-          type="button"
-          aria-label="Encajar las mesas"
-          title="Encajar las mesas"
-          disabled={!content}
-          onClick={() => fitTo('content', 260)}
-        >
-          <Scan aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label="Ver todo el piso"
-          title="Ver todo el piso"
-          onClick={() => fitTo('floor', 260)}
-        >
-          <Maximize aria-hidden />
-        </button>
-      </div>
     </section>
   )
 }
