@@ -37,7 +37,10 @@ lo prende un superadmin por bar).
 | Sucursales, lista de apertura y ajustes del punto de venta | `/[bar]/local/sucursales`, `lib/pos/branches/*`, `lib/pos/settings/*` | hecho |
 | Cocina y aclaraciones (estaciones y a dónde va cada cosa; aclaraciones de cada producto) | `/[bar]/menu/cocina`, `lib/menu/kitchen/*` | hecho |
 | «Hoy en vivo» para los dueños | `/[bar]/local/hoy`, `lib/pos/today/*` | hecho |
-| Ventas por período, proyección de Administración, QR del cliente, modo práctica | — | sigue |
+| Modo práctica por sucursal | `pos_set_practice`, Sucursales › Modo práctica, la franja del salón | hecho |
+| Liberar una mesa abierta por error | `pos_release_table`, la hoja de la mesa en la comanda | hecho |
+| Ventas día por día | `pos_sales_days`, la tira de «Hoy en vivo» | hecho |
+| Proyección de Administración con estas ventas, QR del cliente, juntar mesas, vincular la tele | — | sigue |
 
 ## Modelo de datos
 
@@ -251,8 +254,11 @@ base, y las cuentas se hacen en `lib/pos/today/summary.ts` con las mismas reglas
   de hoy. `?dia=AAAA-MM-DD` mira un día anterior y `?sucursal=` una sola. Mientras es hoy, se relee sola cada
   30 segundos.
 
-Falta: las ventas por período (semana, mes) piden una función de la base que sume por día, y la Proyección
-de Administración todavía no se completa sola con estas ventas.
+Abajo, **los últimos 14 días** como una tira de barras (`pos_sales_days`, una función de la base que suma por
+día de servicio): cada barra lleva a su día, y arriba dice cuánto se vendió en el tramo, el promedio de los
+días con ventas, el consumo por persona y cuál fue el mejor.
+
+Falta: la Proyección de Administración todavía no se completa sola con estas ventas.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 
@@ -285,15 +291,34 @@ bar de ejemplo: cocina, tanda con la misma clave dos veces, baja, baja repetida,
 transacción), así que dentro de la tanda el orden lo termina decidiendo el id y no el orden en que el mozo
 los cargó. Falta una posición explícita en `ticket_items`.
 
-**Pendiente antes de usarlo con plata de verdad (otra tanda):**
-- Las funciones viejas del servicio de mesa (`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`,
-  `mark_session_abandoned`, el cierre automático de las 2 de la mañana) no conocen los cobros.
+**Cerrado con la migración `20261113132936_pos_practica_y_ventas` (aplicada el 13/11):**
+- **Modo práctica de la sucursal.** Lo prende un dueño (Sucursales › Modo práctica) y se apaga solo a las 5
+  de la mañana. Mientras está prendido, cada mesa que se abre ahí es de práctica (lo decide la base, no el
+  celular): se carga, sale en cocina con su cinta de «Prueba» y se cobra sin caja, pero no entra en ningún
+  número, no suma puntos y no toca la reserva. El salón lo avisa con una franja. Al apagarlo (o a la
+  madrugada, si quedó vencido) las mesas de práctica abiertas se levantan.
+- **Liberar una mesa** abierta por error (`pos_release_table`, desde la hoja de la mesa en la comanda): solo
+  si no tiene nada vivo cargado ni cobros.
+- **Un candado al final de cada transacción** (`table_sessions_pos_guard`): en un bar con el punto de venta,
+  una mesa no pasa a «cobrada» sin su cuenta cerrada, ni a «abandonada» o «juntada» con cobros hechos o con
+  consumo sin cobrar. Las funciones viejas del servicio de mesa (`mark_session_paid`,
+  `mark_session_abandoned`, `merge_sessions`) no conocen los cobros: si alguien las llama sobre una mesa
+  del punto de venta, no queda nada escrito. Para no cobrar una mesa (invitación, se fueron sin pagar) el
+  camino es un descuento con su OK, que deja quién fue.
+- **El cierre automático de la madrugada** ya no toca las mesas de un bar con el punto de venta: una mesa
+  que debe plata la cierra una persona.
+- **El orden de los renglones** de una tanda es el orden en que se cargaron.
+
+Probada en una base local con 60 comprobaciones y, ya aplicada, con una pasada en el bar de ejemplo
+(práctica prendida → mesa de prueba cobrada sin caja → práctica apagada; mesa vacía liberada; ventas por día).
+
+**Pendiente (otra tanda):**
+- `cancel_ticket_item` (la baja del servicio de mesa viejo) sigue sin mirar los cobros.
 - El canal en vivo `pos:<sucursal>` es público: no lleva datos de mesas ni de personas, pero cualquiera con
   el id de la sucursal puede escucharlo y emitir. Tiene que pasar a privado, con lectura por membresía.
 - Las acciones validan el bar de la dirección y la RPC opera sobre el bar de la fila: quien trabaja en dos
   bares puede operar una fila de uno desde la dirección del otro (sin ganar permisos, pero la auditoría
   queda en el bar equivocado). Cada RPC tiene que recibir el bar esperado.
-- El modo práctica: de la sucursal, prendido por el dueño, con hora de apagado.
 
 ## Diseño: el mundo «papel»
 

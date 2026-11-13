@@ -77,8 +77,30 @@ export async function getActiveBranch(
   return { branches, active: fallback, chosen: branches.length === 1 }
 }
 
-export function getFloorSnapshot(branchId: string): Promise<PosRead<FloorSnapshot>> {
-  return read<FloorSnapshot>('pos_floor_snapshot', { p_branch_id: branchId })
+/** Hasta cuándo la sucursal está en práctica; `null` si no lo está (o si ya se venció). */
+async function readPracticeUntil(branchId: string): Promise<string | null> {
+  const supabase = await untyped()
+  const { data, error } = await supabase
+    .from('branches')
+    .select('practice_until')
+    .eq('id', branchId)
+    .maybeSingle()
+  if (error) {
+    console.error('[pos.practice]', error.code, error.message)
+    return null
+  }
+  const until = (data as { practice_until: string | null } | null)?.practice_until ?? null
+  return until !== null && new Date(until).getTime() > Date.now() ? until : null
+}
+
+/** El salón de una sucursal, con si está en modo práctica. */
+export async function getFloorSnapshot(branchId: string): Promise<PosRead<FloorSnapshot>> {
+  const [snapshot, practiceUntil] = await Promise.all([
+    read<FloorSnapshot>('pos_floor_snapshot', { p_branch_id: branchId }),
+    readPracticeUntil(branchId),
+  ])
+  if (!snapshot.ok) return snapshot
+  return { ok: true, data: { ...snapshot.data, practice_until: practiceUntil } }
 }
 
 export function getSessionDetail(sessionId: string): Promise<PosRead<SessionDetail>> {

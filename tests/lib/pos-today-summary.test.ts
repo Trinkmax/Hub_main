@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isDay,
+  salesPeriod,
   serviceDayWindow,
   shiftDay,
   shiftWords,
@@ -10,6 +11,7 @@ import {
   todaySentence,
 } from '@/lib/pos/today/summary'
 import type {
+  SalesDay,
   TodayBill,
   TodayData,
   TodayLine,
@@ -376,5 +378,62 @@ describe('los días', () => {
     expect(isDay('2026-02-31')).toBe(false)
     expect(isDay('13/11/2026')).toBe(false)
     expect(isDay(undefined)).toBe(false)
+  })
+})
+
+describe('un tramo de días', () => {
+  const sale = (day: string, salesCents: number, over: Partial<SalesDay> = {}): SalesDay => ({
+    day,
+    salesCents,
+    surchargeCents: 0,
+    tipCents: 0,
+    payments: salesCents > 0 ? 3 : 0,
+    tables: 2,
+    people: 4,
+    consumptionCents: salesCents,
+    discountCents: 0,
+    depositCents: 0,
+    ...over,
+  })
+
+  it('va del primero al último, con los días sin ventas en cero', () => {
+    const period = salesPeriod(
+      [sale('2026-11-11', 4000000), sale('2026-11-13', 8000000)],
+      '2026-11-10',
+      '2026-11-13',
+    )
+    expect(period.days.map((day) => day.day)).toEqual([
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+      '2026-11-13',
+    ])
+    expect(period.days.map((day) => day.salesCents)).toEqual([0, 4000000, 0, 8000000])
+  })
+
+  it('suma, promedia sobre los días con cobros y encuentra el mejor', () => {
+    const period = salesPeriod(
+      [sale('2026-11-11', 4000000), sale('2026-11-13', 8000000)],
+      '2026-11-10',
+      '2026-11-13',
+    )
+    expect(period.salesCents).toBe(12000000)
+    expect(period.activeDays).toBe(2)
+    expect(period.averageCents).toBe(6000000)
+    expect(period.best?.day).toBe('2026-11-13')
+    expect(period.perPersonCents).toBe(1500000)
+  })
+
+  it('sin ventas no inventa promedios', () => {
+    const period = salesPeriod([], '2026-11-10', '2026-11-12')
+    expect(period.days).toHaveLength(3)
+    expect(period.salesCents).toBe(0)
+    expect(period.averageCents).toBeNull()
+    expect(period.best).toBeNull()
+    expect(period.perPersonCents).toBeNull()
+  })
+
+  it('un tramo al revés queda vacío', () => {
+    expect(salesPeriod([], '2026-11-13', '2026-11-10').days).toHaveLength(0)
   })
 })

@@ -25,6 +25,8 @@ export type Branch = {
   active: boolean
   /** Reloj de la base: la versión de la fila, para no pisar un cambio ajeno. */
   updatedAt: string
+  /** Hasta cuándo está en modo práctica (`null` o pasado = no está). Lo pone `pos_set_practice`. */
+  practiceUntil?: string | null
 }
 
 /** Lo que una sucursal tiene cargado: de acá salen los pasos de su lista de apertura. */

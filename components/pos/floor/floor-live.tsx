@@ -3,6 +3,7 @@
 import {
   AlarmClock,
   ChevronDown,
+  GraduationCap,
   LayoutList,
   Map as MapIcon,
   SquareDashed,
@@ -14,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { toast } from 'sonner'
 import { planHref } from '@/lib/floor-plan/branches'
 import { moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import { clockAt } from '@/lib/pos/order/clock'
 import {
   attentionRank,
   deriveFreeState,
@@ -37,6 +39,7 @@ import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
 import '../ui/pos-toast.css'
+import '../ui/pos-practice.css'
 
 /**
  * El salón en vivo de una sucursal: la pantalla de inicio del mozo.
@@ -510,6 +513,16 @@ export function FloorLive({
           />
         ) : null}
       </PosTopbar>
+
+      {snapshot.practice_until ? (
+        <p className="pos-practice-strip" role="status" data-testid="practice-strip">
+          <GraduationCap aria-hidden />
+          <span>
+            <b>Modo práctica</b> hasta las {clockAt(snapshot.practice_until, timeZone)}: lo que se
+            abra ahora es de prueba y no entra en la caja.
+          </span>
+        </p>
+      ) : null}
 
       {empty ? (
         <div className="pos-empty">

@@ -4,6 +4,7 @@ import { isPayMethod } from '@/lib/pos/cash/types'
 import { createClient } from '@/lib/supabase/server'
 import { serviceDayWindow } from './summary'
 import type {
+  SalesDay,
   TodayBill,
   TodayBranch,
   TodayData,
@@ -315,4 +316,53 @@ export async function getToday(
   })
 
   return { day, isToday, loadedAt, branches, payments, bills, shifts, openTables, lines }
+}
+
+type SalesDayRow = {
+  day: string
+  sales_cents: unknown
+  surcharge_cents: unknown
+  tip_cents: unknown
+  payments: unknown
+  tables: unknown
+  people: unknown
+  consumption_cents: unknown
+  discount_cents: unknown
+  deposit_cents: unknown
+}
+
+/**
+ * Lo vendido día por día entre dos fechas (la función `pos_sales_days`, solo para dueños). Devuelve
+ * solo los días que tuvieron algo. Si no se puede leer, `null`: la pantalla sigue sin la tira.
+ */
+export async function getSalesDays(
+  tenantId: string,
+  from: string,
+  to: string,
+  branchId: string | null,
+): Promise<SalesDay[] | null> {
+  const supabase = await untyped()
+  const { data, error } = await supabase.rpc('pos_sales_days', {
+    p_tenant_id: tenantId,
+    p_from: from,
+    p_to: to,
+    p_branch_id: branchId,
+  })
+  if (error) {
+    console.error('[pos.today.sales_days]', error.code, error.message)
+    return null
+  }
+  const rows = ((data as { days?: SalesDayRow[] } | null)?.days ?? []) as SalesDayRow[]
+  return rows.map((row) => ({
+    day: row.day,
+    salesCents: num(row.sales_cents),
+    surchargeCents: num(row.surcharge_cents),
+    tipCents: num(row.tip_cents),
+    payments: num(row.payments),
+    tables: num(row.tables),
+    people: num(row.people),
+    consumptionCents: num(row.consumption_cents),
+    discountCents: num(row.discount_cents),
+    depositCents: num(row.deposit_cents),
+  }))
 }

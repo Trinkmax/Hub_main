@@ -11,7 +11,15 @@
 
 import { cordobaWallTimeToUtc } from '@/lib/dates/zone'
 import { PAY_METHODS, type PayMethod } from '@/lib/pos/cash/types'
-import type { MethodTotal, ProductTotal, TodayBranch, TodayData, TodaySummary } from './types'
+import type {
+  MethodTotal,
+  ProductTotal,
+  SalesDay,
+  SalesPeriod,
+  TodayBranch,
+  TodayData,
+  TodaySummary,
+} from './types'
 
 /** Cuántos productos entran en «lo que más salió». */
 export const TOP_PRODUCTS = 8
@@ -200,5 +208,46 @@ export function serviceDayWindow(day: string): { from: string; to: string } {
   return {
     from: cordobaWallTimeToUtc(day, ROLLOVER),
     to: cordobaWallTimeToUtc(shiftDay(day, 1), ROLLOVER),
+  }
+}
+
+const EMPTY_DAY: Omit<SalesDay, 'day'> = {
+  salesCents: 0,
+  surchargeCents: 0,
+  tipCents: 0,
+  payments: 0,
+  tables: 0,
+  people: 0,
+  consumptionCents: 0,
+  discountCents: 0,
+  depositCents: 0,
+}
+
+/**
+ * Un tramo de días completo, del primero al último: los días sin ventas van en cero (la base solo
+ * devuelve los que tuvieron algo), para que la tira se lea como un calendario.
+ */
+export function salesPeriod(rows: ReadonlyArray<SalesDay>, from: string, to: string): SalesPeriod {
+  const byDay = new Map(rows.map((row) => [row.day, row]))
+  const days: SalesDay[] = []
+  // Tope de cordura: un tramo mal pedido no arma una lista interminable.
+  for (let day = from, guard = 0; day <= to && guard < 400; day = shiftDay(day, 1), guard++) {
+    days.push(byDay.get(day) ?? { day, ...EMPTY_DAY })
+  }
+  const active = days.filter((day) => day.payments > 0)
+  const salesCents = days.reduce((sum, day) => sum + day.salesCents, 0)
+  const people = days.reduce((sum, day) => sum + day.people, 0)
+  const consumption = days.reduce((sum, day) => sum + day.consumptionCents, 0)
+  let best: SalesDay | null = null
+  for (const day of days) {
+    if (day.salesCents > 0 && (best === null || day.salesCents > best.salesCents)) best = day
+  }
+  return {
+    days,
+    salesCents,
+    activeDays: active.length,
+    averageCents: active.length > 0 ? Math.round(salesCents / active.length / 100) * 100 : null,
+    best,
+    perPersonCents: people > 0 ? Math.round(consumption / people / 100) * 100 : null,
   }
 }
