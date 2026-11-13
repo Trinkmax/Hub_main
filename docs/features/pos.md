@@ -117,9 +117,31 @@ Migración `supabase/migrations/20261113030000_pos_cobro_y_caja.sql`: ocho tabla
 - Nada se borra: un cobro se anula o se corrige y queda quién y cuándo. Con el turno cerrado, solo un dueño.
 - La plata la leen dueño y caja; nadie escribe directo en las tablas (todo entra por las funciones).
 
-Pendiente antes de usarlo con plata de verdad: las funciones viejas del servicio de mesa
-(`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`, el cierre automático de las 2 de la mañana)
-todavía no conocen los cobros y hay que ajustarlas.
+## Auditoría del 13/11 y lo que falta cerrar
+
+Una revisión independiente de la rama confirmó lo estructural (cada RPC chequea el rol contra el bar de la
+fila, RLS y política del contador en todas las tablas nuevas, sin `service_role` nuevo, sin datos de personas
+en los registros). Lo que encontró y ya está arreglado en el código: el teléfono guardaba páginas con nombres
+y las mostraba sin sesión (`public/sw.js` las borra al llegar a la pantalla de entrar); el celular podía abrir
+mesas de práctica; cualquiera que mirara la cola marcaba «cocina lo vio»; un aviso en vivo se perdía si
+llegaba durante una lectura (`lib/pos/live-reload.ts`); una tanda sin enviar salía con la sesión de otra
+persona (`mayAutoSend`).
+
+**En la migración `pos_endurecer` (escrita aparte, va junto con cobro):** `pos_cancel_item` no mira la mesa,
+la cuenta ni los cobros; `pos_require_role` no mira el interruptor del bar; `pos_open_table` acepta la
+práctica de cualquier rol; `pos_send_order` mira la mesa antes que la clave; permisos de tabla de más en
+`menu_stockouts` y `menu_price_changes`; una reserva con el socio borrado no se puede sentar; cambiar el
+socio de una mesa no deja evento; la cola de cocina muestra tandas de mesas cerradas.
+
+**Pendiente antes de usarlo con plata de verdad (otra tanda):**
+- Las funciones viejas del servicio de mesa (`mark_session_paid`, `cancel_ticket_item`, `merge_sessions`,
+  `mark_session_abandoned`, el cierre automático de las 2 de la mañana) no conocen los cobros.
+- El canal en vivo `pos:<sucursal>` es público: no lleva datos de mesas ni de personas, pero cualquiera con
+  el id de la sucursal puede escucharlo y emitir. Tiene que pasar a privado, con lectura por membresía.
+- Las acciones validan el bar de la dirección y la RPC opera sobre el bar de la fila: quien trabaja en dos
+  bares puede operar una fila de uno desde la dirección del otro (sin ganar permisos, pero la auditoría
+  queda en el bar equivocado). Cada RPC tiene que recibir el bar esperado.
+- El modo práctica: de la sucursal, prendido por el dueño, con hora de apagado.
 
 ## Diseño: el mundo «papel»
 
