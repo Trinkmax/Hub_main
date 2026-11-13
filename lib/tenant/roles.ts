@@ -233,7 +233,10 @@ export function canAccessSalonPath(role: string, rest: ReadonlyArray<string>): b
     // Con el punto de venta, la anfitriona también sienta a la gente: el mapa y la mesa (POS_FLOOR_ROLES).
     // Si el bar no lo tiene prendido, la página misma responde que no existe.
     return (
-      rest[1] === 'reservas-operativo' || rest[1] === 'puerta' || rest[1] === 'mapa' || rest[1] === 'mesa'
+      rest[1] === 'reservas-operativo' ||
+      rest[1] === 'puerta' ||
+      rest[1] === 'mapa' ||
+      rest[1] === 'mesa'
     )
   }
   return false

@@ -38,6 +38,8 @@
   grid-template-rows: auto minmax(0, 1fr);
   height: calc(100dvh - var(--salon-tabbar-h));
   min-height: 26rem;
+  /* La carta cerrada espera corrida unos píxeles hacia abajo: que no le sume alto a la página. */
+  overflow: clip;
   background: var(--pos-board);
   color: var(--pos-ink);
   touch-action: manipulation;
@@ -911,7 +913,8 @@ button.cmd-line:active {
   display: grid;
   flex: none;
   gap: 0.5rem;
-  padding: 0.6rem var(--cmd-pad) 0.7rem;
+  /* La mesa no lleva pestañas debajo: la barra llega al borde y respeta la franja del teléfono. */
+  padding: 0.6rem var(--cmd-pad) calc(0.7rem + env(safe-area-inset-bottom));
   background: var(--pos-board-2);
   box-shadow: 0 -1px 0 oklch(1 0 0 / 0.08);
 }
@@ -1630,7 +1633,7 @@ button.cmd-line:active {
   display: grid;
   flex: none;
   gap: 0.45rem;
-  padding: 0.5rem var(--cmd-pad) 0.7rem;
+  padding: 0.5rem var(--cmd-pad) calc(0.7rem + env(safe-area-inset-bottom));
   background: var(--pos-board-2);
   color: var(--pos-board-ink);
 }

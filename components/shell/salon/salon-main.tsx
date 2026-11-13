@@ -13,10 +13,18 @@ const FULL_BLEED = /^\/[^/]+\/salon\/(mapa|mesa|caja)(\/|$)/
 export const OWN_TOPBAR = /^\/[^/]+\/salon\/(mapa|mesa)(\/|$)/
 /** La tele de cocina no lleva nada alrededor: ni barra de arriba ni pestañas. */
 export const BARE = /^\/[^/]+\/salon\/tele(\/|$)/
+/**
+ * La mesa es una pantalla de un solo trabajo: se llega desde el mapa y se vuelve con la flecha. Sin las
+ * pestañas, la acción principal (enviar, servir, cobrar) queda al borde del pulgar y las tandas ganan lugar.
+ */
+export const NO_TABBAR = /^\/[^/]+\/salon\/mesa(\/|$)/
 
 export function SalonMain({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   if (BARE.test(pathname)) return <main className="flex-1">{children}</main>
+  // Sin pestañas, el alto de la barra vale cero para lo que haya adentro (la pantalla mide `100dvh`).
+  if (NO_TABBAR.test(pathname))
+    return <main className="flex-1 [--salon-tabbar-h:0px]">{children}</main>
   if (FULL_BLEED.test(pathname)) {
     return <main className="flex-1 pb-[var(--salon-tabbar-h)]">{children}</main>
   }

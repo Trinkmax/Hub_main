@@ -237,6 +237,14 @@ export function FloorModel({
   const scale = fit?.scale ?? 1
   const sx = (x: number) => (fit ? x * scale + fit.offsetX : 0)
   const sy = (y: number) => (fit ? y * scale + fit.offsetY : 0)
+  // Los rótulos del piso («ENTRADA», «VISTA AL CERRO») miden lo mismo con el plano chico o grande: en un
+  // celular, uno cerca del borde se cortaba. Se corre lo justo para quedar entero dentro del mapa.
+  const decalLeft = (x: number, label: string) => {
+    const half = (label.length * 7.2 + 4) / 2
+    const edge = 8
+    if (half * 2 + edge * 2 >= size.width) return size.width / 2
+    return Math.min(Math.max(sx(x), half + edge), size.width - half - edge)
+  }
 
   // Cuánto detalle entra según el tamaño real de una mesa en pantalla.
   const tablePx = 80 * scale
@@ -320,7 +328,7 @@ export function FloorModel({
               <span
                 key={decal.key}
                 className="pos-decal"
-                style={{ left: sx(decal.x), top: sy(decal.y) }}
+                style={{ left: decalLeft(decal.x, decal.label), top: sy(decal.y) }}
               >
                 {decal.label}
               </span>

@@ -392,7 +392,7 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
           )}
         </div>
       ) : (
-        <div className="pos-stage">
+        <div className="pos-stage" data-view={view}>
           {view === 'list' ? (
             <ul className="pos-list">
               {visibleList.map((entry) => {

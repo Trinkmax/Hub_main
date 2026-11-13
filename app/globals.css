@@ -2269,7 +2269,8 @@ html[data-tex-drag] [data-tex-ui] {
 }
 
 /* El mapa ocupa todo lo que queda; el resumen del salón va encima, como fichas. */
-.pos-stage { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+/* `isolation`: las mesas y las fichas usan z-index altos entre ellas; que no le ganen al menú de la barra. */
+.pos-stage { position: relative; isolation: isolate; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .pos-caption {
   position: absolute;
   top: 0.55rem;
@@ -2346,4 +2347,21 @@ html[data-tex-drag] [data-tex-ui] {
 .pos-dim { opacity: 0.28; transition: opacity 180ms var(--pos-ease); }
 .pos-solid, .pos-num, .pos-flag { transition: opacity 180ms var(--pos-ease); }
 .pos-list { background: var(--pos-board); padding-bottom: 5.5rem; }
+/* En la lista, el resumen va arriba de la primera fila (no encima) y las filas se apagan al pasar por
+   debajo de las fichas, en vez de asomarse entre ellas. */
+.pos-stage[data-view='list'] .pos-caption {
+  position: static;
+  order: -1;
+  padding: 0.55rem 0.8rem 0;
+  background: var(--pos-board);
+}
+.pos-stage[data-view='list']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1999;
+  height: 6.5rem;
+  background: linear-gradient(to top, var(--pos-board-2) 42%, transparent);
+  pointer-events: none;
+}
 /* ── fin de Punto de venta ── */
