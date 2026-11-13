@@ -135,6 +135,8 @@ export function OrderScreen({
   const router = useRouter()
   const sessionId = initial.session.id
   const branchId = initial.session.branch_id
+  // Al salón de ESTA mesa: un dispositivo que estaba mirando la otra sucursal no cae en la otra.
+  const mapHref = `/${slug}/salon/mapa${branchSlug ? `?sucursal=${encodeURIComponent(branchSlug)}` : ''}`
 
   const [server, setServer] = useState(initial)
   const [menu, setMenu] = useState(initialMenu)
@@ -496,7 +498,7 @@ export function OrderScreen({
       data-testid="order-screen"
     >
       <PosTopbar account={account}>
-        <Link href={`/${slug}/salon/mapa`} className="cmd-back" aria-label="Volver al salón">
+        <Link href={mapHref} className="cmd-back" aria-label="Volver al salón">
           <ChevronLeft aria-hidden strokeWidth={2.4} />
         </Link>
         <h1 className="cmd-title">{title}</h1>
@@ -607,7 +609,7 @@ export function OrderScreen({
         {closed ? (
           <div className="cmd-closed">
             <span>Esta mesa ya se cerró.</span>
-            <Link href={`/${slug}/salon/mapa`} className="cmd-go">
+            <Link href={mapHref} className="cmd-go">
               Volver al salón
             </Link>
           </div>
@@ -700,6 +702,14 @@ export function OrderScreen({
             description: 'Marcalo agotado y nadie más lo va a poder pedir hoy.',
             duration: 9000,
             action: { label: 'Marcar agotado', onClick: () => toggleStock(product, true) },
+          })
+        }}
+        onRequested={(item) => {
+          void reloadSession()
+          toast(`Baja pedida: ${item.quantity} × ${item.name}`, {
+            description:
+              'El encargado la ve en su celular. Hasta que conteste, sigue en la comanda.',
+            duration: 7000,
           })
         }}
       />

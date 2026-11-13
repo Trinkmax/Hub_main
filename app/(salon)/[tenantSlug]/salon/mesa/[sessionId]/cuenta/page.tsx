@@ -70,6 +70,7 @@ export default async function PosBillPage({
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         // El membrete de la cuenta: el bar y, si tiene más de una sucursal, cuál.
         place={branches.length > 1 ? `${access.tenant.name} · ${branch.name}` : access.tenant.name}
+        branchSlug={branch.slug}
         // El mismo criterio con el que la pantalla de Caja deja entrar a abrir el turno.
         canOpenShift={POS_CASH_ROLES.includes(access.role)}
         actions={{

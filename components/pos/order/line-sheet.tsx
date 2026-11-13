@@ -9,7 +9,7 @@ import {
   SheetGrabber,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { cancelItem } from '@/lib/pos/actions'
+import { requestVoid } from '@/lib/pos/cash/actions'
 import { posFont } from '@/lib/pos/font'
 import { LINE_WORD, lineState } from '@/lib/pos/order/tickets'
 import type { SessionItem } from '@/lib/pos/types'
@@ -21,8 +21,9 @@ import { useLast } from './use-last'
  * Tocar un renglón que ya se mandó: marcarlo servido, o darlo de baja diciendo por qué.
  *
  * Servir no pregunta nada (se puede corregir). Dar de baja no tiene vuelta: el motivo es la
- * confirmación, y se espera la respuesta antes de tacharlo, porque si cocina ya lo empezó la baja la
- * tiene que dar el encargado y eso lo decide el servidor.
+ * confirmación, y se espera la respuesta antes de tacharlo, porque quién puede darla la decide el
+ * servidor: si cocina ya lo empezó, o la mesa ya pidió la cuenta o pagó algo, la baja la da el
+ * encargado. En ese caso queda el pedido esperando su OK y el renglón sigue en la comanda.
  */
 
 /** Con este motivo, después se ofrece marcar el producto agotado. */
@@ -48,12 +49,15 @@ export function LineSheet({
   onClose,
   onServe,
   onCancelled,
+  onRequested,
 }: {
   target: LineTarget | null
   slug: string
   onClose: () => void
   onServe: (item: SessionItem) => void
   onCancelled: (item: SessionItem, reason: string) => void
+  /** La baja quedó pedida: espera el OK de quien puede darlo. */
+  onRequested: (item: SessionItem) => void
 }) {
   const shown = useLast(target)
   const [state, setState] = useState<{
@@ -70,9 +74,9 @@ export function LineSheet({
     if (!target || state.busy) return
     const item = target.item
     setState((s) => ({ ...s, busy: reason, error: null }))
-    let result: Awaited<ReturnType<typeof cancelItem>>
+    let result: Awaited<ReturnType<typeof requestVoid>>
     try {
-      result = await cancelItem(slug, item.id, reason)
+      result = await requestVoid(slug, item.id, reason)
     } catch {
       result = {
         ok: false,
@@ -85,7 +89,8 @@ export function LineSheet({
       setState((s) => ({ ...s, busy: null, error: message }))
       return
     }
-    onCancelled(item, reason)
+    if (result.data.applied) onCancelled(item, reason)
+    else onRequested(item)
     onClose()
   }
 

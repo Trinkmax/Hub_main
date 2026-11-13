@@ -31,9 +31,9 @@ lo prende un superadmin por bar).
 | «¿Dónde trabajás hoy?» | `components/pos/ui/branch-chooser.tsx` | hecho |
 | Editor del plano por sucursal | `/[bar]/local/mesas` (ver `docs/floor-plan-mesas.md`) | hecho |
 | Precios (buscar y cambiar, aumentos en bloque, por sucursal, historial) | `/[bar]/menu/precios`, `lib/menu/prices/*` | hecho |
-| Cobro y caja por turno: base y capa de servidor | migración `pos_cobro_y_caja` (**sin aplicar**), `lib/pos/cash/*` | diseñado y ensayado |
-| La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho con datos de ejemplo |
-| La caja por turno | `/[bar]/salon/caja` | en construcción |
+| Cobro y caja por turno: base y capa de servidor | migraciones `pos_cobro_tablas`, `pos_cobro_cuenta_y_cobrar` y `pos_cobro_descuentos_y_caja`, `lib/pos/cash/*` | hecho |
+| La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
+| La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
 | Tablero del dueño, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
@@ -104,9 +104,10 @@ una hoja. Con el punto de venta el orden es salón, caja, reservas, cocina; el c
 algunas noches quedan detrás de «Más». La comanda (`/salon/mesa/*`) no lleva pestañas: se vuelve con la
 flecha. El punto de venta trae el plano del salón: prender `pos` alcanza (`getEffectiveFeatures`).
 
-## Cobro y caja por turno (diseñado, sin aplicar)
+## Cobro y caja por turno
 
-Migración `supabase/migrations/20261113030000_pos_cobro_y_caja.sql`: ocho tablas nuevas (`pos_registers`,
+Tres migraciones (`20261113113800_pos_cobro_tablas`, `20261113114128_pos_cobro_cuenta_y_cobrar` y
+`20261113114414_pos_cobro_descuentos_y_caja`; es un solo diseño, partido en tres para aplicarlo): ocho tablas nuevas (`pos_registers`,
 `pos_shifts`, `pos_payments`, `pos_payment_edits`, `pos_cash_movements`, `pos_approvals`, `pos_discounts`,
 `pos_closed_bills`) y 28 funciones. No toca la estructura de nada que ya existe.
 
@@ -155,7 +156,38 @@ contestaron. Si no hay nada para esa persona, no se dibuja.
 - Aprobar una baja no tiene vuelta: se pregunta una vez.
 - No abre su propio canal en vivo: la pantalla que la aloja le pasa `signal`.
 
-Probado con datos de ejemplo: la prueba de punta a punta espera que se aplique la migración de cobro.
+Bajas desde la comanda: tocar un renglón → motivo → `requestVoid` (`pos_request_void`). Si quien toca puede
+darla (o cocina no lo empezó y la mesa todavía no pidió la cuenta ni pagó nada) se da de baja ahí mismo; si
+no, queda el pedido y la comanda avisa «Baja pedida».
+
+## La caja por turno
+
+`/[bar]/salon/caja` (dueño y caja), `components/pos/cash/*`, lecturas y acciones en `lib/pos/cash/*`. Una
+pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
+
+- **Abrir**: la primera vez se escribe con cuánto cambio arranca; después muestra lo que dejó el turno
+  anterior y pregunta «¿Están en el cajón?» (si no están, se escribe lo que hay).
+- **El turno abierto**: cuánto entró, las teclas de los medios (cuentan y filtran), la cinta que se escribe
+  sola con cada cobro y, abajo, cuánto efectivo tiene que haber en el cajón. «Sacar plata» y «Entró plata»
+  piden monto y motivo. Tocar un cobro lo corrige (medio, factura) o lo anula; queda quién y cuándo.
+- **Cerrar**: se cuentan los billetes sin ver cuánto tenía que haber, después se compara (si no coincide,
+  la pantalla sugiere qué cobro mirar), se dice cuánto queda de cambio y se confirma. Queda el resumen del
+  turno, para copiar o mandar por WhatsApp.
+- **Práctica**: un turno aparte para aprender; no entra en ningún número.
+- Desde la cuenta de una mesa con la caja cerrada, «Abrir la caja» lleva a la caja de la sucursal de esa mesa.
+
+### Prueba de punta a punta (13/11, bar de ejemplo, sucursal Cerro, base real)
+
+1. Caja sin turnos → abrir con $ 15.000 → cajón $ 15.000.
+2. Mesa 7 → Efectivo → Cobrar $ 47.000 → sello COBRADO; en Caja, $ 47.000 y cajón $ 62.000.
+3. Sacar $ 6.500 («Hielo») → cajón $ 55.500.
+4. Cerrar: contado $ 55.500 → cuadra → quedan $ 15.000 → resumen (se retiran $ 40.500).
+5. Con la caja cerrada, la cuenta de la mesa 26 avisa «La caja está cerrada» → Abrir la caja → «¿Están en el
+   cajón?» → Sí.
+6. Mesa 26 en dos partes: débito $ 11.200 y crédito $ 11.200 + $ 1.120 de recargo → se cierra sola.
+7. Mesa 8 (con socio) por QR $ 101.000 → «Laura sumó 101 puntos».
+
+Queda para probar con dos dispositivos a la vez y sin señal (pasos 12 a 15 del guion de la cuenta).
 
 ## Auditoría del 13/11 y lo que falta cerrar
 

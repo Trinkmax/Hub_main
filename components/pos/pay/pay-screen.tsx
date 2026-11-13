@@ -82,6 +82,8 @@ type Props = {
   timeZone: string
   /** El membrete de la cuenta: el bar y, si tiene más de una, la sucursal. */
   place: string
+  /** La sucursal de la mesa: la caja y el salón a los que se vuelve son los de ESTA mesa. */
+  branchSlug: string
   /** Si esta persona puede abrir la caja (lo resuelve la página con el mismo criterio que Caja). */
   canOpenShift: boolean
   /** El botón de la cuenta de quien trabaja, armado en la página. */
@@ -106,6 +108,7 @@ export function PayScreen({
   actions,
   timeZone,
   place,
+  branchSlug,
   canOpenShift,
   account,
   approvals,
@@ -264,7 +267,11 @@ export function PayScreen({
   const shownStep: StubStep = portion.amountCents <= 0 ? 'split' : step
   const picking = charging && split.kind === 'items' && shownStep === 'split' && !unsent
   const orderHref = `/${slug}/salon/mesa/${sessionId}`
-  const mapHref = `/${slug}/salon/mapa`
+  // Con la sucursal de la mesa: un dispositivo que estaba en la otra (o que nunca eligió) vuelve al
+  // salón de esta mesa y abre la caja de esta mesa, no la de la otra.
+  const branchQuery = `?sucursal=${encodeURIComponent(branchSlug)}`
+  const mapHref = `/${slug}/salon/mapa${branchQuery}`
+  const cashHref = `/${slug}/salon/caja${branchQuery}`
 
   // ── Los pedidos de esta mesa: se contestan con las mismas reglas que en la bandeja ──
   const approvalsApi = useMemo(
@@ -733,7 +740,7 @@ export function PayScreen({
               onReceiptDone={() => setReceipt(null)}
             />
           ) : mode.kind === 'no_shift' ? (
-            <NoShiftState canOpenShift={canOpenShift} cashHref={`/${slug}/salon/caja`} />
+            <NoShiftState canOpenShift={canOpenShift} cashHref={cashHref} />
           ) : mode.kind === 'settled' ? (
             <SettledState
               mode={mode}
