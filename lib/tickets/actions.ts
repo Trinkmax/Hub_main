@@ -158,6 +158,14 @@ export async function cancelTicketItem(
     p_reason: parsed.data.reason,
   })
   if (error) {
+    // En un bar con punto de venta, la baja tiene sus controles y se hace desde la cuenta de la mesa:
+    // esta puerta (la del servicio de mesa anterior) no da de baja nada (`pos_only`).
+    if (error.message.includes('pos_only')) {
+      return {
+        ok: false,
+        message: 'En este bar las bajas se hacen desde la cuenta de la mesa, en el salón.',
+      }
+    }
     console.error('[tickets.cancelItem]', error.message)
     return { ok: false, message: 'No se pudo cancelar el ítem.' }
   }

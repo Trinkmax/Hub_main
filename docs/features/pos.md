@@ -368,8 +368,18 @@ de aprobación, suma las personas y, si no tenía socio, reserva o nombre, toma 
 los puntos no se pierden). No junta una mesa de práctica con una de verdad ni dos mesas con dos reservas
 distintas. 36 comprobaciones en la base local y probado en el bar de ejemplo (la 1 con la 3).
 
+**La baja vieja** (migración `20261113153432_pos_baja_vieja`, aplicada el 13/11). `cancel_ticket_item` es la
+baja del servicio de mesa anterior: con un motivo, cualquier mozo o la cocina daba de baja un renglón. En un
+bar con punto de venta eso salteaba el OK, el «no tocar lo ya cobrado» y el registro de quién fue; dando de
+baja una mesa renglón por renglón se la podía liberar sin cobrar. Ahora, con `pos` prendido, esa función no
+da de baja nada (`pos_only`) y la pantalla vieja dice que se hace desde la cuenta de la mesa. Un bar sin
+punto de venta queda igual. Revisé las demás puertas viejas (13/11): `update_ticket_status` solo avanza una
+comanda, `reject_ticket` y `cancel_pending_ticket` solo tocan pedidos del cliente todavía sin aceptar,
+`split_session` solo mueve lo que cargó un comensal (el punto de venta no carga así), y cerrar o abandonar
+una mesa con consumo ya lo frena el disparador de las mesas. Las tablas no se escriben directo: solo tienen
+política de lectura. 28 comprobaciones en la base local y probado en el bar de ejemplo.
+
 **Pendiente (otra tanda):**
-- `cancel_ticket_item` (la baja del servicio de mesa viejo) sigue sin mirar los cobros.
 - El canal en vivo `pos:<sucursal>` es público: no lleva datos de mesas ni de personas, pero cualquiera con
   el id de la sucursal puede escucharlo y emitir. Tiene que pasar a privado, con lectura por membresía.
 - Las acciones validan el bar de la dirección y la RPC opera sobre el bar de la fila: quien trabaja en dos
