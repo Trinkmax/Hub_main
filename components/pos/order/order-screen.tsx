@@ -336,16 +336,32 @@ export function OrderScreen({
     ).finally(() => setFiring((list) => list.filter((id) => id !== ticketId)))
   }
 
-  const toggleBill = () => {
+  /**
+   * «Cuenta» es un toque: la mesa pasa a «pidió la cuenta» (se ve en el mapa) y se abre la cuenta
+   * para cobrar. Si ya la habían pedido, solo se abre. Deshacerlo («todavía no la pidieron») está
+   * del otro lado, en la cuenta.
+   */
+  const openBill = async () => {
     if (billBusy) return
-    const next = session.bill_requested_at === null
-    buzz(10)
-    setBillBusy(true)
-    void optimistic(
-      (o) => ({ ...o, bill: next }),
-      (o) => ({ ...o, bill: null }),
-      () => requestBill(slug, sessionId, next),
-    ).finally(() => setBillBusy(false))
+    const billHref = `/${slug}/salon/mesa/${sessionId}/cuenta`
+    if (session.bill_requested_at === null) {
+      buzz(10)
+      setBillBusy(true)
+      setOverlay((o) => ({ ...o, bill: true }))
+      let result: { ok: true } | Failure
+      try {
+        result = await requestBill(slug, sessionId, true)
+      } catch {
+        result = NO_SIGNAL
+      }
+      setBillBusy(false)
+      if (!result.ok) {
+        setOverlay((o) => ({ ...o, bill: null }))
+        toast.error(result.message)
+        return
+      }
+    }
+    router.push(billHref)
   }
 
   const saveParty = (change: { partySize?: number; alias?: string }) => {
@@ -605,7 +621,7 @@ export function OrderScreen({
             billBusy={billBusy}
             addRef={addRef}
             onAdd={openPicker}
-            onBill={toggleBill}
+            onBill={() => void openBill()}
             onSend={() => send(true)}
             onHold={() => send(false)}
             onServe={serveReady}

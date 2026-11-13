@@ -116,16 +116,18 @@ export function ActionBar({
       ) : null}
 
       <div className="cmd-bar-row">
+        {/* Un toque: pide la cuenta (la mesa cambia de estado en el mapa) y la abre para cobrar. */}
         <button
           type="button"
           className="cmd-util"
           aria-pressed={billOn}
+          aria-label={billOn ? 'Ver la cuenta: ya la pidieron' : 'Pedir la cuenta y abrirla'}
           onClick={onBill}
           disabled={billBusy}
           data-testid="order-bill"
         >
           <Receipt aria-hidden strokeWidth={2.2} />
-          {billOn ? 'Cuenta pedida' : 'Cuenta'}
+          {billOn ? 'Ver cuenta' : 'Cuenta'}
         </button>
         <button
           ref={addRef}

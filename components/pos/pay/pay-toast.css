@@ -1,0 +1,15 @@
+/* Los avisos de la cuenta («Descuento aplicado · Deshacer») no tapan el talón de cobro: suben justo por
+   encima de él, a mano del pulgar. La pantalla mide el talón y lo deja en `--pay-dock-h`. Con ancho, el
+   talón está a la derecha: los avisos se corren a la columna de la cuenta.
+   El aviso se dibuja fuera del árbol (cuelga de <body>), por eso se lo alcanza con `:has()`. */
+/* biome-ignore-all lint/complexity/noImportantStyles: la librería de avisos fija estas distancias con estilo en línea; solo `!important` les gana. */
+body:has(.pay) [data-sonner-toaster][data-y-position="bottom"] {
+  --mobile-offset-bottom: calc(var(--pay-dock-h, 13rem) + 0.85rem) !important;
+  --offset-bottom: calc(var(--pay-dock-h, 13rem) + 0.85rem) !important;
+}
+@media (min-width: 900px) {
+  body:has(.pay) [data-sonner-toaster][data-y-position="bottom"] {
+    --offset-bottom: 1.25rem !important;
+    --offset-right: calc(clamp(24rem, 38vw, 31rem) + 1.25rem) !important;
+  }
+}

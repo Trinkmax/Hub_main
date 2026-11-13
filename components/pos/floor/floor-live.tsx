@@ -27,10 +27,11 @@ import {
   type TableState,
 } from '@/lib/pos/table-state'
 import type { FloorSession, FloorSnapshot, PosBranch } from '@/lib/pos/types'
+import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { usePosPoke } from '@/lib/pos/use-poke'
-import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
+import { ApprovalsBell } from '../approvals/approvals-bell'
 import { PosOutboxRunner } from '../order/outbox-runner'
 import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
@@ -135,19 +136,20 @@ export function FloorLive({
     }
   }
 
-  const inFlight = useRef(false)
-  const reload = useCallback(async () => {
-    if (inFlight.current) return
-    inFlight.current = true
-    try {
-      const result = await refreshFloor(slug, snapshot.branch.id)
-      if (result.ok) setSnapshot(result.data)
-    } finally {
-      inFlight.current = false
-    }
+  const read = useCallback(async () => {
+    const result = await refreshFloor(slug, snapshot.branch.id)
+    if (result.ok) setSnapshot(result.data)
   }, [slug, snapshot.branch.id])
-  const reloadSoon = useDebouncedRefresh(reload, 220)
-  const live = usePosPoke(snapshot.branch.id, reloadSoon)
+  // No pierde un aviso que llega durante una lectura y nunca lee de más (ver `lib/pos/live-reload.ts`).
+  const { poke, now: reload } = useLiveReload(read)
+  // La campanita de pedidos no abre su propio canal: se entera por acá de que hay novedades.
+  const [approvalsTick, setApprovalsTick] = useState(0)
+  const live = usePosPoke(snapshot.branch.id, (what, pokedSession) => {
+    if (what === 'approvals' || (what === 'floor' && pokedSession === null)) {
+      setApprovalsTick((n) => n + 1)
+    }
+    poke()
+  })
   // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
   useVisibleInterval(reload, 40_000)
 
@@ -330,7 +332,8 @@ export function FloorLive({
         toast.error(result.message)
         return
       }
-      router.refresh()
+      // Con `?sucursal=` en la dirección, la dirección le gana a lo guardado: se va a la elegida.
+      router.replace(`/${slug}/salon/mapa?sucursal=${encodeURIComponent(branch.slug)}`)
     })
   }
 
@@ -497,6 +500,15 @@ export function FloorLive({
             {occupancy} · <b>{clock}</b>
           </span>
         )}
+        {/* Descuentos y bajas que esperan el OK: solo se dibuja si hay algo para esta persona. */}
+        {canOperate ? (
+          <ApprovalsBell
+            slug={slug}
+            branchId={snapshot.branch.id}
+            timeZone={timeZone}
+            signal={approvalsTick}
+          />
+        ) : null}
       </PosTopbar>
 
       {empty ? (
