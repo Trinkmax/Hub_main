@@ -179,7 +179,8 @@ export function openNight(
  */
 export function planillaTotals(
   summary: ProjectionSummary,
-  opts: { hasCloses: boolean },
+  /** `hasSales`: algún día del mes tiene ventas (con cierre, o del punto de venta). */
+  opts: { hasSales: boolean },
 ): TotalizerItem[] {
   const { hasTargets, monthState } = summary
   const toDate =
@@ -200,7 +201,7 @@ export function planillaTotals(
       cents: hasTargets ? summary.monthTargetCents : null,
       hint: toDate,
     },
-    { label: 'Vendido', cents: opts.hasCloses ? summary.soldCents : null, tone: 'ok' },
+    { label: 'Vendido', cents: opts.hasSales ? summary.soldCents : null, tone: 'ok' },
     remaining,
   ]
 }
@@ -230,14 +231,21 @@ export function cashCheckText(cash: CashCheck): string | null {
   }
 }
 
-/** Lo que falta para poder comparar, una oración por motivo. */
-export function cashPending(cash: Pick<CashTotals, 'missingCountDays' | 'missingCloseDays'>) {
+/**
+ * Lo que falta para poder comparar, una oración por motivo. Si alguno de los días tomó la venta del
+ * punto de venta (no tiene cierre), ya no son «días con cierre»: son días con ventas.
+ */
+export function cashPending(
+  cash: Pick<CashTotals, 'missingCountDays' | 'missingCloseDays'> &
+    Partial<Pick<CashTotals, 'missingCountPosDays'>>,
+) {
   const out: string[] = []
   if (cash.missingCountDays > 0) {
+    const what = (cash.missingCountPosDays ?? 0) > 0 ? 'ventas' : 'cierre'
     out.push(
       cash.missingCountDays === 1
-        ? 'A 1 día con cierre le falta cargar lo que entró.'
-        : `A ${cash.missingCountDays} días con cierre les falta cargar lo que entró.`,
+        ? `A 1 día con ${what} le falta cargar lo que entró.`
+        : `A ${cash.missingCountDays} días con ${what} les falta cargar lo que entró.`,
     )
   }
   if (cash.missingCloseDays > 0) {
@@ -269,6 +277,30 @@ export function cashTitle(
   const abs = Math.abs(cash.diffCents)
   const amount = abs % 100 === 0 ? formatCentsShort(abs) : formatCents(abs)
   return cash.diffCents < 0 ? `${nights}, faltan ${amount}` : `${nights}, sobran ${amount}`
+}
+
+// ─── El punto de venta ───────────────────────────────────────────────────────
+
+/** Dónde se ve un día del punto de venta por dentro: «Hoy en vivo», parado en ese día. */
+export function posDayHref(tenantSlug: string, day: string): string {
+  return `/${tenantSlug}/local/hoy?dia=${day}`
+}
+
+/**
+ * La oración que explica los días marcados: de dónde sale el número y qué manda. `null` si ningún día
+ * tomó la venta del punto de venta. `depositCents` son las señas descontadas de esos días.
+ */
+export function posNote(input: { days: number; depositCents: number }): string | null {
+  if (input.days <= 0) return null
+  const head =
+    input.days === 1
+      ? '1 día todavía no tiene cierre y toma lo que cobró el punto de venta.'
+      : `${input.days} días todavía no tienen cierre y toman lo que cobró el punto de venta.`
+  const deposits =
+    input.depositCents > 0
+      ? ` Incluye ${formatCentsShort(input.depositCents)} de señas cobradas antes: cuentan como venta de esa noche, pero no en «ventas contra caja».`
+      : ''
+  return `${head} Sirve para seguir el mes; a los libros va el cierre, y cuando lo cargás manda él.${deposits}`
 }
 
 // ─── Las comisiones ──────────────────────────────────────────────────────────

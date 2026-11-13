@@ -79,6 +79,8 @@ export function loadHome(input: {
   today: string
   serviceDay: string
   canWrite: boolean
+  /** Los días sin cierre toman lo que cobró el punto de venta (`projectionUsesPos`). */
+  pos: boolean
 }): HomeData {
   const { tenantId, tenantSlug, today, serviceDay, canWrite } = input
   const base = `/${tenantSlug}/administracion`
@@ -86,7 +88,7 @@ export function loadHome(input: {
   const summary = settleQuery(getSummary(tenantId, { asOf: today }))
   const settings = settleQuery(getAccountingSettings(tenantId))
   const projection = settleQuery(
-    getSalesProjection(tenantId, monthRange(today)).then((rows) =>
+    getSalesProjection(tenantId, monthRange(today), { pos: input.pos }).then((rows) =>
       buildProjection(rows, { serviceDay }),
     ),
   )

@@ -4,6 +4,7 @@ import { SimplePage } from '@/components/administracion/planilla'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
+  projectionUsesPos,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
 import { serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
@@ -63,6 +64,7 @@ export default async function AdministracionResumenPage({
     today,
     serviceDay: serviceDayInCordoba(),
     canWrite: access.accounting.write,
+    pos: projectionUsesPos(access),
   })
 
   return (

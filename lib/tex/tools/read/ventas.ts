@@ -49,11 +49,13 @@ const NEXT_DAYS = 3
 export function monthFigures(projection: Pick<Projection, 'summary' | 'days'>, month: string) {
   const { summary, days } = projection
   const pace = monthPace(projection)
-  const anyClose = days.some((day) => day.hasClose)
+  // Con cierre o, en un bar con punto de venta, con lo que cobró.
+  const anySales = days.some((day) => day.hasSales)
+  const fromPos = days.filter((day) => day.source === 'pos').length
   return compact({
     titulo: plain(monthTitle(summary, monthName(Number(month.slice(5, 7))))),
     oracion: plain(monthSentence(projection)),
-    vendido: anyClose ? money(summary.soldCents) : null,
+    vendido: anySales ? money(summary.soldCents) : null,
     objetivo: summary.hasTargets ? money(summary.monthTargetCents) : null,
     cumplimiento: summary.monthPercent === null ? null : `${summary.monthPercent} %`,
     objetivo_a_hoy: summary.pace ? money(summary.targetToDateCents) : null,
@@ -62,8 +64,14 @@ export function monthFigures(projection: Pick<Projection, 'summary' | 'days'>, m
     por_arriba: moneyIf(summary.surplusCents),
     por_dia_para_llegar: moneyIf(pace.perDayCents),
     dias_que_quedan: pace.daysLeft,
-    dias_con_cierre: pace.loadedDays,
+    // Si alguno tomó la venta del punto de venta, ya no son todos «con cierre».
+    ...(pace.fromPos ? { dias_con_ventas: pace.loadedDays } : { dias_con_cierre: pace.loadedDays }),
     promedio_por_dia: moneyIf(pace.averageCents),
+    dias_tomados_del_punto_de_venta: fromPos || null,
+    nota_punto_de_venta:
+      fromPos > 0
+        ? 'Esos días todavía no tienen cierre: el número es lo que cobró el punto de venta. A los libros va el cierre.'
+        : null,
   })
 }
 
@@ -74,7 +82,14 @@ export function projectionDayRow(day: ProjectionDay, type: DayType) {
     tipo: type === 'none' ? null : DAY_TYPE_LABELS[type],
     objetivo: day.targetCents === null ? null : money(day.targetCents),
     // Un día sin cargar no es un cero.
-    vendido: day.hasClose ? money(day.netCents) : null,
+    vendido: day.hasSales ? money(day.netCents) : null,
+    // Sin cierre, lo vendido es lo que cobró el punto de venta: provisorio hasta que se cargue.
+    origen:
+      day.source === 'pos'
+        ? day.moment === 'today'
+          ? 'punto de venta, la noche sigue abierta'
+          : 'punto de venta, sin cierre todavía'
+        : null,
     cumplimiento: plain(complianceText(day.compliance) ?? '') || null,
     nota: shortText(day.note, 60),
     caja: day.cash.kind === 'compared' ? plain(cashDiffText(day.cash.diffCents)) : null,
@@ -101,7 +116,10 @@ export function daysThatMatter(days: readonly ProjectionDay[]): Array<{
     days.find((day) => day.moment === 'today'),
     'hoy',
   )
-  const closed = days.filter((day) => day.hasClose)
+  // Los días terminados con ventas: con cierre, o los que tomaron lo del punto de venta.
+  const closed = days.filter(
+    (day) => day.hasSales && !(day.moment === 'today' && day.source === 'pos'),
+  )
   const bySales = [...closed].sort((a, b) => b.netCents - a.netCents)
   pick(bySales[0], 'el que más vendió')
   const measured = closed.filter((day) => day.compliance.kind === 'value')
@@ -285,7 +303,10 @@ export const ventasReadTools = [
     run: async (input, ctx) => {
       const month = texMonth(input.mes, ctx.today)
       if (!month.ok) return { kind: 'error', message: month.message }
-      const rows = await getSalesProjection(ctx.tenantId, monthRange(month.month))
+      const rows = await getSalesProjection(ctx.tenantId, monthRange(month.month), {
+        // Como en la pantalla: en un bar con punto de venta, los días sin cierre toman lo que cobró.
+        pos: ctx.role === 'owner' && ctx.features.pos === true,
+      })
       const projection = buildProjection(rows, { serviceDay: serviceDayInCordoba() })
       return { kind: 'data', data: projectionData(projection, month.month, input.resumen === true) }
     },

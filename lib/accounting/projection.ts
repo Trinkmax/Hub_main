@@ -15,6 +15,12 @@
  *
  * Las comisiones son ESTIMADAS (medio × porcentaje de Ajustes): la real sale de
  * las acreditaciones, en «Neto por medio».
+ *
+ * **Con punto de venta** (pedido de los socios del 11/11/2026: «que la
+ * proyección se complete sola»). Un día sin cierre toma lo que cobró el punto
+ * de venta (`withPosSales`): el cierre del día sigue siendo lo que va a los
+ * libros y, cuando existe, manda él. Lo del punto de venta es provisorio y la
+ * pantalla lo dice. No escribe nada: es solo cómo se arma esta planilla.
  */
 
 import {
@@ -25,6 +31,31 @@ import {
   weekdayOf,
 } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
+
+/** Los medios de cobro del punto de venta (`lib/pos/cash/types.ts`), acá sin depender de él. */
+export type PosPayMethod = 'cash' | 'transfer' | 'qr' | 'debit' | 'credit' | 'other'
+
+/** Lo que cobró el punto de venta un día de servicio (de `pos_sales_days`), sin lo de práctica. */
+export type PosSalesOfDay = {
+  day: string
+  /** Por medio, venta + recargo (sin propinas). */
+  byMethod: Partial<Record<PosPayMethod, number>>
+  /** Señas descontadas de las cuentas cobradas ese día: plata que ya había entrado antes. */
+  depositCents: number
+}
+
+/** Comisión de cada medio, en puntos básicos (314 = 3,14 %): la de Ajustes › Partícipes. */
+export type PosCommissionRates = Partial<Record<PosPayMethod, number>>
+
+/** Lo del punto de venta ya resumido para un día de la planilla. */
+export type ProjectionPosDay = {
+  /** Lo cobrado ese día: venta + recargo, sin propinas. */
+  chargedCents: number
+  /** Señas que se descontaron: cuentan como venta del día, pero no entraron hoy. */
+  depositCents: number
+  /** Comisión estimada de lo cobrado (medio × porcentaje de Ajustes). */
+  commissionCents: number
+}
 
 /** Una fila de `acc_report_sales_projection`, en centavos. */
 export type ProjectionSourceDay = {
@@ -43,6 +74,8 @@ export type ProjectionSourceDay = {
   eventsCommissionCents: number
   /** Σ de lo que entró en las cajas; `null` si ese día no se cargó. */
   cashCountedCents: number | null
+  /** Lo que cobró el punto de venta ese día. Sin la clave (o `null`): el bar no lo usa o no hubo nada. */
+  pos?: ProjectionPosDay | null
 }
 
 export type DayMoment = 'past' | 'today' | 'future'
@@ -67,10 +100,20 @@ export type CashCheck =
   /** Las dos puntas: `diffCents` = entró − venta real del salón (negativo: falta plata). */
   | { kind: 'compared'; diffCents: number }
 
+/** De dónde sale lo vendido de un día: su cierre, el punto de venta (todavía sin cierre) o nada. */
+export type SalesSource = 'close' | 'pos' | null
+
 export type ProjectionDay = {
   day: string
   moment: DayMoment
+  /** Tiene su cierre del día: es lo que va a los libros. */
   hasClose: boolean
+  /** De dónde sale lo vendido que se muestra. */
+  source: SalesSource
+  /** Hay algo vendido que mostrar (con cierre, o del punto de venta). */
+  hasSales: boolean
+  /** Señas ya cobradas que cuentan en la venta de este día (solo las trae el punto de venta). */
+  depositCents: number
   targetCents: number | null
   note: string | null
   barCents: number
@@ -124,14 +167,16 @@ export type ProjectionSummary = {
 }
 
 export type CashTotals = {
-  /** Días con cierre y con lo que entró cargado: los únicos que se comparan. */
+  /** Días con ventas y con lo que entró cargado: los únicos que se comparan. */
   comparedDays: number
   salesCents: number
   countedCents: number
   /** Σ entró − Σ vendido de los días comparados. */
   diffCents: number
-  /** Días con cierre a los que les falta cargar lo que entró. */
+  /** Días con ventas a los que les falta cargar lo que entró. */
   missingCountDays: number
+  /** De esos, los que tomaron la venta del punto de venta (no tienen cierre). */
+  missingCountPosDays: number
   /** Días con lo que entró cargado y sin cierre. */
   missingCloseDays: number
 }
@@ -189,14 +234,25 @@ export function buildProjection(
     countedCents: 0,
     diffCents: 0,
     missingCountDays: 0,
+    missingCountPosDays: 0,
     missingCloseDays: 0,
   }
 
   const days = sorted.map((row): ProjectionDay => {
     const moment = momentOf(row.day, serviceDay)
     const hasClose = row.closes > 0
-    const barCents = row.salonCents + row.eventsCents
-    const posnetCommissionCents = row.salonCommissionCents + row.eventsCommissionCents
+    // Sin cierre, el día toma lo del punto de venta (si cobró algo). Con cierre manda el cierre: es lo
+    // que está en los libros, y sumar los dos sería contar la noche dos veces.
+    const pos =
+      !hasClose && row.pos && row.pos.chargedCents + row.pos.depositCents > 0 ? row.pos : null
+    const source: SalesSource = hasClose ? 'close' : pos ? 'pos' : null
+    const hasSales = source !== null
+    // La seña descontada es consumo de esta noche (cuenta para el objetivo) aunque la plata entró antes.
+    const depositCents = pos ? pos.depositCents : 0
+    const barCents = pos ? pos.chargedCents + pos.depositCents : row.salonCents + row.eventsCents
+    const posnetCommissionCents = pos
+      ? pos.commissionCents
+      : row.salonCommissionCents + row.eventsCommissionCents
     const realCents = barCents - posnetCommissionCents
     const netCents = realCents + row.deliveryCents - row.deliveryCommissionCents
     const targetCents = hasTarget(row.targetCents) ? row.targetCents : null
@@ -210,27 +266,35 @@ export function buildProjection(
     totals.netCents += netCents
     totals.eventsCents += row.eventsCents
 
+    // Lo de hoy que viene del punto de venta es una noche abierta: el número se muestra, pero todavía
+    // no se mide contra el objetivo ni se le reclama la caja.
+    const live = source === 'pos' && moment === 'today'
+
     let compliance: Compliance
     if (moment === 'future') compliance = { kind: 'future' }
     else if (targetCents === null) compliance = { kind: 'no_target' }
-    else if (!hasClose) compliance = { kind: moment === 'today' ? 'in_progress' : 'no_close' }
+    else if (!hasSales) compliance = { kind: moment === 'today' ? 'in_progress' : 'no_close' }
+    else if (live) compliance = { kind: 'in_progress' }
     else compliance = complianceOf(netCents, targetCents)
 
     let check: CashCheck = { kind: 'none' }
     if (moment !== 'future') {
-      if (hasClose && row.cashCountedCents !== null) {
+      if (hasSales && row.cashCountedCents !== null) {
         // Como en su planilla («Sistema» contra «Entra real»): se compara contra la venta
         // real, la del salón sin las comisiones del posnet, que es lo que llega a la caja.
-        const diffCents = row.cashCountedCents - realCents
+        // Una seña descontada no llegó hoy: queda afuera de la comparación.
+        const cashSalesCents = realCents - depositCents
+        const diffCents = row.cashCountedCents - cashSalesCents
         check = { kind: 'compared', diffCents }
         cash.comparedDays += 1
-        cash.salesCents += realCents
+        cash.salesCents += cashSalesCents
         cash.countedCents += row.cashCountedCents
         cash.diffCents += diffCents
-      } else if (hasClose) {
+      } else if (hasSales && !live) {
         check = { kind: 'missing_count' }
         cash.missingCountDays += 1
-      } else if (row.cashCountedCents !== null) {
+        if (source === 'pos') cash.missingCountPosDays += 1
+      } else if (!hasSales && row.cashCountedCents !== null) {
         check = { kind: 'missing_close' }
         cash.missingCloseDays += 1
       }
@@ -240,6 +304,9 @@ export function buildProjection(
       day: row.day,
       moment,
       hasClose,
+      source,
+      hasSales,
+      depositCents,
       targetCents,
       note: row.note,
       barCents,
@@ -277,6 +344,10 @@ export function buildProjection(
   for (const d of days) {
     if (throughDay !== null && d.day <= throughDay) targetToDateCents = d.targetAccumCents
   }
+  // «A hoy» compara lo vendido hasta el último día terminado. Lo que el punto de venta lleva cobrado
+  // de la noche en curso no entra: su objetivo tampoco cuenta todavía.
+  const liveToday = days.find((d) => d.moment === 'today' && d.source === 'pos' && !d.hasClose)
+  const soldToDateCents = totals.netCents - (liveToday?.netCents ?? 0)
 
   const hasTargets = totals.targetCents > 0
   const summary: ProjectionSummary = {
@@ -286,13 +357,66 @@ export function buildProjection(
     monthTargetCents: totals.targetCents,
     throughDay,
     targetToDateCents,
-    pace: targetToDateCents > 0 ? complianceOf(totals.netCents, targetToDateCents) : null,
+    pace: targetToDateCents > 0 ? complianceOf(soldToDateCents, targetToDateCents) : null,
     remainingCents: hasTargets ? Math.max(0, totals.targetCents - totals.netCents) : 0,
     surplusCents: hasTargets ? Math.max(0, totals.netCents - totals.targetCents) : 0,
     monthPercent: hasTargets ? Math.round((totals.netCents * 100) / totals.targetCents) : null,
   }
 
   return { days, totals, summary, cash }
+}
+
+// ─── Las ventas del punto de venta ───────────────────────────────────────────
+
+/** Los medios, en el orden en que se suman (el mismo en que se cobran). */
+const POS_METHODS: readonly PosPayMethod[] = ['cash', 'transfer', 'qr', 'debit', 'credit', 'other']
+
+/**
+ * A qué medio de Administración (`acc_sales_methods.system_key`) corresponde cada medio del punto de
+ * venta, para tomar su comisión de Ajustes. «Otro» no tiene par: se cuenta entero.
+ */
+export const POS_METHOD_SYSTEM_KEY: Readonly<Record<PosPayMethod, string | null>> = {
+  cash: 'cash',
+  transfer: 'transfer',
+  qr: 'qr_mp',
+  debit: 'debit',
+  credit: 'credit',
+  other: null,
+}
+
+/**
+ * Lo que cobró el punto de venta un día, resumido para la planilla. La comisión se estima como en el
+ * reporte de los cierres: importe del medio × su porcentaje, redondeado al centavo por medio. Un medio
+ * sin porcentaje cargado cuenta 0.
+ */
+export function posDaySales(day: PosSalesOfDay, rates: PosCommissionRates): ProjectionPosDay {
+  let chargedCents = 0
+  let commissionCents = 0
+  for (const method of POS_METHODS) {
+    const cents = Math.max(0, Math.round(day.byMethod[method] ?? 0))
+    if (cents === 0) continue
+    chargedCents += cents
+    const bp = rates[method] ?? 0
+    if (bp > 0) commissionCents += Math.round((cents * bp) / 10000)
+  }
+  return { chargedCents, depositCents: Math.max(0, Math.round(day.depositCents)), commissionCents }
+}
+
+/**
+ * Le cuelga a cada fila de la base lo que cobró el punto de venta ese día. No decide nada: quién manda
+ * (el cierre, si lo hay) lo resuelve `buildProjection`. Un día que no está en el rango pedido se ignora.
+ */
+export function withPosSales(
+  rows: readonly ProjectionSourceDay[],
+  posDays: readonly PosSalesOfDay[],
+  rates: PosCommissionRates = {},
+): ProjectionSourceDay[] {
+  if (posDays.length === 0) return [...rows]
+  const byDay = new Map(posDays.map((d) => [d.day, d]))
+  return rows.map((row) => {
+    const sales = byDay.get(row.day)
+    return sales ? { ...row, pos: posDaySales(sales, rates) } : row
+  })
 }
 
 // ─── Copiar el mes pasado ────────────────────────────────────────────────────

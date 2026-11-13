@@ -274,9 +274,9 @@ export const resumenReadTools = [
           getSummary(tenantId, { asOf: today }),
           settleQuery(getAccountingSettings(tenantId)),
           settleQuery(
-            getSalesProjection(tenantId, monthRange(today)).then((rows) =>
-              buildProjection(rows, { serviceDay }),
-            ),
+            getSalesProjection(tenantId, monthRange(today), {
+              pos: ctx.role === 'owner' && ctx.features.pos === true,
+            }).then((rows) => buildProjection(rows, { serviceDay })),
           ),
           settleQuery(listRecurringExpenses(tenantId, { includeInactive: true, today })),
           settleQuery(listRecurringPayments(tenantId)),
@@ -328,6 +328,7 @@ export const resumenReadTools = [
         today: ctx.today,
         serviceDay,
         canWrite: ctx.access.write,
+        pos: ctx.role === 'owner' && ctx.features.pos === true,
       })
       const [agenda, summary, settings, recurring, weekPlan, onboarding, integration, calendar] =
         await Promise.all([

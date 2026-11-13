@@ -8,6 +8,7 @@ import {
   resolveMonth,
 } from '@/components/administracion/cajas-ventas/periods'
 import { PlanillaBar, SimplePage } from '@/components/administracion/planilla'
+import { projectionUsesPos } from '@/lib/accounting/access'
 import { monthOf, serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
 import { CollectionsView } from './_components/collections-view'
 import { InvoicesView } from './_components/invoices-view'
@@ -75,6 +76,7 @@ export default async function VentasPage({
         // La contadora no lee el calendario del bar (está aislada de todo lo que no es
         // Administración): para ella la planilla va sin los eventos.
         canReadCalendar: access.role !== 'accountant',
+        pos: projectionUsesPos(access),
       })
       body = (
         <Suspense fallback={<MonthSkeleton />}>

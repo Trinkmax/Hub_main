@@ -1087,6 +1087,7 @@ describe('el mes contra el objetivo', () => {
       perDayCents: Math.ceil(p(6_400_000) / 19),
       loadedDays: 12,
       averageCents: p(500_000),
+      fromPos: false,
     })
     expect(monthTitle(projection.summary, 'octubre')).toBe(
       `Vas en $${NB}6${NB}M: el 48 % del objetivo de octubre`,

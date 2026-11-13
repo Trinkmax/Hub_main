@@ -910,10 +910,15 @@ export type MonthPace = {
   daysLeft: number
   /** Lo que hay que vender por día para llegar (`null` si no falta nada o no quedan días). */
   perDayCents: number | null
-  /** Días del mes con cierre cargado. */
+  /**
+   * Días terminados con ventas: con su cierre o, en un bar con punto de venta, con lo que cobró. La
+   * noche en curso no cuenta: no es un día entero.
+   */
   loadedDays: number
-  /** Lo vendido por día cargado (`null` sin cierres). */
+  /** Lo vendido por día de esos (`null` si no hay ninguno). */
   averageCents: number | null
+  /** Alguno de esos días tomó la venta del punto de venta (no tiene cierre). */
+  fromPos: boolean
 }
 
 /**
@@ -926,14 +931,20 @@ export function monthPace(projection: Pick<Projection, 'summary' | 'days'>): Mon
   const daysLeft = days.filter(
     (d) => d.moment === 'future' || (d.moment === 'today' && !d.hasClose),
   ).length
-  const loadedDays = days.filter((d) => d.hasClose).length
+  // Lo que el punto de venta lleva cobrado de la noche abierta se ve en «vas vendiendo», pero para el
+  // promedio por día no es un día: se saca de las dos puntas de la cuenta.
+  const live = days.find((d) => d.moment === 'today' && d.source === 'pos')
+  const finished = days.filter((d) => d.hasSales && d !== live)
+  const loadedDays = finished.length
+  const soldCents = summary.soldCents - (live?.netCents ?? 0)
   const remainingCents = summary.hasTargets ? summary.remainingCents : 0
   return {
     remainingCents,
     daysLeft,
     perDayCents: remainingCents > 0 && daysLeft > 0 ? Math.ceil(remainingCents / daysLeft) : null,
     loadedDays,
-    averageCents: loadedDays > 0 ? Math.round(summary.soldCents / loadedDays) : null,
+    averageCents: loadedDays > 0 ? Math.round(soldCents / loadedDays) : null,
+    fromPos: finished.some((d) => d.source === 'pos'),
   }
 }
 
@@ -1002,7 +1013,11 @@ export function monthSentence(projection: Pick<Projection, 'summary' | 'days'>):
         ? 'No se cargó ningún cierre del día.'
         : 'Cargá el cierre de ayer para empezar a ver cómo viene el mes.'
     }
-    return `En ${count(pace.loadedDays, 'día con cierre', 'días con cierre')}: unos ${roughly(pace.averageCents)} por día.`
+    // Con algún día tomado del punto de venta ya no son todos «con cierre».
+    const days = pace.fromPos
+      ? count(pace.loadedDays, 'día con ventas', 'días con ventas')
+      : count(pace.loadedDays, 'día con cierre', 'días con cierre')
+    return `En ${days}: unos ${roughly(pace.averageCents)} por día.`
   }
 
   if (summary.remainingCents === 0) {
@@ -1033,7 +1048,10 @@ export type MonthDay = {
   state: MonthDayState
   /** Es el día de servicio de hoy, tenga o no su cierre. */
   isToday: boolean
-  /** Venta neta del día; `null` sin cierre (un día sin cargar no es un cero). */
+  /**
+   * Venta neta del día; `null` si no se sabe (un día sin cargar no es un cero). En un bar con punto de
+   * venta, un día sin cierre (`missing`, `today`) puede traer lo que cobró.
+   */
   cents: number | null
   targetCents: number | null
   /** Vendido acumulado: llega hasta el último día cargado; después `null` (la línea se corta ahí). */
@@ -1065,7 +1083,8 @@ export function monthDays(
   opts: { booksStartDate?: string | null } = {},
 ): MonthDays {
   const start = validDay(opts.booksStartDate)
-  const lastLoaded = projection.days.filter((d) => d.hasClose).at(-1)?.day ?? null
+  // Hasta dónde llega la línea de lo vendido: el último día del que se sabe algo.
+  const lastLoaded = projection.days.filter((d) => d.hasSales).at(-1)?.day ?? null
   let loaded = 0
   let missing = 0
   let firstMissing: string | null = null
@@ -1092,7 +1111,7 @@ export function monthDays(
       weekday: WEEKDAY_NAMES_SHORT[weekdayOf(d.day)] ?? '',
       state,
       isToday,
-      cents: d.hasClose ? d.netCents : null,
+      cents: d.hasSales ? d.netCents : null,
       targetCents: d.targetCents,
       soldAccumCents: lastLoaded !== null && d.day <= lastLoaded ? d.netAccumCents : null,
       targetAccumCents: projection.summary.hasTargets ? d.targetAccumCents : null,

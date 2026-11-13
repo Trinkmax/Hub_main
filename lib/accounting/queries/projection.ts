@@ -1,14 +1,25 @@
 import 'server-only'
-import type { ProjectionSourceDay, TargetOfDay } from '@/lib/accounting/projection'
+import {
+  POS_METHOD_SYSTEM_KEY,
+  type PosCommissionRates,
+  type PosPayMethod,
+  type PosSalesOfDay,
+  type ProjectionSourceDay,
+  type TargetOfDay,
+  withPosSales,
+} from '@/lib/accounting/projection'
 import { TREASURY_KINDS, type TreasuryKind } from '@/lib/accounting/types'
 import { eventTitle } from '@/lib/salon/events-report'
 import {
+  asRecord,
+  asRecords,
   bool,
   callRpcRows,
   cents,
   centsOrNull,
   dayOrNull,
   int,
+  intOrNull,
   isRecord,
   queryError,
   readerClient,
@@ -43,18 +54,135 @@ export function parseProjectionRow(row: UnknownRecord): ProjectionSourceDay | nu
   }
 }
 
+export type SalesProjectionOptions = {
+  /**
+   * El bar tiene el punto de venta prendido y quien mira es dueño: los días sin cierre toman lo que
+   * cobró (`withPosSales`). Lo decide quien llama, con el acceso que ya resolvió la página; la base lo
+   * vuelve a decidir en `pos_sales_days`. Sin esto, la proyección sale solo de los cierres, como siempre.
+   */
+  pos?: boolean
+}
+
 /** Una fila por día del rango (también los días sin nada), del más viejo al más nuevo. */
 export async function getSalesProjection(
   tenantId: string,
   range: { from: string; to: string },
+  options: SalesProjectionOptions = {},
 ): Promise<ProjectionSourceDay[]> {
   const { from, to } = requireRange(range.from, range.to)
-  const raw = await callRpcRows('acc_report_sales_projection', {
-    p_tenant_id: tenantId,
-    p_from: from,
-    p_to: to,
-  })
-  return raw.map(parseProjectionRow).filter((row): row is ProjectionSourceDay => row !== null)
+  const [raw, pos] = await Promise.all([
+    callRpcRows('acc_report_sales_projection', {
+      p_tenant_id: tenantId,
+      p_from: from,
+      p_to: to,
+    }),
+    options.pos ? getPosSales(tenantId, { from, to }) : null,
+  ])
+  const rows = raw.map(parseProjectionRow).filter((row): row is ProjectionSourceDay => row !== null)
+  return pos ? withPosSales(rows, pos.days, pos.rates) : rows
+}
+
+// ─── Las ventas del punto de venta ───────────────────────────────────────────
+
+const POS_METHODS = Object.keys(POS_METHOD_SYSTEM_KEY) as PosPayMethod[]
+
+/** Un día de `pos_sales_days` → lo que necesita la proyección. `null` si no trae el día. */
+export function parsePosSalesDay(row: UnknownRecord): PosSalesOfDay | null {
+  const day = dayOrNull(row.day)
+  if (!day) return null
+  const raw = asRecord(row.by_method)
+  const byMethod: PosSalesOfDay['byMethod'] = {}
+  for (const method of POS_METHODS) {
+    const value = centsOrNull(raw[method])
+    if (value !== null && value > 0) byMethod[method] = value
+  }
+  return { day, byMethod, depositCents: Math.max(0, cents(row.deposit_cents)) }
+}
+
+/**
+ * La comisión de cada medio del punto de venta: la del partícipe del medio de Administración que le
+ * corresponde (`POS_METHOD_SYSTEM_KEY`). Un medio sin par, o sin porcentaje cargado, no figura.
+ */
+export function posCommissionRates(
+  methods: readonly UnknownRecord[],
+  parties: readonly UnknownRecord[],
+): PosCommissionRates {
+  const bpOfParty = new Map<string, number>()
+  for (const party of parties) {
+    const id = strOrNull(party.id)
+    const bp = intOrNull(party.commission_bp)
+    if (id && bp !== null && bp > 0) bpOfParty.set(id, bp)
+  }
+  const partyOfKey = new Map<string, string>()
+  for (const method of methods) {
+    const key = strOrNull(method.system_key)
+    const partyId = strOrNull(method.party_id)
+    if (key && partyId) partyOfKey.set(key, partyId)
+  }
+  const rates: PosCommissionRates = {}
+  for (const method of POS_METHODS) {
+    const key = POS_METHOD_SYSTEM_KEY[method]
+    const partyId = key ? partyOfKey.get(key) : undefined
+    const bp = partyId ? bpOfParty.get(partyId) : undefined
+    if (bp !== undefined) rates[method] = bp
+  }
+  return rates
+}
+
+/**
+ * Lo que cobró el punto de venta en el rango y las comisiones de Ajustes para estimar su neto.
+ *
+ * `null` si no se pudo leer: la proyección sale de los cierres, como siempre, y queda anotado (sin
+ * datos de nadie: la función y el código). Es un agregado a una pantalla que ya funciona; que falle
+ * no puede tirarla. Si lo que falla son las comisiones, las ventas se muestran igual, enteras.
+ */
+async function getPosSales(
+  tenantId: string,
+  range: { from: string; to: string },
+): Promise<{ days: PosSalesOfDay[]; rates: PosCommissionRates } | null> {
+  const supabase = await readerClient()
+  const keys = POS_METHODS.map((m) => POS_METHOD_SYSTEM_KEY[m]).filter(
+    (k): k is string => k !== null,
+  )
+  const [sales, methods] = await Promise.all([
+    supabase.rpc('pos_sales_days', { p_tenant_id: tenantId, p_from: range.from, p_to: range.to }),
+    supabase
+      .from('acc_sales_methods')
+      .select('system_key, party_id')
+      .eq('tenant_id', tenantId)
+      .in('system_key', keys)
+      .limit(20),
+  ])
+  if (sales.error) {
+    console.error('[acc.projection.pos] pos_sales_days', sales.error.code ?? 'sin-codigo')
+    return null
+  }
+  const days = asRecords(asRecord(sales.data).days)
+    .map(parsePosSalesDay)
+    .filter((day): day is PosSalesOfDay => day !== null)
+  if (days.length === 0) return { days, rates: {} }
+
+  if (methods.error) {
+    console.error('[acc.projection.pos] acc_sales_methods', methods.error.code ?? 'sin-codigo')
+    return { days, rates: {} }
+  }
+  const methodRows = ((methods.data ?? []) as unknown[]).filter(isRecord)
+  const partyIds = [
+    ...new Set(methodRows.map((m) => strOrNull(m.party_id)).filter((id): id is string => !!id)),
+  ]
+  if (partyIds.length === 0) return { days, rates: {} }
+  const parties = await supabase
+    .from('acc_parties')
+    .select('id, commission_bp')
+    .eq('tenant_id', tenantId)
+    .in('id', partyIds)
+    .limit(20)
+  if (parties.error) {
+    console.error('[acc.projection.pos] acc_parties', parties.error.code ?? 'sin-codigo')
+    return { days, rates: {} }
+  }
+  const partyRows = ((parties.data ?? []) as unknown[]).filter(isRecord)
+  return { days, rates: posCommissionRates(methodRows, partyRows) }
 }
 
 /**
