@@ -42,6 +42,7 @@ export function VoucherNumberInput({
   describedBy,
   onBlur,
   disabled,
+  inputClassName,
 }: {
   /** Para el `<label htmlFor>`: va al punto de venta. */
   id: string
@@ -52,6 +53,8 @@ export function VoucherNumberInput({
   /** Al salir del número (para buscar duplicados). */
   onBlur?: (value: VoucherNumberValue) => void
   disabled?: boolean
+  /** Se suma a los dos campos (la tira de gastos fijos los lleva a su altura). */
+  inputClassName?: string
 }) {
   const fromPaste = (text: string): VoucherNumberValue | null => {
     const parsed = splitPastedVoucher(text)
@@ -79,7 +82,10 @@ export function VoucherNumberInput({
     onChange({ ...value, [field]: digits(raw, field === 'pos' ? 5 : 8) })
   }
 
-  const base = 'h-11 text-base tabular-nums md:h-10 md:text-sm aria-invalid:border-destructive'
+  const base = cn(
+    'h-11 text-base tabular-nums md:h-10 md:text-sm aria-invalid:border-destructive',
+    inputClassName,
+  )
 
   return (
     <div className="flex items-center gap-2">

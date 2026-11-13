@@ -415,7 +415,21 @@ describe('preparar_pago_gasto_fijo', () => {
           caja: 'Caja',
         }),
       ),
-    ).toContain('Una factura pide el número')
+    ).toContain('Para la factura falta el número')
+
+    // Sin proveedor, Tex no elige uno: lo manda a la planilla (12/11/2026).
+    stubRows([recurring(account, { voucherType: 'factura_a' })])
+    expect(
+      asError(
+        await runTool(gastosActionTools, 'preparar_pago_gasto_fijo', {
+          gasto: 'Alquiler',
+          caja: 'Caja',
+          papel: 'factura_a',
+          punto_de_venta: 3,
+          numero: 1290,
+        }),
+      ),
+    ).toContain('no tiene proveedor y una factura lo pide')
   })
 
   it('un impuesto que se devenga solo se le paga a Rentas: nunca un gasto, porque quedaría dos veces', async () => {

@@ -27,7 +27,11 @@ import {
   sheetCarry,
   sheetTotals,
   shownTotals,
+  stripAsksSupplier,
   stripFromQr,
+  stripSupplierFromQr,
+  stripTarget,
+  supplierAfterQr,
   tickState,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
 import { fixedProgress } from '@/lib/accounting/home'
@@ -975,15 +979,170 @@ describe('la tira de pago', () => {
     )
   })
 
-  it('una factura pide proveedor y número, y el número lo puede traer el QR', () => {
-    expect(payStripBlock({ ...base, voucher: 'a' })).toBe('Una factura pide proveedor y número.')
+  it('una factura pide proveedor y número (la tira los pregunta)', () => {
+    expect(payStripBlock({ ...base, voucher: 'a' })).toBe(
+      'Para la factura falta el proveedor y el número.',
+    )
     expect(payStripBlock({ ...base, voucher: 'bc', hasNumber: true })).toBe(
-      'Una factura pide proveedor.',
+      'Para la factura falta el proveedor.',
     )
     expect(payStripBlock({ ...base, voucher: 'a', target: party })).toBe(
-      'Una factura pide el número.',
+      'Para la factura falta el número.',
     )
     expect(payStripBlock({ ...base, voucher: 'a', target: party, hasNumber: true })).toBeNull()
+  })
+
+  describe('el proveedor de la factura de un gasto fijo que no tiene (12/11/2026)', () => {
+    // Thinkion: gasto fijo con Factura A y sin proveedor (HUB, 12/11/2026).
+    const thinkeon = {
+      kind: 'new' as const,
+      name: 'Thinkion',
+      taxId: '30-71876543-5',
+      ivaCondition: 'monotributo' as const,
+    }
+    const parties = [
+      {
+        id: 'p-coca',
+        name: 'Coca-Cola FEMSA',
+        tradeName: 'Coca',
+        taxId: '33693450239',
+        active: true,
+        kind: 'supplier' as const,
+      },
+      {
+        id: 'p-mp',
+        name: 'Mercado Pago',
+        tradeName: null,
+        taxId: '30703088534',
+        active: true,
+        kind: 'card_processor' as const,
+      },
+      {
+        id: 'p-viejo',
+        name: 'Viejo',
+        tradeName: null,
+        taxId: '30718765435',
+        active: false,
+        kind: 'supplier' as const,
+      },
+    ]
+
+    it('solo pregunta con factura y sin proveedor en el gasto fijo', () => {
+      expect(stripAsksSupplier(account, 'a')).toBe(true)
+      expect(stripAsksSupplier(account, 'bc')).toBe(true)
+      expect(stripAsksSupplier(account, 'ticket')).toBe(false)
+      expect(stripAsksSupplier(account, 'none')).toBe(false)
+      expect(stripAsksSupplier(party, 'a')).toBe(false)
+      expect(stripAsksSupplier(null, 'a')).toBe(false)
+    })
+
+    it('el elegido va con la categoría del gasto fijo; sin factura no cuenta', () => {
+      const chosen = { kind: 'party' as const, partyId: 'p-coca' }
+      expect(stripTarget({ fixed: account, voucher: 'a', supplier: chosen })).toEqual({
+        kind: 'party',
+        partyId: 'p-coca',
+        accountId: 'acc-1',
+      })
+      expect(stripTarget({ fixed: account, voucher: 'none', supplier: chosen })).toBe(account)
+      expect(stripTarget({ fixed: account, voucher: 'a', supplier: null })).toBe(account)
+      // Con proveedor en el gasto fijo, manda el suyo.
+      expect(stripTarget({ fixed: party, voucher: 'a', supplier: chosen })).toBe(party)
+    })
+
+    it('uno nuevo: la factura A la hace un inscripto; la B o C, lo que diga la letra', () => {
+      expect(stripTarget({ fixed: account, voucher: 'a', supplier: thinkeon })).toEqual({
+        ...thinkeon,
+        ivaCondition: 'responsable_inscripto',
+        accountId: 'acc-1',
+      })
+      expect(stripTarget({ fixed: account, voucher: 'bc', supplier: thinkeon })).toMatchObject({
+        ivaCondition: 'monotributo',
+      })
+    })
+
+    it('uno nuevo pide nombre, un CUIT que sirva y que no sea de otro', () => {
+      const withNew = (s: typeof thinkeon) =>
+        payStripBlock({
+          ...base,
+          voucher: 'a',
+          hasNumber: true,
+          target: stripTarget({ fixed: account, voucher: 'a', supplier: s }),
+          parties,
+        })
+      expect(withNew(thinkeon)).toBeNull()
+      expect(withNew({ ...thinkeon, name: ' ' })).toBe('Escribí el nombre del proveedor nuevo.')
+      expect(withNew({ ...thinkeon, taxId: '' })).toBe(
+        'Para la factura falta el CUIT del proveedor nuevo.',
+      )
+      expect(withNew({ ...thinkeon, taxId: '30-71876543-6' })).toBe(
+        'El CUIT del proveedor nuevo no es válido: revisalo.',
+      )
+      expect(withNew({ ...thinkeon, taxId: '33-69345023-9' })).toBe(
+        'Ese CUIT ya es de «Coca»: elegilo en Proveedor.',
+      )
+      // De alguien que no es proveedor (no está en la lista): no lo manda a elegirlo.
+      expect(withNew({ ...thinkeon, taxId: '30703088534' })).toBe(
+        'Ese CUIT es de «Mercado Pago», que no es un proveedor: revisalo.',
+      )
+      // Uno dado de baja no lo ocupa.
+      expect(withNew({ ...thinkeon, taxId: '30718765435' })).toBeNull()
+      expect(
+        payStripBlock({
+          ...base,
+          voucher: 'a',
+          target: stripTarget({ fixed: account, voucher: 'a', supplier: thinkeon }),
+          parties,
+        }),
+      ).toBe('Para la factura falta el número.')
+    })
+
+    it('el CUIT del QR elige al que ya está o arma uno nuevo con el nombre del gasto fijo', () => {
+      expect(
+        stripSupplierFromQr({ cuit: '33693450239', voucherType: 'factura_a' }, parties, 'X'),
+      ).toEqual({ kind: 'party', partyId: 'p-coca' })
+      expect(
+        stripSupplierFromQr({ cuit: '30718765435', voucherType: 'factura_a' }, parties, 'Thinkion'),
+      ).toEqual({
+        kind: 'new',
+        name: 'Thinkion',
+        taxId: '30-71876543-5',
+        ivaCondition: 'responsable_inscripto',
+      })
+      expect(
+        stripSupplierFromQr({ cuit: '30718765435', voucherType: 'factura_c' }, parties, 'Thinkion'),
+      ).toMatchObject({ ivaCondition: 'monotributo' })
+      // A un medio de cobro no se le carga un gasto; un CUIT roto no sirve.
+      expect(
+        stripSupplierFromQr({ cuit: '30703088534', voucherType: 'factura_a' }, parties, 'X'),
+      ).toBeNull()
+      expect(
+        stripSupplierFromQr({ cuit: '30718765436', voucherType: 'factura_a' }, parties, 'X'),
+      ).toBeNull()
+    })
+
+    it('después del QR: lo elegido de la lista queda; uno nuevo toma el CUIT o pasa al que existe', () => {
+      const qrCoca = { cuit: '33693450239', voucherType: 'factura_a' }
+      const qrNew = { cuit: '30718765435', voucherType: 'factura_a' }
+      const chosen = { kind: 'party' as const, partyId: 'p-otro' }
+      expect(supplierAfterQr(null, qrCoca, parties, 'Thinkion')).toEqual({
+        kind: 'party',
+        partyId: 'p-coca',
+      })
+      expect(supplierAfterQr(chosen, qrCoca, parties, 'Thinkion')).toBe(chosen)
+      const typed = { ...thinkeon, name: 'Thinkeon SRL', taxId: '' }
+      expect(supplierAfterQr(typed, qrNew, parties, 'Thinkion')).toEqual({
+        ...typed,
+        taxId: '30-71876543-5',
+        ivaCondition: 'responsable_inscripto',
+      })
+      expect(supplierAfterQr(typed, qrCoca, parties, 'Thinkion')).toEqual({
+        kind: 'party',
+        partyId: 'p-coca',
+      })
+      // Con un CUIT ya escrito, el nuevo no cambia; sin CUIT que sirva, queda lo que había.
+      expect(supplierAfterQr(thinkeon, qrNew, parties, 'X')).toBe(thinkeon)
+      expect(supplierAfterQr(null, { cuit: '1', voucherType: null }, parties, 'X')).toBeNull()
+    })
   })
 
   it('el QR de ARCA completa el papel, el número y el total', () => {

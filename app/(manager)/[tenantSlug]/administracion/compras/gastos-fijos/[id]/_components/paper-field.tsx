@@ -228,7 +228,8 @@ export function PaperField({
       {needsParty ? (
         <p className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/8 p-3 text-sm text-pretty">
           <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning-text" />
-          Una factura pide proveedor. Sin él, al pagar va a arrancar en «Remito o nada».
+          Una factura pide proveedor. Si no lo elegís acá, se elige al pagarlo en la planilla y
+          queda guardado.
         </p>
       ) : null}
 
