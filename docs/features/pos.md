@@ -73,7 +73,7 @@ las tablas de mesa y comanda no tienen escritura directa. Las lecturas también 
 (`private.pos_poke` → `realtime.send`). Las pantallas escuchan con `usePosPoke` y vuelven a leer lo suyo. Si
 el canal se cae, la pantalla lo dice y al volver se pone al día sola.
 
-El canal es **privado** (migración `pos_canal_privado`, 13/11). Antes era público: no llevaba datos, pero
+El canal es **privado** (migración `20261113195644_pos_canal_privado`, aplicada el 13/11). Antes era público: no llevaba datos, pero
 cualquiera con la clave pública del proyecto y el id de una sucursal podía escucharlo (y saber cuándo se
 mueve un salón) o mandarle avisos falsos. Ahora:
 
@@ -358,6 +358,18 @@ y las mostraba sin sesión (`public/sw.js` las borra al llegar a la pantalla de 
 mesas de práctica; cualquiera que mirara la cola marcaba «cocina lo vio»; un aviso en vivo se perdía si
 llegaba durante una lectura (`lib/pos/live-reload.ts`); una tanda sin enviar salía con la sesión de otra
 persona (`mayAutoSend`).
+
+**Cerrado en la base el 13/11, segunda tanda** (dos migraciones, cada una con su ensayo en producción que se
+deshace solo y sus candados de entrada y de salida):
+- `20261113195644_pos_canal_privado`: el canal en vivo dejó de ser público (ver «En vivo», arriba).
+- `20261113195633_menu_precios_de_una`: `menu_apply_price_changes` cambia precios en una sola operación. Entra
+  entera o no entra; cada precio se cambia solo si sigue valiendo lo que la persona veía (lo que otro cambió,
+  o ya no está, vuelve en `failed` con lo que vale ahora); un aumento y su deshacer quedan marcados como una
+  tanda (`batch_id`, que los disparadores leen de `pos.price_batch`). Corre con los permisos de quien llama:
+  mandan las mismas políticas de `menu_items` y `menu_item_branches` (dueño y editor), y además pide el rol
+  para contestar «no podés». En el ensayo, un aumento a los 233 productos del bar de ejemplo entró en 163 ms.
+  `lib/menu/prices/actions.ts` ya no lee, planea y escribe de a tandas: arma el pedido y lee la respuesta
+  (`plan.ts`). Probada en `tests/rls/menu-price-changes.test.ts` y con 72 comprobaciones en la base local.
 
 **Cerrado en la base con la migración `20261113121745_pos_endurecer` (aplicada el 13/11):**
 - `pos_cancel_item` tiene las mismas reglas que `pos_request_void`: la mesa abierta, nada ya cobrado por
