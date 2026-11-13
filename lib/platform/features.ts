@@ -93,7 +93,7 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     key: 'pos',
     label: 'Punto de venta',
     description:
-      'El salón en vivo: mapa de mesas por sucursal, comanda del mozo, pantalla de cocina, cobro y caja por turno.',
+      'El salón en vivo: mapa de mesas por sucursal, comanda del mozo, pantalla de cocina, cobro y caja por turno. Trae el plano del salón.',
     group: 'Salón',
     defaultEnabled: false,
   },
@@ -127,8 +127,30 @@ export function getTenantFeatures(tenant: Pick<Tenant, 'feature_flags'>): Tenant
   return out
 }
 
+/**
+ * Lo que un interruptor trae consigo. El punto de venta no existe sin el plano del salón (el mapa en vivo
+ * se dibuja ahí): prenderlo alcanza, no hace falta acordarse de prender también el plano.
+ */
+const INCLUDES: Partial<Record<FeatureKey, readonly FeatureKey[]>> = {
+  pos: ['floor_plan'],
+}
+
+/**
+ * Lo que el bar tiene de verdad: sus interruptores más lo que cada uno trae. Es lo que miran los menús,
+ * el buscador y las guardas. `getTenantFeatures` sigue siendo la posición de cada interruptor, que es lo
+ * que muestra (y cambia) el panel de superadmin.
+ */
+export function getEffectiveFeatures(tenant: Pick<Tenant, 'feature_flags'>): TenantFeatures {
+  const out = getTenantFeatures(tenant)
+  for (const key of FEATURE_KEYS) {
+    if (!out[key]) continue
+    for (const included of INCLUDES[key] ?? []) out[included] = true
+  }
+  return out
+}
+
 export function isFeatureEnabled(tenant: Pick<Tenant, 'feature_flags'>, key: FeatureKey): boolean {
-  return getTenantFeatures(tenant)[key]
+  return getEffectiveFeatures(tenant)[key]
 }
 
 /** Agrupa el registry para la grilla de toggles del panel /admin. */

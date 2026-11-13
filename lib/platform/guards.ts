@@ -2,7 +2,7 @@ import 'server-only'
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Tenant } from '@/lib/tenant/types'
-import { type FeatureKey, getTenantFeatures, isFeatureEnabled } from './features'
+import { type FeatureKey, getEffectiveFeatures, isFeatureEnabled } from './features'
 import { isPlatformAdmin } from './is-admin'
 
 /**
@@ -31,7 +31,7 @@ export async function requireFeatureByTenantId(tenantId: string, key: FeatureKey
     .select('feature_flags')
     .eq('id', tenantId)
     .maybeSingle()
-  const features = getTenantFeatures({
+  const features = getEffectiveFeatures({
     feature_flags: (data?.feature_flags ?? {}) as Record<string, boolean>,
   })
   if (features[key]) return

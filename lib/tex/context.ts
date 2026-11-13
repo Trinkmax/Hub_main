@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { todayInCordoba } from '@/lib/dates'
-import { getTenantFeatures } from '@/lib/platform/features'
+import { getEffectiveFeatures } from '@/lib/platform/features'
 import {
   RoleRequiredError,
   requireTenantAccess,
@@ -37,7 +37,7 @@ export async function texContext(slug: string): Promise<TexContextResult> {
         tenantName: access.tenant.name,
         userId: access.user.id,
         role: access.role,
-        features: getTenantFeatures(access.tenant),
+        features: getEffectiveFeatures(access.tenant),
         isAccountant: access.role === 'accountant',
         access: {
           read: accounting.enabled && accounting.read,

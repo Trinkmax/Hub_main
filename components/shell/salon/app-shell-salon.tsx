@@ -1,5 +1,5 @@
 import { signOutAction } from '@/components/shell/sign-out-action'
-import { getTenantFeatures } from '@/lib/platform/features'
+import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { AccountSheet } from './account-sheet'
 import { BottomTabBar } from './bottom-tab-bar'
@@ -39,7 +39,7 @@ export function AppShellSalon({
   email: string
   children: React.ReactNode
 }) {
-  const features = getTenantFeatures(tenant)
+  const features = getEffectiveFeatures(tenant)
 
   return (
     <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">

@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { planHref } from '@/lib/floor-plan/branches'
 import { refreshFloor, setActiveBranch } from '@/lib/pos/actions'
 import {
   attentionRank,
@@ -384,7 +385,7 @@ export function FloorLive({ slug, initial, branches, timeZone, canEditPlan, acco
             Después, acá vas a ver en vivo qué le pasa a cada mesa.
           </p>
           {canEditPlan ? (
-            <Link href={`/${slug}/local/mesas`} className="pos-btn pos-btn-primary">
+            <Link href={planHref(slug, snapshot.branch.slug)} className="pos-btn pos-btn-primary">
               Dibujar el plano
             </Link>
           ) : (
