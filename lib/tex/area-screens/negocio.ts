@@ -180,6 +180,15 @@ export const negocioScreens: readonly TexScreenDef[] = [
     feature: 'auto_accept',
   },
   {
+    id: 'local.sucursales',
+    label: 'Sucursales',
+    what: 'Los locales del bar: qué le falta a cada uno para abrir (plano, carta, cocina, caja, equipo y cobro) y los ajustes del punto de venta: recargo de crédito, propinas, alias de transferencia y quién aprueba descuentos y bajas.',
+    path: '/local/sucursales',
+    root: true,
+    roles: OWNER,
+    feature: 'pos',
+  },
+  {
     id: 'local.mesas',
     label: 'Plano y QRs de mesa',
     what: 'El plano del local, las mesas y el QR de cada una, y el estado en vivo.',

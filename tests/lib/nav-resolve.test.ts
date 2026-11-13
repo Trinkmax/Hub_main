@@ -257,17 +257,19 @@ describe('resolveNavGroups — bloque Salón (feature-flags de superadmin)', () 
     expect(itemLabels(groups, 'Salón')).toEqual(['Cocina'])
   })
 
-  it('el superadmin ve las cuatro, planas y sin cambios, antes de Configuración', () => {
+  it('el superadmin ve las cinco, planas y sin cambios, antes de Configuración', () => {
     const groups = resolveNavGroups('owner', SLUG, allOff, true)
     expect(itemLabels(groups, 'Salón')).toEqual([
       'Salón en vivo',
       'Cocina',
+      'Sucursales',
       'Plano y QRs de mesa',
       'Auto-aceptación',
     ])
     expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio', 'Salón', 'Ajustes'])
     expect(entry(groups, 'Salón en vivo')?.newTab).toBe(true)
     expect(entry(groups, 'Cocina')?.newTab).toBe(true)
+    expect(entry(groups, 'Sucursales')?.href).toBe('/hub/local/sucursales')
     expect(entry(groups, 'Plano y QRs de mesa')?.href).toBe('/hub/local/mesas')
     expect(entry(groups, 'Auto-aceptación')?.href).toBe('/hub/local/auto-aceptacion')
   })
