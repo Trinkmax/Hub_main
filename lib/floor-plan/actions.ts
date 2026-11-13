@@ -1,5 +1,6 @@
 'use server'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import type { z } from 'zod'
 import { logAudit } from '@/lib/audit'
@@ -11,6 +12,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { canUseFloorPlan } from './access'
 import { mapPgError } from './errors'
 import { clampToArea, ELEMENT_DEFAULTS, GRID, TABLE_PRESETS } from './grid'
 import { suggestNextLabel } from './numbering'
@@ -43,18 +45,20 @@ export type FloorPlanActionState =
   | { ok: true; data?: unknown }
   | { ok: false; message: string; fieldErrors?: Record<string, string> }
 
+/**
+ * Quién sos y si podés: dueño del bar, con el plano prendido (o el punto de
+ * venta, que usa este mismo plano). El usuario ya viene verificado en
+ * `requireTenantAccess` (un solo viaje a la base), así que no hace falta
+ * volver a pedírselo a Auth.
+ */
 async function authorize(
   slug: string,
 ): Promise<{ tenant: { id: string }; role: string; userId: string } | null> {
   try {
-    const { tenant, role } = await requireTenantAccess(slug)
-    requireRole(role, ['owner'])
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return null
-    return { tenant, role, userId: user.id }
+    const access = await requireTenantAccess(slug)
+    requireRole(access.role, ['owner'])
+    if (!canUseFloorPlan(access.tenant, access.isPlatformAdmin)) return null
+    return { tenant: access.tenant, role: access.role, userId: access.user.id }
   } catch (error) {
     if (
       error instanceof RoleRequiredError ||
@@ -84,7 +88,7 @@ const NO_ACCESS: FloorPlanActionState = { ok: false, message: 'No tenés permiso
 
 export async function createAreaAction(
   slug: string,
-  input: { name: string; number_start?: number },
+  input: { name: string; number_start?: number; branch_id?: string },
 ): Promise<FloorPlanActionState> {
   const access = await authorize(slug)
   if (!access) return NO_ACCESS
@@ -98,17 +102,44 @@ export async function createAreaAction(
     }
   }
 
-  const supabase = await createClient()
+  // `branches` y `floor_plan_areas.branch_id` (migración pos_sucursales) todavía
+  // no están en types/database.ts: cliente sin tipar, igual que lib/pos/queries.ts.
+  const supabase = (await createClient()) as unknown as SupabaseClient
 
-  // Posición densa: al final de las áreas existentes.
-  const { count, error: countError } = await supabase
-    .from('floor_plan_areas')
-    .select('id', { count: 'exact', head: true })
+  // El sector se crea EN una sucursal: la que pidieron (tiene que ser de este
+  // bar y estar activa) o, si no dijeron cuál, la principal.
+  const wanted = parsed.data.branch_id
+  let branchQuery = supabase
+    .from('branches')
+    .select('id')
     .eq('tenant_id', access.tenant.id)
-  if (countError) {
-    console.error('[floor-plan.createArea] count', countError.message)
-    return { ok: false, message: 'No se pudo crear el área.' }
+    .eq('active', true)
+  branchQuery = wanted ? branchQuery.eq('id', wanted) : branchQuery.eq('is_default', true)
+  const { data: branch, error: branchError } = await branchQuery.maybeSingle()
+  if (branchError) {
+    console.error('[floor-plan.createArea] branch', branchError.message)
+    return { ok: false, message: 'No se pudo crear el sector.' }
   }
+  if (wanted && !branch) {
+    return { ok: false, message: 'No encontré esa sucursal. Recargá la página y probá de nuevo.' }
+  }
+  const branchId = (branch as { id: string } | null)?.id ?? null
+
+  // Al final de los sectores de esa sucursal.
+  let lastQuery = supabase
+    .from('floor_plan_areas')
+    .select('position')
+    .eq('tenant_id', access.tenant.id)
+  if (branchId) lastQuery = lastQuery.eq('branch_id', branchId)
+  const { data: last, error: lastError } = await lastQuery
+    .order('position', { ascending: false })
+    .limit(1)
+  if (lastError) {
+    console.error('[floor-plan.createArea] position', lastError.message)
+    return { ok: false, message: 'No se pudo crear el sector.' }
+  }
+  const lastPosition = (last as { position: number }[] | null)?.[0]?.position
+  const position = typeof lastPosition === 'number' ? lastPosition + 1 : 0
 
   const { data, error } = await supabase
     .from('floor_plan_areas')
@@ -116,7 +147,9 @@ export async function createAreaAction(
       tenant_id: access.tenant.id,
       name: parsed.data.name,
       number_start: parsed.data.number_start,
-      position: count ?? 0,
+      position,
+      // Sin sucursal resuelta la completa la base con la principal (disparador).
+      ...(branchId ? { branch_id: branchId } : {}),
     })
     .select('id')
     .single()
@@ -125,18 +158,23 @@ export async function createAreaAction(
     console.error('[floor-plan.createArea]', error?.message)
     return { ok: false, message: mapPgError(error) }
   }
+  const areaId = (data as { id: string }).id
 
   await logAudit({
     tenantId: access.tenant.id,
     userId: access.userId,
     action: 'create',
     entity: 'floor_plan_area',
-    entityId: data.id,
-    payload: { name: parsed.data.name, number_start: parsed.data.number_start },
+    entityId: areaId,
+    payload: {
+      name: parsed.data.name,
+      number_start: parsed.data.number_start,
+      branch_id: branchId,
+    },
   })
 
   revalidatePath(`/${slug}/local/mesas`)
-  return { ok: true, data: { id: data.id } }
+  return { ok: true, data: { id: areaId } }
 }
 
 export async function renameAreaAction(
@@ -414,18 +452,24 @@ export async function bulkCreateTablesAction(
     .single()
   if (areaError || !area) {
     console.error('[floor-plan.bulkCreate] area', areaError?.message)
-    return { ok: false, message: 'No se pudo leer el área.' }
+    return { ok: false, message: 'No se pudo leer el sector.' }
   }
 
+  // Lo que ya hay en el sector: los números de sus mesas (para seguir la
+  // numeración) y hasta dónde llega lo dibujado (para no caerle encima).
   const { data: siblings } = await supabase
     .from('floor_plan_elements')
-    .select('physical_tables(label)')
+    .select('kind, y, height, physical_tables(label)')
     .eq('area_id', area_id)
     .eq('tenant_id', access.tenant.id)
-    .eq('kind', 'table')
-  const existingLabels = (
-    (siblings ?? []) as unknown as { physical_tables: { label: string } | null }[]
-  )
+  const present = (siblings ?? []) as unknown as {
+    kind: string
+    y: number
+    height: number
+    physical_tables: { label: string } | null
+  }[]
+  const existingLabels = present
+    .filter((s) => s.kind === 'table')
     .map((s) => s.physical_tables?.label)
     .filter((l): l is string => typeof l === 'string')
 
@@ -434,10 +478,15 @@ export async function bulkCreateTablesAction(
   const stepY = dims.height + 28
   const cols = Math.max(1, Math.floor((area.width - 40) / stepX))
 
+  // Las mesas nuevas arrancan debajo de lo que ya está dibujado (con aire para
+  // las sillas), alineadas a la grilla: «varias mesas» nunca tapa una existente.
+  const occupiedBottom = present.reduce((max, s) => Math.max(max, s.y + s.height), 0)
+  const startY = present.length > 0 ? Math.ceil((occupiedBottom + 48) / GRID) * GRID : 20
+
   // Si el área no es lo bastante alta para todas las filas, la agrandamos (cap 6000)
   // para que las mesas no se apilen contra el borde inferior (clamp → overlap).
   const rows = Math.ceil(count / cols)
-  const neededHeight = Math.min(6000, 20 + (rows - 1) * stepY + dims.height + 20)
+  const neededHeight = Math.min(6000, startY + (rows - 1) * stepY + dims.height + 40)
   const effHeight = Math.max(area.height, neededHeight)
   if (effHeight > area.height) {
     await supabase
@@ -455,7 +504,7 @@ export async function bulkCreateTablesAction(
     const row = Math.floor(i / cols)
     const pos = clampToArea(
       20 + col * stepX,
-      20 + row * stepY,
+      startY + row * stepY,
       dims.width,
       dims.height,
       area.width,
@@ -546,7 +595,7 @@ export async function splitTableAction(
 
   if (areaError || !area) {
     console.error('[floor-plan.splitTable] area', areaError?.message)
-    return { ok: false, message: 'No se pudo leer el área.' }
+    return { ok: false, message: 'No se pudo leer el sector.' }
   }
 
   // Labels existentes en el área (para suggestNextLabel).

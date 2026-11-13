@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
+import { CircleDollarSign, Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -19,10 +19,12 @@ export type MenuHubProps = {
   role: TenantRole
   menu: Awaited<ReturnType<typeof listMenu>>
   tags: Awaited<ReturnType<typeof listItemTags>>
+  /** Mostrar el acceso a «Precios» (viene con el punto de venta). */
+  showPrices?: boolean
 }
 
 export function MenuHub(props: MenuHubProps): React.JSX.Element {
-  const { tenantSlug, tenantId, role, menu, tags } = props
+  const { tenantSlug, tenantId, role, menu, tags, showPrices = false } = props
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -72,6 +74,15 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
               QR de la carta
             </Link>
           </Button>
+          {/* Buscar un producto y cambiarle el precio, o subir toda la carta un porcentaje. */}
+          {showPrices ? (
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`/${tenantSlug}/menu/precios`} data-testid="menu-precios-link">
+                <CircleDollarSign className="size-4" />
+                Precios
+              </Link>
+            </Button>
+          ) : null}
           <Popover>
             <PopoverTrigger asChild>
               <Button size="sm" className="gap-1.5" data-tour="menu-nueva-categoria">

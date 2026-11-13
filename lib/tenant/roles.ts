@@ -101,6 +101,27 @@ export const SALON_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 
 export const REDEMPTION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter']
 
 /**
+ * Punto de venta (docs/features/pos.md). Espejan las RPC `pos_*` de la base.
+ *   · salón: abrir mesas, cargar tandas, servir, pedir la cuenta, cambiar de mesa;
+ *   · cocina: avanzar comandas (el mozo también, para el bar sin pantalla de cocina);
+ *   · ver: el mapa en vivo, que la cocina también mira.
+ */
+export const POS_FLOOR_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'host']
+export const POS_KITCHEN_ROLES: ReadonlyArray<TenantRole> = [
+  'owner',
+  'kitchen',
+  'cashier',
+  'waiter',
+]
+export const POS_VIEW_ROLES: ReadonlyArray<TenantRole> = [
+  'owner',
+  'cashier',
+  'waiter',
+  'kitchen',
+  'host',
+]
+
+/**
  * Administración: prerrequisito de ROL. No alcanza con el rol: además hace
  * falta el acceso por persona (`acc_access`, que llega en
  * `TenantAccess.accounting`) y el flag del bar. La contadora lee y exporta; no
@@ -204,9 +225,19 @@ export function canAccessManagerPath(role: string, rest: ReadonlyArray<string>):
  * Sub-rutas de /salon accesibles para roles que NO viven en el salón. El host
  * usa el panel operativo (vista en vivo de reservas) durante el servicio —
  * misma capacidad de lectura que SALON_READ_ROLES — y la puerta, porque quien
- * recibe a la gente es quien valida las entradas.
+ * recibe a la gente es quien valida las entradas. Con el punto de venta suma el
+ * mapa del salón y la mesa.
  */
 export function canAccessSalonPath(role: string, rest: ReadonlyArray<string>): boolean {
-  if (role === 'host') return rest[1] === 'reservas-operativo' || rest[1] === 'puerta'
+  if (role === 'host') {
+    // Con el punto de venta, la anfitriona también sienta a la gente: el mapa y la mesa (POS_FLOOR_ROLES).
+    // Si el bar no lo tiene prendido, la página misma responde que no existe.
+    return (
+      rest[1] === 'reservas-operativo' ||
+      rest[1] === 'puerta' ||
+      rest[1] === 'mapa' ||
+      rest[1] === 'mesa'
+    )
+  }
   return false
 }

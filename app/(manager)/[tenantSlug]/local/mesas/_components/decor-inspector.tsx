@@ -1,206 +1,269 @@
 'use client'
 
-import { ArrowDownToLine, ArrowUpToLine, Trash2, X } from 'lucide-react'
-import { useEffect, useState, useTransition } from 'react'
+import { ArrowDownToLine, ArrowUpToLine, Copy, RotateCw, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
-import {
-  deleteDecorAction,
-  setElementZIndexAction,
-  updateDecorAction,
-} from '@/lib/floor-plan/actions'
+import { updateDecorAction } from '@/lib/floor-plan/actions'
+import { type ElementPatch, KIND_LABELS } from '@/lib/floor-plan/model'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 
-type DecorInspectorProps = {
+export type DecorInspectorProps = {
   slug: string
   element: ElementRow
-  onChanged: () => void
+  /** Cambia al instante lo que se ve en el plano. */
+  onPatch: (elementId: string, patch: ElementPatch) => void
+  /** Sostiene el cambio por encima de un refresco mientras viaja al servidor (`null` = ya llegó). */
+  onHold: (elementId: string, patch: ElementPatch | null) => void
+  /** Guarda lo que haya pendiente de posición antes de hablar con el servidor. */
+  flushGeometry: () => Promise<void>
+  onRotate: () => void
+  onDuplicate: () => void
+  onFront: () => void
+  onBack: () => void
+  /** Quitar del plano (se puede deshacer). */
+  onRemove: () => void
   onClose: () => void
 }
 
-const KIND_LABELS: Record<ElementRow['kind'], string> = {
-  table: 'Mesa',
-  wall: 'Pared',
-  pillar: 'Columna',
-  island: 'Isla',
-  bar: 'Barra',
-  door: 'Puerta',
-  text: 'Texto',
-  stage: 'Escenario',
-  booth: 'Box',
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
+const SAVE_DELAY_MS = 450
+
+// El color del material de cada pieza (lo que muestra el selector cuando el dueño no eligió ninguno).
+const MATERIAL_HEX: Partial<Record<ElementRow['kind'], string>> = {
+  bar: '#bda27d',
+  wall: '#b6c4b7',
+  pillar: '#b6c4b7',
+  island: '#e3ded4',
+  stage: '#e3ded4',
+  booth: '#e3ded4',
 }
 
-const HEX_RE = /^#[0-9a-fA-F]{6}$/
+// Qué es cada cosa y cómo la ve el salón, dicho en una línea.
+const ABOUT: Partial<Record<ElementRow['kind'], string>> = {
+  door: 'Ponele un nombre (por ejemplo «Entrada») y queda escrito en el mapa del salón.',
+  text: 'Lo que escribas se ve como un cartel sobre el piso, también en el salón.',
+  bar: 'Las banquetas se dibujan solas a lo largo de la barra.',
+  wall: 'Estirala desde las manijas y girala para armar el contorno del sector.',
+  stage: 'Una tarima baja: el escenario, o cualquier desnivel.',
+}
 
-export function DecorInspector({ slug, element, onChanged, onClose }: DecorInspectorProps) {
+/**
+ * La ficha de lo que no es una mesa (pared, barra, columna, isla, puerta,
+ * escenario, texto). El nombre y el color se guardan solos al escribir.
+ *
+ * Se monta con `key` = id del elemento: otro elemento, otra ficha.
+ */
+export function DecorInspector({
+  slug,
+  element,
+  onPatch,
+  onHold,
+  flushGeometry,
+  onRotate,
+  onDuplicate,
+  onFront,
+  onBack,
+  onRemove,
+  onClose,
+}: DecorInspectorProps) {
+  const id = useId()
   const [label, setLabel] = useState(element.label ?? '')
   const [color, setColor] = useState(element.color ?? '')
-  const [pending, start] = useTransition()
 
-  // Re-sincroniza si cambia el elemento seleccionado (clave: element.id).
-  // El cuerpo solo lee label/color, pero element.id es el disparador intencional
-  // del re-sync al cambiar de elemento (mismos valores en otro elemento ≠ mismo draft).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: element.id dispara el re-sync a propósito
-  useEffect(() => {
-    setLabel(element.label ?? '')
-    setColor(element.color ?? '')
-  }, [element.id, element.label, element.color])
+  const saved = useRef({ label: element.label, color: element.color })
+  const queued = useRef<{ label: string | null; color: string | null } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latest = useRef({ slug, elementId: element.id, onPatch, onHold, flushGeometry })
+  latest.current = { slug, elementId: element.id, onPatch, onHold, flushGeometry }
 
-  const colorInvalid = color.trim().length > 0 && !HEX_RE.test(color.trim())
-
-  const onSave = () => {
-    if (colorInvalid) {
-      toast.error('El color debe ser un hex de 6 dígitos (ej. #4f7d58).')
-      return
+  const send = useCallback(async (): Promise<void> => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
     }
-    start(async () => {
-      const r = await updateDecorAction(slug, {
-        id: element.id,
-        label: label.trim().length > 0 ? label.trim() : null,
-        color: color.trim().length > 0 ? color.trim() : null,
-      })
-      if (r.ok) {
-        toast.success('Decoración actualizada.')
-        onChanged()
-      } else {
-        toast.error(r.message)
-      }
-    })
+    const next = queued.current
+    if (!next) return
+    queued.current = null
+    const ctx = latest.current
+    await ctx.flushGeometry()
+    const result = await updateDecorAction(ctx.slug, { id: ctx.elementId, ...next })
+    if (result.ok) {
+      saved.current = next
+    } else {
+      toast.error(result.message)
+      ctx.onPatch(ctx.elementId, saved.current)
+    }
+    // Si mientras tanto llegó otro cambio, sigue en espera; si no, se suelta.
+    if (!queued.current) ctx.onHold(ctx.elementId, null)
+  }, [])
+
+  const queue = useCallback(
+    (next: { label: string | null; color: string | null }, delay: number) => {
+      queued.current = next
+      const ctx = latest.current
+      ctx.onPatch(ctx.elementId, next)
+      ctx.onHold(ctx.elementId, next)
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => {
+        void send()
+      }, delay)
+    },
+    [send],
+  )
+
+  // Si la ficha se cierra con algo sin mandar, se manda igual.
+  useEffect(() => {
+    return () => {
+      if (queued.current) void send()
+    }
+  }, [send])
+
+  const current = () => queued.current ?? saved.current
+  const cleanColor = color.trim()
+  const colorInvalid = cleanColor.length > 0 && !HEX_RE.test(cleanColor)
+
+  const onLabel = (value: string) => {
+    setLabel(value)
+    const clean = value.trim()
+    queue({ label: clean.length > 0 ? clean : null, color: current().color }, SAVE_DELAY_MS)
   }
 
-  const onZIndex = (zIndex: number) => {
-    start(async () => {
-      const r = await setElementZIndexAction(slug, element.id, zIndex)
-      if (r.ok) onChanged()
-      else toast.error(r.message)
-    })
+  const onColor = (value: string) => {
+    setColor(value)
+    const clean = value.trim()
+    if (clean.length > 0 && !HEX_RE.test(clean)) return
+    queue({ label: current().label, color: clean.length > 0 ? clean : null }, SAVE_DELAY_MS)
   }
 
-  const onDelete = () => {
-    start(async () => {
-      const r = await deleteDecorAction(slug, element.id)
-      if (r.ok) {
-        toast.success('Decoración borrada.')
-        onChanged()
-      } else {
-        toast.error(r.message)
-      }
-    })
-  }
+  const kind = element.kind
+  const flat = kind === 'door' || kind === 'text'
+  const about = ABOUT[kind]
 
   return (
-    <aside
-      aria-label="Panel de decoración"
-      className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-card p-4"
-    >
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-sm font-semibold">{KIND_LABELS[element.kind]}</h2>
-        <Button size="icon" variant="ghost" onClick={onClose} aria-label="Cerrar panel">
-          <X className="size-4" />
-        </Button>
+    <>
+      <div className="fpe-side-head">
+        <h2 className="fpe-side-title">
+          {KIND_LABELS[kind]}
+          {about ? <span className="fpe-side-sub">{about}</span> : null}
+        </h2>
+        <button
+          type="button"
+          className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+          onClick={onClose}
+          aria-label="Cerrar la ficha"
+          title="Cerrar (Esc)"
+        >
+          <X aria-hidden />
+        </button>
       </div>
 
-      <div className="grid gap-1.5">
-        <Label htmlFor="di-label">Etiqueta</Label>
-        <Input
-          id="di-label"
-          value={label}
-          maxLength={40}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Opcional"
-        />
-      </div>
+      <div className="fpe-side-body">
+        <div className="fpe-group">
+          <div className="fpe-field">
+            <label className="fpe-label" htmlFor={`${id}-label`}>
+              {kind === 'text' ? 'Qué dice' : 'Nombre'}
+            </label>
+            <input
+              id={`${id}-label`}
+              className="fpe-input"
+              value={label}
+              maxLength={40}
+              autoComplete="off"
+              placeholder={
+                kind === 'text'
+                  ? 'Entrada, Baños, Cocina…'
+                  : kind === 'door'
+                    ? 'Entrada'
+                    : 'Opcional'
+              }
+              onChange={(e) => onLabel(e.target.value)}
+            />
+          </div>
 
-      <div className="grid gap-1.5">
-        <Label htmlFor="di-color">Color</Label>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            aria-label="Selector de color"
-            className="size-9 shrink-0 cursor-pointer rounded-md border bg-transparent p-0.5"
-            value={HEX_RE.test(color.trim()) ? color.trim() : '#888888'}
-            onChange={(e) => setColor(e.target.value)}
-          />
-          <Input
-            id="di-color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            placeholder="#4f7d58 (opcional)"
-            aria-invalid={colorInvalid}
-          />
+          {flat ? null : (
+            <div className="fpe-field">
+              <label className="fpe-label" htmlFor={`${id}-color`}>
+                Color
+              </label>
+              <div className="fpe-color">
+                <input
+                  type="color"
+                  aria-label="Elegir el color"
+                  value={HEX_RE.test(cleanColor) ? cleanColor : (MATERIAL_HEX[kind] ?? '#e3ded4')}
+                  onChange={(e) => onColor(e.target.value)}
+                />
+                <input
+                  id={`${id}-color`}
+                  className="fpe-input"
+                  value={color}
+                  autoComplete="off"
+                  placeholder="El del material"
+                  aria-invalid={colorInvalid ? true : undefined}
+                  aria-describedby={`${id}-color-hint`}
+                  onChange={(e) => onColor(e.target.value)}
+                />
+                {cleanColor ? (
+                  <button
+                    type="button"
+                    className="fpe-btn fpe-btn-ghost fpe-btn-sm"
+                    onClick={() => onColor('')}
+                  >
+                    Sacar
+                  </button>
+                ) : null}
+              </div>
+              {colorInvalid ? (
+                <p className="fpe-error" id={`${id}-color-hint`} role="alert">
+                  Escribilo como #4f7d58: numeral y seis letras o números.
+                </p>
+              ) : (
+                <p className="fpe-hint" id={`${id}-color-hint`}>
+                  El color se ve en este plano. La maqueta del salón dibuja todo en sus materiales.
+                </p>
+              )}
+            </div>
+          )}
         </div>
-        {colorInvalid ? (
-          <p className="text-xs text-destructive">Usá un hex de 6 dígitos, ej. #4f7d58.</p>
-        ) : null}
+
+        <div className="fpe-group">
+          <h3 className="fpe-group-title">Acomodar</h3>
+          <div className="fpe-grid-2">
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onRotate}>
+              <RotateCw aria-hidden />
+              Girar
+            </button>
+            <button
+              type="button"
+              className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+              onClick={onDuplicate}
+            >
+              <Copy aria-hidden />
+              Duplicar
+            </button>
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onFront}>
+              <ArrowUpToLine aria-hidden />
+              Al frente
+            </button>
+            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onBack}>
+              <ArrowDownToLine aria-hidden />
+              Al fondo
+            </button>
+          </div>
+          <p className="fpe-hint">El tamaño se cambia estirando las manijas en el plano.</p>
+        </div>
+
+        <div className="fpe-group">
+          <button
+            type="button"
+            className="fpe-btn fpe-btn-danger fpe-btn-sm"
+            onClick={onRemove}
+            title="Quitar (Supr)"
+          >
+            <Trash2 aria-hidden />
+            Quitar del plano
+          </button>
+        </div>
       </div>
-
-      <Button size="sm" onClick={onSave} disabled={pending || colorInvalid}>
-        {pending ? 'Guardando…' : 'Guardar'}
-      </Button>
-
-      <p className="text-xs text-muted-foreground">
-        El tamaño se ajusta arrastrando los controladores del elemento en el plano.
-      </p>
-
-      <Separator />
-
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onZIndex(element.z_index + 1)}
-          disabled={pending}
-        >
-          <ArrowUpToLine className="size-3.5" />
-          Al frente
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onZIndex(element.z_index - 1)}
-          disabled={pending}
-        >
-          <ArrowDownToLine className="size-3.5" />
-          Al fondo
-        </Button>
-      </div>
-
-      <Separator />
-
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button size="sm" variant="destructive" disabled={pending}>
-            <Trash2 className="size-3.5" />
-            Borrar
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar la decoración?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se elimina del plano. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={onDelete}>Borrar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </aside>
+    </>
   )
 }

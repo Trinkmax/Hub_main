@@ -1,0 +1,126 @@
+/* «¿Dónde trabajás hoy?»: la primera vez que un dispositivo entra a un bar con más de una sucursal.
+   Dos carteles grandes con el color de cada sucursal, sobre el paño. Se elige una vez y el dispositivo
+   se acuerda. */
+.pos-where {
+  display: grid;
+  /* En el salón queda la barra de pestañas debajo; en la tele no hay nada alrededor. */
+  min-height: calc(100dvh - var(--salon-tabbar-h, 0px));
+  align-content: center;
+  gap: 1.5rem;
+  padding: calc(1.5rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    calc(1.5rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    var(--pos-board) 0%,
+    var(--pos-board) 42%,
+    var(--pos-board-2) 100%
+  );
+  color: var(--pos-board-ink);
+}
+.pos-where-inner {
+  display: grid;
+  width: 100%;
+  max-width: 34rem;
+  gap: 1.25rem;
+  margin: 0 auto;
+}
+.pos-where h1 {
+  font-size: clamp(2rem, 9vw, 3rem);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.pos-where-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.pos-where-btn {
+  display: flex;
+  width: 100%;
+  min-height: 5.5rem;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1.1rem;
+  /* El color de la sucursal, un poco apagado para que el nombre en crema se lea (≥ 4,5:1). */
+  background: color-mix(in oklab, var(--branch, var(--pos-board)) 88%, black);
+  color: var(--pos-on-dark);
+  text-align: left;
+  box-shadow:
+    0 18px 30px -18px oklch(0 0 0 / 0.7),
+    inset 0 0 0 1px oklch(1 0 0 / 0.14);
+  transition:
+    transform 140ms var(--pos-ease),
+    filter 140ms var(--pos-ease);
+}
+.pos-where-btn:active {
+  transform: scale(0.97);
+}
+.pos-where-btn:focus-visible {
+  outline: 3px solid var(--pos-paper);
+  outline-offset: 3px;
+}
+.pos-where-btn[disabled] {
+  filter: saturate(0.6) brightness(0.85);
+}
+.pos-where-name {
+  display: block;
+  font-size: clamp(1.6rem, 7vw, 2.1rem);
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+}
+.pos-where-addr {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.88;
+}
+.pos-where-go {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  place-items: center;
+  margin-left: auto;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.16);
+}
+.pos-where-go svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+.pos-where-note {
+  max-width: 30rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.pos-where-error {
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.pos-where[data-fill="screen"] {
+  min-height: 100dvh;
+}
+@media (hover: hover) and (pointer: fine) {
+  .pos-where-btn:not([disabled]):hover {
+    filter: brightness(1.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pos-where-btn {
+    transition: none;
+  }
+  .pos-where-btn:active {
+    transform: none;
+  }
+}

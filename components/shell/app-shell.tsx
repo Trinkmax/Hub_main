@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { getTenantFeatures } from '@/lib/platform/features'
+import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
 import { ShellFrame } from './shell-frame'
 import { SidebarContent } from './sidebar-content'
@@ -30,7 +30,7 @@ export async function AppShell({
   accounting?: AccountingAccess
   children: React.ReactNode
 }) {
-  const features = getTenantFeatures(tenant)
+  const features = getEffectiveFeatures(tenant)
   const cookieStore = await cookies()
   const sidebarCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === 'collapsed'
 

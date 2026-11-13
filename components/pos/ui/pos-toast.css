@@ -1,0 +1,12 @@
+/* Los avisos («La mesa 7 pasó a la 10 · Deshacer») no tapan lo que se toca abajo: en el mapa suben por
+   encima de las pestañas y de las fichas del resumen; en la comanda, por encima de la barra de acción.
+   El aviso se dibuja fuera del árbol (cuelga de <body>), por eso se lo alcanza con `:has()`. */
+/* biome-ignore-all lint/complexity/noImportantStyles: la librería de avisos fija estas distancias con estilo en línea; solo `!important` les gana. */
+body:has(.pos-floor-screen) [data-sonner-toaster][data-y-position="bottom"] {
+  --mobile-offset-bottom: calc(var(--salon-tabbar-h, 0px) + 4.6rem) !important;
+  --offset-bottom: calc(var(--salon-tabbar-h, 0px) + 4.6rem) !important;
+}
+body:has(.cmd) [data-sonner-toaster][data-y-position="bottom"] {
+  --mobile-offset-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px)) !important;
+  --offset-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px)) !important;
+}

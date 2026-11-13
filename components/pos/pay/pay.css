@@ -1,0 +1,2297 @@
+/* ============================================================
+   La cuenta — el mundo «papel» (docs/features/pos.md)
+   ============================================================
+   TESIS: cobrar es una conversación de una pregunta por vez («¿cómo paga?», «¿con cuánto?»), y lo
+   que se contesta queda escrito en carbónico sobre el talón de la cuenta. Nada de formularios ni de
+   una calculadora con teclado.
+   MUNDO: la cuenta es la cuenta de papel del bar (membrete, renglones con puntos guía, total abajo,
+   «no válido como factura») apoyada sobre el paño; el talón de cobro es la otra mitad del mismo
+   papel, arrancada por el serrucho. Tinta para lo impreso, carbónico para lo que escribe el sistema,
+   sellos para lo que no tiene vuelta, papel punteado para lo que espera el OK.
+   HISTORIA: el mozo ve cuánto falta, toca el medio, confirma lo mínimo y ve el vuelto enorme; al
+   último cobro la mesa se sella sola.
+   PRIMERA VISTA (390×844): barra fina · «Falta $ 85.000» sobre el paño · la cuenta · el talón con
+   «¿Cómo paga?» y seis medios al alcance del pulgar. Con ancho: la cuenta a la izquierda, cobrar a
+   la derecha.
+   FORMA: conversación de cobro (5.ª de mi lista) fundida con el talonario de cupones · seed 6371d248.
+
+   Todo cuelga de `.pay` (la pantalla) y `.pay-sheet` (las hojas, que se dibujan fuera del árbol).
+   ============================================================ */
+
+.pay,
+.pay-sheet {
+  /* Los colores de estado, oscurecidos hasta que se leen como texto sobre papel (≥ 4,5:1). */
+  --pay-ready-ink: color-mix(in oklch, var(--pos-st-ready) 58%, var(--pos-ink));
+  --pay-late-ink: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
+  --pay-bill-ink: color-mix(in oklch, var(--pos-st-bill) 80%, var(--pos-ink));
+  --pay-stamp: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  --pay-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
+  /* Papel que todavía no es de verdad: lo que espera el OK, lo que se está escribiendo. */
+  --pay-draft: color-mix(in oklch, var(--pos-paper) 90%, var(--pos-kraft));
+  --pay-draft-rule: color-mix(in oklch, var(--pos-ink) 55%, var(--pos-paper));
+  /* Lo que escribió el sistema, de fondo. */
+  --pay-carbon-wash: color-mix(in oklch, var(--pos-carbon) 7%, var(--pos-paper));
+  --pay-carbon-rule: color-mix(in oklch, var(--pos-carbon) 28%, var(--pos-paper));
+  --pay-focus: var(--pos-st-bill);
+  --pay-press: 0.97;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── La pantalla ── */
+.pay {
+  --pay-pad: 0.75rem;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100dvh - var(--salon-tabbar-h));
+  min-height: 26rem;
+  overflow: clip;
+  background: var(--pos-board);
+  color: var(--pos-ink);
+  touch-action: manipulation;
+}
+.pay :focus-visible,
+.pay-sheet :focus-visible {
+  outline: 3px solid var(--pay-focus);
+  outline-offset: 2px;
+}
+.pay-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* ── La barra de arriba: una fila (la misma de la comanda) ── */
+.pay-back {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  margin-left: -0.3rem;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.pay-back svg {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+.pay-back:active {
+  transform: scale(var(--pay-press));
+  background: var(--pos-paper-2);
+}
+.pay-title {
+  flex: none;
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-practice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  border-radius: 0.35rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pay-people {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 0.7rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-carbon);
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* El nombre se queda con el lugar que sobra; si no entran ni cuatro letras, no se muestra. */
+.pay-name {
+  min-width: 0;
+  flex: 1 1 0;
+  container-type: inline-size;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.pay-name > span {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container (min-width: 4.5rem) {
+  .pay-name > span {
+    display: block;
+  }
+}
+
+/* ── Lo que falta: siempre arriba, grande, escrito sobre el paño (no es otra franja) ── */
+.pay-falta {
+  --falta-ink: var(--pos-board-ink);
+  --falta-soft: var(--pos-board-soft);
+  --falta-stub: oklch(1 0 0 / 0.1);
+  --falta-stub-rule: oklch(1 0 0 / 0.3);
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.35rem 0.75rem;
+  padding: 0.6rem var(--pay-pad) 0.45rem;
+  color: var(--falta-ink);
+}
+.pay-falta-main {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+}
+.pay-falta-word {
+  font-size: 1.08rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  color: var(--falta-soft);
+}
+.pay-falta-amount {
+  font-size: 2.9rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-falta-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.1rem;
+  padding-bottom: 0.2rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--falta-soft);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-falta-meta b {
+  font-weight: 700;
+  color: var(--falta-ink);
+}
+/* Los talones de la división: cada parte es un cupón; el cobrado lleva tilde, el que toca está lleno. */
+.pay-stubs {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  color: var(--falta-ink);
+}
+.pay-stub {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.6rem;
+  flex: none;
+  border-radius: 0.3rem;
+  background: var(--falta-stub);
+  box-shadow: inset 0 0 0 1.5px var(--falta-stub-rule);
+  color: var(--falta-soft);
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.pay-stub svg {
+  width: 1rem;
+  height: 1rem;
+}
+.pay-stub.is-paid {
+  background: var(--pos-st-ready);
+  box-shadow: none;
+  color: var(--pos-on-light);
+}
+.pay-stub.is-now {
+  background: var(--pos-paper);
+  box-shadow: none;
+  color: var(--pos-ink);
+}
+.pay-stubs-more {
+  color: var(--falta-soft);
+}
+.pay-stubs-word {
+  margin-left: 0.3rem;
+}
+
+/* ── La cuenta: lo que se pidió, sobre el paño ── */
+.pay-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.pay-offline {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem var(--pay-pad);
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.pay-offline svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.pay-scroll {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+}
+.pay-flow {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.3rem var(--pay-pad) 1.6rem;
+}
+.pay-flow > * {
+  width: 100%;
+  max-width: 35rem;
+  margin-inline: auto;
+}
+
+/* Lo que el sistema ya sabe de la mesa, en chico, sobre el paño. */
+.pay-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--pos-board-ink);
+}
+.pay-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  max-width: 100%;
+  padding: 0.2rem 0.65rem 0.2rem 0.5rem;
+  border-radius: 0.6rem;
+  background: oklch(0.14 0.03 165 / 0.62);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+  color: var(--pos-board-ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.pay-tag svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--pos-board-soft);
+}
+.pay-tag i {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--tier, var(--pos-board-soft));
+  box-shadow: 0 0 0 1.5px oklch(1 0 0 / 0.7);
+}
+.pay-tag.is-bill {
+  background: var(--pos-st-bill);
+  box-shadow: none;
+  color: var(--pos-on-dark);
+}
+.pay-tag.is-bill svg {
+  color: inherit;
+}
+.pay-tag.is-live i {
+  background: oklch(0.85 0.19 148);
+  box-shadow: 0 0 0 3px oklch(0.85 0.19 148 / 0.22);
+}
+.pay-tag.is-off {
+  background: var(--pos-st-late);
+  box-shadow: none;
+  color: var(--pos-on-dark);
+}
+.pay-tag.is-off svg {
+  color: inherit;
+}
+/* Aviso sobre el paño: algo de esta mesa todavía no está en la cuenta. */
+.pay-heads-up {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.7rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.pay-heads-up svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.pay-heads-up span {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.pay-heads-up a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 3rem;
+  margin-left: auto;
+  padding: 0 0.95rem;
+  border-radius: 0.7rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-weight: 800;
+  font-stretch: 86%;
+  white-space: nowrap;
+}
+
+/* ── El papel ── */
+.pay-paper {
+  --paper: var(--pos-paper);
+  position: relative;
+  display: grid;
+  padding: 1rem 0.95rem 0.85rem;
+  border-radius: 0.3rem 0.3rem 0 0;
+  background: var(--paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 16px 22px -18px oklch(0.1 0.04 165 / 0.95),
+    0 2px 6px -3px oklch(0.1 0.04 165 / 0.5);
+}
+/* El troquelado de arriba: de dónde se arrancó del talonario. */
+.pay-paper::before {
+  content: "";
+  position: absolute;
+  top: 0.32rem;
+  right: 0.7rem;
+  left: 0.7rem;
+  height: 3px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in oklch, var(--pos-ink) 26%, var(--paper)) 1.1px,
+      transparent 1.5px
+    )
+    0 0 / 8px 3px repeat-x;
+}
+/* El borde de abajo, cortado en serrucho. */
+.pay-paper::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 0.375rem;
+  background:
+    linear-gradient(135deg, var(--paper) 25%, transparent calc(25% + 0.6px)),
+    linear-gradient(225deg, var(--paper) 25%, transparent calc(25% + 0.6px));
+  background-size: 0.75rem 0.75rem;
+  background-position: 0.375rem 0;
+  filter: drop-shadow(0 3px 2px oklch(0.1 0.04 165 / 0.35));
+}
+/* La cinta de práctica: pegada arriba del papel, de lado a lado. */
+.pay-tape {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.35rem -0.95rem 0.7rem;
+  padding: 0.5rem 0.95rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pay-tape b {
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+/* El membrete: de quién es la cuenta. */
+.pay-letterhead {
+  padding-top: 0.2rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  color: var(--pos-ink-soft);
+  text-align: center;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.pay-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  min-height: 2rem;
+  margin-top: 0.45rem;
+}
+.pay-head h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+}
+.pay-head time {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pay-sub {
+  margin-top: 0.15rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* El estado de la cuenta: color + ícono + palabra. */
+.pay-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2rem;
+  margin-left: auto;
+  padding: 0 0.7rem 0 0.55rem;
+  border-radius: 0.6rem;
+  background: var(--pos-st-bill);
+  color: var(--pos-on-dark);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-chip svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.pay-chip b {
+  font-weight: 600;
+}
+
+/* Renglones: cantidad, nombre, puntos guía y el importe en carbónico. */
+.pay-pick-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  background: var(--pay-carbon-wash);
+  box-shadow: inset 0 0 0 1.5px var(--pay-carbon-rule);
+  color: var(--pos-carbon);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.pay-pick-hint svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.pay-lines {
+  display: grid;
+  margin-top: 0.6rem;
+  border-top: 1.5px solid var(--pos-ink);
+}
+.pay-lines > li {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+.pay-lines > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.pay-line {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  flex: 1;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.6rem 0.15rem 0.5rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+button.pay-line:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.pay-qty {
+  min-width: 1.7rem;
+  flex: none;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.pay-line-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+.pay-line-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.pay-line-name {
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.pay-dots {
+  min-width: 0.75rem;
+  flex: 1;
+  border-bottom: 2px dotted color-mix(in oklch, currentColor 40%, transparent);
+  transform: translateY(-0.22em);
+}
+.pay-line-amount {
+  flex: none;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  line-height: 1.25;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-line-sub {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-carbon);
+  overflow-wrap: anywhere;
+}
+.pay-line-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--pos-ink-soft);
+}
+.pay-line-note svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+.pay-line-note.is-paid {
+  color: var(--pay-stamp);
+}
+.pay-line-note.is-wait {
+  color: var(--pos-on-light);
+}
+/* Un renglón con una baja pedida: papel punteado, todavía no es de verdad. */
+.pay-lines > li.is-wait {
+  margin: 0.25rem -0.35rem;
+  padding: 0 0.35rem;
+  border-top-color: transparent;
+  border-radius: 0.5rem;
+  background: var(--pay-draft);
+  outline: 1.5px dashed var(--pay-draft-rule);
+  outline-offset: -1.5px;
+}
+.pay-lines > li.is-wait + li {
+  border-top-color: transparent;
+}
+/* Todo cobrado: sigue a la vista, apagado. */
+.pay-line.is-paid .pay-qty,
+.pay-line.is-paid .pay-line-name,
+.pay-line.is-paid .pay-line-amount {
+  color: var(--pay-faint);
+}
+/* Elegir por producto: la marca del lápiz, en carbónico. */
+.pay-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: none;
+  margin-top: -0.05rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--pos-ink) 45%, var(--paper));
+  color: transparent;
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 120ms var(--pos-ease),
+    box-shadow 120ms var(--pos-ease);
+}
+.pay-mark svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.pay-line.is-picked .pay-mark {
+  background: var(--pos-carbon);
+  box-shadow: none;
+  color: var(--pos-on-dark);
+}
+.pay-lines > li.is-picked {
+  margin: 0 -0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 0.5rem;
+  background: var(--pay-carbon-wash);
+}
+.pay-line:disabled .pay-mark {
+  box-shadow: inset 0 0 0 2px var(--pos-rule);
+}
+.pay-less {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  min-height: 3rem;
+  flex: none;
+  align-self: center;
+  border-radius: 999px;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pay-carbon-rule);
+  color: var(--pos-carbon);
+  transition: transform 140ms var(--pos-ease);
+}
+.pay-less svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+.pay-less:active {
+  transform: scale(var(--pay-press));
+}
+/* La cantidad salta cuando cambia: dice cuál renglón se movió (solo después de abrir la pantalla). */
+.pay-bump {
+  animation: var(--pay-bump, none) 200ms var(--pos-ease);
+}
+.pay[data-live] {
+  --pay-bump: pay-bump;
+}
+@keyframes pay-bump {
+  0% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Las sumas: consumo, lo que se descuenta, y el total abajo. */
+.pay-sums {
+  display: grid;
+  margin-top: 0.15rem;
+  padding-top: 0.5rem;
+  border-top: 1.5px solid var(--pos-ink);
+}
+.pay-sum {
+  display: flex;
+  width: 100%;
+  min-height: 2rem;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.25rem 0.15rem;
+  border-radius: 0.45rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+}
+.pay-sum > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pay-sum small {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-carbon);
+}
+.pay-sum > b {
+  flex: none;
+  font-weight: 700;
+  font-stretch: 90%;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+button.pay-sum {
+  min-height: 3rem;
+  transition: background-color 140ms var(--pos-ease);
+}
+button.pay-sum:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.pay-total {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.15rem 0.1rem;
+  border-top: 4px double var(--pos-ink);
+}
+.pay-total > span {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+}
+.pay-total > b {
+  margin-left: auto;
+  font-size: 2.1rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-per {
+  color: var(--pos-ink-soft);
+}
+
+/* Lo que espera el OK: los mismos papelitos punteados de la bandeja, dentro de la cuenta. No cambian
+   el total hasta que se aprueben. */
+.pay-waits {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem -0.35rem 0.3rem;
+}
+.pay-mini {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: 1 1 7rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.pay-mini svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.pay-mini:active {
+  transform: scale(var(--pay-press));
+}
+.pay-mini:disabled {
+  opacity: 0.55;
+}
+.pay-mini.is-main {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.pay-mini.is-danger {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 42%, var(--pos-paper));
+  color: var(--pay-late-ink);
+}
+
+/* Los cobros: debajo de la línea de corte, cada uno con su tilde. */
+.pay-cut {
+  position: relative;
+  height: 0;
+  margin: 1rem -0.95rem 0.75rem;
+  border-top: 1.5px dashed color-mix(in oklch, var(--pos-ink) 45%, var(--paper));
+}
+.pay-cut svg {
+  position: absolute;
+  top: -0.62rem;
+  left: 0.6rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.15rem;
+  background: var(--paper);
+  color: var(--pos-ink-soft);
+  box-sizing: content-box;
+}
+.pay-h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1.1;
+}
+.pay-payments {
+  display: grid;
+  margin-top: 0.2rem;
+}
+.pay-payments > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.pay-payment {
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.55rem 0.15rem 0.5rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+.pay-payment:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.pay-payment > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--pay-stamp);
+}
+.pay-payment-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+}
+.pay-payment-name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.pay-payment-sub {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pay-payment > b {
+  flex: none;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  line-height: 1.25;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-payment.is-voided > svg {
+  color: var(--pay-late-ink);
+}
+.pay-payment.is-voided .pay-payment-name,
+.pay-payment.is-voided > b {
+  color: var(--pos-ink-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.pay-payment.is-voided .pay-payment-sub {
+  color: var(--pay-late-ink);
+}
+.pay-left {
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1.5px solid var(--pos-ink);
+  border-radius: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+.pay-left > b {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-stretch: 82%;
+}
+
+/* El pie del papel: el club y la leyenda de siempre. */
+.pay-club {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  text-wrap: pretty;
+}
+.pay-club svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  margin-top: 0.1rem;
+}
+.pay-club i {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: 0 0.3rem 0 0.15rem;
+  border-radius: 999px;
+  background: var(--tier, var(--pos-carbon));
+}
+.pay-voids {
+  margin-top: 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-ink-soft);
+}
+.pay-voids summary {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.pay-voids summary::-webkit-details-marker {
+  display: none;
+}
+.pay-voids summary svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  transition: transform 140ms var(--pos-ease);
+}
+.pay-voids[open] summary svg {
+  transform: rotate(90deg);
+}
+.pay-voids ul {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0 0 0.3rem 1.45rem;
+}
+.pay-voids li b {
+  font-weight: 700;
+  color: var(--pos-ink);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.pay-voids li small {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--pay-late-ink);
+}
+.pay-legal {
+  margin-top: 0.95rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  letter-spacing: 0.14em;
+  color: var(--pay-faint);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Sellos: solo para lo que terminó o no tiene vuelta. */
+.pay-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.8rem;
+  margin-left: auto;
+  padding: 0 0.55rem 0 0.45rem;
+  border: 2px solid currentColor;
+  border-radius: 0.3rem;
+  color: var(--pay-stamp);
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+}
+.pay-stamp svg {
+  width: 1rem;
+  height: 1rem;
+}
+.pay-stamp.is-void {
+  height: auto;
+  margin: 0.3rem 0 0;
+  padding: 0.2rem 0.4rem;
+  border-width: 1.5px;
+  border-radius: 0.25rem;
+  color: var(--pay-late-ink);
+  font-size: 0.7rem;
+  transform: rotate(-4deg);
+}
+/* El sello grande, cruzado sobre el total: la mesa está cobrada. */
+.pay-stamp.is-big {
+  position: absolute;
+  top: -1.6rem;
+  left: 17%;
+  height: auto;
+  margin: 0;
+  padding: 0.35rem 0.8rem 0.3rem 0.65rem;
+  border-width: 3px;
+  border-radius: 0.45rem;
+  font-size: 1.55rem;
+  font-stretch: 80%;
+  letter-spacing: 0.12em;
+  opacity: 0.9;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+.pay-stamp.is-big svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+/* Cuando el último cobro entra con la pantalla abierta, el sello cae. Es el único momento que se mueve. */
+.pay-stamp.is-fresh {
+  animation: pay-stamp 240ms var(--pos-ease) both;
+}
+@keyframes pay-stamp {
+  0% {
+    opacity: 0;
+    transform: rotate(-8deg) scale(1.7);
+  }
+  100% {
+    opacity: 0.9;
+    transform: rotate(-8deg) scale(1);
+  }
+}
+
+/* Debajo del papel, sobre el paño: lo que se puede pedir. */
+.pay-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pay-act {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: 1 1 9rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14);
+  color: var(--pos-board-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1.1;
+  text-align: center;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.pay-act svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+}
+.pay-act:active {
+  transform: scale(var(--pay-press));
+  background: oklch(1 0 0 / 0.16);
+}
+.pay-act:disabled {
+  opacity: 0.55;
+}
+.pay-acts :focus-visible {
+  outline-color: var(--pos-paper);
+}
+/* En el celular van una debajo de la otra: ningún rótulo se parte en dos renglones. */
+@media (max-width: 479.98px) {
+  .pay-act {
+    flex-basis: 100%;
+  }
+}
+.pay-foot-hint {
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+
+/* ── El talón de cobro: la otra mitad del papel, al alcance del pulgar ── */
+.pay-dock {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  flex: none;
+  align-content: start;
+  gap: 0.6rem;
+  max-height: min(36rem, 74dvh);
+  padding: 0.85rem var(--pay-pad) calc(0.8rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}
+/* El serrucho de arriba: por acá se arrancó de la cuenta. */
+.pay-dock-edge {
+  position: relative;
+  z-index: 6;
+  height: 0;
+  flex: none;
+}
+.pay-dock-edge::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0.375rem;
+  background:
+    linear-gradient(315deg, var(--pos-paper) 25%, transparent calc(25% + 0.6px)),
+    linear-gradient(45deg, var(--pos-paper) 25%, transparent calc(25% + 0.6px));
+  background-size: 0.75rem 0.75rem;
+  background-position: 0.375rem 100%;
+  filter: drop-shadow(0 -4px 3px oklch(0.08 0.04 165 / 0.45));
+}
+.pay-step {
+  display: grid;
+  min-width: 0;
+  gap: 0.6rem;
+}
+.pay-ask {
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.pay-ask small {
+  margin-left: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.pay-fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.pay-fieldset > legend {
+  padding: 0;
+}
+/* Lo que ya se contestó: escrito por el sistema, se toca para cambiarlo. */
+.pay-crumb {
+  display: flex;
+  width: 100%;
+  min-height: 3.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.8rem;
+  border-radius: 0.9rem;
+  background: var(--pay-carbon-wash);
+  box-shadow: inset 0 0 0 1.5px var(--pay-carbon-rule);
+  color: var(--pos-ink);
+  text-align: left;
+  transition: transform 140ms var(--pos-ease);
+}
+.pay-crumb:active {
+  transform: scale(var(--pay-press));
+}
+.pay-crumb-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+}
+.pay-crumb-main > span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--pos-carbon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pay-crumb-main > b {
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-crumb-go {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.5rem;
+  padding: 0 0.7rem 0 0.75rem;
+  border-radius: 0.7rem;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pay-carbon-rule);
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pay-crumb-go svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+/* Los medios: seis teclas, ícono arriba y palabra abajo. Siempre en el mismo lugar. */
+.pay-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.pay-key {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  min-height: 4.1rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+  padding: 0.4rem 0.25rem;
+  border-radius: 1rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.96rem;
+  font-weight: 700;
+  font-stretch: 84%;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.pay-key svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+}
+.pay-key small {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pay-key:active {
+  transform: scale(var(--pay-press));
+  background: var(--pos-rule);
+}
+.pay-key:disabled {
+  opacity: 0.5;
+}
+/* Fichas para elegir (cómo dividen, con cuánto paga, el motivo). */
+.pay-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.pay-opts.is-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.pay-opt {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 3.1rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.95rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 1.02rem;
+  font-weight: 700;
+  font-stretch: 92%;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 120ms var(--pos-ease),
+    background-color 120ms var(--pos-ease),
+    color 120ms var(--pos-ease);
+}
+.pay-opt svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.pay-opt small {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+}
+.pay-opt:active {
+  transform: scale(var(--pay-press));
+}
+.pay-opt[aria-pressed="true"] {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.pay-opt[aria-pressed="true"] small {
+  color: color-mix(in oklch, var(--pos-paper) 82%, var(--pos-ink));
+}
+.pay-opt:disabled {
+  opacity: 0.55;
+}
+.pay-opts.is-grid .pay-opt {
+  min-height: 3.5rem;
+  padding: 0.4rem 0.6rem;
+  text-wrap: balance;
+}
+/* Los billetes: justo, los dos que siguen y «otro» entran en una fila hasta en el celular más angosto. */
+.pay-opts.is-row {
+  gap: 0.4rem;
+}
+.pay-opts.is-row .pay-opt {
+  flex: 1 1 auto;
+  padding: 0 0.7rem;
+  white-space: nowrap;
+}
+/* Cuántos dividen: − 4 + */
+.pay-parts {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.pay-parts-step {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.pay-parts-step svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+.pay-parts-step:active {
+  transform: scale(var(--pay-press));
+  background: var(--pos-rule);
+}
+.pay-parts-step:disabled {
+  opacity: 0.4;
+}
+.pay-parts output {
+  min-width: 2ch;
+  font-size: 2.6rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  color: var(--pos-carbon);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.pay-parts-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-ink-soft);
+}
+.pay-parts-text b {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1.05;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pay-note {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.pay-note b {
+  font-weight: 700;
+  color: var(--pos-ink);
+}
+/* El encabezado de un paso: volver, qué medio y cuánto. */
+.pay-step-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+.pay-step-back {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  margin-left: -0.45rem;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.pay-step-back svg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+.pay-step-back:active {
+  transform: scale(var(--pay-press));
+  background: var(--pos-paper-2);
+}
+.pay-step-title {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.12rem;
+}
+.pay-step-title h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 1.45rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+}
+.pay-step-title h3 svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+}
+.pay-step-title span {
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--pos-carbon);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pay-step-amount {
+  flex: none;
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* El vuelto, enorme: es lo que el mozo tiene que devolver con la otra mano. */
+.pay-change {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-height: 3.25rem;
+  padding: 0.15rem 0.1rem 0;
+}
+.pay-change > span {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 84%;
+}
+.pay-change > b {
+  margin-left: auto;
+  font-size: 3.2rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-change.is-none > span {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.pay-change.is-short > span {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--pay-late-ink);
+}
+/* Transferencia: el alias, grande, para leerlo en voz alta o mostrarlo. */
+.pay-alias {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.6rem 0.6rem 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.pay-alias-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+.pay-alias-main > span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pos-ink-soft);
+}
+.pay-alias-main > b {
+  font-size: 2rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.02;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.pay-copy {
+  display: inline-flex;
+  min-width: 3rem;
+  min-height: 3rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.75rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  transition: transform 140ms var(--pos-ease);
+}
+.pay-copy svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.pay-copy:active {
+  transform: scale(var(--pay-press));
+}
+/* La cuenta de este cobro, renglón por renglón (crédito con recargo, propina). */
+.pay-math {
+  display: grid;
+  gap: 0.1rem;
+}
+.pay-math > p {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-height: 1.6rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pay-math > p > b {
+  flex: none;
+  font-weight: 700;
+  font-stretch: 90%;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pay-math > p.is-total {
+  margin-top: 0.25rem;
+  padding-top: 0.4rem;
+  border-top: 1.5px solid var(--pos-ink);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+.pay-math > p.is-total > b {
+  margin-left: auto;
+  font-size: 2.2rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+}
+/* Facturar y propina: dos toques que casi nunca hacen falta. */
+.pay-extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.pay-toggle {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 3rem;
+  flex: 1 1 8.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.8rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  line-height: 1.1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 120ms var(--pos-ease),
+    background-color 120ms var(--pos-ease);
+}
+.pay-toggle svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.pay-toggle:active {
+  transform: scale(var(--pay-press));
+}
+.pay-toggle[aria-pressed="true"],
+.pay-toggle.is-set {
+  background: var(--pay-carbon-wash);
+  box-shadow: inset 0 0 0 2px var(--pos-carbon);
+  color: var(--pos-carbon);
+}
+.pay-after {
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.pay-after b {
+  font-weight: 700;
+  color: var(--pos-ink);
+  font-variant-numeric: tabular-nums;
+}
+/* El botón que manda. */
+.pay-go {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.3rem 1rem;
+  border-radius: 1rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 1.16rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1.1;
+  text-align: center;
+  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.pay-go svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex: none;
+}
+.pay-go:active {
+  transform: scale(var(--pay-press));
+}
+/* Todavía no se puede: el botón dice qué falta, así que se tiene que poder leer. */
+.pay-go:disabled {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink-soft);
+}
+.pay-go.is-quiet {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+}
+.pay-go-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.pay-go-row .pay-go.is-quiet {
+  width: auto;
+  flex: 0 0 auto;
+}
+.pay-spin {
+  animation: pay-spin 0.9s linear infinite;
+}
+@keyframes pay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Lo que acaba de pasar, dicho en una línea. */
+.pay-receipt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.4rem 0.75rem 0.4rem 0.6rem;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--pos-st-ready) 16%, var(--pos-paper));
+  color: var(--pay-ready-ink);
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.pay-receipt svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+}
+.pay-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--pos-st-late) 12%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 40%, var(--pos-paper));
+  color: var(--pay-late-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.pay-alert svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.08rem;
+}
+.pay-alert small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--pos-ink);
+}
+/* Un momento que no es cobrar: caja cerrada, cuenta cubierta, mesa cobrada. */
+.pay-state {
+  display: grid;
+  gap: 0.45rem;
+}
+.pay-state h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.pay-state h3 svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+}
+.pay-state p {
+  max-width: 44ch;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.pay-state p b {
+  font-weight: 700;
+  color: var(--pos-ink);
+  font-variant-numeric: tabular-nums;
+}
+.pay-state .pay-go {
+  margin-top: 0.35rem;
+}
+.pay-points {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.8rem;
+  background: var(--pay-carbon-wash);
+  box-shadow: inset 0 0 0 1.5px var(--pay-carbon-rule);
+  color: var(--pos-carbon);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
+}
+.pay-points svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.08rem;
+}
+.pay-points b {
+  font-weight: 800;
+}
+
+/* ── Plata escrita a mano: en pesos, y con el cuidado de los ceros ── */
+.pay-money {
+  display: flex;
+  height: 3.6rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.95rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: box-shadow 140ms var(--pos-ease);
+}
+.pay-money:focus-within {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.pay-money > span {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  color: var(--pos-ink-soft);
+}
+.pay-money input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  background: transparent;
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  outline: none;
+  appearance: none;
+  font-variant-numeric: tabular-nums;
+}
+.pay-money input::placeholder {
+  color: var(--pay-faint);
+  font-weight: 600;
+  opacity: 1;
+}
+.pay-money-field {
+  display: grid;
+  gap: 0.45rem;
+}
+.pay-money-field label {
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+.pay-zeros {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.7rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: var(--pay-draft);
+  outline: 1.5px dashed var(--pay-draft-rule);
+  outline-offset: -1.5px;
+  color: var(--pos-on-light);
+}
+.pay-zeros p {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 1.08rem;
+  font-weight: 800;
+  font-stretch: 90%;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.pay-zeros p svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.08rem;
+}
+.pay-zeros small {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.pay-zeros-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.pay-text {
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-family: inherit;
+  /* 16 px o más: con menos, el iPhone hace zoom al enfocar. */
+  font-size: 1.06rem;
+  font-weight: 600;
+  outline: none;
+}
+.pay-text::placeholder {
+  color: var(--pay-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+.pay-text:focus {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+
+/* ── Hojas ── */
+.pay-sheet-body {
+  display: grid;
+  gap: 1.05rem;
+}
+.pay-sheet-head {
+  display: grid;
+  gap: 0.3rem;
+  padding-right: 0.5rem;
+}
+.pos-sheet-title.pay-sheet-title {
+  font-size: 1.7rem;
+  line-height: 1.05;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.pay-sheet-sub {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pay-sheet-sub.is-ink {
+  color: var(--pos-ink-soft);
+}
+.pay-group {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.pay-group legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  padding: 0;
+}
+.pay-group legend small {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.pay-reasons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.pay-reasons .pay-opt {
+  min-height: 3.5rem;
+  padding: 0.4rem 0.7rem;
+  text-wrap: balance;
+}
+.pay-sheet-foot {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+.pay-sheet-foot .pos-btn {
+  min-width: 0;
+  min-height: 3.75rem;
+  flex: 1;
+  border-radius: 1rem;
+  font-size: 1.12rem;
+  white-space: normal;
+  text-wrap: balance;
+}
+.pay-sheet-foot .pos-btn:disabled {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink-soft);
+  opacity: 1;
+}
+.pay-sheet .pos-btn-quiet.pay-danger {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 42%, var(--pos-paper));
+  color: var(--pay-late-ink);
+}
+.pay-facts {
+  display: grid;
+  gap: 0.05rem;
+}
+.pay-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-height: 1.9rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.pay-facts dt {
+  color: var(--pos-ink-soft);
+}
+.pay-facts dd {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--pos-carbon);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pay-rows {
+  display: grid;
+  gap: 0.45rem;
+}
+
+/* ── Mientras carga, y cuando la mesa ya no está ── */
+.pay-skeleton .pay-title {
+  color: var(--pay-faint);
+}
+.pay-ghost {
+  height: 19rem;
+  opacity: 0.16;
+}
+.pay-ghost-dock {
+  height: 12rem;
+  opacity: 0.35;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pay-back:hover,
+  .pay-step-back:hover {
+    background: var(--pos-paper-2);
+  }
+  button.pay-line:hover,
+  button.pay-sum:hover,
+  .pay-payment:hover {
+    background: color-mix(in oklch, var(--pos-rule) 40%, var(--paper));
+  }
+  .pay-key:hover,
+  .pay-parts-step:hover {
+    background: var(--pos-rule);
+  }
+  .pay-opt:not([aria-pressed="true"]):hover {
+    background: var(--pos-rule);
+  }
+  .pay-act:hover {
+    background: oklch(1 0 0 / 0.14);
+  }
+  .pay-go:not(:disabled):not(.is-quiet):hover,
+  .pay-mini.is-main:not(:disabled):hover {
+    filter: brightness(1.18);
+  }
+  .pay-go.is-quiet:hover,
+  .pay-mini:not(.is-main):not(:disabled):hover,
+  .pay-toggle:hover,
+  .pay-copy:hover {
+    background: var(--pos-paper-2);
+  }
+  .pay-crumb:hover .pay-crumb-go {
+    background: var(--pos-paper-2);
+  }
+}
+
+/* ── Con ancho: la cuenta a la izquierda, cobrar a la derecha ── */
+@media (min-width: 900px) {
+  .pay {
+    --pay-pad: 1.25rem;
+  }
+  .pay-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(24rem, 38vw, 31rem);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "bill falta"
+      "bill dock";
+  }
+  .pay-main {
+    grid-area: bill;
+  }
+  .pay-flow {
+    gap: 0.95rem;
+    padding-top: 1rem;
+  }
+  /* Lo que falta pasa al papel de la derecha: tinta y carbónico en vez de paño. */
+  .pay-falta {
+    --falta-ink: var(--pos-carbon);
+    --falta-soft: var(--pos-ink-soft);
+    --falta-stub: var(--pos-paper-2);
+    --falta-stub-rule: var(--pos-rule);
+    grid-area: falta;
+    padding: 1.15rem 1.25rem 0.85rem;
+    border-bottom: 1px solid var(--pos-rule);
+    background: var(--pos-paper);
+    box-shadow: -1px 0 0 oklch(0 0 0 / 0.25);
+  }
+  .pay-falta-main {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .pay-falta-word {
+    font-size: 1.15rem;
+    color: var(--pos-ink);
+  }
+  .pay-falta-amount {
+    font-size: 3.6rem;
+  }
+  .pay-falta-meta b {
+    color: var(--pos-ink);
+  }
+  .pay-stub.is-now {
+    background: var(--pos-ink);
+    color: var(--pos-paper);
+  }
+  .pay-dock-edge {
+    display: none;
+  }
+  .pay-dock {
+    grid-area: dock;
+    max-height: none;
+    padding: 1rem 1.25rem 1.25rem;
+    box-shadow: -1px 0 0 oklch(0 0 0 / 0.25);
+  }
+  /* Con lugar, las teclas de los medios van de a dos y más altas. */
+  .pay-keys {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+  .pay-key {
+    min-height: 4.75rem;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.7rem;
+    padding: 0.4rem 1rem;
+    font-size: 1.12rem;
+  }
+  .pay-key small {
+    position: static;
+    margin-left: auto;
+    font-size: 0.92rem;
+  }
+  .pay-change > b {
+    font-size: 3.8rem;
+  }
+  /* El botón que manda queda siempre a la misma altura del panel, cobre lo que cobre: la mano lo
+     encuentra sin mirar. */
+  .pay-step {
+    display: flex;
+    min-height: min(100%, 33rem);
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .pay-step > .pay-after,
+  .pay-step > .pay-go:last-child,
+  .pay-step > .pay-go-row:last-child {
+    margin-top: auto;
+  }
+  .pay-step > .pay-after + .pay-go {
+    margin-top: 0;
+  }
+  .pay-sheet.pos-sheet {
+    right: auto;
+    left: 50%;
+    width: min(34rem, 100vw - 2rem);
+    translate: -50% 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+}
+
+/* «Reducir movimiento»: queda el color y se va el movimiento. */
+@media (prefers-reduced-motion: reduce) {
+  .pay,
+  .pay-sheet {
+    --pay-press: 1;
+  }
+  .pay[data-live] {
+    --pay-bump: none;
+  }
+  .pay-stamp.is-fresh {
+    animation: none;
+  }
+  /* El que gira dice «sigo en eso»: se queda, más lento. */
+  .pay-spin {
+    animation-duration: 1.8s;
+  }
+}

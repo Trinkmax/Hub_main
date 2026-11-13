@@ -3,6 +3,7 @@ import {
   FEATURE_KEYS,
   FEATURE_REGISTRY,
   featuresByGroup,
+  getEffectiveFeatures,
   getTenantFeatures,
   isFeatureEnabled,
 } from '@/lib/platform/features'
@@ -48,6 +49,29 @@ describe('isFeatureEnabled', () => {
   it('devuelve el estado efectivo de una key', () => {
     expect(isFeatureEnabled({ feature_flags: { kitchen: true } }, 'kitchen')).toBe(true)
     expect(isFeatureEnabled({ feature_flags: {} }, 'kitchen')).toBe(false)
+  })
+})
+
+describe('getEffectiveFeatures — lo que un interruptor trae consigo', () => {
+  it('el punto de venta trae el plano del salón aunque su interruptor esté apagado', () => {
+    const tenant = { feature_flags: { pos: true, floor_plan: false } }
+    expect(getEffectiveFeatures(tenant).floor_plan).toBe(true)
+    expect(isFeatureEnabled(tenant, 'floor_plan')).toBe(true)
+    // La posición del interruptor no cambia: es lo que muestra el panel de superadmin.
+    expect(getTenantFeatures(tenant).floor_plan).toBe(false)
+  })
+
+  it('sin punto de venta, el plano depende solo de su interruptor', () => {
+    expect(getEffectiveFeatures({ feature_flags: {} }).floor_plan).toBe(false)
+    expect(getEffectiveFeatures({ feature_flags: { floor_plan: true } }).floor_plan).toBe(true)
+    expect(getEffectiveFeatures({ feature_flags: { floor_plan: true } }).pos).toBe(false)
+  })
+
+  it('no prende nada más: los QR de mesa y el servicio de mesa siguen aparte', () => {
+    const f = getEffectiveFeatures({ feature_flags: { pos: true } })
+    expect(f.table_qr).toBe(false)
+    expect(f.table_service).toBe(false)
+    expect(f.kitchen).toBe(false)
   })
 })
 

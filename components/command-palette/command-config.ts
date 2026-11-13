@@ -1011,6 +1011,18 @@ export const commandEntries: CommandEntry[] = [
     roles: ['owner', 'editor'],
   },
   {
+    // Carta › Precios: cambiar un precio buscando, o subir toda la carta un porcentaje.
+    id: 'menu-prices',
+    label: 'Precios de la carta',
+    icon: Coins,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/menu/precios`,
+    keywords: ['precio', 'precios', 'aumento', 'aumentar', 'subir', 'inflación', 'porcentaje'],
+    roles: ['owner', 'editor'],
+    feature: 'pos',
+  },
+  {
     id: 'club',
     label: 'Club de beneficios',
     icon: Star,

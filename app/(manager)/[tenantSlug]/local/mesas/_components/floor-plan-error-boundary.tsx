@@ -1,5 +1,6 @@
 'use client'
 
+import './floor-editor.css'
 import { AlertTriangle } from 'lucide-react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
@@ -13,8 +14,8 @@ type FloorPlanErrorBoundaryState = {
 }
 
 /**
- * Si el editor visual de plano falla en render (p. ej. dnd-kit / geometría rara),
- * degradamos a la lista accesible en vez de romper toda la pantalla de mesas.
+ * Si el editor visual del plano falla al dibujarse (una geometría rara, el
+ * lienzo), queda en pie la lista de mesas en vez de romperse toda la pantalla.
  * Sin react-error-boundary en el repo → class component con React.Component.
  */
 export class FloorPlanErrorBoundary extends Component<
@@ -35,15 +36,12 @@ export class FloorPlanErrorBoundary extends Component<
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="space-y-4">
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
-          >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-            <p>
-              No pudimos cargar el editor visual de plano. Te mostramos la lista de mesas, donde
-              podés hacer todo igual. Probá recargar la página para volver al editor.
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          <div role="alert" className="fpe-paper fpe-alert">
+            <AlertTriangle aria-hidden />
+            <p style={{ margin: 0 }}>
+              No pude abrir el plano. Te dejo la lista de mesas, donde podés hacer lo mismo. Recargá
+              la página para volver al plano.
             </p>
           </div>
           {this.props.fallback}

@@ -1,0 +1,467 @@
+/* ============================================================
+   La bandeja de pedidos — el mundo «papel» (docs/features/pos.md)
+   ============================================================
+   Un descuento o una baja que necesita el OK no interrumpe a nadie: suena la campanita de la barra
+   de arriba. El encargado abre la hoja y contesta con un toque. Cada pedido es un papelito punteado
+   (todavía no es de verdad); cuando se contesta, se sella.
+
+   `.apv-bell` vive en la barra de arriba; `.apv-sheet` se dibuja fuera del árbol; `.apv-slip` (un
+   pedido) aparece también dentro de la cuenta de su mesa.
+   ============================================================ */
+
+.apv-bell,
+.apv-sheet,
+.apv-slip {
+  --apv-late-ink: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
+  --apv-stamp: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  --apv-draft: color-mix(in oklch, var(--pos-paper) 90%, var(--pos-kraft));
+  --apv-draft-rule: color-mix(in oklch, var(--pos-ink) 55%, var(--pos-paper));
+  --apv-press: 0.97;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── La campanita ── */
+.apv-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.apv-bell svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.apv-bell:active {
+  transform: scale(var(--apv-press));
+  background: var(--pos-paper-2);
+}
+.apv-bell:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.apv-count {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.1rem;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--pos-st-bill);
+  box-shadow: 0 0 0 2px var(--pos-paper);
+  color: var(--pos-on-dark);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* Hay algo esperando el OK de alguien: late, como lo listo en la comanda. */
+.apv-bell.is-ringing .apv-count::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--pos-st-bill);
+  opacity: 0;
+  animation: apv-pulse 1.7s var(--pos-ease) infinite;
+  pointer-events: none;
+}
+@keyframes apv-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+/* Pediste algo y todavía no te contestaron: un punto, sin número. */
+.apv-dot {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--pos-paper);
+  box-shadow:
+    inset 0 0 0 2px var(--pos-st-bill),
+    0 0 0 2px var(--pos-paper);
+}
+
+/* ── La hoja ── */
+.apv-sheet :focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.apv-body {
+  display: grid;
+  gap: 1.05rem;
+}
+.apv-head {
+  display: grid;
+  gap: 0.3rem;
+  padding-right: 0.5rem;
+}
+.pos-sheet-title.apv-title {
+  font-size: 1.7rem;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.apv-sub {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.apv-list {
+  display: grid;
+  gap: 0.6rem;
+}
+/* Un pedido: papel punteado mientras espera. */
+.apv-slip {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.8rem 0.8rem;
+  border-radius: 0.6rem;
+  background: var(--apv-draft);
+  outline: 1.5px dashed var(--apv-draft-rule);
+  outline-offset: -1.5px;
+  color: var(--pos-on-light);
+}
+/* Contestado: ya es de verdad. */
+.apv-slip.is-done {
+  background: var(--pos-paper-2);
+  outline: 1.5px solid var(--pos-rule);
+  color: var(--pos-ink);
+}
+.apv-slip-top {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.apv-slip-top b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* «Ver cuenta»: el toque mide 48 aunque el renglón sea bajo. */
+.apv-slip-link {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: none;
+  align-items: center;
+  gap: 0.15rem;
+  margin: -0.9rem -0.3rem -0.9rem auto;
+  padding: 0 0.3rem 0 0.6rem;
+  border-radius: 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.apv-slip-link svg {
+  width: 1rem;
+  height: 1rem;
+}
+/* Dentro de la cuenta de su mesa el papelito es más bajo: qué se pide, quién y los botones. */
+.apv-slip.is-inline {
+  gap: 0.4rem;
+  padding: 0.65rem 0.7rem 0.7rem;
+}
+.apv-slip.is-inline .apv-slip-top {
+  align-items: center;
+}
+.apv-slip.is-inline .apv-slip-top svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.apv-slip.is-inline .apv-slip-top b {
+  overflow: visible;
+  font-size: 1.14rem;
+  text-overflow: clip;
+  white-space: normal;
+}
+.apv-slip-top em {
+  flex: none;
+  margin-left: auto;
+  font-size: 1.02rem;
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 86%;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+}
+.apv-slip-what {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.apv-slip-what h3 {
+  min-width: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.apv-slip-what b {
+  flex: none;
+  margin-left: auto;
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  color: var(--pos-carbon);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.apv-slip-why {
+  font-size: 0.96rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.apv-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+.apv-btn {
+  display: inline-flex;
+  min-height: 3.25rem;
+  flex: 1 1 7rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 1rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1.1;
+  text-align: center;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.apv-btn svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+}
+.apv-btn:active {
+  transform: scale(var(--apv-press));
+}
+.apv-btn:disabled {
+  opacity: 0.55;
+}
+.apv-btn.is-main {
+  flex: 2 1 9rem;
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.apv-btn.is-link {
+  min-height: 3rem;
+  flex: 0 0 auto;
+  padding: 0 0.6rem;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.96rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+.apv-slip.is-inline .apv-btn {
+  min-height: 3rem;
+}
+.apv-confirm {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.apv-error {
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--apv-late-ink);
+  text-wrap: pretty;
+}
+/* Sello: lo contestado. */
+.apv-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.9rem;
+  padding: 0 0.55rem 0 0.45rem;
+  border: 2px solid currentColor;
+  border-radius: 0.3rem;
+  color: var(--apv-stamp);
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+}
+.apv-stamp svg {
+  width: 1rem;
+  height: 1rem;
+}
+.apv-stamp.is-no {
+  color: var(--apv-late-ink);
+}
+.apv-stamp.is-off {
+  color: var(--pos-ink-soft);
+}
+.apv-spin {
+  animation: apv-spin 0.9s linear infinite;
+}
+@keyframes apv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.apv-h {
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1.15;
+}
+.apv-recent {
+  display: grid;
+}
+.apv-recent > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0.5rem 0;
+}
+.apv-recent > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.apv-recent svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--apv-stamp);
+}
+.apv-recent li.is-no svg {
+  color: var(--apv-late-ink);
+}
+.apv-recent li.is-off svg {
+  color: var(--pos-ink-soft);
+}
+.apv-recent-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.apv-recent-main small {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.apv-empty {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.4rem 0 0.2rem;
+}
+.apv-empty h3 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1.1;
+}
+.apv-empty p {
+  max-width: 40ch;
+  font-size: 0.98rem;
+  line-height: 1.4;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.apv-foot {
+  display: flex;
+}
+.apv-foot .pos-btn {
+  min-height: 3.5rem;
+  flex: 1;
+  border-radius: 1rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .apv-bell:hover {
+    background: var(--pos-paper-2);
+  }
+  .apv-btn:not(.is-main):not(.is-link):not(:disabled):hover {
+    background: var(--pos-paper-2);
+  }
+  .apv-btn.is-main:not(:disabled):hover {
+    filter: brightness(1.18);
+  }
+}
+@media (min-width: 900px) {
+  .apv-sheet.pos-sheet {
+    right: auto;
+    left: 50%;
+    width: min(34rem, 100vw - 2rem);
+    translate: -50% 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .apv-bell,
+  .apv-sheet {
+    --apv-press: 1;
+  }
+  /* Sin el latido, la campanita se queda con el aro puesto. */
+  .apv-bell.is-ringing .apv-count::after {
+    animation: none;
+    opacity: 0.7;
+    transform: scale(1.25);
+  }
+  .apv-spin {
+    animation-duration: 1.8s;
+  }
+}

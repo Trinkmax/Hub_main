@@ -19,6 +19,8 @@ export const DECOR_KIND = z.enum(['wall', 'pillar', 'island', 'bar', 'door', 'te
 export const areaCreateSchema = z.object({
   name: z.string().trim().min(1).max(40),
   number_start: z.coerce.number().int().min(0).max(100000).default(1),
+  // Sucursal donde se crea el sector. Sin dato cae en la principal del bar.
+  branch_id: z.string().uuid().optional(),
 })
 
 export const areaRenameSchema = z.object({

@@ -2,50 +2,62 @@
 
 import { useRef } from 'react'
 
-type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
-
-type TransformRef = React.RefObject<HTMLDivElement | null>
+export type PaletteKind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
 
 export type UsePaletteDragArgs = {
-  /** Wrapper del stage (para medir su rect y validar que el drop cae adentro). */
-  wrapperRef: TransformRef
+  /** El tablero del plano (para medirlo y validar que se soltó adentro). */
+  wrapperRef: React.RefObject<HTMLDivElement | null>
   /** Crea el elemento en el punto de pantalla soltado (el editor convierte a coords lógicas). */
-  onDrop: (kind: Kind, clientX: number, clientY: number) => void
+  onDrop: (kind: PaletteKind, clientX: number, clientY: number) => void
+  /** Cuánto va a ocupar en pantalla lo que se arrastra (su tamaño por el zoom actual). */
+  footprint: (kind: PaletteKind) => { width: number; height: number; round: boolean }
 }
 
 // Umbral de pantalla para distinguir tap (agregar al centro) de drag (soltar en el punto).
 const THRESHOLD = 6
 
 /**
- * Drag-from-palette con **pointer events** (funciona en mouse Y touch — el HTML5
- * drag-and-drop no dispara en tablet/celular). Pinta un "ghost" siguiendo al
- * puntero de forma imperativa (sin re-render por frame → listeners estables, como
- * el resize). Al soltar dentro del stage llama `onDrop`. Un tap (sin mover) NO
- * dropea: lo maneja el `onClick` de la chip (agregar al centro), y este hook
- * suprime ese click cuando hubo un drag real (`shouldSuppressClick`).
+ * Arrastrar desde la paleta con **pointer events** (funciona con mouse Y con
+ * dedo — el drag-and-drop de HTML5 no dispara en tablet/celular). Lo que sigue
+ * al puntero es la HUELLA de lo que va a caer (su tamaño real con el zoom
+ * actual), pintada a mano, sin render por cuadro. Al soltar sobre el tablero
+ * llama `onDrop`. Un toque sin mover NO suelta nada: lo maneja el `onClick` del
+ * botón (agregar al centro), y este hook suprime ese click cuando hubo un
+ * arrastre de verdad (`shouldSuppressClick`).
  */
-export function usePaletteDrag({ wrapperRef, onDrop }: UsePaletteDragArgs) {
+export function usePaletteDrag({ wrapperRef, onDrop, footprint }: UsePaletteDragArgs) {
   const ghostRef = useRef<HTMLDivElement>(null)
+  const ghostLabelRef = useRef<HTMLSpanElement>(null)
   // Tras un drag real, el `click` que sigue (mouse/touch) se ignora una vez.
   const suppressClick = useRef(false)
 
-  const onChipPointerDown = (kind: Kind, label: string, e: React.PointerEvent) => {
+  const onChipPointerDown = (kind: PaletteKind, label: string, e: React.PointerEvent) => {
     if (e.button !== 0) return
     const startX = e.clientX
     const startY = e.clientY
     let moved = false
     const ghost = ghostRef.current
+    let half = { w: 0, h: 0 }
 
     function move(ev: PointerEvent) {
       const dx = ev.clientX - startX
       const dy = ev.clientY - startY
       if (!moved && Math.hypot(dx, dy) < THRESHOLD) return
-      moved = true
-      if (ghost) {
-        ghost.textContent = label
+      if (ghost && !moved) {
+        const size = footprint(kind)
+        const width = Math.max(28, size.width)
+        const height = Math.max(20, size.height)
+        half = { w: width / 2, h: height / 2 }
+        ghost.style.width = `${width}px`
+        ghost.style.height = `${height}px`
+        ghost.style.borderRadius = size.round ? '50%' : '10px'
+        if (ghostLabelRef.current) ghostLabelRef.current.textContent = label
         ghost.style.display = 'flex'
-        // Offset leve respecto al puntero/dedo para que el ghost no quede tapado.
-        ghost.style.transform = `translate3d(${ev.clientX + 10}px, ${ev.clientY + 10}px, 0)`
+      }
+      moved = true
+      // Centrada en el puntero: ahí mismo va a quedar el centro del elemento.
+      if (ghost) {
+        ghost.style.transform = `translate3d(${ev.clientX - half.w}px, ${ev.clientY - half.h}px, 0)`
       }
     }
 
@@ -85,14 +97,11 @@ export function usePaletteDrag({ wrapperRef, onDrop }: UsePaletteDragArgs) {
     return false
   }
 
-  // Ghost único, fixed y oculto por default; se muestra/posiciona imperativamente.
+  // Una sola huella, fija y oculta; se muestra y se mueve a mano.
   const ghostNode = (
-    <div
-      ref={ghostRef}
-      aria-hidden
-      className="pointer-events-none fixed left-0 top-0 z-[60] hidden select-none items-center rounded-md border border-primary/30 bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-lg"
-      style={{ display: 'none' }}
-    />
+    <div ref={ghostRef} aria-hidden className="fpe-ghost">
+      <span ref={ghostLabelRef} />
+    </div>
   )
 
   return { onChipPointerDown, shouldSuppressClick, ghostNode }

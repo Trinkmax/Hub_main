@@ -1,10 +1,10 @@
 import { signOutAction } from '@/components/shell/sign-out-action'
-import { getTenantFeatures } from '@/lib/platform/features'
+import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { AccountSheet } from './account-sheet'
 import { BottomTabBar } from './bottom-tab-bar'
 import { PwaInstallPrompt } from './install-prompt'
-import { PullToRefresh } from './pull-to-refresh'
+import { SalonMain } from './salon-main'
 import { SalonTopbar } from './salon-topbar'
 import { ServiceWorkerRegistration } from './service-worker-registration'
 
@@ -39,7 +39,7 @@ export function AppShellSalon({
   email: string
   children: React.ReactNode
 }) {
-  const features = getTenantFeatures(tenant)
+  const features = getEffectiveFeatures(tenant)
 
   return (
     <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
@@ -56,11 +56,7 @@ export function AppShellSalon({
         }
       />
 
-      <main className="flex-1 pb-[calc(var(--salon-tabbar-h)+1rem)] pt-3">
-        <PullToRefresh>
-          <div className="mx-auto w-full max-w-screen-md px-4">{children}</div>
-        </PullToRefresh>
-      </main>
+      <SalonMain>{children}</SalonMain>
 
       <BottomTabBar
         tenantSlug={tenant.slug}

@@ -1669,3 +1669,699 @@ html[data-tex-drag] [data-tex-ui] {
   --pur-event-soft: oklch(0.3 0.06 292);
 }
 /* ── fin de Compras ── */
+
+/* ── Punto de venta (docs/features/pos.md) ──
+   El mundo «papel»: el salón es una maqueta de cartón blanco sobre un paño verde, y lo único que tiene
+   color es el estado. Cada estado va con color + ícono + palabra, nunca con color solo.
+   Todo cuelga de `.pos` (los portales —hojas, diálogos— llevan la clase aparte). */
+.pos {
+  --pos-font: var(--font-pos), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* papel y tinta */
+  --pos-paper: oklch(0.988 0.01 88);
+  --pos-paper-2: oklch(0.962 0.018 88);
+  --pos-ink: oklch(0.21 0.032 165);
+  --pos-ink-soft: oklch(0.43 0.025 165);
+  --pos-rule: oklch(0.82 0.02 88);
+  /* tinta de carbónico: lo que el sistema escribe solo (horas, montos, comensales) */
+  --pos-carbon: oklch(0.4 0.14 285);
+  /* el paño */
+  --pos-board: oklch(0.285 0.048 165);
+  --pos-board-2: oklch(0.215 0.04 165);
+  --pos-board-ink: oklch(0.93 0.02 100);
+  --pos-board-soft: oklch(0.74 0.035 140);
+  /* la maqueta */
+  --pos-floor: oklch(0.93 0.022 88);
+  --pos-floor-side: oklch(0.72 0.03 85);
+  --pos-card: oklch(0.992 0.006 88);
+  --pos-card-2: oklch(0.905 0.012 88);
+  --pos-card-3: oklch(0.83 0.014 88);
+  --pos-card-4: oklch(0.745 0.016 88);
+  --pos-seat: oklch(0.87 0.014 88);
+  --pos-wall: oklch(0.8 0.02 150);
+  --pos-kraft: oklch(0.73 0.06 72);
+  --pos-shadow: oklch(0.18 0.04 165 / 0.3);
+  /* estados */
+  --pos-st-reserved: oklch(0.52 0.17 300);
+  --pos-st-seated: oklch(0.4 0.035 165);
+  --pos-st-kitchen: oklch(0.7 0.165 58);
+  --pos-st-ready: oklch(0.72 0.19 148);
+  --pos-st-eating: oklch(0.6 0.075 200);
+  --pos-st-bill: oklch(0.53 0.155 255);
+  --pos-st-late: oklch(0.57 0.215 27);
+  --pos-on-dark: oklch(0.99 0.006 88);
+  --pos-on-light: oklch(0.2 0.04 70);
+  /* movimiento */
+  --pos-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  font-family: var(--pos-font);
+}
+
+/* El tablero donde apoya la maqueta. */
+.pos-board {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in oklch, var(--pos-board) 100%, white 6%) 0%, var(--pos-board) 42%, var(--pos-board-2) 100%);
+  color: var(--pos-board-ink);
+  touch-action: manipulation;
+}
+
+.pos-solid { stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pos-top { stroke: oklch(0.2 0.03 165 / 0.2); stroke-width: 0.75; }
+.pos-side-0 { stroke: none; }
+.pos-side-1 { stroke: none; }
+.pos-side-2 { stroke: none; }
+.pos-shadow { fill: var(--pos-shadow); }
+
+/* Piso */
+.pos-floor-top { fill: var(--pos-floor); stroke: oklch(0.2 0.03 165 / 0.18); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.pos-floor-side-0 { fill: color-mix(in oklch, var(--pos-floor-side) 82%, black); }
+.pos-floor-side-1 { fill: var(--pos-floor-side); }
+.pos-floor-side-2 { fill: color-mix(in oklch, var(--pos-floor-side) 80%, white); }
+
+/* Cartón: mesas, sillas, patas. `--c` es el color de la tapa; los lados salen de mezclarlo. */
+.pos-r-tabletop { --c: var(--pos-card); }
+.pos-r-pedestal { --c: var(--pos-card-3); }
+.pos-r-chair { --c: var(--pos-seat); }
+.pos-r-chairback { --c: var(--pos-card-2); }
+.pos-r-stool { --c: var(--pos-seat); }
+.pos-r-wall { --c: var(--pos-wall); }
+.pos-r-pillar { --c: var(--pos-wall); }
+.pos-r-island { --c: var(--pos-card-2); }
+.pos-r-booth { --c: var(--pos-card-2); }
+.pos-r-stage { --c: var(--pos-card-2); }
+.pos-r-bar { --c: var(--pos-kraft); }
+.pos-solid .pos-top { fill: var(--c); transition: fill 240ms var(--pos-ease); }
+.pos-solid .pos-side-2 { fill: color-mix(in oklch, var(--c) 88%, black); transition: fill 240ms var(--pos-ease); }
+.pos-solid .pos-side-1 { fill: color-mix(in oklch, var(--c) 76%, black); transition: fill 240ms var(--pos-ease); }
+.pos-solid .pos-side-0 { fill: color-mix(in oklch, var(--c) 63%, black); transition: fill 240ms var(--pos-ease); }
+
+/* El estado tiñe la tapa de la mesa y pinta a los comensales. */
+.pos-st-reserved { --st: var(--pos-st-reserved); }
+.pos-st-seated { --st: var(--pos-st-seated); }
+.pos-st-kitchen { --st: var(--pos-st-kitchen); }
+.pos-st-ready { --st: var(--pos-st-ready); }
+.pos-st-eating { --st: var(--pos-st-eating); }
+.pos-st-bill { --st: var(--pos-st-bill); }
+.pos-urg-late { --st: var(--pos-st-late); }
+.pos-r-tabletop[class*='pos-st-']:not(.pos-st-free) { --c: color-mix(in oklch, var(--st) 30%, var(--pos-card)); }
+.pos-r-tabletop.pos-st-ready,
+.pos-r-tabletop.pos-urg-late { --c: color-mix(in oklch, var(--st) 52%, var(--pos-card)); }
+.pos-r-pawn { --c: var(--st, var(--pos-ink-soft)); }
+.pos-r-pawn .pos-head { fill: color-mix(in oklch, var(--c) 88%, white); stroke: oklch(0.2 0.03 165 / 0.25); stroke-width: 0.75; vector-effect: non-scaling-stroke; }
+.pos-r-chair.pos-is-open { --c: color-mix(in oklch, var(--st, var(--pos-seat)) 14%, var(--pos-seat)); }
+
+/* Halo en el piso: lo urgente se mueve. */
+.pos-halo { fill: none; stroke: var(--st); stroke-width: 3; vector-effect: non-scaling-stroke; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.pos-halo.pos-st-ready { animation: pos-halo 1.7s var(--pos-ease) infinite; }
+.pos-halo.pos-urg-late { animation: pos-halo 2.4s var(--pos-ease) infinite; }
+@keyframes pos-halo {
+  0% { opacity: 0.85; transform: scale(0.82); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+/* Número de mesa: impreso sobre la tapa. */
+.pos-num {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-stretch: 78%;
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  color: var(--pos-ink);
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pos-num small { display: block; margin-top: 0.14em; font-size: 0.52em; font-weight: 600; font-stretch: 88%; color: var(--pos-carbon); letter-spacing: 0; }
+.pos-num.pos-is-free { color: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-card)); font-weight: 700; }
+
+/* La bandera: color + ícono + palabra, parada sobre la mesa. */
+.pos-flag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pos-flag-plate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  height: 1.9em;
+  padding: 0 0.6em 0 0.5em;
+  border-radius: 0.55em;
+  background: var(--st);
+  color: var(--pos-on-dark);
+  font-size: var(--flag-size, 12px);
+  font-weight: 700;
+  font-stretch: 84%;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0.35em 0.7em -0.25em oklch(0.15 0.04 165 / 0.55), 0 1px 0 0 oklch(1 0 0 / 0.22) inset;
+}
+.pos-flag-plate svg { width: 1.1em; height: 1.1em; flex: none; }
+.pos-flag-time { font-weight: 600; opacity: 0.92; }
+.pos-flag.pos-st-kitchen .pos-flag-plate,
+.pos-flag.pos-st-ready .pos-flag-plate { color: var(--pos-on-light); }
+.pos-flag.pos-urg-late .pos-flag-plate { color: var(--pos-on-dark); }
+.pos-flag.is-icon .pos-flag-plate { width: 1.9em; padding: 0; justify-content: center; border-radius: 0.6em; }
+.pos-flag-dot { position: absolute; top: -0.25em; right: -0.25em; width: 0.7em; height: 0.7em; border-radius: 999px; background: var(--pos-paper); box-shadow: 0 0 0 2px var(--pos-st-bill); }
+.pos-flag-plate { position: relative; }
+.pos-flag-pole { width: 2px; height: var(--pole, 10px); background: color-mix(in oklch, var(--st) 70%, black); border-radius: 0 0 1px 1px; }
+.pos-flag.pos-st-ready { animation: pos-hop 1.15s var(--pos-ease) infinite; }
+@keyframes pos-hop {
+  0%, 100% { translate: 0 0; }
+  42% { translate: 0 -5px; }
+}
+/* Aviso chico pegado a la bandera: «tanda en espera», «próxima reserva». */
+.pos-flag-note {
+  margin-bottom: 2px;
+  padding: 0.15em 0.45em;
+  border-radius: 999px;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  font-size: calc(var(--flag-size, 12px) * 0.82);
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px oklch(0.15 0.04 165 / 0.35);
+}
+
+/* Zona de toque de cada mesa. */
+.pos-hit {
+  position: absolute;
+  border-radius: 14px;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 140ms var(--pos-ease);
+}
+.pos-hit:focus-visible { box-shadow: 0 0 0 3px var(--pos-paper), 0 0 0 6px var(--pos-st-bill); }
+.pos-hit:active { background: oklch(1 0 0 / 0.14); }
+@media (hover: hover) and (pointer: fine) {
+  .pos-hit:hover { background: oklch(1 0 0 / 0.08); }
+}
+
+/* Cartel sobre el piso (nombres de zona, puertas). */
+.pos-decal {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-stretch: 80%;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--pos-ink) 42%, var(--pos-floor));
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-halo, .pos-flag.pos-st-ready { animation: none; }
+  .pos-halo.pos-st-ready, .pos-halo.pos-urg-late { opacity: 0.7; }
+  .pos-solid .pos-top, .pos-solid [class*='pos-side-'] { transition: none; }
+}
+
+/* Pantalla del salón: franja de la sucursal, pestañas de sector y la maqueta ocupando el resto. */
+.pos-floor-screen {
+  position: relative;
+  /* Las mesas se apilan por profundidad con z-index propios: que no se escapen por encima de las hojas. */
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--salon-tabbar-h));
+  min-height: 420px;
+  background: var(--pos-board-2);
+}
+.pos-band {
+  position: relative;
+  z-index: 3;
+  padding: 0.7rem 1rem 0.75rem;
+  background: color-mix(in oklch, var(--branch, var(--pos-board)) 86%, black);
+  color: var(--pos-on-dark);
+}
+.pos-band-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  max-width: 60%;
+  margin-left: -0.25rem;
+  padding: 0 0.4rem 0 0.25rem;
+  border-radius: 0.6rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  letter-spacing: -0.005em;
+  line-height: 1;
+}
+.pos-band-branch:not(:disabled):active { background: oklch(1 0 0 / 0.14); }
+.pos-band-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--branch, var(--pos-board));
+  box-shadow: 0 0 0 2px oklch(1 0 0 / 0.85);
+}
+.pos-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.5rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  background: oklch(0 0 0 / 0.22);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pos-live-dot { width: 0.45rem; height: 0.45rem; border-radius: 999px; background: currentColor; opacity: 0.55; }
+.pos-live.is-live .pos-live-dot { background: oklch(0.85 0.19 148); opacity: 1; box-shadow: 0 0 0 3px oklch(0.85 0.19 148 / 0.25); }
+.pos-live.is-off { background: var(--pos-st-late); }
+.pos-band-summary {
+  margin-top: 0.3rem;
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.3;
+  opacity: 0.95;
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.pos-branch-menu {
+  position: absolute;
+  left: 0.75rem;
+  top: calc(100% - 0.4rem);
+  min-width: 14rem;
+  padding: 0.35rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  box-shadow: 0 18px 40px -12px oklch(0.15 0.04 165 / 0.55), 0 0 0 1px oklch(0.2 0.03 165 / 0.08);
+}
+.pos-branch-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: left;
+}
+.pos-branch-menu button[aria-current='true'] { background: var(--pos-paper-2); }
+.pos-branch-menu button:active { background: var(--pos-rule); }
+.pos-branch-menu .pos-band-swatch { box-shadow: 0 0 0 2px var(--pos-paper), 0 0 0 3px oklch(0.2 0.03 165 / 0.25); }
+
+/* Pestañas de sector: solapas de fichero pegadas al paño. */
+.pos-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  padding: 0.55rem 0.75rem 0;
+  background: var(--pos-board-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pos-tabs::-webkit-scrollbar { display: none; }
+.pos-tab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.45rem;
+  height: 2.75rem;
+  padding: 0 0.95rem;
+  border-radius: 0.7rem 0.7rem 0 0;
+  background: oklch(1 0 0 / 0.07);
+  color: var(--pos-board-soft);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  white-space: nowrap;
+  transition: background-color 160ms var(--pos-ease), color 160ms var(--pos-ease);
+}
+.pos-tab.is-active { background: var(--pos-board); color: var(--pos-board-ink); }
+.pos-tab:not(.is-active):active { background: oklch(1 0 0 / 0.14); }
+.pos-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.pos-view {
+  margin: 0;
+  border: 0;
+  min-inline-size: auto;
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2000;
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 0.95rem;
+  background: oklch(0.14 0.03 165 / 0.82);
+  box-shadow: 0 10px 24px -8px oklch(0 0 0 / 0.6), 0 0 0 1px oklch(1 0 0 / 0.1) inset;
+  backdrop-filter: blur(8px);
+}
+.pos-view button {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.7rem;
+  color: var(--pos-board-soft);
+}
+.pos-view button.is-active { background: var(--pos-paper); color: var(--pos-ink); }
+.pos-floor-stage { flex: 1; min-height: 0; }
+.pos-floor-screen .pos-board { background: radial-gradient(130% 80% at 50% 0%, var(--pos-board) 0%, var(--pos-board) 35%, var(--pos-board-2) 100%); }
+
+/* Lista: lo que pide atención primero. */
+.pos-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.6rem 0.75rem 1rem; background: var(--pos-board); display: grid; gap: 0.4rem; align-content: start; }
+.pos-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 3.75rem;
+  padding: 0.5rem 0.7rem 0.5rem 0.55rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  text-align: left;
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-row:active { transform: scale(0.985); }
+.pos-row.pos-st-free { background: color-mix(in oklch, var(--pos-paper) 86%, var(--pos-board)); }
+.pos-row-num {
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  flex: none;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--st, var(--pos-rule)) 26%, var(--pos-paper));
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+}
+.pos-row.pos-st-free .pos-row-num { background: transparent; box-shadow: inset 0 0 0 1.5px var(--pos-rule); }
+.pos-row-who { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; font-weight: 700; }
+.pos-row-who em { font-style: normal; font-weight: 600; color: var(--pos-carbon); }
+.pos-row-note { display: block; font-size: 0.8rem; font-weight: 600; color: var(--pos-st-bill); }
+.pos-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2rem;
+  padding: 0 0.7rem 0 0.55rem;
+  border-radius: 0.6rem;
+  background: var(--st);
+  color: var(--pos-on-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pos-chip svg { width: 1rem; height: 1rem; }
+.pos-chip b { font-weight: 600; opacity: 0.9; }
+.pos-st-kitchen > .pos-chip, .pos-st-ready > .pos-chip { color: var(--pos-on-light); }
+.pos-urg-late > .pos-chip { color: var(--pos-on-dark); }
+
+.pos-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: var(--pos-board-ink);
+  background: var(--pos-board);
+}
+.pos-empty h2 { font-size: 1.6rem; font-weight: 800; font-stretch: 82%; line-height: 1.1; text-wrap: balance; }
+.pos-empty p { max-width: 34ch; font-size: 0.95rem; line-height: 1.45; color: var(--pos-board-soft); text-wrap: pretty; }
+
+/* Botones del punto de venta. */
+.pos-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3.25rem;
+  padding: 0 1.25rem;
+  border-radius: 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease), filter 140ms var(--pos-ease);
+}
+.pos-btn:active { transform: scale(0.97); }
+.pos-btn:disabled { opacity: 0.55; }
+.pos-btn:focus-visible { outline: 3px solid var(--pos-st-bill); outline-offset: 2px; }
+.pos-btn-primary { background: var(--pos-ink); color: var(--pos-paper); }
+.pos-empty .pos-btn-primary { background: var(--pos-paper); color: var(--pos-ink); }
+.pos-btn-quiet { background: var(--pos-paper-2); color: var(--pos-ink); box-shadow: inset 0 0 0 1.5px var(--pos-rule); }
+.pos-link { min-height: 2.75rem; padding: 0 0.25rem; font-size: 0.95rem; font-weight: 700; color: var(--pos-ink-soft); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Hojas (suben desde abajo). */
+.pos-sheet { background: var(--pos-paper); color: var(--pos-ink); border-color: transparent; max-height: 92dvh; gap: 0; padding: 0; }
+.pos-sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 1.6rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom)); }
+.pos-sheet-title { font-family: var(--pos-font); font-size: 2rem; font-weight: 800; font-stretch: 78%; line-height: 1; letter-spacing: -0.01em; }
+.pos-sheet-hint { font-size: 0.9rem; font-weight: 600; color: var(--pos-ink-soft); }
+.pos-sheet-q { font-size: 1.02rem; font-weight: 700; color: var(--pos-ink); }
+.pos-res {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 4.25rem;
+  padding: 0.6rem 0.9rem 0.6rem 0.7rem;
+  border-radius: 0.95rem;
+  background: color-mix(in oklch, var(--pos-st-reserved) 9%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-reserved) 30%, var(--pos-paper));
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-res.is-mine { background: color-mix(in oklch, var(--pos-st-reserved) 16%, var(--pos-paper)); box-shadow: inset 0 0 0 2px var(--pos-st-reserved); }
+.pos-res:active { transform: scale(0.985); }
+.pos-res:disabled { opacity: 0.6; }
+.pos-res-time { font-size: 1.35rem; font-weight: 800; font-stretch: 78%; color: var(--pos-st-reserved); font-variant-numeric: tabular-nums; }
+.pos-res-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.1rem; font-weight: 800; }
+.pos-res-name em { font-style: normal; font-weight: 700; color: var(--pos-carbon); }
+.pos-res-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; font-weight: 500; color: var(--pos-ink-soft); }
+.pos-count-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.pos-count {
+  display: grid;
+  place-items: center;
+  height: 4.25rem;
+  border-radius: 0.95rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 2rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variant-numeric: tabular-nums;
+  transition: transform 120ms var(--pos-ease), background-color 120ms var(--pos-ease);
+}
+.pos-count:active { transform: scale(0.95); background: var(--pos-ink); color: var(--pos-paper); }
+.pos-count:disabled { opacity: 0.5; }
+.pos-count.is-over { color: var(--pos-ink-soft); background: transparent; }
+.pos-step { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--pos-paper-2); box-shadow: inset 0 0 0 1.5px var(--pos-rule); }
+.pos-step:active { background: var(--pos-rule); }
+.pos-step-value { min-width: 3ch; text-align: center; font-size: 2.2rem; font-weight: 800; font-stretch: 78%; font-variant-numeric: tabular-nums; }
+
+@media (min-width: 900px) {
+  .pos-band { padding: 0.85rem 1.5rem 0.9rem; }
+  .pos-tabs { padding-inline: 1.25rem; }
+  .pos-band-summary { font-size: 0.95rem; }
+}
+
+/* La barra de arriba del punto de venta: una sola fila. Dónde estás (con el color de la sucursal), los
+   sectores, y el resto de la pantalla para el mapa. */
+.pos-topbar {
+  position: relative;
+  z-index: 30;
+  flex: none;
+  padding-top: env(safe-area-inset-top);
+  background: var(--pos-paper);
+  border-bottom: 1px solid var(--pos-rule);
+  color: var(--pos-ink);
+}
+.pos-topbar-row { display: flex; align-items: center; gap: 0.5rem; height: var(--salon-topbar-h); padding: 0 0.6rem; }
+.pos-topbar-account { flex: none; margin-left: auto; }
+.pos-top-branch-wrap { position: relative; flex: none; }
+.pos-top-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.5rem;
+  max-width: 9.5rem;
+  padding: 0 0.65rem 0 0.6rem;
+  border-radius: 0.8rem;
+  background: var(--branch, var(--pos-board));
+  color: var(--pos-on-dark);
+  font-size: 1rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-top-branch:not(:disabled):active { transform: scale(0.97); }
+.pos-top-dot { width: 0.5rem; height: 0.5rem; flex: none; border-radius: 999px; background: oklch(1 0 0 / 0.55); }
+.pos-top-dot.is-live { background: oklch(0.88 0.2 148); box-shadow: 0 0 0 3px oklch(0.88 0.2 148 / 0.28); }
+.pos-top-dot.is-off { background: var(--pos-on-dark); box-shadow: 0 0 0 3px var(--pos-st-late); }
+.pos-top-branch-wrap .pos-branch-menu { left: 0; top: calc(100% + 0.4rem); }
+.pos-top-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, black calc(100% - 1.25rem), transparent);
+}
+.pos-top-tabs::-webkit-scrollbar { display: none; }
+.pos-top-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.5rem;
+  padding: 0 0.7rem;
+  border-radius: 0.8rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  white-space: nowrap;
+  transition: background-color 160ms var(--pos-ease), color 160ms var(--pos-ease);
+}
+.pos-top-tab.is-active { background: var(--pos-ink); color: var(--pos-paper); }
+.pos-top-tab:not(.is-active):active { background: var(--pos-paper-2); }
+.pos-top-tab:focus-visible, .pos-top-branch:focus-visible { outline: 3px solid var(--pos-st-bill); outline-offset: 2px; }
+.pos-top-meta { display: none; flex: none; font-size: 0.86rem; font-weight: 500; color: var(--pos-ink-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pos-top-meta b { font-weight: 700; color: var(--pos-ink); }
+.pos-top-meta.is-always { display: inline; }
+@media (min-width: 900px) {
+  .pos-topbar-row { padding: 0 1rem; gap: 0.75rem; }
+  .pos-top-meta { display: inline; }
+  .pos-topbar-account { margin-left: 0; }
+}
+
+/* El mapa ocupa todo lo que queda; el resumen del salón va encima, como fichas. */
+/* `isolation`: las mesas y las fichas usan z-index altos entre ellas; que no le ganen al menú de la barra. */
+.pos-stage { position: relative; isolation: isolate; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.pos-caption {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.8rem;
+  right: 0.8rem;
+  z-index: 2000;
+  pointer-events: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--pos-board-soft);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.pos-caption.is-focus { color: var(--pos-board-ink); }
+.pos-hud {
+  position: absolute;
+  left: 0.75rem;
+  right: 10.25rem;
+  bottom: 0.75rem;
+  z-index: 2000;
+  pointer-events: none;
+}
+.pos-hud-chips { display: flex; flex-wrap: wrap-reverse; gap: 0.3rem; pointer-events: auto; }
+.pos-hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 3rem;
+  padding: 0 0.5rem;
+  border-radius: 0.85rem;
+  background: oklch(0.14 0.03 165 / 0.82);
+  color: var(--pos-board-ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px -10px oklch(0 0 0 / 0.6), inset 0 0 0 1px oklch(1 0 0 / 0.1);
+  backdrop-filter: blur(8px);
+  transition: transform 140ms var(--pos-ease), background-color 160ms var(--pos-ease), color 160ms var(--pos-ease);
+}
+.pos-hud-chip svg { width: 1rem; height: 1rem; color: var(--chip, currentColor); }
+.pos-hud-chip b { font-size: 1.1rem; font-weight: 800; font-stretch: 84%; font-variant-numeric: tabular-nums; }
+.pos-hud-chip span { display: none; }
+.pos-hud-chip.is-ready { --chip: var(--pos-st-ready); }
+.pos-hud-chip.is-bill { --chip: oklch(0.74 0.13 250); }
+.pos-hud-chip.is-kitchen { --chip: var(--pos-st-kitchen); }
+.pos-hud-chip.is-late { --chip: oklch(0.72 0.19 27); }
+.pos-hud-chip:active { transform: scale(0.96); }
+.pos-hud-chip.is-on { background: var(--pos-paper); color: var(--pos-ink); }
+.pos-hud-chip.is-on svg { color: var(--pos-ink); }
+.pos-hud-chip:focus-visible { outline: 3px solid var(--pos-paper); outline-offset: 2px; }
+@media (min-width: 900px) {
+  /* Con ancho, la gente y las mesas ya están en la barra de arriba; acá queda solo el aviso del filtro. */
+  .pos-caption:not(.is-focus) { display: none; }
+  .pos-hud-chip { padding: 0 0.8rem 0 0.65rem; gap: 0.4rem; }
+  .pos-hud-chip span { display: inline; }
+}
+.pos-offline {
+  position: absolute;
+  top: 2rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.8rem;
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+/* Lo que queda fuera del filtro se apaga, no desaparece: se sigue viendo dónde está cada mesa. */
+.pos-dim { opacity: 0.28; transition: opacity 180ms var(--pos-ease); }
+.pos-solid, .pos-num, .pos-flag { transition: opacity 180ms var(--pos-ease); }
+.pos-list { background: var(--pos-board); padding-bottom: 5.5rem; }
+/* En la lista, el resumen va arriba de la primera fila (no encima) y las filas se apagan al pasar por
+   debajo de las fichas, en vez de asomarse entre ellas. */
+.pos-stage[data-view='list'] .pos-caption {
+  position: static;
+  order: -1;
+  padding: 0.55rem 0.8rem 0;
+  background: var(--pos-board);
+}
+.pos-stage[data-view='list']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1999;
+  height: 6.5rem;
+  background: linear-gradient(to top, var(--pos-board-2) 42%, transparent);
+  pointer-events: none;
+}
+/* ── fin de Punto de venta ── */

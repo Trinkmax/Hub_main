@@ -1,59 +1,73 @@
 'use client'
 
-import { Box, Columns3, DoorOpen, Music, Square, Table2, Type, Wine } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-
-type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
+import {
+  BarGlyph,
+  DoorGlyph,
+  IslandGlyph,
+  PillarGlyph,
+  StageGlyph,
+  TextGlyph,
+  WallGlyph,
+} from './glyphs'
+import type { PaletteKind } from './use-palette-drag'
 
 export type ElementPaletteProps = {
-  /** Fallback tap/teclado: agrega el elemento en el centro del área visible. */
-  onQuickAdd: (kind: Kind) => void
-  /** Inicia el drag-from-palette por pointer (mouse + touch). */
-  onChipPointerDown: (kind: Kind, label: string, e: React.PointerEvent) => void
-  /** Suprime el click que dispara el navegador tras un drag real (evita doble alta). */
+  /** Toque o teclado: agrega el elemento en el centro del sector. */
+  onQuickAdd: (kind: PaletteKind) => void
+  /** Inicia el arrastre desde la paleta (mouse y dedo). */
+  onChipPointerDown: (kind: PaletteKind, label: string, e: React.PointerEvent) => void
+  /** Suprime el click que dispara el navegador tras un arrastre real (evita doble alta). */
   shouldSuppressClick: () => boolean
 }
 
-// kind + label es-AR + ícono. "Mesa" primero (acción principal), luego estructura.
-const ITEMS: { kind: Kind; label: string; Icon: typeof Box; primary?: boolean }[] = [
-  { kind: 'table', label: 'Mesa', Icon: Table2, primary: true },
-  { kind: 'bar', label: 'Barra', Icon: Wine },
-  { kind: 'wall', label: 'Pared', Icon: Columns3 },
-  { kind: 'pillar', label: 'Columna', Icon: Box },
-  { kind: 'island', label: 'Isla', Icon: Square },
-  { kind: 'door', label: 'Puerta', Icon: DoorOpen },
-  { kind: 'stage', label: 'Escenario', Icon: Music },
-  { kind: 'text', label: 'Texto', Icon: Type },
+// Lo que no es mesa: primero lo que más se usa para armar un salón.
+const ITEMS: {
+  kind: Exclude<PaletteKind, 'table'>
+  label: string
+  Glyph: (props: { className?: string }) => React.ReactNode
+}[] = [
+  { kind: 'bar', label: 'Barra', Glyph: BarGlyph },
+  { kind: 'wall', label: 'Pared', Glyph: WallGlyph },
+  { kind: 'pillar', label: 'Columna', Glyph: PillarGlyph },
+  { kind: 'island', label: 'Isla', Glyph: IslandGlyph },
+  { kind: 'door', label: 'Puerta', Glyph: DoorGlyph },
+  { kind: 'stage', label: 'Escenario', Glyph: StageGlyph },
+  { kind: 'text', label: 'Texto', Glyph: TextGlyph },
 ]
 
+/**
+ * La paleta: lo que se puede apoyar en el piso además de las mesas. Cada pieza
+ * se arrastra al plano (cae donde se suelta) o se toca (cae en el centro).
+ */
 export function ElementPalette({
   onQuickAdd,
   onChipPointerDown,
   shouldSuppressClick,
 }: ElementPaletteProps) {
   return (
-    <fieldset className="flex flex-wrap items-center gap-2 border-0 p-0">
-      <legend className="sr-only">Agregar al plano (arrastrá al lienzo o tocá para agregar)</legend>
-      {ITEMS.map(({ kind, label, Icon, primary }) => (
-        <Button
+    <fieldset className="fpe-rail fpe-paper">
+      <legend className="fpe-sr">
+        Agregar al plano: arrastrá una pieza al piso o tocala para agregarla en el centro
+      </legend>
+      <span className="fpe-rail-title" aria-hidden>
+        Agregar
+      </span>
+      {ITEMS.map(({ kind, label, Glyph }) => (
+        <button
           key={kind}
           type="button"
-          variant={primary ? 'default' : 'outline'}
-          size="sm"
-          // Drag por pointer (mouse + touch); el drop sobre el stage crea el elemento.
+          className="fpe-tool"
+          title="Arrastrala al plano o tocala"
+          aria-label={`Agregar ${label.toLowerCase()}`}
           onPointerDown={(e) => onChipPointerDown(kind, label, e)}
-          // tap/teclado → agregar al centro. Si vino de un drag real, el hook lo suprime.
           onClick={() => {
             if (shouldSuppressClick()) return
             onQuickAdd(kind)
           }}
-          // touch-none: que el drag de la chip no dispare scroll en tablet/celular.
-          className="cursor-grab touch-none gap-1.5 active:cursor-grabbing"
-          aria-label={`Agregar ${label} (arrastrá al plano o tocá para agregar en el centro)`}
         >
-          <Icon className="size-4" aria-hidden />
+          <Glyph />
           {label}
-        </Button>
+        </button>
       ))}
     </fieldset>
   )

@@ -12,95 +12,107 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
 import type { UnplacedTable } from '@/lib/floor-plan/queries'
+import { cn } from '@/lib/utils'
+import { PAPEL } from './papel'
 
 type UnplacedTrayProps = {
   tables: UnplacedTable[]
-  onPlace: (tableId: string) => void
+  /** El sector donde caen al ubicarlas. */
+  areaName: string
+  /** Ubica la mesa en el sector. Termina cuando el servidor contestó (bien o mal). */
+  onPlace: (tableId: string) => Promise<void>
   /** Borra la mesa (y su QR) definitivamente. */
   onDelete: (tableId: string) => void
 }
 
-function TrayChip({
-  table,
-  onPlace,
-  onAskDelete,
-}: {
-  table: UnplacedTable
-  onPlace: (tableId: string) => void
-  onAskDelete: (table: UnplacedTable) => void
-}) {
-  return (
-    <li className="flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1.5">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-sm">{table.label}</p>
-        <p className="truncate text-muted-foreground text-xs">
-          {table.capacity != null ? `${table.capacity} pers.` : 'Sin capacidad'} ·{' '}
-          <code>{table.qr_token}</code>
-        </p>
-      </div>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-        onClick={() => onAskDelete(table)}
-        aria-label={`Eliminar mesa ${table.label}`}
-        title="Eliminar mesa"
-      >
-        <Trash2 className="size-3.5" />
-      </Button>
-      <Button size="sm" variant="outline" className="shrink-0" onClick={() => onPlace(table.id)}>
-        <MapPin className="size-3.5" />
-        Colocar
-      </Button>
-    </li>
-  )
-}
+/**
+ * Mesas que existen pero no están dibujadas en ningún sector de la sucursal
+ * (se las quitó del plano, o se reactivaron). «Ubicar» las apoya en el centro
+ * del sector que se está mirando.
+ */
+export function UnplacedTray({ tables, areaName, onPlace, onDelete }: UnplacedTrayProps) {
+  const [doomed, setDoomed] = useState<UnplacedTable | null>(null)
+  // La que se está ubicando: su botón lo dice mientras viaja al servidor.
+  const [placing, setPlacing] = useState<string | null>(null)
 
-export function UnplacedTray({ tables, onPlace, onDelete }: UnplacedTrayProps) {
-  const [pending, setPending] = useState<UnplacedTable | null>(null)
+  const place = async (tableId: string) => {
+    setPlacing(tableId)
+    try {
+      await onPlace(tableId)
+    } finally {
+      setPlacing(null)
+    }
+  }
+
+  if (tables.length === 0) return null
 
   return (
-    <section aria-label="Mesas no ubicadas" className="grid gap-2">
-      <h2 className="font-display font-semibold text-sm">Mesas sin ubicar</h2>
-      {tables.length === 0 ? (
-        <p className="text-muted-foreground text-xs">No hay mesas activas pendientes de ubicar.</p>
-      ) : (
-        <ul className="grid gap-1.5">
-          {tables.map((table) => (
-            <TrayChip key={table.id} table={table} onPlace={onPlace} onAskDelete={setPending} />
-          ))}
-        </ul>
-      )}
+    <div className="fpe-group">
+      <h3 className="fpe-group-title">
+        {tables.length === 1 ? '1 mesa sin ubicar' : `${tables.length} mesas sin ubicar`}
+      </h3>
+      <ul className="fpe-tray">
+        {tables.map((table) => (
+          <li key={table.id} className="fpe-tray-item">
+            <span className="fpe-numchip">{table.label}</span>
+            <span className="fpe-tray-meta">
+              {table.capacity != null
+                ? `${table.capacity} ${table.capacity === 1 ? 'lugar' : 'lugares'}`
+                : 'Sin lugares cargados'}
+            </span>
+            <button
+              type="button"
+              className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
+              onClick={() => setDoomed(table)}
+              aria-label={`Borrar la mesa ${table.label}`}
+              title="Borrar la mesa"
+            >
+              <Trash2 aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="fpe-btn fpe-btn-primary fpe-btn-sm"
+              disabled={placing !== null}
+              onClick={() => void place(table.id)}
+              aria-label={`Ubicar la mesa ${table.label} en ${areaName}`}
+            >
+              <MapPin aria-hidden />
+              {placing === table.id ? 'Ubicando…' : 'Ubicar'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="fpe-hint">«Ubicar» la apoya en el centro de {areaName}.</p>
 
       <AlertDialog
-        open={pending !== null}
-        onOpenChange={(o) => {
-          if (!o) setPending(null)
+        open={doomed !== null}
+        onOpenChange={(open) => {
+          if (!open) setDoomed(null)
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar la mesa "{pending?.label}"?</AlertDialogTitle>
+            <AlertDialogTitle>¿Borrar la mesa {doomed?.label}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se borra la mesa y su QR de forma definitiva. Si la mesa tuvo sesiones, no se podrá
-              borrar (desactivala en su lugar). Esta acción no se puede deshacer.
+              Se borra la mesa y no tiene vuelta. Si alguna vez se usó en el salón no se va a poder
+              borrar: en ese caso desactivala desde Lista.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="fpe-btn fpe-btn-quiet">Dejarla</AlertDialogCancel>
             <AlertDialogAction
+              className="fpe-btn fpe-btn-danger-solid"
               onClick={() => {
-                if (pending) onDelete(pending.id)
-                setPending(null)
+                if (doomed) onDelete(doomed.id)
+                setDoomed(null)
               }}
             >
-              Eliminar
+              Borrar la mesa
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </div>
   )
 }

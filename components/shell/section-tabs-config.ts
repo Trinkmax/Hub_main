@@ -1,4 +1,4 @@
-import { type FeatureKey, getTenantFeatures } from '@/lib/platform/features'
+import { type FeatureKey, getEffectiveFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, Tenant, TenantRole } from '@/lib/tenant/types'
 import { gateAllows, type NavViewer } from './nav-config'
 import type { SectionTabItem } from './section-tabs'
@@ -227,7 +227,7 @@ export function sectionViewer(access: {
 }): SectionViewer {
   return {
     role: access.role,
-    features: getTenantFeatures(access.tenant),
+    features: getEffectiveFeatures(access.tenant),
     isPlatformAdmin: access.isPlatformAdmin,
     accounting: access.accounting,
   }

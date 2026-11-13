@@ -1,0 +1,2408 @@
+/* ============================================================
+   La caja por turno — el mundo «papel» (docs/features/pos.md)
+   ============================================================
+   TESIS: la caja es la registradora entera, no un tablero de tarjetas. Arriba el visor (cuánto
+   entró), en el medio la cinta que se escribe sola con cada cobro, abajo el cajón (cuánto efectivo
+   tiene que haber) con lo que se hace con él: sacar, guardar, contar y cerrar.
+
+   MUNDO: papel crema y cartón blanco sobre el paño verde. Tinta (`--pos-ink`) para lo que escribe
+   una persona (un retiro, el conteo); carbónico violeta (`--pos-carbon`) para lo que escribe el
+   sistema (horas, cobros, sumas). Sellos para lo que no tiene vuelta: ANULADO, CERRADO, CUADRA.
+   Los medios de pago son las teclas de la registradora: cuentan y, al tocarlas, filtran la cinta.
+
+   RECORRIDO: quien abre confirma lo que dejó el turno anterior; durante el turno mira y anota; al
+   cerrar cuenta billete por billete sin ver cuánto tenía que haber, y recién después compara.
+
+   PRIMERA VISTA (celular): una barra fina; el número grande con su oración; las seis teclas; la
+   ranura de donde sale la cinta con lo último arriba; el cajón fijo abajo con su acción principal.
+   Con ancho: los números y el cajón a la izquierda, la cinta entera a la derecha.
+
+   FORMA: la fijó el pedido («la caja es la cinta de la registradora»): no hubo sorteo.
+
+   Todo cuelga de `.caja` (la pantalla) y `.caja-sheet` (hojas y diálogos, que se dibujan fuera del
+   árbol). Nada que se toque mide menos de 48 px; lo principal, 56–64 px, abajo.
+   ============================================================ */
+
+.caja,
+.caja-sheet {
+  /* Los colores de estado, oscurecidos hasta que se leen como texto sobre papel (≥ 4,5:1). */
+  --caja-bad: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
+  --caja-warn: color-mix(in oklch, var(--pos-st-kitchen) 52%, var(--pos-ink));
+  --caja-good: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  /* Texto de apoyo sobre papel: el más claro que todavía se lee. */
+  --caja-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
+  --caja-focus: var(--pos-st-bill);
+  /* Lo que se achica un botón al tocarlo. */
+  --caja-press: 0.97;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── La pantalla ── */
+.caja {
+  --caja-pad: 0.75rem;
+  --paper: var(--pos-paper);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: calc(100dvh - var(--salon-tabbar-h));
+  min-height: 26rem;
+  background: var(--pos-board);
+  color: var(--pos-board-ink);
+  touch-action: manipulation;
+}
+.caja :focus-visible,
+.caja-sheet :focus-visible {
+  outline: 3px solid var(--caja-focus);
+  outline-offset: 2px;
+}
+.caja-desk :focus-visible,
+.caja-drawer :focus-visible,
+.caja-open :focus-visible,
+.caja-bar :focus-visible {
+  outline-color: var(--pos-paper);
+}
+/* Los campos marcan el foco con su propio borde de tinta: sin un segundo aro alrededor. */
+.caja input:focus-visible,
+.caja textarea:focus-visible,
+.caja-sheet input:focus-visible,
+.caja-sheet textarea:focus-visible {
+  outline: none;
+}
+
+/* La barra y los avisos siempre arriba, se dibujen en el orden que se dibujen. */
+.caja > .pos-topbar {
+  grid-row: 1;
+}
+.caja-notes {
+  grid-row: 2;
+}
+
+/* ── La barra de arriba: una fila ── */
+.caja-back,
+.caja-top-btn {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.caja-back {
+  margin-left: -0.3rem;
+}
+.caja-back svg {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+.caja-top-btn svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.caja-back:active,
+.caja-top-btn:active {
+  transform: scale(var(--caja-press));
+  background: var(--pos-paper-2);
+}
+.caja-top-btn span {
+  display: none;
+}
+.caja-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.5rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.caja-title b {
+  flex: none;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.caja-title span {
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  color: var(--pos-ink-soft);
+  text-overflow: ellipsis;
+}
+.caja-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  border-radius: 0.35rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* Con más de una caja, las cajas son pestañas: cada una dice si está abierta. */
+.caja-reg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.caja-reg i {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.caja-reg.is-open i {
+  background: var(--pos-st-ready);
+  box-shadow: 0 0 0 1.5px var(--pos-paper);
+}
+.caja-reg small {
+  display: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+/* ── Avisos: sin conexión, práctica, turno viejo ── */
+.caja-notes {
+  display: grid;
+  min-width: 0;
+}
+.caja-notice {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem var(--caja-pad);
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.caja-notice + .caja-notice {
+  box-shadow: inset 0 1px 0 oklch(0.2 0.04 70 / 0.18);
+}
+.caja-notice > svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.caja-notice > span {
+  min-width: 0;
+  flex: 1;
+}
+.caja-notice b {
+  font-weight: 800;
+}
+.caja-notice.is-off {
+  background: var(--pos-st-late);
+  color: var(--pos-on-dark);
+}
+.caja-notice-btn {
+  min-height: 3rem;
+  flex: none;
+  margin: -0.15rem 0;
+  padding: 0 0.85rem;
+  border-radius: 0.7rem;
+  background: oklch(0.2 0.04 70 / 0.12);
+  box-shadow: inset 0 0 0 1.5px oklch(0.2 0.04 70 / 0.45);
+  color: inherit;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.caja-notice-btn:active {
+  transform: scale(var(--caja-press));
+}
+
+/* ── El cuerpo: en el celular, una columna que se recorre y el cajón fijo abajo ── */
+.caja-scroll {
+  position: relative;
+  grid-row: 3;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+}
+
+/* ── El visor: el número grande y la oración que lo explica ── */
+.caja-desk {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 0.9rem var(--caja-pad) 0.8rem;
+}
+.caja-display {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+}
+.caja-hero {
+  font-size: 3.5rem;
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-hero i {
+  margin-right: 0.12em;
+  font-size: 0.55em;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--pos-board-soft);
+  vertical-align: 0.42em;
+}
+.caja-say {
+  max-width: 34rem;
+  font-size: 1.02rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.caja-say b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+
+/* Las teclas: un medio de pago cada una. Cuentan, y al tocarlas filtran la cinta. */
+.caja-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: auto;
+}
+.caja-key {
+  display: grid;
+  min-width: 0;
+  min-height: 3.5rem;
+  align-content: center;
+  gap: 0.28rem;
+  padding: 0.5rem 0.6rem 0.5rem;
+  border-radius: 0.8rem;
+  background: oklch(1 0 0 / 0.07);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.13),
+    inset 0 -2px 0 oklch(0 0 0 / 0.22);
+  color: var(--pos-board-ink);
+  text-align: left;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease),
+    color 140ms var(--pos-ease);
+}
+.caja-key-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1;
+  color: var(--pos-board-soft);
+  white-space: nowrap;
+}
+.caja-key-name svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+.caja-key b {
+  font-size: 1.16rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-key:not(:disabled):active {
+  transform: scale(var(--caja-press));
+  background: oklch(1 0 0 / 0.14);
+}
+.caja-key[aria-pressed="true"] {
+  background: var(--pos-paper);
+  box-shadow: inset 0 -2px 0 var(--pos-rule);
+  color: var(--pos-ink);
+}
+.caja-key[aria-pressed="true"] .caja-key-name {
+  color: var(--pos-ink-soft);
+}
+.caja-key[aria-pressed="true"] b {
+  color: var(--pos-carbon);
+}
+.caja-key:disabled {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.09);
+}
+.caja-key:disabled b {
+  font-weight: 600;
+  color: var(--pos-board-soft);
+}
+
+/* Lo demás del turno, en una línea que abre el detalle. */
+.caja-facts {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.35rem -0.35rem -0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 0.7rem;
+  color: var(--pos-board-soft);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 140ms var(--pos-ease);
+}
+.caja-facts > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.caja-facts b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+.caja-facts > svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.caja-facts:active {
+  background: oklch(1 0 0 / 0.1);
+}
+.caja-facts-list {
+  display: none;
+}
+
+/* ── La cinta ── */
+.caja-roll {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  justify-items: center;
+  padding: 0 var(--caja-pad) 1.5rem;
+}
+.caja-roll > * {
+  width: 100%;
+  max-width: 36rem;
+}
+/* La ranura por donde sale el papel. */
+.caja-slot {
+  position: relative;
+  z-index: 2;
+  width: calc(100% + 0.7rem);
+  max-width: calc(36rem + 0.7rem);
+  height: 0.85rem;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, oklch(0.12 0.03 165), oklch(0.2 0.036 165));
+  box-shadow:
+    inset 0 2px 3px oklch(0 0 0 / 0.65),
+    0 1px 0 oklch(1 0 0 / 0.09);
+}
+.caja-tape {
+  position: relative;
+  z-index: 1;
+  margin-top: -0.42rem;
+  padding-top: 0.5rem;
+  background: var(--paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 16px 22px -18px oklch(0.1 0.04 165 / 0.95),
+    0 2px 6px -3px oklch(0.1 0.04 165 / 0.5);
+}
+/* La sombra de la ranura sobre el papel que recién sale. */
+.caja-tape::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1rem;
+  background: linear-gradient(to bottom, oklch(0.1 0.04 165 / 0.26), transparent);
+  pointer-events: none;
+}
+/* El borde de abajo, cortado en serrucho: donde se arrancó. */
+.caja-tape::after,
+.caja-slip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 0.375rem;
+  background:
+    linear-gradient(135deg, var(--paper) 25%, transparent calc(25% + 0.6px)),
+    linear-gradient(225deg, var(--paper) 25%, transparent calc(25% + 0.6px));
+  background-size: 0.75rem 0.75rem;
+  background-position: 0.375rem 0;
+  filter: drop-shadow(0 3px 2px oklch(0.1 0.04 165 / 0.35));
+  pointer-events: none;
+}
+/* Papel que no sale de la ranura: la cinta de otro turno, el resumen. */
+.caja-tape.is-loose {
+  margin-top: 1.4rem;
+  padding-top: 0;
+  border-radius: 0.3rem 0.3rem 0 0;
+}
+.caja-tape.is-loose::before {
+  top: 0.32rem;
+  right: 0.7rem;
+  left: 0.7rem;
+  height: 3px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in oklch, var(--pos-ink) 26%, var(--paper)) 1.1px,
+      transparent 1.5px
+    )
+    0 0 / 8px 3px repeat-x;
+}
+.caja-tape.is-old {
+  --paper: color-mix(in oklch, var(--pos-paper) 88%, var(--pos-board));
+}
+.caja-tape.is-practice {
+  --paper: color-mix(in oklch, var(--pos-paper) 86%, var(--pos-kraft));
+}
+.caja-tape-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+  padding: 0.95rem 0.9rem 0.6rem;
+}
+.caja-tape-head h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.1;
+}
+.caja-tape-head p {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Con un medio elegido: qué se está viendo, cuánto suma y cómo volver a todo. */
+.caja-only {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.9rem 0.7rem;
+  border-bottom: 1.5px solid var(--pos-ink);
+  background: var(--paper);
+}
+.caja-only-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+}
+.caja-only-row > p {
+  min-width: 0;
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.caja-only-row > p b {
+  font-weight: 800;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.caja-only-btn {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -0.3rem -0.3rem -0.3rem 0;
+  padding: 0 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.caja-only-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.caja-only-btn:active {
+  transform: scale(var(--caja-press));
+}
+
+/* Una cuenta con puntos guía, como en el talonario. */
+.caja-sum {
+  display: grid;
+  gap: 0.3rem;
+}
+.caja-sum > div,
+.caja-report-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.4rem;
+  align-items: baseline;
+}
+.caja-sum > div {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.caja-sum dt,
+.caja-report-line dt {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+/* Los puntos que llevan el ojo del rótulo al monto. */
+.caja-sum dt::after,
+.caja-report-line dt::after {
+  content: "";
+  min-width: 1rem;
+  flex: 1;
+  border-bottom: 2px dotted color-mix(in oklch, currentColor 40%, transparent);
+  transform: translateY(-0.22em);
+}
+.caja-sum dd {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-sum > .is-total {
+  margin-top: 0.15rem;
+  padding-top: 0.4rem;
+  border-top: 1.5px solid currentColor;
+  font-weight: 800;
+}
+.caja-sum > .is-total dd {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  color: var(--pos-carbon);
+}
+
+/* Los renglones: hora, de quién, cuánto; abajo el medio y quién cobró. */
+.caja-lines {
+  display: grid;
+}
+.caja-lines > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+/* Un renglón que entra con la pantalla abierta: la cinta avanza un paso. */
+.caja-lines > li[data-new] {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: caja-feed 320ms var(--pos-ease);
+}
+.caja-lines > li[data-new] > * {
+  min-height: 0;
+  overflow: hidden;
+  animation: caja-fresh 2.6s linear;
+}
+@keyframes caja-feed {
+  from {
+    grid-template-rows: 0fr;
+  }
+}
+@keyframes caja-fresh {
+  from,
+  70% {
+    background-color: color-mix(in oklch, var(--pos-carbon) 9%, var(--paper));
+  }
+}
+.caja-line {
+  display: grid;
+  grid-template-columns: 3.05rem minmax(0, 1fr) auto;
+  column-gap: 0.6rem;
+  width: 100%;
+  min-height: 3.75rem;
+  align-items: start;
+  padding: 0.72rem 0.9rem 0.68rem;
+  color: var(--pos-ink);
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+button.caja-line:active {
+  background: color-mix(in oklch, var(--pos-rule) 55%, var(--paper));
+}
+.caja-line time {
+  padding-top: 0.14rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.caja-line-body {
+  display: grid;
+  min-width: 0;
+  gap: 0.22rem;
+}
+.caja-line-title {
+  font-size: 1.06rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.caja-line-title em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.caja-line-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-ink-soft);
+}
+.caja-method {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+  color: var(--pos-ink);
+  white-space: nowrap;
+}
+.caja-method svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.caja-line-note {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.caja-line-note.is-why {
+  color: var(--caja-bad);
+}
+.caja-line-note.is-ink {
+  color: var(--pos-ink-soft);
+}
+.caja-line-end {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+}
+.caja-line-sum {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-stretch: 82%;
+  line-height: 1.1;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Lo que escribió una persona (un retiro, el cambio que contó) va en tinta, no en carbónico. */
+.caja-line.is-hand .caja-line-sum {
+  color: var(--pos-ink);
+}
+.caja-line.is-void .caja-line-title,
+.caja-line.is-void .caja-line-sum,
+.caja-line.is-void .caja-method {
+  color: var(--pos-ink-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.caja-line.is-mark {
+  background: color-mix(in oklch, var(--pos-st-kitchen) 20%, var(--paper));
+  box-shadow: inset 0 0 0 2px var(--caja-warn);
+}
+.caja-tape-empty {
+  max-width: 34ch;
+  padding: 0.9rem 0.9rem 1.1rem;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+
+/* Sellos: solo para lo que terminó o no tiene vuelta. */
+.caja-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.7rem;
+  padding: 0 0.5rem 0 0.42rem;
+  border: 2px solid currentColor;
+  border-radius: 0.3rem;
+  color: var(--caja-good);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: rotate(-3deg);
+}
+.caja-stamp svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.caja-stamp.is-void {
+  color: var(--caja-bad);
+  transform: rotate(-4deg);
+}
+.caja-stamp.is-closed {
+  color: var(--pos-ink);
+}
+.caja-stamp.is-big {
+  height: 2.9rem;
+  padding: 0 0.95rem 0 0.8rem;
+  border-width: 3px;
+  border-radius: 0.45rem;
+  font-size: 1.5rem;
+  letter-spacing: 0.12em;
+}
+.caja-stamp.is-big svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* ── El cajón: cuánto tiene que haber, y lo que se hace con él ── */
+.caja-drawer,
+.caja-bar {
+  grid-row: 4;
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  padding: 0.5rem var(--caja-pad) 0.7rem;
+  background: var(--pos-board-2);
+  box-shadow: 0 -1px 0 oklch(1 0 0 / 0.08);
+  color: var(--pos-board-ink);
+}
+.caja-drawer-sum {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 -0.3rem;
+  padding: 0 0.3rem;
+  border-radius: 0.7rem;
+  text-align: left;
+  transition: background-color 140ms var(--pos-ease);
+}
+.caja-drawer-sum > span {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pos-board-soft);
+  text-wrap: balance;
+}
+.caja-drawer-sum > b {
+  flex: none;
+  font-size: 1.9rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-drawer-sum > svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  color: var(--pos-board-soft);
+}
+.caja-drawer-sum:active {
+  background: oklch(1 0 0 / 0.1);
+}
+.caja-drawer-sum[aria-pressed="true"] > svg {
+  color: var(--pos-board-ink);
+}
+.caja-drawer-math {
+  display: none;
+}
+.caja-actions {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+/* Lo que siempre está, en el mismo lugar: ícono arriba, palabra abajo. */
+.caja-util {
+  display: inline-flex;
+  min-width: 4.75rem;
+  min-height: 3.75rem;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0 0.55rem;
+  border-radius: 1rem;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
+  color: var(--pos-board-ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.caja-util svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+.caja-util:active {
+  transform: scale(var(--caja-press));
+  background: oklch(1 0 0 / 0.16);
+}
+/* El botón que manda. */
+.caja-go {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 3.75rem;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0 1rem;
+  border-radius: 1rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  font-size: 1.14rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1.05;
+  text-align: center;
+  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 140ms var(--pos-ease),
+    opacity 140ms var(--pos-ease);
+}
+.caja-go svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex: none;
+}
+.caja-go:not(:disabled):active {
+  transform: scale(var(--caja-press));
+}
+.caja-go:disabled {
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.2);
+  color: var(--pos-board-soft);
+}
+.caja-go.is-quiet {
+  flex: 0 1 auto;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.26);
+  color: var(--pos-board-ink);
+}
+.caja-go.is-good {
+  background: var(--pos-st-ready);
+  color: var(--pos-on-light);
+}
+.caja-bar-sum {
+  display: flex;
+  min-width: 0;
+  min-height: 2.6rem;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.25rem 0 0;
+}
+.caja-bar-sum > span {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--pos-board-soft);
+}
+.caja-bar-sum > b {
+  flex: none;
+  font-size: 1.9rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.caja-bar-note {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-board-ink);
+  text-wrap: pretty;
+}
+
+/* ── Abrir: confirmar lo que dejó el turno anterior ── */
+.caja-open {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 1.25rem;
+  padding: 1.4rem var(--caja-pad) 1.4rem;
+}
+.caja-open-main {
+  display: grid;
+  gap: 0.55rem;
+}
+.caja-ask {
+  font-size: 1.85rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.caja-open .caja-say {
+  max-width: 30rem;
+}
+/* El número grande, cuando lo escribe quien abre. */
+.caja-hero-field {
+  display: flex;
+  max-width: 22rem;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.1rem 0 0.3rem;
+  border-bottom: 2px solid var(--pos-board-soft);
+  transition: border-color 140ms var(--pos-ease);
+}
+.caja-hero-field:focus-within {
+  border-color: var(--pos-paper);
+  box-shadow: 0 2px 0 var(--pos-paper);
+}
+.caja-hero-field > span {
+  font-size: 1.9rem;
+  font-weight: 700;
+  font-stretch: 80%;
+  color: var(--pos-board-soft);
+}
+.caja-hero-field input {
+  width: 100%;
+  min-width: 0;
+  height: 4rem;
+  background: transparent;
+  color: var(--pos-board-ink);
+  font-family: inherit;
+  font-size: 3.5rem;
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  appearance: none;
+}
+.caja-hero-field input::placeholder {
+  color: oklch(1 0 0 / 0.28);
+  opacity: 1;
+}
+.caja-set {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.caja-set legend,
+.caja-set > label {
+  padding: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+.caja-set legend small,
+.caja-set > label small {
+  margin-left: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--pos-board-soft);
+}
+.caja-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.caja-chip {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.95rem;
+  border-radius: 0.85rem;
+  background: oklch(1 0 0 / 0.07);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.16);
+  color: var(--pos-board-ink);
+  font-size: 1rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  line-height: 1.1;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease),
+    color 140ms var(--pos-ease);
+}
+.caja-chip svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.caja-chip:active {
+  transform: scale(var(--caja-press));
+}
+.caja-chip[aria-pressed="true"] {
+  background: var(--pos-paper);
+  box-shadow: none;
+  color: var(--pos-ink);
+}
+.caja-board-input {
+  width: 100%;
+  max-width: 30rem;
+  min-height: 3.25rem;
+  padding: 0 0.9rem;
+  border-radius: 0.85rem;
+  background: oklch(0 0 0 / 0.22);
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.2);
+  color: var(--pos-board-ink);
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  outline: none;
+}
+.caja-board-input::placeholder {
+  color: var(--pos-board-soft);
+  opacity: 1;
+}
+.caja-board-input:focus {
+  box-shadow: inset 0 0 0 2px var(--pos-paper);
+}
+.caja-links {
+  display: grid;
+  justify-items: start;
+  gap: 0.1rem;
+}
+.caja-link {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: -0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 0.6rem;
+  color: var(--pos-board-ink);
+  font-size: 0.98rem;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: oklch(1 0 0 / 0.35);
+  text-underline-offset: 4px;
+  transition: background-color 140ms var(--pos-ease);
+}
+.caja-link svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.caja-link:active {
+  background: oklch(1 0 0 / 0.1);
+}
+
+/* La pregunta de los ceros: «¿$ 129 o $ 129.000?». Sobre el paño y sobre el papel. */
+.caja-guard {
+  display: grid;
+  max-width: 30rem;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.8rem 0.85rem 0.85rem;
+  border: 0;
+  border-radius: 0.9rem;
+  background: var(--pos-kraft);
+  color: var(--pos-on-light);
+  min-inline-size: auto;
+}
+.caja-guard legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+.caja-guard-q {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 1.12rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-wrap: balance;
+}
+.caja-guard-q svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.08rem;
+}
+.caja-guard p {
+  clear: both;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.caja-guard-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  clear: both;
+}
+.caja-guard-opts button {
+  min-height: 3rem;
+  flex: 1 1 8rem;
+  padding: 0 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.caja-guard-opts button + button {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--pos-on-light);
+  color: var(--pos-on-light);
+}
+.caja-guard-opts button:active {
+  transform: scale(var(--caja-press));
+}
+
+/* ── Cerrar: contar, comparar, dejar el cambio ── */
+.caja-flow {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  justify-items: center;
+  gap: 1rem;
+  padding: 1rem var(--caja-pad) 1.6rem;
+}
+.caja-flow > * {
+  width: 100%;
+  max-width: 34rem;
+}
+.caja-flow-head {
+  display: grid;
+  gap: 0.4rem;
+}
+.caja-flow-title {
+  font-size: 1.85rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.caja-flow-title.is-brief {
+  font-size: 1.45rem;
+}
+.caja-flow-head p {
+  max-width: 32rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.caja-flow-head p b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}
+.caja-steps {
+  flex: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-stretch: 90%;
+  color: var(--pos-ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Una hoja de papel suelta sobre el paño: el arqueo, la comparación, el resumen. */
+.caja-slip {
+  position: relative;
+  display: grid;
+  padding: 0.95rem 0.9rem 0.8rem;
+  border-radius: 0.3rem 0.3rem 0 0;
+  background: var(--paper);
+  color: var(--pos-ink);
+  box-shadow:
+    0 16px 22px -18px oklch(0.1 0.04 165 / 0.95),
+    0 2px 6px -3px oklch(0.1 0.04 165 / 0.5);
+}
+.caja-slip::before {
+  content: "";
+  position: absolute;
+  top: 0.32rem;
+  right: 0.7rem;
+  left: 0.7rem;
+  height: 3px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in oklch, var(--pos-ink) 26%, var(--paper)) 1.1px,
+      transparent 1.5px
+    )
+    0 0 / 8px 3px repeat-x;
+}
+.caja-slip-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.1;
+}
+/* Un billete por renglón: cuántos hay. */
+.caja-bill {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 4.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+.caja-bill + .caja-bill {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.caja-bill-face {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+}
+.caja-bill-note {
+  display: inline-flex;
+  height: 2.4rem;
+  align-items: center;
+  padding: 0 0.75rem;
+  border-radius: 0.3rem;
+  background: var(--pos-paper-2);
+  box-shadow:
+    inset 0 0 0 1.5px var(--pos-ink),
+    inset 0 0 0 4px var(--pos-paper-2),
+    inset 0 0 0 5px color-mix(in oklch, var(--pos-ink) 24%, var(--pos-paper-2));
+  font-size: 1.22rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-bill-note.is-loose {
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  font-size: 1.02rem;
+  font-weight: 700;
+  font-stretch: 90%;
+}
+.caja-bill-sub {
+  min-height: 1.1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.caja-stepper {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+}
+.caja-step {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+.caja-step svg {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+.caja-step:not(:disabled):active {
+  transform: scale(var(--caja-press));
+  background: var(--pos-rule);
+}
+.caja-step.is-plus {
+  background: var(--pos-paper);
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-step.is-plus:active {
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+}
+.caja-step:disabled {
+  opacity: 0.4;
+}
+.caja-units,
+.caja-loose {
+  height: 3.5rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  appearance: none;
+}
+.caja-units {
+  width: 4.4rem;
+  font-size: 1.7rem;
+  text-align: center;
+}
+.caja-units.is-zero:not(:focus) {
+  color: var(--caja-faint);
+  font-weight: 600;
+}
+.caja-loose {
+  width: 9.6rem;
+  padding: 0 0.8rem 0 1.9rem;
+  font-size: 1.35rem;
+  text-align: right;
+}
+/* El signo de pesos va adentro del campo, a la izquierda. */
+.caja-loose-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.caja-loose-wrap > span {
+  position: absolute;
+  top: 50%;
+  left: 0.8rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--pos-ink-soft);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.caja-loose::placeholder {
+  color: var(--caja-faint);
+  font-weight: 600;
+  opacity: 1;
+}
+.caja-units:focus,
+.caja-loose:focus {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+
+/* Aviso escrito sobre el mismo papel, separado por una línea de corte. */
+.caja-memo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem 0.6rem;
+  padding: 0.2rem 0 0.75rem;
+  border-bottom: 1.5px dashed color-mix(in oklch, var(--pos-ink) 45%, var(--paper));
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.caja-memo + .caja-memo {
+  padding-top: 0.75rem;
+}
+.caja-memo svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  margin-top: 0.1rem;
+}
+.caja-memo > span {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.caja-memo b {
+  font-weight: 800;
+}
+
+/* La comparación: lo contado contra lo que tenía que haber. */
+.caja-verdict {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: 0.9rem 0 0.2rem;
+}
+.caja-verdict-word {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1;
+}
+.caja-verdict-word svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+}
+.caja-verdict-sum {
+  font-size: 3.1rem;
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.caja-verdict.is-short {
+  color: var(--caja-bad);
+}
+.caja-verdict.is-over {
+  color: var(--caja-warn);
+}
+.caja-verdict p {
+  max-width: 30rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pos-ink);
+  text-wrap: pretty;
+}
+/* Lo que pudo haber pasado: preguntas que se contestan mirando el cajón. */
+.caja-clues {
+  display: grid;
+  margin-top: 0.9rem;
+  border-top: 1.5px solid var(--pos-ink);
+}
+.caja-clues h2 {
+  padding: 0.75rem 0 0.2rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-stretch: 84%;
+}
+.caja-clue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.7rem 0;
+}
+.caja-clue + .caja-clue {
+  border-top: 1px solid color-mix(in oklch, var(--pos-rule) 75%, transparent);
+}
+.caja-clue p {
+  min-width: 0;
+  flex: 1 1 13rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.caja-clue.is-top p {
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.caja-clue-btn {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  padding: 0 0.9rem;
+  border-radius: 0.75rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-ink);
+  color: var(--pos-ink);
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  white-space: nowrap;
+  transition: transform 140ms var(--pos-ease);
+}
+.caja-clue.is-top .caja-clue-btn {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.caja-clue-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.caja-clue-btn:active {
+  transform: scale(var(--caja-press));
+}
+/* Campos sobre papel. */
+.caja-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.4rem;
+}
+.caja-field > label,
+.caja-field > legend {
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+.caja-field small {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.caja-field small.is-need {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--caja-bad);
+  font-weight: 700;
+}
+.caja-pesos {
+  display: flex;
+  min-width: 0;
+  height: 4rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: box-shadow 140ms var(--pos-ease);
+}
+.caja-pesos:focus-within {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-pesos > span {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-stretch: 84%;
+  color: var(--pos-ink-soft);
+}
+.caja-pesos input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-size: 2rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  appearance: none;
+}
+.caja-pesos input::placeholder {
+  color: var(--caja-faint);
+  font-weight: 600;
+  opacity: 1;
+}
+.caja-input {
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-size: 1.06rem;
+  font-weight: 600;
+  outline: none;
+}
+textarea.caja-input {
+  min-height: 5rem;
+  padding: 0.7rem 0.9rem;
+  line-height: 1.35;
+  resize: vertical;
+}
+.caja-input::placeholder {
+  color: var(--caja-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+.caja-input:focus {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.caja-opt {
+  display: inline-flex;
+  min-height: 3.1rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.95rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  transition:
+    transform 120ms var(--pos-ease),
+    background-color 120ms var(--pos-ease),
+    color 120ms var(--pos-ease);
+}
+.caja-opt svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.caja-opt small {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.caja-opt:not(:disabled):active {
+  transform: scale(var(--caja-press));
+}
+.caja-opt[aria-pressed="true"] {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.caja-opt[aria-pressed="true"] small {
+  color: color-mix(in oklch, var(--pos-paper) 82%, var(--pos-ink));
+}
+.caja-opt:disabled {
+  opacity: 0.5;
+}
+.caja-opt.is-was {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-opt-two {
+  display: grid;
+  gap: 0.15rem;
+}
+.caja-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.caja-methods .caja-opt {
+  min-height: 3.5rem;
+}
+.caja-leave {
+  gap: 1rem;
+}
+.caja-leave-out {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.caja-leave-out b {
+  font-weight: 800;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.caja-error {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: color-mix(in oklch, var(--pos-st-late) 12%, var(--pos-paper));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 40%, var(--pos-paper));
+  color: var(--caja-bad);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.caja-spin {
+  animation: caja-spin 0.9s linear infinite;
+}
+@keyframes caja-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── El turno resumido ── */
+.caja-report {
+  display: grid;
+  gap: 0;
+  padding-bottom: 0.9rem;
+}
+.caja-report.is-bare {
+  padding-bottom: 0;
+}
+.caja-report.is-bare > section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+.caja-slip.is-practice {
+  --paper: color-mix(in oklch, var(--pos-paper) 86%, var(--pos-kraft));
+}
+.caja-report-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  padding-bottom: 0.75rem;
+}
+.caja-report-top > div {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 14rem;
+  gap: 0.25rem;
+}
+.caja-report-top p {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.caja-report section {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 0 0.8rem;
+  border-top: 1.5px solid var(--pos-ink);
+}
+.caja-report h3 {
+  padding-bottom: 0.3rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1.1;
+}
+.caja-report-line {
+  padding: 0.28rem 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.caja-report-line dt {
+  overflow-wrap: anywhere;
+}
+.caja-report-line.is-plain dt::after {
+  content: none;
+}
+.caja-report-line dd {
+  font-weight: 700;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-report-line dt small {
+  flex: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+.caja-report-line dd.is-detail {
+  grid-column: 1 / -1;
+  margin-top: 0.1rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pos-ink-soft);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.caja-report-line.is-strong {
+  font-weight: 800;
+}
+.caja-report-line.is-strong dd:not(.is-detail) {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-stretch: 84%;
+}
+.caja-report-line.is-bad dt,
+.caja-report-line.is-bad dd:not(.is-detail) {
+  color: var(--caja-bad);
+  font-weight: 800;
+}
+.caja-report-line.is-warn dt,
+.caja-report-line.is-warn dd:not(.is-detail) {
+  color: var(--caja-warn);
+  font-weight: 800;
+}
+.caja-report-line.is-good dt {
+  color: var(--caja-good);
+  font-weight: 800;
+}
+.caja-report-foot {
+  padding-top: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.caja-report-note {
+  font-size: 1rem;
+  font-weight: 500;
+  font-style: italic;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+/* ── Hojas ── */
+.caja-sheet-body {
+  display: grid;
+  gap: 1.1rem;
+}
+.caja-sheet-head {
+  display: grid;
+  gap: 0.3rem;
+  padding-right: 0.5rem;
+}
+.pos-sheet-title.caja-sheet-title {
+  font-size: 1.7rem;
+  line-height: 1.05;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.caja-sheet-sub {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.caja-sheet-sub.is-ink {
+  color: var(--pos-ink-soft);
+}
+.caja-sheet-notes {
+  display: grid;
+  gap: 0.2rem;
+}
+.caja-group {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.caja-group legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  padding: 0;
+}
+.caja-group legend small {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.caja-reasons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.caja-reasons .caja-opt {
+  min-height: 3.5rem;
+  justify-content: center;
+  padding: 0.4rem 0.7rem;
+  text-align: center;
+  text-wrap: balance;
+}
+.caja-sheet-foot {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+/* Pegado abajo de la hoja, fuera de lo que se desliza: el botón siempre a la vista. */
+.caja-sheet > .caja-sheet-foot {
+  flex: none;
+  padding: 0.7rem 1.1rem calc(0.9rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--pos-rule);
+}
+.caja-sheet .pos-sheet-body.has-foot {
+  padding-bottom: 1.1rem;
+}
+.caja-sheet-foot .pos-btn {
+  min-width: 0;
+  min-height: 3.75rem;
+  flex: 1;
+  border-radius: 1rem;
+  font-size: 1.1rem;
+  line-height: 1.1;
+  white-space: normal;
+  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
+}
+.caja-sheet-foot .pos-btn.is-side {
+  flex: 0 1 auto;
+}
+/* Todavía no se puede: el botón dice qué falta, así que se tiene que poder leer. */
+.caja-sheet-foot .pos-btn:disabled {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink-soft);
+  opacity: 1;
+}
+.caja-sheet .pos-btn-quiet.is-danger {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-st-late) 42%, var(--pos-paper));
+  color: var(--caja-bad);
+}
+.caja-sheet .caja-guard {
+  max-width: none;
+}
+.caja-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.caja-switch .caja-opt {
+  justify-content: center;
+}
+/* Los turnos anteriores. */
+.caja-days {
+  display: grid;
+  gap: 1rem;
+}
+.caja-day h3 {
+  padding: 0 0 0.3rem;
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  color: var(--pos-ink-soft);
+}
+.caja-day ul {
+  display: grid;
+  gap: 0.4rem;
+}
+.caja-shift {
+  display: flex;
+  width: 100%;
+  min-height: 4rem;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem 0.55rem 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  text-align: left;
+  transition: transform 140ms var(--pos-ease);
+}
+.caja-shift:active {
+  transform: scale(0.985);
+}
+.caja-shift[aria-current="true"] {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-shift > span:first-child {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+.caja-shift b {
+  font-size: 1.08rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  line-height: 1.15;
+}
+.caja-shift small {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.caja-shift.is-wrap small {
+  color: var(--pos-ink-soft);
+}
+.caja-result {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  line-height: 1;
+  color: var(--caja-good);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.caja-result svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.caja-result.is-short {
+  color: var(--caja-bad);
+}
+.caja-result.is-over {
+  color: var(--caja-warn);
+}
+.caja-result.is-open {
+  color: var(--pos-ink);
+}
+.caja-shift > svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  color: var(--pos-ink-soft);
+}
+/* La confirmación de lo que no tiene vuelta. */
+.caja-confirm {
+  gap: 1rem;
+  width: min(30rem, calc(100vw - 1.5rem));
+  max-width: none;
+  padding: 1.4rem 1.2rem 1.1rem;
+  border: 0;
+  border-radius: 1.25rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+  font-family: var(--pos-font);
+}
+.caja-confirm h2 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.caja-confirm p {
+  font-size: 1.02rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--pos-ink);
+  text-wrap: pretty;
+}
+.caja-confirm p b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.caja-confirm > .caja-sheet-foot {
+  flex-wrap: wrap-reverse;
+  padding: 0;
+  border-top: 0;
+}
+
+/* ── Mientras carga, y cuando no se pudo leer ── */
+.caja-ghost {
+  height: 13rem;
+  opacity: 0.16;
+}
+.caja-ghost-num {
+  width: 13rem;
+  max-width: 70%;
+  height: 3.3rem;
+  border-radius: 0.6rem;
+  background: oklch(1 0 0 / 0.1);
+}
+.caja-ghost-say {
+  width: 20rem;
+  max-width: 92%;
+  height: 1.1rem;
+  border-radius: 0.4rem;
+  background: oklch(1 0 0 / 0.07);
+}
+.caja-gone {
+  grid-row: 3 / -1;
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 0.8rem;
+  padding: 2rem 1.5rem;
+}
+.caja-gone h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.caja-gone p {
+  max-width: 32ch;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.caja-gone .caja-go {
+  min-width: 12rem;
+  flex: none;
+  margin-top: 0.4rem;
+}
+
+/* Lo que se ve mide 40; lo que se toca, 48 o más (la pastilla de la sucursal, las cajas, la cuenta). */
+.caja .pos-top-branch,
+.caja .pos-top-tab,
+.caja .pos-topbar-account button {
+  position: relative;
+}
+.caja .pos-top-branch::after,
+.caja .pos-top-tab::after,
+.caja .pos-topbar-account button::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem 0;
+}
+.caja .pos-topbar-account button::after {
+  inset: -0.4rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .caja-back:hover,
+  .caja-top-btn:hover {
+    background: var(--pos-paper-2);
+  }
+  .caja-key:not(:disabled):not([aria-pressed="true"]):hover,
+  .caja-util:hover,
+  .caja-facts:hover,
+  .caja-drawer-sum:hover,
+  .caja-link:hover {
+    background-color: oklch(1 0 0 / 0.13);
+  }
+  .caja-chip:not([aria-pressed="true"]):hover {
+    background: oklch(1 0 0 / 0.13);
+  }
+  button.caja-line:hover {
+    background: color-mix(in oklch, var(--pos-rule) 38%, var(--paper));
+  }
+  .caja-go:not(:disabled):hover,
+  .caja-clue-btn:hover,
+  .caja-guard-opts button:hover {
+    filter: brightness(0.95);
+  }
+  .caja-go.is-quiet:not(:disabled):hover {
+    background: oklch(1 0 0 / 0.14);
+    filter: none;
+  }
+  .caja-opt:not(:disabled):not([aria-pressed="true"]):hover,
+  .caja-only-btn:hover,
+  .caja-step:not(.is-plus):not(:disabled):hover,
+  .caja-shift:hover {
+    background: var(--pos-rule);
+  }
+  .caja-step.is-plus:not(:disabled):hover {
+    background: var(--pos-ink);
+    color: var(--pos-paper);
+  }
+}
+
+/* ── Con ancho: los números y el cajón a la izquierda, la cinta a la derecha ── */
+@media (min-width: 900px) {
+  .caja {
+    --caja-pad: 1.5rem;
+    grid-template-columns: clamp(23rem, 36vw, 29rem) minmax(0, 1fr);
+  }
+  .caja > .pos-topbar,
+  .caja-notes {
+    grid-column: 1 / -1;
+  }
+  .caja-top-btn {
+    width: auto;
+    gap: 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.8rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-stretch: 88%;
+  }
+  .caja-top-btn span,
+  .caja-reg small {
+    display: inline;
+  }
+  .caja-title b {
+    font-size: 1.75rem;
+  }
+  /* La columna que se recorría se abre: cada parte va a su lugar en la grilla. */
+  .caja-scroll {
+    display: contents;
+  }
+  .caja-desk,
+  .caja-open,
+  .caja-flow {
+    grid-row: 3;
+    grid-column: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+    background: var(--pos-board-2);
+  }
+  .caja-desk {
+    gap: 1.1rem;
+    padding-top: 1.6rem;
+  }
+  .caja-hero {
+    font-size: 4.25rem;
+  }
+  .caja-open {
+    padding-top: 1.8rem;
+  }
+  .caja-flow {
+    justify-items: stretch;
+    padding-top: 1.4rem;
+  }
+  .caja-drawer,
+  .caja-bar {
+    grid-column: 1;
+    padding-bottom: 1.1rem;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1);
+  }
+  .caja-drawer {
+    gap: 0.6rem;
+    padding-top: 0.9rem;
+  }
+  .caja-drawer-sum {
+    flex-wrap: wrap;
+    row-gap: 0.1rem;
+  }
+  .caja-drawer-sum > span {
+    flex: 1 0 100%;
+  }
+  .caja-drawer-sum > b {
+    flex: 1;
+    font-size: 2.6rem;
+  }
+  /* Acá la cinta está al lado, no arriba: la flecha apunta para allá. */
+  .caja-drawer-sum > svg {
+    transform: rotate(90deg);
+  }
+  .caja-drawer-math {
+    display: block;
+    margin-top: -0.3rem;
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--pos-board-soft);
+    font-variant-numeric: tabular-nums;
+    text-wrap: pretty;
+  }
+  .caja-roll {
+    grid-row: 3 / -1;
+    grid-column: 2;
+    min-height: 0;
+    padding-top: 1.4rem;
+    padding-bottom: 2.2rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+  }
+  .caja-only {
+    top: -1.4rem;
+  }
+  /* Hay lugar: lo demás del turno se lee sin abrir nada. */
+  .caja-facts {
+    display: none;
+  }
+  .caja-facts-list {
+    display: grid;
+    gap: 0.3rem;
+    color: var(--pos-board-soft);
+  }
+  .caja-facts-list .caja-sum > div {
+    font-weight: 500;
+  }
+  .caja-facts-list dd {
+    color: var(--pos-board-ink);
+  }
+  .caja-facts-list .caja-link {
+    margin-top: 0.2rem;
+  }
+  .caja-sheet.pos-sheet {
+    right: auto;
+    left: 50%;
+    width: min(34rem, 100vw - 2rem);
+    translate: -50% 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+  .caja-gone {
+    grid-column: 1 / -1;
+    justify-items: start;
+    padding-left: 3rem;
+  }
+}
+
+/* En el celular, mientras se cierra, la cinta no acompaña: cada paso es una sola cosa. */
+@media (max-width: 899.98px) {
+  .caja[data-view="closing"] .caja-roll {
+    display: none;
+  }
+}
+
+/* «Reducir movimiento»: queda el color y se va el movimiento. */
+@media (prefers-reduced-motion: reduce) {
+  .caja,
+  .caja-sheet {
+    --caja-press: 1;
+  }
+  .caja-lines > li[data-new] {
+    animation: none;
+  }
+  .caja-shift:active {
+    transform: none;
+  }
+  /* El que gira dice «sigo en eso»: se queda, más lento. */
+  .caja-spin {
+    animation-duration: 1.8s;
+  }
+}

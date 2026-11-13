@@ -12,6 +12,26 @@
 
 Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/mesas`).
 
+> **Editor por sucursal (2026-11-13).** Con el punto de venta (`docs/features/pos.md`) el plano pasó a ser de
+> cada sucursal y el editor se rehízo sobre la misma base:
+> - **Sucursal:** pastillas arriba; la elección viaja en `?sucursal=<slug>` (`lib/floor-plan/branches.ts`,
+>   `planHref`). Sectores, mesas, bandeja y lista son de esa sucursal. Crear un sector manda `branch_id`; el
+>   nombre es único por sucursal.
+> - **Acceso:** abre con `floor_plan` o con `pos` (`lib/floor-plan/access.ts`); además `pos` trae `floor_plan`
+>   en los menús (`getEffectiveFeatures`).
+> - **Vistas:** plano, plano y maqueta, maqueta. La maqueta es la del salón (`components/pos/floor/floor-model`),
+>   se alimenta del estado en memoria y sigue el arrastre; al lado del plano no gira (`turn="never"`).
+> - **Modos:** editar, en vivo (la maqueta con estados reales si el bar tiene `pos`; si no, el plano de
+>   siempre) y lista.
+> - **Edición:** quitar no pide confirmación, se deshace; bandeja optimista; teclado completo (flechas, Shift,
+>   Alt, R, Ctrl+Z, Ctrl+D, Supr, Enter).
+> - El asistente no se para encima del editor (`data-tex-away="always"`).
+> - Archivos nuevos en `_components/`: `editor-stage`, `editor-toolbar`, `sector-tabs`, `maqueta-pane`,
+>   `side-panel`, `live-pane`, `use-live-model`, `legacy-live`, `glyphs`, `shortcut-list`, `papel.ts`,
+>   `floor-editor.css`. En `lib/floor-plan/`: `access`, `branches`, `model`, `live-geometry`, `live-model`.
+> - Pendiente: los QR de mesa siguen detrás de `table_qr` (falta decidir si `pos` los trae); reordenar
+>   sectores no se probó en el navegador; `lib/tables/actions.ts › createTable` no pasa sucursal y no se usa.
+
 ---
 
 ## v3 — qué cambió respecto a v2
