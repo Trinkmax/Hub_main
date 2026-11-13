@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
 import { OrderScreen } from '@/components/pos/order/order-screen'
+import { PosViewerProvider } from '@/components/pos/ui/pos-viewer'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { requireFeature } from '@/lib/platform/guards'
@@ -63,23 +64,25 @@ export default async function PosOrderPage({
 
   return (
     <div className={cn('pos', posFont.variable)}>
-      <OrderScreen
-        slug={tenantSlug}
-        initial={detail.data}
-        initialMenu={menu.data}
-        timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
-        startAdding={session.status === 'open' && (nueva === '1' || tickets.length === 0)}
-        branchSlug={branches.find((branch) => branch.id === session.branch_id)?.slug ?? null}
-        account={
-          <AccountSheet
-            email={access.user.email ?? ''}
-            role={access.role}
-            tenantName={access.tenant.name}
-            tenantSlug={tenantSlug}
-            signOut={signOutAction}
-          />
-        }
-      />
+      <PosViewerProvider userId={access.user.id}>
+        <OrderScreen
+          slug={tenantSlug}
+          initial={detail.data}
+          initialMenu={menu.data}
+          timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
+          startAdding={session.status === 'open' && (nueva === '1' || tickets.length === 0)}
+          branchSlug={branches.find((branch) => branch.id === session.branch_id)?.slug ?? null}
+          account={
+            <AccountSheet
+              email={access.user.email ?? ''}
+              role={access.role}
+              tenantName={access.tenant.name}
+              tenantSlug={tenantSlug}
+              signOut={signOutAction}
+            />
+          }
+        />
+      </PosViewerProvider>
     </div>
   )
 }

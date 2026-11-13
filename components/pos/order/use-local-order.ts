@@ -12,6 +12,7 @@ import {
   type OutboxEntry,
   retryNow,
 } from '@/lib/pos/order/outbox'
+import { usePosViewer } from '../ui/pos-viewer'
 import {
   claimSession,
   dropStoredEntry,
@@ -48,6 +49,7 @@ type Options = {
  */
 export function useLocalOrder(options: Options) {
   const { slug, sessionId, label, online } = options
+  const viewerId = usePosViewer()?.userId ?? null
   const [draft, dispatch] = useReducer(cartReducer, EMPTY_DRAFT)
   const [outbox, setOutbox] = useState<OutboxEntry[]>([])
   const [restored, setRestored] = useState(false)
@@ -83,9 +85,10 @@ export function useLocalOrder(options: Options) {
   }, [sessionId])
 
   // En cada cambio: al disco. (No antes de leer: se pisaría lo guardado con un borrador vacío.)
+  // Con quién lo cargó y en qué bar: el teléfono pasa de mano en mano (ver `mayAutoSend`).
   useEffect(() => {
-    if (restored) writeStoredOrder(sessionId, { draft, outbox, label })
-  }, [restored, sessionId, label, draft, outbox])
+    if (restored) writeStoredOrder(sessionId, { draft, outbox, label, by: viewerId, bar: slug })
+  }, [restored, sessionId, label, draft, outbox, viewerId, slug])
 
   /** Lo que estaba esperando su turno sale ya (volvió la red, volvió la pantalla, o lo pidió el mozo). */
   const retry = useCallback(() => {
@@ -178,12 +181,14 @@ export function useLocalOrder(options: Options) {
         draft: EMPTY_DRAFT,
         outbox: [...stored.outbox.filter((e) => e.key !== entry.key), entry],
         label,
+        by: viewerId,
+        bar: slug,
       })
       setOutbox((list) => [...list.filter((e) => e.key !== entry.key), entry])
       dispatch({ type: 'clear' })
       setClock(Date.now())
     },
-    [sessionId, label],
+    [sessionId, label, viewerId, slug],
   )
 
   return { draft, dispatch, outbox, flying, restored, enqueue, retry }

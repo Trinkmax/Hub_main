@@ -3,7 +3,8 @@
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { sendOrder } from '@/lib/pos/actions'
-import { backoffDelay, classifySend, entryOrderLines } from '@/lib/pos/order/outbox'
+import { backoffDelay, classifySend, entryOrderLines, mayAutoSend } from '@/lib/pos/order/outbox'
+import { usePosViewer } from '../ui/pos-viewer'
 import {
   dropStoredEntry,
   isSessionOpen,
@@ -34,7 +35,7 @@ let busy = false
 /** Intentos fallidos por tanda, para ir espaciando los reintentos. */
 const attempts = new Map<string, { count: number; nextAt: number }>()
 
-async function flush(slug: string): Promise<number> {
+async function flush(slug: string, viewerId: string | null): Promise<number> {
   if (busy) return IDLE_MS
   busy = true
   let wait = IDLE_MS
@@ -43,6 +44,9 @@ async function flush(slug: string): Promise<number> {
       const { sessionId, head } = pending
       // Esa mesa tiene su pantalla abierta: la manda ella, y la muestra.
       if (isSessionOpen(sessionId)) continue
+      // La cargó otra persona, o es de otro bar: no sale sola con esta sesión. Queda guardada hasta que
+      // vuelva quien la cargó o alguien abra esa mesa y la vea.
+      if (!mayAutoSend(pending, { userId: viewerId, bar: slug })) continue
       const tried = attempts.get(head.key)
       const now = Date.now()
       const notBefore = Math.max(tried?.nextAt ?? 0, head.createdAt + GRACE_MS)
@@ -98,6 +102,7 @@ async function flush(slug: string): Promise<number> {
 
 export function PosOutboxRunner({ slug }: { slug: string }) {
   const online = useOnline()
+  const viewerId = usePosViewer()?.userId ?? null
 
   useEffect(() => {
     if (!online) return
@@ -107,7 +112,7 @@ export function PosOutboxRunner({ slug }: { slug: string }) {
     const run = async () => {
       if (timer !== null) window.clearTimeout(timer)
       timer = null
-      const wait = await flush(slug)
+      const wait = await flush(slug, viewerId)
       if (!stopped) timer = window.setTimeout(run, Math.max(250, wait))
     }
     const onVisible = () => {
@@ -121,7 +126,7 @@ export function PosOutboxRunner({ slug }: { slug: string }) {
       if (timer !== null) window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [online, slug])
+  }, [online, slug, viewerId])
 
   return null
 }

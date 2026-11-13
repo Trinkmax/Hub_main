@@ -79,6 +79,9 @@ export type StoredOutbox = {
   head: OutboxEntry
   /** Cuántas tandas tiene esa mesa sin enviar. */
   count: number
+  /** Quién la cargó en este teléfono y en qué bar (si se guardó). */
+  by: string | null
+  bar: string | null
 }
 
 /**
@@ -100,6 +103,8 @@ export function listStoredOutboxes(): StoredOutbox[] {
         label: stored.label ?? null,
         head,
         count: stored.outbox.length,
+        by: stored.by ?? null,
+        bar: stored.bar ?? null,
       })
     }
   } catch {

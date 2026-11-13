@@ -119,6 +119,8 @@ const storedSchema = z.object({
   v: z.literal(STORAGE_VERSION),
   savedAt: z.number(),
   label: z.string().max(60).nullish(),
+  by: z.string().max(64).nullish(),
+  bar: z.string().max(80).nullish(),
   draft: z
     .object({
       key: z.string().min(8),
@@ -158,6 +160,9 @@ export type StoredOrder = {
   outbox: OutboxEntry[]
   /** «Mesa 12»: para poder nombrar la mesa cuando la tanda sale (o rebota) desde otra pantalla. */
   label?: string | null
+  /** Quién estaba cargando esta mesa en este teléfono (id de usuario) y en qué bar (slug). */
+  by?: string | null
+  bar?: string | null
 }
 
 export const NOTHING_STORED: StoredOrder = { draft: EMPTY_DRAFT, outbox: [] }
@@ -170,6 +175,8 @@ export function serializeOrder(order: StoredOrder, now: number): string | null {
     v: STORAGE_VERSION,
     savedAt: now,
     label: order.label ?? null,
+    by: order.by ?? null,
+    bar: order.bar ?? null,
     draft,
     outbox: order.outbox,
   })
@@ -190,13 +197,32 @@ export function restoreOrder(raw: string | null | undefined, now: number): Store
   }
   const parsed = storedSchema.safeParse(json)
   if (!parsed.success) return NOTHING_STORED
-  const { draft, outbox, savedAt, label } = parsed.data
+  const { draft, outbox, savedAt, label, by, bar } = parsed.data
   const fresh = now - savedAt <= DRAFT_TTL_MS
   return {
     draft: draft && fresh ? draft : EMPTY_DRAFT,
     outbox: outbox.map((entry) => ({ ...entry, nextAttemptAt: now })),
     label: label ?? null,
+    by: by ?? null,
+    bar: bar ?? null,
   }
+}
+
+/**
+ * ¿Puede salir sola, desde otra pantalla, una tanda que quedó guardada en este teléfono?
+ *
+ * El teléfono pasa de mano en mano. Lo guardado es de quien lo cargó y del bar donde lo cargó: no sale
+ * solo con la sesión de otra persona (quedaría a su nombre sin que lo sepa) ni por otro bar. Queda
+ * guardado hasta que vuelva quien lo cargó o alguien abra esa mesa, lo vea y lo mande. Lo guardado
+ * antes de que existiera el dato (sin dueño) sale como siempre.
+ */
+export function mayAutoSend(
+  owner: { by?: string | null; bar?: string | null },
+  viewer: { userId: string | null; bar: string },
+): boolean {
+  if (owner.bar && owner.bar !== viewer.bar) return false
+  if (owner.by && viewer.userId && owner.by !== viewer.userId) return false
+  return true
 }
 
 /** ¿Se puede tirar esta entrada de otra mesa? Solo si es vieja y no guarda nada sin enviar. */
@@ -227,11 +253,13 @@ export function backoffDelay(attempts: number): number {
  * Errores con los que mandar lo mismo otra vez no sirve: el pedido, así, no va a entrar nunca.
  * Vuelve al borrador con el motivo, para corregirlo. Todo lo demás (sin red, sesión vencida, un
  * error del servidor) se reintenta solo, con la misma clave.
+ *
+ * «No tenés permiso» y «el punto de venta está apagado» NO están acá: el pedido está bien, el que no
+ * puede mandarlo es quien tiene el teléfono ahora. Queda en la bandeja, a la vista, hasta que lo mande
+ * alguien que pueda.
  */
 const REJECT_CODES = new Set([
   'invalid',
-  'forbidden',
-  'disabled',
   'session_not_found',
   'session_not_open',
   'empty_order',

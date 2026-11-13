@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { z } from 'zod'
 import { FloorLive } from '@/components/pos/floor/floor-live'
 import { BranchChooser } from '@/components/pos/ui/branch-chooser'
+import { PosViewerProvider } from '@/components/pos/ui/pos-viewer'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { requireFeature } from '@/lib/platform/guards'
@@ -67,24 +68,26 @@ export default async function PosFloorPage({
 
   return (
     <div className={cn('pos', posFont.variable)}>
-      <FloorLive
-        slug={tenantSlug}
-        initial={snapshot.data}
-        branches={branches}
-        timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
-        canEditPlan={access.role === 'owner'}
-        canOperate={POS_FLOOR_ROLES.includes(access.role)}
-        initialMove={mover && z.uuid().safeParse(mover).success ? mover : null}
-        account={
-          <AccountSheet
-            email={access.user.email ?? ''}
-            role={access.role}
-            tenantName={access.tenant.name}
-            tenantSlug={tenantSlug}
-            signOut={signOutAction}
-          />
-        }
-      />
+      <PosViewerProvider userId={access.user.id}>
+        <FloorLive
+          slug={tenantSlug}
+          initial={snapshot.data}
+          branches={branches}
+          timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
+          canEditPlan={access.role === 'owner'}
+          canOperate={POS_FLOOR_ROLES.includes(access.role)}
+          initialMove={mover && z.uuid().safeParse(mover).success ? mover : null}
+          account={
+            <AccountSheet
+              email={access.user.email ?? ''}
+              role={access.role}
+              tenantName={access.tenant.name}
+              tenantSlug={tenantSlug}
+              signOut={signOutAction}
+            />
+          }
+        />
+      </PosViewerProvider>
     </div>
   )
 }

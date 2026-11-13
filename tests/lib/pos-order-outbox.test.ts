@@ -13,6 +13,7 @@ import {
   entryUnits,
   isDisposable,
   makeEntry,
+  mayAutoSend,
   NOTHING_STORED,
   nextSend,
   type OutboxEntry,
@@ -175,8 +176,6 @@ describe('qué respuesta es «todavía no» y cuál es «así no»', () => {
       'session_not_open',
       'session_not_found',
       'invalid',
-      'forbidden',
-      'disabled',
       'order_too_long',
       'invalid_quantity',
       'too_many_options',
@@ -188,6 +187,55 @@ describe('qué respuesta es «todavía no» y cuál es «así no»', () => {
         message: 'motivo',
       })
     }
+  })
+
+  it('si quien tiene el teléfono no puede mandarla, la tanda NO vuelve al borrador: sigue en la bandeja', () => {
+    // El pedido está bien; el que no puede es el que entró después (otro rol, otro bar, el punto de
+    // venta apagado). Devolverla al borrador la sacaría de la vista y dejaría de reintentarse.
+    for (const code of ['forbidden', 'disabled']) {
+      expect(classifySend({ ok: false, code, message: 'No tenés permiso.' })).toEqual({
+        kind: 'retry',
+        failure: 'server',
+        message: 'No tenés permiso.',
+      })
+    }
+  })
+})
+
+describe('de quién es lo que quedó guardado en el teléfono', () => {
+  const ana = 'usuario-ana'
+  const beto = 'usuario-beto'
+
+  it('se guarda y se lee quién lo cargó y en qué bar', () => {
+    const raw = serializeOrder({ draft: EMPTY_DRAFT, outbox: [entry()], by: ana, bar: 'hub' }, NOW)
+    expect(restoreOrder(raw, NOW)).toMatchObject({ by: ana, bar: 'hub' })
+  })
+
+  it('lo guardado antes de que existiera el dato se lee sin dueño', () => {
+    const raw = serializeOrder({ draft: EMPTY_DRAFT, outbox: [entry()] }, NOW)
+    expect(restoreOrder(raw, NOW)).toMatchObject({ by: null, bar: null })
+  })
+
+  it('sale sola con la sesión de quien la cargó, en su bar', () => {
+    expect(mayAutoSend({ by: ana, bar: 'hub' }, { userId: ana, bar: 'hub' })).toBe(true)
+  })
+
+  it('no sale sola con la sesión de otra persona', () => {
+    expect(mayAutoSend({ by: ana, bar: 'hub' }, { userId: beto, bar: 'hub' })).toBe(false)
+  })
+
+  it('nunca sale por otro bar, aunque sea la misma persona', () => {
+    expect(mayAutoSend({ by: ana, bar: 'hub' }, { userId: ana, bar: 'otro-bar' })).toBe(false)
+  })
+
+  it('lo que no tiene dueño guardado sale como siempre', () => {
+    expect(mayAutoSend({}, { userId: beto, bar: 'hub' })).toBe(true)
+    expect(mayAutoSend({ by: null, bar: null }, { userId: null, bar: 'hub' })).toBe(true)
+  })
+
+  it('sin saber quién mira, solo frena lo de otro bar', () => {
+    expect(mayAutoSend({ by: ana, bar: 'hub' }, { userId: null, bar: 'hub' })).toBe(true)
+    expect(mayAutoSend({ by: ana, bar: 'hub' }, { userId: null, bar: 'otro-bar' })).toBe(false)
   })
 })
 
