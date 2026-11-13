@@ -38,6 +38,9 @@ const MESSAGES: Record<string, string> = {
   pos_session_needs_bill: 'Esa mesa se cobra desde su cuenta, en el punto de venta.',
   pos_session_has_consumption: 'Esa mesa tiene consumo sin cobrar: se cierra desde su cuenta.',
   range_invalid: 'Ese rango de fechas no se puede pedir.',
+  merge_invalid: 'Una mesa no se junta consigo misma.',
+  merge_practice_mismatch: 'Una mesa de práctica no se junta con una de verdad.',
+  merge_two_reservations: 'Las dos mesas tienen su reserva: se cobran por separado.',
 }
 
 export type PosError = { code: string; message: string; detail: string | null }

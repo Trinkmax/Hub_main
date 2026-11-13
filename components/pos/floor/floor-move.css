@@ -152,3 +152,18 @@
     margin-top: 0;
   }
 }
+
+/* ── Juntar dos mesas: la hoja que pregunta ── */
+.pos-merge-text {
+  margin: 0.35rem 0 0;
+  color: var(--pos-ink-soft, var(--pos-ink));
+  font-size: 1rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.pos-merge-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}

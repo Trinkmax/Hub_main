@@ -307,6 +307,42 @@ export async function requestBill(
 }
 
 /**
+ * Juntar dos mesas: todo lo de `fromSessionId` (lo pedido, lo cobrado, los descuentos) pasa a la
+ * cuenta de `intoSessionId`, y la primera queda libre. No tiene vuelta: la pantalla pregunta antes.
+ */
+export async function mergeTables(
+  slug: string,
+  fromSessionId: string,
+  intoSessionId: string,
+): Promise<ActionResult<{ duplicate: boolean }>> {
+  const access = await authorize(slug, POS_FLOOR_ROLES)
+  if (isDenied(access)) return access
+  if (
+    !id.safeParse(fromSessionId).success ||
+    !id.safeParse(intoSessionId).success ||
+    fromSessionId === intoSessionId
+  ) {
+    return invalid
+  }
+  const result = await call<{ merged: boolean; duplicate: boolean }>(access, 'pos_merge_tables', {
+    p_from: fromSessionId,
+    p_into: intoSessionId,
+  })
+  if (!result.ok) return result
+  if (!result.data.duplicate) {
+    await logAudit({
+      tenantId: access.tenantId,
+      userId: access.userId,
+      action: 'pos.tables_merged',
+      entity: 'table_session',
+      entityId: intoSessionId,
+      payload: { from_session_id: fromSessionId },
+    })
+  }
+  return { ok: true, data: { duplicate: result.data.duplicate } }
+}
+
+/**
  * Liberar una mesa que se abrió por error. La base solo deja si no tiene nada vivo cargado ni
  * cobros: lo demás se da de baja o se cobra.
  */

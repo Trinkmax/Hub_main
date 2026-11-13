@@ -40,7 +40,8 @@ lo prende un superadmin por bar).
 | Modo práctica por sucursal | `pos_set_practice`, Sucursales › Modo práctica, la franja del salón | hecho |
 | Liberar una mesa abierta por error | `pos_release_table`, la hoja de la mesa en la comanda | hecho |
 | Ventas día por día | `pos_sales_days`, la tira de «Hoy en vivo» | hecho |
-| Proyección de Administración con estas ventas, QR del cliente, juntar mesas, vincular la tele | — | sigue |
+| Juntar dos mesas | `pos_merge_tables`, el mapa (mover una mesa y tocar una ocupada) | hecho |
+| Proyección de Administración con estas ventas, QR del cliente, vincular la tele, PIN | — | sigue |
 
 ## Modelo de datos
 
@@ -311,6 +312,13 @@ los cargó. Falta una posición explícita en `ticket_items`.
 
 Probada en una base local con 60 comprobaciones y, ya aplicada, con una pasada en el bar de ejemplo
 (práctica prendida → mesa de prueba cobrada sin caja → práctica apagada; mesa vacía liberada; ventas por día).
+
+**Juntar mesas** (migración `20261113140234_pos_juntar_mesas`, aplicada el 13/11): se levanta una mesa en el
+mapa (manteniéndola apretada o con «Cambiar de mesa») y se toca una ocupada. La pantalla pregunta, porque no
+tiene vuelta. `pos_merge_tables` pasa a la mesa que queda las tandas, los cobros, los descuentos y los pedidos
+de aprobación, suma las personas y, si no tenía socio, reserva o nombre, toma los de la otra (así la seña y
+los puntos no se pierden). No junta una mesa de práctica con una de verdad ni dos mesas con dos reservas
+distintas. 36 comprobaciones en la base local y probado en el bar de ejemplo (la 1 con la 3).
 
 **Pendiente (otra tanda):**
 - `cancel_ticket_item` (la baja del servicio de mesa viejo) sigue sin mirar los cobros.

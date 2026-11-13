@@ -13,8 +13,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetGrabber,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { planHref } from '@/lib/floor-plan/branches'
-import { moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import { mergeTables, moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import { posFont } from '@/lib/pos/font'
 import { clockAt } from '@/lib/pos/order/clock'
 import {
   attentionRank,
@@ -77,6 +85,8 @@ type Props = {
 
 /** Una mesa levantada, esperando a dónde va. */
 type Moving = { sessionId: string; fromTableId: string; label: string }
+/** Dos mesas que alguien quiere juntar: se pregunta antes, porque no tiene vuelta. */
+type Merging = { from: Moving; into: { sessionId: string; label: string } }
 
 /** Lo que se puede aislar tocando una ficha del resumen. */
 type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late'
@@ -119,6 +129,8 @@ export function FloorLive({
   const [branchMenu, setBranchMenu] = useState(false)
   const [focus, setFocus] = useState<FocusKey | null>(null)
   const [moving, setMoving] = useState<Moving | null>(null)
+  const [merging, setMerging] = useState<Merging | null>(null)
+  const [mergeBusy, setMergeBusy] = useState(false)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(initial), [initial])
@@ -317,7 +329,9 @@ export function FloorLive({
       if (moving) {
         if (tableId === moving.fromTableId) setMoving(null)
         else if (moveTargets?.has(tableId)) void finishMove(tableId)
-        else toast('Esa mesa no está libre. Elegí una de las marcadas.')
+        else if (entry.session) {
+          setMerging({ from: moving, into: { sessionId: entry.session.id, label: entry.label } })
+        } else toast('Esa mesa no está libre. Elegí una de las marcadas.')
         return
       }
       if (entry.session) router.push(`/${slug}/salon/mesa/${entry.session.id}`)
@@ -325,6 +339,27 @@ export function FloorLive({
     },
     [byId, router, slug, moving, moveTargets, finishMove, canOperate],
   )
+
+  const confirmMerge = async () => {
+    if (!merging || mergeBusy) return
+    const { from, into } = merging
+    setMergeBusy(true)
+    let result: Awaited<ReturnType<typeof mergeTables>>
+    try {
+      result = await mergeTables(slug, from.sessionId, into.sessionId)
+    } catch {
+      result = { ok: false, message: 'No hay señal: las mesas no se juntaron.', code: 'network' }
+    }
+    setMergeBusy(false)
+    setMerging(null)
+    if (!result.ok) {
+      toast.error(result.message)
+    } else {
+      setMoving(null)
+      toast.success(`La mesa ${from.label} se juntó con la ${into.label}`)
+    }
+    void reload()
+  }
 
   const switchBranch = (branch: PosBranch) => {
     setBranchMenu(false)
@@ -402,7 +437,9 @@ export function FloorLive({
     if (moving && moveTargets) {
       return new Set(
         entries
-          .filter((e) => e.tableId !== moving.fromTableId && !moveTargets.has(e.tableId))
+          .filter(
+            (e) => e.tableId !== moving.fromTableId && !moveTargets.has(e.tableId) && !e.session,
+          )
           .map((e) => e.tableId),
       )
     }
@@ -622,8 +659,8 @@ export function FloorLive({
               <p className="pos-move-text">
                 <b>Mesa {moving.label}:</b>{' '}
                 {moveTargets && moveTargets.size > 0
-                  ? 'tocá la mesa libre a la que pasa, o arrastrala hasta ahí.'
-                  : 'no hay ninguna mesa libre. Probá en otro sector.'}
+                  ? 'tocá la mesa libre a la que pasa (o arrastrala), o una ocupada para juntarlas.'
+                  : 'no hay ninguna libre acá. Tocá una ocupada para juntarlas, o probá en otro sector.'}
               </p>
               <button type="button" className="pos-move-cancel" onClick={() => setMoving(null)}>
                 Cancelar
@@ -701,6 +738,51 @@ export function FloorLive({
 
       {/* Las tandas que quedaron sin enviar (sin señal) se siguen mandando desde el mapa. */}
       <PosOutboxRunner slug={slug} />
+
+      <Sheet
+        open={merging !== null}
+        onOpenChange={(open) => {
+          if (!open && !mergeBusy) setMerging(null)
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          showClose={false}
+          className={cn('pos pos-sheet', posFont.variable)}
+          data-testid="merge-sheet"
+        >
+          <SheetGrabber />
+          <div className="pos-sheet-body">
+            <SheetTitle className="pos-sheet-title">
+              ¿Juntar la mesa {merging?.from.label} con la {merging?.into.label}?
+            </SheetTitle>
+            <SheetDescription className="pos-merge-text">
+              Todo lo de la {merging?.from.label} (lo pedido, lo cobrado y los descuentos) pasa a la
+              cuenta de la {merging?.into.label}, y la {merging?.from.label} queda libre. No se
+              puede deshacer.
+            </SheetDescription>
+            <div className="pos-merge-actions">
+              <button
+                type="button"
+                className="pos-btn pos-btn-quiet"
+                onClick={() => setMerging(null)}
+                disabled={mergeBusy}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="pos-btn pos-btn-primary"
+                onClick={() => void confirmMerge()}
+                disabled={mergeBusy}
+                data-testid="merge-confirm"
+              >
+                Sí, juntarlas
+              </button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <OpenTableSheet
         slug={slug}
