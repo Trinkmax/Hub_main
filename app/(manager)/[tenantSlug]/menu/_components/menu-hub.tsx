@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
+import { CircleDollarSign, Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -70,6 +70,13 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
             <Link href={`/print/carta/${tenantSlug}`} target="_blank" rel="noopener">
               <QrCode className="size-4" />
               QR de la carta
+            </Link>
+          </Button>
+          {/* Buscar un producto y cambiarle el precio, o subir toda la carta un porcentaje. */}
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href={`/${tenantSlug}/menu/precios`} data-testid="menu-precios-link">
+              <CircleDollarSign className="size-4" />
+              Precios
             </Link>
           </Button>
           <Popover>
