@@ -178,7 +178,6 @@ const openTableSchema = z.object({
   reservationId: id.nullish(),
   customerId: id.nullish(),
   alias: z.string().trim().max(60).nullish(),
-  practice: z.boolean().optional(),
 })
 export type OpenTableInput = z.input<typeof openTableSchema>
 
@@ -200,7 +199,9 @@ export async function openTable(
       p_reservation_id: parsed.data.reservationId ?? null,
       p_customer_id: parsed.data.customerId ?? null,
       p_alias: parsed.data.alias || null,
-      p_practice: parsed.data.practice ?? false,
+      // Una mesa «de práctica» no llega a la caja ni a los reportes: no la decide el celular. Va apagado
+      // hasta que el modo práctica sea de la sucursal y lo prenda el dueño (docs/features/pos.md).
+      p_practice: false,
     },
   )
   if (!result.ok) return result
@@ -216,7 +217,6 @@ export async function openTable(
         table_id: parsed.data.tableId,
         party_size: parsed.data.partySize,
         reservation_id: parsed.data.reservationId ?? null,
-        practice: parsed.data.practice ?? false,
       },
     })
   }
@@ -249,7 +249,22 @@ export async function updateTable(
     p_customer_id: parsed.data.customerId ?? null,
     p_clear_customer: parsed.data.clearCustomer ?? false,
   })
-  return result.ok ? { ok: true } : result
+  if (!result.ok) return result
+  // De quién es la mesa decide a quién le van los puntos al cobrar: queda quién lo cambió.
+  if (parsed.data.customerId || parsed.data.clearCustomer) {
+    await logAudit({
+      tenantId: access.tenantId,
+      userId: access.userId,
+      action: 'pos.table_customer_changed',
+      entity: 'table_session',
+      entityId: parsed.data.sessionId,
+      payload: {
+        customer_id: parsed.data.clearCustomer ? null : (parsed.data.customerId ?? null),
+        cleared: parsed.data.clearCustomer ?? false,
+      },
+    })
+  }
+  return { ok: true }
 }
 
 export async function moveTable(
@@ -285,7 +300,8 @@ export async function requestBill(
 ): Promise<ActionResult> {
   const access = await authorize(slug, POS_FLOOR_ROLES)
   if (isDenied(access)) return access
-  if (!id.safeParse(sessionId).success) return invalid
+  // `on` llega del navegador: un texto «false» sería verdadero para la base.
+  if (!id.safeParse(sessionId).success || typeof on !== 'boolean') return invalid
   const result = await call(access, 'pos_request_bill', { p_session_id: sessionId, p_on: on })
   return result.ok ? { ok: true } : result
 }
@@ -460,7 +476,13 @@ export async function setStockout(
 ): Promise<ActionResult> {
   const access = await authorize(slug, POS_VIEW_ROLES)
   if (isDenied(access)) return access
-  if (!id.safeParse(branchId).success || !id.safeParse(menuItemId).success) return invalid
+  if (
+    !id.safeParse(branchId).success ||
+    !id.safeParse(menuItemId).success ||
+    typeof on !== 'boolean'
+  ) {
+    return invalid
+  }
   const result = await call(access, 'pos_set_stockout', {
     p_branch_id: branchId,
     p_menu_item_id: menuItemId,

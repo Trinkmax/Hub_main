@@ -11,8 +11,8 @@ import {
 import type { ModelTable } from '@/lib/floor-plan/model'
 import { type FloorSummary, serviceMinutesAt, summarize } from '@/lib/pos/table-state'
 import type { FloorSnapshot } from '@/lib/pos/types'
+import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { type LiveStatus, usePosPoke } from '@/lib/pos/use-poke'
-import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 
 export type LiveModel = {
@@ -56,11 +56,9 @@ export function useLiveModel({
   const active = enabled && branchId !== null
   const activeRef = useRef(active)
   activeRef.current = active
-  const inFlight = useRef(false)
 
-  const reload = useCallback(async () => {
-    if (!activeRef.current || !branchId || inFlight.current) return
-    inFlight.current = true
+  const read = useCallback(async () => {
+    if (!activeRef.current || !branchId) return
     try {
       const result = await refreshLiveModelAction(slug, branchId)
       if (result.ok) {
@@ -71,18 +69,17 @@ export function useLiveModel({
       }
     } catch {
       setError('No se pudo leer el salón. Revisá la conexión.')
-    } finally {
-      inFlight.current = false
     }
   }, [slug, branchId])
+  // Un aviso que llega mientras se está leyendo no se pierde: se lee de nuevo al terminar.
+  const { poke, now: reload } = useLiveReload(read)
 
   // Al entrar a «En vivo»: leer YA (la foto anterior puede ser vieja).
   useEffect(() => {
     if (active) void reload()
   }, [active, reload])
 
-  const reloadSoon = useDebouncedRefresh(reload, 220)
-  const connection = usePosPoke(active ? branchId : null, reloadSoon)
+  const connection = usePosPoke(active ? branchId : null, poke)
   useVisibleInterval(reload, 40_000)
 
   // El reloj de la computadora puede estar corrido: se usa la hora de la base y se la hace avanzar acá.

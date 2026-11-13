@@ -26,6 +26,8 @@ type Props = {
   timeZone: string
   /** `?estaciones=` de la dirección; `null` si no vino (se usa lo guardado en el dispositivo). */
   stationParam: string[] | null
+  /** Quien mira entró con el usuario de la cocina. */
+  isKitchen: boolean
 }
 
 /** Algo que se tocó y la base todavía no confirmó (o confirmó, pero aún no se volvió a leer). */
@@ -60,7 +62,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl }: Props) {
+export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, isKitchen }: Props) {
   const branchId = initial.branch.id
   const [server, setServer] = useState(initial)
   const [pending, setPending] = useState<Pending[]>([])
@@ -280,6 +282,7 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl }: 
       onStations={changeStations}
       onAdvance={advance}
       onShown={shown}
+      isKitchen={isKitchen}
       link={{
         live,
         down,

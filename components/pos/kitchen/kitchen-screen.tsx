@@ -95,6 +95,12 @@ type Props = {
   onAdvance: (ticketId: string, to: AdvanceTo, context: { spoken: string; undo: boolean }) => void
   /** «Cocina lo vio». Devuelve si se pudo avisar; si no, se reintenta en la próxima lectura. */
   onShown: (ticketIds: string[]) => Promise<boolean>
+  /**
+   * Quien mira es la cocina (su usuario). El tilde «cocina lo vio» lo pone la cocina: su usuario en
+   * cualquier pantalla, o una pantalla grande (la tele, una tablet). El dueño o un mozo que espían la cola
+   * desde el celular no lo ponen.
+   */
+  isKitchen: boolean
   link: KitchenLink
   failure: KitchenFailure | null
   onDismissFailure: () => void
@@ -132,6 +138,7 @@ export function KitchenScreen({
   onStations,
   onAdvance,
   onShown,
+  isKitchen,
   link,
   failure,
   onDismissFailure,
@@ -302,15 +309,16 @@ export function KitchenScreen({
 
   // ── «Cocina lo vio» ────────────────────────────────────────────────────────
   const reported = useRef(new Set<string>())
+  const acknowledges = isKitchen || layout.mode === 'rail'
   useEffect(() => {
-    if (document.hidden) return
+    if (document.hidden || !acknowledges) return
     const ids = unseenCards(cards, reported.current)
     if (ids.length === 0) return
     for (const id of ids) reported.current.add(id)
     void onShown(ids).then((ok) => {
       if (!ok) for (const id of ids) reported.current.delete(id)
     })
-  }, [cards, onShown])
+  }, [cards, onShown, acknowledges])
 
   // ── Lo demás ───────────────────────────────────────────────────────────────
   useEffect(() => {

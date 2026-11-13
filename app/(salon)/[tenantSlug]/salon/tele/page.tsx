@@ -78,6 +78,7 @@ export default async function KitchenTvPage({
         initial={queue.data}
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         stationParam={parseStationParam(estaciones)}
+        isKitchen={access.role === 'kitchen'}
       />
     </div>
   )
