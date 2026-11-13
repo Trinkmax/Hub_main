@@ -19,7 +19,6 @@ import {
 } from '@/lib/floor-plan/actions'
 import {
   hasBranchChoice,
-  inkOn,
   type PlanBranch,
   planHref,
   suggestNumberStart,
@@ -54,7 +53,7 @@ import { suggestNextLabel } from '@/lib/floor-plan/numbering'
 import type { ElementRow, FloorPlanData } from '@/lib/floor-plan/queries'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
 import { type AlignKind, alignBoxes, type Guide } from '@/lib/floor-plan/snap'
-import { readStageTransform } from '@/lib/floor-plan/stage-transform'
+import { readStageTransform, type StageInset } from '@/lib/floor-plan/stage-transform'
 import { cn } from '@/lib/utils'
 import { BulkCreateDialog } from './bulk-create-dialog'
 import { ContextualToolbar } from './contextual-toolbar'
@@ -94,8 +93,19 @@ export type FloorPlanEditorProps = {
 type Mode = 'editar' | 'vivo' | 'lista'
 
 const VIEW_KEY = 'hub:fpe:view'
-/** Ancho del editor desde el que entran el plano y la maqueta lado a lado. */
-const SPLIT_MIN_WIDTH = 960
+/**
+ * Ancho del editor desde el que entran el plano y la maqueta lado a lado sin apretar a ninguno. Por
+ * debajo se mira de a uno (el plano, o la maqueta con un toque): en una notebook, partir la pantalla en
+ * dos dejaba el plano en un recuadro. Es el mismo número que usa el CSS (`@container fpe`).
+ */
+const SPLIT_MIN_WIDTH = 1180
+/** Desde este ancho las herramientas flotan sobre el tablero; por debajo (celular) van en filas. */
+const FLOAT_MIN_WIDTH = 860
+/**
+ * Lo que tapan las herramientas que flotan sobre el plano, en píxeles: la barra de agregar arriba, la
+ * paleta a la izquierda y el zoom abajo. El piso se encaja en lo que queda libre.
+ */
+const FLOAT_INSET: StageInset = { top: 52, right: 8, bottom: 52, left: 68 }
 
 // Geometría sin id (para snapshots de undo/redo).
 type GeomFields = {
@@ -297,10 +307,15 @@ export function FloorPlanEditor({
 
   // ── Cómo se mira: plano, maqueta o los dos (recuerda la última elección) ──
   const [canSplit, setCanSplit] = useState(false)
+  const [floating, setFloating] = useState(false)
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const update = () => setCanSplit(host.getBoundingClientRect().width >= SPLIT_MIN_WIDTH)
+    const update = () => {
+      const width = host.getBoundingClientRect().width
+      setCanSplit(width >= SPLIT_MIN_WIDTH)
+      setFloating(width >= FLOAT_MIN_WIDTH)
+    }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(host)
@@ -325,7 +340,8 @@ export function FloorPlanEditor({
       // idem
     }
   }, [])
-  const showModel = view === 'model' || (view === 'split' && canSplit)
+  // Partida, la maqueta va arriba de la ficha; sola, ocupa el tablero entero.
+  const splitShown = view === 'split' && canSplit
 
   const prevGeomRef = useRef<Map<string, ElementGeometry>>(new Map())
 
@@ -1120,20 +1136,28 @@ export function FloorPlanEditor({
 
   const frameStyle = branch ? ({ '--branch': branch.color } as React.CSSProperties) : undefined
 
+  // La misma maqueta en sus dos lugares: el tablero entero («Maqueta») o arriba de la ficha («Los dos»).
+  const maquetaPane = activeArea ? (
+    <MaquetaPane
+      elements={areaElements}
+      areaName={activeArea.name}
+      live={liveStore}
+      selectedTableId={selectedTableId}
+      onTable={selectTable}
+      standUp={viewChosenRef.current}
+    />
+  ) : null
+
   return (
     <>
       {/* `data-tex-away="always"`: el plano usa hasta la última esquina (la ficha de la mesa, el zoom, la
           última fila de la lista) en cualquier pantalla; el asistente no se para encima. */}
       <div ref={hostRef} className="fpe-host" data-tex-away="always">
-        <section
-          className="fpe"
-          aria-label="Plano del salón"
-          data-mode={mode}
-          data-ink={branch ? inkOn(branch.color) : 'light'}
-          style={frameStyle}
-        >
-          <header className="fpe-band">
-            <h1 className="fpe-title">Plano del salón</h1>
+        <section className="fpe" aria-label="Plano del salón" data-mode={mode} style={frameStyle}>
+          {/* Una sola barra fina: la sucursal, los sectores y qué se está haciendo. El dibujo empieza
+              enseguida abajo (antes eran tres franjas apiladas antes de llegar al plano). */}
+          <header className="fpe-bar">
+            <h1 className="fpe-sr">Plano del salón</h1>
 
             {multiBranch ? (
               <nav className="fpe-branches" aria-label="Sucursal">
@@ -1154,55 +1178,62 @@ export function FloorPlanEditor({
               </nav>
             ) : null}
 
+            {mode !== 'lista' && areas.length > 0 ? (
+              <SectorTabs
+                slug={slug}
+                branchId={branch?.id ?? null}
+                multiBranch={multiBranch}
+                areas={areas}
+                activeAreaId={activeArea?.id ?? ''}
+                counts={counts}
+                pending={mode === 'vivo' && liveModelOn ? live.pending : null}
+                editable={mode === 'editar'}
+                suggestedStart={suggestedStart}
+                extent={extent}
+                onSelect={chooseArea}
+                onCreated={onSectorCreated}
+                onChanged={() => onChanged(true)}
+              />
+            ) : (
+              <span className="fpe-bar-name" aria-hidden>
+                {mode === 'lista' ? 'Todas las mesas' : 'Plano del salón'}
+              </span>
+            )}
+
             {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
             <div className="fpe-modes" role="group" aria-label="Qué querés hacer">
               <button
                 type="button"
                 className="fpe-mode"
                 aria-pressed={mode === 'editar'}
+                title="Editar el plano"
                 onClick={() => chooseMode('editar')}
               >
                 <PencilRuler aria-hidden />
-                Editar
+                <span>Editar</span>
               </button>
               <button
                 type="button"
                 className="fpe-mode"
                 aria-pressed={mode === 'vivo'}
+                title="Ver el salón en vivo"
                 onClick={() => chooseMode('vivo')}
               >
                 <Radio aria-hidden />
-                En vivo
+                <span>En vivo</span>
               </button>
               <button
                 type="button"
                 className="fpe-mode"
                 aria-pressed={mode === 'lista'}
+                title="Todas las mesas, en lista"
                 onClick={() => chooseMode('lista')}
               >
                 <LayoutList aria-hidden />
-                Lista
+                <span>Lista</span>
               </button>
             </div>
           </header>
-
-          {mode !== 'lista' && areas.length > 0 ? (
-            <SectorTabs
-              slug={slug}
-              branchId={branch?.id ?? null}
-              multiBranch={multiBranch}
-              areas={areas}
-              activeAreaId={activeArea?.id ?? ''}
-              counts={counts}
-              pending={mode === 'vivo' && liveModelOn ? live.pending : null}
-              editable={mode === 'editar'}
-              suggestedStart={suggestedStart}
-              extent={extent}
-              onSelect={chooseArea}
-              onCreated={onSectorCreated}
-              onChanged={() => onChanged(true)}
-            />
-          ) : null}
 
           <div className="fpe-body">
             {mode === 'lista' ? (
@@ -1250,38 +1281,39 @@ export function FloorPlanEditor({
                 <LegacyLive key={activeArea.id} slug={slug} tenantId={tenantId} area={activeArea} />
               )
             ) : (
-              <>
-                <EditorToolbar
-                  view={view}
-                  canSplit={canSplit}
-                  onView={chooseView}
-                  canUndo={canUndo}
-                  canRedo={canRedo}
-                  onUndo={undo}
-                  onRedo={redo}
-                  onAddTable={() => handleQuickAdd('table')}
-                  onAddTablePointerDown={(e) => onChipPointerDown('table', 'Mesa', e)}
-                  shouldSuppressClick={shouldSuppressClick}
-                  bulk={
-                    <BulkCreateDialog
-                      slug={slug}
-                      areaId={activeArea.id}
-                      areaName={activeArea.name}
-                      onCreated={() => onChanged()}
-                    />
-                  }
-                  qr={
-                    qrEnabled
-                      ? {
-                          ready: areaTables.length > 0,
-                          onPrint: () =>
-                            window.open(`/print/qrs/${activeArea.id}`, '_blank', 'noopener'),
-                        }
-                      : null
-                  }
-                />
+              <div className="fpe-work" data-view={view} data-split={splitShown ? 'on' : undefined}>
+                {/* El tablero: el plano (o la maqueta) ocupa todo y las herramientas flotan encima. */}
+                <div className="fpe-board">
+                  <EditorToolbar
+                    view={view}
+                    canSplit={canSplit}
+                    onView={chooseView}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                    onUndo={undo}
+                    onRedo={redo}
+                    onAddTable={() => handleQuickAdd('table')}
+                    onAddTablePointerDown={(e) => onChipPointerDown('table', 'Mesa', e)}
+                    shouldSuppressClick={shouldSuppressClick}
+                    bulk={
+                      <BulkCreateDialog
+                        slug={slug}
+                        areaId={activeArea.id}
+                        areaName={activeArea.name}
+                        onCreated={() => onChanged()}
+                      />
+                    }
+                    qr={
+                      qrEnabled
+                        ? {
+                            ready: areaTables.length > 0,
+                            onPrint: () =>
+                              window.open(`/print/qrs/${activeArea.id}`, '_blank', 'noopener'),
+                          }
+                        : null
+                    }
+                  />
 
-                <div className="fpe-work" data-view={view}>
                   <ElementPalette
                     onQuickAdd={handleQuickAdd}
                     onChipPointerDown={onChipPointerDown}
@@ -1297,6 +1329,7 @@ export function FloorPlanEditor({
                       fitKey={activeArea.id}
                       onBackground={clearSelection}
                       label={`Plano de ${activeArea.name}`}
+                      inset={floating ? FLOAT_INSET : null}
                       overlay={
                         <>
                           <ContextualToolbar
@@ -1361,19 +1394,15 @@ export function FloorPlanEditor({
                     </EditorStage>
                   </div>
 
-                  <div className="fpe-pane fpe-pane-model">
-                    {showModel ? (
-                      <MaquetaPane
-                        elements={areaElements}
-                        areaName={activeArea.name}
-                        live={liveStore}
-                        selectedTableId={selectedTableId}
-                        onTable={selectTable}
-                        standUp={viewChosenRef.current}
-                      />
-                    ) : null}
-                  </div>
+                  {view === 'model' ? (
+                    <div className="fpe-pane fpe-pane-model">{maquetaPane}</div>
+                  ) : null}
+                </div>
 
+                <div className="fpe-aside">
+                  {splitShown ? (
+                    <div className="fpe-pane fpe-pane-model fpe-pane-mini">{maquetaPane}</div>
+                  ) : null}
                   <aside
                     className={cn('fpe-side fpe-paper')}
                     aria-label={
@@ -1436,7 +1465,7 @@ export function FloorPlanEditor({
                     )}
                   </aside>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </section>

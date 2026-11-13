@@ -76,6 +76,17 @@ export function depthOf(camera: Camera, x: number, y: number): number {
 }
 
 /**
+ * Una huella llevada al piso ya girado por la cámara: `x` es la columna de pantalla donde cae cada punto
+ * (la altura no la mueve) e `y` su profundidad (mayor = más cerca de quien mira). Con esto se decide
+ * quién tapa a quién (`paintOrder` en `scene.ts`).
+ */
+export function floorView(camera: Camera, footprint: readonly Vec2[]): Vec2[] {
+  const cos = Math.cos(camera.yaw)
+  const sin = Math.sin(camera.yaw)
+  return footprint.map((p) => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }))
+}
+
+/**
  * Cuánto sube en pantalla una altura `z` (en las mismas unidades del piso).
  * Con la cámara cenital es 0: los volúmenes no se ven.
  */

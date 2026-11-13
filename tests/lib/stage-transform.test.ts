@@ -84,4 +84,45 @@ describe('fitTransform', () => {
     expect(Number.isFinite(t.positionX)).toBe(true)
     expect(Number.isFinite(t.positionY)).toBe(true)
   })
+
+  describe('con herramientas flotando encima (inset)', () => {
+    // El tablero del editor: la barra de agregar arriba, la paleta a la izquierda y el zoom abajo.
+    const inset = { top: 52, right: 8, bottom: 52, left: 68 }
+    const box = { x: 0, y: 0, width: 1200, height: 800 }
+
+    it('el piso entra entero en lo que queda libre: nada queda debajo de una herramienta', () => {
+      const t = fitTransform(viewport, box, { inset, padding: 14 })
+      const left = t.positionX
+      const top = t.positionY
+      const right = t.positionX + box.width * t.scale
+      const bottom = t.positionY + box.height * t.scale
+      expect(left).toBeGreaterThanOrEqual(inset.left + 14 - 1e-6)
+      expect(top).toBeGreaterThanOrEqual(inset.top + 14 - 1e-6)
+      expect(right).toBeLessThanOrEqual(viewport.width - inset.right - 14 + 1e-6)
+      expect(bottom).toBeLessThanOrEqual(viewport.height - inset.bottom - 14 + 1e-6)
+    })
+
+    it('y queda centrado en esa zona libre, no en el visor entero', () => {
+      const t = fitTransform(viewport, box, { inset })
+      const freeCenterX = inset.left + (viewport.width - inset.left - inset.right) / 2
+      const freeCenterY = inset.top + (viewport.height - inset.top - inset.bottom) / 2
+      expect(t.positionX + (box.width / 2) * t.scale).toBeCloseTo(freeCenterX, 6)
+      expect(t.positionY + (box.height / 2) * t.scale).toBeCloseTo(freeCenterY, 6)
+    })
+
+    it('sin inset da exactamente lo de siempre', () => {
+      expect(fitTransform(viewport, box, { padding: 28, inset: {} })).toEqual(
+        fitTransform(viewport, box, { padding: 28 }),
+      )
+    })
+
+    it('un inset más grande que el visor no rompe la cuenta', () => {
+      const t = fitTransform({ width: 100, height: 80 }, box, {
+        inset: { top: 60, right: 60, bottom: 60, left: 60 },
+      })
+      expect(t.scale).toBeGreaterThan(0)
+      expect(Number.isFinite(t.positionX)).toBe(true)
+      expect(Number.isFinite(t.positionY)).toBe(true)
+    })
+  })
 })

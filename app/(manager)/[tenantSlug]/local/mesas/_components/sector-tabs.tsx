@@ -494,7 +494,9 @@ export type SectorTabsProps = {
 /**
  * Los sectores de la sucursal como solapas de fichero pegadas al paño (igual
  * que en el salón). Un sector es un piso o un ambiente: «Salón», «Planta alta»,
- * «Terraza». Al final, la solapa punteada para agregar uno.
+ * «Terraza». Al final, la solapa punteada para agregar uno y los ajustes del
+ * que se está mirando. No trae su propia franja: va adentro de la barra del
+ * editor (`fpe-bar`), al lado de «Editar · En vivo · Lista».
  */
 export function SectorTabs({
   slug,
@@ -517,7 +519,7 @@ export function SectorTabs({
   const active = activeIndex >= 0 ? areas[activeIndex] : undefined
 
   return (
-    <div className="fpe-tabs-row">
+    <>
       {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
       <div className="fpe-tabs" role="group" aria-label="Sectores">
         {areas.map((area) => {
@@ -553,9 +555,14 @@ export function SectorTabs({
         {editable ? (
           <Popover open={adding} onOpenChange={setAdding}>
             <PopoverTrigger asChild>
-              <button type="button" className="fpe-tab fpe-tab-add">
+              <button
+                type="button"
+                className="fpe-tab fpe-tab-add"
+                aria-label="Agregar un sector"
+                title="Agregar un sector"
+              >
                 <Plus aria-hidden />
-                Agregar sector
+                <span className="fpe-wide-only">Sector</span>
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>
@@ -585,35 +592,34 @@ export function SectorTabs({
       </div>
 
       {editable && active ? (
-        <div className="fpe-tabs-side">
-          <Popover open={settings} onOpenChange={setSettings}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="fpe-boardbtn"
-                aria-label={`Ajustes del sector ${active.name}`}
-              >
-                <Settings2 aria-hidden />
-                <span>Ajustes del sector</span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>
-              <SectorSettings
-                // Otra pestaña, otro formulario: no se arrastran los datos del sector anterior.
-                key={`${active.id}:${active.name}:${active.width}:${active.height}:${active.number_start}`}
-                slug={slug}
-                area={active}
-                index={activeIndex}
-                sectors={areas}
-                multiBranch={multiBranch}
-                extent={extent}
-                onChanged={onChanged}
-                onClose={() => setSettings(false)}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
+        <Popover open={settings} onOpenChange={setSettings}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="fpe-boardbtn"
+              aria-label={`Ajustes del sector ${active.name}`}
+              title={`Ajustes de ${active.name}: nombre, tamaño y numeración`}
+            >
+              <Settings2 aria-hidden />
+              <span className="fpe-wide-only">Ajustes</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" sideOffset={8} className={cn(PAPEL, 'fpe-pop')}>
+            <SectorSettings
+              // Otra pestaña, otro formulario: no se arrastran los datos del sector anterior.
+              key={`${active.id}:${active.name}:${active.width}:${active.height}:${active.number_start}`}
+              slug={slug}
+              area={active}
+              index={activeIndex}
+              sectors={areas}
+              multiBranch={multiBranch}
+              extent={extent}
+              onChanged={onChanged}
+              onClose={() => setSettings(false)}
+            />
+          </PopoverContent>
+        </Popover>
       ) : null}
-    </div>
+    </>
   )
 }

@@ -36,7 +36,8 @@ export class FloorPlanErrorBoundary extends Component<
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
+        // Con aire propio: la página ya no trae márgenes (el editor va de borde a borde).
+        <div style={{ display: 'grid', gap: '0.75rem', padding: '0.75rem' }}>
           <div role="alert" className="fpe-paper fpe-alert">
             <AlertTriangle aria-hidden />
             <p style={{ margin: 0 }}>

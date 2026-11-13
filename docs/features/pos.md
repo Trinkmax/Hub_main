@@ -86,6 +86,15 @@ el canal se cae, la pantalla lo dice y al volver se pone al día sola.
   y lista.
 - La cámara se acomoda a la pantalla (`chooseCamera`): si girar el sector un cuarto de vuelta lo agranda de
   verdad, lo gira; en un celular afloja el giro y la inclinación para que las mesas no queden chicas.
+- **Quién tapa a quién** (`paintOrder` en `scene.ts`). Cada cosa suelta apoyada en el piso es una «pieza»:
+  una mesa (pata y tapa), cada silla (asiento, respaldo y quien está sentado), cada banqueta, la barra, un
+  tramo de pared. Dos piezas solo se pueden tapar si comparten columna de pantalla, y ahí va adelante la que
+  está más cerca de quien mira: se pregunta de a pares (`comparePieces`) y con eso se arma el orden. Antes
+  se ordenaba por un solo punto de cada volumen, y con todo lo largo fallaba (13/11: en una barra, las
+  banquetas pasaban atrás a partir de la cuarta; a las sillas de adelante de una mesa larga les pasaba lo
+  mismo). Si dos huellas se pisan no hay respuesta exacta: la más baja hace de piso de la otra (una mesa
+  sobre el escenario), y entre dos igual de altas (paredes en una esquina) va adelante la que llega más
+  cerca. Las paredes se siguen partiendo en tramos: así dos que se cruzan se intercalan bien.
 - **Estados** (de `lib/pos/table-state.ts`, sin que nadie marque nada a mano), por prioridad:
   comida lista sin llevar › pidió la cuenta › esperando comida › comiendo › sin pedido › reservada › libre.
   Cada uno escala a «miralo» y «ya es tarde» con los minutos de `pos_settings`.

@@ -63,7 +63,8 @@ export default async function MesasPage({
   const qrEnabled = canUseTableQr(tenant, access.isPlatformAdmin)
 
   return (
-    <PageShell width="full" className="px-3 py-3 sm:px-3 sm:py-3 lg:px-3">
+    // Sin márgenes: el editor es la página entera, pegado a la barra de arriba y a los costados.
+    <PageShell width="full" flush className="space-y-0 py-0 sm:py-0">
       {/* `pos` trae los tokens de papel y la letra; el editor es el mismo objeto en tema claro y oscuro. */}
       <div className={PAPEL}>
         <FloorPlanErrorBoundary

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   boundsOf,
+  ellipseFootprint,
   extrude,
   fitBounds,
   floorMatrix,
+  floorView,
   lift,
   MODEL_CAMERA,
   mixCamera,
@@ -25,6 +27,18 @@ import {
 import type { FloorElement } from '@/lib/pos/types'
 
 const DEG = Math.PI / 180
+
+/** Las columnas de pantalla que ocupa una huella: dos cosas solo se pueden tapar si comparten alguna. */
+function columns(
+  camera: Parameters<typeof floorView>[0],
+  footprint: Parameters<typeof floorView>[1],
+): [number, number] {
+  const xs = floorView(camera, footprint).map((p) => p.x)
+  return [Math.min(...xs), Math.max(...xs)]
+}
+function share(a: [number, number], b: [number, number]): boolean {
+  return Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > 1
+}
 
 function table(over: Partial<FloorElement> = {}): FloorElement {
   return {
@@ -236,6 +250,246 @@ describe('maqueta', () => {
     expect(scene.solids.filter((s) => s.role === 'stool').length).toBeGreaterThan(3)
     expect(scene.decals).toEqual([expect.objectContaining({ kind: 'text', label: 'Terraza' })])
     expect(scene.anchors).toHaveLength(0)
+  })
+
+  describe('quién tapa a quién', () => {
+    const bar = (over: Partial<FloorElement> = {}): FloorElement => ({
+      ...table(),
+      id: 'bar',
+      kind: 'bar',
+      table_id: null,
+      table_label: null,
+      capacity: null,
+      x: 100,
+      y: 300,
+      w: 240,
+      h: 40,
+      ...over,
+    })
+    const paintIndex = (scene: ReturnType<typeof buildScene>) => {
+      const order = scene.solids.map((s) => s.key)
+      return (key: string) => order.indexOf(key)
+    }
+    const stoolKeys = (scene: ReturnType<typeof buildScene>) =>
+      scene.solids.filter((s) => s.role === 'stool').map((s) => s.key)
+
+    // El error que se veía: con la barra larga, de la cuarta banqueta en adelante quedaban detrás.
+    it('todas las banquetas de una barra larga van adelante de la barra', () => {
+      for (const camera of [MODEL_CAMERA, { tilt: 50 * DEG, yaw: -10 * DEG }]) {
+        const scene = buildScene(camera, [bar()])
+        const at = paintIndex(scene)
+        const stools = stoolKeys(scene)
+        expect(stools).toHaveLength(10)
+        for (const key of stools) expect(at(key)).toBeGreaterThan(at('bar'))
+      }
+    })
+
+    it('y con la barra dada vuelta quedan todas detrás', () => {
+      const scene = buildScene(MODEL_CAMERA, [bar({ rotation: 180 })])
+      const at = paintIndex(scene)
+      const stools = stoolKeys(scene)
+      expect(stools).toHaveLength(10)
+      for (const key of stools) expect(at(key)).toBeLessThan(at('bar'))
+    })
+
+    it('una barra parada, con las banquetas del lado de quien mira o del otro', () => {
+      // Parada (alta y angosta), las banquetas van a su derecha: con el salón girado a un lado quedan
+      // adelante, y girado al otro, detrás. Solo cuenta para las que comparten columna con la barra: la
+      // que asoma por el costado no la puede tapar ni quedar tapada.
+      const standing = bar({ w: 40, h: 240 })
+      const body = rectFootprint(120, 420, 40, 240)
+      const stoolAt = (i: number) => ellipseFootprint(152, 317 + (i * 206) / 9, 15, 15, 0, 12)
+      for (const [camera, side] of [
+        [{ tilt: 54 * DEG, yaw: 14 * DEG }, 'adelante'],
+        [MODEL_CAMERA, 'detrás'],
+      ] as const) {
+        const scene = buildScene(camera, [standing])
+        const at = paintIndex(scene)
+        let compared = 0
+        for (let i = 0; i < 10; i++) {
+          if (!share(columns(camera, body), columns(camera, stoolAt(i)))) continue
+          compared += 1
+          if (side === 'adelante') expect(at(`bar:s${i}`)).toBeGreaterThan(at('bar'))
+          else expect(at(`bar:s${i}`)).toBeLessThan(at('bar'))
+        }
+        expect(compared).toBeGreaterThanOrEqual(8)
+      }
+    })
+
+    it('las banquetas más cercanas tapan a las de atrás, nunca al revés', () => {
+      // Barra parada: la fila de banquetas se aleja de quien mira.
+      const scene = buildScene({ tilt: 54 * DEG, yaw: 14 * DEG }, [bar({ w: 40, h: 240 })])
+      const at = paintIndex(scene)
+      const stools = stoolKeys(scene)
+      // `s0` es la del fondo (arriba en el plano) y `s9` la de adelante.
+      for (let i = 1; i < 10; i++) expect(at(`bar:s${i}`)).toBeGreaterThan(at(`bar:s${i - 1}`))
+      expect(stools).toHaveLength(10)
+    })
+
+    it('las sillas de adelante de una mesa larga van después de su tapa, todas', () => {
+      const long = table({ w: 240, h: 80, capacity: 8 })
+      const scene = buildScene(MODEL_CAMERA, [long])
+      const at = paintIndex(scene)
+      // 8 lugares en 240×80: tres arriba (0-2), tres abajo (3-5) y uno en cada punta.
+      for (const i of [0, 1, 2]) {
+        expect(at(`el-1:c${i}`)).toBeLessThan(at('el-1:leg'))
+        expect(at(`el-1:b${i}`)).toBeLessThan(at('el-1:leg'))
+      }
+      for (const i of [3, 4, 5]) {
+        expect(at(`el-1:c${i}`)).toBeGreaterThan(at('el-1:top'))
+        expect(at(`el-1:b${i}`)).toBeGreaterThan(at('el-1:top'))
+      }
+    })
+
+    it('una mesa delante de la punta lejana de la barra se dibuja después de la barra', () => {
+      const front = table({ id: 'el-front', table_id: 't-front', x: 420, y: 420 })
+      const back = table({ id: 'el-back', table_id: 't-back', x: 420, y: 120 })
+      const scene = buildScene(MODEL_CAMERA, [front, bar({ w: 440 }), back], { chairs: false })
+      const at = paintIndex(scene)
+      expect(at('el-front:leg')).toBeGreaterThan(at('bar'))
+      expect(at('el-back:top')).toBeLessThan(at('bar'))
+    })
+
+    it('una pared larga queda entre las mesas de atrás y las de adelante', () => {
+      const wall: FloorElement = {
+        ...table(),
+        id: 'w',
+        kind: 'wall',
+        table_id: null,
+        x: 0,
+        y: 250,
+        w: 600,
+        h: 16,
+      }
+      const back = table({ id: 'el-back', table_id: 't-back', x: 480, y: 100 })
+      const front = table({ id: 'el-front', table_id: 't-front', x: 480, y: 320 })
+      const scene = buildScene(MODEL_CAMERA, [front, wall, back])
+      const at = paintIndex(scene)
+      // Las dos mesas ocupan las mismas columnas (con sus sillas): los tramos de pared que las comparten
+      // van después de TODO lo de la mesa del fondo y antes de TODO lo de la de adelante.
+      const tables = columns(MODEL_CAMERA, rectFootprint(520, 250, 128, 400))
+      const between = splitLongRect(300, 258, 600, 16, 0)
+        .map((part, index) => ({
+          index,
+          cols: columns(MODEL_CAMERA, rectFootprint(part.cx, part.cy, part.width, part.height)),
+        }))
+        .filter((part) => share(part.cols, tables))
+        .map((part) => at(`w:w${part.index}`))
+      expect(between.length).toBeGreaterThanOrEqual(1)
+      const lastBack = Math.max(
+        ...scene.solids.filter((s) => s.tableId === 't-back').map((s) => at(s.key)),
+      )
+      const firstFront = Math.min(
+        ...scene.solids.filter((s) => s.tableId === 't-front').map((s) => at(s.key)),
+      )
+      expect(lastBack).toBeLessThan(Math.min(...between))
+      expect(firstFront).toBeGreaterThan(Math.max(...between))
+    })
+
+    it('lo que está apoyado sobre el escenario se dibuja después del escenario', () => {
+      const stage: FloorElement = {
+        ...table(),
+        id: 'stage',
+        kind: 'stage',
+        table_id: null,
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 300,
+      }
+      const scene = buildScene(MODEL_CAMERA, [table({ x: 160, y: 110 }), stage])
+      const at = paintIndex(scene)
+      for (const solid of scene.solids.filter((s) => s.tableId === 't-1')) {
+        expect(at(solid.key)).toBeGreaterThan(at('stage'))
+      }
+    })
+
+    it('dos paredes que se encuentran en una esquina: la que viene hacia adelante va después', () => {
+      const wallOf = (over: Partial<FloorElement>): FloorElement => ({
+        ...table(),
+        kind: 'wall',
+        table_id: null,
+        ...over,
+      })
+      // La del fondo y la del costado se pisan en la esquina (un cuadrado de 14 × 14).
+      const back = wallOf({ id: 'back', x: 0, y: 0, w: 80, h: 14 })
+      const side = wallOf({ id: 'side', x: 0, y: 0, w: 14, h: 80 })
+      for (const elements of [
+        [back, side],
+        [side, back],
+      ]) {
+        const order = buildScene(MODEL_CAMERA, elements).solids.map((s) => s.key)
+        expect(order).toEqual(['back:w0', 'side:w0'])
+      }
+    })
+
+    it('una columna en medio de una pared asoma: se dibuja después de la pared', () => {
+      const wall: FloorElement = {
+        ...table(),
+        id: 'w',
+        kind: 'wall',
+        table_id: null,
+        x: 0,
+        y: 100,
+        w: 80,
+        h: 40,
+      }
+      const pillar: FloorElement = {
+        ...table(),
+        id: 'col',
+        kind: 'pillar',
+        shape: 'circle',
+        table_id: null,
+        x: 30,
+        y: 110,
+        w: 20,
+        h: 20,
+      }
+      const order = buildScene(MODEL_CAMERA, [pillar, wall]).solids.map((s) => s.key)
+      expect(order.indexOf('col')).toBeGreaterThan(order.indexOf('w:w0'))
+    })
+
+    it('lo más bajo que quedó adentro de algo más alto va antes (queda tapado)', () => {
+      // Una mesa metida de lleno en la huella de una isla (más alta): la isla la tapa.
+      const island: FloorElement = {
+        ...table(),
+        id: 'isla',
+        kind: 'island',
+        table_id: null,
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 300,
+      }
+      const scene = buildScene(MODEL_CAMERA, [island, table({ x: 160, y: 110 })], {
+        chairs: false,
+      })
+      const order = scene.solids.map((s) => s.key)
+      expect(order.indexOf('el-1:top')).toBeLessThan(order.indexOf('isla'))
+    })
+
+    it('el orden no depende de en qué orden llegan los elementos', () => {
+      const elements = [
+        bar(),
+        table({ id: 'a', table_id: 'ta', x: 60, y: 60 }),
+        table({ id: 'b', table_id: 'tb', x: 300, y: 80, w: 160, capacity: 6 }),
+        table({ id: 'c', table_id: 'tc', x: 380, y: 400, shape: 'circle' }),
+      ]
+      const one = buildScene(MODEL_CAMERA, elements).solids.map((s) => s.key)
+      const other = buildScene(MODEL_CAMERA, [...elements].reverse()).solids.map((s) => s.key)
+      expect(other).toEqual(one)
+    })
+
+    it('el número de cada mesa se apila en el mismo orden que su tapa', () => {
+      const back = table({ id: 'el-back', table_id: 't-back', y: 60 })
+      const front = table({ id: 'el-front', table_id: 't-front', y: 400 })
+      const scene = buildScene(MODEL_CAMERA, [front, back])
+      const depthOfTable = (id: string) => scene.anchors.find((a) => a.tableId === id)?.depth ?? -1
+      expect(depthOfTable('t-front')).toBeGreaterThan(depthOfTable('t-back'))
+      expect(scene.solids[depthOfTable('t-back')]?.key).toBe('el-back:top')
+      // Cada volumen sabe su lugar: lo usa quien necesite intercalar algo.
+      expect(scene.solids.map((s) => s.depth)).toEqual(scene.solids.map((_, i) => i))
+    })
   })
 
   it('la losa del piso contiene todo lo dibujado', () => {
