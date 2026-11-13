@@ -1,0 +1,125 @@
+/* «Sucursales»: lo que esta pantalla dibuja a mano. Vive acá, al lado de sus componentes, y no
+   en globals.css: son piezas de una sola pantalla.
+
+   La vidriera (`.sf`) es el dibujo de una sucursal: su cartel y su toldo llevan el color de la
+   sucursal (`--sf-branch`, que pone el componente) y la persiana sube un tramo por cada paso
+   hecho (`--sf-open`, de 0 a 1). Las mezclas van en oklab: en Chrome, mezclar dos cremas en
+   oklch da un rosado. */
+
+.sf {
+  --sf-branch: #2f5d50;
+  --sf-on: #fdfcf7;
+  --sf-open: 0;
+
+  --sf-wall: oklch(0.945 0.024 88);
+  --sf-wall-edge: oklch(0.85 0.026 88);
+  --sf-line: oklch(0.205 0.035 165 / 0.2);
+  --sf-line-strong: oklch(0.205 0.035 165 / 0.5);
+  --sf-cream: oklch(0.975 0.02 88);
+  --sf-metal: oklch(0.855 0.012 95);
+  --sf-metal-line: oklch(0.72 0.014 95);
+  --sf-metal-dark: oklch(0.58 0.018 130);
+  --sf-glow: oklch(0.955 0.045 90);
+  --sf-glow-deep: oklch(0.875 0.085 82);
+  --sf-shape: oklch(0.34 0.04 165 / 0.78);
+  --sf-lamp: oklch(0.8 0.13 82);
+  --sf-ground: oklch(0.895 0.022 88);
+  --sf-leaf: oklch(0.5 0.1 158);
+  --sf-pot: oklch(0.6 0.085 45);
+  --sf-sign-edge: transparent;
+
+  display: block;
+  overflow: visible;
+}
+
+.dark .sf {
+  --sf-wall: oklch(0.275 0.026 165);
+  --sf-wall-edge: oklch(0.37 0.028 165);
+  --sf-line: oklch(0.945 0.015 88 / 0.16);
+  --sf-line-strong: oklch(0.945 0.015 88 / 0.4);
+  --sf-cream: oklch(0.9 0.03 88);
+  --sf-metal: oklch(0.42 0.014 165);
+  --sf-metal-line: oklch(0.31 0.014 165);
+  --sf-metal-dark: oklch(0.235 0.014 165);
+  --sf-glow: oklch(0.83 0.105 86);
+  --sf-glow-deep: oklch(0.66 0.125 74);
+  --sf-shape: oklch(0.2 0.03 165 / 0.85);
+  --sf-lamp: oklch(0.92 0.1 90);
+  --sf-ground: oklch(0.235 0.02 165);
+  --sf-leaf: oklch(0.6 0.11 158);
+  --sf-pot: oklch(0.52 0.085 45);
+  /* Sobre el carbón un cartel oscuro se pierde: un filete claro lo despega. */
+  --sf-sign-edge: oklch(1 0 0 / 0.2);
+}
+
+.sf-branch {
+  fill: var(--sf-branch);
+  transition: fill 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sf-sign-text {
+  fill: var(--sf-on);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.sf-sign-rule {
+  fill: none;
+  stroke: var(--sf-on);
+  stroke-opacity: 0.3;
+}
+
+/* La persiana: sube `--sf-open` de la altura del vano (70 unidades del dibujo). */
+.sf-shutter {
+  transform: translateY(calc(var(--sf-open) * -70px));
+  transition: transform 760ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Una sucursal desactivada: el frente pierde color, sigue siendo su vidriera. */
+.sf[data-muted] .sf-front {
+  filter: saturate(0.25) opacity(0.75);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-branch,
+  .sf-shutter {
+    transition: none;
+  }
+}
+
+/* El tilde de un paso que se hizo desde la última vez: se dibuja solo, una vez. */
+.suc-tick {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+}
+.suc-tick[data-fresh] {
+  animation: suc-tick-draw 420ms cubic-bezier(0.22, 1, 0.36, 1) 520ms both;
+}
+@keyframes suc-tick-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .suc-tick[data-fresh] {
+    animation: none;
+  }
+}
+
+/* El QR va siempre en negro sobre blanco, también en oscuro: es para una cámara. */
+.suc-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Un billete: papel con su filete y una guarda apenas, como los de verdad. */
+.suc-bill {
+  background-image: repeating-linear-gradient(
+    115deg,
+    transparent 0 5px,
+    color-mix(in oklab, currentColor 7%, transparent) 5px 6px
+  );
+}

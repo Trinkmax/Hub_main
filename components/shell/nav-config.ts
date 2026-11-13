@@ -232,6 +232,14 @@ export const NAV_GROUPS: NavGroup[] = [
         feature: 'kitchen',
       },
       {
+        // Punto de venta: los locales del bar, su lista de apertura y los ajustes de cobro.
+        label: 'Sucursales',
+        href: (s) => `/${s}/local/sucursales`,
+        icon: 'Store',
+        roles: ['owner'],
+        feature: 'pos',
+      },
+      {
         label: 'Plano y QRs de mesa',
         href: (s) => `/${s}/local/mesas`,
         icon: 'LayoutGrid',

@@ -34,6 +34,7 @@ lo prende un superadmin por bar).
 | Cobro y caja por turno: base y capa de servidor | migraciones `pos_cobro_tablas`, `pos_cobro_cuenta_y_cobrar` y `pos_cobro_descuentos_y_caja`, `lib/pos/cash/*` | hecho |
 | La cuenta y la bandeja de pedidos | `/[bar]/salon/mesa/[sesión]/cuenta`, `components/pos/pay/*`, `components/pos/approvals/*` | hecho |
 | La caja por turno | `/[bar]/salon/caja`, `components/pos/cash/*` | hecho |
+| Sucursales, lista de apertura y ajustes del punto de venta | `/[bar]/local/sucursales`, `lib/pos/branches/*`, `lib/pos/settings/*` | hecho |
 | Tablero del dueño, QR del cliente, modo práctica | — | sigue |
 
 ## Modelo de datos
@@ -188,6 +189,27 @@ pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
 7. Mesa 8 (con socio) por QR $ 101.000 → «Laura sumó 101 puntos».
 
 Queda para probar con dos dispositivos a la vez y sin señal (pasos 12 a 15 del guion de la cuenta).
+
+## Sucursales y ajustes del punto de venta
+
+`/[bar]/local/sucursales` (solo el dueño, con `pos`). Lee todo de una vez (`getBranchBoard`) y nada tiene botón
+de guardar: se toca y queda, con «Deshacer» (`lib/pos/settings/overlay.ts` muestra lo recién tocado encima de
+la última lectura; cada escritura viaja con lo que la persona veía y no pisa lo que otro dueño cambió recién).
+
+- **La cuadra:** una vidriera por sucursal (`storefront.tsx`), con el cartel y el toldo en su color. La
+  persiana está tan levantada como avanzada está su lista de apertura.
+- **Lista de apertura** (`lib/pos/branches/checklist.ts`): el plano, la carta, la cocina, la caja, el equipo y
+  el cobro. Nadie tilda nada a mano: cada paso sale de lo que ya está cargado y lleva a donde se resuelve, ya
+  parado en esa sucursal. El paso de la cocina trae el link y el QR de la pantalla de cocina de esa sucursal.
+- **Sus datos:** nombre, nombre corto (lo que se lee arriba en el salón), dirección y color (una paleta que
+  se lee con letra clara). Principal, orden, activar o desactivar (no con mesas abiertas) y borrar (solo si
+  no tiene plano, mesas ni historia).
+- **Ajustes** (`?ver=ajustes`, valen para todo el bar): cuándo avisa una mesa, recargo de crédito, alias y
+  titular para transferencias, propinas que se ofrecen, qué medios facturan, quién da el OK a descuentos y
+  bajas, y con qué billetes se cuenta la caja.
+
+Probado contra la base real en el bar de ejemplo (13/11): nombre corto que se guarda solo y se deshace; crear
+«Prueba QA» (persiana a medias, «Faltan tres pasos») y borrarla; recargo de 10 % a 12 % y deshacer.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 
