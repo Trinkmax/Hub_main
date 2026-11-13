@@ -18,6 +18,8 @@ import {
   openNight,
   planillaHref,
   planillaTotals,
+  posDayHref,
+  posNote,
   rowAction,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/planilla'
 import {
@@ -221,6 +223,55 @@ describe('cada renglón de la planilla', () => {
       'A 2 días con lo que entró les falta el cierre.',
     ])
   })
+
+  it('si alguno tomó la venta del punto de venta ya no son «días con cierre»', () => {
+    expect(
+      cashPending({ missingCountDays: 3, missingCountPosDays: 1, missingCloseDays: 0 }),
+    ).toEqual(['A 3 días con ventas les falta cargar lo que entró.'])
+    expect(
+      cashPending({ missingCountDays: 1, missingCountPosDays: 1, missingCloseDays: 0 }),
+    ).toEqual(['A 1 día con ventas le falta cargar lo que entró.'])
+    // Sin ninguno del punto de venta, la oración de siempre.
+    expect(
+      cashPending({ missingCountDays: 2, missingCountPosDays: 0, missingCloseDays: 0 }),
+    ).toEqual(['A 2 días con cierre les falta cargar lo que entró.'])
+  })
+})
+
+describe('los días que toman la venta del punto de venta', () => {
+  it('llevan a ese día en «Hoy en vivo»', () => {
+    expect(posDayHref('hub', '2026-11-12')).toBe('/hub/local/hoy?dia=2026-11-12')
+  })
+
+  it('la nota dice de dónde sale el número y qué manda', () => {
+    expect(posNote({ days: 0, depositCents: 0 })).toBeNull()
+    expect(posNote({ days: 1, depositCents: 0 })).toBe(
+      '1 día todavía no tiene cierre y toma lo que cobró el punto de venta. Sirve para seguir el mes; a los libros va el cierre, y cuando lo cargás manda él.',
+    )
+    const withDeposits = posNote({ days: 4, depositCents: 40_000_000 })
+    expect(withDeposits).toContain('4 días todavía no tienen cierre y toman lo que cobró')
+    expect(withDeposits).toContain(`Incluye $${NB}400.000 de señas cobradas antes`)
+    expect(withDeposits).toContain('no en «ventas contra caja»')
+  })
+
+  it('el mes muestra lo vendido aunque no haya ningún cierre', () => {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(day === '2026-10-02'
+        ? { pos: { chargedCents: 80_000_000, depositCents: 0, commissionCents: 1_000_000 } }
+        : {}),
+    }))
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const [, sold] = planillaTotals(projection.summary, {
+      hasSales: projection.days.some((d) => d.hasSales),
+    })
+    expect(sold).toMatchObject({ label: 'Vendido', cents: 79_000_000 })
+    // El día sigue «faltando» para los libros: se ofrece cargar su cierre.
+    const days = monthDays(projection)
+    const day = days.days.find((d) => d.date === '2026-10-02')
+    expect(day).toMatchObject({ state: 'missing', cents: 79_000_000 })
+    expect(rowAction(day?.state, true)).toBe('load')
+  })
 })
 
 describe('los links de la planilla', () => {
@@ -278,7 +329,7 @@ describe('planillaTotals: los tres números de arriba', () => {
   const totals = (rows: ProjectionSourceDay[]) => {
     const projection = buildProjection(rows, { serviceDay: TODAY })
     return planillaTotals(projection.summary, {
-      hasCloses: projection.days.some((d) => d.hasClose),
+      hasSales: projection.days.some((d) => d.hasSales),
     })
   }
   const closed = (day: string) => day < '2026-10-05'
@@ -318,7 +369,7 @@ describe('planillaTotals: los tres números de arriba', () => {
       ...(closed(day) ? { closes: 1, salonCents: 100_000_000 } : {}),
     }))
     const projection = buildProjection(rows, { serviceDay: '2026-11-04' })
-    const [target, , remaining] = planillaTotals(projection.summary, { hasCloses: true })
+    const [target, , remaining] = planillaTotals(projection.summary, { hasSales: true })
     expect(target?.hint).toBeUndefined()
     expect(remaining?.label).toBe('Faltó vender')
   })

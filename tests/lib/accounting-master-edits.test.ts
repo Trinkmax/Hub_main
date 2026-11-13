@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
-import { accountingAllows } from '@/lib/accounting/access'
+import { accountingAllows, projectionUsesPos } from '@/lib/accounting/access'
 import { formInput, presentKeys, rpcPayload } from '@/lib/accounting/actions/support'
 import { partySchema } from '@/lib/accounting/schemas'
 import type { AccountingAccess } from '@/lib/tenant/types'
@@ -35,6 +35,23 @@ describe('accountingAllows', () => {
     expect(accountingAllows(off, 'read')).toBe(false)
     expect(accountingAllows(off, 'write')).toBe(false)
     expect(accountingAllows(off, 'admin')).toBe(false)
+  })
+})
+
+describe('projectionUsesPos: quién ve las ventas del punto de venta en la proyección', () => {
+  const tenant = (flags: Record<string, boolean>) => ({ feature_flags: flags })
+
+  it('el dueño de un bar que lo tiene prendido, y nadie más', () => {
+    expect(projectionUsesPos({ role: 'owner', tenant: tenant({ pos: true }) })).toBe(true)
+    // La contadora está aislada de todo lo que no es Administración.
+    expect(projectionUsesPos({ role: 'accountant', tenant: tenant({ pos: true }) })).toBe(false)
+  })
+
+  it('en un bar sin punto de venta no se pide nada: la proyección queda como estaba', () => {
+    expect(projectionUsesPos({ role: 'owner', tenant: tenant({}) })).toBe(false)
+    expect(
+      projectionUsesPos({ role: 'owner', tenant: tenant({ pos: false, accounting: true }) }),
+    ).toBe(false)
   })
 })
 

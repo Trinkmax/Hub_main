@@ -41,7 +41,8 @@ lo prende un superadmin por bar).
 | Liberar una mesa abierta por error | `pos_release_table`, la hoja de la mesa en la comanda | hecho |
 | Ventas día por día | `pos_sales_days`, la tira de «Hoy en vivo» | hecho |
 | Juntar dos mesas | `pos_merge_tables`, el mapa (mover una mesa y tocar una ocupada) | hecho |
-| Proyección de Administración con estas ventas, QR del cliente, vincular la tele, PIN | — | sigue |
+| La Proyección de Administración toma estas ventas | `withPosSales`, `projectionUsesPos` (sin cambios en la base) | hecho |
+| Cierre del día precargado, QR del cliente, vincular la tele, PIN | — | sigue |
 
 ## Modelo de datos
 
@@ -268,7 +269,42 @@ Abajo, **los últimos 14 días** como una tira de barras (`pos_sales_days`, una 
 día de servicio): cada barra lleva a su día, y arriba dice cuánto se vendió en el tramo, el promedio de los
 días con ventas, el consumo por persona y cuál fue el mejor.
 
-Falta: la Proyección de Administración todavía no se completa sola con estas ventas.
+## La Proyección de Administración se completa sola
+
+Pedido de los socios (reunión del 11/11): «que la proyección se complete sola con las ventas». Hasta ahora
+salía solo de los cierres del día que alguien carga a mano en Administración.
+
+- **Qué hace.** En Ventas › Proyección, el Resumen y lo que responde Tex, un día **sin cierre** toma lo que
+  cobró el punto de venta ese día de servicio (`pos_sales_days`). La noche en curso se ve en vivo.
+- **El cierre sigue mandando.** Es lo que va a los libros (ventas, IVA, cajas). Cuando un día tiene cierre,
+  la planilla usa el cierre y lo del punto de venta no se suma ni lo pisa. Por eso «Cargar cierre» sigue en
+  el renglón, y los avisos de cierres que faltan no cambian.
+- **No escribe nada.** Es solo cómo se arma la planilla: ni una tabla ni una función nueva en la base, y nada
+  en los libros. `getSalesProjection(…, { pos })` pide las ventas y `withPosSales` se las cuelga a cada día;
+  quién manda lo decide `buildProjection` (`lib/accounting/projection.ts`).
+- **Se nota de dónde sale.** El monto lleva una marca (con texto para lectores de pantalla), abajo se
+  explica, y tocarlo abre ese día en «Hoy en vivo».
+- **Comisiones.** Se estiman igual que en los cierres: cada medio × el porcentaje de Ajustes › Partícipes. El
+  par de cada medio sale del `system_key` del medio de Administración (efectivo, transferencia, QR →
+  `qr_mp`, débito, crédito); «Otro» va entero.
+- **La noche abierta** suma en «Vas vendiendo», pero todavía no se mide contra su objetivo ni entra en
+  «Objetivo a hoy» (compararía una noche a medias contra un objetivo entero), y no se le reclama la caja.
+- **Quién lo ve.** El dueño de un bar con `pos` (`projectionUsesPos`). La contadora no: está aislada de todo
+  lo que no es Administración, y para ella sale de los cierres, como siempre. Un bar sin `pos` no pide nada:
+  queda exactamente como estaba (lo fija una prueba).
+
+**Decisiones mías, a confirmar con Nacho:**
+
+1. **Las señas descontadas cuentan como venta de la noche del consumo** (la mesa consumió eso), pero quedan
+   afuera de «ventas contra caja» porque esa plata entró antes. Si en la planilla de los socios la seña se
+   cuenta el día que se cobra, hay que darlo vuelta.
+2. **La contadora no ve estas ventas.** Si tiene que verlas, hace falta una función que las lea con su
+   permiso de lectura.
+3. **Es del bar entero**, las dos sucursales juntas, igual que los objetivos. Una proyección por sucursal
+   necesita objetivos por sucursal.
+
+**El paso que sigue** (sin hacer): que «Cargar cierre» venga precargado con lo del punto de venta, para que
+confirmar el cierre sea un toque. Ahí sí se escribe en los libros, y lo decide quien carga.
 
 ## Auditoría del 13/11 y lo que falta cerrar
 

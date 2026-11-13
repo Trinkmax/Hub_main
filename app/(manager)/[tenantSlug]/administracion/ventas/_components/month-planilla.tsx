@@ -76,6 +76,8 @@ import {
   type PendingTargets,
   planillaHref,
   planillaTotals,
+  posDayHref,
+  posNote,
   rowAction,
   savedTarget,
 } from '../_lib/planilla'
@@ -371,7 +373,13 @@ export function MonthPlanilla({
   }, [focus])
 
   const { days, totals, summary, cash } = projection
-  const hasCloses = days.some((d) => d.hasClose)
+  const hasSales = days.some((d) => d.hasSales)
+  // Los días que tomaron la venta del punto de venta (no tienen cierre): van marcados y explicados.
+  const posDays = days.filter((d) => d.source === 'pos')
+  const posExplained = posNote({
+    days: posDays.length,
+    depositCents: posDays.reduce((sum, d) => sum + d.depositCents, 0),
+  })
   const { hasTargets } = summary
   const name = capitalizeFirst(monthName(Number(month.slice(5, 7))))
   const nextClose = nextCloseDay(days, states)
@@ -441,11 +449,37 @@ export function MonthPlanilla({
         dayLabel={longDay(d.day)}
         treasuries={treasuries.filter((t) => t.active || initial[t.id] !== undefined)}
         initial={initial}
-        salesCents={d.hasClose ? d.realCents : null}
+        // Lo que tenía que entrar: la venta real, sin las señas que ya se habían cobrado antes.
+        salesCents={d.hasSales ? d.realCents - d.depositCents : null}
         countedCents={d.cashCountedCents}
       />
     )
   }
+
+  /**
+   * «Vendido» de un día que tomó lo del punto de venta: el mismo número, con una marca (nunca solo
+   * color: lo dice el título y lo lee el lector de pantalla) y un toque para ver ese día por dentro.
+   */
+  const posAmount = (d: ProjectionDay): ReactNode => (
+    <Link
+      href={posDayHref(tenantSlug, d.day)}
+      prefetch={false}
+      title={
+        d.moment === 'today'
+          ? 'Lo que lleva cobrado el punto de venta esta noche. Tocá para verla.'
+          : 'Del punto de venta: este día todavía no tiene cierre. Tocá para verlo.'
+      }
+      className="inline-flex items-center gap-1.5 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+      {formatCentsShort(d.netCents)}
+      <span className="sr-only">
+        {d.moment === 'today'
+          ? ' del punto de venta, la noche sigue abierta'
+          : ' del punto de venta, sin cierre'}
+      </span>
+    </Link>
+  )
 
   const difference = (d: ProjectionDay): ReactNode => {
     const words = cashCheckText(d.cash)
@@ -471,7 +505,7 @@ export function MonthPlanilla({
 
   return (
     <>
-      <Totalizer items={planillaTotals(summary, { hasCloses })} />
+      <Totalizer items={planillaTotals(summary, { hasSales })} />
 
       <Planilla>
         {!hasTargets ? (
@@ -595,7 +629,11 @@ export function MonthPlanilla({
                     )}
                   </PTd>
                   <PTd align="right" className="font-medium">
-                    <Money cents={d.netCents} show={d.hasClose} />
+                    {d.source === 'pos' ? (
+                      posAmount(d)
+                    ) : (
+                      <Money cents={d.netCents} show={d.hasSales} />
+                    )}
                   </PTd>
                   <PTd align="right">
                     {percent ? (
@@ -615,22 +653,22 @@ export function MonthPlanilla({
                   {detail ? (
                     <>
                       <PTd align="right">
-                        <Money cents={d.barCents} show={d.hasClose} />
+                        <Money cents={d.barCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
-                        <Money cents={d.deliveryCents} show={d.hasClose} />
+                        <Money cents={d.deliveryCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
-                        <Money cents={d.deliveryCommissionCents} show={d.hasClose} />
+                        <Money cents={d.deliveryCommissionCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
-                        <Money cents={d.posnetCommissionCents} show={d.hasClose} />
+                        <Money cents={d.posnetCommissionCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
-                        <Money cents={d.realCents} show={d.hasClose} />
+                        <Money cents={d.realCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
-                        <Money cents={d.netCents} show={d.hasClose} />
+                        <Money cents={d.netCents} show={d.hasSales} />
                       </PTd>
                       <PTd align="right">
                         <Money cents={d.targetAccumCents} />
@@ -665,10 +703,10 @@ export function MonthPlanilla({
                 <Money cents={totals.targetCents} />
               </PTd>
               <PTd align="right">
-                <Money cents={totals.netCents} show={hasCloses} />
+                <Money cents={totals.netCents} show={hasSales} />
               </PTd>
               <PTd align="right">
-                {summary.monthPercent !== null && hasCloses ? (
+                {summary.monthPercent !== null && hasSales ? (
                   `${summary.monthPercent}${NBSP}%`
                 ) : (
                   <Dash />
@@ -719,6 +757,16 @@ export function MonthPlanilla({
           <span className="min-w-0 text-xs text-muted-foreground text-pretty">
             {DAY_TYPE_LEGEND}
             {closesFrom ? ` Los cierres arrancan el ${formatDayMonth(closesFrom)}.` : null}
+            {posExplained ? (
+              <>
+                {' '}
+                <span
+                  aria-hidden
+                  className="mx-0.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                />{' '}
+                Del punto de venta, todavía sin cierre.
+              </>
+            ) : null}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             {canWrite ? (
@@ -770,6 +818,11 @@ export function MonthPlanilla({
                 : ''}
             </p>
             {commissionNote}
+            {posExplained ? (
+              <p>
+                <span className="font-medium text-foreground">Punto de venta:</span> {posExplained}
+              </p>
+            ) : null}
             <p>
               <span className="font-medium text-foreground">Ventas contra caja:</span>{' '}
               {cashTitle(cash, { reader: !canWrite })}. Compara la venta real con la plata que entró

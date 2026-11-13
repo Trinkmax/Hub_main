@@ -85,12 +85,14 @@ export function loadMonth(input: {
   serviceDay: string
   canWrite: boolean
   canReadCalendar: boolean
+  /** Los días sin cierre toman lo que cobró el punto de venta (`projectionUsesPos`). */
+  pos: boolean
 }): MonthData {
   const { tenantId, range, serviceDay, canWrite } = input
   const period = { from: range.from, to: range.to }
   return {
     calendar: settleQuery(getDailyCloseCalendar(tenantId, range.month, { serviceDay })),
-    projection: settleQuery(getSalesProjection(tenantId, period)),
+    projection: settleQuery(getSalesProjection(tenantId, period, { pos: input.pos })),
     events: input.canReadCalendar ? settleQuery(listDayEvents(tenantId, period)) : null,
     counts: canWrite ? settleQuery(listDailyCashCounts(tenantId, period)) : null,
     treasuries: canWrite ? settleQuery(listCashCountTreasuries(tenantId)) : null,

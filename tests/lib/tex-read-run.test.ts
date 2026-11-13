@@ -443,10 +443,29 @@ describe('ver_proyeccion', () => {
   it('el mes pedido entero', async () => {
     mocks.getSalesProjection.mockResolvedValue([])
     await run('ver_proyeccion', { mes: '2026-10', resumen: true })
-    expect(mocks.getSalesProjection).toHaveBeenCalledWith('tenant-hub', {
-      from: '2026-10-01',
-      to: '2026-10-31',
-    })
+    expect(mocks.getSalesProjection).toHaveBeenCalledWith(
+      'tenant-hub',
+      { from: '2026-10-01', to: '2026-10-31' },
+      // Un bar sin punto de venta: la proyección sale solo de los cierres.
+      { pos: false },
+    )
+  })
+
+  it('en un bar con punto de venta, el dueño pide también lo que cobró; la contadora no', async () => {
+    mocks.getSalesProjection.mockResolvedValue([])
+    const withPos = { ...CTX, features: { pos: true } as never }
+    await run('ver_proyeccion', { mes: '2026-10' }, withPos)
+    expect(mocks.getSalesProjection).toHaveBeenLastCalledWith(
+      'tenant-hub',
+      { from: '2026-10-01', to: '2026-10-31' },
+      { pos: true },
+    )
+    await run('ver_proyeccion', { mes: '2026-10' }, { ...withPos, role: 'accountant' })
+    expect(mocks.getSalesProjection).toHaveBeenLastCalledWith(
+      'tenant-hub',
+      { from: '2026-10-01', to: '2026-10-31' },
+      { pos: false },
+    )
   })
 })
 

@@ -11,6 +11,7 @@ import 'server-only'
  */
 
 import { cache } from 'react'
+import { isFeatureEnabled } from '@/lib/platform/features'
 import { createClient } from '@/lib/supabase/server'
 import {
   ACCOUNTING_READ_ROLES,
@@ -76,6 +77,19 @@ export async function requireAccountingAccess(
   if (!access.accounting.enabled) throw new AccountingDisabledError()
   if (!accountingAllows(access.accounting, need)) throw new AccountingForbiddenError()
   return access
+}
+
+/**
+ * ¿La proyección de ventas toma lo que cobró el punto de venta? Solo si el bar lo tiene prendido y
+ * quien mira es dueño: `pos_sales_days` es de dueños, y la contadora está aislada de todo lo que no es
+ * Administración (para ella la proyección sale de los cierres, como siempre). Va por el interruptor del
+ * bar, sin la excepción de superadmin: mirando un bar que no lo usa no hay nada que sumar.
+ */
+export function projectionUsesPos(access: {
+  role: TenantRole
+  tenant: Pick<TenantAccess['tenant'], 'feature_flags'>
+}): boolean {
+  return access.role === 'owner' && isFeatureEnabled(access.tenant, 'pos')
 }
 
 export type AccountingAuthorized = {

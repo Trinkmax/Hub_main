@@ -7,11 +7,19 @@ import {
   cashDiffText,
   complianceOf,
   complianceText,
+  POS_METHOD_SYSTEM_KEY,
+  type PosSalesOfDay,
   type ProjectionSourceDay,
+  posDaySales,
   projectionFigures,
+  withPosSales,
 } from '@/lib/accounting/projection'
 import { dailyCashSchema, salesTargetsSchema } from '@/lib/accounting/projection-schemas'
-import { parseProjectionRow } from '@/lib/accounting/queries/projection'
+import {
+  parsePosSalesDay,
+  parseProjectionRow,
+  posCommissionRates,
+} from '@/lib/accounting/queries/projection'
 
 const NB = ' '
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -216,6 +224,7 @@ describe('ventas contra caja', () => {
       countedCents: p(1_440_000),
       diffCents: p(50_000),
       missingCountDays: 1,
+      missingCountPosDays: 0,
       missingCloseDays: 1,
     })
   })
@@ -470,5 +479,239 @@ describe('la base y la pantalla hablan de lo mismo', () => {
     expect(writes).toContain("k not in ('day', 'target_cents', 'note')")
     expect(writes).toContain("k not in ('treasury_account_id', 'amount_cents')")
     expect(writes).toContain('jsonb_array_length(p_items) not between 1 and 62')
+  })
+})
+
+// ─── Con punto de venta: la proyección se completa sola ──────────────────────
+
+describe('las ventas del punto de venta en la proyección', () => {
+  /** Las comisiones de Ajustes, en puntos básicos: transferencia y QR 1,5 %, débito 3,14 %, crédito 6,29 %. */
+  const RATES = { transfer: 150, qr: 150, debit: 314, credit: 629 }
+  const sales = (day: string, over: Partial<PosSalesOfDay> = {}): PosSalesOfDay => ({
+    day,
+    byMethod: {},
+    depositCents: 0,
+    ...over,
+  })
+  const TODAY = '2026-11-13'
+
+  it('la comisión se estima por medio, como en los cierres; el efectivo y «otro» van enteros', () => {
+    const day = posDaySales(
+      sales('2026-11-10', {
+        byMethod: { cash: p(100_000), debit: p(200_000), credit: p(100_000), other: p(5_000) },
+        depositCents: p(40_000),
+      }),
+      RATES,
+    )
+    expect(day.chargedCents).toBe(p(405_000))
+    expect(day.depositCents).toBe(p(40_000))
+    // 200.000 × 3,14 % + 100.000 × 6,29 %
+    expect(day.commissionCents).toBe(p(6_280) + p(6_290))
+    // Sin porcentajes cargados no inventa nada.
+    expect(
+      posDaySales(sales('2026-11-10', { byMethod: { debit: p(200_000) } }), {}).commissionCents,
+    ).toBe(0)
+  })
+
+  it('cada medio del punto de venta toma la comisión de su par de Administración', () => {
+    expect(POS_METHOD_SYSTEM_KEY).toEqual({
+      cash: 'cash',
+      transfer: 'transfer',
+      qr: 'qr_mp',
+      debit: 'debit',
+      credit: 'credit',
+      other: null,
+    })
+  })
+
+  it('un día sin cierre toma lo del punto de venta y se mide contra su objetivo', () => {
+    const rows = withPosSales(
+      [
+        row('2026-11-10', { targetCents: p(500_000) }),
+        row('2026-11-11', { targetCents: p(500_000) }),
+      ],
+      [sales('2026-11-10', { byMethod: { cash: p(300_000), debit: p(200_000) } })],
+      RATES,
+    )
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const [sold, empty] = projection.days
+    expect(sold).toMatchObject({
+      hasClose: false,
+      hasSales: true,
+      source: 'pos',
+      barCents: p(500_000),
+      posnetCommissionCents: p(6_280),
+      realCents: p(493_720),
+      netCents: p(493_720),
+    })
+    expect(sold?.compliance).toEqual({ kind: 'value', percent: 99, side: 'below', gapPercent: 1 })
+    // El día sin nada sigue diciendo que le falta el cierre: no es un cero.
+    expect(empty).toMatchObject({ hasSales: false, source: null, netCents: 0 })
+    expect(empty?.compliance).toEqual({ kind: 'no_close' })
+    expect(projection.summary.soldCents).toBe(p(493_720))
+  })
+
+  it('con cierre manda el cierre: lo del punto de venta no se suma ni lo pisa', () => {
+    const rows = withPosSales(
+      [
+        row('2026-11-10', {
+          targetCents: p(500_000),
+          closes: 1,
+          salonCents: p(480_000),
+          salonCommissionCents: p(5_000),
+        }),
+      ],
+      [sales('2026-11-10', { byMethod: { cash: p(900_000) }, depositCents: p(50_000) })],
+      RATES,
+    )
+    const [day] = buildProjection(rows, { serviceDay: TODAY }).days
+    expect(day).toMatchObject({
+      hasClose: true,
+      source: 'close',
+      depositCents: 0,
+      barCents: p(480_000),
+      netCents: p(475_000),
+    })
+  })
+
+  it('la seña descontada cuenta como venta de esa noche, pero no en «ventas contra caja»', () => {
+    const rows = withPosSales(
+      [row('2026-11-10', { targetCents: p(1_000_000), cashCountedCents: p(600_000) })],
+      [sales('2026-11-10', { byMethod: { cash: p(600_000) }, depositCents: p(400_000) })],
+      RATES,
+    )
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const [day] = projection.days
+    expect(day).toMatchObject({
+      barCents: p(1_000_000),
+      depositCents: p(400_000),
+      netCents: p(1_000_000),
+    })
+    expect(day?.compliance).toMatchObject({ kind: 'value', percent: 100 })
+    // Entraron $ 600.000 y eso es lo que se cobró: coincide, aunque la venta de la noche fue de un millón.
+    expect(day?.cash).toEqual({ kind: 'compared', diffCents: 0 })
+    expect(projection.cash).toMatchObject({ comparedDays: 1, salesCents: p(600_000), diffCents: 0 })
+  })
+
+  it('la noche en curso se ve, pero no se mide ni entra en «a hoy»', () => {
+    const rows = withPosSales(
+      [
+        row('2026-11-12', { targetCents: p(500_000) }),
+        row(TODAY, { targetCents: p(800_000) }),
+        row('2026-11-14', { targetCents: p(800_000) }),
+      ],
+      [
+        sales('2026-11-12', { byMethod: { cash: p(550_000) } }),
+        sales(TODAY, { byMethod: { cash: p(120_000) } }),
+      ],
+      RATES,
+    )
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const [yesterday, today] = projection.days
+    expect(today).toMatchObject({ source: 'pos', hasSales: true, netCents: p(120_000) })
+    expect(today?.compliance).toEqual({ kind: 'in_progress' })
+    // A la noche abierta no se le reclama la caja.
+    expect(today?.cash).toEqual({ kind: 'none' })
+    expect(yesterday?.cash).toEqual({ kind: 'missing_count' })
+    expect(projection.cash).toMatchObject({ missingCountDays: 1, missingCountPosDays: 1 })
+    // «Vas vendiendo» incluye lo de esta noche…
+    expect(projection.summary.soldCents).toBe(p(670_000))
+    // …pero «a hoy» llega hasta ayer, y compara ayer contra ayer: 550 sobre 500.
+    expect(projection.summary.throughDay).toBe('2026-11-12')
+    expect(projection.summary.targetToDateCents).toBe(p(500_000))
+    expect(projection.summary.pace).toEqual({
+      kind: 'value',
+      percent: 110,
+      side: 'above',
+      gapPercent: 10,
+    })
+  })
+
+  it('un día del punto de venta en cero no cuenta como venta: sigue faltando el cierre', () => {
+    const rows = withPosSales(
+      [row('2026-11-10', { targetCents: p(500_000) })],
+      [sales('2026-11-10', { byMethod: { cash: 0 } })],
+      RATES,
+    )
+    const [day] = buildProjection(rows, { serviceDay: TODAY }).days
+    expect(day).toMatchObject({ hasSales: false, source: null })
+    expect(day?.compliance).toEqual({ kind: 'no_close' })
+  })
+
+  it('sin punto de venta todo queda exactamente igual', () => {
+    const plain = buildProjection(OCTOBER, { serviceDay: '2026-10-05' })
+    const merged = buildProjection(withPosSales(OCTOBER, [], RATES), { serviceDay: '2026-10-05' })
+    expect(merged).toEqual(plain)
+    for (const day of plain.days) {
+      expect(day.source).toBe(day.hasClose ? 'close' : null)
+      expect(day.hasSales).toBe(day.hasClose)
+      expect(day.depositCents).toBe(0)
+    }
+  })
+
+  it('un día del punto de venta que no está en el mes pedido se ignora', () => {
+    const rows = withPosSales(
+      [row('2026-11-10')],
+      [sales('2026-12-01', { byMethod: { cash: p(100_000) } })],
+      RATES,
+    )
+    expect(rows).toEqual([row('2026-11-10')])
+  })
+})
+
+describe('lo que llega del punto de venta y de Ajustes', () => {
+  it('un día de pos_sales_days: por medio va venta + recargo; las propinas no son venta', () => {
+    const day = parsePosSalesDay({
+      day: '2026-11-13',
+      sales_cents: 9_300_000,
+      surcharge_cents: 112_000,
+      tip_cents: 500_000,
+      payments: 4,
+      by_method: {
+        cash: '4700000',
+        debit: 2_000_000,
+        credit: 1_232_000,
+        qr: 1_480_000,
+        transfer: 0,
+      },
+      tables: 3,
+      people: 9,
+      consumption_cents: 9_300_000,
+      discount_cents: 0,
+      deposit_cents: 250_000,
+    })
+    expect(day).toEqual({
+      day: '2026-11-13',
+      byMethod: { cash: 4_700_000, debit: 2_000_000, credit: 1_232_000, qr: 1_480_000 },
+      depositCents: 250_000,
+    })
+    // Lo que no se entiende no se inventa.
+    expect(parsePosSalesDay({ by_method: { cash: 100 } })).toBeNull()
+    expect(parsePosSalesDay({ day: '2026-11-13', by_method: 'x', deposit_cents: -5 })).toEqual({
+      day: '2026-11-13',
+      byMethod: {},
+      depositCents: 0,
+    })
+  })
+
+  it('la comisión de cada medio es la del partícipe de su par en Administración', () => {
+    const methods = [
+      { system_key: 'cash', party_id: null },
+      { system_key: 'transfer', party_id: 'mp' },
+      { system_key: 'qr_mp', party_id: 'mp' },
+      { system_key: 'debit', party_id: 'posnet-debito' },
+      { system_key: 'credit', party_id: 'posnet-credito' },
+      // Un medio que no es del punto de venta no pinta nada acá.
+      { system_key: 'pedidosya', party_id: 'pedidosya' },
+    ]
+    const parties = [
+      { id: 'mp', commission_bp: 150 },
+      { id: 'posnet-debito', commission_bp: '314' },
+      // Sin el porcentaje cargado: el medio se cuenta entero.
+      { id: 'posnet-credito', commission_bp: null },
+      { id: 'pedidosya', commission_bp: 2520 },
+    ]
+    expect(posCommissionRates(methods, parties)).toEqual({ transfer: 150, qr: 150, debit: 314 })
+    expect(posCommissionRates([], parties)).toEqual({})
   })
 })
