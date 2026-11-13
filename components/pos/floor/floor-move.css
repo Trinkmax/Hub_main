@@ -36,6 +36,13 @@
     stroke-dashoffset: -24;
   }
 }
+/* Soltar la ficha sobre una mesa ocupada es juntarlas: la que recibe se marca al pasarle por encima
+   (conserva su color de estado; cambia el borde). */
+.pos-solid.pos-r-tabletop.pos-join-hot .pos-top {
+  stroke: var(--pos-ink);
+  stroke-width: 4;
+  stroke-dasharray: 7 4;
+}
 
 /* Lo que va en el dedo mientras se arrastra: la ficha de la mesa, un poco arriba para que se vea. */
 .pos-ghost {

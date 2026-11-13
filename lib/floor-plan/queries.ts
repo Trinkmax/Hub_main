@@ -1,6 +1,10 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { serviceDayInCordoba } from '@/lib/dates'
+import type { FloorSnapshot } from '@/lib/pos/types'
 import { createClient } from '@/lib/supabase/server'
+import { legacyFloorSession } from './live-model'
+import { toFloorElements } from './model'
 
 export type AreaRow = {
   id: string
@@ -759,4 +763,106 @@ export async function getItemMoveTargets(
 
   targets.sort((a, b) => a.area_pos - b.area_pos || a.label.localeCompare(b.label, 'es'))
   return targets
+}
+
+// ─── «En vivo» en un bar sin punto de venta ──────────────────────────────────
+
+/**
+ * La foto del salón de una sucursal de un bar SIN punto de venta, con la misma forma que usa la maqueta
+ * (`FloorSnapshot`). Sale de lo de siempre: el plano y las mesas abiertas del servicio de mesa anterior.
+ * Así «En vivo» dibuja la misma maqueta en cualquier bar (antes caía al plano viejo).
+ *
+ * Lee con el cliente de la persona: las políticas de cada tabla deciden qué ve, y cada consulta filtra
+ * por el bar. No trae reservas (el servicio viejo no las ata a una mesa).
+ */
+export async function getLegacyFloorSnapshot(
+  tenantId: string,
+  branch: FloorSnapshot['branch'],
+): Promise<FloorSnapshot> {
+  const supabase = await createClient()
+  const [plan, { data: rawSessions, error: sessionsError }] = await Promise.all([
+    getFloorPlan(tenantId, branch.id),
+    supabase
+      .from('table_sessions')
+      .select('id, physical_table_id, status, total_cents, party_size, alias, opened_at')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'open'),
+  ])
+  if (sessionsError) console.error('[floor-plan.legacySnapshot] sessions', sessionsError.message)
+
+  const elements = toFloorElements(plan.elements)
+  // Las mesas de ESTA sucursal: las dibujadas y las que todavía no tienen lugar.
+  const tableIds = new Set<string>()
+  for (const el of elements) if (el.table_id) tableIds.add(el.table_id)
+  for (const table of plan.unplacedTables) tableIds.add(table.id)
+
+  const sessions = ((rawSessions ?? []) as unknown as RawSessionRow[]).filter(
+    (row) => row.physical_table_id !== null && tableIds.has(row.physical_table_id),
+  )
+  const sessionIds = sessions.map((row) => row.id)
+
+  const kitchen = new Map<string, 'preparing' | 'ready'>()
+  const billAt = new Map<string, string>()
+  if (sessionIds.length > 0) {
+    const [{ data: rawTickets }, { data: rawBill }] = await Promise.all([
+      supabase
+        .from('tickets')
+        .select('session_id, status')
+        .in('session_id', sessionIds)
+        .in('status', ['accepted', 'preparing', 'ready']),
+      supabase
+        .from('table_session_events')
+        .select('session_id, created_at')
+        .in('session_id', sessionIds)
+        .eq('type', 'bill_requested'),
+    ])
+    for (const ticket of (rawTickets ?? []) as unknown as RawTicketRow[]) {
+      if (ticket.status === 'ready') kitchen.set(ticket.session_id, 'ready')
+      else if (kitchen.get(ticket.session_id) !== 'ready') {
+        kitchen.set(ticket.session_id, 'preparing')
+      }
+    }
+    for (const event of (rawBill ?? []) as unknown as Array<{
+      session_id: string
+      created_at: string
+    }>) {
+      // Si la pidió más de una vez, cuenta la primera: desde ahí espera.
+      const known = billAt.get(event.session_id)
+      if (!known || event.created_at < known) billAt.set(event.session_id, event.created_at)
+    }
+  }
+
+  return {
+    now: new Date().toISOString(),
+    service_day: serviceDayInCordoba(),
+    branch,
+    settings: null,
+    areas: plan.areas.map((area) => ({
+      id: area.id,
+      name: area.name,
+      position: area.position,
+      width: area.width,
+      height: area.height,
+    })),
+    elements,
+    loose_tables: plan.unplacedTables.map((table) => ({
+      id: table.id,
+      label: table.label,
+      capacity: table.capacity,
+    })),
+    sessions: sessions.map((row) =>
+      legacyFloorSession({
+        id: row.id,
+        tableId: row.physical_table_id as string,
+        openedAt: row.opened_at,
+        partySize: row.party_size,
+        alias: row.alias,
+        totalCents: row.total_cents ?? 0,
+        kitchen: kitchen.get(row.id) ?? 'none',
+        billRequestedAt: billAt.get(row.id) ?? null,
+      }),
+    ),
+    reservations: [],
+    practice_until: null,
+  }
 }

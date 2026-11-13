@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildLiveEntries,
+  legacyFloorSession,
   liveSummaryLine,
   liveTables,
   pendingByArea,
 } from '@/lib/floor-plan/live-model'
-import { summarize } from '@/lib/pos/table-state'
+import { deriveSessionState, summarize } from '@/lib/pos/table-state'
 import type { FloorElement, FloorReservation, FloorSession, FloorSnapshot } from '@/lib/pos/types'
 
 const NOW = Date.parse('2026-11-12T23:30:00Z')
@@ -238,5 +239,72 @@ describe('liveSummaryLine', () => {
     expect(liveSummaryLine({ ...base, tables: 8, open: 3, people: 9, bill: 2, late: 1 })).toBe(
       '3 de 8 mesas · 9 personas · 2 pidieron la cuenta · 1 con demora',
     )
+  })
+})
+
+/**
+ * Los bares sin punto de venta ven «En vivo» con la misma maqueta. Sus mesas abiertas vienen del
+ * servicio de mesa de siempre, que sabe mucho menos de cada una: acá se fija que con eso poco se llegue
+ * al estado correcto y, sobre todo, que no se invente un reloj que nadie midió.
+ */
+describe('legacyFloorSession: una mesa del servicio de siempre, con la forma de la maqueta', () => {
+  const facts = (over: Partial<Parameters<typeof legacyFloorSession>[0]> = {}) => ({
+    id: 's-1',
+    tableId: 't-1',
+    openedAt: minutesAgo(40),
+    partySize: 4,
+    alias: 'Juli',
+    totalCents: 0,
+    kitchen: 'none' as const,
+    billRequestedAt: null,
+    ...over,
+  })
+  const stateOf = (over: Parameters<typeof facts>[0] = {}) =>
+    deriveSessionState(legacyFloorSession(facts(over)), NOW)
+
+  it('recién sentados: sin consumo ni nada en cocina', () => {
+    const state = stateOf()
+    expect(state.key).toBe('seated')
+    // Desde que se abrió: es lo único que el servicio viejo sí sabe.
+    expect(state.minutes).toBe(40)
+  })
+
+  it('con algo en la cocina, espera la comida', () => {
+    expect(stateOf({ kitchen: 'preparing', totalCents: 500_000 }).key).toBe('kitchen')
+  })
+
+  it('con algo listo, es para llevar (aunque además haya algo cocinándose)', () => {
+    expect(stateOf({ kitchen: 'ready', totalCents: 500_000 }).key).toBe('ready')
+  })
+
+  it('con consumo y la cocina sin nada suyo, están comiendo', () => {
+    expect(stateOf({ totalCents: 500_000 }).key).toBe('eating')
+  })
+
+  it('pidieron la cuenta: se cuenta desde que la pidieron', () => {
+    const state = stateOf({ totalCents: 500_000, billRequestedAt: minutesAgo(6) })
+    expect(state.key).toBe('bill')
+    expect(state.minutes).toBe(6)
+  })
+
+  it('lo que el servicio viejo no registra no se inventa: esos estados van sin reloj', () => {
+    expect(stateOf({ kitchen: 'preparing', totalCents: 1 }).minutes).toBeNull()
+    expect(stateOf({ kitchen: 'ready', totalCents: 1 }).minutes).toBeNull()
+    expect(stateOf({ totalCents: 1 }).minutes).toBeNull()
+    // Y sin reloj, una mesa esperando comida no figura como demorada.
+    expect(stateOf({ kitchen: 'preparing', totalCents: 1 }).urgency).toBe('none')
+  })
+
+  it('conserva quiénes son y cuánto llevan', () => {
+    const session = legacyFloorSession(facts({ totalCents: 1_234_500 }))
+    expect(session).toMatchObject({
+      id: 's-1',
+      table_id: 't-1',
+      party_size: 4,
+      alias: 'Juli',
+      total_cents: 1_234_500,
+      is_practice: false,
+      held_tickets: 0,
+    })
   })
 })

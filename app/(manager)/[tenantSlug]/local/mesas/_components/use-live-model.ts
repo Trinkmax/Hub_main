@@ -13,6 +13,7 @@ import { type FloorSummary, serviceMinutesAt, summarize } from '@/lib/pos/table-
 import type { FloorSnapshot } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { type LiveStatus, usePosPoke } from '@/lib/pos/use-poke'
+import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 
 export type LiveModel = {
@@ -36,19 +37,32 @@ const EMPTY_ENTRIES: LiveEntry[] = []
  * El salón en vivo de una sucursal, para la pestaña «En vivo» del editor.
  *
  * Mientras `enabled` es falso no pide ni escucha nada (el dueño está editando).
- * Al prenderse lee la foto del salón y se suscribe a los avisos de la sucursal
- * (`usePosPoke`): cada aviso vuelve a leer. Si un aviso se pierde, una red de
- * seguridad vuelve a leer cada 40 s mientras la pestaña está a la vista.
+ * Al prenderse lee la foto del salón y escucha lo que cambia: cada aviso vuelve a
+ * leer. Si un aviso se pierde, una red de seguridad vuelve a leer cada 40 s
+ * mientras la pestaña está a la vista.
+ *
+ * De dónde llegan los avisos depende del bar:
+ * - Con punto de venta, del canal de la sucursal (`usePosPoke`).
+ * - Sin punto de venta, de los cambios en las mesas abiertas y las comandas del
+ *   servicio de mesa de siempre (los mismos que escucha el plano del salón).
+ *
+ * En los dos casos la foto llega con la misma forma y se dibuja con la misma
+ * maqueta: «En vivo» se ve igual en cualquier bar.
  */
 export function useLiveModel({
   enabled,
   slug,
+  tenantId,
   branchId,
+  posEnabled,
   timeZone,
 }: {
   enabled: boolean
   slug: string
+  tenantId: string
   branchId: string | null
+  /** El bar usa el punto de venta: los avisos llegan por el canal de la sucursal. */
+  posEnabled: boolean
   timeZone: string
 }): LiveModel {
   const [snapshot, setSnapshot] = useState<FloorSnapshot | null>(null)
@@ -79,7 +93,36 @@ export function useLiveModel({
     if (active) void reload()
   }, [active, reload])
 
-  const connection = usePosPoke(active ? branchId : null, poke)
+  const posConnection = usePosPoke(active && posEnabled ? branchId : null, poke)
+
+  // Sin punto de venta: los cambios de las mesas y las comandas del servicio de siempre.
+  const [legacyConnection, setLegacyConnection] = useState<LiveStatus>('connecting')
+  useEffect(() => {
+    if (!active || posEnabled) return
+    setLegacyConnection('connecting')
+    let wasDown = false
+    const leave = subscribeChanges({
+      channel: `plan-live-${tenantId}`,
+      events: [
+        { event: '*', table: 'table_sessions', filter: `tenant_id=eq.${tenantId}`, onChange: poke },
+        { event: '*', table: 'tickets', filter: `tenant_id=eq.${tenantId}`, onChange: poke },
+      ],
+      onStatus: (status) => {
+        if (status === 'SUBSCRIBED') {
+          setLegacyConnection('live')
+          // Lo que pasó mientras estuvo caído no se reenvía: al volver se lee de nuevo.
+          if (wasDown) poke()
+          wasDown = false
+        } else {
+          wasDown = true
+          setLegacyConnection('offline')
+        }
+      },
+    })
+    return leave
+  }, [active, posEnabled, tenantId, poke])
+
+  const connection = posEnabled ? posConnection : legacyConnection
   useVisibleInterval(reload, 40_000)
 
   // El reloj de la computadora puede estar corrido: se usa la hora de la base y se la hace avanzar acá.

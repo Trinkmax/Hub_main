@@ -246,6 +246,18 @@ export function FloorLive({
         : null,
     [entries, moving],
   )
+  // Sobre una ocupada también se puede soltar: es juntarlas (se pregunta antes).
+  const joinTargets = useMemo(
+    () =>
+      moving
+        ? new Set(
+            entries
+              .filter((e) => e.session && e.tableId !== moving.fromTableId)
+              .map((e) => e.tableId),
+          )
+        : null,
+    [entries, moving],
+  )
   const startMove = useCallback(
     (tableId: string) => {
       const entry = byId.get(tableId)
@@ -640,9 +652,12 @@ export function FloorLive({
               holdable={holdable}
               onHold={startMove}
               move={
-                moving && moveTargets ? { from: moving.fromTableId, targets: moveTargets } : null
+                moving && moveTargets
+                  ? { from: moving.fromTableId, targets: moveTargets, joins: joinTargets }
+                  : null
               }
-              onDrop={(tableId) => void finishMove(tableId)}
+              // Soltar sobre una mesa es lo mismo que tocarla: a una libre pasa, con una ocupada se junta.
+              onDrop={onTable}
               label={`${activeArea?.name ?? 'Salón'}: ${areaElements.filter((e) => e.kind === 'table').length} mesas`}
             />
           )}
@@ -660,8 +675,8 @@ export function FloorLive({
               <p className="pos-move-text">
                 <b>Mesa {moving.label}:</b>{' '}
                 {moveTargets && moveTargets.size > 0
-                  ? 'tocá la mesa libre a la que pasa (o arrastrala), o una ocupada para juntarlas.'
-                  : 'no hay ninguna libre acá. Tocá una ocupada para juntarlas, o probá en otro sector.'}
+                  ? 'arrastrala (o tocá) a una mesa libre para pasarla, o a una ocupada para juntarlas.'
+                  : 'no hay ninguna libre acá. Arrastrala (o tocá) a una ocupada para juntarlas, o probá en otro sector.'}
               </p>
               <button type="button" className="pos-move-cancel" onClick={() => setMoving(null)}>
                 Cancelar

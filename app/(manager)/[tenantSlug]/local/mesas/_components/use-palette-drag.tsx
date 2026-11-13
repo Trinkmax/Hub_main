@@ -13,10 +13,10 @@ export type UsePaletteDragArgs = {
   footprint: (kind: PaletteKind) => { width: number; height: number; round: boolean }
 }
 
-// Umbral de pantalla para distinguir tap (agregar al centro) de drag (soltar en el punto).
+// Umbral de pantalla para distinguir tap (agregar en un lugar libre) de drag (soltar en el punto).
 const THRESHOLD = 6
 /** Lo que flota sobre el tablero y no es piso (ver floor-editor.css › Área de trabajo). */
-const TOOLS = '.fpe-float, .fpe-rail, .fpe-zoom, .fpe-selbar'
+const TOOLS = '.fpe-float, .fpe-rail, .fpe-inspector'
 
 /**
  * Arrastrar desde la paleta con **pointer events** (funciona con mouse Y con
@@ -24,7 +24,7 @@ const TOOLS = '.fpe-float, .fpe-rail, .fpe-zoom, .fpe-selbar'
  * al puntero es la HUELLA de lo que va a caer (su tamaño real con el zoom
  * actual), pintada a mano, sin render por cuadro. Al soltar sobre el tablero
  * llama `onDrop`. Un toque sin mover NO suelta nada: lo maneja el `onClick` del
- * botón (agregar al centro), y este hook suprime ese click cuando hubo un
+ * botón (agregar en un lugar libre), y este hook suprime ese click cuando hubo un
  * arrastre de verdad (`shouldSuppressClick`).
  */
 export function usePaletteDrag({ wrapperRef, onDrop, footprint }: UsePaletteDragArgs) {
@@ -83,8 +83,8 @@ export function usePaletteDrag({ wrapperRef, onDrop, footprint }: UsePaletteDrag
         ev.clientY >= r.top &&
         ev.clientY <= r.bottom
       if (!inside) return
-      // Las herramientas flotan SOBRE el tablero: soltar arriba de una (la propia paleta, la barra de
-      // agregar, el zoom) no es soltar en el piso. Sin esto, la pieza caía escondida debajo.
+      // Las herramientas flotan SOBRE el tablero: soltar arriba de una (la propia paleta, la fila de
+      // arriba, la ficha) no es soltar en el piso. Sin esto, la pieza caía escondida debajo.
       const under = document.elementFromPoint(ev.clientX, ev.clientY)
       if (under?.closest(TOOLS)) return
       onDrop(kind, ev.clientX, ev.clientY)

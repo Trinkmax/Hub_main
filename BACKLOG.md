@@ -1651,4 +1651,10 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
     función en la base que lo aplique entero y lo marque como una tanda (`pos.price_batch`).
   - `types/database.ts` no conoce `branches`, `menu_item_branches`, `menu_price_changes`, `kitchen_stations`, los
     `menu_modifier_*` ni las `pos_*`: `lib/pos`, `lib/floor-plan` y `lib/menu/prices` usan clientes sin tipar.
+  - «Cambiar de mesa» del servicio de mesa de siempre (`components/floor-plan/move-table-sheet.tsx`,
+    `loadMoveTargetsAction`) lista las mesas libres de TODAS las sucursales y las agrupa por nombre de sector:
+    con dos sucursales que tienen un sector «Salón» los grupos se repiten (y React avisa de claves repetidas).
+    Hoy no molesta (las sucursales llegaron con el punto de venta, que mueve las mesas de otra manera), pero
+    si un bar sin punto de venta suma una sucursal hay que filtrar por la sucursal de la mesa. Se vio el 13/11
+    al probar «En vivo» del editor en ese modo.
 

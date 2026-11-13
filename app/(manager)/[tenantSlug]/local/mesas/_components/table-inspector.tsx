@@ -3,6 +3,7 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  ChevronDown,
   Copy,
   Minus,
   Plus,
@@ -10,6 +11,7 @@ import {
   QrCode,
   RefreshCw,
   RotateCw,
+  Split,
   Trash2,
   X,
 } from 'lucide-react'
@@ -80,9 +82,13 @@ const SHAPES: {
 ]
 
 /**
- * La ficha de una mesa. Nombre, lugares y forma cambian al toque (se ven en el
- * plano y en la maqueta antes de que conteste el servidor); solo se confirma lo
- * que no tiene vuelta fácil.
+ * La ficha de una mesa: una hojita que flota al lado de la mesa elegida. Arriba, lo
+ * que se cambia siempre (número, lugares, forma) y lo que se le hace (girar,
+ * duplicar, quitar); lo de vez en cuando (dividir, juntar eligiendo de una lista,
+ * cambiar el QR, desactivar) espera plegado en «Más opciones».
+ *
+ * Nombre, lugares y forma cambian al toque (se ven en el plano y en la maqueta
+ * antes de que conteste el servidor); solo se confirma lo que no tiene vuelta fácil.
  *
  * Se monta con `key` = id del elemento: otra mesa, otra ficha.
  */
@@ -108,6 +114,7 @@ export function TableInspector({
   const [label, setLabel] = useState(meta?.label ?? '')
   const [capacity, setCapacity] = useState<number | null>(meta?.capacity ?? null)
   const [mergeTarget, setMergeTarget] = useState('')
+  const [more, setMore] = useState(false)
   const [pending, start] = useTransition()
 
   // Lo último que el servidor aceptó, lo que falta mandar y el reloj que lo manda.
@@ -285,62 +292,65 @@ export function TableInspector({
 
       <div className="fpe-side-body">
         <div className="fpe-group">
-          <div className="fpe-field">
-            <label className="fpe-label" htmlFor={`${id}-label`}>
-              Número o nombre
-            </label>
-            <input
-              id={`${id}-label`}
-              className="fpe-input"
-              value={label}
-              maxLength={40}
-              autoComplete="off"
-              onChange={(e) => setLabel(e.target.value)}
-              onBlur={commitLabel}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-            />
-          </div>
-          <div className="fpe-field">
-            <span className="fpe-label" id={`${id}-seats`}>
-              Lugares
-            </span>
-            {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
-            <div className="fpe-stepper" role="group" aria-labelledby={`${id}-seats`}>
-              <button
-                type="button"
-                aria-label="Un lugar menos"
-                disabled={shown <= 1}
-                onClick={() => setSeats(shown - 1)}
-              >
-                <Minus aria-hidden />
-              </button>
-              <output aria-live="polite" aria-label={`${shown} lugares`}>
-                {shown}
-              </output>
-              <button
-                type="button"
-                aria-label="Un lugar más"
-                disabled={shown >= 50}
-                onClick={() => setSeats(shown + 1)}
-              >
-                <Plus aria-hidden />
-              </button>
-              <span className="fpe-stepper-unit">{shown === 1 ? 'persona' : 'personas'}</span>
+          <div className="fpe-pair">
+            <div className="fpe-field">
+              <label className="fpe-label" htmlFor={`${id}-label`}>
+                Número o nombre
+              </label>
+              <input
+                id={`${id}-label`}
+                className="fpe-input"
+                value={label}
+                maxLength={40}
+                autoComplete="off"
+                onChange={(e) => setLabel(e.target.value)}
+                onBlur={commitLabel}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+              />
             </div>
-            {capacity === null ? (
-              <p className="fpe-hint">Todavía sin cargar: el salón la dibuja de {DEFAULT_SEATS}.</p>
-            ) : null}
+            <div className="fpe-field">
+              <span className="fpe-label" id={`${id}-seats`}>
+                Lugares
+              </span>
+              {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
+              <div className="fpe-stepper" role="group" aria-labelledby={`${id}-seats`}>
+                <button
+                  type="button"
+                  aria-label="Un lugar menos"
+                  disabled={shown <= 1}
+                  onClick={() => setSeats(shown - 1)}
+                >
+                  <Minus aria-hidden />
+                </button>
+                <output aria-live="polite" aria-label={`${shown} lugares`}>
+                  {shown}
+                </output>
+                <button
+                  type="button"
+                  aria-label="Un lugar más"
+                  disabled={shown >= 50}
+                  onClick={() => setSeats(shown + 1)}
+                >
+                  <Plus aria-hidden />
+                </button>
+              </div>
+            </div>
           </div>
+          {capacity === null ? (
+            <p className="fpe-hint">
+              Los lugares están sin cargar: el salón la dibuja de {DEFAULT_SEATS}.
+            </p>
+          ) : null}
         </div>
 
         <div className="fpe-group">
-          <h3 className="fpe-group-title" id={`${id}-shape`}>
+          <h3 className="fpe-sr" id={`${id}-shape`}>
             Forma
           </h3>
           {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
-          <div className="fpe-shapes" role="group" aria-labelledby={`${id}-shape`}>
+          <div className="fpe-shapes fpe-shapes-row" role="group" aria-labelledby={`${id}-shape`}>
             {SHAPES.map(({ value, label: shapeLabel, Glyph }) => (
               <button
                 key={value}
@@ -357,182 +367,240 @@ export function TableInspector({
         </div>
 
         <div className="fpe-group">
-          <h3 className="fpe-group-title">Acomodar</h3>
-          <div className="fpe-grid-2">
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onRotate}>
+          {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
+          <div
+            className="fpe-acts"
+            data-cols={qrEnabled && meta?.qr_token ? 4 : 3}
+            role="group"
+            aria-label="Qué hacer con la mesa"
+          >
+            <button
+              type="button"
+              className="fpe-act"
+              onClick={onRotate}
+              title="Girar un cuarto de vuelta (R)"
+            >
               <RotateCw aria-hidden />
               Girar
             </button>
             <button
               type="button"
-              className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+              className="fpe-act"
               onClick={onDuplicate}
+              title="Duplicar (Ctrl D)"
             >
               <Copy aria-hidden />
               Duplicar
             </button>
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onFront}>
-              <ArrowUpToLine aria-hidden />
-              Al frente
-            </button>
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onBack}>
-              <ArrowDownToLine aria-hidden />
-              Al fondo
-            </button>
-          </div>
-        </div>
-
-        {qrEnabled && meta?.qr_token ? (
-          <div className="fpe-group">
-            <h3 className="fpe-group-title">QR de la mesa</h3>
-            <code className="fpe-code" title={meta.qr_token}>
-              {meta.qr_token}
-            </code>
-            <div className="fpe-grid-2">
-              <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={printQr}>
+            {qrEnabled && meta?.qr_token ? (
+              <button
+                type="button"
+                className="fpe-act"
+                onClick={printQr}
+                title="Imprimir el QR de esta mesa"
+              >
                 <QrCode aria-hidden />
                 Imprimir QR
               </button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="fpe-btn fpe-btn-quiet fpe-btn-sm"
-                    disabled={pending}
-                  >
-                    <RefreshCw aria-hidden />
-                    Cambiar QR
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>¿Cambiar el QR de la {theTable}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      El QR que está pegado en la mesa deja de funcionar. Vas a tener que imprimir
-                      el nuevo y cambiarlo.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="fpe-btn fpe-btn-quiet">Dejarlo</AlertDialogCancel>
-                    <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={regenerate}>
-                      Cambiar el QR
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="fpe-group">
-          <h3 className="fpe-group-title">Juntar y dividir</h3>
-          <button
-            type="button"
-            className="fpe-btn fpe-btn-quiet fpe-btn-sm"
-            disabled={pending}
-            onClick={split}
-          >
-            <Copy aria-hidden />
-            Dividir: sumar otra al lado
-          </button>
-          {others.length > 0 ? (
-            <div className="fpe-row">
-              <div className="fpe-field" style={{ flex: 1 }}>
-                <label className="fpe-sr" htmlFor={`${id}-merge`}>
-                  Juntar con otra mesa
-                </label>
-                <select
-                  id={`${id}-merge`}
-                  className="fpe-input"
-                  value={mergeTarget}
-                  disabled={pending}
-                  onChange={(e) => setMergeTarget(e.target.value)}
-                >
-                  <option value="">Juntar con…</option>
-                  {others.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      Mesa {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="fpe-btn fpe-btn-quiet"
-                    disabled={pending || !mergeTarget}
-                  >
-                    Juntar
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      ¿Juntar la mesa {mergeLabel} con la {theTable}?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      La {theTable} se queda y absorbe a la otra: la mesa {mergeLabel} sale del
-                      plano y queda desactivada. No pierde su historial y la podés reactivar desde
-                      Lista.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
-                      Dejarlas
-                    </AlertDialogCancel>
-                    <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={merge}>
-                      Juntar las mesas
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="fpe-group">
-          <div className="fpe-grid-2">
+            ) : null}
             <button
               type="button"
-              className="fpe-btn fpe-btn-danger fpe-btn-sm"
+              className="fpe-act is-danger"
               onClick={onRemove}
-              title="Vuelve a «Mesas sin ubicar» (Supr)"
+              title="Sale del plano y queda en «Sin ubicar» (Supr)"
             >
               <Trash2 aria-hidden />
               Quitar
             </button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <button
-                  type="button"
-                  className="fpe-btn fpe-btn-danger fpe-btn-sm"
-                  disabled={pending}
-                >
-                  <PowerOff aria-hidden />
-                  Desactivar
-                </button>
-              </AlertDialogTrigger>
-              <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>¿Desactivar la {theTable}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Sale del plano y el salón deja de verla. No se puede si está abierta. No pierde
-                    su historial y la reactivás cuando quieras desde Lista.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="fpe-btn fpe-btn-quiet">Dejarla</AlertDialogCancel>
-                  <AlertDialogAction className="fpe-btn fpe-btn-danger-solid" onClick={deactivate}>
-                    Desactivar la mesa
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </div>
-          <p className="fpe-hint">
-            «Quitar» la saca del plano y la deja en «Mesas sin ubicar». «Desactivar» la saca de uso.
-          </p>
+        </div>
+
+        <div className="fpe-group">
+          <button
+            type="button"
+            className="fpe-more"
+            aria-expanded={more}
+            aria-controls={`${id}-more`}
+            onClick={() => setMore((open) => !open)}
+          >
+            Más opciones
+            <ChevronDown aria-hidden />
+          </button>
+          {more ? (
+            <div className="fpe-more-body" id={`${id}-more`}>
+              <div className="fpe-field">
+                <span className="fpe-label">Juntar con otra</span>
+                <p className="fpe-hint">
+                  Arrastrá una mesa encima de otra y se juntan.
+                  {others.length > 0 ? ' O elegila acá:' : ''}
+                </p>
+                {others.length > 0 ? (
+                  <div className="fpe-row">
+                    <div className="fpe-field" style={{ flex: 1 }}>
+                      <label className="fpe-sr" htmlFor={`${id}-merge`}>
+                        Juntar con otra mesa
+                      </label>
+                      <select
+                        id={`${id}-merge`}
+                        className="fpe-input"
+                        value={mergeTarget}
+                        disabled={pending}
+                        onChange={(e) => setMergeTarget(e.target.value)}
+                      >
+                        <option value="">Juntar con…</option>
+                        {others.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            Mesa {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="fpe-btn fpe-btn-quiet"
+                          disabled={pending || !mergeTarget}
+                        >
+                          Juntar
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            ¿Juntar la mesa {mergeLabel} con la {theTable}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            La {theTable} se queda y absorbe a la otra: la mesa {mergeLabel} sale
+                            del plano y queda desactivada. No pierde su historial y la podés
+                            reactivar desde Lista.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                            Dejarlas
+                          </AlertDialogCancel>
+                          <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={merge}>
+                            Juntar las mesas
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+                disabled={pending}
+                onClick={split}
+              >
+                <Split aria-hidden />
+                Dividir: sumar otra al lado
+              </button>
+
+              <div className="fpe-field">
+                <span className="fpe-label">Si se pisa con otra cosa</span>
+                <div className="fpe-row">
+                  <button
+                    type="button"
+                    className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+                    onClick={onFront}
+                    title="Traer al frente ( ] )"
+                  >
+                    <ArrowUpToLine aria-hidden />
+                    Al frente
+                  </button>
+                  <button
+                    type="button"
+                    className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+                    onClick={onBack}
+                    title="Mandar al fondo ( [ )"
+                  >
+                    <ArrowDownToLine aria-hidden />
+                    Al fondo
+                  </button>
+                </div>
+              </div>
+
+              {qrEnabled && meta?.qr_token ? (
+                <div className="fpe-field">
+                  <span className="fpe-label">Código del QR</span>
+                  <code className="fpe-code" title={meta.qr_token}>
+                    {meta.qr_token}
+                  </code>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        type="button"
+                        className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+                        disabled={pending}
+                      >
+                        <RefreshCw aria-hidden />
+                        Cambiar el QR
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>¿Cambiar el QR de la {theTable}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          El QR que está pegado en la mesa deja de funcionar. Vas a tener que
+                          imprimir el nuevo y cambiarlo.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                          Dejarlo
+                        </AlertDialogCancel>
+                        <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={regenerate}>
+                          Cambiar el QR
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ) : null}
+
+              <div className="fpe-field">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="fpe-btn fpe-btn-danger fpe-btn-sm"
+                      disabled={pending}
+                    >
+                      <PowerOff aria-hidden />
+                      Desactivar la mesa
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Desactivar la {theTable}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Sale del plano y el salón deja de verla. No se puede si está abierta. No
+                        pierde su historial y la reactivás cuando quieras desde Lista.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
+                        Dejarla
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        className="fpe-btn fpe-btn-danger-solid"
+                        onClick={deactivate}
+                      >
+                        Desactivar la mesa
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <p className="fpe-hint">
+                  «Quitar» la saca del plano y la deja sin ubicar. «Desactivar» la saca de uso.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </>

@@ -226,42 +226,55 @@ export function DecorInspector({
         </div>
 
         <div className="fpe-group">
-          <h3 className="fpe-group-title">Acomodar</h3>
-          <div className="fpe-grid-2">
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onRotate}>
+          {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
+          <div className="fpe-acts" data-cols="5" role="group" aria-label="Qué hacer con esto">
+            <button
+              type="button"
+              className="fpe-act"
+              onClick={onRotate}
+              title="Girar un cuarto de vuelta (R)"
+            >
               <RotateCw aria-hidden />
               Girar
             </button>
             <button
               type="button"
-              className="fpe-btn fpe-btn-quiet fpe-btn-sm"
+              className="fpe-act"
               onClick={onDuplicate}
+              title="Duplicar (Ctrl D)"
             >
               <Copy aria-hidden />
               Duplicar
             </button>
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onFront}>
+            <button
+              type="button"
+              className="fpe-act"
+              onClick={onFront}
+              title="Traer al frente ( ] )"
+            >
               <ArrowUpToLine aria-hidden />
-              Al frente
+              Frente
             </button>
-            <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onBack}>
+            <button
+              type="button"
+              className="fpe-act"
+              onClick={onBack}
+              title="Mandar al fondo ( [ )"
+            >
               <ArrowDownToLine aria-hidden />
-              Al fondo
+              Fondo
+            </button>
+            <button
+              type="button"
+              className="fpe-act is-danger"
+              onClick={onRemove}
+              title="Quitar del plano (Supr)"
+            >
+              <Trash2 aria-hidden />
+              Quitar
             </button>
           </div>
           <p className="fpe-hint">El tamaño se cambia estirando las manijas en el plano.</p>
-        </div>
-
-        <div className="fpe-group">
-          <button
-            type="button"
-            className="fpe-btn fpe-btn-danger fpe-btn-sm"
-            onClick={onRemove}
-            title="Quitar (Supr)"
-          >
-            <Trash2 aria-hidden />
-            Quitar del plano
-          </button>
         </div>
       </div>
     </>
