@@ -1122,9 +1122,9 @@ export function FloorPlanEditor({
 
   return (
     <>
-      {/* `data-tex-away`: el plano usa hasta la última esquina (la ficha de la mesa, el zoom, la última
-          fila de la lista); el asistente no se para encima. */}
-      <div ref={hostRef} className="fpe-host" data-tex-away>
+      {/* `data-tex-away="always"`: el plano usa hasta la última esquina (la ficha de la mesa, el zoom, la
+          última fila de la lista) en cualquier pantalla; el asistente no se para encima. */}
+      <div ref={hostRef} className="fpe-host" data-tex-away="always">
         <section
           className="fpe"
           aria-label="Plano del salón"

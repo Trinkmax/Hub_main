@@ -96,14 +96,13 @@ export function TexDock() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: al cambiar de pantalla hay que volver a mirar.
   useEffect(() => {
-    if (!phone) {
-      setBar(0)
-      setAway(false)
-      return
-    }
+    // `data-tex-away` lo corre solo en el celular (un chat abierto). `data-tex-away="always"` es para una
+    // pantalla que usa hasta la última esquina en cualquier tamaño, como el editor del plano.
     const check = () => {
-      setBar(bottomBarHeight())
-      setAway(document.querySelector('[data-tex-away]') !== null)
+      setBar(phone ? bottomBarHeight() : 0)
+      setAway(
+        document.querySelector(phone ? '[data-tex-away]' : '[data-tex-away="always"]') !== null,
+      )
     }
     check()
     const timer = setInterval(check, BAR_CHECK_MS)
