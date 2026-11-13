@@ -15,6 +15,8 @@ export type UsePaletteDragArgs = {
 
 // Umbral de pantalla para distinguir tap (agregar al centro) de drag (soltar en el punto).
 const THRESHOLD = 6
+/** Lo que flota sobre el tablero y no es piso (ver floor-editor.css › Área de trabajo). */
+const TOOLS = '.fpe-float, .fpe-rail, .fpe-zoom, .fpe-selbar'
 
 /**
  * Arrastrar desde la paleta con **pointer events** (funciona con mouse Y con
@@ -80,7 +82,12 @@ export function usePaletteDrag({ wrapperRef, onDrop, footprint }: UsePaletteDrag
         ev.clientX <= r.right &&
         ev.clientY >= r.top &&
         ev.clientY <= r.bottom
-      if (inside) onDrop(kind, ev.clientX, ev.clientY)
+      if (!inside) return
+      // Las herramientas flotan SOBRE el tablero: soltar arriba de una (la propia paleta, la barra de
+      // agregar, el zoom) no es soltar en el piso. Sin esto, la pieza caía escondida debajo.
+      const under = document.elementFromPoint(ev.clientX, ev.clientY)
+      if (under?.closest(TOOLS)) return
+      onDrop(kind, ev.clientX, ev.clientY)
     }
 
     window.addEventListener('pointermove', move)
