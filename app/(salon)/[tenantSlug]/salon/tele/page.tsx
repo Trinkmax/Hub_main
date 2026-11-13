@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { notFound } from 'next/navigation'
 import { KitchenLive } from '@/components/pos/kitchen/kitchen-live'
+import { BranchChooser } from '@/components/pos/ui/branch-chooser'
 import { requireFeature } from '@/lib/platform/guards'
 import { posFont } from '@/lib/pos/font'
 import { parseStationParam } from '@/lib/pos/kitchen/stations'
@@ -45,11 +46,24 @@ export default async function KitchenTvPage({
   }
   await requireFeature(access.tenant, 'pos')
 
-  const { active } = await getActiveBranch(
+  const { branches, active, chosen } = await getActiveBranch(
     access.tenant.id,
     Array.isArray(sucursal) ? sucursal[0] : sucursal,
   )
   if (!active) notFound()
+
+  // Una tele es de una sucursal: la primera vez se elige, y después nunca pregunta.
+  if (!chosen) {
+    return (
+      <div className={cn('pos', posFont.variable)}>
+        <BranchChooser
+          fill="screen"
+          slug={tenantSlug}
+          branches={branches.map(({ id, name, color, address }) => ({ id, name, color, address }))}
+        />
+      </div>
+    )
+  }
 
   const queue = await getKitchenQueue(active.id)
   if (!queue.ok) {

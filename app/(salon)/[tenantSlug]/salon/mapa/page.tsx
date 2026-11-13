@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { FloorLive } from '@/components/pos/floor/floor-live'
+import { BranchChooser } from '@/components/pos/ui/branch-chooser'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { requireFeature } from '@/lib/platform/guards'
@@ -40,8 +41,20 @@ export default async function PosFloorPage({
   }
   await requireFeature(access.tenant, 'pos')
 
-  const { branches, active } = await getActiveBranch(access.tenant.id, sucursal)
+  const { branches, active, chosen } = await getActiveBranch(access.tenant.id, sucursal)
   if (!active) notFound()
+
+  // Más de una sucursal y este dispositivo nunca eligió: se pregunta una vez, antes de mostrar nada.
+  if (!chosen) {
+    return (
+      <div className={cn('pos', posFont.variable)}>
+        <BranchChooser
+          slug={tenantSlug}
+          branches={branches.map(({ id, name, color, address }) => ({ id, name, color, address }))}
+        />
+      </div>
+    )
+  }
 
   const snapshot = await getFloorSnapshot(active.id)
   if (!snapshot.ok) {
