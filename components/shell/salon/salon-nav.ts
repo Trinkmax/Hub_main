@@ -1,4 +1,5 @@
 import {
+  Banknote,
   Boxes,
   CalendarCheck,
   ChefHat,
@@ -11,6 +12,7 @@ import {
   User,
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
+import { POS_CASH_ROLES } from '@/lib/pos/cash/roles'
 import {
   POS_FLOOR_ROLES,
   POS_KITCHEN_ROLES,
@@ -35,16 +37,17 @@ import type { TenantRole } from '@/lib/tenant/types'
  *   3. Reservas     — el pase de lista de la noche.
  *   4. Puerta       — las noches de cine: validar las entradas con QR.
  *   5. Stock        — la cocina cuenta el stock y recibe lo que llega (Compras).
+ *
+ * Con el punto de venta prendido el orden cambia (`POS_ORDER`): manda el salón en vivo, y sumar puntos
+ * deja de ser lo primero porque los puntos se suman solos al cobrar.
+ *
+ * En un celular entran cinco pestañas. Si a alguien le tocan más (el dueño las tiene todas), la quinta
+ * es «Más» y abre el resto: ningún nombre se corta con «…» (`splitSalonTabs`).
  */
 export type SalonTab = {
   key: string
   /** Label de la tab bar. Corto: entra en ~5rem. */
   label: string
-  /**
-   * Label para cuando la barra tiene más de cinco pestañas (cada una baja a ~4rem en un
-   * celular y «Sumar puntos» se cortaba en «Sumar p…»). Si falta, se usa `label`.
-   */
-  short?: string
   /** Título que muestra el topbar. Puede ser más descriptivo que el label. */
   title: string
   icon: LucideIcon
@@ -67,6 +70,17 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     feature: 'pos',
   },
   {
+    // La caja del turno: abrir, lo que entró por cada medio, retiros y cerrar contando los billetes.
+    key: 'caja',
+    label: 'Caja',
+    title: 'Caja',
+    icon: Banknote,
+    href: (s) => `/${s}/salon/caja`,
+    match: (p, s) => p.startsWith(`/${s}/salon/caja`),
+    roles: POS_CASH_ROLES,
+    feature: 'pos',
+  },
+  {
     // La pantalla de cocina del punto de venta: la misma que va en la tele, desde cualquier celular.
     key: 'tele',
     label: 'Cocina',
@@ -80,7 +94,6 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
   {
     key: 'escanear',
     label: 'Sumar puntos',
-    short: 'Puntos',
     title: 'Sumar puntos',
     icon: ScanLine,
     href: (s) => `/${s}/salon/escanear`,
@@ -92,7 +105,6 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
   {
     key: 'qr-club',
     label: 'QR del club',
-    short: 'QR club',
     title: 'QR del club',
     icon: QrCode,
     href: (s) => `/${s}/salon/qr-club`,
@@ -160,16 +172,56 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
   },
 ]
 
+/**
+ * El orden con el punto de venta: el salón, la plata, quién llega, la cocina; después lo del club y lo
+ * que es de algunas noches. Lo que no figura acá queda al final, en su orden de siempre.
+ */
+const POS_ORDER: ReadonlyArray<string> = [
+  'mapa',
+  'caja',
+  'reservas',
+  'tele',
+  'escanear',
+  'qr-club',
+  'puerta',
+  'stock',
+]
+
 export function visibleSalonTabs(opts: {
   role: TenantRole
   features: TenantFeatures
   isPlatformAdmin: boolean
 }): SalonTab[] {
-  return SALON_TABS.filter((tab) => {
+  const tabs = SALON_TABS.filter((tab) => {
     const roleOk = !tab.roles || tab.roles.includes(opts.role)
     const featureOk = !tab.feature || opts.isPlatformAdmin || opts.features[tab.feature]
     return roleOk && featureOk
   })
+  if (!tabs.some((tab) => tab.feature === 'pos')) return tabs
+  const rank = (key: string) => {
+    const at = POS_ORDER.indexOf(key)
+    return at === -1 ? POS_ORDER.length : at
+  }
+  // `sort` es estable: lo que empata (lo que no está en la lista) conserva su orden.
+  return [...tabs].sort((a, b) => rank(a.key) - rank(b.key))
+}
+
+/** Cuántas pestañas entran abajo en un celular sin cortar ningún nombre. */
+export const SALON_TABBAR_SLOTS = 5
+
+/**
+ * Qué va en la barra y qué detrás de «Más». Con cinco o menos, todas en la barra. Con más, cuatro y
+ * «Más»: las primeras del orden, que son las que más se usan.
+ */
+export function splitSalonTabs(tabs: ReadonlyArray<SalonTab>): {
+  bar: SalonTab[]
+  more: SalonTab[]
+} {
+  if (tabs.length <= SALON_TABBAR_SLOTS) return { bar: [...tabs], more: [] }
+  return {
+    bar: tabs.slice(0, SALON_TABBAR_SLOTS - 1),
+    more: tabs.slice(SALON_TABBAR_SLOTS - 1),
+  }
 }
 
 /** Título de la pantalla actual para el topbar. `null` = usar el nombre del bar. */

@@ -4,7 +4,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/browser'
 
-export type PokeWhat = 'floor' | 'kitchen' | 'menu'
+/** Qué se movió: el salón, la cocina, la carta, la plata (un cobro, la caja) o un pedido de permiso. */
+export type PokeWhat = 'floor' | 'kitchen' | 'menu' | 'cash' | 'approvals'
 export type LiveStatus = 'connecting' | 'live' | 'offline'
 
 /**
