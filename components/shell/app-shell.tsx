@@ -5,6 +5,7 @@ import { ShellFrame } from './shell-frame'
 import { SidebarContent } from './sidebar-content'
 import { SIDEBAR_COOKIE, SidebarProvider } from './sidebar-state'
 import { Topbar } from './topbar'
+import { ViewAsProvider, type ViewAsState } from './view-as'
 
 /**
  * Shell del manager. NO hace I/O a Supabase: todo lo que necesita (tenant, rol,
@@ -19,6 +20,7 @@ export async function AppShell({
   isPlatformAdmin,
   email,
   accounting,
+  viewAs = null,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url' | 'feature_flags'>
@@ -28,6 +30,8 @@ export async function AppShell({
   email: string
   /** Administración para esta persona: la entrada del menú y las de ⌘K. */
   accounting?: AccountingAccess
+  /** «Ver como» para el menú de usuario; null si esta persona no puede usarlo. */
+  viewAs?: ViewAsState | null
   children: React.ReactNode
 }) {
   const features = getEffectiveFeatures(tenant)
@@ -35,33 +39,35 @@ export async function AppShell({
   const sidebarCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === 'collapsed'
 
   return (
-    <SidebarProvider initialCollapsed={sidebarCollapsed}>
-      {/* min-h-dvh (no screen/vh): en iOS 100vh es el viewport "grande" y deja
+    <ViewAsProvider value={viewAs}>
+      <SidebarProvider initialCollapsed={sidebarCollapsed}>
+        {/* min-h-dvh (no screen/vh): en iOS 100vh es el viewport "grande" y deja
           la página scrolleable la altura de la barra del navegador */}
-      <div className="bg-app-gradient relative min-h-dvh">
-        <ShellFrame
-          sidebar={
-            <SidebarContent
+        <div className="bg-app-gradient relative min-h-dvh">
+          <ShellFrame
+            sidebar={
+              <SidebarContent
+                tenant={tenant}
+                role={role}
+                features={features}
+                isPlatformAdmin={isPlatformAdmin}
+                accounting={accounting}
+              />
+            }
+          >
+            <Topbar
               tenant={tenant}
               role={role}
               features={features}
               isPlatformAdmin={isPlatformAdmin}
+              memberships={memberships}
+              email={email}
               accounting={accounting}
             />
-          }
-        >
-          <Topbar
-            tenant={tenant}
-            role={role}
-            features={features}
-            isPlatformAdmin={isPlatformAdmin}
-            memberships={memberships}
-            email={email}
-            accounting={accounting}
-          />
-          <main className="flex-1">{children}</main>
-        </ShellFrame>
-      </div>
-    </SidebarProvider>
+            <main className="flex-1">{children}</main>
+          </ShellFrame>
+        </div>
+      </SidebarProvider>
+    </ViewAsProvider>
   )
 }

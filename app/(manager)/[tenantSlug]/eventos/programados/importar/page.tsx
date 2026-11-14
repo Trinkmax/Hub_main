@@ -49,10 +49,14 @@ export default async function ImportarFechasPage({
       .eq('tenant_id', access.tenant.id)
       .eq('active', true)
       .order('name', { ascending: true }),
-    supabase
-      .from('event_experiences')
-      .select('template_id, title')
-      .eq('tenant_id', access.tenant.id),
+    // Las películas de Entradas son del dueño (RLS): la anfitriona ve los nombres del calendario.
+    // Se decide por el rol para que «Ver como» muestre lo mismo que ve ella.
+    access.role === 'owner'
+      ? supabase
+          .from('event_experiences')
+          .select('template_id, title')
+          .eq('tenant_id', access.tenant.id)
+      : Promise.resolve({ data: [] }),
   ])
   const titleOf = new Map(
     ((films as Array<{ template_id: string; title: string }> | null) ?? []).map((f) => [

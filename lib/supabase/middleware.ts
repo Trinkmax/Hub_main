@@ -17,6 +17,7 @@ import {
 } from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
+import { routingRole, VIEW_AS_COOKIE } from '@/lib/tenant/view-as'
 import { PATH_HEADER, WORKSPACE_HEADER } from '@/lib/workspace'
 
 const PUBLIC_PATHS = new Set([
@@ -291,8 +292,9 @@ export async function updateSession(request: NextRequest) {
         lookup = await getActiveRoleAndSlug(supabase, userId, activeTenantId)
       }
       if (lookup) {
+        const role = routingRole(lookup.role, request.cookies.get(VIEW_AS_COOKIE)?.value, userId)
         return NextResponse.redirect(
-          new URL(homePathForRole(lookup.role, lookup.slug), request.url),
+          new URL(homePathForRole(role ?? lookup.role, lookup.slug), request.url),
         )
       }
     }
@@ -302,7 +304,7 @@ export async function updateSession(request: NextRequest) {
   // Ruteo por rol dentro del tenant:
   //  - staff de salón (cashier/waiter/kitchen) → siempre /salon
   //  - roles acotados del manager (editor/host) → solo sus prefijos permitidos
-  //  - owner navega libre (peek mode en /salon permitido)
+  //  - owner navega libre (peek mode en /salon permitido), salvo con «Ver como»
   // Es SOLO ruteo: la autorización real la hace cada layout/page contra la DB
   // (get_tenant_access bajo RLS) y cada Server Action con requireRole.
   const segments = pathname.split('/').filter(Boolean)
@@ -310,9 +312,12 @@ export async function updateSession(request: NextRequest) {
   const rest = segments.slice(1)
 
   if (slug && !RESERVED_SLUGS.has(slug)) {
-    const role = tenantClaims
+    const claimRole = tenantClaims
       ? roleForSlug(tenantClaims, slug)
       : await getRoleForSlug(supabase, userId, slug)
+    // «Ver como» (lib/tenant/view-as.ts): el dueño que mira el panel con otro rol se rutea como
+    // ese rol. Solo baja permisos; las páginas vuelven a decidir con la base.
+    const role = routingRole(claimRole, request.cookies.get(VIEW_AS_COOKIE)?.value, userId)
     if (role) {
       const inSalon = rest[0] === 'salon'
       if (inSalon) {

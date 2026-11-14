@@ -151,15 +151,26 @@ type FormatRow = {
   default_private_group: boolean
 }
 
-/** Los formatos del bar, con los títulos de Entradas y la hora y el cupo de su última fecha. */
-async function loadFormats(supabase: SBAny, tenantId: string): Promise<ImportFormat[]> {
-  const [{ data: templates, error }, { data: films }, { data: recent }] = await Promise.all([
+/**
+ * Los formatos del bar, con los títulos de Entradas y la hora y el cupo de su última fecha.
+ * `films: false` no busca los títulos de Entradas: es lo que ve la anfitriona (event_experiences
+ * es del dueño por RLS). Lo decide el rol, así «Ver como» (lib/tenant/view-as.ts) reconoce lo
+ * mismo que reconocería ella aunque la sesión sea la del dueño.
+ */
+async function loadFormats(
+  supabase: SBAny,
+  tenantId: string,
+  films: boolean,
+): Promise<ImportFormat[]> {
+  const [{ data: templates, error }, { data: filmRows }, { data: recent }] = await Promise.all([
     supabase
       .from('scheduled_event_templates')
       .select('id, name, active, default_capacity, default_meal_type, default_private_group')
       .eq('tenant_id', tenantId),
-    // Si el rol no ve Entradas (RLS), solo se reconocen los nombres del calendario.
-    supabase.from('event_experiences').select('template_id, title').eq('tenant_id', tenantId),
+    // Sin Entradas (la anfitriona), solo se reconocen los nombres del calendario.
+    films
+      ? supabase.from('event_experiences').select('template_id, title').eq('tenant_id', tenantId)
+      : Promise.resolve({ data: [] }),
     supabase
       .from('scheduled_events')
       .select('template_id, starts_at_local, capacity, event_date')
@@ -172,7 +183,7 @@ async function loadFormats(supabase: SBAny, tenantId: string): Promise<ImportFor
     throw new Error('No pudimos cargar los formatos del calendario.')
   }
   const titles = new Map<string, string[]>()
-  for (const f of (films as Array<{ template_id: string; title: string }> | null) ?? []) {
+  for (const f of (filmRows as Array<{ template_id: string; title: string }> | null) ?? []) {
     titles.set(f.template_id, [...(titles.get(f.template_id) ?? []), f.title])
   }
   const usual = new Map<string, { time: string; capacity: number }>()
@@ -276,9 +287,14 @@ type Built = {
   noColumns: boolean
 }
 
-async function build(supabase: SBAny, tenantId: string, rows: Cell[][]): Promise<Built> {
+async function build(
+  supabase: SBAny,
+  tenantId: string,
+  rows: Cell[][],
+  films: boolean,
+): Promise<Built> {
   const today = todayInCordoba()
-  const formats = await loadFormats(supabase, tenantId)
+  const formats = await loadFormats(supabase, tenantId, films)
   const read = readImportRows(rows, formats, today)
   const months = [...new Set(read.entries.map((e) => e.date.slice(0, 7)))].sort()
   const formatIds = [...new Set(read.entries.map((e) => e.formatId))]
@@ -358,7 +374,7 @@ export async function previewCalendarImport(
   if (!file.ok) return file
   const supabase = (await createClient()) as SBAny
   try {
-    const built = await build(supabase, access.tenant.id, file.rows)
+    const built = await build(supabase, access.tenant.id, file.rows, access.role === 'owner')
     return {
       ok: true,
       preview: {
@@ -398,7 +414,7 @@ export async function applyCalendarImport(
 
   let built: Built
   try {
-    built = await build(supabase, tenantId, file.rows)
+    built = await build(supabase, tenantId, file.rows, access.role === 'owner')
   } catch (error) {
     return {
       ok: false,

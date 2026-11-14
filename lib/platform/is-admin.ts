@@ -1,7 +1,9 @@
 import 'server-only'
+import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/tenant/current'
+import { readViewAs, VIEW_AS_COOKIE } from '@/lib/tenant/view-as'
 
 /**
  * True cuando el email del usuario logueado está en platform_admins.
@@ -19,6 +21,18 @@ export const isPlatformAdmin = cache(async (): Promise<boolean> => {
     return false
   }
   return data === true
+})
+
+/**
+ * Superadmin que además NO está usando «Ver como» (lib/tenant/view-as.ts). Es la pregunta de
+ * las pantallas del bar («¿le abro el panel que el bar tiene apagado?»): mirando el rol de otra
+ * persona, tiene que ver lo mismo que esa persona. /admin y sus actions siguen con
+ * `isPlatformAdmin`, que no cambia.
+ */
+export const actsAsPlatformAdmin = cache(async (): Promise<boolean> => {
+  if (!(await isPlatformAdmin())) return false
+  const user = await getCurrentUser()
+  return readViewAs((await cookies()).get(VIEW_AS_COOKIE)?.value, user?.id) === null
 })
 
 /** Oculta la existencia de /admin a quien no sea superadmin (notFound, no 403). */

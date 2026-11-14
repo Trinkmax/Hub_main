@@ -1,6 +1,7 @@
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
+import { ViewAsProvider, type ViewAsState } from '../view-as'
 import { AccountSheet } from './account-sheet'
 import { BottomTabBar } from './bottom-tab-bar'
 import { PwaInstallPrompt } from './install-prompt'
@@ -31,42 +32,47 @@ export function AppShellSalon({
   role,
   isPlatformAdmin,
   email,
+  viewAs = null,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'feature_flags'>
   role: TenantRole
   isPlatformAdmin: boolean
   email: string
+  /** «Ver como» para la hoja «Tu cuenta»; null si esta persona no puede usarlo. */
+  viewAs?: ViewAsState | null
   children: React.ReactNode
 }) {
   const features = getEffectiveFeatures(tenant)
 
   return (
-    <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
-      <SalonTopbar
-        tenant={tenant}
-        account={
-          <AccountSheet
-            email={email}
-            role={role}
-            tenantName={tenant.name}
-            tenantSlug={tenant.slug}
-            signOut={signOutAction}
-          />
-        }
-      />
+    <ViewAsProvider value={viewAs}>
+      <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
+        <SalonTopbar
+          tenant={tenant}
+          account={
+            <AccountSheet
+              email={email}
+              role={role}
+              tenantName={tenant.name}
+              tenantSlug={tenant.slug}
+              signOut={signOutAction}
+            />
+          }
+        />
 
-      <SalonMain>{children}</SalonMain>
+        <SalonMain>{children}</SalonMain>
 
-      <BottomTabBar
-        tenantSlug={tenant.slug}
-        role={role}
-        features={features}
-        isPlatformAdmin={isPlatformAdmin}
-      />
+        <BottomTabBar
+          tenantSlug={tenant.slug}
+          role={role}
+          features={features}
+          isPlatformAdmin={isPlatformAdmin}
+        />
 
-      <ServiceWorkerRegistration />
-      <PwaInstallPrompt />
-    </div>
+        <ServiceWorkerRegistration />
+        <PwaInstallPrompt />
+      </div>
+    </ViewAsProvider>
   )
 }

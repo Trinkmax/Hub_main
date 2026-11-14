@@ -58,8 +58,9 @@ export default async function SalonLayout({
 
   // El proxy rutea por el rol del JWT (≤1 h de antigüedad). Si difiere del rol
   // real que devolvió la DB, refrescar la sesión desde el browser (una vez/min).
+  // Contra el rol REAL: con «Ver como» el rol que se muestra es otro a propósito.
   const claimRole = access.user.tenants ? roleForSlug(access.user.tenants, tenantSlug) : null
-  const claimsStale = access.user.tenants !== null && claimRole !== access.role
+  const claimsStale = access.user.tenants !== null && claimRole !== access.realRole
 
   return (
     <AppShellSalon
@@ -67,6 +68,7 @@ export default async function SalonLayout({
       role={access.role}
       isPlatformAdmin={access.isPlatformAdmin}
       email={access.user.email ?? ''}
+      viewAs={access.canViewAs ? { slug: tenantSlug, viewAs: access.viewAs } : null}
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />

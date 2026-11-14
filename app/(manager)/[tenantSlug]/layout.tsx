@@ -61,8 +61,9 @@ export default async function DashboardLayout({
 
   // Si el JWT trae un rol distinto al de la DB, forzar un refresh de sesión
   // desde el browser para que el hook re-inyecte los claims (una vez/min).
+  // Contra el rol REAL: con «Ver como» el rol que se muestra es otro a propósito.
   const claimRole = access.user.tenants ? roleForSlug(access.user.tenants, tenantSlug) : null
-  const claimsStale = access.user.tenants !== null && claimRole !== access.role
+  const claimsStale = access.user.tenants !== null && claimRole !== access.realRole
 
   return (
     <AppShell
@@ -72,6 +73,7 @@ export default async function DashboardLayout({
       isPlatformAdmin={access.isPlatformAdmin}
       email={access.user.email ?? ''}
       accounting={access.accounting}
+      viewAs={access.canViewAs ? { slug: tenantSlug, viewAs: access.viewAs } : null}
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />

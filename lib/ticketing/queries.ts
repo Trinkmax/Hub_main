@@ -1154,11 +1154,16 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
  * `fromIso` (inclusive) y `toIso` (exclusivo), de la más nueva a la más vieja, y cuándo entró la
  * anterior más nueva, para «Ver días anteriores». Las leen el dueño y la anfitriona, cada uno con
  * su sesión (policies ticket_orders_owner_select y ticket_orders_host_select).
+ *
+ * `undos: false` no busca los «Deshacer» de la puerta: es lo que ve la anfitriona, que no lee
+ * audit_log. Lo pasa la página según el rol, así «Ver como» (lib/tenant/view-as.ts) muestra lo
+ * mismo que ve ella aunque la sesión sea la del dueño.
  */
 export async function listOrdersBetween(
   tenantId: string,
   fromIso: string,
   toIso: string,
+  options: { undos?: boolean } = {},
 ): Promise<{ orders: AdminOrder[]; olderCreatedAt: string | null }> {
   const supabase = (await createClient()) as SBAny
   const [page, older] = await Promise.all([
@@ -1185,8 +1190,12 @@ export async function listOrdersBetween(
     throw new Error('No pudimos cargar las ventas.')
   }
   const olderRows = (older.data as Array<{ created_at: string }> | null) ?? []
+  const rows = (page.data as Omit<AdminOrder, 'undo'>[] | null) ?? []
   return {
-    orders: await withUndos(supabase, tenantId, (page.data as Omit<AdminOrder, 'undo'>[]) ?? []),
+    orders:
+      options.undos === false
+        ? rows.map((o) => ({ ...o, undo: null }))
+        : await withUndos(supabase, tenantId, rows),
     olderCreatedAt: olderRows[0]?.created_at ?? null,
   }
 }
