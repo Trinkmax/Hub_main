@@ -3,11 +3,12 @@ import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Tenant } from '@/lib/tenant/types'
 import { type FeatureKey, getEffectiveFeatures, isFeatureEnabled } from './features'
-import { isPlatformAdmin } from './is-admin'
+import { actsAsPlatformAdmin } from './is-admin'
 
 /**
  * Corta con notFound() cuando la feature está OFF para el tenant.
- * Los superadmins siempre pasan (pueden ver los paneles ocultos).
+ * Los superadmins siempre pasan (pueden ver los paneles ocultos), salvo mirando el panel con
+ * otro rol («Ver como»): ahí ven lo mismo que esa persona.
  * Usar en page/layout DESPUÉS de requireTenantAccess (que ya trae feature_flags).
  */
 export async function requireFeature(
@@ -15,7 +16,7 @@ export async function requireFeature(
   key: FeatureKey,
 ): Promise<void> {
   if (isFeatureEnabled(tenant, key)) return
-  if (await isPlatformAdmin()) return
+  if (await actsAsPlatformAdmin()) return
   notFound()
 }
 
@@ -35,6 +36,6 @@ export async function requireFeatureByTenantId(tenantId: string, key: FeatureKey
     feature_flags: (data?.feature_flags ?? {}) as Record<string, boolean>,
   })
   if (features[key]) return
-  if (await isPlatformAdmin()) return
+  if (await actsAsPlatformAdmin()) return
   notFound()
 }

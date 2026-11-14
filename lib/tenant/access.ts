@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { type CurrentUser, getCurrentUser } from './current'
@@ -9,6 +10,7 @@ import {
   type Tenant,
   type TenantRole,
 } from './types'
+import { resolveViewAs, VIEW_AS_COOKIE } from './view-as'
 
 /**
  * Todo lo que el layout, el shell y la page necesitan para un tenant, resuelto
@@ -17,8 +19,21 @@ import {
  */
 export type TenantAccess = {
   tenant: Tenant
+  /**
+   * El rol con el que la app muestra y autoriza. Es el de la base, salvo que un superadmin
+   * esté usando «Ver como» (lib/tenant/view-as.ts): entonces es el rol que está mirando.
+   */
   role: TenantRole
-  /** Superadmin de la plataforma (platform_admins por email). */
+  /** El rol de verdad en este bar, el de la base. Solo difiere de `role` con «Ver como». */
+  realRole: TenantRole
+  /** «Ver como»: el rol que se está mirando, o null. */
+  viewAs: TenantRole | null
+  /** Puede usar «Ver como» en este bar: superadmin y dueño. */
+  canViewAs: boolean
+  /**
+   * Superadmin de la plataforma (platform_admins por email). Mirando otro rol es `false`, así
+   * no se le abren los paneles que el bar tiene apagados.
+   */
   isPlatformAdmin: boolean
   /** Memberships del usuario, en orden de alta (para el switcher de bares). */
   memberships: MembershipWithTenant[]
@@ -129,12 +144,24 @@ export const requireTenantAccess = cache(async (slug: string): Promise<TenantAcc
   const parsed = parseAccess(data)
   if (!parsed) throw new TenantNotFoundError()
 
+  // «Ver como»: la cookie solo cuenta para un superadmin que es dueño de este bar.
+  const view = resolveViewAs({
+    realRole: parsed.role,
+    isPlatformAdmin: parsed.is_platform_admin,
+    accounting: parsed.accounting,
+    cookie: (await cookies()).get(VIEW_AS_COOKIE)?.value,
+    userId: user.id,
+  })
+
   return {
     tenant: parsed.tenant,
-    role: parsed.role,
-    isPlatformAdmin: parsed.is_platform_admin,
+    role: view.role,
+    realRole: view.realRole,
+    viewAs: view.viewAs,
+    canViewAs: view.canViewAs,
+    isPlatformAdmin: view.isPlatformAdmin,
     memberships: parsed.memberships,
-    accounting: parsed.accounting,
+    accounting: view.accounting,
     user,
   }
 })

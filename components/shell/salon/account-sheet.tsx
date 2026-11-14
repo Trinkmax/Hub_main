@@ -2,7 +2,7 @@
 
 import { LayoutDashboard, LogOut } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sheet'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
+import { useViewAs, ViewAsDot, ViewAsSheetSection } from '../view-as'
 
 /**
  * La cuenta del staff, colgada del topbar del salón.
@@ -41,6 +42,8 @@ export function AccountSheet({
   signOut: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const viewAs = useViewAs()
   const initial = (email.charAt(0) || '?').toUpperCase()
 
   return (
@@ -49,9 +52,10 @@ export function AccountSheet({
         <button
           type="button"
           aria-label="Tu cuenta"
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 font-serif text-sm font-semibold text-primary transition-transform active:scale-95"
+          className="relative grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 font-serif text-sm font-semibold text-primary transition-transform active:scale-95"
         >
           {initial}
+          <ViewAsDot />
         </button>
       </SheetTrigger>
 
@@ -62,6 +66,9 @@ export function AccountSheet({
             {ROLE_LABELS[role] ?? role} · {tenantName}
           </SheetDescription>
         </SheetHeader>
+
+        {/* «Ver como»: solo para un superadmin que es dueño del bar (lib/tenant/view-as.ts). */}
+        {viewAs ? <ViewAsSheetSection onSettled={close} /> : null}
 
         <div className="space-y-2 px-4 pb-4">
           {role === 'owner' ? (

@@ -58,7 +58,8 @@ export default async function VentasOnlinePage({
   const { fromIso, toIso } = salesPageRange(page)
   const tenantId = access.tenant.id
   const [result, transferEnabled, appUrl] = await Promise.all([
-    listOrdersBetween(tenantId, fromIso, toIso).then(
+    // Los «Deshacer» de la puerta salen de audit_log, que es del dueño: la anfitriona no los ve.
+    listOrdersBetween(tenantId, fromIso, toIso, { undos: access.role === 'owner' }).then(
       ({ orders, olderCreatedAt }): SalesResult => ({
         ok: true,
         days: groupSalesByDay(orders),
