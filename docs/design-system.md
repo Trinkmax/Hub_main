@@ -166,10 +166,20 @@ Patrones usados:
 
 ---
 
-## 7. PWA (modo salón)
+## 7. PWA y el celular
 
-- `public/manifest.webmanifest`: `display: standalone`, portrait,
-  cream/forest theme colors.
+El panel y el salón se pueden agregar a la pantalla de inicio. En el
+celular, la navegación es una barra de vidrio estilo iOS 26 (lente que
+se levanta, se estira y agranda): ver `docs/features/app-movil.md`.
+
+- `public/manifest.webmanifest`: «HUB!», `display: standalone`, portrait,
+  cream/forest theme colors. Lo enlazan los layouts del panel y del
+  salón; `start_url` es `/`, que lleva a cada rol a su espacio.
+- Barra de abajo: `components/shell/dock/` (`LiquidDock`). Tokens
+  `--dock-h`, `--dock-gap`, `--dock-space` y `--salon-tabbar-h`. Una
+  pantalla con su propia barra de acciones abajo lleva
+  `data-dock-hide=""` (o `<HideDock />`).
+- Hojas de vidrio (iOS 26): `components/shell/mobile/app-sheet.tsx`.
 - `public/icons/hub.svg` y `hub-maskable.svg`: iconos en SVG con
   HUB! serif. **TODO**: PNGs 192/512 reales para Lighthouse 100.
 - `public/sw.js`: cache versionado (`hub-salon-v1`), network-first
