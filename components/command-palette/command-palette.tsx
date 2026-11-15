@@ -3,7 +3,6 @@
 import { MessageCircleQuestion, Search } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { actionHrefFrom } from '@/components/administracion/acciones/types'
 import { openTex, texAvailable } from '@/components/administracion/tex/open-tex'
 import { NO_ACCOUNTING } from '@/components/shell/nav-config'
 import {
@@ -18,7 +17,8 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import type { TenantFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
-import { type CommandEntry, commandEntries } from './command-config'
+import type { CommandEntry, commandEntries } from './command-config'
+import { COMMAND_GROUPS_ORDER, commandEntryHref, visibleCommandEntries } from './command-entries'
 import { useCommandShortcuts } from './use-command-shortcuts'
 
 type CommandPaletteProps = {
@@ -28,17 +28,6 @@ type CommandPaletteProps = {
   isPlatformAdmin: boolean
   /** Administración para esta persona (`access.accounting`). */
   accounting?: AccountingAccess
-}
-
-const GROUPS_ORDER = ['Acciones rápidas', 'Administración', 'Operación', 'Ir a'] as const
-
-/** ¿Alcanza el acceso a Administración para esta entrada? (el flag ya viene adentro). */
-function accountingOk(entry: CommandEntry, accounting: AccountingAccess): boolean {
-  if (!entry.accounting) return true
-  if (!accounting.enabled) return false
-  if (entry.accounting === 'write') return accounting.write
-  if (entry.accounting === 'read') return accounting.read
-  return accounting.read || accounting.canSetUp
 }
 
 export function CommandPalette({
@@ -58,16 +47,8 @@ export function CommandPalette({
   useCommandShortcuts(toggle)
 
   const groupedEntries = useMemo(() => {
-    const visible = commandEntries.filter((entry) => {
-      const roleOk = (entry.roles ?? ['owner']).includes(role)
-      // El flag de Administración no se saltea por ser superadmin (lo decide la base).
-      const featureOk =
-        !entry.feature ||
-        (entry.feature !== 'accounting' && isPlatformAdmin) ||
-        features[entry.feature]
-      return roleOk && featureOk && accountingOk(entry, accounting)
-    })
-    return GROUPS_ORDER.map((group) => ({
+    const visible = visibleCommandEntries({ role, features, isPlatformAdmin, accounting })
+    return COMMAND_GROUPS_ORDER.map((group) => ({
       group,
       items: visible.filter((entry) => entry.group === group),
     })).filter((g) => g.items.length > 0)
@@ -76,17 +57,8 @@ export function CommandPalette({
   const handleSelect = useCallback(
     (entry: CommandEntry) => {
       setOpen(false)
-      // Las hojas de Administración se abren sobre la pantalla actual si ya se
-      // está en la sección (conservando ?tab=, ?mes=…); si no, sobre el Resumen.
-      const href = entry.accountingAction
-        ? actionHrefFrom(
-            tenantSlug,
-            pathname,
-            typeof window === 'undefined' ? '' : window.location.search,
-            entry.accountingAction,
-          )
-        : entry.href(tenantSlug)
-      router.push(href)
+      const search = typeof window === 'undefined' ? '' : window.location.search
+      router.push(commandEntryHref(entry, tenantSlug, pathname, search))
     },
     [pathname, router, tenantSlug],
   )

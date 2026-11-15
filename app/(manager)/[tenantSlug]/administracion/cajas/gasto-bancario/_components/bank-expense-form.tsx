@@ -872,7 +872,10 @@ export function BankExpenseForm({
 
         {/* Sin lugar para el resumen al costado: el total siempre a la vista y el papel a un toque.
             Va pegada abajo DENTRO de la página, así no pisa el menú del costado. */}
-        <div className="sticky bottom-0 z-30 -mx-4 -mb-6 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md sm:-mx-6 sm:-mb-8 sm:px-6 lg:hidden">
+        <div
+          data-dock-hide=""
+          className="sticky bottom-0 z-30 -mx-4 -mb-6 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md sm:-mx-6 sm:-mb-8 sm:px-6 lg:hidden"
+        >
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">

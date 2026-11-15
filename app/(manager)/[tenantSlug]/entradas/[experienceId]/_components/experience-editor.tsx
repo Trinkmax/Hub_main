@@ -1098,7 +1098,10 @@ export function ExperienceEditor({
         </div>
 
         {/* ── Barra de guardado ───────────────────────────── */}
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-lg backdrop-blur">
+        <div
+          data-dock-hide=""
+          className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-lg backdrop-blur"
+        >
           <p className="flex items-center gap-2 text-sm" aria-live="polite">
             {uploads > 0 ? (
               <>

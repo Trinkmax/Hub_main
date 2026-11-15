@@ -2924,7 +2924,10 @@ export function PurchaseForm({
             ) : null}
 
             {/* ── El pie: en el celular queda siempre a mano ── */}
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border/70 px-3 py-2 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-card md:bg-secondary/40">
+            <div
+              data-dock-hide=""
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border/70 px-3 py-2 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-card md:bg-secondary/40"
+            >
               <label
                 htmlFor={ids('another')}
                 className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground md:min-h-0"

@@ -3,7 +3,14 @@ import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
 import type { NavIconKey } from './nav-icons'
 
 export type NavItem = {
+  /** Identificador estable (la barra de abajo del celular lo guarda en una cookie). */
+  key: string
   label: string
+  /**
+   * Nombre corto para la barra de abajo del celular, donde cada pestaña mide ~56 px. La grilla de «Más»
+   * y el menú lateral usan `label`.
+   */
+  short?: string
   href: (slug: string) => string
   icon: NavIconKey
   /** Si está, sólo se muestra a estos roles. Si no, a todos. */
@@ -44,7 +51,9 @@ export type NavGroup = {
 
 /** Versión "resuelta" — href ya evaluado, todo serializable para cruzar a Client Components. */
 export type ResolvedNavItem = {
+  key: string
   label: string
+  short?: string
   href: string
   iconKey: NavIconKey
   exact?: boolean
@@ -85,6 +94,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Hoy',
     items: [
       {
+        key: 'resumen',
         label: 'Resumen',
         href: (s) => `/${s}`,
         icon: 'LayoutDashboard',
@@ -92,6 +102,7 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
       },
       {
+        key: 'operativo',
         label: 'Operativo',
         href: (s) => `/${s}/operativo`,
         icon: 'MonitorSmartphone',
@@ -100,7 +111,9 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Hub de comunicación con el cliente. Su navegación interna
         // (Inbox/Difusiones/Flows/Audiencias/Config) vive en su propio riel.
+        key: 'mensajeria',
         label: 'Mensajería',
+        short: 'Mensajes',
         href: (s) => `/${s}/mensajeria`,
         icon: 'MessageCircle',
         roles: ['owner'],
@@ -114,12 +127,14 @@ export const NAV_GROUPS: NavGroup[] = [
         // La lista del día / semana / mes: la anfitriona trabaja con la lista,
         // el filtro y «Pasar lista». El alta y la ficha (/reservas/nuevo,
         // /reservas/[id]) resaltan esta entrada por prefijo.
+        key: 'reservas',
         label: 'Reservas',
         href: (s) => `/${s}/reservas`,
         icon: 'CalendarCheck',
         roles: ['owner', 'host'],
       },
       {
+        key: 'calendario',
         label: 'Calendario',
         href: (s) => `/${s}/eventos/programados`,
         icon: 'CalendarDays',
@@ -128,7 +143,9 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Las compras de la cartelera, día por día, con «Confirmar transferencia». Aparte de
         // Marketing para que entre la anfitriona (06/11/2026): ella recibe el «ya transferí».
+        key: 'ventas-online',
         label: 'Ventas online',
+        short: 'Ventas',
         href: (s) => `/${s}/ventas-online`,
         icon: 'Ticket',
         roles: ['owner', 'host'],
@@ -136,6 +153,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Personas (con sus segmentos Reservas / Walk-in), Acreditar y el QR del
         // club: pestañas arriba de la página.
+        key: 'clientes',
         label: 'Clientes',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
@@ -150,6 +168,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Edita el menú público. «Ver carta» (como la ve el cliente) es un
         // botón de la página, para el dueño y para quien edita contenido.
+        key: 'carta',
         label: 'Carta',
         href: (s) => `/${s}/menu`,
         icon: 'UtensilsCrossed',
@@ -157,6 +176,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Su propio editor (/club) con pestañas internas (?tab=).
+        key: 'club',
         label: 'Club',
         href: (s) => `/${s}/club`,
         icon: 'Star',
@@ -166,6 +186,7 @@ export const NAV_GROUPS: NavGroup[] = [
         // Lo que el bar muestra puertas afuera y cómo se organiza el equipo
         // para producirlo: Tareas, Link de Instagram, Páginas y Entradas son
         // pestañas. Owner-only: es la mesa de los socios.
+        key: 'marketing',
         label: 'Marketing',
         href: (s) => `/${s}/tareas`,
         icon: 'ListChecks',
@@ -175,7 +196,9 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Resumen, Cómo nos fue, Señas, Comisiones y Reseñas (con su flag) son
         // pestañas arriba de la página.
+        key: 'estadisticas',
         label: 'Estadísticas',
+        short: 'Números',
         href: (s) => `/${s}/estadisticas`,
         icon: 'BarChart3',
         roles: ['owner'],
@@ -183,7 +206,9 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Lo que va ganando quien gestiona reservas (comisiones propias).
+        key: 'mis-numeros',
         label: 'Mis números',
+        short: 'Números',
         href: (s) => `/${s}/mis-numeros`,
         icon: 'Coins',
         roles: ['host'],
@@ -192,6 +217,7 @@ export const NAV_GROUPS: NavGroup[] = [
         // Compras (docs/features/compras.md): los pedidos a proveedores que arma el conteo de la
         // cocina. Insumos, Recetas y Proveedores son pestañas. La cocina cuenta y recibe desde el
         // salón (/salon/stock).
+        key: 'compras',
         label: 'Compras',
         href: (s) => `/${s}/compras`,
         icon: 'ShoppingBasket',
@@ -203,7 +229,9 @@ export const NAV_GROUPS: NavGroup[] = [
         // acceso por persona; la contadora ve SOLO esta entrada. Las seis palabras
         // (Resumen, Compras y pagos, Gastos y sueldos, Ventas, Caja, Contabilidad)
         // las dibuja la sección, así que resalta en cualquier /administracion/*.
+        key: 'administracion',
         label: 'Administración',
+        short: 'Admin',
         href: (s) => `/${s}/administracion`,
         icon: 'Landmark',
         roles: ['owner', 'accountant'],
@@ -216,7 +244,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Salón',
     items: [
       {
+        key: 'salon-en-vivo',
         label: 'Salón en vivo',
+        short: 'Salón',
         href: (s) => `/${s}/salon/mesas`,
         icon: 'ClipboardList',
         roles: ['owner'],
@@ -224,6 +254,7 @@ export const NAV_GROUPS: NavGroup[] = [
         feature: 'table_service',
       },
       {
+        key: 'cocina',
         label: 'Cocina',
         href: (s) => `/${s}/salon/cocina`,
         icon: 'ChefHat',
@@ -233,7 +264,9 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Punto de venta: cómo va el día en el salón (ventas, medios de pago, per cápita, cajas).
+        key: 'hoy-en-vivo',
         label: 'Hoy en vivo',
+        short: 'En vivo',
         href: (s) => `/${s}/local/hoy`,
         icon: 'Activity',
         roles: ['owner'],
@@ -241,6 +274,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         // Punto de venta: los locales del bar, su lista de apertura y los ajustes de cobro.
+        key: 'sucursales',
         label: 'Sucursales',
         href: (s) => `/${s}/local/sucursales`,
         icon: 'Store',
@@ -248,14 +282,18 @@ export const NAV_GROUPS: NavGroup[] = [
         feature: 'pos',
       },
       {
+        key: 'plano',
         label: 'Plano y QRs de mesa',
+        short: 'Plano',
         href: (s) => `/${s}/local/mesas`,
         icon: 'LayoutGrid',
         roles: ['owner'],
         feature: 'floor_plan',
       },
       {
+        key: 'auto-aceptacion',
         label: 'Auto-aceptación',
+        short: 'Auto',
         href: (s) => `/${s}/local/auto-aceptacion`,
         icon: 'Zap',
         roles: ['owner'],
@@ -270,7 +308,9 @@ export const NAV_GROUPS: NavGroup[] = [
     pinned: true,
     items: [
       {
+        key: 'configuracion',
         label: 'Configuración',
+        short: 'Ajustes',
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',
         roles: ['owner'],
@@ -366,7 +406,9 @@ export function resolveNavGroups(
     label: group.label,
     pinned: group.pinned,
     items: group.items.map((item) => ({
+      key: item.key,
       label: item.label,
+      short: item.short,
       href: item.href(slug),
       iconKey: item.icon,
       exact: item.exact,

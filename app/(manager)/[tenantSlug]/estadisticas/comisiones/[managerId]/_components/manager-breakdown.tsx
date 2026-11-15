@@ -226,7 +226,7 @@ export function ManagerCommissionsBreakdown({
       </AlertDialog>
 
       {selected.size > 0 ? (
-        <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-amber-50/80 px-3 py-2 text-sm backdrop-blur dark:bg-amber-950/30">
+        <div className="sticky top-16 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-amber-50/80 px-3 py-2 text-sm backdrop-blur dark:bg-amber-950/30">
           {/* "reservas", no "entries": en este período hay una entry de ledger
               por reserva del gestor, y es el idioma del dueño — el diálogo de
               liquidar todo y el toast dicen lo mismo. */}

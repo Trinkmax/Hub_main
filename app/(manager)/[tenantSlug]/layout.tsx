@@ -1,3 +1,4 @@
+import type { Viewport } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { Tex } from '@/components/administracion/tex/tex'
@@ -17,6 +18,18 @@ import {
 import { roleForSlug } from '@/lib/tenant/claims'
 import { texEnabled } from '@/lib/tex/enabled'
 import { PATH_HEADER } from '@/lib/workspace'
+
+// En el celular el panel se usa como una app: con `cover` la página llega hasta los bordes y
+// `env(safe-area-inset-*)` deja de valer 0 (la barra de abajo flota sobre el área segura del iPhone).
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f5edd7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f2a20' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 
 export default async function DashboardLayout({
   children,
@@ -74,6 +87,7 @@ export default async function DashboardLayout({
       email={access.user.email ?? ''}
       accounting={access.accounting}
       viewAs={access.canViewAs ? { slug: tenantSlug, viewAs: access.viewAs } : null}
+      tex={texEnabled()}
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />

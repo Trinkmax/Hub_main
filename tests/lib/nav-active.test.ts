@@ -33,24 +33,37 @@ const mirror: ResolvedNavGroup[] = [
   {
     label: 'A',
     items: [
-      { label: 'Resumen', href: '/x', iconKey: 'LayoutDashboard', exact: true },
+      { key: 'resumen', label: 'Resumen', href: '/x', iconKey: 'LayoutDashboard', exact: true },
       {
+        key: 'clientes',
         label: 'Clientes',
         href: '/x/clientes',
         iconKey: 'Users',
         activePaths: ['/x/acreditar', '/x/local/captura'],
       },
-      { label: 'Local', href: '/x/local', iconKey: 'LayoutGrid' },
-      { label: 'Plano', href: '/x/local/mesas', iconKey: 'LayoutGrid' },
-      { label: 'Salón en vivo', href: '/x/salon/mesas', iconKey: 'ClipboardList', newTab: true },
+      { key: 'local', label: 'Local', href: '/x/local', iconKey: 'LayoutGrid' },
+      { key: 'plano', label: 'Plano', href: '/x/local/mesas', iconKey: 'LayoutGrid' },
+      {
+        key: 'salon',
+        label: 'Salón en vivo',
+        href: '/x/salon/mesas',
+        iconKey: 'ClipboardList',
+        newTab: true,
+      },
     ],
   },
   {
     label: 'B',
     items: [
       // Empata con «Clientes» en /x/clientes: gana el primero del menú.
-      { label: 'Duplicado', href: '/x/otra', iconKey: 'Users', activePaths: ['/x/clientes'] },
-      { label: 'Walk-in', href: '/x/clientes?segment=walkin', iconKey: 'Users' },
+      {
+        key: 'duplicado',
+        label: 'Duplicado',
+        href: '/x/otra',
+        iconKey: 'Users',
+        activePaths: ['/x/clientes'],
+      },
+      { key: 'walkin', label: 'Walk-in', href: '/x/clientes?segment=walkin', iconKey: 'Users' },
     ],
   },
 ]

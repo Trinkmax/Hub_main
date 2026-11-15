@@ -1614,7 +1614,10 @@ export function ReservationForm({
       </FieldGroup>
 
       {/* Footer: comisión + submit */}
-      <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-lg backdrop-blur">
+      <div
+        data-dock-hide=""
+        className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-lg backdrop-blur"
+      >
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm dark:bg-amber-950/40">
             <span className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">

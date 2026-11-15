@@ -239,6 +239,7 @@ export function MarkerDock({
   return (
     <div
       data-testid="marker-dock"
+      data-dock-hide=""
       className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_20px_-14px_color-mix(in_oklch,var(--foreground)_35%,transparent)] lg:hidden"
     >
       <div className="flex min-h-7 items-center justify-between gap-3 px-4 pt-2">

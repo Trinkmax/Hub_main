@@ -29,7 +29,8 @@ function useScrolledDown(): boolean {
 
 /**
  * «＋ Cargar» flotante del celular: abre el lanzador «¿Qué querés cargar?». Abajo a la derecha,
- * por encima del área segura del iPhone; desde `lg` no se ve, porque «Cargar» está en la barra.
+ * por encima del área segura del iPhone y de la barra de abajo (`--dock-space`); desde `lg` no se ve,
+ * porque «Cargar» está en la barra de arriba.
  *
  * - Arriba de todo es una píldora con la palabra. Al bajar se achica a un círculo con el «＋»
  *   (ya se sabe qué es) y tapa menos de lo que estás leyendo; al volver arriba se abre de nuevo.
@@ -43,7 +44,7 @@ export function LauncherFab() {
   return (
     <>
       <div aria-hidden="true" className="h-24 lg:hidden" />
-      <LauncherButton className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-30 h-14 min-w-14 gap-0 px-0 text-base shadow-lg ring-4 ring-background lg:hidden">
+      <LauncherButton className="fixed right-4 bottom-[max(calc(env(safe-area-inset-bottom)+1rem),calc(var(--dock-space,0px)+0.25rem))] z-30 h-14 min-w-14 gap-0 px-0 text-base shadow-lg ring-4 ring-background lg:hidden">
         {/* Chico: 18 + 20 + 18 = 56, un círculo. Grande: el aire de siempre a cada lado. */}
         <span
           aria-hidden="true"

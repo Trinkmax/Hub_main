@@ -462,7 +462,10 @@ export function SupplierSorter({
             {/* Sin la cola al costado (celular, tablet) el pie queda pegado abajo mientras se
                 recorre la ficha: «Saltear» y por dónde vas, siempre a mano. Va a la izquierda:
                 a la derecha está el flotante «＋ Cargar». */}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/60 pt-3 max-lg:sticky max-lg:bottom-0 max-lg:z-[1] max-lg:-mx-4 max-lg:-mb-4 max-lg:justify-start max-lg:rounded-b-2xl max-lg:bg-card max-lg:px-4 max-lg:pt-1.5 max-lg:pb-1.5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 sm:max-lg:px-6">
+            <div
+              data-dock-hide=""
+              className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/60 pt-3 max-lg:sticky max-lg:bottom-0 max-lg:z-[1] max-lg:-mx-4 max-lg:-mb-4 max-lg:justify-start max-lg:rounded-b-2xl max-lg:bg-card max-lg:px-4 max-lg:pt-1.5 max-lg:pb-1.5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 sm:max-lg:px-6"
+            >
               <button type="button" onClick={skip} className={QUIET}>
                 <SkipForward aria-hidden className="size-3.5" />
                 Saltear

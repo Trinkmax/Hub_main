@@ -674,7 +674,10 @@ export function RecipeEditor({
       </section>
 
       {/* El pie fijo: «Guardar receta» siempre a mano. */}
-      <div className="sticky bottom-0 z-20 -mx-4 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sm:-mx-6 sm:px-6 lg:-mx-8 lg:pr-36 lg:pl-8">
+      <div
+        data-dock-hide=""
+        className="sticky bottom-0 z-20 -mx-4 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 sm:-mx-6 sm:px-6 lg:-mx-8 lg:pr-36 lg:pl-8"
+      >
         <div className="flex items-center justify-between gap-3">
           <p
             aria-live="polite"
