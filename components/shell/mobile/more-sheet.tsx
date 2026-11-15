@@ -29,15 +29,6 @@ import { NAV_ICONS } from '../nav-icons'
 import { AccountPanel } from './account-panel'
 import { AppSheet } from './app-sheet'
 
-/** El color de los íconos de cada bloque del menú, como las carpetas de una pantalla de inicio. */
-const GROUP_TONES: Record<string, string> = {
-  Hoy: 'forest',
-  'Agenda y clientes': 'blue',
-  Negocio: 'amber',
-  Salón: 'terracotta',
-  Ajustes: 'slate',
-}
-
 export type MoreSheetViewer = {
   role: TenantRole
   roleLabel: string
@@ -52,8 +43,8 @@ export type MoreSheetViewer = {
  *
  * - Arriba, un buscador con las mismas entradas que ⌘K en la compu (acciones, pantallas, Administración);
  *   si no aparece y Tex está, se le pregunta a él.
- * - En el medio, todas las secciones como íconos de app, agrupadas como en el menú lateral, cada bloque con
- *   su color.
+ * - En el medio, todas las secciones como íconos de vidrio (sin colores, el trazo en el verde de la marca),
+ *   agrupadas como en el menú lateral.
  * - «Editar» (arriba a la derecha): los íconos tiemblan, como en la pantalla de inicio del iPhone, y con un
  *   toque se elige qué cuatro van en la barra. Arriba se ve cómo va a quedar.
  * - Abajo, tu cuenta (apariencia, «Ver como», contraseña, salir).
@@ -247,7 +238,7 @@ export function MoreSheet({
                   goTo(commandEntryHref(entry, slug, pathname, window.location.search))
                 }
               >
-                <span className="app-row-icon" data-tone={toneForCommand(entry.group)}>
+                <span className="app-row-icon">
                   <Icon aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1 text-left">
@@ -262,7 +253,7 @@ export function MoreSheet({
           })}
           {tex && asked.length >= 2 ? (
             <button type="button" className="app-row" onClick={askTex}>
-              <span className="app-row-icon" data-tone="navy">
+              <span className="app-row-icon">
                 <MessageCircleQuestion aria-hidden />
               </span>
               <span className="min-w-0 flex-1 truncate text-left">Preguntale a Tex: «{asked}»</span>
@@ -288,14 +279,12 @@ export function MoreSheet({
                     {editing ? (
                       <EditTile
                         item={item}
-                        tone={GROUP_TONES[group.label]}
                         inBar={draft.includes(item.key)}
                         onToggle={() => toggle(item.key)}
                       />
                     ) : (
                       <SectionTile
                         item={item}
-                        tone={GROUP_TONES[group.label]}
                         active={!item.newTab && item.href === activeHref}
                         onGo={close}
                       />
@@ -337,12 +326,10 @@ export function MoreSheet({
 /** Un ícono de sección: lleva a su pantalla. */
 function SectionTile({
   item,
-  tone,
   active,
   onGo,
 }: {
   item: ResolvedNavItem
-  tone: string | undefined
   active: boolean
   onGo: () => void
 }) {
@@ -356,7 +343,7 @@ function SectionTile({
       rel={item.newTab ? 'noopener noreferrer' : undefined}
       onClick={onGo}
     >
-      <span className="app-tile-icon" data-tone={tone}>
+      <span className="app-tile-icon">
         <Icon aria-hidden />
         {item.newTab ? (
           <span className="app-tile-out">
@@ -373,12 +360,10 @@ function SectionTile({
 /** En «Editar»: el ícono tiembla y con un toque entra o sale de la barra. */
 function EditTile({
   item,
-  tone,
   inBar,
   onToggle,
 }: {
   item: ResolvedNavItem
-  tone: string | undefined
   inBar: boolean
   onToggle: () => void
 }) {
@@ -387,7 +372,7 @@ function EditTile({
   if (item.newTab) {
     return (
       <span className="app-tile is-disabled" aria-disabled="true">
-        <span className="app-tile-icon" data-tone={tone}>
+        <span className="app-tile-icon">
           <Icon aria-hidden />
         </span>
         <span className="app-tile-label">{item.label}</span>
@@ -396,7 +381,7 @@ function EditTile({
   }
   return (
     <button type="button" className="app-tile" aria-pressed={inBar} onClick={onToggle}>
-      <span className="app-tile-icon" data-tone={tone}>
+      <span className="app-tile-icon">
         <Icon aria-hidden />
         <span className={cn('app-tile-badge', inBar && 'is-in')}>
           {inBar ? <Check aria-hidden /> : <Plus aria-hidden />}
@@ -463,11 +448,4 @@ function DockPreview({
       </ul>
     </div>
   )
-}
-
-function toneForCommand(group: string): string {
-  if (group === 'Acciones rápidas') return 'forest'
-  if (group === 'Administración') return 'amber'
-  if (group === 'Operación') return 'terracotta'
-  return 'blue'
 }

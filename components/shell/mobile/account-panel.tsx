@@ -101,7 +101,7 @@ function InstallRow() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="app-row-icon" data-tone="forest">
+        <span className="app-row-icon">
           <Smartphone aria-hidden />
         </span>
         <span className="flex-1 text-left">Usar HUB! como app</span>
@@ -166,7 +166,7 @@ export function AccountPanel({
       <div className="app-group app-group-list">
         <InstallRow />
         <Link href="/auth/update-password" className="app-row" onClick={onDone}>
-          <span className="app-row-icon" data-tone="slate">
+          <span className="app-row-icon">
             <KeyRound aria-hidden />
           </span>
           <span className="flex-1">Cambiar contraseña</span>
@@ -178,7 +178,7 @@ export function AccountPanel({
           disabled={signingOut}
           onClick={() => startSignOut(() => signOutAction())}
         >
-          <span className="app-row-icon" data-tone="terracotta">
+          <span className="app-row-icon">
             {signingOut ? <Loader2 aria-hidden className="animate-spin" /> : <LogOut aria-hidden />}
           </span>
           <span className="flex-1 text-left">Cerrar sesión</span>

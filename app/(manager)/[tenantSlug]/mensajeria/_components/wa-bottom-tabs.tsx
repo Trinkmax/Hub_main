@@ -91,7 +91,7 @@ export function WaBottomTabs({
                     aria-current={active ? 'page' : undefined}
                     onClick={() => setMoreOpen(false)}
                   >
-                    <span className="app-row-icon" data-tone={active ? 'forest' : 'slate'}>
+                    <span className="app-row-icon">
                       <Icon aria-hidden />
                     </span>
                     <span className="flex-1">{item.label}</span>
@@ -113,7 +113,7 @@ export function WaBottomTabs({
               setTimeout(openMoreSheet, 220)
             }}
           >
-            <span className="app-row-icon" data-tone="forest">
+            <span className="app-row-icon">
               <LayoutGrid aria-hidden />
             </span>
             <span className="flex-1 text-left">Ir a otra parte del panel</span>

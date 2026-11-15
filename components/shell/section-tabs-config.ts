@@ -1,6 +1,7 @@
 import { type FeatureKey, getEffectiveFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, Tenant, TenantRole } from '@/lib/tenant/types'
 import { gateAllows, type NavViewer } from './nav-config'
+import type { NavIconKey } from './nav-icons'
 import type { SectionTabItem } from './section-tabs'
 
 /**
@@ -16,7 +17,13 @@ import type { SectionTabItem } from './section-tabs'
  * las entradas del sidebar; la página y la base vuelven a decidir todo, esto solo muestra.
  */
 
-export type SectionKey = 'clientes' | 'marketing' | 'estadisticas' | 'administracion' | 'compras'
+export type SectionKey =
+  | 'reservas'
+  | 'clientes'
+  | 'marketing'
+  | 'estadisticas'
+  | 'administracion'
+  | 'compras'
 
 export type SectionTabDef = {
   value: string
@@ -41,6 +48,11 @@ export type SectionTabDef = {
    * dueño habilitado); `read_or_setup` = también el dueño que puede hacer la puesta en marcha.
    */
   accounting?: 'read' | 'read_or_setup'
+  /**
+   * Ícono de la pestaña cuando va suelta en la barra de abajo del celular (la de quien tiene una o dos
+   * secciones, como la anfitriona: ahí las pestañas de Reservas son sus pestañas de la barra).
+   */
+  icon?: NavIconKey
 }
 
 export type SectionDef = {
@@ -52,17 +64,70 @@ export type SectionDef = {
    * esas páginas la barra no aparece.
    */
   showWhenNoneActive?: boolean
+  /**
+   * `wide`: la barra mide lo que una página ancha (`max-w-screen-2xl`), porque la sección mezcla páginas
+   * anchas (el Operativo, el Calendario) con normales; las normales se alinean a su borde izquierdo.
+   */
+  width?: 'wide'
 }
 
 const ACCOUNTING_ROLES: readonly TenantRole[] = ['owner', 'accountant']
 
 export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
+  // Quién viene y cuándo (15/11/2026, pedido del dueño: «anidarlas para reducir el ruido visual»):
+  // lo que eran cuatro entradas del menú (Reservas, Operativo, Calendario, Ventas online) es una
+  // sección. Son las mismas puertas que tenían en el sidebar: dueño y anfitriona.
+  reservas: {
+    label: 'Secciones de Reservas',
+    width: 'wide',
+    tabs: [
+      // Exacta: el alta (/reservas/nuevo) y la ficha (/reservas/[id]) son formularios con su barra
+      // de guardado; las pestañas de arriba no van ahí.
+      {
+        value: 'reservas',
+        label: 'Reservas',
+        path: 'reservas',
+        exact: true,
+        roles: ['owner', 'host'],
+        icon: 'CalendarCheck',
+      },
+      // El tablero de la noche (marcar «Llegó», mesas).
+      {
+        value: 'operativo',
+        label: 'Operativo',
+        path: 'operativo',
+        roles: ['owner', 'host'],
+        icon: 'MonitorSmartphone',
+      },
+      // Los eventos del mes; los formatos viven en su propia pestaña adentro de la página (la vieja
+      // /eventos/templates redirige ahí).
+      {
+        value: 'calendario',
+        label: 'Calendario',
+        path: 'eventos/programados',
+        roles: ['owner', 'host'],
+        icon: 'CalendarDays',
+      },
+      // Las compras de la cartelera, día por día (y «Funciones y cupos»).
+      {
+        value: 'ventas',
+        label: 'Ventas online',
+        shortLabel: 'Ventas',
+        path: 'ventas-online',
+        roles: ['owner', 'host'],
+        icon: 'Ticket',
+      },
+    ],
+  },
   // Toda la sección es del dueño (el proxy, el layout del panel y cada página lo exigen).
   clientes: {
     label: 'Secciones de Clientes',
     tabs: [
       // Por prefijo: la ficha (/clientes/[id]), el alta y el canje quedan en Personas.
       { value: 'personas', label: 'Personas', path: 'clientes' },
+      // El programa (puntos, niveles, aliados, bienvenida, tarjetas de sellos): era su propia entrada
+      // del menú hasta el 15/11/2026. Por prefijo: sus pantallas (/club/simular…) quedan acá.
+      { value: 'club', label: 'Club', path: 'club' },
       { value: 'acreditar', label: 'Acreditar', path: 'acreditar' },
       { value: 'qr', label: 'QR del club', path: 'local/captura' },
     ],
@@ -254,12 +319,19 @@ export function tabVisible(tab: SectionTabDef, viewer?: SectionViewer | null): b
 }
 
 /** Una pestaña lista para la barra: href resuelto y cómo se marca activa. Serializable. */
-export type ResolvedSectionTab = SectionTabItem & { exact?: boolean; alsoHrefs?: string[] }
+export type ResolvedSectionTab = SectionTabItem & {
+  exact?: boolean
+  alsoHrefs?: string[]
+  iconKey?: NavIconKey
+}
 
 export type ResolvedSection = {
+  /** Qué sección es (no `key`: React se lo queda al desparramar las props). */
+  id: SectionKey
   label: string
   tabs: ResolvedSectionTab[]
   showWhenNoneActive: boolean
+  width?: 'wide'
 }
 
 /** Las pestañas que ve `viewer` en la sección, con el href del bar (`slug`). */
@@ -270,8 +342,10 @@ export function resolveSection(
 ): ResolvedSection {
   const def = SECTION_TABS[section]
   return {
+    id: section,
     label: def.label,
     showWhenNoneActive: def.showWhenNoneActive ?? false,
+    ...(def.width ? { width: def.width } : {}),
     tabs: def.tabs
       .filter((tab) => tabVisible(tab, viewer))
       .map((tab) => ({
@@ -281,6 +355,7 @@ export function resolveSection(
         href: `/${slug}/${tab.path}`,
         ...(tab.exact ? { exact: true } : {}),
         ...(tab.alsoPaths ? { alsoHrefs: tab.alsoPaths.map((path) => `/${slug}/${path}`) } : {}),
+        ...(tab.icon ? { iconKey: tab.icon } : {}),
       })),
   }
 }

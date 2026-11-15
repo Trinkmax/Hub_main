@@ -67,13 +67,47 @@ const labels = (section: ResolvedSection) => section.tabs.map((t) => t.label)
 const hrefs = (section: ResolvedSection) => section.tabs.map((t) => t.href)
 
 describe('pestañas de sección: qué ve cada uno', () => {
-  it('Clientes: Personas, Acreditar y QR del club, sin preguntar quién mira', () => {
+  it('Clientes: Personas, Club, Acreditar y QR del club, sin preguntar quién mira', () => {
     expect(sectionNeedsViewer('clientes')).toBe(false)
     const section = resolveSection('clientes', SLUG)
     expect(section.label).toBe('Secciones de Clientes')
-    expect(labels(section)).toEqual(['Personas', 'Acreditar', 'QR del club'])
-    expect(hrefs(section)).toEqual(['/hub/clientes', '/hub/acreditar', '/hub/local/captura'])
+    expect(labels(section)).toEqual(['Personas', 'Club', 'Acreditar', 'QR del club'])
+    expect(hrefs(section)).toEqual([
+      '/hub/clientes',
+      '/hub/club',
+      '/hub/acreditar',
+      '/hub/local/captura',
+    ])
     expect(section.showWhenNoneActive).toBe(false)
+  })
+
+  it('Reservas: la lista, el Operativo, el Calendario y las Ventas online (dueño y anfitriona)', () => {
+    expect(sectionNeedsViewer('reservas')).toBe(true)
+    for (const role of ['owner', 'host'] as const) {
+      const section = resolveSection('reservas', SLUG, viewer({ role }))
+      expect(section.label).toBe('Secciones de Reservas')
+      expect(section.width).toBe('wide')
+      expect(labels(section)).toEqual(['Reservas', 'Operativo', 'Calendario', 'Ventas online'])
+      expect(hrefs(section)).toEqual([
+        '/hub/reservas',
+        '/hub/operativo',
+        '/hub/eventos/programados',
+        '/hub/ventas-online',
+      ])
+    }
+    // Sin saber quién mira, nada (falla cerrado), y el editor no ve ninguna.
+    expect(resolveSection('reservas', SLUG).tabs).toEqual([])
+    expect(resolveSection('reservas', SLUG, viewer({ role: 'editor' })).tabs).toEqual([])
+  })
+
+  it('Reservas: el alta y la ficha de una reserva van sin barra; el Operativo y sus días, con', () => {
+    const tabs = resolveSection('reservas', SLUG, viewer({ role: 'owner' })).tabs
+    expect(activeSectionTab(tabs, '/hub/reservas')).toBe('reservas')
+    expect(activeSectionTab(tabs, '/hub/reservas/nuevo')).toBeNull()
+    expect(activeSectionTab(tabs, '/hub/reservas/abc')).toBeNull()
+    expect(activeSectionTab(tabs, '/hub/operativo')).toBe('operativo')
+    expect(activeSectionTab(tabs, '/hub/eventos/programados/abc')).toBe('calendario')
+    expect(activeSectionTab(tabs, '/hub/ventas-online/funciones')).toBe('ventas')
   })
 
   it('Marketing: Tareas, Link de Instagram, Páginas y Entradas (los editores van sin barra)', () => {
@@ -443,7 +477,7 @@ describe('pestañas de sección: el proxy deja abrir todo lo que la barra muestr
     }
   })
 
-  it('la contadora solo llega a la barra de Administración; el anfitrión y el editor, a ninguna', () => {
+  it('la contadora solo llega a Administración, la anfitriona a Reservas y el editor a ninguna', () => {
     const reachableSections = (role: TenantRole, accounting: AccountingAccess) =>
       (Object.keys(SECTION_TABS) as SectionKey[]).filter((key) =>
         resolveSection(key, SLUG, viewer({ role, features: allOn, accounting })).tabs.some((tab) =>
@@ -451,7 +485,8 @@ describe('pestañas de sección: el proxy deja abrir todo lo que la barra muestr
         ),
       )
     expect(reachableSections('accountant', ACCOUNTANT_ACCESS)).toEqual(['administracion'])
-    expect(reachableSections('host', NO_ACCESS)).toEqual([])
+    // La anfitriona llega a Reservas (sus cuatro pestañas son suyas desde siempre).
+    expect(reachableSections('host', NO_ACCESS)).toEqual(['reservas'])
     expect(reachableSections('editor', NO_ACCESS)).toEqual([])
   })
 })

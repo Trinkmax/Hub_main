@@ -51,36 +51,37 @@ function entry(groups: ResolvedNavGroup[], label: string) {
   return groups.flatMap((g) => g.items).find((i) => i.label === label)
 }
 
+// 15/11/2026: Operativo, Calendario y Ventas online son pestañas de Reservas, y Club de Clientes.
 const OWNER_ENTRIES = [
   'Resumen',
-  'Operativo',
-  'Mensajería',
   'Reservas',
-  'Calendario',
-  'Ventas online',
   'Clientes',
+  'Mensajería',
   'Carta',
-  'Club',
   'Marketing',
   'Estadísticas',
   'Configuración',
 ]
 
 describe('resolveNavGroups — una entrada por sección, por rol', () => {
-  it('dueño (flags de HUB): 12 entradas en bloques, Configuración anclada al fondo', () => {
+  it('dueño (flags de HUB): 8 entradas en bloques, Configuración anclada al fondo', () => {
     const groups = resolveNavGroups('owner', SLUG, HUB, false)
     expect(entries(groups)).toEqual(OWNER_ENTRIES)
-    expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio', 'Ajustes'])
-    expect(itemLabels(groups, 'Hoy')).toEqual(['Resumen', 'Operativo', 'Mensajería'])
-    expect(itemLabels(groups, 'Agenda y clientes')).toEqual([
-      'Reservas',
-      'Calendario',
-      'Ventas online',
-      'Clientes',
-    ])
-    expect(itemLabels(groups, 'Negocio')).toEqual(['Carta', 'Club', 'Marketing', 'Estadísticas'])
+    expect(clusters(groups)).toEqual(['Inicio', 'Agenda y clientes', 'Negocio', 'Ajustes'])
+    expect(itemLabels(groups, 'Inicio')).toEqual(['Resumen'])
+    expect(itemLabels(groups, 'Agenda y clientes')).toEqual(['Reservas', 'Clientes', 'Mensajería'])
+    expect(itemLabels(groups, 'Negocio')).toEqual(['Carta', 'Marketing', 'Estadísticas'])
     expect(groups.filter((g) => g.pinned).map((g) => g.label)).toEqual(['Ajustes'])
     expect(itemLabels(groups, 'Ajustes')).toEqual(['Configuración'])
+  })
+
+  it('Reservas y Clientes llevan sus pestañas (las otras partes de la sección)', () => {
+    const groups = resolveNavGroups('owner', SLUG, HUB, false)
+    expect(entry(groups, 'Reservas')?.section).toBe('reservas')
+    expect(entry(groups, 'Clientes')?.section).toBe('clientes')
+    for (const gone of ['Operativo', 'Calendario', 'Ventas online', 'Club']) {
+      expect(entries(groups)).not.toContain(gone)
+    }
   })
 
   it('dueño sin Administración: ni con el flag apagado ni con el flag pero sin acceso', () => {
@@ -92,29 +93,21 @@ describe('resolveNavGroups — una entrada por sección, por rol', () => {
     )
   })
 
-  it('dueño con acceso a Administración: una sola entrada más, al final del Negocio', () => {
+  it('dueño con acceso a Administración: una sola entrada más, en la Gestión', () => {
     const groups = resolveNavGroups('owner', SLUG, HUB_WITH_ACCOUNTING, false, OWNER_WITH_ACCESS)
-    expect(itemLabels(groups, 'Negocio')).toEqual([
-      'Carta',
-      'Club',
-      'Marketing',
-      'Estadísticas',
-      'Administración',
-    ])
+    expect(itemLabels(groups, 'Gestión')).toEqual(['Administración'])
     expect(entries(groups)).toHaveLength(OWNER_ENTRIES.length + 1)
   })
 
-  it('host (anfitrión): Operativo, Reservas, Calendario, Ventas online y Mis números — nada del dueño', () => {
+  it('host (anfitrión): Reservas (con sus cuatro pestañas) y Mis números — nada del dueño', () => {
     const groups = resolveNavGroups('host', SLUG, HUB, false)
-    expect(entries(groups)).toEqual([
-      'Operativo',
-      'Reservas',
-      'Calendario',
-      'Ventas online',
-      'Mis números',
+    expect(entries(groups)).toEqual(['Reservas', 'Mis números'])
+    expect(clusters(groups)).toEqual(['Agenda y clientes'])
+    expect(entry(groups, 'Reservas')?.activePaths).toEqual([
+      '/hub/operativo',
+      '/hub/eventos',
+      '/hub/ventas-online',
     ])
-    expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio'])
-    expect(entry(groups, 'Ventas online')?.href).toBe('/hub/ventas-online')
     expect(entry(groups, 'Mis números')?.href).toBe('/hub/mis-numeros')
   })
 
@@ -156,6 +149,7 @@ describe('resolveNavGroups — sin desplegables', () => {
             'exact',
             'newTab',
             'activePaths',
+            'section',
           ]).toContain(key)
         }
       }
@@ -212,13 +206,10 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
   it('resuelve los hrefs con el slug', () => {
     expect(entry(groups, 'Resumen')?.href).toBe('/hub')
     expect(entry(groups, 'Resumen')?.exact).toBe(true)
-    expect(entry(groups, 'Operativo')?.href).toBe('/hub/operativo')
     expect(entry(groups, 'Mensajería')?.href).toBe('/hub/mensajeria')
     expect(entry(groups, 'Reservas')?.href).toBe('/hub/reservas')
-    expect(entry(groups, 'Calendario')?.href).toBe('/hub/eventos/programados')
     expect(entry(groups, 'Clientes')?.href).toBe('/hub/clientes')
     expect(entry(groups, 'Carta')?.href).toBe('/hub/menu')
-    expect(entry(groups, 'Club')?.href).toBe('/hub/club')
     expect(entry(groups, 'Marketing')?.href).toBe('/hub/tareas')
     expect(entry(groups, 'Estadísticas')?.href).toBe('/hub/estadisticas')
     expect(entry(groups, 'Administración')?.href).toBe('/hub/administracion')
@@ -226,7 +217,16 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
   })
 
   it('las otras rutas de cada sección también la resaltan (activePaths con el slug)', () => {
-    expect(entry(groups, 'Clientes')?.activePaths).toEqual(['/hub/acreditar', '/hub/local/captura'])
+    expect(entry(groups, 'Reservas')?.activePaths).toEqual([
+      '/hub/operativo',
+      '/hub/eventos',
+      '/hub/ventas-online',
+    ])
+    expect(entry(groups, 'Clientes')?.activePaths).toEqual([
+      '/hub/club',
+      '/hub/acreditar',
+      '/hub/local/captura',
+    ])
     expect(entry(groups, 'Marketing')?.activePaths).toEqual([
       '/hub/enlaces',
       '/hub/paginas',
@@ -242,14 +242,10 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
     )
     expect(icons).toEqual({
       Resumen: 'LayoutDashboard',
-      Operativo: 'MonitorSmartphone',
       Mensajería: 'MessageCircle',
       Reservas: 'CalendarCheck',
-      Calendario: 'CalendarDays',
-      'Ventas online': 'Ticket',
       Clientes: 'Users',
       Carta: 'UtensilsCrossed',
-      Club: 'Star',
       Marketing: 'ListChecks',
       Estadísticas: 'BarChart3',
       Administración: 'Landmark',
@@ -278,7 +274,15 @@ describe('resolveNavGroups — bloque Salón (feature-flags de superadmin)', () 
       'Plano y QRs de mesa',
       'Auto-aceptación',
     ])
-    expect(clusters(groups)).toEqual(['Hoy', 'Agenda y clientes', 'Negocio', 'Salón', 'Ajustes'])
+    // Compras (con su feature) también la ve el superadmin: va en la Gestión, antes del Salón.
+    expect(clusters(groups)).toEqual([
+      'Inicio',
+      'Agenda y clientes',
+      'Negocio',
+      'Gestión',
+      'Salón',
+      'Ajustes',
+    ])
     expect(entry(groups, 'Salón en vivo')?.newTab).toBe(true)
     expect(entry(groups, 'Cocina')?.newTab).toBe(true)
     expect(entry(groups, 'Sucursales')?.href).toBe('/hub/local/sucursales')

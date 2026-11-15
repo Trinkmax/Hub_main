@@ -46,7 +46,7 @@ function activeLabels(url: string, groups: ResolvedNavGroup[]): string[] {
 }
 
 describe('menú: Administración es UNA entrada (H.0)', () => {
-  it('dueño con acceso: una sola entrada, en el Negocio después de Estadísticas', () => {
+  it('dueño con acceso: una sola entrada, en la Gestión (después de Compras, si está)', () => {
     const groups = resolveNavGroups('owner', SLUG, accountingOn, false, OWNER_WITH_ACCESS)
     const admin = adminEntries(groups)
     expect(admin.map((i) => i.label)).toEqual(['Administración'])
@@ -54,8 +54,11 @@ describe('menú: Administración es UNA entrada (H.0)', () => {
     expect(admin[0]?.iconKey).toBe('Landmark')
     // No es exacta: resalta en todo /administracion/*.
     expect(admin[0]?.exact).toBeFalsy()
-    const negocio = groups.find((g) => g.label === 'Negocio')?.items.map((i) => i.label) ?? []
-    expect(negocio.indexOf('Administración')).toBe(negocio.indexOf('Estadísticas') + 1)
+    // Desde el 15/11/2026 va con Compras en «Gestión» (el bloque después del Negocio).
+    const gestion = groups.find((g) => g.label === 'Gestión')?.items.map((i) => i.label) ?? []
+    expect(gestion.at(-1)).toBe('Administración')
+    const labels = groups.map((g) => g.label)
+    expect(labels.indexOf('Gestión')).toBe(labels.indexOf('Negocio') + 1)
   })
 
   it('antes de configurar, el que puede hacerlo también la ve (lo lleva al asistente)', () => {

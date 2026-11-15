@@ -44,20 +44,16 @@ Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario.
 - Bienvenida (está en Club › Bienvenida): con tique, título, texto, puntos de regalo y activar o apagar. La recompensa se elige en la pantalla.
 - Solo en la pantalla: Equipo y roles, logo y color, plano de mesas, auto-aceptación.
 
-## Dónde está cada cosa (compu: menú lateral; celular: la barra de abajo y su «Más»)
+## Dónde está cada cosa (compu: menú lateral; celular: la barra de abajo y su «Más»; las partes de una sección son pestañas arriba)
 - Resumen: la portada.
-- Operativo: el tablero de la noche.
+- Reservas: lista, alta y ficha; pestañas Operativo (el tablero de la noche), Calendario (eventos y formatos) y Ventas online (las compras de la cartelera, día por día, y «Confirmar transferencia»).
+- Clientes: Personas, Club (puntos y niveles, aliados, bienvenida y tarjetas de sellos), Acreditar y el QR del club.
 - Mensajería: bandeja, difusiones, flows, audiencias y plantillas.
-- Reservas: lista, alta y ficha.
-- Calendario: eventos y formatos.
-- Ventas online: las compras de la cartelera de entradas, día por día, y «Confirmar transferencia».
-- Clientes: personas, Acreditar y el QR del club.
 - Carta.
-- Club: puntos y niveles, aliados, bienvenida y tarjetas de sellos.
 - Marketing: Tareas, Link de Instagram, Páginas y Entradas (la cartelera, Mercado Pago y las películas).
 - Estadísticas: Resumen, Cómo nos fue, Señas, Comisiones y Reseñas.
 - Mis números: lo que va ganando quien gestiona reservas.
 - Administración: compras, gastos, sueldos, ventas, caja y contabilidad.
 - Compras (pedidos a proveedores), Salón en vivo, Cocina, Hoy en vivo (las ventas del salón en el día), Sucursales (los locales del bar y los ajustes del punto de venta), Plano y QRs de mesa, Auto-aceptación: si el bar los tiene prendidos.
 - Configuración (abajo; en el celular, en «Más»): Equipo, Comisiones, Capacidad, Tortas de cumpleaños, Reseñas, Apariencia y Documentación.
-El rol Contenido solo ve la Carta; Anfitrión, Operativo, Reservas, Calendario, Ventas online (confirma transferencias y cambia el cupo de cada función, no devuelve ni anula) y Mis números; Contabilidad, Administración. Lo demás es del dueño.`
+El rol Contenido solo ve la Carta; Anfitrión, Reservas con sus pestañas (confirma transferencias y cambia el cupo de cada función, no devuelve ni anula) y Mis números; Contabilidad, Administración. Lo demás es del dueño.`

@@ -121,7 +121,7 @@ function MoreRow({
   const Icon = tab.icon
   return (
     <Link href={href} onClick={onGo} aria-current={active ? 'page' : undefined} className="app-row">
-      <span className="app-row-icon" data-tone={active ? 'forest' : 'slate'}>
+      <span className="app-row-icon">
         <Icon aria-hidden />
       </span>
       <span className="flex-1 font-semibold">{tab.title}</span>

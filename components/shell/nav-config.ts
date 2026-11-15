@@ -1,6 +1,7 @@
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
 import type { NavIconKey } from './nav-icons'
+import type { SectionKey } from './section-tabs-config'
 
 export type NavItem = {
   /** Identificador estable (la barra de abajo del celular lo guarda en una cookie). */
@@ -36,6 +37,11 @@ export type NavItem = {
    * el href: por prefijo con borde de segmento.
    */
   activePaths?: (slug: string) => string[]
+  /**
+   * Sus pestañas (section-tabs-config.ts). La barra de abajo del celular las usa para «aplanar» la
+   * sección cuando la persona tiene una o dos (la anfitriona: las pestañas de Reservas son su barra).
+   */
+  section?: SectionKey
 }
 
 export type NavGroup = {
@@ -59,6 +65,7 @@ export type ResolvedNavItem = {
   exact?: boolean
   newTab?: boolean
   activePaths?: string[]
+  section?: SectionKey
 }
 
 export type ResolvedNavGroup = {
@@ -74,24 +81,30 @@ export type ResolvedNavGroup = {
  * Pedido del dueño (07/10/2026): «se presta mucho a confusión los
  * desplegables, no se nota cuándo está plegado… la idea siempre es que haya
  * la menor cantidad posible». Las partes de cada sección son pestañas arriba
- * de la página (Clientes, Marketing, Estadísticas, Administración) o la
- * navegación interna que ya tenían (Club, Mensajería, Configuración), y
- * `activePaths` deja la entrada resaltada en todas ellas.
+ * de la página (`section`, ver section-tabs-config.ts) o la navegación interna
+ * que ya tenían (Mensajería, Administración, Configuración), y `activePaths`
+ * deja la entrada resaltada en todas ellas.
  *
- * Orden por el FLUJO del dueño, en bloques separados por aire: el hoy
- * (resumen, operativo, mensajería), la agenda y los clientes, el negocio
- * (carta, club, marketing, números, administración) y, anclada abajo, la
- * configuración. Lo de servicio de mesa (Salón) queda OCULTO detrás de
+ * 15/11/2026 (pedido del dueño: «anidarlas para reducir el ruido visual y jugar
+ * con las pestañas dentro de las secciones»): de 14 entradas a 10. Reservas
+ * junta Operativo, Calendario y Ventas online (quién viene y cuándo) y Clientes
+ * suma el Club (todo lo de fidelización junto). Las URLs no cambiaron.
+ *
+ * Bloques separados por aire (en «Más», en el celular, sus nombres son los
+ * títulos de cada grupo de íconos), por el trabajo del dueño: el inicio; la
+ * agenda y los clientes (reservas, clientes, mensajería); el negocio (carta,
+ * marketing, números); la gestión (compras, administración) y, anclada abajo,
+ * la configuración. Lo de servicio de mesa (Salón) queda OCULTO detrás de
  * feature-flags de superadmin.
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
  *   editor     → sólo Carta («Ver carta» es un botón de la página)
- *   host       → Operativo, Reservas, Calendario, Ventas online y Mis números
+ *   host       → Reservas (con sus cuatro pestañas) y Mis números
  *   accountant → sólo Administración
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Hoy',
+    label: 'Inicio',
     items: [
       {
         key: 'resumen',
@@ -101,12 +114,32 @@ export const NAV_GROUPS: NavGroup[] = [
         exact: true,
         roles: ['owner'],
       },
+    ],
+  },
+  {
+    label: 'Agenda y clientes',
+    items: [
       {
-        key: 'operativo',
-        label: 'Operativo',
-        href: (s) => `/${s}/operativo`,
-        icon: 'MonitorSmartphone',
+        // Quién viene y cuándo: la lista (alta y ficha por prefijo), el Operativo (el tablero de la
+        // noche), el Calendario y las Ventas online son pestañas arriba de la página.
+        key: 'reservas',
+        label: 'Reservas',
+        href: (s) => `/${s}/reservas`,
+        icon: 'CalendarCheck',
         roles: ['owner', 'host'],
+        section: 'reservas',
+        activePaths: (s) => [`/${s}/operativo`, `/${s}/eventos`, `/${s}/ventas-online`],
+      },
+      {
+        // Personas (con sus segmentos Reservas / Walk-in), el Club, Acreditar y el QR del club:
+        // pestañas arriba de la página.
+        key: 'clientes',
+        label: 'Clientes',
+        href: (s) => `/${s}/clientes`,
+        icon: 'Users',
+        roles: ['owner'],
+        section: 'clientes',
+        activePaths: (s) => [`/${s}/club`, `/${s}/acreditar`, `/${s}/local/captura`],
       },
       {
         // Hub de comunicación con el cliente. Su navegación interna
@@ -118,47 +151,14 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'MessageCircle',
         roles: ['owner'],
       },
-    ],
-  },
-  {
-    label: 'Agenda y clientes',
-    items: [
       {
-        // La lista del día / semana / mes: la anfitriona trabaja con la lista,
-        // el filtro y «Pasar lista». El alta y la ficha (/reservas/nuevo,
-        // /reservas/[id]) resaltan esta entrada por prefijo.
-        key: 'reservas',
-        label: 'Reservas',
-        href: (s) => `/${s}/reservas`,
-        icon: 'CalendarCheck',
-        roles: ['owner', 'host'],
-      },
-      {
-        key: 'calendario',
-        label: 'Calendario',
-        href: (s) => `/${s}/eventos/programados`,
-        icon: 'CalendarDays',
-        roles: ['owner', 'host'],
-      },
-      {
-        // Las compras de la cartelera, día por día, con «Confirmar transferencia». Aparte de
-        // Marketing para que entre la anfitriona (06/11/2026): ella recibe el «ya transferí».
-        key: 'ventas-online',
-        label: 'Ventas online',
-        short: 'Ventas',
-        href: (s) => `/${s}/ventas-online`,
-        icon: 'Ticket',
-        roles: ['owner', 'host'],
-      },
-      {
-        // Personas (con sus segmentos Reservas / Walk-in), Acreditar y el QR del
-        // club: pestañas arriba de la página.
-        key: 'clientes',
-        label: 'Clientes',
-        href: (s) => `/${s}/clientes`,
-        icon: 'Users',
-        roles: ['owner'],
-        activePaths: (s) => [`/${s}/acreditar`, `/${s}/local/captura`],
+        // Lo que va ganando quien gestiona reservas (comisiones propias).
+        key: 'mis-numeros',
+        label: 'Mis números',
+        short: 'Números',
+        href: (s) => `/${s}/mis-numeros`,
+        icon: 'Coins',
+        roles: ['host'],
       },
     ],
   },
@@ -175,14 +175,6 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner', 'editor'],
       },
       {
-        // Su propio editor (/club) con pestañas internas (?tab=).
-        key: 'club',
-        label: 'Club',
-        href: (s) => `/${s}/club`,
-        icon: 'Star',
-        roles: ['owner'],
-      },
-      {
         // Lo que el bar muestra puertas afuera y cómo se organiza el equipo
         // para producirlo: Tareas, Link de Instagram, Páginas y Entradas son
         // pestañas. Owner-only: es la mesa de los socios.
@@ -191,6 +183,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/tareas`,
         icon: 'ListChecks',
         roles: ['owner'],
+        section: 'marketing',
         activePaths: (s) => [`/${s}/enlaces`, `/${s}/paginas`, `/${s}/entradas`],
       },
       {
@@ -202,17 +195,14 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/estadisticas`,
         icon: 'BarChart3',
         roles: ['owner'],
+        section: 'estadisticas',
         activePaths: (s) => [`/${s}/reviews`],
       },
-      {
-        // Lo que va ganando quien gestiona reservas (comisiones propias).
-        key: 'mis-numeros',
-        label: 'Mis números',
-        short: 'Números',
-        href: (s) => `/${s}/mis-numeros`,
-        icon: 'Coins',
-        roles: ['host'],
-      },
+    ],
+  },
+  {
+    label: 'Gestión',
+    items: [
       {
         // Compras (docs/features/compras.md): los pedidos a proveedores que arma el conteo de la
         // cocina. Insumos, Recetas y Proveedores son pestañas. La cocina cuenta y recibe desde el
@@ -223,6 +213,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'ShoppingBasket',
         roles: ['owner'],
         feature: 'purchasing',
+        section: 'compras',
       },
       {
         // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
@@ -237,6 +228,7 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner', 'accountant'],
         feature: 'accounting',
         accounting: 'read_or_setup',
+        section: 'administracion',
       },
     ],
   },
@@ -414,6 +406,7 @@ export function resolveNavGroups(
       exact: item.exact,
       newTab: item.newTab,
       activePaths: item.activePaths?.(slug),
+      section: item.section,
     })),
   }))
 }

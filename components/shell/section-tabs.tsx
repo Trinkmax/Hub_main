@@ -91,6 +91,8 @@ export function SectionTabs({
     <nav
       ref={navRef}
       aria-label={label}
+      // En el celular son píldoras (components/shell/mobile/mobile.css); en la compu, el subrayado.
+      data-section-tabs=""
       className={cn(
         '-mx-4 flex items-center gap-1 overflow-x-auto border-b border-border/60 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden',
         className,
@@ -127,6 +129,7 @@ export function SectionTabs({
             {isActive ? (
               <span
                 aria-hidden="true"
+                data-tab-underline=""
                 className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
               />
             ) : null}

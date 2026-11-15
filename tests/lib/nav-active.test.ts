@@ -140,14 +140,18 @@ const host = resolveNavGroups('host', SLUG, EVERYTHING, false)
 describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
   const CASES: Array<[url: string, label: string]> = [
     ['/hub', 'Resumen'],
-    ['/hub/operativo', 'Operativo'],
+    // Operativo, Calendario y Ventas online son pestañas de Reservas (15/11/2026).
+    ['/hub/operativo', 'Reservas'],
+    ['/hub/operativo?date=2026-11-14', 'Reservas'],
     ['/hub/mensajeria', 'Mensajería'],
     ['/hub/mensajeria/flows/abc/registros', 'Mensajería'],
     ['/hub/reservas?day=2026-09-10', 'Reservas'],
     ['/hub/reservas/nuevo?date=2026-09-10&volver=calendario', 'Reservas'],
     ['/hub/reservas/abc', 'Reservas'],
-    ['/hub/eventos/programados?day=2026-09-10', 'Calendario'],
-    ['/hub/eventos/programados/nuevo', 'Calendario'],
+    ['/hub/eventos/programados?day=2026-09-10', 'Reservas'],
+    ['/hub/eventos/programados/nuevo', 'Reservas'],
+    ['/hub/ventas-online', 'Reservas'],
+    ['/hub/ventas-online/funciones', 'Reservas'],
     ['/hub/clientes', 'Clientes'],
     ['/hub/clientes?segment=walkin', 'Clientes'],
     ['/hub/clientes?segment=reserva&page=2', 'Clientes'],
@@ -156,9 +160,10 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     ['/hub/local/captura', 'Clientes'],
     ['/hub/menu', 'Carta'],
     ['/hub/menu/tags', 'Carta'],
-    ['/hub/club', 'Club'],
-    ['/hub/club?tab=aliados', 'Club'],
-    ['/hub/club/simular', 'Club'],
+    // El Club es una pestaña de Clientes (15/11/2026).
+    ['/hub/club', 'Clientes'],
+    ['/hub/club?tab=aliados', 'Clientes'],
+    ['/hub/club/simular', 'Clientes'],
     ['/hub/tareas', 'Marketing'],
     ['/hub/enlaces', 'Marketing'],
     ['/hub/paginas', 'Marketing'],
@@ -205,13 +210,13 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     expect(activeLabels('/hub/salon/cocina', owner)).toEqual([])
   })
 
-  it('el host: su home y sus números', () => {
+  it('el host: Reservas (con sus pestañas) y sus números', () => {
     expect(activeLabels('/hub/reservas', host)).toEqual(['Reservas'])
-    expect(activeLabels('/hub/eventos/programados', host)).toEqual(['Calendario'])
-    expect(activeLabels('/hub/operativo', host)).toEqual(['Operativo'])
+    expect(activeLabels('/hub/eventos/programados', host)).toEqual(['Reservas'])
+    expect(activeLabels('/hub/operativo', host)).toEqual(['Reservas'])
     expect(activeLabels('/hub/mis-numeros', host)).toEqual(['Mis números'])
-    expect(activeLabels('/hub/ventas-online', host)).toEqual(['Ventas online'])
-    expect(activeLabels('/hub/ventas-online?hasta=2026-11-01', host)).toEqual(['Ventas online'])
+    expect(activeLabels('/hub/ventas-online', host)).toEqual(['Reservas'])
+    expect(activeLabels('/hub/ventas-online?hasta=2026-11-01', host)).toEqual(['Reservas'])
   })
 
   // Todas las páginas del workspace manager (app/(manager)/[tenantSlug]/**/page.tsx,
