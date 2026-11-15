@@ -162,7 +162,17 @@
      adivinaba (`pb-24`, `h-[calc(100dvh-56px-76px)]`) y ninguna coincidía con la
      barra real: de ahí los scrolls raros y el contenido tapado. */
   --salon-topbar-h: 3.5rem;
-  --salon-tabbar-h: calc(4.25rem + env(safe-area-inset-bottom));
+  /* Lo que ocupa abajo la barra de vidrio del salón: la barra (--dock-h), lo que flota sobre el borde
+     (--dock-gap) y un poco de aire. */
+  --salon-tabbar-h: calc(var(--dock-h) + var(--dock-gap) + 8px);
+
+  /* La barra de abajo del celular, la de vidrio (components/shell/dock). Flota a --dock-gap del borde de
+     abajo (en el iPhone, apenas sobre la rayita de inicio). --dock-space es lo que la página deja libre
+     abajo para que lo último no quede tapado: vale 0 salvo en el celular con la barra a la vista (lo
+     prende dock.css). Para subir algo por encima de la barra: `bottom: calc(var(--dock-space) + …)`. */
+  --dock-h: 62px;
+  --dock-gap: max(10px, calc(env(safe-area-inset-bottom) - 8px));
+  --dock-space: 0px;
 
   /* Aliases legacy para no romper componentes que aún referencian brand-* */
   --brand-rose:  var(--destructive);

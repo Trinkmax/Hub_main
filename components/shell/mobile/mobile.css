@@ -1,0 +1,851 @@
+/* El panel en el celular, a la manera de iOS 26: hojas de vidrio, listas agrupadas, íconos de app y la
+ * barra de arriba que pasa a vidrio al correr la página. Ver components/shell/mobile/*.
+ * Sin capa (@layer) a propósito, como dock.css. */
+
+/* ── La hoja ──────────────────────────────────────────────────────────────────────────────────────── */
+
+.app-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: oklch(0.16 0.02 165 / 0.3);
+}
+
+.app-sheet {
+  position: fixed;
+  z-index: 50;
+  right: 8px;
+  bottom: max(8px, calc(env(safe-area-inset-bottom) - 4px));
+  left: 8px;
+  display: flex;
+  max-height: calc(100dvh - max(env(safe-area-inset-top), 10px) - 26px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 34px;
+  background: color-mix(in oklch, var(--popover) 88%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    0 28px 70px -24px oklch(0.205 0.035 165 / 0.45),
+    0 4px 14px -6px oklch(0.205 0.035 165 / 0.18),
+    inset 0 0 0 0.5px var(--lg-stroke, oklch(1 0 0 / 0.6)),
+    inset 0 1px 0 var(--lg-highlight, oklch(1 0 0 / 0.8));
+  color: var(--popover-foreground);
+  outline: none;
+}
+
+.dark .app-sheet {
+  box-shadow:
+    0 28px 70px -24px oklch(0 0 0 / 0.8),
+    inset 0 0 0 0.5px var(--lg-stroke),
+    inset 0 1px 0 var(--lg-highlight);
+}
+
+/* En la tablet la hoja no se estira de lado a lado: queda centrada, como en el iPad. */
+@media (min-width: 640px) {
+  .app-sheet {
+    right: auto;
+    left: 50%;
+    width: min(560px, calc(100vw - 32px));
+    translate: -50% 0;
+  }
+}
+
+.app-sheet-handle {
+  flex: none;
+  padding: 7px 14px 6px 20px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.app-sheet-grabber {
+  display: block;
+  width: 38px;
+  height: 5px;
+  margin: 0 auto 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 20%, transparent);
+}
+
+.app-sheet-header {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-sheet-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sheet-close {
+  display: grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--muted-foreground);
+  box-shadow: inset 0 0.5px 0 oklch(1 0 0 / 0.5);
+  transition: transform 160ms ease;
+}
+
+.app-sheet-close:active {
+  transform: scale(0.9);
+}
+
+.app-sheet-close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-sheet-body {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 16px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── El buscador ──────────────────────────────────────────────────────────────────────────────────── */
+
+.app-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.app-search-icon {
+  position: absolute;
+  left: 11px;
+  width: 17px;
+  height: 17px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.app-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 36px 0 36px;
+  border: 0;
+  border-radius: 13px;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--foreground);
+  /* 16 px: con menos, Safari agranda la página al tocar el campo. */
+  font-size: 16px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.app-search-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.app-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.app-search-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.app-search-clear {
+  position: absolute;
+  right: 9px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 32%, transparent);
+  color: var(--background);
+}
+
+/* ── Listas agrupadas (como los Ajustes del iPhone) ───────────────────────────────────────────────── */
+
+.app-group-label {
+  margin: 18px 4px 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-group {
+  overflow: hidden;
+  border-radius: 18px;
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.app-group + .app-group {
+  margin-top: 12px;
+}
+
+.app-group-flush > * {
+  margin-inline: 0;
+}
+
+.app-account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.app-row {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease;
+}
+
+.app-group-list > .app-row + .app-row {
+  box-shadow: inset 0 0.5px 0 color-mix(in oklch, var(--foreground) 9%, transparent);
+}
+
+.app-row:active {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.app-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.app-row:disabled {
+  opacity: 0.6;
+}
+
+.app-row-danger {
+  color: var(--destructive);
+}
+
+.app-row-chevron {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: color-mix(in oklch, var(--foreground) 30%, transparent);
+}
+
+.app-row-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 9px;
+  color: white;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.3),
+    inset 0 -1px 0 oklch(0 0 0 / 0.1);
+}
+
+.app-row-icon > svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Íconos de app (la grilla de «Más») ───────────────────────────────────────────────────────────── */
+
+.app-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  border-radius: 16px;
+  color: var(--foreground);
+  text-align: center;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.app-tile:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-tile-icon {
+  position: relative;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 16px;
+  color: white;
+  box-shadow:
+    0 6px 14px -8px oklch(0.205 0.035 165 / 0.55),
+    inset 0 1px 0 oklch(1 0 0 / 0.32),
+    inset 0 -1px 0 oklch(0 0 0 / 0.12);
+  transition: transform 260ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+/* El brillo de arriba de un ícono de iOS. */
+.app-tile-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.26) 0%, transparent 52%);
+  pointer-events: none;
+}
+
+.app-tile-icon > svg {
+  position: relative;
+  width: 27px;
+  height: 27px;
+  stroke-width: 1.9;
+}
+
+.app-tile:active .app-tile-icon {
+  transform: scale(0.9);
+  transition-duration: 120ms;
+}
+
+/* La sección en la que estás: un aro del color de la marca. */
+.app-tile[aria-current="page"] .app-tile-icon {
+  box-shadow:
+    0 0 0 2.5px var(--popover),
+    0 0 0 4.5px var(--primary),
+    inset 0 1px 0 oklch(1 0 0 / 0.32);
+}
+
+.app-tile-out {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.2);
+}
+
+.app-tile-out > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.app-tile-label {
+  display: -webkit-box;
+  max-width: 100%;
+  min-height: 2.4em;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 520;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  /* «Administración» no entra en una línea de un celular chico: se corta en sílabas, no en el aire. */
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Los colores: de la marca (bosque, ámbar, terracota) y dos neutros, que no cambian con el tema. */
+:is(.app-tile-icon, .app-row-icon)[data-tone="forest"] {
+  background: linear-gradient(160deg, oklch(0.55 0.085 165), oklch(0.37 0.065 165));
+}
+:is(.app-tile-icon, .app-row-icon)[data-tone="blue"] {
+  background: linear-gradient(160deg, oklch(0.64 0.075 232), oklch(0.47 0.08 240));
+}
+:is(.app-tile-icon, .app-row-icon)[data-tone="amber"] {
+  background: linear-gradient(160deg, oklch(0.8 0.13 80), oklch(0.65 0.14 60));
+}
+:is(.app-tile-icon, .app-row-icon)[data-tone="terracotta"] {
+  background: linear-gradient(160deg, oklch(0.68 0.14 42), oklch(0.53 0.155 33));
+}
+:is(.app-tile-icon, .app-row-icon)[data-tone="slate"] {
+  background: linear-gradient(160deg, oklch(0.66 0.02 250), oklch(0.48 0.025 250));
+}
+:is(.app-tile-icon, .app-row-icon)[data-tone="navy"] {
+  background: linear-gradient(160deg, oklch(0.45 0.12 265), oklch(0.27 0.1 265));
+}
+
+/* ── «Editar»: elegir las pestañas de la barra ───────────────────────────────────────────────────── */
+
+/* «Editar» / «Listo», en texto, como los botones de la barra de iOS. */
+.app-sheet-text-button {
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease;
+}
+
+.app-sheet-text-button.is-strong {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.app-sheet-text-button:active {
+  transform: scale(0.94);
+}
+
+.app-sheet-text-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-edit-hint {
+  margin: 2px 2px 12px;
+  color: var(--muted-foreground);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+/* La barra como va a quedar: la misma cápsula de vidrio. */
+.app-dock-preview {
+  position: relative;
+  height: 62px;
+  border-radius: 999px;
+}
+
+.app-dock-preview[data-nudge] {
+  animation: app-nudge 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes app-nudge {
+  15%,
+  85% {
+    transform: translateX(-2px);
+  }
+  30%,
+  70% {
+    transform: translateX(4px);
+  }
+  45%,
+  55% {
+    transform: translateX(-5px);
+  }
+}
+
+.app-dock-preview-row {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-dock-preview-row > li {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.app-dock-preview-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--lg-ink);
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-dock-preview-item > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.app-dock-preview-item > span:not(.app-dock-preview-x) {
+  max-width: 100%;
+  padding-inline: 2px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-dock-preview-item.is-auto,
+.app-dock-preview-item.is-fixed {
+  opacity: 0.5;
+}
+
+.app-dock-preview-item:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.app-dock-preview-x {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 55%, transparent);
+  color: var(--background);
+}
+
+.app-dock-preview-x > svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+
+/* Los íconos tiemblan, cada uno con su ritmo (como la pantalla de inicio del iPhone al editar). */
+.app-tiles[data-editing] .app-tile-icon {
+  animation: app-wiggle 300ms ease-in-out infinite;
+}
+
+.app-tiles[data-editing] > li:nth-child(2n) .app-tile-icon {
+  animation-duration: 330ms;
+  animation-delay: -150ms;
+}
+
+.app-tiles[data-editing] > li:nth-child(3n) .app-tile-icon {
+  animation-duration: 280ms;
+  animation-delay: -90ms;
+}
+
+@keyframes app-wiggle {
+  0%,
+  100% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(1.6deg);
+  }
+}
+
+.app-tile:is(button) {
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-tile.is-disabled {
+  opacity: 0.4;
+}
+
+.app-tiles[data-editing] .app-tile.is-disabled .app-tile-icon {
+  animation: none;
+}
+
+/* La insignia de arriba a la izquierda: «+» para sumarla, ✓ si ya va en la barra. */
+.app-tile-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 62%, var(--popover));
+  color: var(--popover);
+  box-shadow: 0 0 0 2px var(--popover);
+}
+
+.app-tile-badge.is-in {
+  background: var(--success);
+  color: var(--success-foreground);
+}
+
+.app-tile-badge > svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 3;
+}
+
+.app-edit-reset {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.app-edit-reset:active {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
+/* ── Tu cuenta ────────────────────────────────────────────────────────────────────────────────────── */
+
+.app-account > .app-group + .app-group-label {
+  margin-top: 18px;
+}
+
+.app-avatar {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(160deg, oklch(0.55 0.085 165), oklch(0.37 0.065 165));
+  color: oklch(0.97 0.02 88);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.3),
+    0 2px 6px -2px oklch(0.205 0.035 165 / 0.45);
+}
+
+.app-avatar-lg {
+  width: 46px;
+  height: 46px;
+  font-size: 20px;
+}
+
+/* El control segmentado de la apariencia: el elegido lleva una píldora que se desliza. */
+.app-segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--seg-n), minmax(0, 1fr));
+  padding: 3px;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.app-segmented-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--seg-n));
+  border-radius: 11px;
+  background: var(--card);
+  box-shadow:
+    0 3px 8px -2px oklch(0.205 0.035 165 / 0.2),
+    0 0 0 0.5px oklch(0.205 0.035 165 / 0.06);
+  transform: translateX(calc(100% * var(--seg-i)));
+  transition: transform 380ms cubic-bezier(0.3, 1.3, 0.45, 1);
+}
+
+.dark .app-segmented-thumb {
+  background: color-mix(in oklch, var(--foreground) 16%, var(--card));
+}
+
+.app-segmented-option {
+  position: relative;
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 13.5px;
+  font-weight: 560;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-segmented-option[aria-checked="true"] {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.app-segmented-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* ── La barra de arriba en el celular ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1023.98px) {
+  /* Vidrio con el borde de abajo que se desvanece (el «scroll edge effect» de iOS 26). Solo cuando la
+     página ya se corrió: arriba de todo la barra es transparente. */
+  [data-app-topbar]::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 -18px;
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--background) 90%, transparent) 0%,
+      color-mix(in oklch, var(--background) 72%, transparent) 68%,
+      transparent 100%
+    );
+    -webkit-backdrop-filter: blur(14px) saturate(170%);
+    backdrop-filter: blur(14px) saturate(170%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 64%, transparent);
+    mask-image: linear-gradient(to bottom, #000 64%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+
+  [data-app-topbar][data-scrolled]::before {
+    opacity: 1;
+  }
+}
+
+.app-topbar-lead {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  align-self: stretch;
+}
+
+.app-topbar-brand {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app-topbar-brand.is-away {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  pointer-events: none;
+}
+
+.app-topbar-brand:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* El título de la página, chico y centrado en la pantalla (no en el hueco que queda). */
+.app-topbar-title {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  display: flex;
+  max-width: calc(100vw - 132px);
+  height: 3.5rem;
+  align-items: center;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 6px);
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app-topbar-title.is-shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-topbar-avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease;
+}
+
+.app-topbar-avatar:active {
+  transform: scale(0.92);
+}
+
+.app-topbar-avatar:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* Desde 1024 px manda la barra de la compu (estas reglas no tienen capa y le ganarían a `lg:hidden`). */
+@media (min-width: 1024px) {
+  .app-topbar-lead,
+  .app-topbar-avatar {
+    display: none;
+  }
+}
+
+/* El círculo de Tex en la barra de abajo: su cabeza en píxeles. */
+.tex-orb-head {
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 1px oklch(0.2 0.05 260 / 0.25));
+}
+
+/* En el celular Tex vive en el círculo de la barra: el que se paraba en la esquina se va. */
+@media (max-width: 1023.98px) {
+  html:has(.lg-dock[data-scope="app"] .lg-orb) .tex-dock {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-tiles[data-editing] .app-tile-icon,
+  .app-dock-preview[data-nudge] {
+    animation: none;
+  }
+
+  .app-segmented-thumb,
+  .app-topbar-brand,
+  .app-topbar-title,
+  .app-tile-icon {
+    transition: none;
+  }
+}

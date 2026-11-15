@@ -276,6 +276,7 @@ export function PostBar({
     <>
       <div
         id="cargar"
+        data-dock-hide=""
         className="sticky bottom-0 z-30 -mx-4 scroll-mt-28 border-t border-border/60 bg-background/95 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-2xl lg:border lg:px-5 lg:pb-2.5 lg:shadow-md"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

@@ -625,7 +625,10 @@ export function RecurringForm({
       ) : null}
 
       {/* En el celular el pie queda a mano, pegado abajo. */}
-      <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+      <div
+        data-dock-hide=""
+        className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-background/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none"
+      >
         {/* En el celular se vuelve con «‹ Gastos fijos», arriba: el pie es solo el botón. */}
         <Button asChild variant="ghost" className="h-11 max-sm:hidden md:pointer-fine:h-9">
           <Link href={backHref}>Cancelar</Link>

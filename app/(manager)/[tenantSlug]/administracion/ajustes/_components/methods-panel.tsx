@@ -416,7 +416,10 @@ export function MethodsPanel({
           En el cierre, los medios del mismo tipo se muestran juntos.
         </p>
       ) : null}
-      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-card/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] backdrop-blur sm:-mx-5 sm:flex-row sm:items-center sm:justify-end sm:px-5">
+      <div
+        data-dock-hide=""
+        className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-col-reverse gap-2 border-t border-border/60 bg-card/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] backdrop-blur sm:-mx-5 sm:flex-row sm:items-center sm:justify-end sm:px-5"
+      >
         <p aria-live="polite" className="text-xs text-muted-foreground sm:mr-auto">
           {savingOrder && progress
             ? `Guardando el orden… ${progress.done + 1} de ${progress.total}`

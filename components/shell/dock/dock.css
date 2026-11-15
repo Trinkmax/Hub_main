@@ -1,0 +1,602 @@
+/* La barra de abajo del celular: vidrio líquido estilo iOS 26 (components/shell/dock/liquid-dock.tsx).
+ *
+ * Sin capa (@layer): gana sobre las utilidades de Tailwind a propósito, así nadie la rompe con una clase.
+ * Por eso lo de «solo en el celular» se decide acá (data-mobile-only) y no con `lg:hidden`.
+ *
+ * Safari 26 tiñe su propia barra con el color de lo fijo que toca el borde de abajo. Por eso la barra no
+ * toca el borde (flota a --dock-gap) y el vidrio vive en un hijo absoluto (.lg-glass), que Safari no mira.
+ */
+
+:root,
+.force-light {
+  --lg-tint: color-mix(in oklch, var(--card) 62%, transparent);
+  --lg-stroke: oklch(1 0 0 / 0.75);
+  --lg-highlight: oklch(1 0 0 / 0.95);
+  --lg-lowlight: oklch(0.205 0.035 165 / 0.07);
+  --lg-sheen: oklch(1 0 0 / 0.55);
+  --lg-sheen-low: oklch(1 0 0 / 0.14);
+  --lg-shadow:
+    0 14px 34px -14px oklch(0.205 0.035 165 / 0.4), 0 3px 10px -4px oklch(0.205 0.035 165 / 0.16);
+  --lg-pill: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --lg-lens: oklch(1 0 0 / 0.06);
+  --lg-lens-edge: oklch(0.205 0.035 165 / 0.14);
+  --lg-lens-shadow:
+    0 14px 26px -12px oklch(0.205 0.035 165 / 0.5), 0 2px 6px -1px oklch(0.205 0.035 165 / 0.16);
+  --lg-ink: color-mix(in oklch, var(--foreground) 80%, transparent);
+  --lg-active: var(--primary);
+  --lg-badge: var(--success);
+  --lg-badge-ink: var(--success-foreground);
+}
+
+.dark {
+  --lg-tint: color-mix(in oklch, var(--card) 58%, transparent);
+  --lg-stroke: oklch(1 0 0 / 0.14);
+  --lg-highlight: oklch(1 0 0 / 0.24);
+  --lg-lowlight: oklch(0 0 0 / 0.28);
+  --lg-sheen: oklch(1 0 0 / 0.1);
+  --lg-sheen-low: oklch(1 0 0 / 0.03);
+  --lg-shadow: 0 18px 40px -14px oklch(0 0 0 / 0.75), 0 3px 10px -4px oklch(0 0 0 / 0.45);
+  --lg-pill: color-mix(in oklch, var(--foreground) 13%, transparent);
+  --lg-lens: oklch(1 0 0 / 0.05);
+  --lg-lens-edge: oklch(0 0 0 / 0.35);
+  --lg-lens-shadow: 0 14px 28px -12px oklch(0 0 0 / 0.75);
+  --lg-ink: color-mix(in oklch, var(--foreground) 84%, transparent);
+}
+
+/* ── La barra ─────────────────────────────────────────────────────────────────────────────────────── */
+
+.lg-dock {
+  --lg-h: var(--dock-h, 62px);
+  --lg-inset: 4px;
+  position: fixed;
+  inset-inline: 0;
+  bottom: var(--dock-gap, 12px);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+  /* Lo que no es barra ni círculo deja pasar el dedo a la página. */
+  pointer-events: none;
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.9, 0.25, 1.08),
+    opacity 240ms ease,
+    visibility 0s linear 0s;
+}
+
+@media (min-width: 1024px) {
+  .lg-dock[data-mobile-only] {
+    display: none;
+  }
+}
+
+/* Escondida (un chat abierto, una pantalla de un solo trabajo, el teclado): baja y se apaga. Al final de
+   la transición queda `visibility: hidden` para que no reciba toques ni la lean. */
+.lg-dock[data-hidden],
+.lg-dock[data-keyboard] {
+  transform: translateY(calc(100% + var(--dock-gap, 12px) + 16px));
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 300ms cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 200ms ease,
+    visibility 0s linear 300ms;
+}
+
+/* La cápsula con las pestañas. `touch-action: none`: el dedo que la toca arrastra la lente, no la página. */
+.lg-bar {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 520px;
+  height: var(--lg-h);
+  border-radius: 999px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transform-origin: 50% 50%;
+}
+
+/* ── Vidrio ────────────────────────────────────────────────────────────────────────────────────────── */
+
+.lg-glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--lg-tint);
+  -webkit-backdrop-filter: blur(16px) saturate(190%);
+  backdrop-filter: blur(16px) saturate(190%);
+  box-shadow:
+    var(--lg-shadow),
+    inset 0 0 0 0.5px var(--lg-stroke),
+    inset 0 1px 0.5px var(--lg-highlight),
+    inset 0 -1px 1px var(--lg-lowlight);
+  pointer-events: none;
+}
+
+/* El brillo del borde de arriba y el reflejo de abajo, como un vaso al trasluz. */
+.lg-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, var(--lg-sheen) 0%, transparent 44%),
+    linear-gradient(0deg, var(--lg-sheen-low) 0%, transparent 28%);
+  pointer-events: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lg-glass {
+    background: color-mix(in oklch, var(--card) 96%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .lg-glass {
+    background: var(--card);
+  }
+}
+
+/* ── La píldora (la pestaña activa, en reposo) ────────────────────────────────────────────────────── */
+
+.lg-pill {
+  position: absolute;
+  z-index: 0;
+  /* Antes de que la física la mida (el primer dibujo, que viene del servidor), se ubica con CSS: todas las
+     pestañas miden lo mismo, así que alcanza con el número de la activa (--i) y cuántas hay (--n). */
+  top: var(--lg-inset);
+  left: calc(var(--lg-inset) + (100% - 2 * var(--lg-inset)) / var(--n, 1) * var(--i, 0) + 2px);
+  width: calc((100% - 2 * var(--lg-inset)) / var(--n, 1) - 4px);
+  height: calc(100% - 2 * var(--lg-inset));
+  border-radius: 999px;
+  background: var(--lg-pill);
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+
+.lg-pill[data-empty] {
+  opacity: 0;
+}
+
+.lg-bar[data-live] .lg-pill {
+  top: 0;
+  left: 0;
+  width: var(--pill-w);
+  height: var(--pill-h);
+  will-change: transform, opacity;
+}
+
+/* Mientras carga la pantalla elegida, la píldora late (sobre su propio brillo: la opacidad de la píldora la
+   maneja la física). */
+.lg-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--lg-pill);
+  opacity: 0;
+}
+
+.lg-bar[data-pending] .lg-pill::after {
+  animation: lg-breathe 900ms ease-in-out infinite;
+}
+
+@keyframes lg-breathe {
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── Las pestañas ─────────────────────────────────────────────────────────────────────────────────── */
+
+.lg-row,
+.lg-replica {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lg-row {
+  position: absolute;
+  z-index: 1;
+  inset: var(--lg-inset);
+}
+
+/* Lo que queda debajo de la lente se ve agrandado adentro de ella: el original se tapa (con una máscara de
+   bordes duros: así se ve la palabra partida en el filo, como en iOS). */
+.lg-row[data-holed] {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 var(--hole-l),
+    rgb(0 0 0 / var(--hole-a)) var(--hole-l),
+    rgb(0 0 0 / var(--hole-a)) var(--hole-r),
+    #000 var(--hole-r)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 var(--hole-l),
+    rgb(0 0 0 / var(--hole-a)) var(--hole-l),
+    rgb(0 0 0 / var(--hole-a)) var(--hole-r),
+    #000 var(--hole-r)
+  );
+}
+
+.lg-cell {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.lg-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 1px 0 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--lg-ink);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 180ms ease;
+}
+
+.lg-item[aria-current="page"],
+.lg-item[data-current] {
+  color: var(--lg-active);
+}
+
+.lg-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.lg-icon {
+  position: relative;
+  display: grid;
+  width: 28px;
+  height: 25px;
+  place-items: center;
+}
+
+.lg-icon > svg {
+  width: 23px;
+  height: 23px;
+}
+
+/* El ícono de la activa va «relleno», como los de iOS (un velo del mismo color adentro del trazo). */
+.lg-item[aria-current="page"] .lg-icon > svg,
+.lg-item[data-current] .lg-icon > svg {
+  fill: currentColor;
+  fill-opacity: 0.16;
+}
+
+.lg-label {
+  max-width: 100%;
+  padding-inline: 2px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 560;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-item[aria-current="page"] .lg-label,
+.lg-item[data-current] .lg-label {
+  font-weight: 680;
+}
+
+.lg-badge {
+  position: absolute;
+  top: -4px;
+  left: 16px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  padding-inline: 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--lg-badge);
+  color: var(--lg-badge-ink);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--card) 85%, transparent);
+}
+
+/* ── La lente ─────────────────────────────────────────────────────────────────────────────────────── */
+
+.lg-lens {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: var(--lens-w, 80px);
+  height: var(--lens-h, 76px);
+  overflow: hidden;
+  border-radius: 999px;
+  box-shadow: var(--lg-lens-shadow);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  isolation: isolate;
+  will-change: transform, opacity;
+}
+
+/* Casi transparente: aclara apenas lo que hay detrás, como un vidrio grueso. */
+.lg-lens-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--lg-lens);
+  -webkit-backdrop-filter: blur(1.5px) saturate(165%);
+  backdrop-filter: blur(1.5px) saturate(165%);
+  /* El volumen del vidrio: el borde de adentro se oscurece apenas (la luz se dobla ahí) y abajo junta un
+     poco de sombra. */
+  box-shadow:
+    inset 0 0 0 1px var(--lg-lens-edge),
+    inset 0 -8px 12px -8px var(--lg-lens-edge),
+    inset 0 0 18px -6px var(--lg-lens-edge);
+}
+
+/* Dos copias de la fila, agrandadas distinto: la del centro (LENS_ZOOM) y la del filo (EDGE_ZOOM), que se
+   funden en un anillo. Lo de afuera se ve más grande que lo del centro: es la «doblez» del borde de un
+   vidrio curvo, sin filtros SVG (que Safari no aplica sobre el fondo). */
+.lg-lens-zoom {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.lg-lens-zoom[data-part="core"] {
+  -webkit-mask-image: radial-gradient(closest-side, #000 76%, transparent 87%);
+  mask-image: radial-gradient(closest-side, #000 76%, transparent 87%);
+}
+
+.lg-lens-zoom[data-part="edge"] {
+  -webkit-mask-image: radial-gradient(closest-side, transparent 74%, #000 85%);
+  mask-image: radial-gradient(closest-side, transparent 74%, #000 85%);
+}
+
+.lg-lens-core {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--row-w, 0px);
+  height: var(--row-h, 0px);
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.lg-lens-core > .lg-replica {
+  position: absolute;
+  inset: 0;
+}
+
+/* El arcoíris del filo: la copia de afuera, corrida un pelo hacia rojo de un lado y hacia cian del otro. */
+.lg-lens-zoom[data-part="edge"] .lg-lens-core {
+  filter: drop-shadow(1.1px 0 0 rgb(255 45 100 / 0.55))
+    drop-shadow(-1.1px 0 0 rgb(0 175 255 / 0.55));
+}
+
+/* Lo que está justo debajo de la lente se ve como la pestaña elegida. */
+.lg-replica [data-hover] .lg-item {
+  color: var(--lg-active);
+}
+
+/* El aro: un filo de luz que da toda la vuelta, más fuerte arriba a la izquierda y abajo a la derecha, con
+   un tornasol suave (rosa, celeste, verde agua) en el medio. */
+.lg-lens-rim {
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 200deg,
+    rgb(255 255 255 / 0.95),
+    rgb(255 255 255 / 0.2) 40deg,
+    rgb(255 150 215 / 0.65) 78deg,
+    rgb(140 215 255 / 0.65) 118deg,
+    rgb(255 255 255 / 0.3) 160deg,
+    rgb(255 255 255 / 0.95) 200deg,
+    rgb(255 255 255 / 0.2) 245deg,
+    rgb(170 255 215 / 0.6) 295deg,
+    rgb(255 255 255 / 0.95) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* Los reflejos de adentro: la luz que entra por arriba y rebota abajo. */
+.lg-lens-glint {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 85% at 32% 0%, rgb(255 255 255 / 0.24), transparent 58%);
+  box-shadow:
+    inset 0 1.5px 1.5px rgb(255 255 255 / 0.75),
+    inset 0 -1.5px 2px rgb(255 255 255 / 0.3),
+    inset 1.5px 0 2px rgb(255 255 255 / 0.16),
+    inset -1.5px 0 2px rgb(255 255 255 / 0.16);
+  pointer-events: none;
+}
+
+/* ── El círculo (Tex en el panel, el lugar del «Buscar» de iOS) ───────────────────────────────────── */
+
+.lg-orb {
+  position: relative;
+  display: grid;
+  flex: none;
+  width: var(--lg-h);
+  height: var(--lg-h);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--lg-ink);
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 420ms cubic-bezier(0.3, 1.7, 0.45, 1);
+}
+
+.lg-orb:active {
+  transform: scale(0.88);
+  transition-duration: 140ms;
+  transition-timing-function: ease-out;
+}
+
+.lg-orb:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.lg-orb-content {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-dock,
+  .lg-orb,
+  .lg-item {
+    transition: none;
+  }
+
+  .lg-bar[data-pending] .lg-pill::after {
+    animation: none;
+  }
+}
+
+/* ── Lo que la página le deja a la barra ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 1023.98px) {
+  /* Con la barra del panel a la vista, el contenido termina por encima de ella (lo usa el <main>). */
+  html:not(:has([data-dock-hide])):has(.lg-dock[data-scope="app"]:not([data-hidden])) {
+    --dock-space: calc(var(--dock-h) + var(--dock-gap) + 18px);
+  }
+
+  /* Una pantalla con su propia barra de acciones abajo (guardar una reserva, cerrar la caja) la marca con
+     `data-dock-hide`: la barra se va mientras esa pantalla está abierta, como en iOS al entrar a una tarea. */
+  html:has([data-dock-hide]) .lg-dock[data-scope="app"] {
+    transform: translateY(calc(100% + var(--dock-gap, 12px) + 16px));
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      transform 300ms cubic-bezier(0.4, 0, 0.6, 1),
+      opacity 200ms ease,
+      visibility 0s linear 300ms;
+  }
+
+  /* Los avisos salen por encima de la barra, no sobre ella. La librería fija estas distancias con estilo en
+     línea: solo `!important` les gana (como en components/pos/ui/pos-toast.css). */
+  :where(html:has(.lg-dock[data-scope="app"]:not([data-hidden])))
+    [data-sonner-toaster][data-y-position="bottom"] {
+    /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+    --mobile-offset-bottom: calc(var(--dock-space) + 4px) !important;
+    /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+    --offset-bottom: calc(var(--dock-space) + 4px) !important;
+  }
+}
+
+/* ── Celulares angostos ──────────────────────────────────────────────────────────────────────────── */
+
+/* Un celular angosto (360 px): un poco menos de aire alrededor, así ningún nombre se corta («Operativo»
+   entra entero en una pestaña de ~53 px). */
+@media (max-width: 379.98px) {
+  .lg-dock {
+    --lg-h: 58px;
+    gap: 8px;
+    padding-inline: max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-right));
+  }
+
+  .lg-dock .lg-label {
+    font-size: 10px;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Y en los más chicos que quedan (320 px), un poco más. */
+@media (max-width: 339.98px) {
+  .lg-dock {
+    --lg-h: 54px;
+    gap: 6px;
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+  }
+
+  .lg-dock .lg-label {
+    font-size: 9.5px;
+    letter-spacing: -0.03em;
+  }
+
+  .lg-dock .lg-icon > svg {
+    width: 21px;
+    height: 21px;
+  }
+}
+
+/* ── Mensajería ───────────────────────────────────────────────────────────────────────────────────── */
+
+/* Su barra es solo del celular: desde 768 px Mensajería tiene su riel al costado. */
+@media (min-width: 768px) {
+  .lg-dock[data-scope="wa"] {
+    display: none;
+  }
+}
+
+@media (max-width: 767.98px) {
+  /* Adentro de Mensajería, en el celular, la barra del panel se va: manda la de Mensajería. */
+  .lg-dock[data-scope="app"][data-context="wa"] {
+    display: none;
+  }
+
+  html:not(:has([data-dock-hide])):has(.lg-dock[data-scope="app"][data-context="wa"]) {
+    --dock-space: 0px;
+  }
+
+  /* La lista de Mensajería scrollea por adentro: deja lugar abajo para su barra (salvo con un chat
+     abierto, que la esconde). */
+  html:has(.lg-dock[data-scope="wa"]:not([data-hidden])) [data-wa-scroll] {
+    padding-bottom: calc(var(--dock-h) + var(--dock-gap) + 14px);
+  }
+}
+
+/* ── Salón ────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* Los avisos del salón también salen por encima de su barra. Con `:where()` pesa poco: las pantallas del
+   punto de venta que necesitan subirlos más (components/pos/ui/pos-toast.css) siguen mandando. */
+:where(html:has(.lg-dock[data-scope="salon"]:not([data-hidden])))
+  [data-sonner-toaster][data-y-position="bottom"] {
+  /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+  --mobile-offset-bottom: calc(var(--salon-tabbar-h) + 4px) !important;
+  /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+  --offset-bottom: calc(var(--salon-tabbar-h) + 4px) !important;
+}

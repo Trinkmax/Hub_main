@@ -31,6 +31,8 @@ export const viewport: Viewport = {
   themeColor: '#f5edd7',
   width: 'device-width',
   initialScale: 1,
+  // Hasta los bordes: la barra de abajo flota sobre el área segura del iPhone (env() deja de valer 0).
+  viewportFit: 'cover',
   // Sin `maximumScale`/`userScalable: false`: bloquear el zoom rompe WCAG 1.4.4
   // y en un salón oscuro el mozo a veces necesita agrandar. El auto-zoom de iOS
   // al enfocar un input ya está cubierto por el `text-base` de <Input>.

@@ -145,7 +145,18 @@ describe('resolveNavGroups — sin desplegables', () => {
       }
       for (const item of g.items) {
         for (const key of Object.keys(item)) {
-          expect(['label', 'href', 'iconKey', 'exact', 'newTab', 'activePaths']).toContain(key)
+          // `key` y `short` son de la barra de abajo del celular (la clave que guarda la cookie y el
+          // nombre corto): datos de la misma entrada, no sub-ítems.
+          expect([
+            'key',
+            'label',
+            'short',
+            'href',
+            'iconKey',
+            'exact',
+            'newTab',
+            'activePaths',
+          ]).toContain(key)
         }
       }
     }

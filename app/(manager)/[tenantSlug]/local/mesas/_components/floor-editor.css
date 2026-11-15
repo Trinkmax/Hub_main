@@ -93,7 +93,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 3.5rem);
+  /* En el celular la barra de abajo flota sobre la página: el tablero termina por encima de ella. */
+  height: calc(100dvh - 3.5rem - var(--dock-space, 0px));
   min-height: 26rem;
   background: var(--pos-board-2);
   color: var(--pos-board-ink);

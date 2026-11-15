@@ -34,6 +34,7 @@ import {
   PTh,
   PTotalRow,
 } from '@/components/administracion/planilla'
+import { HideDock } from '@/components/shell/dock/hide-dock'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -1627,6 +1628,7 @@ export function SalesCloseForm({
 
             {/* El pie queda pegado abajo mientras se carga: el botón dice cuánto suma lo cargado. */}
             <PlanillaFoot className="sticky bottom-0 z-10 rounded-b-xl bg-card pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+              <HideDock />
               <div className="min-w-0 text-xs text-muted-foreground">
                 {afterSaveLabel ? <p>Después sigue el del {afterSaveLabel}.</p> : null}
                 <p className="hidden xl:block">
