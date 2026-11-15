@@ -49,6 +49,11 @@ export type DockItem = {
   icon: LucideIcon
   /** Adónde lleva. Sin `href` es una acción (`onSelect`), como «Más». */
   href?: string
+  /**
+   * El principio de la sección, si `href` es donde la dejaste (la barra se acuerda, como iOS): tocar la
+   * pestaña en la que ya estás lleva acá.
+   */
+  rootHref?: string
   onSelect?: () => void
   /** El número del globito (0 o null: sin globito). */
   badge?: number | null
@@ -396,8 +401,10 @@ export function LiquidDock({
         return
       }
       if (index === sim.current.active && item.key === activeKey) {
-        // La pestaña en la que ya estás: si estás más adentro (una ficha) vuelve a su raíz; si no, sube.
-        if (pathname !== item.href) startNavigation(() => router.push(item.href as string))
+        // La pestaña en la que ya estás: si estás más adentro (otra pestaña, una ficha) vuelve al
+        // principio de la sección; si ya estás ahí, sube.
+        const root = item.rootHref ?? item.href
+        if (pathname !== root) startNavigation(() => router.push(root))
         else window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }

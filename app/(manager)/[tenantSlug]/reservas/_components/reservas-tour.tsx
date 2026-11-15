@@ -240,7 +240,7 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Ya estás lista para el servicio',
         body: (
           <>
-            También podés reservar desde <strong>Agenda → Calendario</strong>, que tiene su propia
+            También podés reservar desde la pestaña <strong>Calendario</strong>, que tiene su propia
             guía; al guardar, cada lado te devuelve a donde estabas. Y esta guía queda siempre en el
             botón <strong>¿Cómo funciona?</strong>.
           </>

@@ -35,19 +35,24 @@ iOS 26).
 
 | Quién | Pestañas | Círculo |
 |---|---|---|
-| Dueño | Resumen · Operativo · Reservas · Clientes · **Más** | Tex |
-| Anfitriona | Operativo · Reservas · Calendario · Ventas · Mis números (le entran todas, no hay «Más») | Tex |
+| Dueño | Resumen · Reservas · Clientes · Estadísticas · **Más** | Tex |
+| Anfitriona | Reservas · Operativo · Calendario · Ventas · Mis números: las pestañas de Reservas sueltas (tiene dos secciones), sin «Más» | Tex |
 | Contadora y quien edita la carta | Sin barra: tienen una sola sección | — |
 | Salón | Sus pestañas de siempre (`salon-nav.ts`): hasta cinco, o cuatro y «Más» | — |
 | Mensajería (en el celular) | Chats · Difusiones · Automático · Audiencias | «Más» de Mensajería: ajustes y salida al panel |
 
-Las del dueño salen de lo que más se usa en HUB (`audit_log`, 15/10–14/11/2026):
+Las del dueño salen de lo que más se usa en HUB (`audit_log`, 15/10–14/11/2026). Desde el 15/11 las
+reservas y el Operativo viven en la misma sección (Reservas):
 
 | Acción | Veces | Socios |
 |---|---|---|
 | Reservas cargadas | 673 | 9 |
 | «Llegó» marcados (Operativo) | 480 | 7 |
 | Fichas de clientes tocadas | — | 9 |
+
+**Cada pestaña se acuerda de dónde la dejaste**, como en iOS: si saliste de Reservas estando en Operativo,
+tocar «Reservas» te devuelve a Operativo, y tocarla otra vez te lleva al principio de la sección. Se guarda
+por pestaña del navegador (`sessionStorage`).
 
 **Cada socio elige sus cuatro.** «Más › Editar» pone los íconos a temblar, como en la pantalla de inicio
 del iPhone, y muestra arriba cómo va a quedar la barra.
@@ -59,11 +64,30 @@ del iPhone, y muestra arriba cómo va a quedar la barra.
 
 ### «Más»
 
-Es una hoja de vidrio que flota a 8 px de los bordes y se baja con el dedo. Adentro tiene:
+Es una hoja de vidrio que flota a 8 px de los bordes. **Se baja deslizando desde cualquier parte** (pedido
+del 15/11): con la lista arriba de todo, tirar hacia abajo arrastra la hoja; si estaba corrida, el dedo
+corre la lista. Se cierra al soltar si bajó lo suficiente o con un tirón; si no, vuelve con un resorte.
+Adentro tiene:
 
 1. un buscador con las mismas entradas que ⌘K en la compu y, si Tex está, «Preguntale a Tex: "…"»;
-2. todas las secciones como íconos de app, agrupadas como el menú lateral, con un color por bloque;
+2. todas las secciones como íconos de **vidrio sin color** (crema esmerilado con el trazo en el verde de la
+   marca; en oscuro, vidrio noche con el trazo dorado), agrupadas como el menú lateral. El 15/11 Nacho
+   pidió sacar los colores («re raro»);
 3. tu cuenta: apariencia, «Ver como», «Usar HUB! como app», contraseña y salir.
+
+### Las secciones y sus pestañas (15/11/2026)
+
+Pedido del 15/11: «anidarlas para reducir el ruido visual y jugar con las pestañas dentro de las
+secciones… en pc también». El menú pasó de 14 entradas a 10 (HUB), igual en la compu y en el celular, sin
+cambiar ninguna URL:
+
+- **Reservas**: Reservas · Operativo · Calendario · Ventas online.
+- **Clientes**: Personas · Club · Acreditar · QR del club.
+- El resto, como estaba.
+
+En la compu, las pestañas son el subrayado de siempre. En el celular son píldoras (la activa rellena en el
+verde de la marca), parte de la página y no una barra fija. Si la barra de abajo ya lleva las pestañas de
+la sección sueltas (la anfitriona), las píldoras de arriba se esconden.
 
 ### La barra de arriba (celular)
 

@@ -839,6 +839,46 @@
   outline-offset: 1px;
 }
 
+/* ── Las pestañas de una sección, en el celular ──────────────────────────────────────────────────── */
+
+/* Píldoras que se deslizan de costado, la activa rellena en el verde de la marca: el mismo idioma que
+   los «Hoy / Esta semana / Este mes» de Reservas y la barra de Administración. Son parte de la página
+   (se van al correrla), no una barra fija más. En la compu sigue el subrayado de siempre. */
+@media (max-width: 1023.98px) {
+  [data-section-tabs] {
+    gap: 6px;
+    padding-block: 2px 4px;
+    border-bottom-width: 0;
+  }
+
+  [data-section-tabs] > a {
+    min-height: 36px;
+    padding-inline: 14px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--foreground) 6%, transparent);
+    color: var(--foreground);
+    font-size: 14px;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  [data-section-tabs] > a:active {
+    transform: scale(0.96);
+  }
+
+  [data-section-tabs] > a[aria-current="page"] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-weight: 600;
+  }
+
+  [data-section-tabs] [data-tab-underline] {
+    display: none;
+  }
+}
+
 /* Desde 1024 px manda la barra de la compu (estas reglas no tienen capa y le ganarían a `lg:hidden`). */
 @media (min-width: 1024px) {
   .app-topbar-lead,

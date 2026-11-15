@@ -15,13 +15,15 @@ import {
   DOCK_PINNED,
   dockActiveKey,
   dockCookieName,
+  flattenedSections,
   MORE_KEY,
   parseDockCookie,
   planDock,
   serializeDockCookie,
 } from '@/components/shell/dock/dock-items'
 import { createSpring, snapSpring, springSettled, stepSpring } from '@/components/shell/dock/spring'
-import { resolveNavGroups } from '@/components/shell/nav-config'
+import { NO_ACCOUNTING as NO_ACC, resolveNavGroups } from '@/components/shell/nav-config'
+import { resolveSection } from '@/components/shell/section-tabs-config'
 import { getTenantFeatures, type TenantFeatures } from '@/lib/platform/features'
 import type { AccountingAccess } from '@/lib/tenant/types'
 
@@ -167,13 +169,13 @@ describe('los resortes', () => {
 describe('qué va en la barra del panel', () => {
   const owner = resolveNavGroups('owner', SLUG, HUB, false, OWNER_ACCESS)
 
-  it('el dueño: Resumen, Operativo, Reservas, Clientes y «Más» con todo lo demás', () => {
+  it('el dueño: Resumen, Reservas, Clientes, Estadísticas y «Más» con todo lo demás', () => {
     const plan = planDock(owner, 'owner', null)
     expect(plan?.bar.map((item) => item.key)).toEqual([
       'resumen',
-      'operativo',
       'reservas',
       'clientes',
+      'estadisticas',
     ])
     const more = plan?.more.map((item) => item.key) ?? []
     expect(more).toContain('administracion')
@@ -182,9 +184,10 @@ describe('qué va en la barra del panel', () => {
   })
 
   it('cada socio elige sus cuatro (en su orden) y lo que no puede ver se ignora', () => {
-    const plan = planDock(owner, 'owner', ['calendario', 'reservas', 'no-existe', 'administracion'])
+    // «operativo» ya no es una sección (es una pestaña de Reservas): se ignora como cualquier otra.
+    const plan = planDock(owner, 'owner', ['carta', 'reservas', 'operativo', 'administracion'])
     expect(plan?.bar.map((item) => item.key)).toEqual([
-      'calendario',
+      'carta',
       'reservas',
       'administracion',
       'resumen',
@@ -192,7 +195,13 @@ describe('qué va en la barra del panel', () => {
   })
 
   it('nunca más de cuatro con «Más», aunque la cookie traiga más', () => {
-    const plan = planDock(owner, 'owner', ['carta', 'club', 'marketing', 'estadisticas', 'compras'])
+    const plan = planDock(owner, 'owner', [
+      'carta',
+      'mensajeria',
+      'marketing',
+      'estadisticas',
+      'compras',
+    ])
     expect(plan?.bar).toHaveLength(DOCK_PINNED)
   })
 
@@ -209,17 +218,42 @@ describe('qué va en la barra del panel', () => {
     expect(plan?.more.map((item) => item.key)).toContain('salon-en-vivo')
   })
 
-  it('la anfitriona: le entran las cinco y no hay «Más»', () => {
+  it('la anfitriona: las pestañas de Reservas van sueltas, más sus números, y no hay «Más»', () => {
     const host = resolveNavGroups('host', SLUG, HUB, false)
-    const plan = planDock(host, 'host', null)
+    const viewer = {
+      role: 'host' as const,
+      features: HUB,
+      isPlatformAdmin: false,
+      accounting: NO_ACC,
+    }
+    const plan = planDock(host, 'host', null, {
+      reservas: resolveSection('reservas', SLUG, viewer),
+    })
     expect(plan?.bar.map((item) => item.label)).toEqual([
-      'Operativo',
       'Reservas',
+      'Operativo',
       'Calendario',
       'Ventas online',
       'Mis números',
     ])
+    expect(plan?.bar.map((item) => item.short ?? item.label)[3]).toBe('Ventas')
     expect(plan?.more).toEqual([])
+    if (!plan) throw new Error('sin barra')
+    // Cada pestaña suelta se marca en su página; la lista solo en la lista (el alta no es «Reservas»).
+    expect(dockActiveKey(plan, '/hub/reservas', '/hub/operativo')).toBe('reservas-operativo')
+    expect(dockActiveKey(plan, '/hub/reservas', '/hub/reservas')).toBe('reservas-reservas')
+    expect(dockActiveKey(plan, '/hub/reservas', '/hub/eventos/programados/nuevo')).toBe(
+      'reservas-calendario',
+    )
+    expect(dockActiveKey(plan, '/hub/mis-numeros', '/hub/mis-numeros')).toBe('mis-numeros')
+    expect(flattenedSections(plan)).toEqual(['reservas'])
+  })
+
+  it('sin las pestañas a mano, la anfitriona igual tiene su barra (Reservas y sus números)', () => {
+    const host = resolveNavGroups('host', SLUG, HUB, false)
+    const plan = planDock(host, 'host', null)
+    expect(plan?.bar.map((item) => item.label)).toEqual(['Reservas', 'Mis números'])
+    expect(flattenedSections(plan)).toEqual([])
   })
 
   it('con una sola sección (contadora, contenido) no hay barra', () => {
@@ -237,7 +271,8 @@ describe('qué va en la barra del panel', () => {
     const plan = planDock(owner, 'owner', null)
     if (!plan) throw new Error('sin barra')
     expect(dockActiveKey(plan, '/hub/reservas')).toBe('reservas')
-    expect(dockActiveKey(plan, '/hub/estadisticas')).toBe(MORE_KEY)
+    expect(dockActiveKey(plan, '/hub/carta')).toBeNull()
+    expect(dockActiveKey(plan, '/hub/tareas')).toBe(MORE_KEY)
     expect(dockActiveKey(plan, null)).toBeNull()
     expect(dockActiveKey(plan, '/hub/no-es-una-seccion')).toBeNull()
   })

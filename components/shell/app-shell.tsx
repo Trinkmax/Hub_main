@@ -2,9 +2,17 @@ import { cookies } from 'next/headers'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
-import { dockCookieName, parseDockCookie, planDock } from './dock/dock-items'
+import { DockFlatProvider } from './dock/dock-flat-context'
+import {
+  type DockSections,
+  dockCookieName,
+  flattenedSections,
+  parseDockCookie,
+  planDock,
+} from './dock/dock-items'
 import { ManagerDock } from './mobile/manager-dock'
 import { NO_ACCOUNTING, resolveNavGroups } from './nav-config'
+import { resolveSection } from './section-tabs-config'
 import { ShellFrame } from './shell-frame'
 import { SidebarContent } from './sidebar-content'
 import { SIDEBAR_COOKIE, SidebarProvider } from './sidebar-state'
@@ -46,10 +54,18 @@ export async function AppShell({
   const sidebarCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === 'collapsed'
   // La barra de abajo del celular: las pestañas que eligió esta persona (o las de su rol) y el resto en «Más».
   const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin, accounting)
+  // Las pestañas de adentro de cada sección, con las mismas puertas que las de arriba de la página: quien
+  // tiene una o dos secciones (la anfitriona) las lleva sueltas en la barra.
+  const viewer = { role, features, isPlatformAdmin, accounting: accounting ?? NO_ACCOUNTING }
+  const sections: DockSections = {}
+  for (const item of groups.flatMap((group) => group.items)) {
+    if (item.section) sections[item.section] = resolveSection(item.section, tenant.slug, viewer)
+  }
   const dock = planDock(
     groups,
     role,
     parseDockCookie(cookieStore.get(dockCookieName(tenant.slug))?.value),
+    sections,
   )
 
   return (
@@ -78,13 +94,16 @@ export async function AppShell({
               accounting={accounting}
             />
             {/* En el celular deja lugar abajo para la barra flotante (en la compu --dock-space vale 0). */}
-            <main className="flex-1 pb-(--dock-space)">{children}</main>
+            <main className="flex-1 pb-(--dock-space)">
+              <DockFlatProvider sections={flattenedSections(dock)}>{children}</DockFlatProvider>
+            </main>
           </ShellFrame>
           {dock ? (
             <ManagerDock
               slug={tenant.slug}
               tenantName={tenant.name}
               groups={groups}
+              sections={sections}
               plan={dock}
               tex={tex}
               viewer={{

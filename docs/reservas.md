@@ -18,7 +18,7 @@
 | Stats | Liquidación por gestor con drill-down | `app/(manager)/[tenantSlug]/estadisticas/comisiones/*` |
 | Stats | Señas por día (criterio reserva / carga, canceladas aparte) | `app/(manager)/[tenantSlug]/estadisticas/senas/*`, `lib/salon/deposits.ts` |
 | Stats | Cómo nos fue: gente por noche y por evento | `app/(manager)/[tenantSlug]/estadisticas/como-nos-fue/*`, `lib/salon/events-report.ts` |
-| Nav | Entradas "Operativo", "Reservas" y "Calendario" del menú; "Cómo nos fue", "Señas" y "Comisiones" son pestañas de Estadísticas | `components/shell/nav-config.ts`, `components/shell/section-tabs-config.ts` |
+| Nav | Entrada "Reservas" del menú, con las pestañas Reservas, Operativo, Calendario y Ventas online (desde el 15/11/2026; antes eran entradas sueltas); "Cómo nos fue", "Señas" y "Comisiones" son pestañas de Estadísticas | `components/shell/nav-config.ts`, `components/shell/section-tabs-config.ts` |
 | Tests | Motor TS (24 cases), schemas zod (24), RLS isolation | `tests/lib/commissions-engine.test.ts`, `tests/lib/salon-schemas.test.ts`, `tests/rls/salon-reservations.test.ts` |
 
 ---

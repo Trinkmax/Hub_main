@@ -1,13 +1,22 @@
 import type { ReactNode } from 'react'
+import { SectionTabsLayout } from '@/components/shell/section-tabs-server'
 
 /**
- * El editor del Club se unificó en /menu (mundo "Club"): todas las viejas rutas
- * /club/* ahora redirigen ahí. Lo único que queda bajo /club es el simulador de
- * wallet (herramienta aparte, con su propio guard owner-only). Este layout es un
- * wrapper mínimo de ancho — sin sub-nav, para no duplicar la navegación de /menu.
+ * Clientes › Club: el editor del programa (puntos y niveles, aliados, bienvenida, tarjetas de sellos)
+ * y el simulador de la billetera, con las pestañas de Clientes arriba. El Club era su propia entrada del
+ * menú hasta el 15/11/2026; ahora es parte de Clientes (todo lo de fidelización junto).
  */
-export default function ClubLayout({ children }: { children: ReactNode }) {
+export default async function ClubLayout({
+  children,
+  params,
+}: {
+  children: ReactNode
+  params: Promise<{ tenantSlug: string }>
+}) {
+  const { tenantSlug } = await params
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+    <SectionTabsLayout section="clientes" tenantSlug={tenantSlug}>
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+    </SectionTabsLayout>
   )
 }
