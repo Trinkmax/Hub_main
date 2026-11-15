@@ -400,6 +400,228 @@
   background: linear-gradient(160deg, oklch(0.45 0.12 265), oklch(0.27 0.1 265));
 }
 
+/* ── «Editar»: elegir las pestañas de la barra ───────────────────────────────────────────────────── */
+
+/* «Editar» / «Listo», en texto, como los botones de la barra de iOS. */
+.app-sheet-text-button {
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease;
+}
+
+.app-sheet-text-button.is-strong {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.app-sheet-text-button:active {
+  transform: scale(0.94);
+}
+
+.app-sheet-text-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.app-edit-hint {
+  margin: 2px 2px 12px;
+  color: var(--muted-foreground);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+/* La barra como va a quedar: la misma cápsula de vidrio. */
+.app-dock-preview {
+  position: relative;
+  height: 62px;
+  border-radius: 999px;
+}
+
+.app-dock-preview[data-nudge] {
+  animation: app-nudge 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes app-nudge {
+  15%,
+  85% {
+    transform: translateX(-2px);
+  }
+  30%,
+  70% {
+    transform: translateX(4px);
+  }
+  45%,
+  55% {
+    transform: translateX(-5px);
+  }
+}
+
+.app-dock-preview-row {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-dock-preview-row > li {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.app-dock-preview-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--lg-ink);
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-dock-preview-item > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.app-dock-preview-item > span:not(.app-dock-preview-x) {
+  max-width: 100%;
+  padding-inline: 2px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-dock-preview-item.is-auto,
+.app-dock-preview-item.is-fixed {
+  opacity: 0.5;
+}
+
+.app-dock-preview-item:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.app-dock-preview-x {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 55%, transparent);
+  color: var(--background);
+}
+
+.app-dock-preview-x > svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+
+/* Los íconos tiemblan, cada uno con su ritmo (como la pantalla de inicio del iPhone al editar). */
+.app-tiles[data-editing] .app-tile-icon {
+  animation: app-wiggle 300ms ease-in-out infinite;
+}
+
+.app-tiles[data-editing] > li:nth-child(2n) .app-tile-icon {
+  animation-duration: 330ms;
+  animation-delay: -150ms;
+}
+
+.app-tiles[data-editing] > li:nth-child(3n) .app-tile-icon {
+  animation-duration: 280ms;
+  animation-delay: -90ms;
+}
+
+@keyframes app-wiggle {
+  0%,
+  100% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(1.6deg);
+  }
+}
+
+.app-tile:is(button) {
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-tile.is-disabled {
+  opacity: 0.4;
+}
+
+.app-tiles[data-editing] .app-tile.is-disabled .app-tile-icon {
+  animation: none;
+}
+
+/* La insignia de arriba a la izquierda: «+» para sumarla, ✓ si ya va en la barra. */
+.app-tile-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 62%, var(--popover));
+  color: var(--popover);
+  box-shadow: 0 0 0 2px var(--popover);
+}
+
+.app-tile-badge.is-in {
+  background: var(--success);
+  color: var(--success-foreground);
+}
+
+.app-tile-badge > svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 3;
+}
+
+.app-edit-reset {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.app-edit-reset:active {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
 /* ── Tu cuenta ────────────────────────────────────────────────────────────────────────────────────── */
 
 .app-account > .app-group + .app-group-label {
@@ -615,6 +837,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-tiles[data-editing] .app-tile-icon,
+  .app-dock-preview[data-nudge] {
+    animation: none;
+  }
+
   .app-segmented-thumb,
   .app-topbar-brand,
   .app-topbar-title,

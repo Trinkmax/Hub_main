@@ -1,4 +1,4 @@
-import type { Viewport } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { Tex } from '@/components/administracion/tex/tex'
@@ -18,6 +18,25 @@ import {
 import { roleForSlug } from '@/lib/tenant/claims'
 import { texEnabled } from '@/lib/tex/enabled'
 import { PATH_HEADER } from '@/lib/workspace'
+
+// El panel se puede agregar a la pantalla de inicio del celular y abrirse como una app (sin la barra del
+// navegador). El mismo manifiesto que el salón: `/` lleva a cada uno a su espacio según su rol.
+export const metadata: Metadata = {
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'HUB!',
+  },
+  applicationName: 'HUB!',
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+}
 
 // En el celular el panel se usa como una app: con `cover` la página llega hasta los bordes y
 // `env(safe-area-inset-*)` deja de valer 0 (la barra de abajo flota sobre el área segura del iPhone).

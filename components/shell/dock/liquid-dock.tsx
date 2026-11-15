@@ -126,6 +126,7 @@ export function LiquidDock({
   hidden = false,
   mobileOnly = false,
   scope,
+  context,
   className,
 }: {
   items: DockItem[]
@@ -139,6 +140,8 @@ export function LiquidDock({
   mobileOnly?: boolean
   /** Para las reglas de CSS que dependen de qué barra es (`app`, `salon`, `wa`). */
   scope: string
+  /** Dónde está parada (por ejemplo `wa`, adentro de Mensajería): el CSS decide si se ve. */
+  context?: string
   className?: string
 }) {
   const router = useRouter()
@@ -474,6 +477,7 @@ export function LiquidDock({
       aria-label={label}
       className={cn('lg-dock', className)}
       data-scope={scope}
+      data-context={context}
       data-mobile-only={mobileOnly ? '' : undefined}
       data-hidden={hidden ? '' : undefined}
       data-keyboard={keyboard ? '' : undefined}

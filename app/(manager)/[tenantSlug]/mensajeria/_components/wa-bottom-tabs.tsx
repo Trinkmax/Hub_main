@@ -1,23 +1,22 @@
 'use client'
 
-import { Settings } from 'lucide-react'
+import { ChevronRight, CircleEllipsis, LayoutGrid } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { useMemo, useState } from 'react'
+import { type DockItem, LiquidDock } from '@/components/shell/dock/liquid-dock'
+import { AppSheet } from '@/components/shell/mobile/app-sheet'
+import { openMoreSheet } from '@/components/shell/mobile/more-events'
 import type { TenantRole } from '@/lib/tenant/types'
-import { cn } from '@/lib/utils'
 import { MAIN_ITEMS, SETTINGS_ITEMS, visibleFor } from './wa-rail'
 
 /**
- * Tabs de secciones abajo (solo mobile), como WhatsApp en el teléfono.
- * Dentro de un chat abierto se ocultan para dejar el composer al fondo.
+ * Las secciones de Mensajería abajo (solo en el celular), como WhatsApp en el teléfono: la misma barra de
+ * vidrio líquido del resto del panel (components/shell/dock), con sus pestañas (Chats, Difusiones,
+ * Automático, Audiencias). El círculo de la derecha es el «Más» de Mensajería: sus ajustes y la salida al
+ * resto del panel (la barra del panel se va mientras estás acá).
+ *
+ * Con un chat abierto la barra se va, para dejar el composer al fondo, como WhatsApp.
  */
 export function WaBottomTabs({
   tenantSlug,
@@ -30,96 +29,98 @@ export function WaBottomTabs({
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [moreOpen, setMoreOpen] = useState(false)
 
-  // Con un chat abierto el composer va al fondo, como WhatsApp
-  const inChat = pathname.endsWith('/mensajeria/inbox') && searchParams.has('c')
-  if (inChat) return null
+  const main = useMemo(() => visibleFor(MAIN_ITEMS, role), [role])
+  const settings = useMemo(() => visibleFor(SETTINGS_ITEMS, role), [role])
 
-  const main = visibleFor(MAIN_ITEMS, role)
-  const settings = visibleFor(SETTINGS_ITEMS, role)
-  const settingsActive = settings.some((item) =>
-    pathname.startsWith(`/${tenantSlug}/mensajeria/${item.segment}`),
+  const items = useMemo<DockItem[]>(
+    () =>
+      main.map((item) => ({
+        key: item.segment,
+        label: item.segment === 'flows' ? 'Automático' : item.label,
+        title: item.segment === 'flows' ? item.label : undefined,
+        icon: item.icon,
+        href: `/${tenantSlug}/mensajeria/${item.segment}`,
+        badge: item.segment === 'inbox' ? unreadTotal : null,
+      })),
+    [main, tenantSlug, unreadTotal],
   )
 
-  return (
-    <nav
-      aria-label="Secciones de mensajería"
-      className="flex shrink-0 items-stretch justify-around border-t border-(--wa-border) bg-(--wa-panel) pb-[env(safe-area-inset-bottom)] md:hidden"
-    >
-      {main.map((item) => {
-        const href = `/${tenantSlug}/mensajeria/${item.segment}`
-        const active = pathname === href || pathname.startsWith(`${href}/`)
-        const Icon = item.icon
-        return (
-          <Link
-            key={item.segment}
-            href={href}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              'flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
-              active ? 'text-(--wa-accent-deep)' : 'text-(--wa-muted)',
-            )}
-          >
-            <span
-              className={cn(
-                'relative flex h-7 w-12 items-center justify-center rounded-full',
-                active && 'bg-(--wa-accent-soft)',
-              )}
-            >
-              <Icon className="size-[20px]" strokeWidth={active ? 2.2 : 1.8} aria-hidden />
-              {item.segment === 'inbox' && unreadTotal > 0 ? (
-                <span className="absolute -top-0.5 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--wa-unread) px-1 text-[9px] font-bold tabular-nums text-white">
-                  {unreadTotal > 99 ? '99+' : unreadTotal}
-                </span>
-              ) : null}
-            </span>
-            <span className="max-w-full truncate">
-              {item.segment === 'flows' ? 'Automático' : item.label}
-            </span>
-          </Link>
-        )
-      })}
+  // Con un chat abierto el composer va al fondo, como WhatsApp.
+  const inChat = pathname.endsWith('/mensajeria/inbox') && searchParams.has('c')
+  const activeKey =
+    main.find((item) => {
+      const href = `/${tenantSlug}/mensajeria/${item.segment}`
+      return pathname === href || pathname.startsWith(`${href}/`)
+    })?.segment ?? null
 
-      {settings.length > 0 ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Ajustes de mensajería"
-            className={cn(
-              'flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors focus-visible:outline-none',
-              settingsActive ? 'text-(--wa-accent-deep)' : 'text-(--wa-muted)',
-            )}
-          >
-            <span
-              className={cn(
-                'flex h-7 w-12 items-center justify-center rounded-full',
-                settingsActive && 'bg-(--wa-accent-soft)',
-              )}
-            >
-              <Settings
-                className="size-[20px]"
-                strokeWidth={settingsActive ? 2.2 : 1.8}
-                aria-hidden
-              />
-            </span>
-            <span className="max-w-full truncate">Ajustes</span>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="end" className="w-56">
-            <DropdownMenuLabel>Ajustes de mensajería</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {settings.map((item) => {
-              const Icon = item.icon
-              return (
-                <DropdownMenuItem key={item.segment} asChild>
-                  <Link href={`/${tenantSlug}/mensajeria/${item.segment}`}>
-                    <Icon className="size-4" aria-hidden />
-                    {item.label}
+  return (
+    <>
+      <LiquidDock
+        scope="wa"
+        label="Secciones de mensajería"
+        items={items}
+        activeKey={activeKey}
+        hidden={inChat}
+        orb={{
+          label: 'Más: ajustes de mensajería y el resto del panel',
+          content: <CircleEllipsis aria-hidden className="size-[24px]" strokeWidth={1.9} />,
+          onPress: () => setMoreOpen(true),
+        }}
+      />
+      <AppSheet
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        title="Mensajería"
+        description="Los ajustes de mensajería y el resto del panel."
+      >
+        {settings.length > 0 ? (
+          <>
+            <h3 className="app-group-label mt-1">Ajustes</h3>
+            <div className="app-group app-group-list">
+              {settings.map((item) => {
+                const Icon = item.icon
+                const href = `/${tenantSlug}/mensajeria/${item.segment}`
+                const active = pathname.startsWith(href)
+                return (
+                  <Link
+                    key={item.segment}
+                    href={href}
+                    className="app-row"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => setMoreOpen(false)}
+                  >
+                    <span className="app-row-icon" data-tone={active ? 'forest' : 'slate'}>
+                      <Icon aria-hidden />
+                    </span>
+                    <span className="flex-1">{item.label}</span>
+                    <ChevronRight aria-hidden className="app-row-chevron" />
                   </Link>
-                </DropdownMenuItem>
-              )
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
-    </nav>
+                )
+              })}
+            </div>
+          </>
+        ) : null}
+        <h3 className="app-group-label">El panel</h3>
+        <div className="app-group app-group-list">
+          <button
+            type="button"
+            className="app-row"
+            onClick={() => {
+              setMoreOpen(false)
+              // Que esta hoja termine de bajar antes de que suba la del panel.
+              setTimeout(openMoreSheet, 220)
+            }}
+          >
+            <span className="app-row-icon" data-tone="forest">
+              <LayoutGrid aria-hidden />
+            </span>
+            <span className="flex-1 text-left">Ir a otra parte del panel</span>
+            <ChevronRight aria-hidden className="app-row-chevron" />
+          </button>
+        </div>
+      </AppSheet>
+    </>
   )
 }

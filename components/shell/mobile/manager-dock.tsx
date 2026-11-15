@@ -2,20 +2,30 @@
 
 import { CircleEllipsis } from 'lucide-react'
 import { usePathname } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { openTex } from '@/components/administracion/tex/open-tex'
-import { type DockPlan, dockActiveKey, MORE_KEY } from '../dock/dock-items'
+import {
+  DEFAULT_DOCK,
+  type DockPlan,
+  dockActiveKey,
+  dockCookieName,
+  MORE_KEY,
+  planDock,
+  serializeDockCookie,
+} from '../dock/dock-items'
 import { type DockItem, LiquidDock } from '../dock/liquid-dock'
 import { computeActiveHrefs } from '../nav-active'
 import type { ResolvedNavGroup } from '../nav-config'
 import { NAV_ICONS } from '../nav-icons'
+import { MORE_OPEN_EVENT } from './more-events'
 import { MoreSheet, type MoreSheetViewer } from './more-sheet'
 import { TexOrbFace } from './tex-orb'
 
 /**
  * La barra de abajo del panel de gestión en el celular (debajo de 1024 px; en la compu manda el menú
- * lateral). Las pestañas las decide `planDock` en el servidor (rol + lo que eligió cada socio). La última
- * es «Más», que abre la hoja con todo lo demás. El círculo de la derecha es Tex.
+ * lateral). Las pestañas las decide `planDock` (rol + lo que eligió cada socio): la primera vez en el
+ * servidor, con la cookie, y después acá, apenas alguien las cambia desde «Más › Editar». La última es
+ * «Más», que abre la hoja con todo lo demás. El círculo de la derecha es Tex.
  *
  * Mensajería es una app dentro de la app (el clon de WhatsApp) y trae su propia barra: ahí esta se va.
  */
@@ -23,7 +33,7 @@ export function ManagerDock({
   slug,
   tenantName,
   groups,
-  plan,
+  plan: initialPlan,
   viewer,
   tex,
 }: {
@@ -36,6 +46,25 @@ export function ManagerDock({
 }) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
+  // Las que eligió esta persona: arrancan como vinieron del servidor y cambian al instante al editarlas.
+  const [chosen, setChosen] = useState<string[]>(() => initialPlan.bar.map((item) => item.key))
+  const plan = useMemo(
+    () => planDock(groups, viewer.role, chosen) ?? initialPlan,
+    [groups, viewer.role, chosen, initialPlan],
+  )
+
+  const saveBar = (keys: string[]) => {
+    setChosen(keys)
+    // biome-ignore lint/suspicious/noDocumentCookie: cookie no-httpOnly que el servidor lee en el primer render (mismo patrón que hub_sidebar); Cookie Store API aún no es universal
+    document.cookie = `${dockCookieName(slug)}=${serializeDockCookie(keys)}; path=/; max-age=31536000; samesite=lax`
+  }
+
+  // Mensajería tiene su propia barra; su círculo abre esta hoja para ir a otra parte del panel.
+  useEffect(() => {
+    const open = () => setMoreOpen(true)
+    window.addEventListener(MORE_OPEN_EVENT, open)
+    return () => window.removeEventListener(MORE_OPEN_EVENT, open)
+  }, [])
 
   const activeHref = useMemo(
     () => [...computeActiveHrefs(pathname, '', groups)][0] ?? null,
@@ -76,7 +105,8 @@ export function ManagerDock({
         label="Secciones del panel"
         items={items}
         activeKey={activeKey}
-        hidden={inMessaging}
+        // En el celular, adentro de Mensajería manda su propia barra (dock.css esconde esta debajo de 768 px).
+        context={inMessaging ? 'wa' : undefined}
         orb={
           tex
             ? {
@@ -96,6 +126,9 @@ export function ManagerDock({
         activeHref={activeHref}
         viewer={viewer}
         tex={tex}
+        bar={plan.bar.map((item) => item.key)}
+        defaultBar={DEFAULT_DOCK[viewer.role] ?? []}
+        onSaveBar={plan.more.length > 0 ? saveBar : undefined}
       />
     </>
   )

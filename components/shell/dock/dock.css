@@ -518,8 +518,8 @@
 
   /* Los avisos salen por encima de la barra, no sobre ella. La librería fija estas distancias con estilo en
      línea: solo `!important` les gana (como en components/pos/ui/pos-toast.css). */
-  html:has(.lg-dock[data-scope="app"]:not([data-hidden]))
-  [data-sonner-toaster][data-y-position="bottom"] {
+  :where(html:has(.lg-dock[data-scope="app"]:not([data-hidden])))
+    [data-sonner-toaster][data-y-position="bottom"] {
     /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
     --mobile-offset-bottom: calc(var(--dock-space) + 4px) !important;
     /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
@@ -561,4 +561,42 @@
     width: 21px;
     height: 21px;
   }
+}
+
+/* ── Mensajería ───────────────────────────────────────────────────────────────────────────────────── */
+
+/* Su barra es solo del celular: desde 768 px Mensajería tiene su riel al costado. */
+@media (min-width: 768px) {
+  .lg-dock[data-scope="wa"] {
+    display: none;
+  }
+}
+
+@media (max-width: 767.98px) {
+  /* Adentro de Mensajería, en el celular, la barra del panel se va: manda la de Mensajería. */
+  .lg-dock[data-scope="app"][data-context="wa"] {
+    display: none;
+  }
+
+  html:not(:has([data-dock-hide])):has(.lg-dock[data-scope="app"][data-context="wa"]) {
+    --dock-space: 0px;
+  }
+
+  /* La lista de Mensajería scrollea por adentro: deja lugar abajo para su barra (salvo con un chat
+     abierto, que la esconde). */
+  html:has(.lg-dock[data-scope="wa"]:not([data-hidden])) [data-wa-scroll] {
+    padding-bottom: calc(var(--dock-h) + var(--dock-gap) + 14px);
+  }
+}
+
+/* ── Salón ────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* Los avisos del salón también salen por encima de su barra. Con `:where()` pesa poco: las pantallas del
+   punto de venta que necesitan subirlos más (components/pos/ui/pos-toast.css) siguen mandando. */
+:where(html:has(.lg-dock[data-scope="salon"]:not([data-hidden])))
+  [data-sonner-toaster][data-y-position="bottom"] {
+  /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+  --mobile-offset-bottom: calc(var(--salon-tabbar-h) + 4px) !important;
+  /* biome-ignore lint/complexity/noImportantStyles: le gana al estilo en línea de sonner */
+  --offset-bottom: calc(var(--salon-tabbar-h) + 4px) !important;
 }

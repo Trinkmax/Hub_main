@@ -1,8 +1,18 @@
 'use client'
 
-import { ChevronRight, KeyRound, Loader2, LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  KeyRound,
+  Loader2,
+  LogOut,
+  Monitor,
+  Moon,
+  Smartphone,
+  Sun,
+} from 'lucide-react'
 import Link from 'next/link'
-import { useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useTheme } from '@/components/theme/theme-provider'
 import type { ThemePreference } from '@/lib/theme/types'
 import { cn } from '@/lib/utils'
@@ -66,6 +76,52 @@ function ThemeSegmented() {
 }
 
 /**
+ * «Usar HUB! como app»: cómo agregarlo a la pantalla de inicio. Solo si todavía se abre en el navegador
+ * (instalado ya no hace falta). Se decide en el navegador: hasta saberlo no se muestra nada.
+ */
+function InstallRow() {
+  const [platform, setPlatform] = useState<'ios' | 'android' | 'other' | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const nav = navigator as Navigator & { standalone?: boolean }
+    const installed = window.matchMedia('(display-mode: standalone)').matches || nav.standalone
+    if (installed) return
+    const ua = navigator.userAgent
+    const ios = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+    setPlatform(ios ? 'ios' : /Android/.test(ua) ? 'android' : 'other')
+  }, [])
+
+  if (!platform || platform === 'other') return null
+  return (
+    <>
+      <button
+        type="button"
+        className="app-row"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="app-row-icon" data-tone="forest">
+          <Smartphone aria-hidden />
+        </span>
+        <span className="flex-1 text-left">Usar HUB! como app</span>
+        <ChevronDown
+          aria-hidden
+          className={cn('app-row-chevron transition-transform', open && 'rotate-180')}
+        />
+      </button>
+      {open ? (
+        <p className="px-4 pb-3 text-[13.5px] leading-snug text-muted-foreground">
+          {platform === 'ios'
+            ? 'En Safari tocá Compartir (el cuadrado con la flecha) y después «Agregar a inicio». Se abre como una app, sin la barra del navegador.'
+            : 'En Chrome tocá el menú ⋮ y después «Instalar app» (o «Agregar a la pantalla principal»). Se abre como una app, sin la barra del navegador.'}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+/**
  * Tu cuenta, en el celular: quién sos, la apariencia, «Ver como» (si te toca), la contraseña y salir. Una
  * lista agrupada como los Ajustes del iPhone. La usan la hoja del avatar y el pie de «Más».
  */
@@ -108,6 +164,7 @@ export function AccountPanel({
       ) : null}
 
       <div className="app-group app-group-list">
+        <InstallRow />
         <Link href="/auth/update-password" className="app-row" onClick={onDone}>
           <span className="app-row-icon" data-tone="slate">
             <KeyRound aria-hidden />

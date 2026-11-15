@@ -34,13 +34,18 @@ export default async function MensajeriaLayout({
   const unreadTotal = await getUnreadTotal(access.tenant.id)
 
   return (
-    <div className="wa flex h-[calc(100dvh-3.5rem)] w-full overflow-hidden bg-(--wa-app)">
+    // En la tablet la barra del panel flota abajo (--dock-space); en el celular, la de Mensajería
+    // (`data-wa-scroll` deja lugar para ella, ver components/shell/dock/dock.css).
+    <div className="wa flex h-[calc(100dvh-3.5rem-var(--dock-space,0px))] w-full overflow-hidden bg-(--wa-app)">
       <WaRail tenantSlug={tenantSlug} role={access.role} unreadTotal={unreadTotal} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-background">
+        <div
+          data-wa-scroll=""
+          className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-background"
+        >
           {children}
         </div>
-        {/* Mobile: las secciones van abajo, como WhatsApp en el teléfono */}
+        {/* Celular: las secciones van abajo, como WhatsApp en el teléfono */}
         <Suspense fallback={null}>
           <WaBottomTabs tenantSlug={tenantSlug} role={access.role} unreadTotal={unreadTotal} />
         </Suspense>
