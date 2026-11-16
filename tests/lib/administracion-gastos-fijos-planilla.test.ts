@@ -12,6 +12,7 @@ import {
   amountEditable,
   askWords,
   autoTaxPlan,
+  defaultStripSupplier,
   detectInstallment,
   installmentWords,
   morePayOptionsHref,
@@ -979,16 +980,13 @@ describe('la tira de pago', () => {
     )
   })
 
-  it('una factura pide proveedor y número (la tira los pregunta)', () => {
-    expect(payStripBlock({ ...base, voucher: 'a' })).toBe(
-      'Para la factura falta el proveedor y el número.',
-    )
+  it('una factura pide de quién es; el número no (16/11/2026)', () => {
+    expect(payStripBlock({ ...base, voucher: 'a' })).toBe('Para la factura falta el proveedor.')
     expect(payStripBlock({ ...base, voucher: 'bc', hasNumber: true })).toBe(
       'Para la factura falta el proveedor.',
     )
-    expect(payStripBlock({ ...base, voucher: 'a', target: party })).toBe(
-      'Para la factura falta el número.',
-    )
+    // Con proveedor alcanza: sin número se guarda igual (no entra al Libro IVA).
+    expect(payStripBlock({ ...base, voucher: 'a', target: party })).toBeNull()
     expect(payStripBlock({ ...base, voucher: 'a', target: party, hasNumber: true })).toBeNull()
   })
 
@@ -1071,8 +1069,9 @@ describe('la tira de pago', () => {
         })
       expect(withNew(thinkeon)).toBeNull()
       expect(withNew({ ...thinkeon, name: ' ' })).toBe('Escribí el nombre del proveedor nuevo.')
+      // Con número la factura entra al Libro IVA, y el libro pide el CUIT.
       expect(withNew({ ...thinkeon, taxId: '' })).toBe(
-        'Para la factura falta el CUIT del proveedor nuevo.',
+        'Con el número, la factura entra al Libro IVA: falta el CUIT del proveedor.',
       )
       expect(withNew({ ...thinkeon, taxId: '30-71876543-6' })).toBe(
         'El CUIT del proveedor nuevo no es válido: revisalo.',
@@ -1086,6 +1085,7 @@ describe('la tira de pago', () => {
       )
       // Uno dado de baja no lo ocupa.
       expect(withNew({ ...thinkeon, taxId: '30718765435' })).toBeNull()
+      // Sin número no hace falta nada más: ni el número ni el CUIT traban el pago.
       expect(
         payStripBlock({
           ...base,
@@ -1093,7 +1093,71 @@ describe('la tira de pago', () => {
           target: stripTarget({ fixed: account, voucher: 'a', supplier: thinkeon }),
           parties,
         }),
-      ).toBe('Para la factura falta el número.')
+      ).toBeNull()
+      expect(
+        payStripBlock({
+          ...base,
+          voucher: 'a',
+          target: stripTarget({
+            fixed: account,
+            voucher: 'a',
+            supplier: { ...thinkeon, taxId: '' },
+          }),
+          parties,
+        }),
+      ).toBeNull()
+      // Un CUIT a medio escribir sigue siendo un error, con número o sin él.
+      expect(
+        payStripBlock({
+          ...base,
+          voucher: 'a',
+          target: stripTarget({
+            fixed: account,
+            voucher: 'a',
+            supplier: { ...thinkeon, taxId: '30-7187' },
+          }),
+          parties,
+        }),
+      ).toBe('El CUIT del proveedor nuevo no es válido: revisalo.')
+    })
+
+    it('si nadie elige, el proveedor es el que se llama como el gasto fijo, o uno nuevo así', () => {
+      // «Thinkion» no está entre los proveedores: va uno nuevo con ese nombre, sin CUIT.
+      expect(defaultStripSupplier('Thinkion', parties, 'a')).toEqual({
+        kind: 'new',
+        name: 'Thinkion',
+        taxId: '',
+        ivaCondition: 'responsable_inscripto',
+      })
+      expect(defaultStripSupplier(' Thinkion ', parties, 'bc')).toMatchObject({
+        name: 'Thinkion',
+        ivaCondition: 'monotributo',
+      })
+      // El que se llama igual (por nombre o por nombre de fantasía, sin mirar mayúsculas ni acentos).
+      expect(defaultStripSupplier('coca', parties, 'a')).toEqual({
+        kind: 'party',
+        partyId: 'p-coca',
+      })
+      expect(defaultStripSupplier('COCA-COLA FEMSA', parties, 'a')).toEqual({
+        kind: 'party',
+        partyId: 'p-coca',
+      })
+      // Parecido no es igual: «Coca Cola» no elige a «Coca» por las dudas.
+      expect(defaultStripSupplier('Coca Cola', parties, 'a')).toMatchObject({ kind: 'new' })
+      // Alguien que no es proveedor (un medio de cobro) no cuenta aunque se llame igual.
+      expect(defaultStripSupplier('Mercado Pago', parties, 'a')).toMatchObject({ kind: 'new' })
+      // Sin un nombre que sirva no se inventa a nadie.
+      expect(defaultStripSupplier(' ', parties, 'a')).toBeNull()
+      // Y con ese proveedor por defecto la tira se puede pagar sin escribir nada más.
+      const supplier = defaultStripSupplier('Thinkion', parties, 'a')
+      expect(
+        payStripBlock({
+          ...base,
+          voucher: 'a',
+          target: stripTarget({ fixed: account, voucher: 'a', supplier }),
+          parties,
+        }),
+      ).toBeNull()
     })
 
     it('el CUIT del QR elige al que ya está o arma uno nuevo con el nombre del gasto fijo', () => {

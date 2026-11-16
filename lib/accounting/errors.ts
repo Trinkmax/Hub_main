@@ -479,7 +479,8 @@ export const ACC_ERRORS = {
   },
   voucher_number_required: {
     code: 'invalid',
-    message: 'Cargá el punto de venta y el número del comprobante.',
+    message:
+      'El punto de venta y el número van los dos o ninguno. Sin número se guarda igual, pero no se le puede tomar el IVA ni cargar percepciones.',
   },
   range_invalid: { code: 'invalid', message: 'El «hasta» no puede ser menor que el «desde».' },
   invoiced_exceeds_sold: {

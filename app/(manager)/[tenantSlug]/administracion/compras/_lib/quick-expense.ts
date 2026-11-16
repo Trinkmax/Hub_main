@@ -281,8 +281,8 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
   }
 
   const accountId = target.accountId ?? ''
-  // Sin factura no hay punto de venta ni número (el del remito va en el detalle); con factura
-  // el esquema los exige (lo marca en `number`).
+  // Sin factura no hay punto de venta ni número (el del remito va en el detalle). Con factura son
+  // opcionales (16/11/2026): van los dos o ninguno, y la mitad la marca el esquema en `number`.
   const numbered = quickVoucherInvoiced(state.voucher)
   const detail = numbered ? state.detail.trim() : withRemito(state.remito ?? '', state.detail)
   const values: QuickExpenseFormValues = {

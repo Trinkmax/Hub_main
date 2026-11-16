@@ -1658,3 +1658,19 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
     si un bar sin punto de venta suma una sucursal hay que filtrar por la sucursal de la mesa. Se vio el 13/11
     al probar «En vivo» del editor en ese modo.
 
+
+## Del pedido del 16/11/2026 (correcciones de los socios), lo que quedó anotado
+
+- **Facturas sin número, a la vista de la contadora.** Una compra sin número se guarda y no entra al
+  Libro IVA. Falta un aviso en el cierre del mes («Hay N facturas sin número: no entran al Libro IVA»),
+  como el de los tiques sin comercio (`tickets_without_vendor`, que sale de la base), y un filtro en
+  Comprobantes para completarlas.
+- **«Nuevo gasto» adjunta la foto pero no la lee.** La lectura (QR y, si no, IA) está en la compra y en
+  la tira de gastos fijos. Llevarla a la hoja «Nuevo gasto» es completar monto, papel, número y
+  proveedor ahí.
+- **La comanda impresa no dice quién la mandó.** `pos_kitchen_queue` no trae el nombre del mozo: sumarlo
+  es tocar esa función (tanda de base).
+- **Dos compus imprimiendo la misma estación imprimen las dos.** Hoy lo impreso se anota en cada
+  dispositivo. Si hace falta que solo una imprima (una de respaldo), la marca tiene que ir a la base.
+- **Cierre de caja en papel: falta el formato de los dueños.** Hoy imprime el resumen del turno
+  (`lib/pos/print/shift.ts`); cuando lo pasen se adapta ahí.

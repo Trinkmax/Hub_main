@@ -62,6 +62,7 @@ import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
   autoTaxPlan,
+  defaultStripSupplier,
   morePayOptionsHref,
   payStripBlock,
   type StripSupplier,
@@ -203,12 +204,17 @@ function PayForm({
   const [files, setFiles] = useState<File[]>([])
   // Con factura se escribe; el QR lo completa con cualquier papel (un tique con número va al libro).
   const [numberText, setNumberText] = useState<VoucherNumberValue>({ pos: '', number: '' })
-  // Solo cuenta con factura y un gasto fijo sin proveedor (`stripAsksSupplier`).
-  const [supplier, setSupplier] = useState<StripSupplier | null>(null)
+  // Solo cuenta con factura y un gasto fijo sin proveedor (`stripAsksSupplier`). `null` = nadie eligió:
+  // vale el de siempre (`defaultStripSupplier`: el que se llama como el gasto fijo, o uno nuevo así).
+  const [pickedSupplier, setSupplier] = useState<StripSupplier | null>(null)
 
   const fixedTarget = prefill?.target ?? null
   const asksSupplier = stripAsksSupplier(fixedTarget, voucher)
   const asksNumber = isInvoiceVoucher(voucher)
+  const supplier = useMemo<StripSupplier | null>(() => {
+    if (!asksSupplier) return null
+    return pickedSupplier ?? defaultStripSupplier(row.name, data.parties, voucher)
+  }, [asksSupplier, pickedSupplier, row.name, data.parties, voucher])
   const target = useMemo(
     () => stripTarget({ fixed: fixedTarget, voucher, supplier }),
     [fixedTarget, voucher, supplier],
@@ -307,7 +313,12 @@ function PayForm({
     hasNumber,
     parties: data.parties,
   })
-  const problem = block ?? (preview && !preview.ok ? preview.message : null)
+  // El número va entero o no va: la mitad se avisa (si no, se guardaría sin número sin que se note).
+  const halfNumber =
+    asksNumber && (pointOfSale === null) !== (voucherNo === null)
+      ? 'Al número de la factura le falta una parte: completalo o borralo.'
+      : null
+  const problem = block ?? halfNumber ?? (preview && !preview.ok ? preview.message : null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al abrir la tira
   useEffect(() => {
     if (problem === null) submitRef.current?.focus({ preventScroll: true })
@@ -331,7 +342,7 @@ function PayForm({
       : 'Cargar pago'
 
   const submit = () => {
-    if (posting.pending || isAutoTax || !built.values || !preview?.ok || block !== null) return
+    if (posting.pending || isAutoTax || !built.values || !preview?.ok || problem !== null) return
     posting.submit(built.values, preview.hash, key)
   }
 
@@ -351,8 +362,9 @@ function PayForm({
 
   // ── De quién es la factura (un gasto fijo sin proveedor) ──
   /**
-   * Sin buscar: primero los que se parecen al nombre del gasto fijo, después otros de la lista (que se
-   * vea que se puede elegir uno que ya está) y crear uno con ese nombre.
+   * Sin buscar: arriba, crear uno con el nombre del gasto fijo (lo que casi siempre es); después los
+   * que se parecen a ese nombre y, atrás, TODOS los demás. Antes se mostraban seis y había que
+   * adivinar que escribiendo aparecía el resto («en el desplegable no está», 16/11/2026).
    */
   const filterSuppliers = (query: string): ComboOption[] => {
     let found: typeof suppliers
@@ -360,7 +372,7 @@ function PayForm({
     else {
       const similar = rankAndFilter(suppliers, row.name, rankParty, 6)
       const others = suppliers.filter((p) => !similar.includes(p))
-      found = [...similar, ...others.slice(0, Math.max(0, 6 - similar.length))]
+      found = [...similar, ...others]
     }
     const options: ComboOption[] = found.map((p) => ({
       value: p.id,
@@ -369,10 +381,10 @@ function PayForm({
       group: 'Proveedores',
     }))
     if (!query) {
-      options.push({
+      options.unshift({
         value: NEW_FROM_ROW,
-        label: `Crear proveedor «${row.name}»`,
-        description: 'Después escribís el CUIT.',
+        label: `«${row.name}» como proveedor nuevo`,
+        description: 'El CUIT se puede cargar después.',
         group: 'Nuevo',
       })
     }
@@ -386,7 +398,8 @@ function PayForm({
       ivaCondition: voucher === 'bc' ? 'monotributo' : 'responsable_inscripto',
     })
     posting.clearFieldErrors()
-    // Lo que sigue es el CUIT (el combo devuelve el foco a su botón al cerrarse: esto va después).
+    // Lo que sigue es el CUIT, si lo tienen (el combo devuelve el foco a su botón al cerrarse: esto
+    // va después).
     requestAnimationFrame(() =>
       requestAnimationFrame(() => document.getElementById(`${uid}-cuit`)?.focus()),
     )
@@ -416,9 +429,16 @@ function PayForm({
       : supplier.kind === 'new'
         ? supplier.name
         : (chosenParty?.tradeName ?? chosenParty?.name ?? null)
-  // La foto del QR completa lo que falta de una factura (número, proveedor y monto).
+  // La foto de la factura completa lo que falte (número, proveedor y monto).
   const qrHint =
     problem !== null && asksNumber && (!hasNumber || (asksSupplier && supplier === null))
+  // Una factura sin número se guarda igual: se avisa qué se pierde, sin trabar.
+  const numberlessNote =
+    problem === null && asksNumber && !hasNumber
+      ? voucher === 'a'
+        ? 'Sin el número, la factura no entra al Libro IVA ni se toma su IVA. Si lo tenés, cargalo o sacale una foto.'
+        : 'Sin el número, la factura no entra al Libro IVA. Si lo tenés, cargalo o sacale una foto.'
+      : null
 
   if (isAutoTax) {
     return (
@@ -495,7 +515,7 @@ function PayForm({
               placeholder="Elegí o creá el proveedor"
               searchPlaceholder="Nombre o CUIT…"
               emptyText={(q) =>
-                q ? `No hay ninguno con «${q}». Podés crearlo.` : 'Escribí para buscar.'
+                q ? `No hay ninguno con «${q}». Podés crearlo.` : 'Todavía no hay proveedores.'
               }
               disabled={posting.pending}
               className={BOX}
@@ -505,7 +525,13 @@ function PayForm({
         {newSupplier ? (
           <div className="grid w-full gap-1.5 sm:w-44">
             <Label htmlFor={`${uid}-cuit`} className="text-xs">
-              CUIT del proveedor
+              {hasNumber ? (
+                'CUIT del proveedor'
+              ) : (
+                <>
+                  CUIT <span className="text-muted-foreground">(opcional)</span>
+                </>
+              )}
             </Label>
             <Input
               id={`${uid}-cuit`}
@@ -555,7 +581,7 @@ function PayForm({
         {asksNumber ? (
           <div className="grid w-full gap-1.5 sm:w-60">
             <Label htmlFor={`${uid}-numero`} className="text-xs">
-              N.º de la factura
+              N.º de la factura <span className="text-muted-foreground">(opcional)</span>
             </Label>
             <VoucherNumberInput
               id={`${uid}-numero`}
@@ -577,10 +603,13 @@ function PayForm({
             const read = stripFromQr(qr)
             const nextVoucher = read.voucher ?? voucher
             if (read.voucher !== null) setVoucher(read.voucher)
-            setNumberText({
-              pos: padPos(String(read.pointOfSale)),
-              number: padNumber(String(read.number)),
-            })
+            // Lo que no se leyó no pisa lo que ya estaba escrito.
+            if (read.pointOfSale !== null && read.number !== null) {
+              setNumberText({
+                pos: padPos(String(read.pointOfSale)),
+                number: padNumber(String(read.number)),
+              })
+            }
             if (read.amountCents !== null) onAmountRead?.(read.amountCents)
             // Sin proveedor en el gasto fijo, el CUIT del QR dice de quién es la factura.
             if (stripAsksSupplier(fixedTarget, nextVoucher)) {
@@ -588,7 +617,7 @@ function PayForm({
             }
             posting.clearFieldErrors()
           }}
-          label="Foto por QR"
+          label="Foto"
           disabled={posting.pending}
           className={ACTION}
         />
@@ -618,8 +647,11 @@ function PayForm({
       {problem ? (
         <p role="status" className="text-xs text-warning-text text-pretty">
           {problem}
-          {qrHint ? ' O sacale una foto al QR de la factura: se completa sola.' : null}
+          {qrHint ? ' O sacale una foto a la factura: se completa sola.' : null}
         </p>
+      ) : null}
+      {numberlessNote ? (
+        <p className="text-xs text-muted-foreground text-pretty">{numberlessNote}</p>
       ) : null}
       {supplierName !== null && problem === null ? (
         <p className="text-xs text-muted-foreground text-pretty">

@@ -250,3 +250,78 @@ export async function readComprobante(
     return { qr: null, previewUrl: null }
   }
 }
+
+// ─── La foto para la IA ──────────────────────────────────────────────────────
+
+/** El lado más largo con el que viaja la foto: más grande no lee mejor y pesa (y cuesta) de más. */
+const AI_MAX_SIDE = 1568
+/** Un PDF así de chico viaja entero (se leen todas sus hojas); uno más pesado, solo la primera, como imagen. */
+const AI_MAX_PDF_BYTES = 2_400_000
+
+export type AiPayload = {
+  mime: 'image/jpeg' | 'application/pdf'
+  /** En base64, sin el encabezado `data:`. */
+  data: string
+}
+
+function blobToBase64(blob: Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onerror = () => resolve(null)
+    reader.onload = () => {
+      const url = typeof reader.result === 'string' ? reader.result : ''
+      const comma = url.indexOf(',')
+      resolve(comma >= 0 ? url.slice(comma + 1) : null)
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+function jpegOf(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+): Promise<Blob | null> {
+  const ratio = Math.min(1, AI_MAX_SIDE / Math.max(sourceWidth, sourceHeight, 1))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(sourceWidth * ratio))
+  canvas.height = Math.max(1, Math.round(sourceHeight * ratio))
+  const context = canvas.getContext('2d')
+  if (!context) return Promise.resolve(null)
+  // Fondo blanco: un PNG con transparencia saldría con el papel en negro.
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+}
+
+/**
+ * La foto, lista para mandarla a leer con IA: achicada a un JPEG liviano (una foto de celular pesa
+ * varios megas y no entra en un pedido). Nunca tira: lo que el navegador no sabe abrir vuelve `null`
+ * y la foto simplemente queda adjunta.
+ */
+export async function comprobanteForAi(file: File): Promise<AiPayload | null> {
+  try {
+    if (isPdf(file)) {
+      if (file.size <= AI_MAX_PDF_BYTES) {
+        const data = await blobToBase64(file)
+        return data ? { mime: 'application/pdf', data } : null
+      }
+      const page = await renderPdfFirstPage(file)
+      if (!page) return null
+      const blob = await jpegOf(page, page.width, page.height)
+      const data = blob ? await blobToBase64(blob) : null
+      return data ? { mime: 'image/jpeg', data } : null
+    }
+    const bitmap = await createImageBitmap(file)
+    try {
+      const blob = await jpegOf(bitmap, bitmap.width, bitmap.height)
+      const data = blob ? await blobToBase64(blob) : null
+      return data ? { mime: 'image/jpeg', data } : null
+    } finally {
+      bitmap.close()
+    }
+  } catch {
+    return null
+  }
+}

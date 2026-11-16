@@ -806,7 +806,10 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   }
 
   // ── Textos que acompañan ──
-  const split = voucher === 'a' ? splitTotal(amount, vatRate, vatAdjust) : null
+  // El número de la factura no es obligatorio (16/11/2026). Sin número no entra al Libro IVA ni se toma
+  // su IVA: el neto y el IVA solo se muestran cuando el número está entero.
+  const hasVoucherNumber = pointOfSale !== null && number !== null
+  const split = voucher === 'a' && hasVoucherNumber ? splitTotal(amount, vatRate, vatAdjust) : null
   // «Remito o nada» es `none`: se guarda sin factura y sin número (el del remito va en el detalle).
   const invoiced = quickVoucherInvoiced(voucher)
   const outcome = quickExpenseOutcome({
@@ -845,7 +848,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           paper: voucher,
           condition: party.ivaCondition,
           hasTaxId: Boolean(party.taxId),
-          entersIvaBook: isInvoiceVoucher(voucher),
+          entersIvaBook: isInvoiceVoucher(voucher) && hasVoucherNumber,
         })
       : null
   const lastVoucher =
@@ -878,10 +881,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // Si no es nada de lo que se sabe nombrar pero todavía no hay asiento (un dato de un
   // proveedor nuevo, la fecha), se avisa igual: el ticket nunca promete lo que no se puede guardar.
   const missing =
-    missingForSummary({
-      ...unanswered,
-      invoiceNumber: isInvoiceVoucher(voucher) && (pointOfSale === null || number === null),
-    }) ?? (entries.length === 0 ? 'Todavía falta completar un dato.' : null)
+    missingForSummary(unanswered) ??
+    (entries.length === 0 ? 'Todavía falta completar un dato.' : null)
   const answered = !unanswered.amount && !unanswered.target && !unanswered.treasury
   const linkedRecurring = recurringId ? data.recurring.find((r) => r.id === recurringId) : undefined
   // Como un tique de verdad (la regla del ticket del cierre, la misma de la compra y del
@@ -1050,7 +1051,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 'newParty.name': errors['newParty.name'],
                 'newParty.taxId': errors['newParty.taxId'],
               }}
-              needsTaxId={isInvoiceVoucher(voucher)}
+              needsTaxId={isInvoiceVoucher(voucher) && hasVoucherNumber}
             />
           </div>
 
@@ -1172,22 +1173,29 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                   <span id={ids.vatLabel} className="text-sm font-medium">
                     IVA de la factura
                   </span>
-                  <RadioChips
-                    labelledBy={ids.vatLabel}
-                    value={String(vatRate)}
-                    onChange={(next) => {
-                      const rate = Number(next)
-                      if (!isQuickVatRate(rate)) return
-                      setVatRate(rate)
-                      setVatAdjust(0)
-                    }}
-                    options={QUICK_VAT_RATES.map((r) => ({
-                      value: String(r),
-                      label: vatRateLabel(r),
-                    }))}
-                  />
+                  {hasVoucherNumber ? (
+                    <RadioChips
+                      labelledBy={ids.vatLabel}
+                      value={String(vatRate)}
+                      onChange={(next) => {
+                        const rate = Number(next)
+                        if (!isQuickVatRate(rate)) return
+                        setVatRate(rate)
+                        setVatAdjust(0)
+                      }}
+                      options={QUICK_VAT_RATES.map((r) => ({
+                        value: String(r),
+                        label: vatRateLabel(r),
+                      }))}
+                    />
+                  ) : null}
                 </div>
-                {split ? (
+                {!hasVoucherNumber ? (
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    Para tomar el IVA hace falta el número de la factura. Sin número se guarda
+                    igual: el total va entero al gasto y no entra al Libro IVA.
+                  </p>
+                ) : split ? (
                   <p className="text-xs tabular-nums text-muted-foreground">
                     Neto {formatCents(split.netCents)} · IVA {formatCents(split.vatCents)}
                   </p>
@@ -1255,17 +1263,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             {invoiced ? (
               <div className="grid gap-1.5">
                 <Label htmlFor={ids.number}>
-                  Número
-                  {isInvoiceVoucher(voucher) ? (
-                    <span aria-hidden="true" className="ml-0.5 text-destructive">
-                      *
-                    </span>
-                  ) : (
-                    <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
-                  )}
+                  Número{' '}
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
                 </Label>
-                {/* Los ejemplos («0003 – 00001290») van apagados: con Factura A el número es
-                    obligatorio y, apurado, el ejemplo parecía un número ya puesto. */}
+                {/* Los ejemplos («0003 – 00001290») van apagados: apurado, el ejemplo parecía un
+                    número ya puesto. */}
                 <div className="[&_input]:placeholder:text-muted-foreground/50">
                   <VoucherNumberInput
                     id={ids.number}
@@ -1284,7 +1286,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                     : 'Punto de venta y número. Podés pegar «0003-00001290».'}
                   {voucher === 'ticket'
                     ? ' Con proveedor y número, el tique entra al Libro IVA.'
-                    : null}
+                    : isInvoiceVoucher(voucher) && !hasVoucherNumber
+                      ? ' Sin número, la factura no entra al Libro IVA.'
+                      : null}
                 </p>
                 {(errors.number ?? errors.pointOfSale) ? (
                   <p role="alert" className="text-xs text-destructive">

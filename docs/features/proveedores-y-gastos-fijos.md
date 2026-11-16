@@ -162,3 +162,34 @@ Los gastos fijos de prueba fueron «Thinkion QA», «Hosting QA» y «Mantenimie
 3. Con «Factura B o C» y un proveedor nuevo, la tira pide la letra y arranca en C.
 4. «Mantenimiento QA», con proveedor: arranca en Factura A, no pide proveedor y Enter en el número paga.
 5. En el celular (390 px, con el dedo), los campos van uno debajo del otro y nada se sale de la pantalla.
+
+## Addendum 16/11/2026 — La tira ya no traba: el proveedor viene elegido y el número es opcional
+
+Reclamo de los socios: «Cuando voy a gastos fijos desde el listado no me deja pagarlo; en el desplegable,
+por ejemplo, Thinkeon no está». Es el mismo «Thinkion» del 12/11: ninguno de los 49 gastos fijos de HUB
+tiene proveedor y «Thinkion» no figura entre sus 58 proveedores. Con Factura A la tira pedía proveedor
+(de una lista que mostraba seis, sin relación con el nombre), su CUIT y el número: sin los tres no dejaba
+pagar. Junto con «que el número de factura no sea obligatorio» (ver `administracion-simple.md`).
+
+**Qué cambió** (`pay-strip.tsx`, lo puro en `planilla-words.ts`):
+
+- **El proveedor viene elegido** (`defaultStripSupplier`): el que se llama igual que el gasto fijo (por
+  nombre o nombre de fantasía, sin mirar mayúsculas ni acentos) o, si no hay ninguno, uno nuevo con ese
+  nombre («Thinkion · nuevo»). Se puede cambiar. Parecido no alcanza para elegir a uno que ya existe.
+- **El desplegable muestra todos los proveedores**, no seis: arriba «"…" como proveedor nuevo», después
+  los parecidos al nombre y atrás el resto. Escribiendo se busca, como siempre.
+- **El número es opcional.** Sin número la factura se guarda igual y no entra al Libro IVA (la tira lo
+  dice). La mitad de un número se avisa.
+- **El CUIT de un proveedor nuevo es opcional mientras no haya número.** Con número la factura entra al
+  Libro IVA y el libro lo pide: ahí sí avisa.
+- **La foto** lee el QR y, si no aparece, la lee la IA: completa lo que encuentre (papel, número, monto y
+  proveedor por CUIT o por nombre) y no pisa lo que no leyó.
+- Tex sigue sin elegir proveedores: manda a la planilla, donde ahora viene elegido.
+
+### Smoke manual (bar demo, 16/11/2026)
+
+«Alquiler del local» (vencido, sin proveedor, $ 850.000): al tildarlo y elegir Factura A, Proveedor
+arranca en «Alquiler del local · nuevo», CUIT y N.º figuran como opcionales, y «Cargar pago · $ 850.000»
+queda habilitado sin escribir nada. Debajo dice «Sin el número, la factura no entra al Libro IVA ni se
+toma su IVA…» y «Alquiler del local queda como proveedor…». El desplegable trae los 14 proveedores del
+bar de ejemplo, con «"Alquiler del local" como proveedor nuevo» primero.

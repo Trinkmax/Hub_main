@@ -16,8 +16,7 @@ import { findPossibleDuplicate, getFormDefaults } from '@/lib/accounting/queries
 import { getParty } from '@/lib/accounting/queries/parties'
 import { getWeekPlan } from '@/lib/accounting/queries/week-plan'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
-import type { PartyKind } from '@/lib/accounting/types'
-import { voucherNumberRequired } from '@/lib/accounting/voucher-types'
+import type { PartyKind, VoucherType } from '@/lib/accounting/types'
 import { mondayOf, saveWeekBudgetsSchema } from '@/lib/accounting/week-plan'
 import { prepareDocument } from '../../document-action'
 import { type Resolved, resolveAccount, resolveParty, resolveTreasury } from '../../resolve'
@@ -339,14 +338,13 @@ async function duplicateNotices(
     partyId: string | null
     totalCents: number | null
     issueDate: string
-    voucherType: Parameters<typeof voucherNumberRequired>[0]
+    voucherType: VoucherType
     pointOfSale: number | null
     number: number | null
   },
 ) {
-  const { partyId, totalCents, number } = params
+  const { partyId, totalCents } = params
   if (!partyId || totalCents === null) return []
-  if (voucherNumberRequired(params.voucherType) && number === null) return []
   const found = await optional(
     findPossibleDuplicate(ctx.tenantId, { ...params, partyId, totalCents }),
   )

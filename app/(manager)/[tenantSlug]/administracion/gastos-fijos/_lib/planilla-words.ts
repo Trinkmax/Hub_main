@@ -652,9 +652,48 @@ export function stripTarget(input: {
   }
 }
 
+/** Para comparar nombres: sin mayúsculas, sin acentos y sin espacios de más. */
+function plainName(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /**
- * Lo que la tira no puede resolver todavía, en palabras. `null` = se puede cargar. Una factura pide
- * proveedor y número: la tira los pregunta, y el QR de ARCA los completa.
+ * De quién es la factura si nadie dijo nada: el proveedor que se llama igual que el gasto fijo o, si
+ * no hay ninguno, uno nuevo con ese nombre. Así la tira nunca arranca trabada: «Thinkion» ES el
+ * proveedor de «Thinkion» (reclamo de los socios del 12 y del 16/11/2026: había que buscarlo en una
+ * lista donde no estaba). Un nombre de menos de dos letras no alcanza para crear a nadie.
+ */
+export function defaultStripSupplier(
+  rowName: string,
+  parties: readonly StripParty[],
+  voucher: QuickVoucher,
+): StripSupplier | null {
+  const wanted = plainName(rowName)
+  if (wanted.length < 2) return null
+  const same = parties.find(
+    (p) => isPayableParty(p) && (plainName(p.name) === wanted || plainName(p.tradeName) === wanted),
+  )
+  if (same) return { kind: 'party', partyId: same.id }
+  return {
+    kind: 'new',
+    name: rowName.trim(),
+    taxId: '',
+    // La letra de una B o C se puede cambiar en la tira; una A la hace un responsable inscripto.
+    ivaCondition: voucher === 'bc' ? 'monotributo' : 'responsable_inscripto',
+  }
+}
+
+/**
+ * Lo que la tira no puede resolver todavía, en palabras. `null` = se puede cargar.
+ *
+ * Una factura pide de quién es (viene elegido: `defaultStripSupplier`). El número no es obligatorio
+ * (pedido de los socios, 16/11/2026): sin número se guarda igual y no entra al Libro IVA, y entonces
+ * tampoco hace falta el CUIT de un proveedor nuevo. Con número, el libro pide ese CUIT.
  */
 export function payStripBlock(input: {
   amountCents: number | null
@@ -672,18 +711,16 @@ export function payStripBlock(input: {
   if (target === null) return 'Este gasto fijo no tiene proveedor ni categoría que sirvan.'
   if (target.accountId === null) return 'Este gasto fijo no tiene una categoría que sirva.'
   if (!isInvoiceVoucher(input.voucher)) return null
-  if (target.kind === 'account') {
-    return input.hasNumber
-      ? 'Para la factura falta el proveedor.'
-      : 'Para la factura falta el proveedor y el número.'
-  }
+  if (target.kind === 'account') return 'Para la factura falta el proveedor.'
   if (target.kind === 'new') {
     if (target.name.trim().length < 2) return 'Escribí el nombre del proveedor nuevo.'
     const cuit = parseCuit(target.taxId)
     if (!cuit.ok) {
-      return cuit.reason === 'vacio'
-        ? 'Para la factura falta el CUIT del proveedor nuevo.'
-        : 'El CUIT del proveedor nuevo no es válido: revisalo.'
+      if (cuit.reason !== 'vacio') return 'El CUIT del proveedor nuevo no es válido: revisalo.'
+      // Sin CUIT se puede, mientras la factura no vaya al Libro IVA (no trae número).
+      return input.hasNumber
+        ? 'Con el número, la factura entra al Libro IVA: falta el CUIT del proveedor.'
+        : null
     }
     const owner = cuitOwner(input.parties ?? [], cuit.cuit)
     if (owner) {
@@ -693,7 +730,6 @@ export function payStripBlock(input: {
         : `Ese CUIT es de «${name}», que no es un proveedor: revisalo.`
     }
   }
-  if (!input.hasNumber) return 'Para la factura falta el número.'
   return null
 }
 
@@ -703,21 +739,29 @@ export function payStripBlock(input: {
  * `null`: el CUIT no sirve, o es de alguien a quien no se le carga un gasto (un medio de cobro).
  */
 export function stripSupplierFromQr(
-  qr: { cuit: string; voucherType: string | null },
+  qr: { cuit: string | null; voucherType: string | null; issuerName?: string | null },
   parties: readonly StripParty[],
   name: string,
 ): StripSupplier | null {
+  const letter = isVoucherType(qr.voucherType) ? VOUCHER_CATALOG[qr.voucherType].letter : null
+  const ivaCondition: IvaCondition = letter === 'C' ? 'monotributo' : 'responsable_inscripto'
   const cuit = parseCuit(qr.cuit)
-  if (!cuit.ok) return null
+  if (!cuit.ok) {
+    // La IA leyó quién la emite pero no su CUIT: el que se llama igual, o uno nuevo con ese nombre.
+    const issuer = qr.issuerName?.trim() ?? ''
+    if (issuer.length < 2) return null
+    const wanted = plainName(issuer)
+    const same = parties.find(
+      (p) =>
+        isPayableParty(p) && (plainName(p.name) === wanted || plainName(p.tradeName) === wanted),
+    )
+    return same
+      ? { kind: 'party', partyId: same.id }
+      : { kind: 'new', name: issuer, taxId: '', ivaCondition }
+  }
   const owner = cuitOwner(parties, cuit.cuit)
   if (owner) return isPayableParty(owner) ? { kind: 'party', partyId: owner.id } : null
-  const letter = isVoucherType(qr.voucherType) ? VOUCHER_CATALOG[qr.voucherType].letter : null
-  return {
-    kind: 'new',
-    name: name.trim(),
-    taxId: formatCuit(cuit.cuit),
-    ivaCondition: letter === 'C' ? 'monotributo' : 'responsable_inscripto',
-  }
+  return { kind: 'new', name: name.trim(), taxId: formatCuit(cuit.cuit), ivaCondition }
 }
 
 /**
@@ -726,7 +770,7 @@ export function stripSupplierFromQr(
  */
 export function supplierAfterQr(
   current: StripSupplier | null,
-  qr: { cuit: string; voucherType: string | null },
+  qr: { cuit: string | null; voucherType: string | null; issuerName?: string | null },
   parties: readonly StripParty[],
   fallbackName: string,
 ): StripSupplier | null {
@@ -740,22 +784,26 @@ export function supplierAfterQr(
     : current
 }
 
-/** Lo que el QR de ARCA le completa a la tira. Un comprobante que no se carga no cambia el papel. */
+/**
+ * Lo que la lectura del comprobante (el QR de ARCA o la IA) le completa a la tira. Un comprobante que
+ * no se carga no cambia el papel, y el número viene entero o no viene.
+ */
 export function stripFromQr(data: {
   voucherType: string | null
-  pointOfSale: number
-  number: number
+  pointOfSale: number | null
+  number: number | null
   totalCents: number | null
 }): {
   voucher: QuickVoucher | null
-  pointOfSale: number
-  number: number
+  pointOfSale: number | null
+  number: number | null
   amountCents: number | null
 } {
+  const hasNumber = data.pointOfSale !== null && data.number !== null
   return {
     voucher: quickVoucherFromType(data.voucherType),
-    pointOfSale: data.pointOfSale,
-    number: data.number,
+    pointOfSale: hasNumber ? data.pointOfSale : null,
+    number: hasNumber ? data.number : null,
     amountCents: data.totalCents !== null && data.totalCents > 0 ? data.totalCents : null,
   }
 }

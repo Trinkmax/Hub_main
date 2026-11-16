@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ArcaQrData } from '@/lib/accounting/arca-qr'
+import { readInvoicePhoto } from '@/lib/accounting/actions/invoice-reader'
 import {
   ATTACHMENT_ACCEPT,
   ATTACHMENT_MESSAGES,
@@ -33,6 +33,7 @@ import {
   guessAttachmentMime,
   MAX_ATTACHMENTS_PER_DOCUMENT,
 } from '@/lib/accounting/attachments'
+import { type InvoiceRead, readFromQr, readSummary } from '@/lib/accounting/invoice-read'
 import { cn } from '@/lib/utils'
 import { type UploadLinkState, useUploadLink } from './use-upload-link'
 
@@ -45,8 +46,10 @@ import { type UploadLinkState, useUploadLink } from './use-upload-link'
  *
  * Cómo llega una foto: por el QR (la baja `useUploadLink`), soltándola acá o en cualquier lado de la
  * pantalla (`onDroppedComprobante`), o desde otra pantalla (`takeDropped`, con `?desde=archivo`). Si
- * la pantalla pasa `onRead`, se busca su QR de ARCA. Sin QR no pasa nada: la foto queda adjunta y se
- * tipea.
+ * la pantalla pasa `onRead`, se busca su QR de ARCA (exacto y al toque). Si el QR no aparece (una foto
+ * de celular muchas veces no lo deja leer, o el papel no trae: un tique, una factura de talonario),
+ * la foto se lee con IA (`readInvoicePhoto`): vuelve una propuesta de datos y se pide revisarla. Si
+ * tampoco se pudo, la foto queda adjunta y se tipea.
  *
  * Para que el QR vuelva a empezar (después de guardar, «Cargar otra»), montá el panel con otra `key`:
  * al desmontarse cierra el link y borra la copia temporal.
@@ -55,8 +58,8 @@ export type FotoPanelProps = {
   tenantSlug: string
   files: readonly File[]
   onFiles: (files: File[]) => void
-  /** Se leyó un QR de ARCA. Sin esto no se busca. */
-  onRead?: (data: ArcaQrData) => void
+  /** Se leyeron datos del comprobante (del QR de ARCA o con IA). Sin esto no se busca. */
+  onRead?: (data: InvoiceRead) => void
   /** Más chico y en una sola fila: una hoja, un diálogo. */
   compact?: boolean
   /** Toma el archivo que se soltó en otra pantalla (`?desde=archivo`). */
@@ -102,16 +105,33 @@ function wait(ms: number): Promise<void> {
 
 type Reading = {
   key: string
-  status: 'scanning' | 'read' | 'none'
+  /**
+   * `scanning`: buscando el QR · `ai`: leyéndola con IA · `read`: leída por el QR · `read-ai`: leída
+   * con IA · `none`: no se pudo leer (o no se intentó): queda adjunta.
+   */
+  status: 'scanning' | 'ai' | 'read' | 'read-ai' | 'none'
+  /** Qué se completó («el proveedor, el número y el total»), para decirlo. */
+  summary?: string
+  /** Lo que la IA avisó que no leyó bien. */
+  doubts?: string | null
+  /** Por qué no se pudo leer con IA, si hay algo para decir. */
+  problem?: string | null
 }
+
+/**
+ * La lectura con IA no está prendida en este servidor (falta la clave): se pregunta una sola vez por
+ * carga de la página y después ni se intenta.
+ */
+let aiReadingOff = false
 
 /** Lo que entra por cualquiera de los caminos, y la lectura de su QR. */
 function useFotoIntake({
+  tenantSlug,
   files,
   onFiles,
   onRead,
   takeDropped,
-}: Pick<FotoPanelProps, 'files' | 'onFiles' | 'onRead' | 'takeDropped'>) {
+}: Pick<FotoPanelProps, 'tenantSlug' | 'files' | 'onFiles' | 'onRead' | 'takeDropped'>) {
   const [errors, setErrors] = useState<string[]>([])
   const [reading, setReading] = useState<Reading | null>(null)
   const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(() => new Map())
@@ -133,29 +153,73 @@ function useFotoIntake({
     }
   }, [])
 
-  const read = useCallback(async (file: File) => {
-    const key = fileKey(file)
-    setReading({ key, status: 'scanning' })
-    const started = Date.now()
-    const { readComprobante } = await import('./read-qr')
-    const result = await readComprobante(file)
-    if (!mounted.current) {
-      if (result.previewUrl) URL.revokeObjectURL(result.previewUrl)
-      return
-    }
-    if (result.previewUrl) {
-      const url = result.previewUrl
-      setPreviews((prev) => new Map(prev).set(key, url))
-    }
-    // Que se vea el escaneo también cuando el QR se lee al toque.
-    if (!prefersReducedMotion()) await wait(Math.max(0, SCAN_MS - (Date.now() - started)))
-    if (!mounted.current) return
-    setReading((prev) => {
-      if (prev?.key !== key) return prev
-      return { key, status: result.qr ? 'read' : 'none' }
-    })
-    if (result.qr) handlers.current.onRead?.(result.qr)
-  }, [])
+  const read = useCallback(
+    async (file: File) => {
+      const key = fileKey(file)
+      const settle = (next: Omit<Reading, 'key'>) =>
+        setReading((prev) => (prev?.key === key ? { key, ...next } : prev))
+      setReading({ key, status: 'scanning' })
+      const started = Date.now()
+      const { readComprobante, comprobanteForAi } = await import('./read-qr')
+      const result = await readComprobante(file)
+      if (!mounted.current) {
+        if (result.previewUrl) URL.revokeObjectURL(result.previewUrl)
+        return
+      }
+      if (result.previewUrl) {
+        const url = result.previewUrl
+        setPreviews((prev) => new Map(prev).set(key, url))
+      }
+      // Que se vea el escaneo también cuando el QR se lee al toque.
+      if (!prefersReducedMotion()) await wait(Math.max(0, SCAN_MS - (Date.now() - started)))
+      if (!mounted.current) return
+      if (result.qr) {
+        settle({ status: 'read' })
+        handlers.current.onRead?.(readFromQr(result.qr))
+        return
+      }
+      // Sin QR: la lee la IA. Es una propuesta: quien carga la revisa antes de guardar.
+      if (aiReadingOff) {
+        settle({ status: 'none' })
+        return
+      }
+      settle({ status: 'ai' })
+      const payload = await comprobanteForAi(file)
+      if (!mounted.current) return
+      if (!payload) {
+        settle({ status: 'none' })
+        return
+      }
+      let answer: Awaited<ReturnType<typeof readInvoicePhoto>>
+      try {
+        answer = await readInvoicePhoto(tenantSlug, payload)
+      } catch {
+        // Sin red, o el servidor no contestó: la foto queda adjunta igual.
+        answer = { ok: false, code: 'error', message: 'No pudimos leerla: revisá la conexión.' }
+      }
+      if (!mounted.current) return
+      if (!answer.ok) {
+        if (answer.code === 'disabled') {
+          aiReadingOff = true
+          settle({ status: 'none' })
+          return
+        }
+        settle({ status: 'none', problem: answer.message })
+        return
+      }
+      const found = answer.data.read
+      if (!found) {
+        settle({
+          status: 'none',
+          problem: 'No pudimos leer los datos de esta foto. Quedó adjunta: cargalos a mano.',
+        })
+        return
+      }
+      settle({ status: 'read-ai', summary: readSummary(found), doubts: found.doubts })
+      handlers.current.onRead?.(found)
+    },
+    [tenantSlug],
+  )
 
   const add = useCallback(
     (picked: readonly File[]) => {
@@ -380,6 +444,7 @@ export function FotoPanel({
   const accounting = useAccountingOptional()
   const wide = useWideScreen()
   const { errors, reading, previews, add, remove } = useFotoIntake({
+    tenantSlug,
     files,
     onFiles,
     onRead,
@@ -425,12 +490,37 @@ export function FotoPanel({
             key={shownKey}
             file={shown}
             preview={shownKey ? (previews.get(shownKey) ?? null) : null}
-            scanning={shownReading?.status === 'scanning'}
+            scanning={shownReading?.status === 'scanning' || shownReading?.status === 'ai'}
             compact={compact}
           />
           {shownReading?.status === 'scanning' ? (
             <p role="status" className="text-xs text-muted-foreground">
               Leyendo el comprobante…
+            </p>
+          ) : null}
+          {shownReading?.status === 'ai' ? (
+            <p role="status" className="text-xs text-muted-foreground text-pretty">
+              No encontramos el QR: la estamos leyendo con IA…
+            </p>
+          ) : null}
+          {shownReading?.status === 'read-ai' ? (
+            <p
+              role="status"
+              className="adm-rise w-full rounded-md bg-success/10 px-2.5 py-1.5 text-left text-[12.5px] text-success text-pretty"
+            >
+              <b className="font-semibold">La leímos con IA</b>
+              {shownReading.summary ? `: ${shownReading.summary}` : ''}. Revisá los datos antes de
+              guardar.
+              {shownReading.doubts ? (
+                <span className="mt-0.5 block text-warning-text">
+                  No se leyó bien: {shownReading.doubts}
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+          {shownReading?.status === 'none' && shownReading.problem ? (
+            <p role="status" className="w-full text-left text-xs text-muted-foreground text-pretty">
+              {shownReading.problem}
             </p>
           ) : null}
           {shownReading?.status === 'read' ? (
@@ -510,7 +600,7 @@ export function FotoPanel({
             <h2 className="hidden text-sm font-semibold md:block">Escanealo y sacale la foto</h2>
             <p className="hidden text-xs text-muted-foreground text-pretty md:block">
               O arrastrá la foto o el PDF acá.
-              {onRead ? ' Si es factura electrónica, se completa sola.' : null}
+              {onRead ? ' Los datos se completan solos y los revisás.' : null}
             </p>
             <PickButton
               onFiles={add}

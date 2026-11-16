@@ -188,17 +188,29 @@ describe('quickExpenseSchema (Nuevo gasto, G.2)', () => {
     expect(v.detail).toBeNull()
   })
 
-  it('con factura hace falta el proveedor y el número', () => {
+  it('con factura hace falta el proveedor; el número es opcional, pero va entero', () => {
     expect(messageAt(quickExpenseSchema, { ...base, voucher: 'a' }, 'target')).toBe(
       'Elegí el proveedor de la factura.',
     )
-    expect(
-      messageAt(
-        quickExpenseSchema,
-        { ...base, voucher: 'a', target: { type: 'party', partyId: U3, accountId: U1 } },
-        'number',
-      ),
-    ).toBe('Con factura, cargá el punto de venta y el número.')
+    // Sin número se guarda igual (pedido de los socios, 16/11/2026): no entra al Libro IVA.
+    ok(quickExpenseSchema, {
+      ...base,
+      voucher: 'a',
+      target: { type: 'party', partyId: U3, accountId: U1 },
+    })
+    // La mitad de un número no dice nada: se avisa.
+    for (const half of [
+      { pointOfSale: 3, number: null },
+      { pointOfSale: null, number: 1290 },
+    ]) {
+      expect(
+        messageAt(
+          quickExpenseSchema,
+          { ...base, voucher: 'a', target: { type: 'party', partyId: U3, accountId: U1 }, ...half },
+          'number',
+        ),
+      ).toBe('Cargá el punto de venta y el número, o dejá los dos vacíos.')
+    }
     ok(quickExpenseSchema, {
       ...base,
       voucher: 'a',
@@ -323,10 +335,15 @@ describe('purchaseSchema (comprobante de compra)', () => {
     ).toBe('Elegí el proveedor.')
   })
 
-  it('número obligatorio salvo DDJJ y sin comprobante', () => {
+  it('el número es opcional, pero va entero: la mitad se avisa', () => {
     expect(messageAt(purchaseSchema, { ...e1, number: null }, 'number')).toBe(
-      'Cargá el punto de venta y el número.',
+      'Cargá el punto de venta y el número, o dejá los dos vacíos.',
     )
+    expect(messageAt(purchaseSchema, { ...e1, pointOfSale: null }, 'number')).toBe(
+      'Cargá el punto de venta y el número, o dejá los dos vacíos.',
+    )
+    // Sin ninguno de los dos se guarda igual (no entra al Libro IVA).
+    ok(purchaseSchema, { ...e1, pointOfSale: null, number: null })
     ok(purchaseSchema, {
       ...e1,
       voucherType: 'ddjj_impuesto',

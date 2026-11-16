@@ -560,9 +560,10 @@ describe('preparar_compra: lo que manda el formulario', () => {
     entry('purchase', plan.values, ctx)
   })
 
-  it('Sin decir el papel, con un responsable inscripto: Factura A, y pide el número', () => {
-    const { f } = prepare()
-    const message = failure(
+  it('Sin decir el papel, con un responsable inscripto: Factura A, y sin número se carga igual', () => {
+    const { f, ctx } = prepare()
+    // El número no es obligatorio (16/11/2026): sin número no entra al Libro IVA.
+    const plan = ok(
       compraPlan(
         compra(f, {
           supplier: fixtureOf(f, 'mayorista'),
@@ -571,8 +572,9 @@ describe('preparar_compra: lo que manda el formulario', () => {
         }),
       ),
     )
-    expect(message).toContain('Factura A')
-    expect(message).toContain('punto de venta')
+    expect(plan.voucherType).toBe('factura_a')
+    expect(plan.values).toMatchObject({ pointOfSale: null, number: null })
+    entry('purchase', plan.values, ctx)
   })
 
   it('La cuenta, el punto de venta y la alícuota salen de lo que recuerda el sistema', () => {
