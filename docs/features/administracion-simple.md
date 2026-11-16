@@ -40,7 +40,18 @@ tradicional no quiere decir que debe ser feo».
   en una COMPRA van el punto de venta y el número, los dos, o ninguno. Sin número se guarda igual, no entra al Libro
   IVA y no se le toma el IVA (el total va entero a la imputación); lo que solo existe en el libro (IVA por renglón,
   percepciones, la factura de comisiones) sí pide el número. Es la regla que ya tenía el tique desde el 29/10. Lo que
-  emite el bar sigue llevando número siempre.
+  emite el bar sigue llevando número siempre. El punto de venta que **propone el sistema** (el de la última factura de
+  ese proveedor) no cuenta mientras nadie escriba el número (`voucherParts`): antes dejaba el número «a medias» y
+  trababa el guardado por algo que la persona no había tipeado. Un punto de venta escrito a mano sin número sí avisa.
+- **Cuotas con tarjeta** (pedido de los socios, 16/11/2026: «en medio de pago, cuota como una opción individual»;
+  migración `acc_cuotas_tarjeta`). Al pagar con una cuenta de tipo «Tarjeta de crédito» aparece «¿En cuántas cuotas?»
+  (`InstallmentsField`: 1 pago, 3, 6, 9, 12 u «Otra», hasta 48) en «Nuevo gasto», en la compra pagada en el momento, en
+  «Pagar» y en la tira de gastos fijos. Es un **dato del pago**, no contabilidad: la deuda con la tarjeta entra entera
+  el día de la compra, como siempre, y las cuotas dicen cómo se va a pagar. Se anota DESPUÉS de guardar
+  (`saveCardInstallments` → `setCardInstallments` → RPC), sobre el comprobante del paquete que movió la tarjeta (el
+  gasto, o el pago de una compra); si esa anotación falla, el pago queda y se avisa. Se lee en la ficha del comprobante
+  («Quedó en Visa, en 3 cuotas»; en la factura, «La pagaste en el momento, con Pago #N, en 3 cuotas») y en los
+  movimientos de la tarjeta («Pago · 3 cuotas»). No reparte la deuda por mes ni proyecta resúmenes.
 - **Impuestos automáticos** (`lib/accounting/taxes.ts`, Ajustes › Impuestos): Ingresos Brutos y Comercio e Industria van
   dentro del asiento del cierre del día (`buildSalesClose`), y el impuesto al cheque es un `bank_expense` en el mismo
   bundle del pago (`withBankTax`, marcado con `AUTO_BANK_TAX_NOTE`). Base por defecto: lo facturado sin IVA.
@@ -107,6 +118,7 @@ Migraciones `20261104120000`–`120800`. Lo que queda disponible:
 | `acc_upload_link_open(p_token)` | Público. `{ok, reason?, tenant_name, bucket, uploaded, slots}`. |
 | `acc_upload_link_add(p_token, p_path, p_file_name, p_mime_type, p_size_bytes)` | Público. |
 | `acc_upload_link_close(p_tenant_id, p_link_id)` | Al terminar. |
+| `acc_set_card_installments(p_tenant_id, p_bundle_id, p_installments)` | Migración `20261116141226`. Anota en `acc_card_installments` las cuotas (2–48; `1` borra el dato) de los comprobantes vigentes de ese paquete que movieron una tarjeta de crédito. Devuelve `{documents}`; si el paquete no pagó con tarjeta, `0` y no hace nada. Solo quien escribe. La tabla se lee con la política de lectores (`getCardInstallments`). |
 
 Un `payment` puede llevar `recurringExpenseId`: pagarle a Rentas o a la Municipalidad deja pagado su gasto fijo sin
 cargar el gasto de nuevo (ya se devengó en cada cierre).
@@ -117,6 +129,17 @@ pagar). La contadora puede usar `postManualEntry`. Ninguna compra exige punto de
 ninguno (`voucherNumberIncomplete`), y al Libro IVA entra solo la que trae número (`entersIvaBook`).
 
 ## Smoke manual
+
+**Cuotas con tarjeta (16/11/2026, `demo-administracion`, con clics de verdad por CDP y verificando en la base)**
+1. En el bar de ejemplo se creó la cuenta «Visa del bar» (Tarjeta de crédito).
+2. «Nuevo gasto» (`?accion=gasto`): $ 90.000 a Limpieza Demo SA, «¿Con qué pagaste?» = Visa del bar. Aparece «¿En
+   cuántas cuotas?»; con el banco, desaparece. Se eligió 3: «3 cuotas de $ 30.000. La deuda con la tarjeta entra
+   entera hoy.» En el celular (390 px) los seis botones entran en un renglón y miden 44 px.
+3. «Cargar gasto» con el punto de venta propuesto (0012) y sin número: guarda (antes trababa). Quedaron la compra #154
+   (Factura A sin número) y el pago #155 desde la tarjeta, con `installments = 3` y una fila de auditoría
+   (`acc_card_installments.set`).
+4. La ficha del pago dice «Quedó en Visa del bar, en 3 cuotas»; la de la factura, «La pagaste en el momento, con Pago
+   #155, en 3 cuotas»; los movimientos de la tarjeta, «Limpieza Demo SA · Pago · 3 cuotas».
 
 Hecho el 04/11/2026 en `demo-administracion`, contra el sistema compilado (`next build` + `next start`), con clics y
 teclas de verdad por CDP y verificando en la base. Compu, celular y oscuro.

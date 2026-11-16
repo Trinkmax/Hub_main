@@ -23,6 +23,8 @@ import {
   treasuryAfterWords,
 } from '@/components/administracion/acciones/gasto-papel'
 import { SavedNote, TreasuryAfterHint } from '@/components/administracion/acciones/gasto-piezas'
+import { InstallmentsField } from '@/components/administracion/acciones/installments-field'
+import { saveCardInstallments } from '@/components/administracion/acciones/save-installments'
 import { ADD_LINK } from '@/components/administracion/acciones/sheet-parts'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { attachPendingFiles } from '@/components/administracion/adjuntos/upload'
@@ -63,6 +65,7 @@ import {
 } from '@/lib/accounting/actions/documents'
 import { saveParty } from '@/lib/accounting/actions/master'
 import { amountLooksOff, pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
+import { isCreditCard } from '@/lib/accounting/installments'
 import type { InvoiceRead } from '@/lib/accounting/invoice-read'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
@@ -103,6 +106,7 @@ import {
   VoucherNumberInput,
   type VoucherNumberValue,
   voucherPart,
+  voucherParts,
 } from '../../_components/voucher-number-input'
 import { isPurchaseImputation } from '../../_lib/accounts'
 import { IIBB_JURISDICTIONS } from '../../_lib/jurisdictions'
@@ -429,6 +433,8 @@ export function PurchaseForm({
   const [family, setFamily] = useState<PurchaseFamily>(initialFamily)
   const [voucherType, setVoucherType] = useState<VoucherType | null>(null)
   const [voucherNumber, setVoucherNumber] = useState<VoucherNumberValue>({ pos: '', number: '' })
+  /** El punto de venta que propuso el sistema (el de la última factura del proveedor). */
+  const [suggestedPos, setSuggestedPos] = useState<string | null>(null)
   const [issueDate, setIssueDate] = useState<string | null>(today)
   const [dueDate, setDueDate] = useState<string | null>(today)
   const [amountMode, setAmountMode] = useState<'total' | 'detail'>('total')
@@ -528,6 +534,8 @@ export function PurchaseForm({
   const [savingTerm, setSavingTerm] = useState(false)
   /** Con «Cargar otra»: lo último que se cargó y cuántas van, para no perder el hilo. */
   const [lastSaved, setLastSaved] = useState<{ text: string; count: number } | null>(null)
+  /** Pagada con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
+  const [installments, setInstallments] = useState(1)
   /** Cambia para que el panel de la foto cierre su link y arranque con un QR nuevo. */
   const [panelNonce, setPanelNonce] = useState(0)
   /** Los campos que acaba de completar el QR se encienden un momento. */
@@ -706,9 +714,9 @@ export function PurchaseForm({
         setVatRateBp(d.vatRateBp as VatRateBp)
       }
       if (d.pointOfSale !== null) {
-        setVoucherNumber((prev) =>
-          prev.pos === '' ? { ...prev, pos: padPos(String(d.pointOfSale)) } : prev,
-        )
+        const proposed = padPos(String(d.pointOfSale))
+        setSuggestedPos(proposed)
+        setVoucherNumber((prev) => (prev.pos === '' ? { ...prev, pos: proposed } : prev))
       }
       // Lo que se pagó la última vez con este proveedor, si nadie eligió otra cosa.
       if (d.treasuryAccountId && !touched.current.treasury) {
@@ -839,6 +847,7 @@ export function PurchaseForm({
     setCuitOffer(null)
     // El punto de venta propuesto era del proveedor anterior; lo que ya se tipeó no se borra.
     setVoucherNumber((prev) => (prev.number === '' ? { pos: '', number: '' } : prev))
+    setSuggestedPos(null)
     resetDue()
     resetAccountFor(id)
     posting.clearFieldErrors()
@@ -861,8 +870,8 @@ export function PurchaseForm({
   const formState: PurchaseFormState = {
     party,
     voucherType,
-    pointOfSale: voucherPart(voucherNumber.pos),
-    number: voucherPart(voucherNumber.number),
+    // El punto de venta propuesto no cuenta si nadie escribió el número: sin número se guarda igual.
+    ...voucherParts(voucherNumber, suggestedPos),
     issueDate,
     dueDate,
     amountMode,
@@ -935,6 +944,10 @@ export function PurchaseForm({
   const onSaved = (saved: SavedState) => {
     if (paying && payNow?.treasuryAccountId) {
       rememberTreasury(tenantSlug, payNow.treasuryAccountId)
+      // Pagada con tarjeta de crédito: en cuántas cuotas (se anota aparte, después de guardar).
+      if (isCreditCard(data.treasuries.find((t) => t.id === payNow.treasuryAccountId))) {
+        void saveCardInstallments(tenantSlug, saved.result.bundle_id, installments)
+      }
     }
     posting.undoToast(saved.message, saved)
     const remember = rememberOnSave.current
@@ -977,8 +990,11 @@ export function PurchaseForm({
       touched.current.account = false
       setVoucherType(null)
       setVoucherNumber({ pos: '', number: '' })
+      setSuggestedPos(null)
       setAccountId(null)
     } else {
+      // Sigue el mismo proveedor: su punto de venta queda propuesto para la que viene.
+      setSuggestedPos(voucherNumber.pos === '' ? null : voucherNumber.pos)
       setVoucherNumber((prev) => ({ pos: prev.pos, number: '' }))
     }
     setTotalCents(null)
@@ -996,6 +1012,7 @@ export function PurchaseForm({
     setVatAdjust(0)
     setRecurringId(null)
     setPayNow((prev) => (prev ? { ...prev, amountCents: null, date: today, reference: '' } : null))
+    setInstallments(1)
     setNotes('')
     setRemito('')
     // [Cambiar] valía para esa compra: la próxima vuelve a la cuenta de la ficha.
@@ -2496,6 +2513,18 @@ export function PurchaseForm({
                         )}
                       </div>
                     </div>
+                  ) : null}
+                  {/* Con la tarjeta: en cuántas cuotas, a lo ancho (en la columna de «Salió de» no entra) */}
+                  {isCreditCard(data.treasuries.find((t) => t.id === payNow.treasuryAccountId)) ? (
+                    <InstallmentsField
+                      // Después de «Cargar otra» arranca de nuevo en un solo pago.
+                      key={lastSaved?.count ?? 0}
+                      value={installments}
+                      onChange={setInstallments}
+                      amountCents={payAmount}
+                      disabled={posting.pending}
+                      className="@lg:col-span-2"
+                    />
                   ) : null}
                 </div>
               ) : null}

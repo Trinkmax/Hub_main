@@ -35,6 +35,8 @@ import {
   recurringPrefill,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/quick-expense'
 import type { SheetData } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
+import { InstallmentsField } from '@/components/administracion/acciones/installments-field'
+import { saveCardInstallments } from '@/components/administracion/acciones/save-installments'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { attachPendingFiles } from '@/components/administracion/adjuntos/upload'
 import { type ComboOption, EntityCombobox } from '@/components/administracion/entity-combobox'
@@ -54,6 +56,7 @@ import {
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
 import { rememberRecurringSupplier } from '@/lib/accounting/actions/master'
 import { pickTreasury } from '@/lib/accounting/defaults'
+import { isCreditCard } from '@/lib/accounting/installments'
 import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import { bankTaxOf, bpLabel } from '@/lib/accounting/taxes'
@@ -202,6 +205,8 @@ function PayForm({
     () => prefill?.voucher ?? quickVoucherFromType(recurring?.voucherType) ?? 'none',
   )
   const [files, setFiles] = useState<File[]>([])
+  /** Con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
+  const [installments, setInstallments] = useState(1)
   // Con factura se escribe; el QR lo completa con cualquier papel (un tique con número va al libro).
   const [numberText, setNumberText] = useState<VoucherNumberValue>({ pos: '', number: '' })
   // Solo cuenta con factura y un gasto fijo sin proveedor (`stripAsksSupplier`). `null` = nadie eligió:
@@ -286,6 +291,10 @@ function PayForm({
 
   const onSaved = (saved: SavedState) => {
     if (treasuryId) rememberTreasury(tenantSlug, treasuryId)
+    // Con tarjeta de crédito: en cuántas cuotas (se anota aparte, después de guardar).
+    if (isCreditCard(data.treasuries.find((t) => t.id === treasuryId))) {
+      void saveCardInstallments(tenantSlug, saved.result.bundle_id, installments)
+    }
     posting.undoToast(saved.message, saved)
     const documentId = saved.result.documents[0]?.id ?? null
     // La foto sube después de guardar: si alguna no sube, avisa y se suma desde el comprobante.
@@ -644,6 +653,15 @@ function PayForm({
         </Link>
       </div>
 
+      {isCreditCard(data.treasuries.find((t) => t.id === treasuryId)) ? (
+        <InstallmentsField
+          value={installments}
+          onChange={setInstallments}
+          amountCents={amountCents}
+          disabled={posting.pending}
+          compact
+        />
+      ) : null}
       {problem ? (
         <p role="status" className="text-xs text-warning-text text-pretty">
           {problem}

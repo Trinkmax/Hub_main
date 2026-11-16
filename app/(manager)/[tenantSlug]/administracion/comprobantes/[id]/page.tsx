@@ -22,6 +22,7 @@ import {
 } from '@/lib/accounting/queries'
 import { listDocumentAttachments } from '@/lib/accounting/queries/attachments'
 import { getDocumentOrigin, getLinkedDocuments } from '@/lib/accounting/queries/document-origin'
+import { getCardInstallments } from '@/lib/accounting/queries/installments'
 import { reimputeAccountOptions, reimputeTargets } from '@/lib/accounting/reimpute'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
@@ -243,6 +244,12 @@ export default async function ComprobantePage({
     !doc.recurringExpenseId &&
     doc.accountingDate.slice(0, 7) === today.slice(0, 7)
   const hasTreasury = doc.lines.some((line) => line.treasuryAccountId !== null)
+  // Dónde puede haber cuotas anotadas: en este papel si movió una caja, y en los pagos unidos a él.
+  const installmentIds = [
+    ...(hasTreasury ? [doc.id] : []),
+    ...doc.bundleSiblings.map((sibling) => sibling.id),
+    ...doc.allocations.flatMap((a) => (a.otherDocumentId ? [a.otherDocumentId] : [])),
+  ]
 
   // Un cobro o un conteo cubren ventas de varios días: para nombrar cada cierre por su fecha
   // («Cierre del mar 01/09») y no por su número interno.
@@ -263,6 +270,7 @@ export default async function ComprobantePage({
     catalog,
     flags,
     reimputations,
+    installments,
   ] = await Promise.all([
     // La foto o el PDF del comprobante.
     settleQuery(listDocumentAttachments(tenantId, doc.id)),
@@ -282,6 +290,8 @@ export default async function ComprobantePage({
     settleQuery(loadPostingCatalog(tenantId)),
     settleQuery(getImputationFlags(tenantId, { from: doc.accountingDate, to: doc.accountingDate })),
     settleQuery(listLineReimputations(tenantId, doc.id)),
+    // Si este comprobante, o el pago unido a él, salió de la tarjeta: en cuántas cuotas.
+    installmentIds.length > 0 ? getCardInstallments(tenantId, installmentIds) : null,
   ])
 
   const arcaCard = arcaOutcome?.ok ? arcaOutcome.data : null
@@ -321,6 +331,8 @@ export default async function ComprobantePage({
     today,
     canWrite,
     treasuryKinds: treasuries?.ok ? new Map(treasuries.data.map((t) => [t.id, t.kind])) : null,
+    installments: installments?.get(doc.id) ?? null,
+    linkedInstallments: installments,
     recurring: !doc.recurringExpenseId
       ? undefined
       : recurringOutcome?.ok

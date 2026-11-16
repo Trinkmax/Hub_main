@@ -30,6 +30,23 @@ export function voucherPart(text: string): number | null {
 }
 
 /**
+ * Las dos partes del número, como van a la base. El punto de venta que propuso el sistema (el de la
+ * última factura de ese proveedor) no cuenta mientras nadie escriba el número: guardar «sin número»
+ * no puede fallar por algo que la persona no tipeó. Un punto de venta escrito a mano sin su número sí
+ * queda a medias, y eso se avisa.
+ */
+export function voucherParts(
+  value: VoucherNumberValue,
+  suggestedPos: string | null,
+): { pointOfSale: number | null; number: number | null } {
+  const proposedOnly = value.number === '' && suggestedPos !== null && value.pos === suggestedPos
+  return {
+    pointOfSale: proposedOnly ? null : voucherPart(value.pos),
+    number: voucherPart(value.number),
+  }
+}
+
+/**
  * Punto de venta y número de un comprobante (H.6): dos campos del panel, el
  * teclado numérico en el celular, y pegar «0003-00001290» en cualquiera de
  * los dos completa los dos. Al salir se rellenan los ceros.

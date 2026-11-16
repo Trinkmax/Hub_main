@@ -32,6 +32,7 @@ import {
 import { balancePoints, balanceTrend, weekBuckets } from '@/lib/accounting/home'
 import { getCashDaily } from '@/lib/accounting/queries/cash-flow'
 import { getTreasuryCheck } from '@/lib/accounting/queries/forms'
+import { getCardInstallments } from '@/lib/accounting/queries/installments'
 import { exportHref } from '@/lib/accounting/queries/labels'
 import { getAccountingSettings, listSalesMethods } from '@/lib/accounting/queries/settings'
 import { type QueryOutcome, settleQuery } from '@/lib/accounting/queries/shared'
@@ -185,11 +186,26 @@ export default async function CajaPage({
   // Lo más nuevo arriba cuando el período entra en una página (lo normal); si
   // hay que paginar, del más viejo al más nuevo, que es como pagina la base.
   const onePage = firstPage && data !== null && !data.nextCursor
+  // En la tarjeta, cada compra dice en cuántas cuotas se pagó (si se anotó).
+  const installments =
+    treasury.kind === 'credit_card'
+      ? await getCardInstallments(
+          tenantId,
+          lines.flatMap((r) => (r.documentId ? [r.documentId] : [])),
+        )
+      : null
   const days = groupByDay(
     lines
       .map((r, index) => movementFromTreasuryRow(r, index, treasury))
       .filter((m) => m !== null)
-      .map((m) => activityFromMovement(m, { view: 'one', kindOf: () => treasury.kind })),
+      .map((m) =>
+        activityFromMovement(
+          installments && m.documentId
+            ? { ...m, installments: installments.get(m.documentId) ?? null }
+            : m,
+          { view: 'one', kindOf: () => treasury.kind },
+        ),
+      ),
     { today, newestFirst: onePage },
   )
 

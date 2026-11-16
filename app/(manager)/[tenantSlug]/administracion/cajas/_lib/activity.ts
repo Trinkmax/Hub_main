@@ -85,6 +85,8 @@ export type ActivityMovement = {
   balanceCents: number
   treasuryId: string | null
   treasuryName: string | null
+  /** Pagado con tarjeta en cuotas: cuántas. Sin dato = un solo pago. */
+  installments?: number | null
 }
 
 export type ActivityRow = {
@@ -269,7 +271,7 @@ export function activityFromMovement(
     key: m.key,
     date: m.date,
     title,
-    sub,
+    sub: m.installments && m.installments > 1 ? `${sub}${SEP}${m.installments} cuotas` : sub,
     icon,
     direction,
     cents,
