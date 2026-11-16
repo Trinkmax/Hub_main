@@ -8,7 +8,7 @@
 import { vatFromNet } from '@/lib/accounting/iva'
 import type { PurchaseValues } from '@/lib/accounting/server/document-types'
 import type { IvaCondition, VatRateBp, VoucherType } from '@/lib/accounting/types'
-import { VOUCHER_CATALOG, voucherNumberRequired } from '@/lib/accounting/voucher-types'
+import { VOUCHER_CATALOG, voucherNumberIncomplete } from '@/lib/accounting/voucher-types'
 import { docKindOf } from './vouchers'
 
 /** Las alícuotas del detalle, en el orden en que se muestran (las tres primeras siempre). */
@@ -243,16 +243,29 @@ export function buildPurchaseValues(state: PurchaseFormState): {
     if (state.payNow.treasuryAccountId === null) missing.payTreasury = 'Elegí con qué pagaste.'
   }
 
+  // El número no es obligatorio (16/11/2026), pero la mitad no dice nada: en una factura se avisa. El
+  // tique sigue como estaba: a medias va sin ninguno.
+  if (
+    type !== null &&
+    type !== 'tique' &&
+    VOUCHER_CATALOG[type].numbered &&
+    voucherNumberIncomplete(state.pointOfSale, state.number)
+  ) {
+    missing.number =
+      state.number === null
+        ? 'Falta el número (o borrá el punto de venta).'
+        : 'Falta el punto de venta (o borrá el número).'
+  }
+
   if (Object.keys(missing).length > 0 || party === null || type === null || !state.issueDate) {
     return { values: null, missing, fieldOf }
   }
 
   const docKind = docKindOf(type)
-  // Un tique no exige número: con los dos entra al Libro IVA; a medias, va sin ninguno (la base no
-  // acepta un punto de venta sin número). El remito y la DDJJ nunca llevan.
+  // Ningún comprobante exige número: con los dos entra al Libro IVA; sin ellos se guarda igual y no
+  // entra (la base no acepta un punto de venta sin número). El remito y la DDJJ nunca llevan.
   const numbered =
-    VOUCHER_CATALOG[type].numbered &&
-    (voucherNumberRequired(type) || (state.pointOfSale !== null && state.number !== null))
+    VOUCHER_CATALOG[type].numbered && state.pointOfSale !== null && state.number !== null
   const values: PurchaseFormValues = {
     docKind,
     partyId: party.kind === 'existing' ? party.id : null,

@@ -175,25 +175,23 @@ export function paperOutcomeNote(input: {
  * Mientras falte algo el ticket se ve en borrador y dice esto en la letra
  * chica, en vez de prometer «Entra al Libro IVA» con un dato obligatorio vacío.
  *
- * `invoiceNumber`: con Factura A, B o C el punto de venta y el número son
- * obligatorios (lo exige el esquema; sin ellos no hay asiento que mostrar).
+ * El número de la factura no figura acá: desde el 16/11/2026 no es obligatorio
+ * (sin número se guarda igual y no entra al Libro IVA).
  */
 export function missingForSummary(missing: {
   amount: boolean
   target: boolean
   treasury: boolean
-  invoiceNumber?: boolean
 }): string | null {
   const parts = [
     missing.amount ? 'cuánto gastaste' : null,
     missing.target ? 'en qué se gastó' : null,
     missing.treasury ? 'con qué pagaste' : null,
   ].filter((part): part is string => part !== null)
-  const number = missing.invoiceNumber === true
-  if (parts.length === 0) return number ? 'Falta el número de la factura.' : null
+  if (parts.length === 0) return null
   const last = parts[parts.length - 1]
   const list = parts.length === 1 ? last : `${parts.slice(0, -1).join(', ')} y ${last}`
-  return `Falta decir ${list}.${number ? ' También falta el número de la factura.' : ''}`
+  return `Falta decir ${list}.`
 }
 
 /**

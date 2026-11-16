@@ -62,8 +62,8 @@ import {
   postQuickExpense,
 } from '@/lib/accounting/actions/documents'
 import { saveParty } from '@/lib/accounting/actions/master'
-import type { ArcaQrData } from '@/lib/accounting/arca-qr'
 import { amountLooksOff, pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
+import type { InvoiceRead } from '@/lib/accounting/invoice-read'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
@@ -73,7 +73,6 @@ import {
   isVoucherType,
   VOUCHER_CATALOG,
   voucherConditionCheck,
-  voucherNumberRequired,
 } from '@/lib/accounting/voucher-types'
 import { ivaOptionsWith } from '@/lib/arca/lookup-fill'
 import { formatIsoDay, formatMonthYear } from '@/lib/dates'
@@ -128,6 +127,7 @@ import {
   dueSameDayWarning,
   dueTermOf,
   findPartyByCuit,
+  findPartyByName,
   INVOICING_CHOICES,
   initialPayNow,
   invoicingGap,
@@ -532,9 +532,12 @@ export function PurchaseForm({
   const [panelNonce, setPanelNonce] = useState(0)
   /** Los campos que acaba de completar el QR se encienden un momento. */
   const [flash, setFlash] = useState(false)
-  /** La CUIT del QR no está entre los proveedores: se ofrece crearlo. */
+  /** Quien emitió el papel leído no está entre los proveedores: se ofrece crearlo con lo que se leyó. */
   const [cuitOffer, setCuitOffer] = useState<{
-    cuit: string
+    /** `null`: la IA leyó el nombre pero no la CUIT. */
+    cuit: string | null
+    /** Solo lo trae la lectura con IA. */
+    name: string | null
     condition: IvaCondition | null
   } | null>(null)
 
@@ -588,7 +591,6 @@ export function PurchaseForm({
         : 'purchase'
   const isCreditNote = docKind === 'purchase_credit_note'
   const paying = payNow !== null && !isCreditNote
-  const numberRequired = voucherType ? voucherNumberRequired(voucherType) : true
   const vat = discriminatesVat(voucherType)
 
   // ── El papel: los botones de abajo de la letra (y, para lo demás, una lista) ──
@@ -1049,20 +1051,12 @@ export function PurchaseForm({
   const partyId = party?.kind === 'existing' ? party.id : null
   const pos = voucherPart(voucherNumber.pos)
   const number = voucherPart(voucherNumber.number)
-  // Un tique va con los dos o con ninguno: un punto de venta solo (el que propone el sistema) no cuenta.
+  // El número va con sus dos partes o no va: un punto de venta solo (el que propone el sistema) no cuenta.
   const hasBothParts = pos !== null && number !== null
   const carriesNumber =
-    voucherType !== null &&
-    VOUCHER_CATALOG[voucherType].numbered &&
-    (numberRequired || hasBothParts)
+    voucherType !== null && VOUCHER_CATALOG[voucherType].numbered && hasBothParts
   useEffect(() => {
-    if (
-      !partyId ||
-      total === null ||
-      !issueDate ||
-      !voucherType ||
-      (numberRequired && number === null)
-    ) {
+    if (!partyId || total === null || !issueDate || !voucherType) {
       setDuplicate(null)
       return
     }
@@ -1086,17 +1080,7 @@ export function PurchaseForm({
       alive = false
       window.clearTimeout(timer)
     }
-  }, [
-    partyId,
-    total,
-    issueDate,
-    voucherType,
-    numberRequired,
-    carriesNumber,
-    pos,
-    number,
-    tenantSlug,
-  ])
+  }, [partyId, total, issueDate, voucherType, carriesNumber, pos, number, tenantSlug])
 
   // Con `ASK_WHEN_UNKNOWN` (apagado): sin plazo, el vencimiento hay que tocarlo.
   const dueAnswered = isCreditNote || payNow !== null || dueTouched || !asksDue({ termDays })
@@ -1262,9 +1246,8 @@ export function PurchaseForm({
     }
     writeVoucher(type)
   }
-  // Un tique sin número no entra al Libro IVA: para ese papel el CUIT no hace falta.
-  const entersIvaBook = (type: VoucherType) =>
-    VOUCHER_CATALOG[type].ivaBook && (voucherNumberRequired(type) || hasBothParts)
+  // Sin número el comprobante no entra al Libro IVA: para ese papel el CUIT no hace falta.
+  const entersIvaBook = (type: VoucherType) => VOUCHER_CATALOG[type].ivaBook && hasBothParts
   const partyGap =
     existing && voucherType
       ? invoicingGap({
@@ -1447,15 +1430,17 @@ export function PurchaseForm({
   }
 
   /**
-   * Llegó una foto con el QR de ARCA: se completa el papel, y cada campo se enciende para que se vea
-   * qué se puso. Lo que no se leyó se queda como estaba. Después, revisar y listo.
+   * Llegó una foto y se leyó (por su QR de ARCA o con IA): se completa el papel, y cada campo se
+   * enciende para que se vea qué se puso. Lo que no se leyó se queda como estaba. Después, revisar y
+   * listo.
    */
-  const applyRead = (read: ArcaQrData) => {
+  const applyRead = (read: InvoiceRead) => {
     posting.clearFieldErrors()
-    const found = findPartyByCuit(
-      data.parties.filter((p) => PURCHASE_PARTY_KINDS.has(p.kind)),
-      read.cuit,
-    )
+    const candidates = data.parties.filter((p) => PURCHASE_PARTY_KINDS.has(p.kind))
+    // Por CUIT; si la IA no lo llegó a leer, por el nombre exacto de quien la emite.
+    const found =
+      (read.cuit ? findPartyByCuit(candidates, read.cuit) : null) ??
+      (read.cuit === null ? findPartyByName(candidates, read.issuerName) : null)
     const nextFamily = read.voucherType ? familyOf(read.voucherType) : family
     if (nextFamily !== family) {
       setFamily(nextFamily)
@@ -1463,7 +1448,13 @@ export function PurchaseForm({
     }
     if (found && found.id !== partyId) choosePartyId(found.id)
     setCuitOffer(
-      found ? null : { cuit: read.cuit, condition: conditionForVoucher(read.voucherType) },
+      found || (read.cuit === null && read.issuerName === null)
+        ? null
+        : {
+            cuit: read.cuit,
+            name: read.issuerName,
+            condition: conditionForVoucher(read.voucherType),
+          },
     )
     if (read.voucherType) {
       const known = found ?? existing
@@ -1487,12 +1478,14 @@ export function PurchaseForm({
         setAsking(read.voucherType)
       }
     }
-    setVoucherNumber({
-      pos: padPos(String(read.pointOfSale)),
-      number: padNumber(String(read.number)),
-    })
-    if (read.voucherType === 'tique') setTiqueNumber(true)
-    setIssueDate(read.date)
+    if (read.pointOfSale !== null && read.number !== null) {
+      setVoucherNumber({
+        pos: padPos(String(read.pointOfSale)),
+        number: padNumber(String(read.number)),
+      })
+      if (read.voucherType === 'tique') setTiqueNumber(true)
+    }
+    if (read.date !== null) setIssueDate(read.date)
     if (read.totalCents !== null) {
       setAmountMode('total')
       setTotalCents(read.totalCents)
@@ -1560,10 +1553,25 @@ export function PurchaseForm({
         .join(' · ')
     : null
   // Lo que pide el papel sigue a la letra que se ve, aunque todavía falte confirmarla.
-  const shownNeedsNumber = shownType ? voucherNumberRequired(shownType) : true
+  // El número no es obligatorio en ningún papel (16/11/2026). En una factura el casillero está siempre
+  // a la vista, como opcional; en un tique aparece recién cuando dicen que lo tiene.
   const showTiqueFields =
     shownType === 'tique' && (tiqueNumber || voucherNumber.number !== '' || Boolean(errors.number))
-  const showNumber = shownType !== null && (shownNeedsNumber || showTiqueFields)
+  const showNumber =
+    shownType !== null &&
+    VOUCHER_CATALOG[shownType].numbered &&
+    (shownType !== 'tique' || showTiqueFields)
+  // Una factura que discrimina IVA y va sin número: se avisa qué se pierde.
+  const numberlessNote =
+    shownType !== null &&
+    shownType !== 'tique' &&
+    showNumber &&
+    !hasBothParts &&
+    VOUCHER_CATALOG[shownType].ivaBook
+      ? VOUCHER_CATALOG[shownType].purchaseVat === 'no'
+        ? 'Sin número no entra al Libro IVA.'
+        : 'Sin número no entra al Libro IVA ni se toma su IVA.'
+      : null
 
   return (
     <SimplePage className="pb-6 md:pb-6">
@@ -1774,8 +1782,8 @@ export function PurchaseForm({
                         size="sm"
                         className="h-11 md:h-8"
                         onClick={() =>
-                          startNewParty('', {
-                            taxId: formatCuit(cuitOffer.cuit),
+                          startNewParty(cuitOffer.name ?? '', {
+                            taxId: cuitOffer.cuit ? formatCuit(cuitOffer.cuit) : undefined,
                             condition: cuitOffer.condition,
                           })
                         }
@@ -1784,7 +1792,9 @@ export function PurchaseForm({
                       </Button>
                     }
                   >
-                    La CUIT {formatCuit(cuitOffer.cuit)} no está entre tus proveedores.
+                    {cuitOffer.cuit
+                      ? `${cuitOffer.name ? `${cuitOffer.name} (CUIT ${formatCuit(cuitOffer.cuit)})` : `La CUIT ${formatCuit(cuitOffer.cuit)}`} no está entre tus proveedores.`
+                      : `${cuitOffer.name} no está entre tus proveedores.`}
                   </InlineNotice>
                 ) : null}
 
@@ -1848,10 +1858,13 @@ export function PurchaseForm({
                   <PaperField
                     id={ids('number')}
                     label="Punto de venta y número"
-                    required={shownNeedsNumber}
-                    optional={!shownNeedsNumber}
+                    optional
                     error={errors.number}
-                    hint={lastVoucher ? `La última fue ${lastVoucher}.` : undefined}
+                    hint={
+                      [numberlessNote, lastVoucher ? `La última fue ${lastVoucher}.` : null]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
                   >
                     {/* Los ejemplos van apagados: apurado, el ejemplo parecía un número ya puesto. */}
                     <FlashCell
@@ -1866,7 +1879,9 @@ export function PurchaseForm({
                           posting.clearFieldErrors()
                         }}
                         invalid={Boolean(errors.number)}
-                        describedBy={lastVoucher ? `${ids('number')}-hint` : undefined}
+                        describedBy={
+                          numberlessNote || lastVoucher ? `${ids('number')}-hint` : undefined
+                        }
                       />
                     </FlashCell>
                   </PaperField>

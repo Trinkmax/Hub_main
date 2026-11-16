@@ -29,7 +29,18 @@ tradicional no quiere decir que debe ser feo».
   diario, mayor y sumas y saldos muestran todo. El Libro IVA solo tiene comprobantes fiscales, como siempre.
 - **«Mover plata» sale del frente, no se borra.** Queda en el menú «⋯» de cada cuenta (Transferir a otra cuenta), porque
   un depósito al banco lo necesita para que el saldo cierre.
-- **Leer la factura** es leer su QR de ARCA (exacto y gratis). Sin QR, se tipea. Leer con IA necesitaría una clave.
+- **Leer la factura** es, primero, leer su QR de ARCA (exacto y gratis). Si el QR no aparece (reclamo de los socios del
+  16/11/2026: «raras veces detecta»; además un tique o una factura de talonario no lo traen), la foto se lee **con IA**
+  (`readInvoicePhoto` → `lib/accounting/server/invoice-reader.ts`): la foto viaja achicada, vuelve una PROPUESTA
+  (proveedor por CUIT o por nombre, papel, número, fecha y total) y la pantalla pide revisarla; nada se guarda solo. Lo
+  que la IA devuelve no se cree tal cual (`readFromAi` descarta un CUIT que no valida, una fecha del futuro, medio
+  número). Necesita `ANTHROPIC_API_KEY`: sin la clave sigue leyendo solo el QR. Tope de 30 lecturas cada 10 minutos por
+  persona. Está en la compra y en la tira de gastos fijos; «Nuevo gasto» todavía adjunta sin leer.
+- **El número de la factura no es obligatorio** (pedido de los socios, 16/11/2026; migración `acc_factura_sin_numero`):
+  en una COMPRA van el punto de venta y el número, los dos, o ninguno. Sin número se guarda igual, no entra al Libro
+  IVA y no se le toma el IVA (el total va entero a la imputación); lo que solo existe en el libro (IVA por renglón,
+  percepciones, la factura de comisiones) sí pide el número. Es la regla que ya tenía el tique desde el 29/10. Lo que
+  emite el bar sigue llevando número siempre.
 - **Impuestos automáticos** (`lib/accounting/taxes.ts`, Ajustes › Impuestos): Ingresos Brutos y Comercio e Industria van
   dentro del asiento del cierre del día (`buildSalesClose`), y el impuesto al cheque es un `bank_expense` en el mismo
   bundle del pago (`withBankTax`, marcado con `AUTO_BANK_TAX_NOTE`). Base por defecto: lo facturado sin IVA.
@@ -102,8 +113,8 @@ cargar el gasto de nuevo (ya se devengó en cada cierre).
 
 En `PostingContext`: `ctx.settings.taxSettings`, `ctx.treasuries.get(id).chargesBankTax`, `ctx.parties.get(id).systemKey`.
 Partícipes del sistema: `personal` (Sueldos a pagar), `rentas` (IIBB a pagar), `municipalidad` (Comercio e Industria a
-pagar). La contadora puede usar `postManualEntry`. Un tique ya no exige punto de venta ni número
-(`voucherNumberRequired`).
+pagar). La contadora puede usar `postManualEntry`. Ninguna compra exige punto de venta ni número: van los dos o
+ninguno (`voucherNumberIncomplete`), y al Libro IVA entra solo la que trae número (`entersIvaBook`).
 
 ## Smoke manual
 
@@ -125,7 +136,8 @@ teclas de verdad por CDP y verificando en la base. Compu, celular y oscuro.
   `bank_expense` en un solo paquete, y el impuesto (0,6 %) partido en computable y gasto.
 - Tique sin número: guarda y no pide punto de venta. Repetido: avisa «Ya hay un comprobante de $ X… ¿Es otro?».
 - Tildar un gasto fijo: tira con Salió de, Papel, QR e impuesto al cheque; cae el sello PAGADO y el totalizador cuenta.
-  Con factura pide el número y, si el gasto fijo no tiene proveedor, el proveedor (que queda guardado; 12/11/2026).
+  Con factura, si el gasto fijo no tiene proveedor, viene elegido solo (el que se llama igual, o uno nuevo con ese
+  nombre) y queda guardado; el número y el CUIT son opcionales (16/11/2026).
 - Gasto fijo con cuenta de Ingresos Brutos: tildar abre el Pago a Rentas con lo devengado y la fila queda Pagado.
 
 **Sueldos**

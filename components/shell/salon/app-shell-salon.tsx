@@ -1,3 +1,4 @@
+import { PosPrintStation } from '@/components/pos/print/print-station'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
@@ -33,6 +34,7 @@ export function AppShellSalon({
   isPlatformAdmin,
   email,
   viewAs = null,
+  printStation = null,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'feature_flags'>
@@ -41,6 +43,12 @@ export function AppShellSalon({
   email: string
   /** «Ver como» para la hoja «Tu cuenta»; null si esta persona no puede usarlo. */
   viewAs?: ViewAsState | null
+  /**
+   * Con el punto de venta: las sucursales del bar, para que la compu que tiene la comandera imprima
+   * sola las comandas desde cualquier pantalla del salón. No dibuja nada, y no hace nada en un
+   * dispositivo que no prendió «Imprimir las comandas acá» (se guarda por sucursal en cada uno).
+   */
+  printStation?: { branchIds: string[]; timeZone: string } | null
   children: React.ReactNode
 }) {
   const features = getEffectiveFeatures(tenant)
@@ -70,6 +78,14 @@ export function AppShellSalon({
           isPlatformAdmin={isPlatformAdmin}
         />
 
+        {printStation?.branchIds.map((branchId) => (
+          <PosPrintStation
+            key={branchId}
+            slug={tenant.slug}
+            branchId={branchId}
+            timeZone={printStation.timeZone}
+          />
+        ))}
         <ServiceWorkerRegistration />
         <PwaInstallPrompt />
       </div>

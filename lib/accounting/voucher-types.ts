@@ -314,11 +314,22 @@ export function isVoucherType(value: unknown): value is VoucherType {
 }
 
 /**
- * ¿El comprobante exige punto de venta y número? Un tique no (reunión del 29/10/2026): sin número se guarda igual y
- * no entra al Libro IVA; con número, entra.
+ * ¿Al número del comprobante le falta la mitad? Ningún comprobante EXIGE punto de venta y número: el
+ * tique desde la reunión del 29/10/2026 y las facturas desde el pedido de los socios del 16/11/2026
+ * («que el número de factura no sea obligatorio»). Sin número se guarda igual y no entra al Libro
+ * IVA (ni se toma su IVA); con número, entra. Lo único que no vale es la mitad: un punto de venta
+ * sin número, o un número sin punto de venta.
  */
-export function voucherNumberRequired(type: VoucherType): boolean {
-  return VOUCHER_CATALOG[type].numbered && type !== 'tique'
+export function voucherNumberIncomplete(
+  pointOfSale: number | null,
+  number: number | null,
+): boolean {
+  return (pointOfSale === null) !== (number === null)
+}
+
+/** ¿El comprobante entra al Libro IVA? Solo los de un tipo que va al libro, y solo con su número. */
+export function entersIvaBook(type: VoucherType, hasNumber: boolean): boolean {
+  return VOUCHER_CATALOG[type].ivaBook && hasNumber
 }
 
 /** «Factura A». Para un valor desconocido devuelve el texto tal cual (no rompe un listado viejo). */

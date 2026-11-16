@@ -41,7 +41,7 @@ import {
   WARNING_KEYS,
 } from './types'
 import { MAX_AMOUNT_CENTS, MAX_WRITE_OFF_CENTS } from './validate'
-import { SALES_CLOSE_VOUCHERS, VOUCHER_CATALOG, voucherNumberRequired } from './voucher-types'
+import { SALES_CLOSE_VOUCHERS, VOUCHER_CATALOG, voucherNumberIncomplete } from './voucher-types'
 
 export { CLOSE_WARNING_KEYS, WARNING_KEYS } from './types'
 
@@ -415,9 +415,8 @@ const PURCHASE_VOUCHER_TYPES = VOUCHER_TYPE_KEYS.filter((t) => VOUCHER_CATALOG[t
   ...VoucherType[],
 ]
 
-function voucherNeedsNumber(type: VoucherType): boolean {
-  return voucherNumberRequired(type)
-}
+/** El número va entero o no va: lo que no se acepta es la mitad (ver `voucherNumberIncomplete`). */
+const HALF_NUMBER = 'Cargá el punto de venta y el número, o dejá los dos vacíos.'
 
 // ─── Nuevo gasto (H.5) ───────────────────────────────────────────────────────
 
@@ -459,15 +458,13 @@ export const quickExpenseSchema = obj({
       message: 'Elegí el proveedor de la factura.',
     })
   }
-  if (invoice && (v.pointOfSale === null || v.number === null)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['number'],
-      message: 'Con factura, cargá el punto de venta y el número.',
-    })
+  // El número de la factura no es obligatorio (pedido de los socios, 16/11/2026): sin número se guarda
+  // igual y no entra al Libro IVA.
+  if (voucherNumberIncomplete(v.pointOfSale, v.number)) {
+    ctx.addIssue({ code: 'custom', path: ['number'], message: HALF_NUMBER })
   }
-  // Proveedor nuevo con factura: el CUIT es obligatorio para el Libro IVA (H.5).
-  if (invoice && v.newParty !== null && v.newParty.taxId === null) {
+  // Proveedor nuevo con una factura que va al Libro IVA (trae su número): el libro pide el CUIT (H.5).
+  if (invoice && v.number !== null && v.newParty !== null && v.newParty.taxId === null) {
     ctx.addIssue({
       code: 'custom',
       path: ['newParty', 'taxId'],
@@ -533,12 +530,8 @@ export const purchaseSchema = obj({
   if ((v.partyId === null) === (v.newParty === null)) {
     ctx.addIssue({ code: 'custom', path: ['partyId'], message: 'Elegí el proveedor.' })
   }
-  if (voucherNeedsNumber(v.voucherType) && (v.pointOfSale === null || v.number === null)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['number'],
-      message: 'Cargá el punto de venta y el número.',
-    })
+  if (VOUCHER_CATALOG[v.voucherType].numbered && voucherNumberIncomplete(v.pointOfSale, v.number)) {
+    ctx.addIssue({ code: 'custom', path: ['number'], message: HALF_NUMBER })
   }
   if ((v.docKind === 'purchase_credit_note') !== info.isCreditNote) {
     ctx.addIssue({

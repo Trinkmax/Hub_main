@@ -220,7 +220,7 @@ describe('liveSummaryLine', () => {
     const line = liveSummaryLine(
       summarize(entries.map((e) => ({ state: e.state, partySize: e.session?.party_size ?? null }))),
     )
-    expect(line).toBe('2 de 5 mesas · 6 personas · 1 para llevar · 1 esperando comida')
+    expect(line).toBe('2 de 5 mesas · 6 personas · 1 en despacho · 1 en preparación')
   })
 
   it('singulares y plurales', () => {
@@ -273,7 +273,7 @@ describe('legacyFloorSession: una mesa del servicio de siempre, con la forma de 
     expect(stateOf({ kitchen: 'preparing', totalCents: 500_000 }).key).toBe('kitchen')
   })
 
-  it('con algo listo, es para llevar (aunque además haya algo cocinándose)', () => {
+  it('con algo listo, está en despacho (aunque además haya algo cocinándose)', () => {
     expect(stateOf({ kitchen: 'ready', totalCents: 500_000 }).key).toBe('ready')
   })
 

@@ -47,6 +47,7 @@ import { isPastedColumn } from '@/lib/accounting/paste'
 import {
   buildProjection,
   cashDiffText,
+  complianceTone,
   copyMonthTargets,
   type ProjectionDay,
   type ProjectionSourceDay,
@@ -62,6 +63,7 @@ import { capitalizeFirst, formatDayMonth, monthName } from '@/lib/dates'
 import { formatCentsShort, NBSP } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
+  COMPLIANCE_CLASS,
   cashCheckText,
   cashPending,
   cashTitle,
@@ -457,7 +459,7 @@ export function MonthPlanilla({
   }
 
   /**
-   * «Vendido» de un día que tomó lo del punto de venta: el mismo número, con una marca (nunca solo
+   * La «Venta total» de un día que tomó lo del punto de venta: el mismo número, con una marca (nunca solo
    * color: lo dice el título y lo lee el lector de pantalla) y un toque para ver ese día por dentro.
    */
   const posAmount = (d: ProjectionDay): ReactNode => (
@@ -505,7 +507,7 @@ export function MonthPlanilla({
 
   return (
     <>
-      <Totalizer items={planillaTotals(summary, { hasSales })} />
+      <Totalizer items={planillaTotals(summary, { hasSales, totals })} />
 
       <Planilla>
         {!hasTargets ? (
@@ -534,14 +536,18 @@ export function MonthPlanilla({
           </div>
         ) : null}
 
-        <PTable minWidth={detail ? 1720 : 560} label={`Proyección de ${name}`}>
+        <PTable minWidth={detail ? 1720 : 760} label={`Proyección de ${name}`}>
           <thead>
             <tr>
               <PTh className={detail ? STICKY_HEAD : undefined}>Día</PTh>
               <PTh>Tipo</PTh>
               <PTh align="right">Objetivo</PTh>
+              <PTh align="right">Venta bar</PTh>
+              <PTh align="right">Venta delivery</PTh>
               <PTh align="right">
-                <span title="Venta neta: sin las comisiones estimadas">Vendido</span>
+                <span title="Lo que se compara con el objetivo: la venta neta, sin las comisiones estimadas">
+                  Venta total
+                </span>
               </PTh>
               <PTh align="right">Cumpl.</PTh>
               <PTh>
@@ -549,8 +555,6 @@ export function MonthPlanilla({
               </PTh>
               {detail ? (
                 <>
-                  <PTh align="right">Venta bar</PTh>
-                  <PTh align="right">Delivery</PTh>
                   <PTh align="right">Comisión delivery</PTh>
                   <PTh align="right">Comisiones posnet</PTh>
                   <PTh align="right">Venta real</PTh>
@@ -628,6 +632,12 @@ export function MonthPlanilla({
                       <Money cents={d.targetCents ?? 0} />
                     )}
                   </PTd>
+                  <PTd align="right">
+                    <Money cents={d.barCents} show={d.hasSales} />
+                  </PTd>
+                  <PTd align="right">
+                    <Money cents={d.deliveryCents} show={d.hasSales} />
+                  </PTd>
                   <PTd align="right" className="font-medium">
                     {d.source === 'pos' ? (
                       posAmount(d)
@@ -637,12 +647,7 @@ export function MonthPlanilla({
                   </PTd>
                   <PTd align="right">
                     {percent ? (
-                      <span
-                        className={cn(
-                          'font-medium',
-                          percent.good ? 'text-success' : 'text-destructive',
-                        )}
-                      >
+                      <span className={cn('font-medium', COMPLIANCE_CLASS[percent.tone])}>
                         {percent.text}
                       </span>
                     ) : (
@@ -652,12 +657,6 @@ export function MonthPlanilla({
                   <PTd className="w-[7.5rem] whitespace-nowrap text-right">{action(d)}</PTd>
                   {detail ? (
                     <>
-                      <PTd align="right">
-                        <Money cents={d.barCents} show={d.hasSales} />
-                      </PTd>
-                      <PTd align="right">
-                        <Money cents={d.deliveryCents} show={d.hasSales} />
-                      </PTd>
                       <PTd align="right">
                         <Money cents={d.deliveryCommissionCents} show={d.hasSales} />
                       </PTd>
@@ -703,11 +702,20 @@ export function MonthPlanilla({
                 <Money cents={totals.targetCents} />
               </PTd>
               <PTd align="right">
+                <Money cents={totals.barCents} show={hasSales} />
+              </PTd>
+              <PTd align="right">
+                <Money cents={totals.deliveryCents} show={hasSales} />
+              </PTd>
+              <PTd align="right">
                 <Money cents={totals.netCents} show={hasSales} />
               </PTd>
               <PTd align="right">
                 {summary.monthPercent !== null && hasSales ? (
-                  `${summary.monthPercent}${NBSP}%`
+                  <span className={COMPLIANCE_CLASS[complianceTone(summary.monthPercent)]}>
+                    {summary.monthPercent}
+                    {NBSP}%
+                  </span>
                 ) : (
                   <Dash />
                 )}
@@ -715,12 +723,6 @@ export function MonthPlanilla({
               <PTd />
               {detail ? (
                 <>
-                  <PTd align="right">
-                    <Money cents={totals.barCents} />
-                  </PTd>
-                  <PTd align="right">
-                    <Money cents={totals.deliveryCents} />
-                  </PTd>
                   <PTd align="right">
                     <Money cents={totals.deliveryCommissionCents} />
                   </PTd>
@@ -804,7 +806,8 @@ export function MonthPlanilla({
         {detail ? (
           <div className="space-y-1.5 border-t border-border/70 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground text-pretty">
             <p>
-              Vendido es la venta neta, sin las comisiones estimadas con los porcentajes de{' '}
+              La venta total es la venta neta: bar más delivery, sin las comisiones estimadas con
+              los porcentajes de{' '}
               {canWrite ? (
                 <Link href={`${base}/ajustes?tab=participes`} className={NOTE_LINK}>
                   Ajustes

@@ -19,7 +19,7 @@ import {
   taxSettingsPayload,
 } from '@/lib/accounting/taxes'
 import type { PartyRef, PostingContext, PostingResult } from '@/lib/accounting/types'
-import { voucherNumberRequired } from '@/lib/accounting/voucher-types'
+import { entersIvaBook, voucherNumberIncomplete } from '@/lib/accounting/voucher-types'
 import { cashMovementInput, E8, prepare, purchaseInput } from './accounting-fixtures'
 
 /**
@@ -335,11 +335,17 @@ describe('withBankTax: el impuesto al cheque viaja con lo que hizo salir la plat
   })
 })
 
-describe('el tique no pide número', () => {
-  it('factura sí, tique no', () => {
-    expect(voucherNumberRequired('factura_a')).toBe(true)
-    expect(voucherNumberRequired('factura_c')).toBe(true)
-    expect(voucherNumberRequired('tique')).toBe(false)
+describe('ningún comprobante pide número', () => {
+  it('el número va entero o no va; al Libro IVA entra solo con número', () => {
+    expect(voucherNumberIncomplete(null, null)).toBe(false)
+    expect(voucherNumberIncomplete(3, 1290)).toBe(false)
+    expect(voucherNumberIncomplete(3, null)).toBe(true)
+    expect(voucherNumberIncomplete(null, 1290)).toBe(true)
+    expect(entersIvaBook('factura_a', true)).toBe(true)
+    expect(entersIvaBook('factura_a', false)).toBe(false)
+    expect(entersIvaBook('tique', false)).toBe(false)
+    // Un remito no va al libro ni con número.
+    expect(entersIvaBook('sin_comprobante', true)).toBe(false)
   })
 
   it('una compra con tique sin número se guarda y no va al libro IVA', () => {
@@ -367,30 +373,128 @@ describe('el tique no pide número', () => {
     expect(result.bundle.documents[0]?.fiscalVouchers).toEqual([])
   })
 
-  it('una factura sin número sigue frenando', () => {
+  // Pedido de los socios del 16/11/2026: «que el número de factura no sea obligatorio».
+  const facturaA = (
+    r: ReturnType<typeof prepare>['r'],
+    over: Partial<Parameters<typeof purchaseInput>[0]> = {},
+  ) => ({
+    ...purchaseInput({
+      partyId: r.party('cocacola'),
+      voucherType: 'factura_a',
+      pointOfSale: 3,
+      number: 1290,
+      issueDate: '2026-10-05',
+      amountMode: 'total',
+      total: {
+        totalCents: 1_210_000,
+        vatRateBp: 2100,
+        accountId: r.account('purchases_soft_drinks'),
+      },
+      controlTotalCents: 1_210_000,
+    }),
+    ...over,
+  })
+
+  it('una factura A sin número se guarda: no va al Libro IVA ni se toma su IVA', () => {
     const { ctx, meta, r } = prepare()
-    const result = buildPurchase(
-      {
-        ...purchaseInput({
-          partyId: r.party('cocacola'),
-          voucherType: 'factura_a',
-          pointOfSale: 3,
-          number: 1290,
-          issueDate: '2026-10-05',
-          amountMode: 'total',
-          total: {
-            totalCents: 1_210_000,
-            vatRateBp: 2100,
-            accountId: r.account('purchases_soft_drinks'),
-          },
-          controlTotalCents: 1_210_000,
-        }),
+    const result = buildPurchase(facturaA(r, { pointOfSale: null, number: null }), ctx, meta)
+    expect(kinds(result)).toEqual(['purchase'])
+    if (!result.ok) return
+    const [doc] = result.bundle.documents
+    expect(doc?.fiscalVouchers).toEqual([])
+    expect(doc?.pointOfSale).toBeNull()
+    expect(doc?.number).toBeNull()
+    // El total va entero a la imputación: ningún renglón de IVA.
+    const roles = doc?.lines.map((line) => line.role) ?? []
+    expect(roles).not.toContain('vat')
+    expect(roles).not.toContain('net')
+    const gross = doc?.lines.find((line) => line.role === 'gross')
+    expect(gross).toMatchObject({
+      accountId: r.account('purchases_soft_drinks'),
+      amountCents: 1_210_000,
+    })
+  })
+
+  it('la misma factura con número va al libro y discrimina el IVA, como siempre', () => {
+    const { ctx, meta, r } = prepare()
+    const result = buildPurchase(facturaA(r), ctx, meta)
+    expect(kinds(result)).toEqual(['purchase'])
+    if (!result.ok) return
+    const [doc] = result.bundle.documents
+    expect(doc?.fiscalVouchers).toHaveLength(1)
+    expect(doc?.lines.find((line) => line.role === 'net')?.amountCents).toBe(1_000_000)
+  })
+
+  it('la mitad de un número frena: van los dos o ninguno', () => {
+    const { ctx, meta, r } = prepare()
+    for (const half of [
+      { pointOfSale: 3, number: null },
+      { pointOfSale: null, number: 1290 },
+    ]) {
+      const result = buildPurchase(facturaA(r, half), ctx, meta)
+      expect(result.ok).toBe(false)
+      if (result.ok) continue
+      expect(result.errors.map((e) => e.key)).toContain('voucher_number_required')
+    }
+  })
+
+  it('lo que solo existe en el libro pide el número: IVA por renglón y percepciones', () => {
+    const { ctx, meta, r } = prepare()
+    const byLine = buildPurchase(
+      facturaA(r, {
         pointOfSale: null,
         number: null,
-      },
+        amountMode: 'detail',
+        total: null,
+        controlTotalCents: null,
+        lines: [
+          {
+            role: 'net',
+            accountId: r.account('purchases_soft_drinks'),
+            amountCents: 1_000_000,
+            vatRateBp: 2100,
+          },
+        ],
+      }),
       ctx,
       meta,
     )
-    expect(result.ok).toBe(false)
+    expect(byLine.ok).toBe(false)
+    const withPerception = buildPurchase(
+      facturaA(r, {
+        pointOfSale: null,
+        number: null,
+        controlTotalCents: null,
+        perceptions: [{ taxKind: 'iva', amountCents: 10_000 }],
+      }),
+      ctx,
+      meta,
+    )
+    expect(withPerception.ok).toBe(false)
+    for (const failed of [byLine, withPerception]) {
+      if (failed.ok) continue
+      expect(failed.errors.map((e) => e.key)).toContain('voucher_number_required')
+    }
+  })
+
+  it('una B o C sin número tampoco va al libro, y su importe queda igual', () => {
+    const { ctx, meta, r } = prepare()
+    const result = buildPurchase(
+      facturaA(r, {
+        voucherType: 'factura_b',
+        pointOfSale: null,
+        number: null,
+        total: {
+          totalCents: 1_210_000,
+          vatRateBp: null,
+          accountId: r.account('purchases_soft_drinks'),
+        },
+      }),
+      ctx,
+      meta,
+    )
+    expect(kinds(result)).toEqual(['purchase'])
+    if (!result.ok) return
+    expect(result.bundle.documents[0]?.fiscalVouchers).toEqual([])
   })
 })

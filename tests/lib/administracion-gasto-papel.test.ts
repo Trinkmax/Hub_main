@@ -261,30 +261,16 @@ describe('el ticket de «Nuevo gasto» · sello y letra chica', () => {
     )
   })
 
-  it('con Factura A, B o C sin número, lo que falta es el número (y no «los importes»)', () => {
-    const answered = { amount: false, target: false, treasury: false }
-    // Importe, proveedor y caja ya están: el ticket no puede decir «Entra al Libro IVA» todavía.
-    expect(missingForSummary({ ...answered, invoiceNumber: true })).toBe(
-      'Falta el número de la factura.',
-    )
-    expect(missingForSummary({ ...answered, invoiceNumber: false })).toBeNull()
-    // Si además falta otra cosa, se dicen las dos.
-    expect(missingForSummary({ ...answered, amount: true, invoiceNumber: true })).toBe(
-      'Falta decir cuánto gastaste. También falta el número de la factura.',
+  it('el número de la factura no es algo que falte: con importe, proveedor y caja alcanza', () => {
+    expect(missingForSummary({ amount: false, target: false, treasury: false })).toBeNull()
+    expect(missingForSummary({ amount: true, target: false, treasury: false })).toBe(
+      'Falta decir cuánto gastaste.',
     )
   })
 
-  it('sin el número de una factura no hay asiento: por eso el ticket queda en borrador', () => {
+  it('una factura sin número se guarda igual (16/11/2026), como un tique o un remito', () => {
     const { r, ctx } = prepare()
-    for (const voucher of ['a', 'bc'] as const) {
-      const built = buildQuickExpenseValues(
-        formState(r, voucher, { pointOfSale: null, number: null }),
-      )
-      const preview = previewDocumentForm('quick_expense', built.values, ctx)
-      expect(preview.ok, voucher).toBe(false)
-    }
-    // Un tique o un remito se cargan igual sin número.
-    for (const voucher of ['ticket', 'none'] as const) {
+    for (const voucher of ['a', 'bc', 'ticket', 'none'] as const) {
       const built = buildQuickExpenseValues(
         formState(r, voucher, { pointOfSale: null, number: null }),
       )

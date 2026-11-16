@@ -24,7 +24,7 @@
   --pay-ready-ink: color-mix(in oklch, var(--pos-st-ready) 58%, var(--pos-ink));
   --pay-late-ink: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
   --pay-bill-ink: color-mix(in oklch, var(--pos-st-bill) 80%, var(--pos-ink));
-  --pay-stamp: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  --pay-stamp: color-mix(in oklch, var(--pos-good) 72%, var(--pos-ink));
   --pay-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
   /* Papel que todavía no es de verdad: lo que espera el OK, lo que se está escribiendo. */
   --pay-draft: color-mix(in oklch, var(--pos-paper) 90%, var(--pos-kraft));
@@ -1160,6 +1160,15 @@ button.pay-sum:active {
 }
 .pay-acts :focus-visible {
   outline-color: var(--pos-paper);
+}
+/* Imprimir es de la compu que tiene la comandera: en el celular no se ofrece. */
+.pay-act-print {
+  display: none;
+}
+@media (min-width: 900px) {
+  .pay-act-print {
+    display: inline-flex;
+  }
 }
 /* En el celular van una debajo de la otra: ningún rótulo se parte en dos renglones. */
 @media (max-width: 479.98px) {

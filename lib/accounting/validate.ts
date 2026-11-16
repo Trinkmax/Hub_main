@@ -65,7 +65,6 @@ import {
   isVoucherAllowedForKind,
   VOUCHER_CATALOG,
   voucherConditionCheck,
-  voucherNumberRequired,
 } from './voucher-types'
 
 /** Tope por importe de un formulario: $ 9.999.999.999,99 (E.6, `amount_too_large`). */
@@ -1282,10 +1281,14 @@ export function fiscalVoucherRule(
     case 'purchase':
     case 'purchase_debit_note':
     case 'purchase_credit_note':
+      // Una compra sin número no entra al libro: el tique desde la reunión del 29/10/2026 y, desde el
+      // 16/11/2026, cualquier comprobante («que el número de factura no sea obligatorio»).
+      if (doc.number === null) return 'forbidden'
+      return doc.voucherType && VOUCHER_CATALOG[doc.voucherType].ivaBook ? 'required' : 'forbidden'
     case 'sales_invoice':
     case 'sales_debit_note':
     case 'sales_credit_note':
-      // Un tique sin número no entra al libro (reunión del 29/10/2026).
+      // Lo que emite el bar siempre lleva número; el tique sin número sigue sin entrar al libro.
       if (doc.voucherType === 'tique' && doc.number === null) return 'forbidden'
       return doc.voucherType && VOUCHER_CATALOG[doc.voucherType].ivaBook ? 'required' : 'forbidden'
     case 'collection':
@@ -1931,11 +1934,19 @@ export function validateDocument(
   ) {
     out.errors.push(err('invalid_bundle', 'number', { reason: 'voucher_number_range' }))
   }
+  // El número de una COMPRA no es obligatorio (16/11/2026): van los dos o ninguno. Lo demás (lo que
+  // emite el bar) sigue llevándolo siempre; el tique sin número ya valía. La misma regla que
+  // `acc_check_document` (migración `acc_factura_sin_numero`).
+  const numberFree =
+    doc.pointOfSale === null &&
+    doc.number === null &&
+    (isPurchaseKind(doc.kind) || doc.voucherType === 'tique')
   if (
     doc.voucherType &&
-    voucherNumberRequired(doc.voucherType) &&
+    VOUCHER_CATALOG[doc.voucherType].numbered &&
     doc.kind !== 'expense' &&
-    (doc.pointOfSale === null || doc.number === null)
+    (doc.pointOfSale === null || doc.number === null) &&
+    !numberFree
   ) {
     out.errors.push(err('voucher_number_required', 'number'))
   }

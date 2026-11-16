@@ -87,14 +87,14 @@ export function pendingByArea(entries: readonly LiveEntry[]): Record<string, num
   return out
 }
 
-/** El salón en una línea: «12 de 25 mesas · 46 personas · 2 para llevar». */
+/** El salón en una línea: «12 de 25 mesas · 46 personas · 2 en despacho». */
 export function liveSummaryLine(summary: FloorSummary): string {
   const parts = [
     `${summary.open} de ${summary.tables} ${summary.tables === 1 ? 'mesa' : 'mesas'}`,
     `${summary.people} ${summary.people === 1 ? 'persona' : 'personas'}`,
   ]
-  if (summary.ready > 0) parts.push(`${summary.ready} para llevar`)
-  if (summary.waitingFood > 0) parts.push(`${summary.waitingFood} esperando comida`)
+  if (summary.ready > 0) parts.push(`${summary.ready} en despacho`)
+  if (summary.waitingFood > 0) parts.push(`${summary.waitingFood} en preparación`)
   if (summary.bill > 0) {
     parts.push(`${summary.bill} ${summary.bill === 1 ? 'pidió' : 'pidieron'} la cuenta`)
   }
@@ -123,7 +123,7 @@ export type LegacySessionFacts = {
 
 /**
  * Esa mesa, con la forma que usa la maqueta (`FloorSession`), para que «En vivo» se vea igual en
- * cualquier bar: sentada, esperando comida, lista para llevar, comiendo o con la cuenta pedida. Lo que
+ * cualquier bar: sentada, en preparación, en despacho, comiendo o con la cuenta pedida. Lo que
  * el servicio viejo no registra (desde cuándo espera, cuándo se sirvió) va en `null`: el estado se
  * muestra sin reloj en vez de inventar uno.
  */

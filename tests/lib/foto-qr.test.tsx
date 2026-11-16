@@ -95,7 +95,7 @@ describe('el panel, sin foto', () => {
     const read = text(out)
     expect(read).toContain('Escanealo y sacale la foto')
     expect(read).toContain('O arrastrá la foto o el PDF acá.')
-    expect(read).toContain('Si es factura electrónica, se completa sola.')
+    expect(read).toContain('Los datos se completan solos y los revisás.')
     expect(read).toContain('Sacar la foto')
     expect(read).toContain('Elegir un archivo')
     expect(out).toContain('capture="environment"')

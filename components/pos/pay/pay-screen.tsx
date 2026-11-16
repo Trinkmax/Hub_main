@@ -1,6 +1,6 @@
 'use client'
 
-import { BadgePercent, ChevronLeft, Send, Undo2, WifiOff } from 'lucide-react'
+import { BadgePercent, ChevronLeft, Printer, Send, Undo2, Utensils, WifiOff } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -14,6 +14,8 @@ import { newId, readStoredOrder } from '@/components/pos/order/order-storage'
 import { PosOutboxRunner } from '@/components/pos/order/outbox-runner'
 import { useNow } from '@/components/pos/order/use-now'
 import { useOnline } from '@/components/pos/order/use-online'
+import { printJob } from '@/components/pos/print/print-frame'
+import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
 import {
   type Bill,
@@ -38,6 +40,7 @@ import {
 import { groupLines, type LineGroup, setChosen, tapChosen } from '@/lib/pos/pay/lines'
 import { billMode, billName, billPeople, billTitle } from '@/lib/pos/pay/mode'
 import { initialSplit, portionOf, reconcileSplit, type Split } from '@/lib/pos/pay/split'
+import { billDoc } from '@/lib/pos/print/bill'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
@@ -569,7 +572,29 @@ export function PayScreen({
 
   const hasLivePayment = bill.payments.some((payment) => payment.status === 'ok')
   const canUnrequest = open && bill.session.bill_requested_at !== null && !hasLivePayment
+  // Cobro parcial: alguien pagó lo suyo y los demás siguen. La mesa deja de figurar «pidió la cuenta»
+  // (si no, queda en rojo en el mapa toda la noche) y vuelve a la comanda para seguir pidiendo.
+  const canKeepGoing =
+    open &&
+    bill.session.bill_requested_at !== null &&
+    hasLivePayment &&
+    bill.bill.remaining_cents > 0
   const canDiscount = open && bill.bill.remaining_cents > 0
+  const canPrint = bill.lines.length > 0
+
+  /** La cuenta en papel, por la comandera de esta compu. */
+  const printBill = async () => {
+    try {
+      await printJob({
+        paper: readPrinter(bill.session.branch_id).paper,
+        docs: [billDoc(bill, { barName: place, branch: null, timeZone })],
+      })
+    } catch {
+      toast.error('No se pudo mandar a la impresora', {
+        description: 'Fijate que esté prendida y con papel.',
+      })
+    }
+  }
 
   return (
     <div
@@ -670,7 +695,7 @@ export function PayScreen({
                 onPayment={(payment) => setSheet({ kind: 'payment', payment })}
               />
 
-              {open && (canDiscount || canUnrequest) ? (
+              {canPrint || (open && (canDiscount || canUnrequest || canKeepGoing)) ? (
                 <div className="pay-acts">
                   {canDiscount ? (
                     <button
@@ -693,6 +718,29 @@ export function PayScreen({
                     >
                       <Undo2 aria-hidden strokeWidth={2.2} />
                       Todavía no la pidieron
+                    </button>
+                  ) : null}
+                  {canKeepGoing ? (
+                    <button
+                      type="button"
+                      className="pay-act"
+                      onClick={() => void unrequest()}
+                      disabled={unrequesting}
+                      data-testid="pay-keep-going"
+                    >
+                      <Utensils aria-hidden strokeWidth={2.2} />
+                      La mesa sigue
+                    </button>
+                  ) : null}
+                  {canPrint ? (
+                    <button
+                      type="button"
+                      className="pay-act pay-act-print"
+                      onClick={() => void printBill()}
+                      data-testid="pay-print"
+                    >
+                      <Printer aria-hidden strokeWidth={2.2} />
+                      Imprimir la cuenta
                     </button>
                   ) : null}
                 </div>

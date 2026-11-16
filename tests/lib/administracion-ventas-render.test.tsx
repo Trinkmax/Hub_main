@@ -339,8 +339,6 @@ async function renderMonth(
 
 /** Las columnas que pidieron los socios el 12/10 y las de ventas contra caja: «nada de eso se pierde». */
 const DETAIL_COLUMNS = [
-  'Venta bar',
-  'Delivery',
   'Comisión delivery',
   'Comisiones posnet',
   'Venta real',
@@ -363,13 +361,24 @@ function rowOf(markup: string, day: string): string {
 // ─── La planilla del mes ─────────────────────────────────────────────────────
 
 describe('la planilla del mes', () => {
-  it('los tres números de arriba y las columnas, sin el almanaque ni el héroe', async () => {
+  it('los números de arriba y las columnas, sin el almanaque ni el héroe', async () => {
     const markup = await renderMonth({ targetCents: 150_000_000 })
     const read = text(markup)
-    for (const label of ['Objetivo del mes', 'Vendido', 'Falta vender']) {
+    // Lo vendido va abierto en bar, delivery y total (pedido de los socios, 16/11/2026).
+    for (const label of [
+      'Objetivo del mes',
+      'Venta bar',
+      'Venta delivery',
+      'Venta total',
+      'Falta vender',
+    ]) {
       expect(read).toContain(label)
     }
+    expect(read).toContain('Sin $ 495.000 de comisiones')
     for (const column of ['Día', 'Tipo', 'Objetivo', 'Cumpl.']) expect(read).toContain(column)
+    // Las tres columnas de la venta, sin abrir el detalle: bar, delivery y la total (la neta).
+    const row = text(`<tr${rowOf(markup, 'lu 05')}`)
+    expect(row).toContain('$ 900.000 $ 100.000 $ 955.000 64 %')
     expect(read).toContain('Objetivo a hoy')
     // Lo que había antes ya no está: ni la hoja verde, ni el almanaque, ni el ticket al costado.
     expect(markup).not.toContain('adm-hero')
@@ -387,12 +396,16 @@ describe('la planilla del mes', () => {
     expect(text(`<tr${row}`)).toContain('Normal')
   })
 
-  it('el cumplimiento va en verde o en rojo, con su número', async () => {
+  it('el cumplimiento va en rojo, amarillo o verde, con su número', async () => {
     const low = rowOf(await renderMonth({ targetCents: 150_000_000 }), 'lu 05')
     // $ 955.000 netos contra $ 1.500.000.
     expect(text(`<tr${low}`)).toContain('$ 955.000')
     expect(text(`<tr${low}`)).toContain('64 %')
     expect(low).toContain('text-destructive')
+    // Contra $ 1.000.000 queda en 96 %: cerca, en amarillo.
+    const near = rowOf(await renderMonth({ targetCents: 100_000_000 }), 'lu 05')
+    expect(text(`<tr${near}`)).toContain('96 %')
+    expect(near).toMatch(/text-warning-text[^>]*>96/)
     const high = rowOf(await renderMonth({ targetCents: 90_000_000 }), 'lu 05')
     expect(text(`<tr${high}`)).toContain('106 %')
     expect(high).toContain('text-success')

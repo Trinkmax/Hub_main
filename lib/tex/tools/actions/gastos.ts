@@ -540,7 +540,7 @@ export const gastosActionTools = [
           // Tex no elige proveedores: la planilla sí (y lo deja guardado en el gasto fijo).
           if (built.target?.kind === 'account' && isInvoiceVoucher(built.voucher)) {
             return fail(
-              `«${row.name}» no tiene proveedor y una factura lo pide. Con factura se carga desde la planilla de gastos fijos: al tildarlo y elegir el papel aparece «Proveedor» (de la lista o uno nuevo con su CUIT) y queda guardado para el mes que viene. Si no tiene factura, mandá papel sin_factura.`,
+              `«${row.name}» no tiene proveedor y una factura lo pide. Con factura se carga desde la planilla de gastos fijos: al tildarlo viene elegido el proveedor (el que se llama igual, o uno nuevo con ese nombre; se puede cambiar) y queda guardado para el mes que viene. Si no tiene factura, mandá papel sin_factura.`,
             )
           }
           return fail(

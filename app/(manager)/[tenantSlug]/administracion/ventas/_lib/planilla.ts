@@ -17,9 +17,11 @@ import type {
   CashCheck,
   CashTotals,
   Compliance,
+  ComplianceTone,
   ProjectionSummary,
+  ProjectionTotals,
 } from '@/lib/accounting/projection'
-import { cashDiffText } from '@/lib/accounting/projection'
+import { cashDiffText, complianceTone } from '@/lib/accounting/projection'
 import {
   capitalizeFirst,
   formatDayMonth,
@@ -179,8 +181,11 @@ export function openNight(
  */
 export function planillaTotals(
   summary: ProjectionSummary,
-  /** `hasSales`: algún día del mes tiene ventas (con cierre, o del punto de venta). */
-  opts: { hasSales: boolean },
+  /**
+   * `hasSales`: algún día del mes tiene ventas (con cierre, o del punto de venta).
+   * `totals`: los del mes, para abrir lo vendido en bar y delivery. Sin ellos va un solo «Vendido».
+   */
+  opts: { hasSales: boolean; totals?: ProjectionTotals },
 ): TotalizerItem[] {
   const { hasTargets, monthState } = summary
   const toDate =
@@ -195,24 +200,56 @@ export function planillaTotals(
           label: monthState === 'past' ? 'Faltó vender' : 'Falta vender',
           cents: summary.remainingCents,
         }
+  const sold = (cents: number): number | null => (opts.hasSales ? cents : null)
+  // «Venta bar · Venta delivery · Venta total» (pedido de los socios, 16/11/2026). La total es lo
+  // que se compara con el objetivo: la venta neta, sin las comisiones estimadas. Si hay comisiones,
+  // el renglón de abajo lo dice (por eso bar + delivery puede dar un poco más).
+  const commissions = opts.totals
+    ? opts.totals.deliveryCommissionCents + opts.totals.posnetCommissionCents
+    : 0
+  const split: TotalizerItem[] = opts.totals
+    ? [
+        { label: 'Venta bar', cents: sold(opts.totals.barCents) },
+        { label: 'Venta delivery', cents: sold(opts.totals.deliveryCents) },
+      ]
+    : []
   return [
     {
       label: 'Objetivo del mes',
       cents: hasTargets ? summary.monthTargetCents : null,
       hint: toDate,
     },
-    { label: 'Vendido', cents: opts.hasSales ? summary.soldCents : null, tone: 'ok' },
+    ...split,
+    {
+      label: opts.totals ? 'Venta total' : 'Vendido',
+      cents: sold(summary.soldCents),
+      tone: 'ok',
+      hint:
+        opts.hasSales && commissions > 0
+          ? `Sin ${formatCentsShort(commissions)} de comisiones`
+          : undefined,
+    },
     remaining,
   ]
 }
 
-/** El cumplimiento de un renglón: el número, sin palabras; el verde o el rojo lo pone la pantalla. */
+/**
+ * El cumplimiento de un renglón: el número, sin palabras, y cómo viene (`complianceTone`: rojo abajo
+ * de 90 %, amarillo de 90 a 99 % y verde con el objetivo cumplido). El color lo pone la pantalla.
+ */
 export function compliancePercent(compliance: Compliance): {
   text: string
-  good: boolean
+  tone: ComplianceTone
 } | null {
   if (compliance.kind !== 'value') return null
-  return { text: `${compliance.percent}${NBSP}%`, good: compliance.side !== 'below' }
+  return { text: `${compliance.percent}${NBSP}%`, tone: complianceTone(compliance.percent) }
+}
+
+/** La clase de cada tono del cumplimiento. El número siempre va escrito: el color no va solo. */
+export const COMPLIANCE_CLASS: Readonly<Record<ComplianceTone, string>> = {
+  bad: 'text-destructive',
+  warn: 'text-warning-text',
+  good: 'text-success',
 }
 
 // ─── Ventas contra caja ──────────────────────────────────────────────────────

@@ -389,7 +389,7 @@ describe('preparar_pago_gasto_fijo', () => {
     expect(prepared.ticket.confirmLabel).toBe('Cargar el pago')
   })
 
-  it('sin monto, sin caja o con factura sin número: pregunta lo que falta', async () => {
+  it('sin monto o sin caja pregunta lo que falta; el número de la factura no es obligatorio', async () => {
     const { f } = setup()
     const account = f.sys('misc_expenses').id
     stubRows([recurring(account, { amountCents: null })])
@@ -407,15 +407,14 @@ describe('preparar_pago_gasto_fijo', () => {
       asError(await runTool(gastosActionTools, 'preparar_pago_gasto_fijo', { gasto: 'Alquiler' })),
     ).toContain('Preguntale con qué lo pagó')
 
+    // Con proveedor, la factura se prepara aunque no digan el número (16/11/2026): no es obligatorio.
     stubRows([recurring(account, { partyId: f.party('mayorista').id, voucherType: 'factura_a' })])
-    expect(
-      asError(
-        await runTool(gastosActionTools, 'preparar_pago_gasto_fijo', {
-          gasto: 'Alquiler',
-          caja: 'Caja',
-        }),
-      ),
-    ).toContain('Para la factura falta el número')
+    asPrepared(
+      await runTool(gastosActionTools, 'preparar_pago_gasto_fijo', {
+        gasto: 'Alquiler',
+        caja: 'Caja',
+      }),
+    )
 
     // Sin proveedor, Tex no elige uno: lo manda a la planilla (12/11/2026).
     stubRows([recurring(account, { voucherType: 'factura_a' })])

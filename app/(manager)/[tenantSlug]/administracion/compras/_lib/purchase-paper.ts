@@ -473,6 +473,32 @@ export function findPartyByCuit<T extends { taxId: string | null; active: boolea
   return same.find((party) => party.active) ?? same[0] ?? null
 }
 
+/** Para comparar nombres: sin mayúsculas, sin acentos y sin espacios de más. */
+function plainName(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * El proveedor que se llama EXACTAMENTE así (por su nombre o el de fantasía), para cuando la lectura
+ * con IA trae quién emitió el papel pero no su CUIT. Parecido no alcanza: ante la duda no elige a
+ * nadie y se ofrece crearlo.
+ */
+export function findPartyByName<
+  T extends { name: string; tradeName?: string | null; active: boolean },
+>(parties: readonly T[], name: string | null | undefined): T | null {
+  const wanted = plainName(name)
+  if (wanted.length < 2) return null
+  const same = parties.filter(
+    (party) => plainName(party.name) === wanted || plainName(party.tradeName) === wanted,
+  )
+  return same.find((party) => party.active) ?? same[0] ?? null
+}
+
 /** El botón que guarda, con la forma del de «Nuevo gasto» («Cargar gasto · $ 12.500»). */
 export function purchaseSubmitLabel(input: {
   docKind: PurchaseDocKind

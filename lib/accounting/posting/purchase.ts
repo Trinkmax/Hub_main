@@ -85,7 +85,7 @@ import {
   isVatComputable,
   VOUCHER_CATALOG,
   voucherDisplay,
-  voucherNumberRequired,
+  voucherNumberIncomplete,
 } from '@/lib/accounting/voucher-types'
 
 export type PurchaseBuildInput = Omit<PurchaseInput, 'clientRef' | 'previewHash'>
@@ -174,11 +174,23 @@ export function composePurchase(
   if (partyKey && !party) fatal.push(postingError('party_not_found', 'partyId'))
 
   const info = VOUCHER_CATALOG[input.voucherType]
-  if (
-    voucherNumberRequired(input.voucherType) &&
-    (input.pointOfSale === null || input.number === null)
-  ) {
+  // El número no es obligatorio (ver `voucherNumberIncomplete`); la mitad de un número, sí es un error.
+  const hasNumber = input.pointOfSale !== null && input.number !== null
+  if (info.numbered && voucherNumberIncomplete(input.pointOfSale, input.number)) {
     fatal.push(postingError('voucher_number_required', 'number'))
+  }
+  // Sin número el comprobante no entra al Libro IVA, así que tampoco se toma su IVA: el total va entero
+  // a la imputación. Lo que solo tiene sentido en el libro (IVA por renglón, percepciones, la factura
+  // de comisiones) pide el número: sin él no hay dónde anotarlo.
+  const needsBook =
+    info.purchaseVat !== 'no' &&
+    (input.settlesCommissions ||
+      input.perceptions.length > 0 ||
+      input.vat.length > 0 ||
+      (input.amountMode === 'detail' &&
+        input.lines.some((l) => l.role === 'net' && (l.vatRateBp ?? 0) !== 0)))
+  if (info.numbered && !hasNumber && needsBook) {
+    fatal.push(postingError('voucher_number_required', 'number', { reason: 'vat_needs_number' }))
   }
   if (input.amountMode === 'total' && input.total === null) {
     fatal.push(postingError('amount_required', 'total.totalCents'))
@@ -191,7 +203,7 @@ export function composePurchase(
   const errors: PostingError[] = []
   const warnings: PostingWarning[] = []
   const isCredit = input.docKind === 'purchase_credit_note'
-  const discriminates = info.purchaseVat !== 'no'
+  const discriminates = info.purchaseVat !== 'no' && hasNumber
   const computable = isVatComputable(
     input.voucherType,
     party.ivaCondition,

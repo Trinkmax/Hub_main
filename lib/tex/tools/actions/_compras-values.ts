@@ -86,7 +86,6 @@ import {
   VOUCHER_CATALOG,
   voucherDisplay,
   voucherLabel,
-  voucherNumberRequired,
 } from '@/lib/accounting/voucher-types'
 import { type BudgetItem, type WeekPlanRow, weekLabel } from '@/lib/accounting/week-plan'
 import { capitalizeFirst, formatIsoDay, formatMonthYear } from '@/lib/dates'
@@ -492,18 +491,15 @@ export function compraPlan(draft: CompraDraft): PlanFailure | CompraPlan {
   }
 
   // ── El número ──
+  // El número no es obligatorio (16/11/2026): sin número se guarda igual y no entra al Libro IVA. Un
+  // punto de venta recordado no alcanza para inventar la mitad de un número: va con el suyo o sin nada.
   const info = VOUCHER_CATALOG[voucherType]
-  const numberRequired = voucherNumberRequired(voucherType)
-  const pointOfSale = draft.pointOfSale ?? (info.numbered ? (memory?.pointOfSale ?? null) : null)
-  const hasNumber = pointOfSale !== null && draft.number !== null
-  if (numberRequired && !hasNumber) {
-    return fail(
-      wanted
-        ? `${info.label} lleva punto de venta y número. Preguntáselos.`
-        : `A ${name ?? 'este proveedor'} se le carga ${info.label}, que lleva punto de venta y número. Preguntale esos números, o qué papel le dieron.`,
-    )
-  }
-  const entersBook = info.ivaBook && (numberRequired || hasNumber)
+  const hasNumber =
+    info.numbered &&
+    draft.number !== null &&
+    (draft.pointOfSale ?? memory?.pointOfSale ?? null) !== null
+  const pointOfSale = hasNumber ? (draft.pointOfSale ?? memory?.pointOfSale ?? null) : null
+  const entersBook = info.ivaBook && hasNumber
   if (entersBook && name && (existing ? !existing.facts.taxId : fresh ? !fresh.taxId : false)) {
     return fail(cuitGapMessage(name, fresh !== null))
   }
@@ -598,7 +594,7 @@ export function compraPlan(draft: CompraDraft): PlanFailure | CompraPlan {
         : null,
     voucherType,
     pointOfSale,
-    number: draft.number,
+    number: hasNumber ? draft.number : null,
     issueDate,
     dueDate,
     amountMode: detail ? 'detail' : 'total',
@@ -640,7 +636,7 @@ export function compraPlan(draft: CompraDraft): PlanFailure | CompraPlan {
 
   // ── El tique ──
   const total = purchaseTotal(state)
-  const numbered = info.numbered && (numberRequired || hasNumber)
+  const numbered = hasNumber
   const paper = voucherDisplay(
     voucherType,
     numbered ? pointOfSale : null,

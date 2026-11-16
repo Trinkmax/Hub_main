@@ -18,7 +18,7 @@
   --cmd-ready-ink: color-mix(in oklch, var(--pos-st-ready) 58%, var(--pos-ink));
   --cmd-kitchen-ink: color-mix(in oklch, var(--pos-st-kitchen) 58%, var(--pos-ink));
   --cmd-late-ink: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
-  --cmd-stamp: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  --cmd-stamp: color-mix(in oklch, var(--pos-good) 72%, var(--pos-ink));
   /* Texto de apoyo sobre papel: el más claro que todavía se lee. */
   --cmd-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
   --cmd-focus: var(--pos-st-bill);
@@ -397,6 +397,44 @@
   gap: 0.35rem 0.6rem;
   min-height: 2rem;
   margin-bottom: 0.3rem;
+}
+/* Reimprimir la comanda: es de la compu que tiene la comandera, en el celular no se ofrece. */
+.cmd-ticket-print {
+  display: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: -0.25rem -0.35rem -0.25rem auto;
+  border-radius: 0.7rem;
+  color: var(--pos-ink-soft);
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease),
+    color 140ms var(--pos-ease);
+}
+@media (min-width: 900px) {
+  .cmd-ticket-print {
+    display: grid;
+  }
+}
+.cmd-ticket-print svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+.cmd-ticket-print:active {
+  transform: scale(0.95);
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+}
+.cmd-ticket-print:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .cmd-ticket-print:hover {
+    background: var(--pos-paper-2);
+    color: var(--pos-ink);
+  }
 }
 .cmd-ticket-title {
   font-size: 1.25rem;

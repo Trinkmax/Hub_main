@@ -43,6 +43,7 @@ lo prende un superadmin por bar).
 | Juntar dos mesas | `pos_merge_tables`, el mapa (levantar una mesa y soltarla, o tocar, sobre una ocupada) | hecho |
 | La Proyección de Administración toma estas ventas | `withPosSales`, `projectionUsesPos` (sin cambios en la base) | hecho |
 | El cierre del día arranca precargado con lo cobrado | `posCloseFill`, `getPosCloseDay` (sin cambios en la base) | hecho |
+| Comandas, cuenta y cierre de caja por la comandera | `lib/pos/print/*`, `components/pos/print/*` (sin cambios en la base) | hecho |
 | QR del cliente, vincular la tele, PIN | — | sigue |
 
 ## Modelo de datos
@@ -115,8 +116,13 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
   sobre el escenario), y entre dos igual de altas (paredes en una esquina) va adelante la que llega más
   cerca. Las paredes se siguen partiendo en tramos: así dos que se cruzan se intercalan bien.
 - **Estados** (de `lib/pos/table-state.ts`, sin que nadie marque nada a mano), por prioridad:
-  comida lista sin llevar › pidió la cuenta › esperando comida › comiendo › sin pedido › reservada › libre.
+  en despacho › pidió la cuenta › en preparación › comiendo › sin pedido › reservada › libre.
   Cada uno escala a «miralo» y «ya es tarde» con los minutos de `pos_settings`.
+- **Cómo se llaman y de qué color van lo eligió el bar (16/11/2026):** «En preparación» (naranja)
+  mientras cocina trabaja, «En despacho» (verde) cuando ya salió y espera que la lleven, «Comiendo»
+  en violeta, «Cuenta» en azul y «Reservada» en gris. «Para llevar» NO se usa para lo que está listo:
+  en un bar quiere decir que el cliente se lo lleva, no que va a una mesa. El sello de «cobrado» y lo
+  que salió bien usan su propio color (`--pos-good`), que no es un estado de mesa.
 - Lo urgente se mueve: la mesa con comida lista late; la demorada se pone roja.
 - Arriba, el salón en una línea. Cada pestaña de sector avisa cuántas mesas tienen algo pendiente.
 - Una reserva toma su mesa desde 45 minutos antes; antes de eso la mesa está libre pero avisa la hora.
@@ -173,6 +179,11 @@ Tres migraciones (`20261113113800_pos_cobro_tablas`, `20261113114128_pos_cobro_c
   alias. Crédito: el recargo antes de cobrar. «Facturar» viene según el medio; la propina va aparte.
 - **Dividir** es otra pregunta: todo junto, partes iguales (arranca en los comensales; el plan se lee de los
   rótulos «Parte 2 de 4», así cualquier celular lo sigue), por producto (se marca en la cuenta) u otro monto.
+- **Cobro parcial sin cerrar la mesa** (pedido del 16/11/2026): se divide «por producto», se marca lo
+  que paga quien se va y se cobra; la cuenta muestra «2 de 8 ya cobrados» y lo que falta. Con una parte
+  cobrada aparece **«La mesa sigue»**: le saca a la mesa el aviso de cuenta (si no, queda como «pidió
+  la cuenta» y en rojo toda la noche) y vuelve a la comanda para seguir pidiendo.
+- **«Imprimir la cuenta»** (en la compu que tiene la comandera) saca la cuenta en papel: ver «La comandera».
 - **El último cobro cierra la mesa sola:** sello COBRADO, vuelto si hubo, puntos del socio y «Volver al salón».
 - **Un cobro nunca se encola.** Sin señal se dice que no se registró y se reintenta con la misma clave; «No
   cobrar» primero relee la cuenta para saber si había entrado.
@@ -226,6 +237,46 @@ pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
 7. Mesa 8 (con socio) por QR $ 101.000 → «Laura sumó 101 puntos».
 
 Queda para probar con dos dispositivos a la vez y sin señal (pasos 12 a 15 del guion de la cuenta).
+
+## La comandera (comandas, cuenta y cierre en papel)
+
+Pedido del 16/11/2026: «se necesitan comandas en ticket, con cable USB; va a haber dos compus, una
+afuera y otra adentro» y «cierre de caja: imprimir una planilla en la comandera».
+
+`lib/pos/print/*` (puro, probado en `tests/lib/pos-print.test.ts`) · `components/pos/print/*`. No toca
+la base.
+
+- **Cómo imprime.** La comandera es una impresora térmica de rollo enchufada por USB a una compu, con su
+  driver, como cualquier impresora. El tique se arma como una hoja angosta (72 mm de ancho útil en el
+  rollo de 80; 48 en el de 58), todo en negro pleno, y se manda por el camino de siempre del navegador
+  (`printJob`: un marco que no se ve, `print()`). Sirve cualquier marca; no hace falta hablarle en su
+  idioma. Para que salga **sin preguntar**: la comandera como impresora predeterminada y Chrome abierto
+  con `--kiosk-printing` (la hoja «Comandera» lo explica). Sin eso muestra el cuadro de imprimir y
+  alcanza con Enter.
+- **Quién imprime las comandas.** La compu que tiene la impresora, no el celular del mozo. En esa compu
+  se prende **«Imprimir las comandas acá»** (botón de la impresora en la barra de arriba del mapa, de la
+  caja y de la tele de cocina; en un celular no se dibuja). Desde entonces, cada pedido que entra sale
+  solo, se mire la pantalla que se mire (`PosPrintStation` vive en el marco del salón). Se entera por el
+  aviso en vivo y, por las dudas, mira cada 15 segundos.
+- **Qué imprime cada una** es de cada compu y queda guardado en el dispositivo (`hub:pos:printer:<sucursal>`):
+  todas las estaciones o algunas (la de adentro, la plancha; la de afuera, la barra), **un tique por
+  estación** para cortar y repartir, papel de 80 o 58 mm y una o dos copias.
+- **No repite ni saltea.** Imprime lo que salió a cocina desde que se prendió y todavía no imprimió; la
+  lista de lo impreso queda en el dispositivo (36 horas). Lo anota ANTES de mandarlo, con un candado del
+  navegador: dos pestañas abiertas en la misma compu no imprimen dos veces. Si la impresión falla, lo
+  desanota, avisa una vez por minuto y reintenta sola. Si la compu se apagó un rato, al volver imprime lo
+  que entró mientras tanto.
+- **La comanda** (`comandaDoc`): la mesa enorme, sector, personas y tanda, la hora del pedido, los avisos
+  de salud en negativo, y los productos como en la tele: los iguales juntos («x2 Cheese Burger») y debajo
+  cómo va cada uno. **«Reimprimir»** está en cada tanda de la comanda del mozo (por si se trabó el papel).
+- **La cuenta** (`billDoc`): membrete, productos juntos, descuentos y seña, total, lo ya pagado y lo que
+  falta, el alias para transferir y «Documento no válido como factura».
+- **El cierre de caja** (`shiftDoc`): el mismo resumen del turno que se copia o se manda por WhatsApp,
+  con el arqueo arriba (en negativo si no cuadra) y lugar para firmar («Contó», «Controló»). El formato
+  definitivo lo van a pasar los dueños: cuando llegue se cambia en `lib/pos/print/shift.ts` y solo ahí.
+- **Qué no hace todavía:** no imprime el nombre del mozo (la cola de cocina no lo trae), no reimprime
+  sola una comanda a la que le dieron de baja algo, y si dos compus distintas tienen prendida la
+  impresión de la misma estación, las dos imprimen (es a propósito: cada una tiene su impresora).
 
 ## Sucursales y ajustes del punto de venta
 
@@ -487,6 +538,15 @@ Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta), `tests/lib/pos-t
   la confirma y se reintenta sola; lo que quedó sin enviar también sale desde el mapa (`PosOutboxRunner`).
 
 ## La pantalla de cocina
+
+- **Los productos iguales van juntos** (pedido del 16/11/2026): un renglón por producto con todas sus
+  unidades («x2 Cheese Burger»), aunque el mozo las haya cargado por separado. Si todas van igual, las
+  aclaraciones van una vez; si no (una sin cebolla, otra con otra guarnición), cada forma va debajo con
+  su cantidad y la que no lleva nada dice «Común» (`groupSameProducts` en `lib/pos/kitchen/cards.ts`).
+  Solo se juntan los de la misma estación y el mismo paso: uno entregado no se mezcla con uno que falta.
+- **Un monitor por estación** ya existía: cada pantalla elige qué estaciones muestra (queda guardado en
+  el dispositivo y en la dirección, `?estaciones=`), y a qué estación va cada producto se decide en
+  Carta › Cocina y aclaraciones (por categoría, o producto por producto).
 
 - Una tarjeta por tanda, colgada del riel por orden de llegada; nunca se reacomoda sola.
 - Arriba, el total que se está preparando («8 Bacon · 5 Lomito»).

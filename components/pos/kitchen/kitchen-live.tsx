@@ -8,6 +8,7 @@ import type { KitchenQueue } from '@/lib/pos/types'
 import { usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
+import { PrinterButton } from '../print/printer-button'
 import { type KitchenFailure, KitchenScreen } from './kitchen-screen'
 
 /**
@@ -292,6 +293,15 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, is
       failure={failure}
       onDismissFailure={dismissFailure}
       timeZone={timeZone}
+      tools={
+        <PrinterButton
+          variant="kitchen"
+          slug={slug}
+          branchId={branchId}
+          branchName={server.branch.name}
+          timeZone={timeZone}
+        />
+      }
     />
   )
 }

@@ -106,6 +106,7 @@ export default async function PosCashPage({
         branches={branches.map(toBranch)}
         shifts={visibleShifts}
         timeZone={timeZone}
+        barName={access.tenant.name}
         account={
           <AccountSheet
             email={access.user.email ?? ''}

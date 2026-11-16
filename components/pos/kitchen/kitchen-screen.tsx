@@ -105,6 +105,8 @@ type Props = {
   failure: KitchenFailure | null
   onDismissFailure: () => void
   timeZone: string
+  /** Lo que va al final de la barra (la comandera de esta compu). */
+  tools?: React.ReactNode
 }
 
 const ACK_MS = 120
@@ -143,6 +145,7 @@ export function KitchenScreen({
   failure,
   onDismissFailure,
   timeZone,
+  tools,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
   const track = useRef<HTMLOListElement>(null)
@@ -473,6 +476,7 @@ export function KitchenScreen({
             <SoundIcon aria-hidden strokeWidth={2.4} />
             <span>{SOUND_WORD[sound.state]}</span>
           </button>
+          {tools}
         </div>
       </header>
 

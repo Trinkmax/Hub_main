@@ -783,9 +783,11 @@ describe('un tique no pide número', () => {
     expect(preview.ok).toBe(true)
   })
 
-  it('una factura sí lo exige, y un remito nunca lleva', () => {
+  it('una factura tampoco lo exige (16/11/2026), y un remito nunca lleva', () => {
     const invoice = previewOf(tique({ voucherType: 'factura_a' }))
-    expect(invoice.preview.ok).toBe(false)
+    expect(invoice.values.pointOfSale).toBeNull()
+    expect(invoice.values.number).toBeNull()
+    expect(invoice.preview.ok).toBe(true)
     const remito = previewOf(tique({ voucherType: 'sin_comprobante', pointOfSale: 3, number: 7 }))
     expect(remito.values.pointOfSale).toBeNull()
     expect(remito.values.number).toBeNull()

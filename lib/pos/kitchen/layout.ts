@@ -58,7 +58,13 @@ export type TicketShape = {
   labels: number
   /** Lleva la línea del pie con lo de otras estaciones. */
   footer: boolean
-  lines: readonly { name: string; modifiers: readonly string[]; notes: string | null }[]
+  lines: readonly {
+    name: string
+    modifiers: readonly string[]
+    notes: string | null
+    /** Las formas distintas de un mismo producto: cada una arranca su propio renglón de aclaraciones. */
+    variants?: readonly { modifiers: readonly string[]; notes: string | null }[]
+  }[]
 }
 
 /** Las medidas de `kitchen.css`, en unidades. Si cambia la hoja de estilos, cambian acá. */
@@ -79,6 +85,8 @@ const TICKET = {
   modRow: 43,
   modChar: 16,
   modPadding: 26,
+  /** La cantidad de cada forma («x1»), a la izquierda de sus aclaraciones. */
+  variantQty: 54,
   /** Padding lateral del papel + la columna de la cantidad. */
   sideChrome: 130,
 } as const
@@ -116,10 +124,24 @@ export function estimateTicket(
   let body = TICKET.bodyPadding + shape.labels * TICKET.label
   for (const line of shape.lines) {
     const nameRows = Math.max(1, Math.ceil((line.name.length * TICKET.nameChar) / nameWidth))
-    const marks = [...line.modifiers, ...(line.notes ? [`«${line.notes}»`] : [])].map(
-      (text) => text.length * TICKET.modChar + TICKET.modPadding,
-    )
-    const modRows = rowsOf(marks, nameWidth, 8)
+    const widths = (modifiers: readonly string[], notes: string | null) =>
+      [...modifiers, ...(notes ? [`«${notes}»`] : [])].map(
+        (text) => text.length * TICKET.modChar + TICKET.modPadding,
+      )
+    const variants = line.variants ?? []
+    const modRows =
+      variants.length > 0
+        ? // Cada forma va en su renglón, con su cantidad adelante (y «Común» si no lleva nada).
+          variants.reduce(
+            (rows, variant) =>
+              rows +
+              Math.max(
+                1,
+                rowsOf(widths(variant.modifiers, variant.notes), nameWidth - TICKET.variantQty, 8),
+              ),
+            0,
+          )
+        : rowsOf(widths(line.modifiers, line.notes), nameWidth, 8)
     const height =
       TICKET.linePadding +
       nameRows * TICKET.nameRow +

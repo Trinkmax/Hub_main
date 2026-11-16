@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
+import { printJob } from '@/components/pos/print/print-frame'
+import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
 import { formatCentsShort } from '@/lib/money/format'
 import {
@@ -34,6 +36,8 @@ import {
   tandaNumbers,
   ticketDisplay,
 } from '@/lib/pos/order/tickets'
+import { comandaDoc } from '@/lib/pos/print/comanda'
+import { reprintCard } from '@/lib/pos/print/station'
 import type { MenuItem, PosMenu, SessionDetail, SessionItem } from '@/lib/pos/types'
 import { usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
@@ -273,7 +277,7 @@ export function OrderScreen({
     const ready = summarizeSession(server.tickets).readyItemIds
     if (readySeen.current !== null && newlyReady(readySeen.current, server.tickets).length > 0) {
       buzz([60, 40, 60])
-      toast.success(`${title}: lista para llevar`)
+      toast.success(`${title}: en despacho`)
     }
     readySeen.current = new Set(ready)
   }, [server, title])
@@ -327,6 +331,25 @@ export function OrderScreen({
     serve(summary.readyItemIds, () => markServed(slug, { sessionId, onlyReady: true }))
   const serveLine = (item: SessionItem) =>
     serve([item.id], () => markServed(slug, { sessionId, itemIds: [item.id], onlyReady: false }))
+
+  /** Otra copia de la comanda de una tanda, por la comandera de esta compu. */
+  const reprint = async (ticketId: string) => {
+    const card = reprintCard(view, ticketId)
+    if (!card) {
+      toast('Esa tanda no tiene nada para imprimir')
+      return
+    }
+    try {
+      await printJob({
+        paper: readPrinter(branchId).paper,
+        docs: [comandaDoc(card, { branch: '', timeZone, stationLabel: null, reprint: true })],
+      })
+    } catch {
+      toast.error('No se pudo mandar a la impresora', {
+        description: 'Fijate que esté prendida y con papel.',
+      })
+    }
+  }
 
   const fire = (ticketId: string) => {
     if (firing.includes(ticketId)) return
@@ -586,6 +609,7 @@ export function OrderScreen({
                   })
                 }
                 onFire={() => fire(ticket.id)}
+                onPrint={() => void reprint(ticket.id)}
               />
             ))}
 
