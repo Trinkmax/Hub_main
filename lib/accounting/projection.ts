@@ -198,6 +198,24 @@ export function complianceOf(
   return { kind: 'value', percent, side, gapPercent: Math.abs(percent - 100) }
 }
 
+/** Cómo viene un cumplimiento: mal, cerca o cumplido. */
+export type ComplianceTone = 'bad' | 'warn' | 'good'
+
+/** Desde qué porcentaje el cumplimiento deja de estar en rojo y pasa a amarillo. */
+export const COMPLIANCE_WARN_FROM = 90
+/** Desde qué porcentaje está cumplido (verde). */
+export const COMPLIANCE_GOOD_FROM = 100
+
+/**
+ * El semáforo del cumplimiento (pedido de los socios, 16/11/2026): menos de 90 % en rojo, de 90 a
+ * 99 % en amarillo y con el objetivo cumplido en verde. Pidieron «verde desde 101 %»; el 100 % justo
+ * también va en verde: llegar al objetivo no es quedarse cerca.
+ */
+export function complianceTone(percent: number): ComplianceTone {
+  if (percent >= COMPLIANCE_GOOD_FROM) return 'good'
+  return percent >= COMPLIANCE_WARN_FROM ? 'warn' : 'bad'
+}
+
 /** Tiene objetivo: cargado y mayor a cero (un objetivo en cero no se puede cumplir ni incumplir). */
 function hasTarget(targetCents: number | null): targetCents is number {
   return targetCents !== null && targetCents > 0

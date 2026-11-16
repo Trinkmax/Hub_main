@@ -46,7 +46,7 @@ ${everywhere}
 - La contadora reimputa y hace asientos; no carga compras, pagos ni ventas.
 - Un comprobante recién cargado se deshace con un toque durante 10 minutos. Después se anula desde su ficha, con motivo.
 - Un mes cerrado no se toca: lo que se carga con esa fecha entra el primer día abierto.
-- La Proyección (Ventas) es el objetivo de cada día. El objetivo lo escribe la persona, día por día: el sistema no calcula ni sugiere objetivos. Lo que sale solo es el tipo: comparando ese objetivo con el promedio de los días del mes que tienen objetivo, más de 10 % arriba es Fuerte, más de 10 % abajo es Flojo y el resto es Normal. «Sin objetivo» es que nadie lo escribió todavía. «Vendido» sale del cierre de ese día, y «Cumpl.» es vendido contra objetivo.
+- La Proyección (Ventas) es el objetivo de cada día. El objetivo lo escribe la persona, día por día: el sistema no calcula ni sugiere objetivos. Lo que sale solo es el tipo: comparando ese objetivo con el promedio de los días del mes que tienen objetivo, más de 10 % arriba es Fuerte, más de 10 % abajo es Flojo y el resto es Normal. «Sin objetivo» es que nadie lo escribió todavía. Lo vendido sale del cierre de ese día y va en tres columnas: «Venta bar», «Venta delivery» y «Venta total» (la neta: bar más delivery, sin las comisiones estimadas). «Cumpl.» es la venta total contra el objetivo: en rojo abajo de 90 %, en amarillo de 90 a 99 % y en verde con el objetivo cumplido.
 
 ## Las recetas: una por situación
 ${recipes}

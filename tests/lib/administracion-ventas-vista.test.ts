@@ -191,17 +191,26 @@ describe('cada renglón de la planilla', () => {
     expect(nextCloseDay(days, { '01': 'loaded', '02': 'loaded', '03': 'future' })).toBeNull()
   })
 
-  it('el cumplimiento es el número: el verde o el rojo lo pone la pantalla', () => {
+  it('el cumplimiento es el número y cómo viene: rojo abajo de 90, amarillo de 90 a 99, verde cumplido', () => {
     expect(
       compliancePercent({ kind: 'value', percent: 84, side: 'below', gapPercent: 16 }),
-    ).toEqual({ text: `84${NB}%`, good: false })
+    ).toEqual({ text: `84${NB}%`, tone: 'bad' })
+    expect(
+      compliancePercent({ kind: 'value', percent: 89, side: 'below', gapPercent: 11 }),
+    ).toEqual({ text: `89${NB}%`, tone: 'bad' })
+    expect(
+      compliancePercent({ kind: 'value', percent: 90, side: 'below', gapPercent: 10 }),
+    ).toEqual({ text: `90${NB}%`, tone: 'warn' })
+    expect(compliancePercent({ kind: 'value', percent: 99, side: 'below', gapPercent: 1 })).toEqual(
+      { text: `99${NB}%`, tone: 'warn' },
+    )
     expect(compliancePercent({ kind: 'value', percent: 100, side: 'on', gapPercent: 0 })).toEqual({
       text: `100${NB}%`,
-      good: true,
+      tone: 'good',
     })
     expect(
       compliancePercent({ kind: 'value', percent: 120, side: 'above', gapPercent: 20 }),
-    ).toEqual({ text: `120${NB}%`, good: true })
+    ).toEqual({ text: `120${NB}%`, tone: 'good' })
     // Un día sin cierre o sin objetivo no es 0 %.
     expect(compliancePercent({ kind: 'no_close' })).toBeNull()
     expect(compliancePercent({ kind: 'no_target' })).toBeNull()
@@ -372,6 +381,54 @@ describe('planillaTotals: los tres números de arriba', () => {
     const [target, , remaining] = planillaTotals(projection.summary, { hasSales: true })
     expect(target?.hint).toBeUndefined()
     expect(remaining?.label).toBe('Faltó vender')
+  })
+
+  it('con los totales del mes, lo vendido se abre en bar, delivery y total', () => {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(closed(day)
+        ? {
+            closes: 1,
+            salonCents: 100_000_000,
+            salonCommissionCents: 5_000_000,
+            deliveryCents: 20_000_000,
+            deliveryCommissionCents: 5_000_000,
+          }
+        : {}),
+    }))
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const items = planillaTotals(projection.summary, { hasSales: true, totals: projection.totals })
+    expect(items.map((item) => item.label)).toEqual([
+      'Objetivo del mes',
+      'Venta bar',
+      'Venta delivery',
+      'Venta total',
+      'Falta vender',
+    ])
+    const [target, bar, delivery, total, remaining] = items
+    // Cuatro días cerrados: $ 1.000.000 de bar y $ 200.000 de delivery cada uno.
+    expect(bar).toMatchObject({ cents: 400_000_000 })
+    expect(delivery).toMatchObject({ cents: 80_000_000 })
+    // La total es la que se compara con el objetivo: sin las comisiones estimadas, y lo dice.
+    expect(total).toMatchObject({ cents: 440_000_000, tone: 'ok' })
+    expect(total?.hint).toBe(`Sin $${NB}400.000 de comisiones`)
+    expect((target?.cents ?? 0) - (total?.cents ?? 0)).toBe(remaining?.cents)
+  })
+
+  it('sin comisiones, la venta total no lleva aclaración; sin ventas, nada dice «$ 0»', () => {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(closed(day) ? { closes: 1, salonCents: 100_000_000 } : {}),
+    }))
+    const projection = buildProjection(rows, { serviceDay: TODAY })
+    const withSales = planillaTotals(projection.summary, {
+      hasSales: true,
+      totals: projection.totals,
+    })
+    expect(withSales[3]?.hint).toBeUndefined()
+    const empty = buildProjection(source(), { serviceDay: TODAY })
+    const none = planillaTotals(empty.summary, { hasSales: false, totals: empty.totals })
+    expect(none.slice(1, 4).map((item) => item.cents)).toEqual([null, null, null])
   })
 
   it('pasado el objetivo, el tercer número dice por cuánto', () => {

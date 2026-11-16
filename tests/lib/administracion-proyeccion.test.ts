@@ -7,6 +7,7 @@ import {
   cashDiffText,
   complianceOf,
   complianceText,
+  complianceTone,
   POS_METHOD_SYSTEM_KEY,
   type PosSalesOfDay,
   type ProjectionSourceDay,
@@ -73,6 +74,14 @@ const OCTOBER: ProjectionSourceDay[] = [
   row('2026-10-05', { targetCents: p(1_000_000) }),
   row('2026-10-06', { targetCents: p(2_000_000) }),
 ]
+
+describe('el semáforo del cumplimiento', () => {
+  it('rojo abajo de 90 %, amarillo de 90 a 99 % y verde con el objetivo cumplido', () => {
+    expect([0, 64, 89].map(complianceTone)).toEqual(['bad', 'bad', 'bad'])
+    expect([90, 95, 99].map(complianceTone)).toEqual(['warn', 'warn', 'warn'])
+    expect([100, 101, 250].map(complianceTone)).toEqual(['good', 'good', 'good'])
+  })
+})
 
 describe('proyección de ventas: las cuentas de la planilla', () => {
   const projection = buildProjection(OCTOBER, { serviceDay: '2026-10-05' })

@@ -1,7 +1,12 @@
 import { Plus, ReceiptText } from 'lucide-react'
 import { Suspense } from 'react'
 import { PanelLink, RetryButton, StatusPill } from '@/components/administracion/kit'
-import { cashDiffText, type ProjectionDay } from '@/lib/accounting/projection'
+import {
+  type ComplianceTone,
+  cashDiffText,
+  complianceTone,
+  type ProjectionDay,
+} from '@/lib/accounting/projection'
 import { type DailyCloseDay, getDocument } from '@/lib/accounting/queries/documents'
 import type { CashCountTreasury } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
@@ -48,6 +53,13 @@ export type NightSheetProps = {
 
 const SECTION = 'space-y-3 border-t border-border/70 pt-4'
 
+/** El semáforo del cumplimiento, en los tonos de la pastilla (el rojo es «vencido» en su paleta). */
+const NIGHT_PACE_TONE: Readonly<Record<ComplianceTone, 'ok' | 'warn' | 'late'>> = {
+  good: 'ok',
+  warn: 'warn',
+  bad: 'late',
+}
+
 /** El objetivo del día (se escribe en el lugar) y cómo quedó contra lo vendido. */
 function TargetLine({
   day,
@@ -74,7 +86,7 @@ function TargetLine({
           </span>
         )}
         {pace ? (
-          <StatusPill tone={pace.side === 'below' ? 'warn' : 'ok'}>
+          <StatusPill tone={NIGHT_PACE_TONE[complianceTone(pace.percent)]}>
             {nightPaceText(pace)}
           </StatusPill>
         ) : null}
