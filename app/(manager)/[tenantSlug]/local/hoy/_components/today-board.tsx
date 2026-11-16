@@ -27,9 +27,11 @@ import type {
   TodayShift,
   TodaySummary,
 } from '@/lib/pos/today/types'
+import { unsoldOfBranch } from '@/lib/pos/unsold/report'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { Storefront } from '../../sucursales/_components/storefront'
+import { UnsoldPanel } from './unsold-panel'
 
 /** Cada cuánto se vuelve a leer mientras la pantalla está a la vista. */
 const REFRESH_MS = 30_000
@@ -373,6 +375,13 @@ export function TodayBoard({
               </ol>
             )}
           </Panel>
+
+          <UnsoldPanel
+            report={unsoldOfBranch(data.unsold, branch?.id ?? null)}
+            timeZone={timeZone}
+            isToday={data.isToday}
+            className="lg:col-span-2"
+          />
 
           <Panel
             title="Turnos de caja"

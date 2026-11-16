@@ -1681,3 +1681,11 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   Visa» (el gasto dice «Lo pagaste con Visa»): unificar el texto.
 - **HUB no tiene ninguna tarjeta cargada como cuenta** (al 16/11: una caja y una billetera). Para usar las cuotas
   hay que sumarla en Administración › Ajustes › Cajas como «Tarjeta de crédito».
+- **«Salió sin venderse»: lo que quedó para después** (ver `docs/features/pos.md`). (1) `pos_sales_days` y el
+  arqueo (`pos_shift_summary`) cuentan una mesa que no se cobró entre las mesas y las personas: el per cápita de
+  la tira de 14 días y del cierre de caja baja un poco con cada mesa de socios; arreglarlo es tocar esas dos
+  funciones. (2) Falta un resumen por semana o por mes (hoy es día por día). (3) Las bajas no dicen quién las dio
+  en «Hoy en vivo» (`ticket_items.cancelled_by` es un id; el nombre lo arma la base y hoy solo sale en el arqueo).
+  (4) El «ya estaba hecho» viaja en el texto del motivo: si algún día hace falta consultarlo en la base, pasa a una
+  columna. (5) Descontar insumos de verdad: recetas por producto de la carta (hoy `pur_recipes` es solo de
+  formatos de evento) y movimientos de stock.

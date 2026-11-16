@@ -7,6 +7,7 @@
  */
 
 import type { PayMethod } from '@/lib/pos/cash/types'
+import type { UnsoldBill, UnsoldDiscount, UnsoldLine } from '@/lib/pos/unsold/report'
 
 export type TodayBranch = {
   id: string
@@ -95,6 +96,12 @@ export type TodayData = {
   /** Solo cuando se mira el día en curso. */
   openTables: TodayOpenTable[]
   lines: TodayLine[]
+  /** Con qué se arma «Salió sin venderse» (`lib/pos/unsold/report.ts`). */
+  unsold: {
+    bills: UnsoldBill[]
+    discounts: UnsoldDiscount[]
+    lines: UnsoldLine[]
+  }
 }
 
 export type MethodTotal = {

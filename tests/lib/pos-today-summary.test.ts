@@ -101,6 +101,7 @@ const data = (over: Partial<TodayData>): TodayData => ({
   shifts: [],
   openTables: [],
   lines: [],
+  unsold: { bills: [], discounts: [], lines: [] },
   ...over,
 })
 
@@ -189,6 +190,25 @@ describe('mesas, personas y per cápita', () => {
     expect(summary.depositCents).toBe(8000000)
     expect(summary.memberTables).toBe(1)
     expect(summary.pointsAwarded).toBe(91)
+  })
+
+  it('una mesa que no se cobró (consumo de socios) no es una mesa cobrada ni un descuento', () => {
+    const summary = summarizeToday(
+      data({
+        bills: [
+          bill({ partySize: 2, subtotalCents: 4000000, dueCents: 4000000 }),
+          // La mesa del socio: la bonificación cubrió todo y no entró plata.
+          bill({ partySize: 6, subtotalCents: 9000000, discountCents: 9000000, dueCents: 0 }),
+        ],
+      }),
+      null,
+    )
+    expect(summary.tables).toBe(1)
+    expect(summary.people).toBe(2)
+    expect(summary.consumptionCents).toBe(4000000)
+    expect(summary.perPersonCents).toBe(2000000)
+    expect(summary.discountCents).toBe(0)
+    expect(summary.discountedTables).toBe(0)
   })
 
   it('sin personas anotadas no inventa un per cápita', () => {

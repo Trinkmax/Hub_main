@@ -13,6 +13,12 @@ import { requestVoid } from '@/lib/pos/cash/actions'
 import { posFont } from '@/lib/pos/font'
 import { LINE_WORD, lineState } from '@/lib/pos/order/tickets'
 import type { SessionItem } from '@/lib/pos/types'
+import {
+  MADE_REASONS,
+  NOT_MADE_REASONS,
+  REASON_SOLD_OUT,
+  voidReasonText,
+} from '@/lib/pos/unsold/reasons'
 import { cn } from '@/lib/utils'
 import { modifierText } from './ticket-card'
 import { useLast } from './use-last'
@@ -26,14 +32,21 @@ import { useLast } from './use-last'
  * encargado. En ese caso queda el pedido esperando su OK y el renglón sigue en la comanda.
  */
 
-/** Con este motivo, después se ofrece marcar el producto agotado. */
-export const REASON_SOLD_OUT = 'No hay más'
+export { REASON_SOLD_OUT }
 
-export const CANCEL_REASONS = [
-  'Error de carga',
-  'El cliente cambió de idea',
-  'Se demoró',
-  REASON_SOLD_OUT,
+/**
+ * Los motivos, en dos grupos (pedido de los socios, 16/11/2026: «bajar de stock lo mal comandado»):
+ * lo que todavía no se hizo no se pierde; lo que ya estaba hecho, sí, y queda anotado así para que los
+ * dueños vean cuánto salió sin venderse. Un toque sigue alcanzando: el grupo dice cuál de las dos es.
+ */
+const REASON_GROUPS = [
+  {
+    made: false,
+    title: 'Todavía no se hizo',
+    hint: 'No se pierde nada.',
+    reasons: NOT_MADE_REASONS,
+  },
+  { made: true, title: 'Ya estaba hecho', hint: 'Se pierde el producto.', reasons: MADE_REASONS },
 ] as const
 
 export type LineTarget = {
@@ -142,22 +155,35 @@ export function LineSheet({
                   <span className="pos-sheet-q">¿Por qué se da de baja?</span>
                   <small>Queda anotado quién fue.</small>
                 </legend>
-                <div className="cmd-reasons">
-                  {CANCEL_REASONS.map((reason) => (
-                    <button
-                      key={reason}
-                      type="button"
-                      className="cmd-opt"
-                      onClick={() => void cancel(reason)}
-                      data-testid={`reason-${CANCEL_REASONS.indexOf(reason)}`}
-                    >
-                      {state.busy === reason ? (
-                        <LoaderCircle className="cmd-spin" aria-hidden />
-                      ) : null}
-                      {reason}
-                    </button>
-                  ))}
-                </div>
+                {/* Lo que no salió a cocina no pudo estar hecho: solo el primer grupo. */}
+                {REASON_GROUPS.filter((group) => shown.fired || !group.made).map((group) => (
+                  <div key={group.title} className="cmd-reason-group">
+                    {shown.fired ? (
+                      <p className="cmd-reason-title">
+                        <b>{group.title}</b> {group.hint}
+                      </p>
+                    ) : null}
+                    <div className="cmd-reasons">
+                      {group.reasons.map((label, index) => {
+                        const reason = voidReasonText(label, group.made)
+                        return (
+                          <button
+                            key={reason}
+                            type="button"
+                            className="cmd-opt"
+                            onClick={() => void cancel(reason)}
+                            data-testid={`reason-${group.made ? 'made' : 'not-made'}-${index}`}
+                          >
+                            {state.busy === reason ? (
+                              <LoaderCircle className="cmd-spin" aria-hidden />
+                            ) : null}
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </fieldset>
             ) : null}
 

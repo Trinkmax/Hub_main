@@ -25,6 +25,14 @@ import { isVoidPayload } from '@/lib/pos/pay/approvals'
 import { bpLabel } from '@/lib/pos/pay/charge'
 import type { LineGroup } from '@/lib/pos/pay/lines'
 import { discountWindow } from '@/lib/pos/pay/typed'
+import {
+  COMP_REASONS,
+  compReasonText,
+  MADE_MARK,
+  MADE_REASONS,
+  NOT_MADE_REASONS,
+  voidReasonText,
+} from '@/lib/pos/unsold/reasons'
 import { cn } from '@/lib/utils'
 import { MoneyField, typedSettled } from './money-field'
 import { minus, money } from './pay-types'
@@ -41,7 +49,19 @@ import { minus, money } from './pay-types'
 export type SheetResult = Promise<string | null>
 
 const DISCOUNT_REASONS = ['Cortesía de la casa', 'Demora', 'Reclamo', 'Promo', 'Personal del bar']
-const VOID_REASONS = ['No lo consumieron', 'Vino mal', 'Se demoró', 'Error de carga']
+/**
+ * Los motivos de una baja, en dos grupos (los mismos que en la comanda): lo que no llegó a hacerse no
+ * se pierde; lo que ya estaba hecho, sí, y queda anotado así (`lib/pos/unsold/reasons.ts`).
+ */
+const VOID_GROUPS = [
+  {
+    made: false,
+    title: 'No llegó a hacerse',
+    hint: 'No se pierde nada.',
+    reasons: NOT_MADE_REASONS,
+  },
+  { made: true, title: 'Ya estaba hecho', hint: 'Se pierde el producto.', reasons: MADE_REASONS },
+] as const
 const PAYMENT_VOID_REASONS = [
   'Medio equivocado',
   'Monto equivocado',
@@ -70,12 +90,15 @@ function ReasonButtons({
   busy,
   submitLabel,
   onPick,
+  name = 'pay',
 }: {
   reasons: ReadonlyArray<string>
   /** El motivo que está viajando. */
   busy: string | null
   submitLabel: string
   onPick: (reason: string) => void
+  /** Para distinguir dos listas en la misma hoja (el campo de «Otro motivo» y las pruebas). */
+  name?: string
 }) {
   const [other, setOther] = useState<string | null>(null)
   const typed = (other ?? '').trim()
@@ -88,7 +111,7 @@ function ReasonButtons({
             type="button"
             className="pay-opt"
             onClick={() => onPick(reason)}
-            data-testid={`pay-reason-${i}`}
+            data-testid={`${name}-reason-${i}`}
           >
             {busy === reason ? <LoaderCircle className="pay-spin" aria-hidden /> : null}
             {reason}
@@ -108,11 +131,11 @@ function ReasonButtons({
             if (typed) onPick(typed)
           }}
         >
-          <label className="sr-only" htmlFor="pay-other-reason">
+          <label className="sr-only" htmlFor={`${name}-other-reason`}>
             Otro motivo
           </label>
           <input
-            id="pay-other-reason"
+            id={`${name}-other-reason`}
             className="pay-text"
             type="text"
             value={other}
@@ -141,6 +164,173 @@ function ReasonButtons({
 export type DiscountChoice =
   | { kind: 'percent'; percent: number; reason: string }
   | { kind: 'amount'; amountCents: number; reason: string }
+
+/**
+ * «No se cobra»: la mesa de un socio, una invitación, el personal (pedido de los socios, 16/11/2026:
+ * «lo de los socios se descuenta de stock y no cuenta la plata como ingreso»). Bonifica lo que falta
+ * con su motivo y cierra la mesa: no entra plata, no cuenta como venta y queda en «Salió sin
+ * venderse» con sus productos. Quien no puede dar el OK, lo pide, como cualquier descuento.
+ */
+export function CompSheet({
+  open,
+  bill,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean
+  bill: Bill
+  onClose: () => void
+  onSubmit: (reason: string) => SheetResult
+}) {
+  const [draft, setDraft] = useState<CompDraft>({ open: false, ...EMPTY_COMP })
+  if (open !== draft.open) setDraft({ open, ...EMPTY_COMP })
+  const patch = (change: Partial<CompDraft>) => setDraft((d) => ({ ...d, error: null, ...change }))
+
+  const direct = bill.can.discount_direct
+  const partial = bill.bill.paid_cents > 0 || bill.bill.deposit_cents > 0
+  const base = (draft.other !== null ? draft.other : draft.reason).trim()
+  const reason = base === '' ? '' : compReasonText(base, draft.who)
+  const ready = reason !== ''
+
+  const submit = async () => {
+    if (!ready || draft.busy) return
+    patch({ busy: true })
+    const error = await onSubmit(reason)
+    if (error) patch({ busy: false, error })
+    else onClose()
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={(next) => !next && !draft.busy && onClose()}>
+      <SheetContent
+        side="bottom"
+        showClose={false}
+        className={sheetClass()}
+        data-testid="comp-sheet"
+      >
+        <SheetGrabber />
+        <div className="pos-sheet-body pay-sheet-body">
+          <div className="pay-sheet-head">
+            <SheetTitle className="pos-sheet-title pay-sheet-title">
+              {direct ? 'No se cobra' : 'Pedir que no se cobre'}
+            </SheetTitle>
+            <SheetDescription className="pay-sheet-sub is-ink">
+              {partial ? 'Lo que falta' : 'La mesa'} ({money(bill.bill.remaining_cents)}) no se
+              cobra: no entra plata ni cuenta como venta. Queda anotado qué salió y por qué.
+            </SheetDescription>
+          </div>
+
+          <fieldset className="pay-group" disabled={draft.busy}>
+            <legend>
+              <span className="pos-sheet-q">¿Por qué?</span>
+            </legend>
+            <div className="pay-opts">
+              {COMP_REASONS.map((text, i) => (
+                <button
+                  key={text}
+                  type="button"
+                  className="pay-opt"
+                  aria-pressed={draft.other === null && draft.reason === text}
+                  onClick={() => patch({ reason: text, other: null })}
+                  data-testid={`comp-reason-${i}`}
+                >
+                  {text}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="pay-opt"
+                aria-pressed={draft.other !== null}
+                onClick={() => patch({ other: draft.other ?? '' })}
+              >
+                Otro motivo
+              </button>
+            </div>
+            {draft.other !== null ? (
+              <>
+                <label className="sr-only" htmlFor="pay-comp-reason">
+                  Otro motivo
+                </label>
+                <input
+                  id="pay-comp-reason"
+                  className="pay-text"
+                  type="text"
+                  value={draft.other}
+                  maxLength={80}
+                  onChange={(event) => patch({ other: event.target.value })}
+                  placeholder="Contá por qué"
+                  autoComplete="off"
+                  enterKeyHint="next"
+                />
+              </>
+            ) : null}
+          </fieldset>
+
+          <fieldset className="pay-group" disabled={draft.busy}>
+            <legend>
+              <label className="pos-sheet-q" htmlFor="pay-comp-who">
+                ¿Para quién?
+              </label>
+              <small>Si querés: el socio o el invitado.</small>
+            </legend>
+            <input
+              id="pay-comp-who"
+              className="pay-text"
+              type="text"
+              value={draft.who}
+              maxLength={60}
+              onChange={(event) => patch({ who: event.target.value })}
+              placeholder="Nombre"
+              autoComplete="off"
+              enterKeyHint="done"
+              data-testid="comp-who"
+            />
+          </fieldset>
+
+          <SheetError message={draft.error} />
+
+          <div className="pay-sheet-foot">
+            <button
+              type="button"
+              className="pos-btn pos-btn-quiet"
+              onClick={onClose}
+              disabled={draft.busy}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="pos-btn pos-btn-primary"
+              onClick={() => void submit()}
+              disabled={!ready || draft.busy}
+              data-testid="comp-submit"
+            >
+              {draft.busy ? <LoaderCircle className="pay-spin size-5" aria-hidden /> : null}
+              {!ready ? 'Elegí el motivo' : direct ? 'No cobrar y cerrar' : 'Pedir el OK'}
+            </button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+type CompDraft = {
+  open: boolean
+  reason: string
+  other: string | null
+  who: string
+  busy: boolean
+  error: string | null
+}
+
+const EMPTY_COMP: Omit<CompDraft, 'open'> = {
+  reason: '',
+  other: null,
+  who: '',
+  busy: false,
+  error: null,
+}
 
 type DiscountDraft = {
   mode: 'percent' | 'other' | 'amount' | null
@@ -615,12 +805,25 @@ export function BillLineSheet({
                       : 'El encargado da el OK desde su celular.'}
                   </small>
                 </legend>
-                <ReasonButtons
-                  reasons={VOID_REASONS}
-                  busy={state.busy}
-                  submitLabel={direct ? 'Dar de baja' : 'Pedir la baja'}
-                  onPick={(reason) => void request(reason)}
-                />
+                {VOID_GROUPS.map((group) => (
+                  <div key={group.title} className="pay-reason-group">
+                    <p className="pay-reason-title">
+                      <b>{group.title}</b> {group.hint}
+                    </p>
+                    <ReasonButtons
+                      name={group.made ? 'void-made' : 'void-not-made'}
+                      reasons={group.reasons}
+                      // El que viaja lleva la marca de «ya estaba hecho»: se compara sin ella.
+                      busy={
+                        state.busy === null || state.busy.endsWith(MADE_MARK) !== group.made
+                          ? null
+                          : state.busy.replace(MADE_MARK, '')
+                      }
+                      submitLabel={direct ? 'Dar de baja' : 'Pedir la baja'}
+                      onPick={(reason) => void request(voidReasonText(reason, group.made))}
+                    />
+                  </div>
+                ))}
               </fieldset>
             )}
 

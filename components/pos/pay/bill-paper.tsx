@@ -27,6 +27,7 @@ import type { Chosen, LineGroup } from '@/lib/pos/pay/lines'
 import { type BillMode, billName, billPeople, billTitle } from '@/lib/pos/pay/mode'
 import { dayAt } from '@/lib/pos/pay/when'
 import { formatMinutes } from '@/lib/pos/table-state'
+import { billNotCharged } from '@/lib/pos/unsold/report'
 import { cn } from '@/lib/utils'
 import { minus, money } from './pay-types'
 
@@ -333,7 +334,7 @@ export function BillPaper({
               data-testid="pay-stamp"
             >
               <Stamp aria-hidden strokeWidth={2.4} />
-              Cobrado
+              {billNotCharged(numbers) ? 'No se cobró' : 'Cobrado'}
             </span>
           ) : null}
         </p>
