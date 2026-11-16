@@ -13,7 +13,8 @@ import type { TexExecution, TexToolContext, TexToolResult } from '../types'
 
 // `lib/tenant/roles.ts` no tiene un set para Mensajería: las páginas y las acciones escriben estos
 // mismos arrays a mano. El área la ve solo el dueño (`visible`); estos dicen lo que deja cada pantalla.
-/** Difusiones, audiencias, plantillas, flows, canales y tareas. */
+// Las tareas de marketing sí tienen el suyo (`MARKETING_TASK_ROLES`): lo usa `tareas.ts`.
+/** Difusiones, audiencias, plantillas, flows y canales. */
 export const OWNER_ROLES: readonly TenantRole[] = ['owner']
 /** La bandeja, y etiquetar una conversación. */
 export const INBOX_ROLES: readonly TenantRole[] = ['owner', 'cashier', 'waiter']

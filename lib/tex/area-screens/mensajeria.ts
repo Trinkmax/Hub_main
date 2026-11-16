@@ -3,8 +3,9 @@ import type { TexScreenDef } from '../screen-types'
 /**
  * Mensajería y Marketing. Todas fuera de Administración (`root`).
  *
- * El tablero de Tareas elige su solapa con `?seccion=`, que no es un parámetro de Tex: cada solapa es una
- * pantalla con su `query` fija. `/mensajeria` solo redirige a la bandeja: no hace falta una pantalla más.
+ * El tablero de Tareas filtra con `?persona=` y cambia de vista con `?vista=`, que no son parámetros de
+ * Tex: «Mis tareas» y la rutina son pantallas con su `query` fija. `?tarea=` sí lo es: abre el panel de
+ * una tarea. `/mensajeria` solo redirige a la bandeja: no hace falta una pantalla más.
  */
 export const mensajeriaScreens: readonly TexScreenDef[] = [
   {
@@ -119,41 +120,26 @@ export const mensajeriaScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'marketing.tareas',
-    label: 'Marketing › Tareas › Eventos',
-    what: 'El tablero de tareas de los socios: abre en la solapa Eventos.',
+    label: 'Marketing › Tareas',
+    what: 'El tablero de tareas de marketing: los grupos, quién hace qué, para cuándo y lo terminado. Con tarea (su id) abre el panel de esa tarea, con sus actualizaciones y archivos.',
     path: '/tareas',
     root: true,
-  },
-  {
-    id: 'marketing.tareas_promociones',
-    label: 'Marketing › Tareas › Promociones',
-    what: 'Las tareas de la solapa Promociones.',
-    path: '/tareas',
-    query: 'seccion=promociones',
-    root: true,
-  },
-  {
-    id: 'marketing.tareas_impresiones',
-    label: 'Marketing › Tareas › Impresiones',
-    what: 'Las tareas de la solapa Impresiones.',
-    path: '/tareas',
-    query: 'seccion=impresiones',
-    root: true,
+    params: ['tarea'],
   },
   {
     id: 'marketing.tareas_mias',
     label: 'Marketing › Tareas › Mis tareas',
-    what: 'Las tareas de una persona, de todas las secciones.',
+    what: 'El tablero con solo las tareas de quien mira: las que lleva y en las que está metido.',
     path: '/tareas',
-    query: 'seccion=mias',
+    query: 'persona=yo',
     root: true,
   },
   {
     id: 'marketing.tareas_organico',
-    label: 'Marketing › Tareas › Orgánico',
-    what: 'El checklist que se repite todas las semanas: historias, reels.',
+    label: 'Marketing › Tareas › Rutina de la semana',
+    what: 'Lo que se repite todas las semanas (historias, reels), con sus tildes. Antes se llamaba Orgánico.',
     path: '/tareas',
-    query: 'seccion=organico',
+    query: 'vista=rutina',
     root: true,
     params: ['semana'],
   },

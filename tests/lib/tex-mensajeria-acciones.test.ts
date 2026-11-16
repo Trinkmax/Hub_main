@@ -62,6 +62,8 @@ const TAG_VIP = uuid(71)
 const TAG_RESERVAS = uuid(72)
 const TASK = uuid(81)
 const ROUTINE = uuid(82)
+const GROUP = uuid(83)
+const OTHER_GROUP = uuid(84)
 const PHONE_ANA = '543515551234'
 
 const everyone = { kind: 'group', op: 'AND', nodes: [] }
@@ -226,25 +228,32 @@ function tables(): Record<string, FakeRow[]> {
     ],
     conversation_tag_assignments: [],
     quick_messages: [],
+    marketing_task_groups: [
+      { id: GROUP, tenant_id: TENANT, name: 'Eventos', color: 'forest', position: 1 },
+      { id: OTHER_GROUP, tenant_id: TENANT, name: 'Impresiones', color: 'sky', position: 2 },
+    ],
+    // `people`, `updates` y `files` son lo que PostgREST trae embebido con el select del tablero.
     marketing_tasks: [
       {
         id: TASK,
         tenant_id: TENANT,
+        group_id: GROUP,
         title: 'Flyer',
-        category: 'eventos',
-        kind: 'design',
         status: 'todo',
-        specifications: null,
+        due_date: null,
         notes: null,
-        file_url: null,
-        responsible_user_id: null,
-        involved_user_id: null,
-        ideal_date: null,
-        defined_date: null,
+        position: 1,
+        created_by: null,
         created_at: hoursAgo(5),
+        completed_at: null,
         updated_at: hoursAgo(5),
+        people: [],
+        updates: [{ count: 0 }],
+        files: [{ count: 0 }],
       },
     ],
+    marketing_task_people: [],
+    marketing_task_updates: [],
     marketing_routines: [
       {
         id: ROUTINE,
@@ -657,34 +666,73 @@ describe('el resto, con las acciones de verdad', () => {
     ])
   })
 
-  it('una tarea nueva y su edición', async () => {
-    expectDone(
+  it('una tarea nueva: se crea en su grupo y después se completa, como en el tablero', async () => {
+    const done = expectDone(
       await confirmed('preparar_tarea', {
         titulo: 'Reel',
-        seccion: 'promociones',
-        tipo: 'grabar',
-        responsable: 'yo',
-        fecha_ideal: '2026-11-20',
+        grupo: 'impresiones',
+        estado: 'en_curso',
+        responsables: ['yo'],
+        vencimiento: '2026-11-20',
+        notas: 'Vertical',
       }),
     )
-    expect(written('marketing_tasks')[0]?.payload).toMatchObject({
-      tenant_id: TENANT,
-      title: 'Reel',
-      category: 'promociones',
-      kind: 'shoot',
-      status: 'todo',
-      responsible_user_id: CTX.userId,
-      ideal_date: '2026-11-20',
-      specifications: null,
-      file_url: null,
-      completed_at: null,
+    const [insert, update] = written('marketing_tasks')
+    expect(insert).toMatchObject({
+      kind: 'insert',
+      payload: {
+        tenant_id: TENANT,
+        group_id: OTHER_GROUP,
+        title: 'Reel',
+        status: 'todo',
+        position: 1,
+        created_by: CTX.userId,
+      },
     })
-    expectDone(await confirmed('preparar_tarea', { tarea: 'flyer', comentarios: 'Con logo' }))
-    expect(fake.db.rows('marketing_tasks').find((task) => task.id === TASK)).toMatchObject({
+    expect(update).toMatchObject({
+      kind: 'update',
+      payload: {
+        status: 'in_progress',
+        completed_at: null,
+        due_date: '2026-11-20',
+        notes: 'Vertical',
+      },
+    })
+    const created = fake.db.rows('marketing_tasks').find((task) => task.title === 'Reel')
+    expect(created).toMatchObject({ group_id: OTHER_GROUP, status: 'in_progress' })
+    expect(written('marketing_task_people')[0]?.payload).toEqual([
+      {
+        tenant_id: TENANT,
+        task_id: created?.id,
+        user_id: CTX.userId,
+        role: 'responsible',
+        created_by: CTX.userId,
+      },
+    ])
+    expect(written('audit_log')[0]?.payload).toMatchObject({ action: 'marketing_task.created' })
+    expect(done.href).toBe(`/hub/tareas?tarea=${created?.id}`)
+  })
+
+  it('la edición cambia esa, solo en lo que se dijo, y suma a quien se dijo', async () => {
+    expectDone(
+      await confirmed('preparar_tarea', {
+        tarea: 'flyer',
+        notas: 'Con logo',
+        involucrados: ['Socia'],
+      }),
+    )
+    expect(fake.db.rows('marketing_tasks')).toHaveLength(1)
+    expect(written('marketing_tasks')[0]?.payload).toEqual({ notes: 'Con logo' })
+    expect(fake.db.rows('marketing_tasks')[0]).toMatchObject({
+      id: TASK,
       title: 'Flyer',
-      kind: 'design',
+      status: 'todo',
+      group_id: GROUP,
       notes: 'Con logo',
     })
+    expect(fake.db.rows('marketing_task_people')).toEqual([
+      expect.objectContaining({ task_id: TASK, user_id: CTX.userId, role: 'involved' }),
+    ])
   })
 
   it('terminar una tarea guarda cuándo y quién', async () => {
@@ -694,6 +742,43 @@ describe('el resto, con las acciones de verdad', () => {
       completed_by: CTX.userId,
       completed_at: NOW.toISOString(),
     })
+    expect(written('audit_log')[0]?.payload).toMatchObject({ action: 'marketing_task.completed' })
+  })
+
+  it('una actualización queda en el hilo, a nombre de quien la confirmó', async () => {
+    const done = expectDone(
+      await confirmed('preparar_actualizacion_tarea', {
+        tarea: 'flyer',
+        texto: 'Subí el arte final',
+      }),
+    )
+    expect(written('marketing_task_updates')[0]?.payload).toEqual({
+      tenant_id: TENANT,
+      task_id: TASK,
+      author_id: CTX.userId,
+      body: 'Subí el arte final',
+    })
+    expect(done.href).toBe(`/hub/tareas?tarea=${TASK}`)
+  })
+
+  it('la anfitriona trabaja el tablero; la caja no, aunque tenga el tique', async () => {
+    const prepared = asPrepared(await run('preparar_tarea', { titulo: 'Reel', grupo: 'eventos' }))
+    const actAs = (role: string) =>
+      vi.mocked(requireTenantAccess).mockResolvedValue({
+        tenant: { id: TENANT, slug: 'hub', name: 'HUB' },
+        role,
+        user: { id: CTX.userId },
+      } as never)
+    actAs('cashier')
+    expect(await execute(prepared.executor, prepared.payload)).toMatchObject({
+      ok: false,
+      kind: 'failed',
+      message: 'No tenés permiso para hacer esto.',
+    })
+    expect(written('marketing_tasks')).toHaveLength(0)
+    actAs('host')
+    expectDone(await execute(prepared.executor, prepared.payload))
+    expect(written('marketing_tasks')).toHaveLength(1)
   })
 
   it('tildar una rutina de esta semana', async () => {
@@ -711,6 +796,19 @@ describe('lo que lee Tex no se lleva un dato de más', () => {
     await run('ver_conversacion', { conversacion: 'ana' })
     await run('ver_bandeja', {})
     expect(fake.db.writes).toEqual([])
+  })
+
+  it('mirar el tablero tampoco escribe, y lee solo lo de este bar', async () => {
+    const result = await run('ver_tareas', { con_terminadas: true })
+    expect(result).toMatchObject({
+      kind: 'data',
+      data: { cuantas: 1, filas: [{ tarea: 'Flyer' }] },
+    })
+    await run('preparar_tarea', { tarea: 'flyer', estado: 'backlog' })
+    expect(fake.db.writes).toEqual([])
+    expect(fake.db.rpcs.find((call) => call.name === 'get_marketing_team')?.args).toEqual({
+      p_tenant: TENANT,
+    })
   })
 
   it('nunca le pide el token a la base', async () => {

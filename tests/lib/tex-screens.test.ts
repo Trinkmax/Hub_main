@@ -403,6 +403,8 @@ describe('texScreenHref', () => {
     expect(href('mensajeria.inbox', { chat: ID })).toBe(`/hub/mensajeria/inbox?c=${ID}`)
     expect(href('mensajeria.inbox', { chat: 'Ana' })).toBe('/hub/mensajeria/inbox')
     expect(href('clientes.lista', { etiqueta: ID })).toBe(`/hub/clientes?tag=${ID}`)
+    expect(href('marketing.tareas', { tarea: ID })).toBe(`/hub/tareas?tarea=${ID}`)
+    expect(href('marketing.tareas', { tarea: 'Flyer' })).toBe('/hub/tareas')
     expect(href('senas.reporte', { mes: '2026-10' })).toBe('/hub/estadisticas/senas?month=2026-10')
   })
 
@@ -437,6 +439,7 @@ describe('texScreenHref', () => {
         evento: value,
         etiqueta: value,
         estrellas: value,
+        tarea: value,
       })
       expect(link.ok).toBe(true)
       if (!link.ok) return
