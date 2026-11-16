@@ -78,9 +78,15 @@ type PaymentRow = {
   created_at: string
   edits: Array<{ id: string }> | null
 }
+type TableEmbed =
+  | { physical_tables: { label: string } | Array<{ label: string }> | null }
+  | Array<{ physical_tables: { label: string } | Array<{ label: string }> | null }>
+  | null
 type BillRow = {
   session_id: string
   branch_id: string
+  /** La mesa, para decir de cuál fue lo que no se cobró. */
+  session: TableEmbed
   party_size: number | null
   subtotal_cents: unknown
   discount_cents: unknown
@@ -109,17 +115,37 @@ type OpenRow = {
   opened_at: string
   bill_requested_at: string | null
 }
+type TicketSession = {
+  branch_id: string
+  physical_tables: { label: string } | Array<{ label: string }> | null
+}
 type TicketRow = {
   id: string
-  session: { branch_id: string } | Array<{ branch_id: string }> | null
+  session_id: string
+  session: TicketSession | TicketSession[] | null
   items: Array<{
     menu_item_id: string
     quantity: number
     line_total_cents: unknown
     cancelled_at: string | null
+    cancellation_reason: string | null
+    prep_status: string | null
     item: { name: string } | Array<{ name: string }> | null
   }> | null
 }
+type DiscountRow = {
+  id: string
+  session_id: string
+  kind: string
+  value: unknown
+  reason: string
+  created_by_name: string | null
+  approved_by_name: string | null
+  created_at: string
+}
+
+/** Un descuento se pone antes de cerrar la mesa: se leen desde un día y medio antes de la ventana. */
+const DISCOUNT_LOOKBACK_MS = 36 * 60 * 60 * 1000
 
 const one = <T>(value: T | T[] | null | undefined): T | null =>
   Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
@@ -139,98 +165,116 @@ export async function getToday(
   // El día es una ventana de tiempo (de 5 a 5): una mesa abierta ayer y cobrada hoy es venta de hoy.
   const { from: since, to: until } = serviceDayWindow(day)
 
-  const [branchRows, paymentRows, billRows, shiftRows, openRows, ticketRows] = await Promise.all([
-    readAll<{
-      id: string
-      name: string
-      short_name: string | null
-      slug: string
-      color: string
-      position: number
-      is_default: boolean
-    }>('branches', (from, to) =>
-      supabase
-        .from('branches')
-        .select('id, name, short_name, slug, color, position, is_default')
-        .eq('tenant_id', tenantId)
-        .eq('active', true)
-        .order('position')
-        .order('id')
-        .range(from, to),
-    ),
-    readAll<PaymentRow>('payments', (from, to) =>
-      supabase
-        .from('pos_payments')
-        .select(
-          'id, branch_id, session_id, shift_id, method, amount_cents, surcharge_cents, tip_cents, invoice, status, created_at, edits:pos_payment_edits(id)',
+  const discountsSince = new Date(Date.parse(since) - DISCOUNT_LOOKBACK_MS).toISOString()
+
+  const [branchRows, paymentRows, billRows, shiftRows, openRows, ticketRows, discountRows] =
+    await Promise.all([
+      readAll<{
+        id: string
+        name: string
+        short_name: string | null
+        slug: string
+        color: string
+        position: number
+        is_default: boolean
+      }>('branches', (from, to) =>
+        supabase
+          .from('branches')
+          .select('id, name, short_name, slug, color, position, is_default')
+          .eq('tenant_id', tenantId)
+          .eq('active', true)
+          .order('position')
+          .order('id')
+          .range(from, to),
+      ),
+      readAll<PaymentRow>('payments', (from, to) =>
+        supabase
+          .from('pos_payments')
+          .select(
+            'id, branch_id, session_id, shift_id, method, amount_cents, surcharge_cents, tip_cents, invoice, status, created_at, edits:pos_payment_edits(id)',
+          )
+          .eq('tenant_id', tenantId)
+          .gte('created_at', since)
+          .lt('created_at', until)
+          .eq('is_practice', false)
+          .order('created_at')
+          .order('id')
+          .range(from, to),
+      ),
+      readAll<BillRow>('bills', (from, to) =>
+        supabase
+          .from('pos_closed_bills')
+          .select(
+            'session_id, branch_id, party_size, subtotal_cents, discount_cents, deposit_cents, due_cents, closed_at, customer_id, points_awarded, session:table_sessions(physical_tables(label))',
+          )
+          .eq('tenant_id', tenantId)
+          .gte('closed_at', since)
+          .lt('closed_at', until)
+          .eq('is_practice', false)
+          .order('closed_at')
+          .order('session_id')
+          .range(from, to),
+      ),
+      readAll<ShiftRow>('shifts', (from, to) => {
+        const query = supabase
+          .from('pos_shifts')
+          .select(
+            'id, branch_id, label, status, opened_at, opened_by_name, closed_at, closed_by_name, difference_cents',
+          )
+          .eq('tenant_id', tenantId)
+          .eq('is_practice', false)
+        return (
+          isToday
+            ? query.or(`and(opened_at.gte."${since}",opened_at.lt."${until}"),status.eq.open`)
+            : query.gte('opened_at', since).lt('opened_at', until)
         )
-        .eq('tenant_id', tenantId)
-        .gte('created_at', since)
-        .lt('created_at', until)
-        .eq('is_practice', false)
-        .order('created_at')
-        .order('id')
-        .range(from, to),
-    ),
-    readAll<BillRow>('bills', (from, to) =>
-      supabase
-        .from('pos_closed_bills')
-        .select(
-          'session_id, branch_id, party_size, subtotal_cents, discount_cents, deposit_cents, due_cents, closed_at, customer_id, points_awarded',
-        )
-        .eq('tenant_id', tenantId)
-        .gte('closed_at', since)
-        .lt('closed_at', until)
-        .eq('is_practice', false)
-        .order('closed_at')
-        .order('session_id')
-        .range(from, to),
-    ),
-    readAll<ShiftRow>('shifts', (from, to) => {
-      const query = supabase
-        .from('pos_shifts')
-        .select(
-          'id, branch_id, label, status, opened_at, opened_by_name, closed_at, closed_by_name, difference_cents',
-        )
-        .eq('tenant_id', tenantId)
-        .eq('is_practice', false)
-      return (
-        isToday
-          ? query.or(`and(opened_at.gte."${since}",opened_at.lt."${until}"),status.eq.open`)
-          : query.gte('opened_at', since).lt('opened_at', until)
-      )
-        .order('opened_at')
-        .order('id')
-        .range(from, to)
-    }),
-    isToday
-      ? readAll<OpenRow>('open tables', (from, to) =>
-          supabase
-            .from('table_sessions')
-            .select('id, branch_id, party_size, total_cents, opened_at, bill_requested_at')
-            .eq('tenant_id', tenantId)
-            .eq('status', 'open')
-            .eq('is_practice', false)
-            .order('opened_at')
-            .order('id')
-            .range(from, to),
-        )
-      : Promise.resolve([] as OpenRow[]),
-    readAll<TicketRow>('tickets', (from, to) =>
-      supabase
-        .from('tickets')
-        .select(
-          'id, session:table_sessions!inner(branch_id), items:ticket_items(menu_item_id, quantity, line_total_cents, cancelled_at, item:menu_items(name))',
-        )
-        .eq('tenant_id', tenantId)
-        .eq('is_practice', false)
-        .gte('submitted_at', since)
-        .lt('submitted_at', until)
-        .order('submitted_at')
-        .order('id')
-        .range(from, to),
-    ),
-  ])
+          .order('opened_at')
+          .order('id')
+          .range(from, to)
+      }),
+      isToday
+        ? readAll<OpenRow>('open tables', (from, to) =>
+            supabase
+              .from('table_sessions')
+              .select('id, branch_id, party_size, total_cents, opened_at, bill_requested_at')
+              .eq('tenant_id', tenantId)
+              .eq('status', 'open')
+              .eq('is_practice', false)
+              .order('opened_at')
+              .order('id')
+              .range(from, to),
+          )
+        : Promise.resolve([] as OpenRow[]),
+      readAll<TicketRow>('tickets', (from, to) =>
+        supabase
+          .from('tickets')
+          .select(
+            'id, session_id, session:table_sessions!inner(branch_id, physical_tables(label)), items:ticket_items(menu_item_id, quantity, line_total_cents, cancelled_at, cancellation_reason, prep_status, item:menu_items(name))',
+          )
+          .eq('tenant_id', tenantId)
+          .eq('is_practice', false)
+          .gte('submitted_at', since)
+          .lt('submitted_at', until)
+          .order('submitted_at')
+          .order('id')
+          .range(from, to),
+      ),
+      // Los descuentos vigentes de las mesas que cerraron en el día (se cruzan abajo por mesa).
+      readAll<DiscountRow>('discounts', (from, to) =>
+        supabase
+          .from('pos_discounts')
+          .select(
+            'id, session_id, kind, value, reason, created_by_name, approved_by_name, created_at',
+          )
+          .eq('tenant_id', tenantId)
+          .eq('status', 'active')
+          .gte('created_at', discountsSince)
+          .lt('created_at', until)
+          .order('created_at')
+          .order('id')
+          .range(from, to),
+      ),
+    ])
 
   const branches: TodayBranch[] = [...branchRows]
     .sort(
@@ -315,7 +359,54 @@ export async function getToday(
     }))
   })
 
-  return { day, isToday, loadedAt, branches, payments, bills, shifts, openTables, lines }
+  // Lo que salió sin venderse: las cuentas cerradas, sus descuentos y los renglones con su motivo.
+  const closedSessions = new Set(billRows.map((row) => row.session_id))
+  const unsold: TodayData['unsold'] = {
+    bills: billRows.map((row) => ({
+      sessionId: row.session_id,
+      branchId: row.branch_id,
+      tableLabel: one(one(row.session)?.physical_tables)?.label ?? null,
+      subtotalCents: num(row.subtotal_cents),
+      discountCents: num(row.discount_cents),
+      depositCents: num(row.deposit_cents),
+      dueCents: num(row.due_cents),
+      closedAt: row.closed_at,
+    })),
+    discounts: discountRows.flatMap((row) =>
+      closedSessions.has(row.session_id) && (row.kind === 'percent' || row.kind === 'amount')
+        ? [
+            {
+              id: row.id,
+              sessionId: row.session_id,
+              kind: row.kind,
+              value: num(row.value),
+              reason: row.reason,
+              byName: row.created_by_name,
+              approvedByName: row.approved_by_name,
+              createdAt: row.created_at,
+            },
+          ]
+        : [],
+    ),
+    lines: ticketRows.flatMap((ticket) => {
+      const session = one(ticket.session)
+      if (!session?.branch_id) return []
+      const tableLabel = one(session.physical_tables)?.label ?? null
+      return (ticket.items ?? []).map((item) => ({
+        sessionId: ticket.session_id,
+        branchId: session.branch_id,
+        tableLabel,
+        name: one(item.item)?.name ?? 'Producto',
+        quantity: item.quantity,
+        totalCents: num(item.line_total_cents),
+        cancelledAt: item.cancelled_at,
+        cancellationReason: item.cancellation_reason,
+        started: item.prep_status !== null && item.prep_status !== 'queued',
+      }))
+    }),
+  }
+
+  return { day, isToday, loadedAt, branches, payments, bills, shifts, openTables, lines, unsold }
 }
 
 type SalesDayRow = {

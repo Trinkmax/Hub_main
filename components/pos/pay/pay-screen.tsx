@@ -1,6 +1,15 @@
 'use client'
 
-import { BadgePercent, ChevronLeft, Printer, Send, Undo2, Utensils, WifiOff } from 'lucide-react'
+import {
+  BadgePercent,
+  ChevronLeft,
+  HandHeart,
+  Printer,
+  Send,
+  Undo2,
+  Utensils,
+  WifiOff,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -49,6 +58,7 @@ import { BillPaper } from './bill-paper'
 import { Falta } from './falta'
 import {
   BillLineSheet,
+  CompSheet,
   type DiscountChoice,
   DiscountInfoSheet,
   DiscountSheet,
@@ -98,6 +108,7 @@ type Props = {
 
 type OpenSheet =
   | { kind: 'discount' }
+  | { kind: 'comp' }
   | { kind: 'discount-info'; discount: BillDiscount }
   | { kind: 'line'; group: LineGroup }
   | { kind: 'payment'; payment: Payment }
@@ -516,6 +527,41 @@ export function PayScreen({
     return null
   }
 
+  /**
+   * «No se cobra» (consumo de socios, una invitación): se bonifica lo que falta con su motivo y la mesa
+   * se cierra. Quien no puede dar el OK deja el pedido, como con cualquier descuento.
+   */
+  const submitComp = async (reason: string): Promise<string | null> => {
+    const before = billRef.current
+    const amountCents = before.bill.remaining_cents
+    if (amountCents <= 0) return 'A esta mesa ya no le falta nada por cobrar.'
+    const result = await attempt(() =>
+      actions.addDiscount({ sessionId, kind: 'amount', amountCents, reason }),
+    )
+    if (!result.ok) return result.message
+    land({ ...billRef.current, bill: result.data.bill })
+    await reload()
+    if (!result.data.applied) {
+      setApprovalsTick((n) => n + 1)
+      toast('Pedido enviado', {
+        description: 'El encargado lo ve en su celular. Hasta que conteste, la cuenta no cambia.',
+      })
+      return null
+    }
+    // Si mientras tanto alguien sumó algo, la cuenta lo muestra y se cobra o se bonifica lo que falta.
+    if (billRef.current.bill.remaining_cents > 0) {
+      toast('Se sumó algo a la mesa mientras tanto: falta bonificar o cobrar eso.')
+      return null
+    }
+    // Una mesa sin ningún cobro la cierra quien puede aprobar.
+    if (before.bill.paid_cents === 0 && !before.can.close_without_payment) {
+      toast('Quedó en cero', { description: 'La cierra el encargado desde la cuenta.' })
+      return null
+    }
+    await closeTable()
+    return null
+  }
+
   const removeDiscount = async (discount: BillDiscount): Promise<string | null> => {
     const result = await attempt(() => actions.removeDiscount(discount.id))
     if (!result.ok) return result.message
@@ -729,6 +775,17 @@ export function PayScreen({
                       {bill.can.discount_direct ? 'Descuento' : 'Pedir un descuento'}
                     </button>
                   ) : null}
+                  {canDiscount ? (
+                    <button
+                      type="button"
+                      className="pay-act"
+                      onClick={() => setSheet({ kind: 'comp' })}
+                      data-testid="pay-comp-open"
+                    >
+                      <HandHeart aria-hidden strokeWidth={2.2} />
+                      No se cobra
+                    </button>
+                  ) : null}
                   {canUnrequest ? (
                     <button
                       type="button"
@@ -851,6 +908,12 @@ export function PayScreen({
         bill={bill}
         onClose={() => setSheet(null)}
         onSubmit={submitDiscount}
+      />
+      <CompSheet
+        open={sheet?.kind === 'comp'}
+        bill={bill}
+        onClose={() => setSheet(null)}
+        onSubmit={submitComp}
       />
       <DiscountInfoSheet
         discount={sheet?.kind === 'discount-info' ? sheet.discount : null}

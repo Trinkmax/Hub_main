@@ -2084,6 +2084,29 @@ button.pay-sum:active {
   padding: 0.4rem 0.7rem;
   text-wrap: balance;
 }
+/* Los motivos de una baja, en dos grupos: lo que no llegó a hacerse y lo que ya estaba hecho. */
+.pay-reason-group {
+  display: grid;
+  gap: 0.4rem;
+}
+.pay-reason-group + .pay-reason-group {
+  margin-top: 0.35rem;
+}
+.pay-reason-title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.pay-reason-title b {
+  color: var(--pos-ink);
+  font-weight: 800;
+}
+@media (min-width: 560px) {
+  .pay-reason-group .pay-reasons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 .pay-sheet-foot {
   display: flex;
   align-items: stretch;

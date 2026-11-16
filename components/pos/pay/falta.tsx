@@ -4,6 +4,7 @@ import type { Bill } from '@/lib/pos/cash/types'
 import type { BillMode } from '@/lib/pos/pay/mode'
 import { nextPart, partStubs } from '@/lib/pos/pay/plan'
 import type { Split } from '@/lib/pos/pay/split'
+import { billNotCharged } from '@/lib/pos/unsold/report'
 import { cn } from '@/lib/utils'
 import { money } from './pay-types'
 
@@ -31,6 +32,8 @@ export function Falta({
 }) {
   const numbers = bill.bill
   const closed = mode.kind === 'closed'
+  // Cerró sin que entrara plata (consumo de socios, una invitación): no se «cobró», y se dice así.
+  const comp = closed && billNotCharged(numbers)
   const overpaid = mode.kind === 'overpaid'
   const each = perPerson(numbers.due_cents, people)
   const extra = numbers.surcharge_cents + numbers.tip_cents
@@ -53,16 +56,23 @@ export function Falta({
   const shown = stubs.slice(0, MAX_STUBS)
 
   return (
-    <section className="pay-falta" aria-label={closed ? 'Lo que se cobró' : 'Lo que falta cobrar'}>
+    <section
+      className="pay-falta"
+      aria-label={comp ? 'Lo que no se cobró' : closed ? 'Lo que se cobró' : 'Lo que falta cobrar'}
+    >
       <p className="pay-falta-main" aria-live="polite" aria-atomic="true" data-testid="pay-falta">
-        <span className="pay-falta-word">{closed ? 'Cobrado' : overpaid ? 'De más' : 'Falta'}</span>
+        <span className="pay-falta-word">
+          {comp ? 'No se cobró' : closed ? 'Cobrado' : overpaid ? 'De más' : 'Falta'}
+        </span>
         <b className="pay-falta-amount">
           {money(
-            closed
-              ? numbers.paid_cents
-              : overpaid
-                ? numbers.overpaid_cents
-                : numbers.remaining_cents,
+            comp
+              ? numbers.subtotal_cents
+              : closed
+                ? numbers.paid_cents
+                : overpaid
+                  ? numbers.overpaid_cents
+                  : numbers.remaining_cents,
           )}
         </b>
       </p>

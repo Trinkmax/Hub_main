@@ -11,6 +11,7 @@
 
 import { cordobaWallTimeToUtc } from '@/lib/dates/zone'
 import { PAY_METHODS, type PayMethod } from '@/lib/pos/cash/types'
+import { isComp } from '@/lib/pos/unsold/report'
 import type {
   MethodTotal,
   ProductTotal,
@@ -60,7 +61,10 @@ export function summarizeToday(data: TodayData, branchId: string | null): TodayS
     },
   )
 
-  const bills = mine(data.bills)
+  // Una mesa que cerró sin que entrara plata (consumo de socios, una invitación) no es una mesa
+  // cobrada: no cuenta en las mesas, las personas ni el per cápita, y su bonificación no es un
+  // «descuento» más (se ve entera en «Salió sin venderse»).
+  const bills = mine(data.bills).filter((bill) => !isComp(bill))
   let people = 0
   let consumptionCents = 0
   let discountCents = 0

@@ -2110,3 +2110,27 @@ button.cmd-line:active {
     animation-duration: 1.8s;
   }
 }
+
+/* Los motivos de una baja, en dos grupos: lo que todavía no se hizo y lo que ya estaba hecho. */
+.cmd-reason-group {
+  display: grid;
+  gap: 0.4rem;
+}
+.cmd-reason-group + .cmd-reason-group {
+  margin-top: 0.35rem;
+}
+.cmd-reason-title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.cmd-reason-title b {
+  color: var(--pos-ink);
+  font-weight: 800;
+}
+@media (min-width: 560px) {
+  .cmd-reason-group .cmd-reasons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

@@ -6,6 +6,7 @@ import { groupThousands } from '@/lib/money'
 import type { Bill, Payment, PointsAwarded } from '@/lib/pos/cash/types'
 import { clockAt } from '@/lib/pos/order/clock'
 import type { BillMode } from '@/lib/pos/pay/mode'
+import { billNotCharged } from '@/lib/pos/unsold/report'
 import { money } from './pay-types'
 
 /**
@@ -160,12 +161,20 @@ export function ClosedState({
 }) {
   const change = lastPayment?.change_cents ?? 0
   const closedAt = bill.closed?.at ?? bill.session.paid_at
+  // Cerró sin que entrara plata (consumo de socios, una invitación).
+  const comp = billNotCharged(bill.bill)
   return (
     <div className="pay-state" data-testid="pay-closed">
       <h3>
         <Stamp aria-hidden strokeWidth={2.3} />
-        Mesa cobrada
+        {comp ? 'Cerrada sin cobrar' : 'Mesa cobrada'}
       </h3>
+      {comp ? (
+        <p data-testid="pay-comp-note">
+          No entró plata ni cuenta como venta. Quedó anotado, con sus productos, en «Salió sin
+          venderse» de Hoy en vivo.
+        </p>
+      ) : null}
       {change > 0 ? (
         <p className="pay-change" data-testid="pay-change">
           <span>Vuelto</span>
@@ -206,8 +215,8 @@ export function ClosedState({
       {bill.closed ? (
         <p>
           La cerró {bill.closed.by_name}
-          {closedAt ? ` a las ${clockAt(closedAt, timeZone)}` : ''}. Un cobro mal cargado se corrige
-          desde Caja.
+          {closedAt ? ` a las ${clockAt(closedAt, timeZone)}` : ''}.
+          {comp ? '' : ' Un cobro mal cargado se corrige desde Caja.'}
         </p>
       ) : null}
       <Link href={mapHref} className="pay-go" data-testid="pay-back-to-floor">

@@ -346,6 +346,45 @@ Abajo, **los últimos 14 días** como una tira de barras (`pos_sales_days`, una 
 día de servicio): cada barra lleva a su día, y arriba dice cuánto se vendió en el tramo, el promedio de los
 días con ventas, el consumo por persona y cuál fue el mejor.
 
+## Lo que salió sin venderse (16/11/2026)
+
+Pedido de los socios: «bajar de stock lo mal comandado, lo de los socios, etc.». El sistema **no lleva stock por
+producto** (el stock sale de los conteos de la cocina, ver `docs/features/compras.md`, y la carta no tiene recetas),
+así que no hay de dónde «bajar». Nacho eligió **anotar y ver cuánto fue**, y para el consumo de socios, lo que dijo
+Tomás: «se descuenta de stock y no cuenta la plata como ingreso». No se tocó la base: todo sale de lo que ya se
+guardaba (descuentos y bajas con motivo, cuentas cerradas).
+
+**Tres cosas que no son lo mismo** (`lib/pos/unsold/report.ts`, `buildUnsold`):
+
+| Qué | Cuándo | Cuenta en «Salió sin venderse» |
+|---|---|---|
+| **No se cobró** | Una mesa que cerró sin que entrara plata: ni cobros ni seña, y la bonificación cubrió todo (`isComp`). | Sí: todo su consumo, con sus productos. |
+| **Baja de algo ya hecho** | Un renglón dado de baja con «ya estaba hecho», o que la cocina ya había empezado. | Sí: ese producto. |
+| **Baja de algo que no se hizo** | Lo demás: se anuló antes de salir. | No (aparte: «no se perdió nada»). |
+| **Descuento** | Bonificación a una mesa que sí pagó. | No (aparte: es plata, no productos). |
+
+Se valúa al **precio de la carta**. No es venta, no entra a la caja y no cambia nada de Administración.
+
+- **«No se cobra»** (la cuenta de la mesa, `CompSheet` en `components/pos/pay/pay-sheets.tsx`): motivo (Consumo de
+  socios · Invitación de la casa · Personal del bar · otro) y, si quieren, para quién. Bonifica lo que falta
+  (`pos_add_discount` con ese monto y el motivo «Consumo de socios · Nacho») y cierra la mesa (`pos_close_table`).
+  Quien no puede dar el OK lo pide, como cualquier descuento; una mesa sin ningún cobro la cierra quien puede aprobar.
+  La cuenta cerrada dice «No se cobró» (el sello, el número de arriba y el estado), no «Cobrado».
+- **Los motivos de una baja van en dos grupos** (`lib/pos/unsold/reasons.ts`; la comanda y la cuenta usan los
+  mismos): «Todavía no se hizo» (Mal comandado · El cliente cambió de idea · No hay más) y «Ya estaba hecho» (Mal
+  comandado · Vino mal · Se demoró). Sigue siendo un toque. El «ya estaba hecho» viaja en el texto del motivo
+  (`MADE_MARK`), porque la base lo guarda como texto libre; al leerlo vale la marca o que la cocina ya lo hubiera
+  empezado (`prep_status`). Los motivos de antes («Error de carga») se leen como «Mal comandado».
+- **Dónde se ve:** Hoy en vivo › «Salió sin venderse» (`unsold-panel.tsx`): el total, por motivo, y uno por uno (hora,
+  mesa, qué fue, quién dio el OK). Con `?dia=` se mira cualquier día; con `?sucursal=`, una sola.
+- **En los números del día** una mesa que no se cobró no es una «mesa cobrada»: no cuenta en las mesas, las personas
+  ni el per cápita, y su bonificación no suma a «Descuentos» (`summarizeToday`).
+- **El descuento manual** que pidió Franco ya estaba: Cobrar › Descuento › «Otro %» o «En pesos», con motivo.
+
+Lo que falta: la tira de 14 días y el arqueo de la caja (que salen de la base) siguen contando la mesa sin cobrar
+entre las mesas y las personas; un resumen por semana o por mes de lo que salió; el nombre de quien dio de baja (hoy
+está en el arqueo de Caja). Y descontar insumos de verdad necesita la receta de cada producto de la carta.
+
 ## La Proyección de Administración se completa sola
 
 Pedido de los socios (reunión del 11/11): «que la proyección se complete sola con las ventas». Hasta ahora
