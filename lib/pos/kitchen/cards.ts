@@ -41,17 +41,39 @@ export type KitchenAlert = {
   critical: boolean
 }
 
-export type CardLine = {
-  id: string
-  menuItemId: string
-  name: string
+/** Las unidades de un mismo producto que se piden de la misma forma. */
+export type LineVariant = {
   quantity: number
   /** Aclaraciones para tocar («Jugoso», «Sin lechuga»), en el orden en que se cargaron. */
   modifiers: string[]
   notes: string | null
+}
+
+/**
+ * Un renglón de la comanda: UN producto con todas sus unidades («x2 Cheese Burger»), aunque el mozo
+ * las haya cargado en renglones distintos. Si todas se piden igual, las aclaraciones van una sola
+ * vez; si no (una sin cebolla, otra con otra guarnición), cada forma va debajo con su cantidad.
+ */
+export type CardLine = {
+  /** El id del primer renglón que lo forma: una identidad que no cambia al dibujar. */
+  id: string
+  /** Los renglones de la tanda que se juntaron acá. */
+  itemIds: string[]
+  menuItemId: string
+  name: string
+  /** Unidades entre todas las formas. */
+  quantity: number
+  /** Lo que piden TODAS las unidades. Vacío cuando hay más de una forma (ver `variants`). */
+  modifiers: string[]
+  notes: string | null
+  /** Las formas distintas del mismo producto, cada una con su cantidad. Vacío si todas van igual. */
+  variants: LineVariant[]
   stationId: string | null
   status: PrepStatus
 }
+
+/** Cómo se nombra, entre varias formas, la que no lleva ninguna aclaración. */
+export const PLAIN_VARIANT = 'Común'
 
 /** Los renglones de una estación. `station` viene vacío cuando la comanda es de una sola: no hace falta rótulo. */
 export type LineGroup = {
@@ -188,19 +210,79 @@ function nameIt(ticket: KitchenTicket) {
   } as const
 }
 
-function toLine(item: KitchenItem): CardLine {
-  return {
-    id: item.id,
-    menuItemId: item.menu_item_id,
-    name: item.name,
-    quantity: item.quantity,
-    modifiers: (item.modifiers ?? [])
+/** Lo que hace que dos unidades del mismo producto se pidan «igual»: mismas aclaraciones y misma nota. */
+function specKey(modifiers: readonly string[], notes: string | null): string {
+  const marks = modifiers.map((label) => label.toLowerCase()).sort()
+  return JSON.stringify([marks, (notes ?? '').toLowerCase()])
+}
+
+/** Lo mínimo que hace falta de un renglón para juntarlo con sus iguales. */
+export type LineSource = {
+  id: string
+  menu_item_id: string
+  name: string
+  quantity: number
+  modifiers?: readonly { label: string }[] | null
+  notes?: string | null
+  station_id: string | null
+  prep_status: PrepStatus
+}
+
+/**
+ * Junta los renglones del mismo producto: «x2 Cheese Burger» en vez de dos renglones de a uno.
+ *
+ * Se juntan los que son de la misma estación y van en el mismo paso (uno entregado no se mezcla con
+ * uno que falta: la marca de «listo» tiene que seguir siendo verdad). El renglón queda en el lugar
+ * del primero que se cargó. Las formas distintas del mismo producto no se pierden: van debajo, cada
+ * una con su cantidad, y la que no lleva aclaraciones va última.
+ */
+export function groupSameProducts(items: readonly LineSource[]): CardLine[] {
+  type Open = { line: CardLine; specs: Map<string, LineVariant> }
+  const open = new Map<string, Open>()
+  const order: Open[] = []
+  for (const item of items) {
+    const modifiers = (item.modifiers ?? [])
       .map((m) => m.label.trim())
-      .filter((label) => label.length > 0),
-    notes: clean(item.notes),
-    stationId: item.station_id,
-    status: item.prep_status,
+      .filter((label) => label.length > 0)
+    const notes = clean(item.notes)
+    const key = JSON.stringify([item.station_id, item.menu_item_id, item.prep_status])
+    let group = open.get(key)
+    if (!group) {
+      group = {
+        line: {
+          id: item.id,
+          itemIds: [],
+          menuItemId: item.menu_item_id,
+          name: item.name,
+          quantity: 0,
+          modifiers: [],
+          notes: null,
+          variants: [],
+          stationId: item.station_id,
+          status: item.prep_status,
+        },
+        specs: new Map(),
+      }
+      open.set(key, group)
+      order.push(group)
+    }
+    group.line.itemIds.push(item.id)
+    group.line.quantity += item.quantity
+    const spec = specKey(modifiers, notes)
+    const variant = group.specs.get(spec)
+    if (variant) variant.quantity += item.quantity
+    else group.specs.set(spec, { quantity: item.quantity, modifiers, notes })
   }
+  return order.map(({ line, specs }) => {
+    const variants = [...specs.values()]
+    const only = variants.length === 1 ? variants[0] : undefined
+    if (only) return { ...line, modifiers: only.modifiers, notes: only.notes }
+    const plain = (variant: LineVariant) => variant.modifiers.length === 0 && !variant.notes
+    return {
+      ...line,
+      variants: [...variants.filter((v) => !plain(v)), ...variants.filter(plain)],
+    }
+  })
 }
 
 function slowest(statuses: readonly PrepStatus[]): PrepStatus {
@@ -255,7 +337,7 @@ function buildCard(
           .sort((a, b) => order(a.item.station_id) - order(b.item.station_id) || a.index - b.index)
           .map(({ item }) => item)
       : mine
-  const lines = sorted.map(toLine)
+  const lines = groupSameProducts(sorted)
 
   const groups: LineGroup[] = []
   for (const line of lines) {

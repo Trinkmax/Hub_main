@@ -79,7 +79,7 @@ export function ActionBar({
   primary: BarPrimary
   /** El número de la tanda que se marcharía. */
   fireNumber: number | null
-  /** «2 Mojito · 1 Lomo»: lo que está listo para llevar. */
+  /** «2 Mojito · 1 Lomo»: lo que está en despacho, listo para que lo lleven a la mesa. */
   readyLabel: string
   blocked: boolean
   billOn: boolean
@@ -104,12 +104,12 @@ export function ActionBar({
           type="button"
           className="cmd-bar-ready"
           onClick={onShowReady}
-          aria-label={`Listo para llevar: ${readyLabel}. Ver en la comanda`}
+          aria-label={`En despacho: ${readyLabel}. Ver en la comanda`}
           data-testid="order-ready"
         >
           <BellRing aria-hidden strokeWidth={2.5} />
           <span>
-            <b>Para llevar:</b> {readyLabel}
+            <b>En despacho:</b> {readyLabel}
           </span>
           <ChevronUp aria-hidden />
         </button>

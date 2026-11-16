@@ -30,8 +30,8 @@ const SINCE: Record<TableStateKey, string> = {
   free: '',
   reserved: 'Pasó la hora hace',
   seated: 'Sentados hace',
-  kitchen: 'Esperando la comida hace',
-  ready: 'Lista para llevar hace',
+  kitchen: 'En preparación hace',
+  ready: 'En despacho hace',
   eating: 'Última tanda hace',
   bill: 'Pidió la cuenta hace',
 }

@@ -87,18 +87,22 @@ describe('cómo se lee una tanda', () => {
     expect(display.mixed).toBe(true)
   })
 
-  it('lista cuando todo lo que falta llevar está listo; el reloj corre desde que estuvo', () => {
+  it('en despacho cuando todo lo que falta llevar está listo; el reloj corre desde que estuvo', () => {
     const display = ticketDisplay(
       tanda([line('ready', { ready_at: ago(4) }), line('ready', { ready_at: ago(2) })]),
       NOW,
     )
-    expect(display).toMatchObject({ stage: 'ready', word: 'Lista', minutes: 4, mixed: false })
+    expect(display).toMatchObject({ stage: 'ready', word: 'En despacho', minutes: 4, mixed: false })
     expect(ticketDisplay(tanda([line('ready'), line('served')]), NOW).stage).toBe('ready')
   })
 
-  it('lista en parte: algo para llevar y algo todavía en cocina', () => {
+  it('en despacho en parte: algo ya salió y algo todavía está en cocina', () => {
     const display = ticketDisplay(tanda([line('ready'), line('preparing')]), NOW)
-    expect(display).toMatchObject({ stage: 'partly_ready', word: 'Lista en parte', late: false })
+    expect(display).toMatchObject({
+      stage: 'partly_ready',
+      word: 'En despacho en parte',
+      late: false,
+    })
   })
 
   it('servida cuando no queda nada por llevar', () => {

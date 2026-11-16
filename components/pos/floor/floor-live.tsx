@@ -43,6 +43,7 @@ import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { ApprovalsBell } from '../approvals/approvals-bell'
 import { PosOutboxRunner } from '../order/outbox-runner'
+import { PrinterButton } from '../print/printer-button'
 import { PosTopbar } from '../ui/pos-topbar'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
@@ -411,7 +412,7 @@ export function FloorLive({
 
   const chips = (
     [
-      { key: 'ready', count: summary.ready, label: 'para llevar', icon: STATE_ICON.ready },
+      { key: 'ready', count: summary.ready, label: 'en despacho', icon: STATE_ICON.ready },
       {
         key: 'bill',
         count: summary.bill,
@@ -421,7 +422,7 @@ export function FloorLive({
       {
         key: 'kitchen',
         count: summary.waitingFood,
-        label: 'esperando comida',
+        label: 'en preparación',
         icon: STATE_ICON.kitchen,
       },
       { key: 'late', count: summary.late, label: 'con demora', icon: AlarmClock },
@@ -560,6 +561,15 @@ export function FloorLive({
             branchId={snapshot.branch.id}
             timeZone={timeZone}
             signal={approvalsTick}
+          />
+        ) : null}
+        {/* La comandera de esta compu (en un celular no se dibuja). */}
+        {canOperate ? (
+          <PrinterButton
+            slug={slug}
+            branchId={snapshot.branch.id}
+            branchName={snapshot.branch.name}
+            timeZone={timeZone}
           />
         ) : null}
       </PosTopbar>

@@ -3,6 +3,8 @@ import { notFound, redirect } from 'next/navigation'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import { AppShellSalon } from '@/components/shell/salon/app-shell-salon'
+import { getEffectiveFeatures } from '@/lib/platform/features'
+import { getActiveBranch } from '@/lib/pos/queries'
 import { requireTenantAccess, TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
 import { roleForSlug } from '@/lib/tenant/claims'
 
@@ -64,6 +66,13 @@ export default async function SalonLayout({
   const claimRole = access.user.tenants ? roleForSlug(access.user.tenants, tenantSlug) : null
   const claimsStale = access.user.tenants !== null && claimRole !== access.realRole
 
+  // Con el punto de venta, la compu que tiene la comandera imprime sola desde cualquier pantalla del
+  // salón: el marco necesita las sucursales del bar (cada dispositivo guarda en cuál imprime). Una
+  // lectura, y solo en los bares que lo usan (el marco no se vuelve a armar al cambiar de pantalla).
+  const printBranches = getEffectiveFeatures(access.tenant).pos
+    ? (await getActiveBranch(access.tenant.id)).branches.map((branch) => branch.id)
+    : []
+
   return (
     <AppShellSalon
       tenant={access.tenant}
@@ -71,6 +80,14 @@ export default async function SalonLayout({
       isPlatformAdmin={access.isPlatformAdmin}
       email={access.user.email ?? ''}
       viewAs={access.canViewAs ? { slug: tenantSlug, viewAs: access.viewAs } : null}
+      printStation={
+        printBranches.length > 0
+          ? {
+              branchIds: printBranches,
+              timeZone: access.tenant.timezone || 'America/Argentina/Cordoba',
+            }
+          : null
+      }
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />

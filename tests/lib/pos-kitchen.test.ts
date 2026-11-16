@@ -346,6 +346,117 @@ describe('la comanda', () => {
   })
 })
 
+describe('productos iguales, juntos', () => {
+  const mod = (label: string) => ({ id: label, label, group: 'Aclaraciones', delta_cents: 0 })
+  const linesOf = (items: KitchenItem[]) => {
+    const [card] = buildCards(queue([ticket({ items })]), [])
+    return card?.lines ?? []
+  }
+
+  it('dos renglones del mismo producto, sin aclaraciones: uno solo con la suma', () => {
+    const lines = linesOf([
+      item({ name: 'Cheese Burger' }),
+      item({ name: 'Lomito' }),
+      item({ name: 'Cheese Burger', quantity: 2 }),
+    ])
+    expect(lines.map((line) => [line.quantity, line.name])).toEqual([
+      [3, 'Cheese Burger'],
+      [1, 'Lomito'],
+    ])
+    expect(lines[0]?.variants).toEqual([])
+    expect(lines[0]?.itemIds).toHaveLength(2)
+  })
+
+  it('todas con la misma aclaración: va una sola vez, en el renglón', () => {
+    const [line] = linesOf([
+      item({ name: 'Cheese Burger', modifiers: [mod('Sin cebolla')] }),
+      item({ name: 'Cheese Burger', modifiers: [mod('Sin cebolla')] }),
+    ])
+    expect(line).toMatchObject({ quantity: 2, modifiers: ['Sin cebolla'], variants: [] })
+  })
+
+  it('el mismo producto pedido distinto: un renglón, y cada forma con su cantidad', () => {
+    const [line, other] = linesOf([
+      item({ name: 'Cheese Burger' }),
+      item({ name: 'Cheese Burger', modifiers: [mod('Sin TACC')] }),
+      item({ name: 'Cheese Burger', modifiers: [mod('Papas rústicas')], notes: 'bien cocida' }),
+      item({ name: 'Cheese Burger', modifiers: [mod('Sin TACC')], quantity: 2 }),
+    ])
+    expect(other).toBeUndefined()
+    expect(line).toMatchObject({ quantity: 5, name: 'Cheese Burger', modifiers: [], notes: null })
+    // La que va sin nada queda última: lo que hay que mirar son las aclaraciones.
+    expect(line?.variants).toEqual([
+      { quantity: 3, modifiers: ['Sin TACC'], notes: null },
+      { quantity: 1, modifiers: ['Papas rústicas'], notes: 'bien cocida' },
+      { quantity: 1, modifiers: [], notes: null },
+    ])
+  })
+
+  it('las mismas aclaraciones en otro orden o con otra mayúscula son la misma forma', () => {
+    const [line] = linesOf([
+      item({
+        name: 'Lomito',
+        modifiers: [mod('Jugoso'), mod('Sin lechuga')],
+        notes: 'Para compartir',
+      }),
+      item({
+        name: 'Lomito',
+        modifiers: [mod('sin lechuga'), mod('Jugoso')],
+        notes: 'para compartir',
+      }),
+    ])
+    expect(line).toMatchObject({ quantity: 2, variants: [] })
+    expect(line?.modifiers).toEqual(['Jugoso', 'Sin lechuga'])
+  })
+
+  it('lo que ya salió no se junta con lo que falta: la marca de listo sigue siendo verdad', () => {
+    const lines = linesOf([
+      item({ name: 'Lomito', prep_status: 'ready', ready_at: ago(1) }),
+      item({ name: 'Lomito', prep_status: 'preparing' }),
+    ])
+    expect(lines.map((line) => [line.quantity, line.status])).toEqual([
+      [1, 'ready'],
+      [1, 'preparing'],
+    ])
+  })
+
+  it('el mismo producto en dos estaciones queda en la suya', () => {
+    const [card] = buildCards(
+      queue([
+        ticket({
+          items: [
+            item({ name: 'Papas', station_id: COCINA }),
+            item({ name: 'Papas', station_id: FRIOS }),
+            item({ name: 'Papas', station_id: COCINA }),
+          ],
+        }),
+      ]),
+      [],
+    )
+    expect(card?.groups.map((group) => group.lines.map((line) => line.quantity))).toEqual([
+      [2],
+      [1],
+    ])
+  })
+
+  it('los totales de la tira cuentan igual que antes de juntar', () => {
+    const cards = buildCards(
+      queue([
+        ticket({
+          items: [
+            item({ name: 'Cheese Burger' }),
+            item({ name: 'Cheese Burger', modifiers: [mod('Sin cebolla')], quantity: 2 }),
+          ],
+        }),
+      ]),
+      [],
+    )
+    expect(totalsOf(cards)).toEqual([
+      { menuItemId: 'm-Cheese Burger', name: 'Cheese Burger', quantity: 3 },
+    ])
+  })
+})
+
 describe('avisos de la mesa', () => {
   it('en castellano, lo de salud primero', () => {
     expect(kitchenAlerts(['vegan', 'allergy', 'celiac'])).toEqual([

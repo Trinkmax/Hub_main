@@ -28,7 +28,7 @@
   /* Los colores de estado, oscurecidos hasta que se leen como texto sobre papel (≥ 4,5:1). */
   --caja-bad: color-mix(in oklch, var(--pos-st-late) 82%, var(--pos-ink));
   --caja-warn: color-mix(in oklch, var(--pos-st-kitchen) 52%, var(--pos-ink));
-  --caja-good: color-mix(in oklch, var(--pos-st-eating) 72%, var(--pos-ink));
+  --caja-good: color-mix(in oklch, var(--pos-good) 72%, var(--pos-ink));
   /* Texto de apoyo sobre papel: el más claro que todavía se lee. */
   --caja-faint: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-paper));
   --caja-focus: var(--pos-st-bill);

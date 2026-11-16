@@ -1710,14 +1710,16 @@ html[data-tex-drag] [data-tex-ui] {
   --pos-wall: oklch(0.8 0.02 150);
   --pos-kraft: oklch(0.73 0.06 72);
   --pos-shadow: oklch(0.18 0.04 165 / 0.3);
-  /* estados */
-  --pos-st-reserved: oklch(0.52 0.17 300);
+  /* estados (16/11: el bar pidió Reservada en gris y Comiendo en violeta) */
+  --pos-st-reserved: oklch(0.53 0.012 255);
   --pos-st-seated: oklch(0.4 0.035 165);
   --pos-st-kitchen: oklch(0.7 0.165 58);
   --pos-st-ready: oklch(0.72 0.19 148);
-  --pos-st-eating: oklch(0.6 0.075 200);
+  --pos-st-eating: oklch(0.52 0.17 300);
   --pos-st-bill: oklch(0.53 0.155 255);
   --pos-st-late: oklch(0.57 0.215 27);
+  /* el sello de «cobrado» y lo que salió bien: no es un estado de mesa, no cambia con ellos */
+  --pos-good: oklch(0.6 0.075 200);
   --pos-on-dark: oklch(0.99 0.006 88);
   --pos-on-light: oklch(0.2 0.04 70);
   /* movimiento */
@@ -2173,7 +2175,7 @@ html[data-tex-drag] [data-tex-ui] {
 .pos-res.is-mine { background: color-mix(in oklch, var(--pos-st-reserved) 16%, var(--pos-paper)); box-shadow: inset 0 0 0 2px var(--pos-st-reserved); }
 .pos-res:active { transform: scale(0.985); }
 .pos-res:disabled { opacity: 0.6; }
-.pos-res-time { font-size: 1.35rem; font-weight: 800; font-stretch: 78%; color: var(--pos-st-reserved); font-variant-numeric: tabular-nums; }
+.pos-res-time { font-size: 1.35rem; font-weight: 800; font-stretch: 78%; color: var(--pos-ink); font-variant-numeric: tabular-nums; }
 .pos-res-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.1rem; font-weight: 800; }
 .pos-res-name em { font-style: normal; font-weight: 700; color: var(--pos-carbon); }
 .pos-res-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; font-weight: 500; color: var(--pos-ink-soft); }

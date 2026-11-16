@@ -26,7 +26,7 @@ export type TicketStage =
   /** Una pantalla de cocina la mostró (dos tildes). */
   | 'seen'
   | 'preparing'
-  /** Algo ya está para llevar y algo todavía se está haciendo. */
+  /** Algo ya está en despacho y algo todavía se está haciendo. */
   | 'partly_ready'
   | 'ready'
   | 'served'
@@ -38,8 +38,8 @@ export const STAGE_WORD: Record<TicketStage, string> = {
   sent: 'Enviada',
   seen: 'Cocina lo vio',
   preparing: 'En preparación',
-  partly_ready: 'Lista en parte',
-  ready: 'Lista',
+  partly_ready: 'En despacho en parte',
+  ready: 'En despacho',
   served: 'Servida',
   cancelled: 'Dada de baja',
 }

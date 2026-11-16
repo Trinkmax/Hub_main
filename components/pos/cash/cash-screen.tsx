@@ -13,6 +13,7 @@ import {
   History,
   LoaderCircle,
   LockKeyhole,
+  Printer,
   ReceiptText,
   Send,
   WifiOff,
@@ -20,6 +21,8 @@ import {
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOnline } from '@/components/pos/order/use-online'
+import { printJob } from '@/components/pos/print/print-frame'
+import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
 import {
   Sheet,
@@ -55,6 +58,7 @@ import {
 } from '@/lib/pos/cash/types'
 import { posFont } from '@/lib/pos/font'
 import { clockAt } from '@/lib/pos/order/clock'
+import { shiftDoc } from '@/lib/pos/print/shift'
 import type { PosBranch } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { usePosPoke } from '@/lib/pos/use-poke'
@@ -95,6 +99,10 @@ type Props = {
   timeZone: string
   /** El botón de la cuenta de quien trabaja, armado en la página. */
   account?: React.ReactNode
+  /** El nombre del bar, para el membrete del cierre impreso. */
+  barName?: string
+  /** Lo que va al final de la barra de arriba (la comandera de esta compu). */
+  tools?: React.ReactNode
 }
 
 /** Qué se le pide a la base: el carril (de verdad o práctica) y, si no es el de siempre, qué turno. */
@@ -106,7 +114,17 @@ function digitsOf(cents: number): string {
   return formatCentsShort(cents, { currency: false })
 }
 
-export function CashScreen({ api, initial, branch, branches, shifts, timeZone, account }: Props) {
+export function CashScreen({
+  api,
+  initial,
+  branch,
+  branches,
+  shifts,
+  timeZone,
+  account,
+  barName,
+  tools,
+}: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
   const [lane, setLane] = useState<Lane>({ practice: initial.practice, shiftId: null })
@@ -434,6 +452,25 @@ export function CashScreen({ api, initial, branch, branches, shifts, timeZone, a
     }
   }
 
+  /** La planilla del turno, por la comandera: para verificar con el cajón adelante y firmarla. */
+  const printSummary = async () => {
+    if (!report) return
+    try {
+      await printJob({
+        paper: readPrinter(branch.id).paper,
+        docs: [
+          shiftDoc(report, {
+            barName: barName ?? snapshot.branch.name,
+            timeZone,
+            printedAt: Date.now(),
+          }),
+        ],
+      })
+    } catch {
+      notify.error('No se pudo mandar a la impresora. Fijate que esté prendida.')
+    }
+  }
+
   // ── La barra de arriba ──
   const branchPill = (
     <div className="pos-top-branch-wrap">
@@ -721,6 +758,15 @@ export function CashScreen({ api, initial, branch, branches, shifts, timeZone, a
             <button
               type="button"
               className="caja-go is-quiet"
+              onClick={() => void printSummary()}
+              data-testid="resumen-imprimir"
+            >
+              <Printer aria-hidden strokeWidth={2.3} />
+              Imprimir
+            </button>
+            <button
+              type="button"
+              className="caja-go is-quiet"
               onClick={() => void copySummary()}
               data-testid="resumen-copiar"
             >
@@ -789,6 +835,7 @@ export function CashScreen({ api, initial, branch, branches, shifts, timeZone, a
         </span>
       ) : null}
       {shiftsButton}
+      {tools}
     </PosTopbar>
   )
 

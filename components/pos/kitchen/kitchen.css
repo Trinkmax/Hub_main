@@ -704,6 +704,13 @@ body:has(.kds) {
   line-height: 0.9;
   text-align: center;
 }
+/* «x2»: la equis chica, pegada al número, como se escribe una comanda a mano. */
+.kds-qty-x {
+  margin-right: 0.04em;
+  font-size: 0.5em;
+  font-weight: 700;
+  opacity: 0.7;
+}
 /* Más de uno: en negativo, como cuando el cocinero le hace un círculo a la cantidad. */
 .kds-qty[data-many] {
   background: var(--pos-ink);
@@ -723,6 +730,43 @@ body:has(.kds) {
   flex-wrap: wrap;
   gap: calc(var(--s) * 6) calc(var(--s) * 8);
   margin-top: calc(var(--s) * 7);
+}
+/* El mismo producto pedido de formas distintas: una forma por renglón, con cuántas van así. */
+.kds-variants {
+  display: grid;
+  gap: calc(var(--s) * 6);
+  margin-top: calc(var(--s) * 7);
+}
+.kds-variant {
+  display: grid;
+  grid-template-columns: calc(var(--s) * 46) minmax(0, 1fr);
+  align-items: start;
+  column-gap: calc(var(--s) * 8);
+}
+.kds-variant .kds-mods {
+  margin-top: 0;
+}
+.kds-vqty {
+  padding-top: calc(var(--s) * 2);
+  font-size: calc(var(--s) * 32);
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.14;
+  font-variant-numeric: tabular-nums;
+}
+.kds-vqty > span {
+  margin-right: 0.04em;
+  font-size: 0.7em;
+  font-weight: 700;
+  opacity: 0.7;
+}
+.kds-plain {
+  padding-top: calc(var(--s) * 2);
+  color: var(--pos-ink-soft);
+  font-size: calc(var(--s) * 32);
+  font-weight: 600;
+  font-stretch: 86%;
+  line-height: 1.14;
 }
 /* Las aclaraciones, pasadas con resaltador. */
 .kds-mod {

@@ -13,6 +13,7 @@ import {
   PencilLine,
   Play,
   Plus,
+  Printer,
   Trash2,
   WifiOff,
 } from 'lucide-react'
@@ -137,6 +138,7 @@ export function SentTicket({
   readOnly,
   onLine,
   onFire,
+  onPrint,
 }: {
   ticket: SessionTicket
   number: number
@@ -149,6 +151,8 @@ export function SentTicket({
   readOnly: boolean
   onLine: (item: SessionItem) => void
   onFire: () => void
+  /** Volver a imprimir la comanda de esta tanda (solo en la compu que tiene la comandera). */
+  onPrint?: () => void
 }) {
   const held = display.stage === 'held'
   return (
@@ -162,6 +166,17 @@ export function SentTicket({
         <h2 className="cmd-ticket-title">Tanda {number}</h2>
         {clock ? <time className="cmd-ticket-time">{clock}</time> : null}
         <StageChip display={display} />
+        {onPrint && !held ? (
+          <button
+            type="button"
+            className="cmd-ticket-print"
+            onClick={onPrint}
+            aria-label={`Volver a imprimir la comanda de la tanda ${number}`}
+            data-testid={`ticket-print-${number}`}
+          >
+            <Printer aria-hidden strokeWidth={2.3} />
+          </button>
+        ) : null}
       </header>
 
       <ul className="cmd-lines">

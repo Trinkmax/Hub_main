@@ -13,6 +13,7 @@ import {
 } from '@/lib/pos/cash/actions'
 import type { ShiftRow, ShiftSnapshot } from '@/lib/pos/cash/types'
 import type { PosBranch } from '@/lib/pos/types'
+import { PrinterButton } from '../print/printer-button'
 import type { CashApi } from './api'
 import { CashScreen } from './cash-screen'
 
@@ -29,6 +30,7 @@ export function CashLive({
   shifts,
   timeZone,
   account,
+  barName,
 }: {
   slug: string
   initial: ShiftSnapshot
@@ -37,6 +39,8 @@ export function CashLive({
   shifts: ReadonlyArray<ShiftRow>
   timeZone: string
   account?: React.ReactNode
+  /** El nombre del bar, para el membrete de lo que se imprime. */
+  barName: string
 }) {
   const api = useMemo<CashApi>(
     () => ({
@@ -62,6 +66,15 @@ export function CashLive({
       shifts={shifts}
       timeZone={timeZone}
       account={account}
+      barName={barName}
+      tools={
+        <PrinterButton
+          slug={slug}
+          branchId={branch.id}
+          branchName={branch.name}
+          timeZone={timeZone}
+        />
+      }
     />
   )
 }

@@ -1,0 +1,311 @@
+/* ============================================================
+   La comandera de esta compu: el botón de la barra y su hoja.
+   Usa los tokens del punto de venta (`.pos`, en globals.css).
+   ============================================================ */
+
+/* Un celular no tiene una impresora enchufada: el botón aparece donde hay lugar. */
+.prn-btn {
+  position: relative;
+  display: none;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  border-radius: 0.8rem;
+  color: var(--pos-ink);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 140ms var(--pos-ease),
+    background-color 140ms var(--pos-ease);
+}
+@media (min-width: 900px) {
+  .prn-btn {
+    display: grid;
+  }
+}
+.prn-btn svg {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+.prn-btn:active {
+  transform: scale(0.97);
+  background: var(--pos-paper-2);
+}
+.prn-btn:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.prn-btn[data-on] {
+  color: color-mix(in oklch, var(--pos-good) 72%, var(--pos-ink));
+}
+.prn-btn-dot {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.5rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--pos-st-ready);
+  box-shadow: 0 0 0 2px var(--pos-paper);
+}
+
+/* En la tele de cocina el botón es una herramienta más de su barra oscura (`.kds-tool`). */
+.prn-kds {
+  position: relative;
+}
+.prn-kds .prn-btn-dot {
+  top: 0.35rem;
+  right: 0.35rem;
+  box-shadow: none;
+}
+@media (max-width: 899.98px) {
+  .prn-kds-word {
+    display: none;
+  }
+}
+
+/* ── La hoja ── */
+.prn-sheet {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 720px) {
+  .prn-sheet.pos-sheet {
+    left: 50%;
+    right: auto;
+    width: min(34rem, calc(100vw - 2rem));
+    translate: -50% 0;
+    border-radius: 1.2rem 1.2rem 0 0;
+  }
+}
+.prn-body {
+  display: grid;
+  gap: 1.1rem;
+}
+.prn-head {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.prn-switch {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  text-align: left;
+  transition:
+    background-color 160ms var(--pos-ease),
+    box-shadow 160ms var(--pos-ease),
+    transform 140ms var(--pos-ease);
+}
+.prn-switch:active {
+  transform: scale(0.99);
+}
+.prn-switch:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.prn-switch[data-on] {
+  background: color-mix(in oklab, var(--pos-st-ready) 16%, var(--pos-paper));
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--pos-st-ready) 70%, var(--pos-ink));
+}
+.prn-switch-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.15rem;
+}
+.prn-switch-text b {
+  font-size: 1.12rem;
+  font-weight: 800;
+  font-stretch: 86%;
+}
+.prn-switch-text span {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+.prn-switch-knob {
+  position: relative;
+  flex: none;
+  width: 3.1rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  background: var(--pos-card-4);
+  transition: background-color 160ms var(--pos-ease);
+}
+.prn-switch-knob::after {
+  content: "";
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: var(--pos-paper);
+  box-shadow: 0 1px 3px oklch(0.2 0.03 165 / 0.35);
+  transition: transform 180ms var(--pos-ease);
+}
+.prn-switch[data-on] .prn-switch-knob {
+  background: color-mix(in oklab, var(--pos-st-ready) 62%, var(--pos-ink));
+}
+.prn-switch[data-on] .prn-switch-knob::after {
+  transform: translateX(1.3rem);
+}
+
+.prn-field {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.prn-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.prn-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.prn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0 0.95rem;
+  border-radius: 0.8rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  transition:
+    background-color 140ms var(--pos-ease),
+    color 140ms var(--pos-ease),
+    transform 140ms var(--pos-ease);
+}
+.prn-chip:active {
+  transform: scale(0.97);
+}
+.prn-chip:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.prn-chip[aria-pressed="true"] {
+  background: var(--pos-ink);
+  box-shadow: none;
+  color: var(--pos-paper);
+}
+.prn-chip svg {
+  width: 1rem;
+  height: 1rem;
+}
+.prn-chip-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+}
+
+.prn-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.35rem 0.1rem;
+  cursor: pointer;
+}
+.prn-check input {
+  flex: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.1rem;
+  accent-color: var(--pos-ink);
+}
+.prn-check > span {
+  display: grid;
+  gap: 0.1rem;
+}
+.prn-check b {
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+.prn-check span span {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+
+.prn-how {
+  border-top: 1px solid var(--pos-rule);
+  padding-top: 0.8rem;
+}
+.prn-how summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+.prn-how summary::-webkit-details-marker {
+  display: none;
+}
+.prn-how summary svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  transition: transform 180ms var(--pos-ease);
+}
+.prn-how[open] summary svg {
+  transform: rotate(180deg);
+}
+.prn-how ol {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.3rem 0 0;
+  padding-left: 1.3rem;
+  list-style: decimal;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+.prn-how b {
+  color: var(--pos-ink);
+  font-weight: 700;
+}
+.prn-how code {
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+  font-size: 0.88em;
+}
+
+.prn-foot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+@media (max-width: 480px) {
+  .prn-row,
+  .prn-foot {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prn-btn,
+  .prn-switch,
+  .prn-switch-knob,
+  .prn-switch-knob::after,
+  .prn-chip,
+  .prn-how summary svg {
+    transition: none;
+  }
+}

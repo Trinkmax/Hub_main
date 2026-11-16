@@ -20,6 +20,7 @@ import {
   type CardStatus,
   type KitchenCard,
   OTHER_STATUS_LABEL,
+  PLAIN_VARIANT,
   undoTarget,
 } from '@/lib/pos/kitchen/cards'
 import { MIN_TICKET_SCALE, nextTicketScale } from '@/lib/pos/kitchen/layout'
@@ -115,27 +116,62 @@ export function Clock({ minutes, level }: { minutes: number; level: AgeLevel }) 
   )
 }
 
+/** Las aclaraciones, pasadas con resaltador. `plain`: si no hay ninguna, lo dice («Común»). */
+function Marks({
+  modifiers,
+  notes,
+  plain = false,
+}: {
+  modifiers: readonly string[]
+  notes: string | null
+  plain?: boolean
+}) {
+  if (modifiers.length === 0 && !notes) {
+    return plain ? <p className="kds-plain">{PLAIN_VARIANT}</p> : null
+  }
+  return (
+    <ul className="kds-mods" aria-label="Aclaraciones">
+      {modifiers.map((modifier, index) => (
+        // Dos aclaraciones iguales en un mismo renglón son posibles: la posición desempata.
+        // biome-ignore lint/suspicious/noArrayIndexKey: lista fija por renglón, nunca se reordena
+        <li key={`${modifier}:${index}`} className="kds-mod">
+          {modifier}
+        </li>
+      ))}
+      {notes ? <li className="kds-mod is-note">«{notes}»</li> : null}
+    </ul>
+  )
+}
+
 function Line({ line, cardStatus }: { line: CardLine; cardStatus: CardStatus }) {
   // Solo se marca el renglón que va distinto del resto de la comanda.
   const ahead = line.status === 'served' || (line.status === 'ready' && cardStatus !== 'ready')
   return (
     <li className="kds-line" data-status={line.status}>
       <span className="kds-qty" data-many={line.quantity > 1 ? 'true' : undefined}>
+        <span className="kds-qty-x" aria-hidden>
+          x
+        </span>
         {line.quantity}
       </span>
       <div className="kds-what">
         <p className="kds-name">{line.name}</p>
-        {line.modifiers.length > 0 || line.notes ? (
-          <ul className="kds-mods" aria-label="Aclaraciones">
-            {line.modifiers.map((modifier, index) => (
-              // Dos aclaraciones iguales en un mismo renglón son posibles: la posición desempata.
+        {line.variants.length > 0 ? (
+          // El mismo producto pedido de formas distintas: cada forma con cuántas van así.
+          <ul className="kds-variants" aria-label="Cómo va cada uno">
+            {line.variants.map((variant, at) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: lista fija por renglón, nunca se reordena
-              <li key={`${modifier}:${index}`} className="kds-mod">
-                {modifier}
+              <li key={at} className="kds-variant">
+                <span className="kds-vqty">
+                  <span aria-hidden>x</span>
+                  {variant.quantity}
+                </span>
+                <Marks modifiers={variant.modifiers} notes={variant.notes} plain />
               </li>
             ))}
-            {line.notes ? <li className="kds-mod is-note">«{line.notes}»</li> : null}
           </ul>
+        ) : line.modifiers.length > 0 || line.notes ? (
+          <Marks modifiers={line.modifiers} notes={line.notes} />
         ) : null}
         {ahead ? (
           <p className="kds-line-state">
