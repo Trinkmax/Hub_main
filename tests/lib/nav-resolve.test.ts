@@ -99,10 +99,11 @@ describe('resolveNavGroups — una entrada por sección, por rol', () => {
     expect(entries(groups)).toHaveLength(OWNER_ENTRIES.length + 1)
   })
 
-  it('host (anfitrión): Reservas (con sus cuatro pestañas) y Mis números — nada del dueño', () => {
+  it('host (anfitrión): Reservas (con sus cuatro pestañas), Mis números y Tareas — nada del dueño', () => {
     const groups = resolveNavGroups('host', SLUG, HUB, false)
-    expect(entries(groups)).toEqual(['Reservas', 'Mis números'])
-    expect(clusters(groups)).toEqual(['Agenda y clientes'])
+    expect(entries(groups)).toEqual(['Reservas', 'Mis números', 'Tareas'])
+    expect(clusters(groups)).toEqual(['Agenda y clientes', 'Negocio'])
+    expect(entry(groups, 'Tareas')?.href).toBe('/hub/tareas')
     expect(entry(groups, 'Reservas')?.activePaths).toEqual([
       '/hub/operativo',
       '/hub/eventos',
@@ -111,9 +112,10 @@ describe('resolveNavGroups — una entrada por sección, por rol', () => {
     expect(entry(groups, 'Mis números')?.href).toBe('/hub/mis-numeros')
   })
 
-  it('editor (contenido): sólo Carta («Ver carta» vive en la página)', () => {
+  it('editor (contenido): Carta («Ver carta» vive en la página) y Tareas', () => {
     const groups = resolveNavGroups('editor', SLUG, HUB, false)
-    expect(entries(groups)).toEqual(['Carta'])
+    expect(entries(groups)).toEqual(['Carta', 'Tareas'])
+    expect(entry(groups, 'Tareas')?.href).toBe('/hub/tareas')
     expect(entry(groups, 'Carta')?.href).toBe('/hub/menu')
   })
 

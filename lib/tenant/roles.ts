@@ -24,8 +24,9 @@ export const ROLE_DESCRIPTIONS: Record<TenantRole, string> = {
   waiter: 'Atiende mesas: registra clientes y check-in en eventos.',
   kitchen:
     'Cocina: cuenta el stock, recibe la mercadería y, si está prendida, avanza las comandas.',
-  editor: 'Edita la carta: fotos, videos, textos, precios y etiquetas. No ve el resto.',
-  host: 'Gestiona reservas y eventos, ve las ventas online, confirma transferencias y cambia el cupo de las funciones, y ve sus propias comisiones.',
+  editor:
+    'Edita la carta (fotos, videos, textos, precios y etiquetas) y trabaja las tareas de marketing. No ve el resto.',
+  host: 'Gestiona reservas y eventos, ve las ventas online, confirma transferencias y cambia el cupo de las funciones, trabaja las tareas de marketing y ve sus propias comisiones.',
   accountant:
     'Ve y exporta Administración: libros, IVA, cuentas corrientes y cajas. No carga ni cambia nada y no ve el resto del panel.',
 }
@@ -49,6 +50,16 @@ export const SALON_ROLES: ReadonlyArray<TenantRole> = ['cashier', 'waiter', 'kit
 
 /** Edición de la carta: categorías, ítems, media, tags. */
 export const MENU_EDIT_ROLES: ReadonlyArray<TenantRole> = ['owner', 'editor']
+
+/**
+ * Tareas de marketing (tablero estilo Monday, 15/11/2026): las ven y las trabajan
+ * quienes el selector de personas ofrece — dueños, Contenido y la anfitriona —
+ * (estado, personas, actualizaciones, archivos y la rutina de la semana). Los
+ * grupos y las rutinas los arma el dueño. Espejan `marketing_member_tenant_ids()`
+ * y `marketing_manager_tenant_ids()` de la base.
+ */
+export const MARKETING_TASK_ROLES: ReadonlyArray<TenantRole> = ['owner', 'editor', 'host']
+export const MARKETING_GROUP_ROLES: ReadonlyArray<TenantRole> = ['owner']
 
 /** CRUD de reservas + eventos del calendario (instancias). */
 export const RESERVATION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'host']
@@ -207,8 +218,9 @@ export function homePathForRole(role: string, slug: string): string {
  * 'ventas-online', las compras de la cartelera (TICKET_SALES_ROLES).
  */
 export const MANAGER_SCOPED_PREFIXES: Partial<Record<TenantRole, ReadonlyArray<string>>> = {
-  editor: ['menu'],
-  host: ['reservas', 'eventos', 'operativo', 'ventas-online', 'mis-numeros'],
+  // 'tareas' (15/11/2026): el tablero de marketing es también de Contenido y de la anfitriona.
+  editor: ['menu', 'tareas'],
+  host: ['reservas', 'eventos', 'operativo', 'ventas-online', 'mis-numeros', 'tareas'],
   accountant: ['administracion'],
 } satisfies Record<ScopedManagerRole, ReadonlyArray<string>>
 

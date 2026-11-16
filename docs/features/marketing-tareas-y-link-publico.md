@@ -9,7 +9,7 @@
 
 | Ruta | Quién entra | Qué es |
 |---|---|---|
-| `/[slug]/tareas` | `owner` | El tablero compartido de los socios. |
+| `/[slug]/tareas` | `owner`, `editor` (Contenido), `host` (anfitriona) | El tablero de tareas estilo Monday (desde el 15/11/2026). |
 | `/[slug]/enlaces` | `owner` | Editor del link de la bio, con vista previa en vivo. |
 | `/l/[slug]` | **cualquiera, sin sesión** | La página pública que va en Instagram. |
 
@@ -20,85 +20,120 @@ Tareas, Link de Instagram y Páginas son pestañas arriba de la página, definid
 
 ---
 
-## 1. Tablero de tareas — `/[slug]/tareas`
+## 1. Tablero de tareas — `/[slug]/tareas` (estilo Monday, 15/11/2026)
 
-Cinco solapas. Las tres primeras son categorías reales de la DB; las otras dos
-son vistas.
+Lo pidió Nacho Badra con un video de su Monday: «necesito que sea así». El
+tablero de septiembre (tarjetas por fecha, tres secciones fijas) «estaba muy
+desorganizado» y lo terminado no se iba a ningún lado.
 
-- **Eventos · Promociones · Impresiones** — el listado de tareas de esa sección,
-  con el contador de lo que sigue abierto (todo lo que no está `Terminado`).
-- **Orgánico** — el checklist semanal recurrente (ver abajo). No es una
-  categoría de tarea: es otra tabla.
-- **Mis tareas** — filtro por persona (arranca en vos) y por rol en la tarea:
-  *Ambos · Responsable · Involucrado*.
+### Cómo se ve
 
-Arriba, un buscador que filtra sobre título + especificaciones + comentarios,
-sin tildes (`grabacion` encuentra `grabación`) y sin round-trip: todas las
-tareas se traen de una sola vez y el filtrado es en el cliente.
+- **Grupos** que arma cada bar (Eventos, Promociones, Impresiones, Redes…), cada
+  uno con su color: el riel al costado de las filas y el título. La cabecera del
+  grupo lleva la cantidad y una **barrita con el reparto de estados** (cuenta el
+  grupo entero, también lo terminado: se ve cuánto falta). Se pliegan (se
+  recuerda en el navegador) y el dueño los renombra, les cambia el color, los
+  ordena y los borra (con aviso de cuántas tareas se van).
+- **La fila** (compu): título que se escribe ahí mismo · globito con la cantidad
+  de actualizaciones · Responsable (avatares) · Involucrados (nombres con el
+  color de cada persona) · **Estado como celda sólida** · Vencimiento · Notas
+  (solo con lugar) · Archivos. Las columnas responden al ancho del tablero
+  (container queries), no al de la ventana: en la notebook de Nacho con el menú
+  abierto entra igual. En el celular, cada tarea va en dos renglones (título y
+  estado; avatares, vencimiento, globitos) y se toca para abrir el panel.
+- **Estados** (`lib/marketing/constants.ts`, teclas 1 a 6 en el menú): Por hacer
+  (rojo) · En curso (amarillo) · Interrumpido (naranja) · Terminado (verde) ·
+  Backlog (gris, «lo dejo para después») · Esperando feedback (azul). Colores en
+  `app/globals.css` (bloque «Tareas de marketing»), con el texto calculado para
+  pasar AA en los seis.
+- **Vencimiento**: vencida en rojo con «!», hoy en ámbar, terminada en verde y
+  tachada. Atajos: Hoy, Mañana, El viernes, La semana que viene.
+- **Terminadas**: al marcar Terminado la fila destella en verde y se va a
+  «Terminadas · N» (abajo, cerrado), con «Deshacer». La tarea conserva su grupo:
+  si se reabre desde ahí, vuelve.
+- **Cargar rápido**: «+ Agregar tarea» al pie de cada grupo (Enter y queda listo
+  para la próxima) y «Nueva tarea» arriba (elige el grupo y carga arriba de
+  todo). Pegar una lista carga una tarea por renglón.
+- **Arrastrar** para ordenar y para pasar de grupo (dnd-kit, también con
+  teclado). Con un filtro puesto no se arrastra: reordenar una parte rompería el
+  resto.
+- **Filtros**: «Mis tareas» (responsable o involucrado: lo que pidió Nacho
+  Badra), cualquier otra persona, el buscador (título y notas, sin tildes) y
+  «N vencidas» en el resumen, que filtra.
+- **En vivo**: si otro socio cambia algo, el tablero se pone al día solo
+  (Realtime de las cinco tablas, con un refresh agrupado).
 
-### Los cajones de fecha
+### El panel de la tarea
 
-El listado no se ordena: se agrupa en cinco cajones colapsables —
-**Fechas pasadas · Hoy · Esta semana · La próxima semana · Más adelante**.
+Se abre con «Abrir», con el globito o con `?tarea=<id>` («Copiar link» para
+mandarlo por WhatsApp). Título grande editable, estado, vencimiento,
+responsables, involucrados, grupo (para pasarla a otro), notas que se guardan
+solas, y dos pestañas:
 
-El cajón sale de la **fecha efectiva** = `defined_date ?? ideal_date`:
+- **Actualizaciones**: el hilo de Monday. Quien la carga deja el detalle (textos,
+  guiones) y quien la hace deja lo entregado ahí mismo, con archivos (adjuntar o
+  pegar con ⌘V). Después de publicar ofrece pasarla a «Esperando feedback» o
+  «Terminado». Cada uno edita o borra lo suyo; el dueño borra cualquiera.
+- **Archivos**: arrastrar o elegir (fotos, videos, PDF, Office, zip; hasta 50 MB
+  cada uno; lo más pesado, como link), pegar un link, miniaturas de las fotos,
+  bajar con el nombre original.
 
-- `ideal_date` es el deseo ("estaría bueno para el finde").
-- `defined_date` es el compromiso ("sale el jueves") y manda sobre la ideal.
-- Sin ninguna de las dos, la tarea es un pendiente sin compromiso → *Más adelante*.
+Los archivos van **directo del navegador al bucket privado** `marketing-files`
+con la sesión de la persona (mismo camino que los comprobantes de
+Administración): el servidor valida y da las rutas (`prepareTaskUploads`), el
+navegador sube, y el servidor registra (`registerTaskFiles` / `postTaskUpdate`).
+Se ven con URLs firmadas de 1 h.
 
-Las ventanas son **móviles** (7 y 14 días desde hoy), no el calendario: un
-martes, "esta semana" tiene que llegar hasta el lunes que viene y no morirse el
-domingo. Todo se calcula en el reloj del bar (`America/Argentina/Cordoba`) y en
-el **server** — `today` y la etiqueta de la semana viajan como props para que un
-render a las 23:59 y la hidratación a las 00:00 no digan cosas distintas.
-
-Ver `lib/marketing/week.ts` (puro, sin red) y `tests/lib/marketing-week.test.ts`.
-
-### La tarjeta
-
-Punto de color por estado, título (click = editar), especificaciones, y una fila
-de metadatos: tipo de tarea, fecha, responsable, involucrado, *Con contexto* si
-hay comentarios, y *Archivo* si hay link. A la derecha, el chip de estado abre un
-menú con los cuatro estados —
-**Por hacer · En proceso · Interrumpido · Terminado** — y el cambio se pinta
-optimista (es el gesto más frecuente del tablero).
-
-Marcar *Terminado* congela `completed_at` / `completed_by`; volver atrás los limpia.
-
-### Orgánico (checklist semanal)
+### Rutina de la semana (el «Orgánico» de antes)
 
 Lo que se repite **todas** las semanas: historias, reels, el mensaje al canal.
-No son tareas — no tienen fecha ni responsable, tienen **cupo semanal**
-("reels: 3 por semana") y se reinician solas cada lunes.
-
-- La semana viaja por la URL (`?seccion=organico&semana=YYYY-MM-DD`) porque los
-  tildes los trae el server. Se normaliza siempre al lunes.
-- **Tildar = insertar la fila; destildar = borrarla.** No existe el estado
-  "sin hacer": ni filas basura por cada rutina × semana que nadie tocó, ni un
-  booleano que mantener.
-- Barra de progreso con `hechas / total` de esa semana.
-- Las rutinas se editan (nombre, detalle, veces por semana) y se borran. En el
-  estado vacío hay un botón que carga un **checklist sugerido** genérico
-  (`SUGGESTED_ROUTINES` en `lib/marketing/constants.ts`) para que un bar nuevo
-  no arranque mirando una pantalla en blanco.
-
-> El checklist real de HUB (Branca, Happy Hour, Stella, meriendas…) se cargó
-> como **dato**, no en la migración: es contenido de ese bar, no del schema.
+No son tareas — no tienen fecha ni responsable, tienen **cupo semanal** y se
+reinician solas cada lunes. Es la otra vista del mismo lugar
+(`?vista=rutina&semana=YYYY-MM-DD`; los viejos `?seccion=organico` siguen
+andando). Tildar = insertar la fila; destildar = borrarla. La arma el dueño;
+Contenido y la anfitriona tildan.
 
 ### Quién puede
 
-`owner` y nadie más — es la mesa de los socios. Está enforceado en tres capas:
-el sidebar (`roles: ['owner']`), la page (`requireRole(access.role, ['owner'])`)
-y las policies de la DB (`user_role_in_tenant(tenant_id) = 'owner'`).
+| | Dueño | Contenido (`editor`) | Anfitriona (`host`) |
+|---|---|---|---|
+| Ver el tablero y la rutina | ✓ | ✓ | ✓ |
+| Crear, editar, asignar, comentar, subir archivos | ✓ | ✓ | ✓ |
+| Borrar una tarea | ✓ | la que creó | la que creó |
+| Borrar actualizaciones / archivos | ✓ | los suyos | los suyos |
+| Grupos y rutinas (crear, cambiar, borrar) | ✓ | — | — |
 
-El combo Responsable / Involucrado sale del RPC **`get_marketing_team`**, que
-cruza `memberships` con `auth.users` y `reservation_managers` para conseguir el
-nombre real con el que se conocen entre ellos (`auth.users.full_name` casi
-siempre viene vacío y `auth.users` no es accesible vía PostgREST). Excluye al
-staff de salón: una tarea de marketing no se le asigna a un mozo.
+Enforceado en cuatro capas: el menú (dueño entra por **Marketing**; Contenido y
+la anfitriona tienen su entrada **Tareas**), el proxy (`tareas` en
+`MANAGER_SCOPED_PREFIXES`), la página y las actions (`MARKETING_TASK_ROLES` /
+`MARKETING_GROUP_ROLES` de `lib/tenant/roles.ts`) y la base
+(`marketing_member_tenant_ids()` / `marketing_manager_tenant_ids()`). A una tarea
+solo se puede sumar gente que trabaja el tablero de ese bar (política de
+`marketing_task_people`). La contadora no ve nada (RESTRICTIVE `_no_accountant`
+en cada tabla).
 
----
+**Candados** (migración `20261116001427_marketing_tasks_candados.sql`, después de la
+revisión independiente del 15/11/2026): un disparador fija el autor, el bar y la fecha
+de alta de cada tarea y calcula «quién y cuándo la terminó» del cambio de estado (antes,
+con la consola, alguien podía ponerse como autor de una tarea ajena y borrarla); las
+actualizaciones no cambian de tarea ni de autor; un archivo del bucket lo borra quien lo
+subió, un dueño o quien creó la tarea; y una tarea sin grupo solo crea grupo si la carga
+un dueño. Las actions repiten las reglas antes de tocar el bucket, nunca borran un objeto
+si el registro falló porque la ruta ya era de otro archivo, y el navegador borra lo que
+subió si no lo pudo registrar.
+
+En el celular de la anfitriona, las cuatro pestañas de Reservas siguen sueltas en
+la barra de abajo; «Mis números» y «Tareas» quedan en «Más».
+
+El combo de personas sale del RPC **`get_marketing_team`** (cruza `memberships`
+con `auth.users` y `reservation_managers` para el nombre real).
+
+### Tex
+
+`ver_tareas`, `preparar_tarea`, `preparar_estado_tarea`,
+`preparar_actualizacion_tarea`, `ver_checklist_organico` y
+`preparar_tilde_rutina` (`lib/tex/tools/mensajeria/tareas.ts`), para los mismos
+tres roles.
 
 ## 2. Link público de la bio — `/l/[slug]`
 
@@ -137,11 +172,16 @@ formalmente válida y el filtro lo dejaría pasar (`tests/lib/public-links-schem
 ## Datos
 
 ```
-marketing_tasks            id, tenant_id, title, category, kind, status,
-                           specifications, notes, file_url,
-                           responsible_user_id, involved_user_id,
-                           ideal_date, defined_date,
+marketing_task_groups      id, tenant_id, name, color, position     (los grupos; color de una paleta fija)
+marketing_tasks            id, tenant_id, group_id, title, status, due_date, notes, position,
                            created_by, completed_at, completed_by
+                           (+ las columnas del tablero de septiembre, que quedan sin uso hasta
+                           la migración de limpieza: category, kind, specifications, file_url,
+                           responsible_user_id, involved_user_id, ideal_date, defined_date)
+marketing_task_people      task_id, user_id, role (responsible | involved)   ← varias de cada una
+marketing_task_updates     task_id, author_id, body                           ← el hilo
+marketing_task_files       task_id, update_id?, kind (file | link), storage_path | url,
+                           file_name, mime_type, size_bytes                   ← bucket marketing-files
 marketing_routines         id, tenant_id, title, description, slots, position, active
                            unique (id, tenant_id)  ← habilita la FK compuesta de abajo
 marketing_routine_checks   id, tenant_id, routine_id, week_start, slot, completed_by
@@ -153,24 +193,29 @@ public_links               id, tenant_id, label, description, url, icon,
                            highlight, position, active
 ```
 
-Enums: `marketing_task_category` (eventos·promociones·impresiones),
-`marketing_task_status` (todo·in_progress·blocked·done) y `marketing_task_kind`
-(design·shoot·edit·script·ads·publish·print·coordinate·other). Claves en inglés
-como el resto del schema; los labels en español viven en
-`lib/marketing/constants.ts`.
+Enum `marketing_task_status`: todo · in_progress · blocked · done · backlog ·
+waiting_feedback. Claves en inglés como el resto del schema; los labels en
+español viven en `lib/marketing/constants.ts`. Todas las hijas cuelgan de la
+tarea con FK compuesta `(task_id, tenant_id)` (nada cruza de bar) y la tarea del
+grupo con `(group_id, tenant_id)`.
 
-**RLS**: las cinco tablas son `for all to authenticated` con
-`public.user_role_in_tenant(tenant_id) = 'owner'`, más `revoke all … from anon`
-(el proyecto arrastra default privileges que le regalan SELECT/INSERT a `anon`
-en cada tabla nueva de `public`).
+**RLS** (migración `20261115230118_marketing_tasks_board_v2.sql`): ver «Quién
+puede». `revoke all … from anon` en todas. Las cinco tablas del tablero están en
+la publicación `supabase_realtime`. Reordenar es la RPC `marketing_reorder_tasks`
+(security invoker: manda la RLS).
 
 **La página pública no lee con `anon`**: la sirve un Server Component con
 `createServiceClient()` filtrando por `tenant_id`, igual que `/carta`.
 `public.tenants` tampoco es legible por `anon` y abrirlo sólo para esto
 expondría `feature_flags`, teléfonos de feedback y config de puntos.
 
-Migraciones: `20260903213046_marketing_tasks_board.sql` y
-`20260903213113_public_links_bio_page.sql`.
+Migraciones: `20260903213046_marketing_tasks_board.sql`,
+`20260903213113_public_links_bio_page.sql`, y el tablero estilo Monday:
+`20261115225856_marketing_task_status_v2.sql` (los dos estados nuevos, sola
+porque un valor de enum no se usa en la misma transacción) y
+`20261115230118_marketing_tasks_board_v2.sql` («expandir ahora, limpiar
+después»: agrega todo y conserva las columnas viejas para que el código anterior
+siguiera andando entre la migración y el deploy).
 
 ---
 
@@ -191,10 +236,21 @@ distinto:
 
 ```
 app/(manager)/[tenantSlug]/tareas/       page + loading + _components/
-  _components/marketing-board.tsx        solapas, buscador, filtros, agrupado
-  _components/task-card.tsx              tarjeta + menú de estado
-  _components/task-dialog.tsx            alta/edición/borrado
-  _components/organic-checklist.tsx      semana, progreso, casilleros
+  _components/task-board.tsx             estado optimista, filtros, arrastrar, en vivo, panel
+  _components/board-toolbar.tsx          resumen, Mis tareas, persona, buscador, Tablero/Rutina
+  _components/group-section.tsx          grupo: cabecera con la barrita, filas, «+ Agregar tarea»
+  _components/task-row.tsx               la fila (compu) y la tarjeta de dos renglones (celular)
+  _components/status-picker.tsx          la celda sólida y los seis estados
+  _components/people-picker.tsx          responsables / involucrados
+  _components/due-picker.tsx             vencimiento con atajos
+  _components/done-section.tsx           «Terminadas»
+  _components/task-panel.tsx             el panel de la tarea
+  _components/task-updates.tsx           actualizaciones (escribir, editar, borrar)
+  _components/task-files.tsx             archivos y links
+  _components/upload.ts                  subida directa al bucket
+  _components/new-task-popover.tsx       «Nueva tarea»
+  _components/groups-empty.tsx           tablero vacío y «Nuevo grupo»
+  _components/organic-checklist.tsx      rutina de la semana: progreso, casilleros
   _components/routine-dialog.tsx         alta/edición/borrado de rutinas
 app/(manager)/[tenantSlug]/enlaces/      page + loading + _components/
   _components/links-manager.tsx          encabezado, lista, previa
@@ -202,7 +258,7 @@ app/(manager)/[tenantSlug]/enlaces/      page + loading + _components/
 app/l/[tenantSlug]/                      page + not-found (pública)
 components/public-links/link-page-view.tsx   ← compartido página real ↔ previa
 components/ui/copy-button.tsx            (extraído: había 4 copias ad-hoc)
-lib/marketing/{constants,week,schemas,queries,actions}.ts
+lib/marketing/{constants,board,files,week,schemas,queries,actions}.ts
 lib/public-links/{schemas,queries,actions}.ts
-tests/lib/{marketing-week,marketing-schemas,public-links-schemas}.test.ts
+tests/lib/{marketing-board,marketing-files,marketing-week,marketing-schemas,public-links-schemas}.test.ts
 ```

@@ -111,8 +111,9 @@ describe('pestañas de sección: qué ve cada uno', () => {
   })
 
   it('Marketing: Tareas, Link de Instagram, Páginas y Entradas (los editores van sin barra)', () => {
-    expect(sectionNeedsViewer('marketing')).toBe(false)
-    const section = resolveSection('marketing', SLUG)
+    // Desde el 15/11/2026 Tareas también es de Contenido y de la anfitriona: la barra pregunta quién mira.
+    expect(sectionNeedsViewer('marketing')).toBe(true)
+    const section = resolveSection('marketing', SLUG, viewer({ role: 'owner' }))
     expect(labels(section)).toEqual(['Tareas', 'Link de Instagram', 'Páginas', 'Entradas'])
     expect(hrefs(section)).toEqual(['/hub/tareas', '/hub/enlaces', '/hub/paginas', '/hub/entradas'])
     expect(section.tabs.find((t) => t.value === 'paginas')?.exact).toBe(true)
@@ -360,7 +361,7 @@ describe('pestaña activa según la URL', () => {
   it('la barra: Administración se queda sin marca; Marketing se esconde en el editor', () => {
     const admin = resolveSection('administracion', SLUG, full)
     expect(sectionBarVisible(admin, null)).toBe(true)
-    const marketing = resolveSection('marketing', SLUG)
+    const marketing = resolveSection('marketing', SLUG, viewer({ role: 'owner' }))
     expect(sectionBarVisible(marketing, null)).toBe(false)
     expect(sectionBarVisible(marketing, 'paginas')).toBe(true)
     expect(sectionBarVisible(marketing, 'entradas')).toBe(true)
@@ -477,7 +478,7 @@ describe('pestañas de sección: el proxy deja abrir todo lo que la barra muestr
     }
   })
 
-  it('la contadora solo llega a Administración, la anfitriona a Reservas y el editor a ninguna', () => {
+  it('la contadora solo llega a Administración, la anfitriona a Reservas y Tareas, el editor a Tareas', () => {
     const reachableSections = (role: TenantRole, accounting: AccountingAccess) =>
       (Object.keys(SECTION_TABS) as SectionKey[]).filter((key) =>
         resolveSection(key, SLUG, viewer({ role, features: allOn, accounting })).tabs.some((tab) =>
@@ -486,7 +487,16 @@ describe('pestañas de sección: el proxy deja abrir todo lo que la barra muestr
       )
     expect(reachableSections('accountant', ACCOUNTANT_ACCESS)).toEqual(['administracion'])
     // La anfitriona llega a Reservas (sus cuatro pestañas son suyas desde siempre).
-    expect(reachableSections('host', NO_ACCESS)).toEqual(['reservas'])
-    expect(reachableSections('editor', NO_ACCESS)).toEqual([])
+    expect(reachableSections('host', NO_ACCESS)).toEqual(['reservas', 'marketing'])
+    // Tareas de marketing (15/11/2026): Contenido y la anfitriona trabajan el tablero.
+    expect(reachableSections('editor', NO_ACCESS)).toEqual(['marketing'])
+  })
+
+  it('Contenido y la anfitriona ven solo Tareas en Marketing (una pestaña: sin barra)', () => {
+    for (const role of ['editor', 'host'] as const) {
+      const section = resolveSection('marketing', SLUG, viewer({ role }))
+      expect(labels(section), role).toEqual(['Tareas'])
+      expect(sectionBarVisible(section, 'tareas'), role).toBe(false)
+    }
   })
 })

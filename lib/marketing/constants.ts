@@ -1,127 +1,195 @@
 /**
- * Catálogo del tablero de marketing: las claves viven en la DB (enums
- * `marketing_task_*`), los textos en español viven acá. Fuente ÚNICA — el
- * formulario, las tarjetas, los filtros y los tests importan de este archivo.
+ * Catálogo del tablero de tareas de marketing (estilo Monday, pedido de Nacho
+ * Badra del 15/11/2026). Las claves viven en la DB (enum `marketing_task_status`,
+ * check `mtg_color`); los textos y los colores viven acá. Fuente ÚNICA: el
+ * tablero, el panel de la tarea, Tex y los tests importan de este archivo.
+ *
+ * Los colores son tokens de `app/globals.css` (bloque «Tareas de marketing»),
+ * escritos como clases literales para que Tailwind las encuentre.
  */
 
 // ──────────────────────────────────────────────
-// Secciones del tablero
+// Estados
 // ──────────────────────────────────────────────
-
-export const TASK_CATEGORIES = ['eventos', 'promociones', 'impresiones'] as const
-export type TaskCategory = (typeof TASK_CATEGORIES)[number]
-
-export const CATEGORY_LABELS: Record<TaskCategory, string> = {
-  eventos: 'Eventos',
-  promociones: 'Promociones',
-  impresiones: 'Impresiones',
-}
 
 /**
- * Las "vistas" del tablero. Las tres primeras son categorías reales de la DB;
- * `organico` es el checklist semanal (otra tabla) y `mias` es un filtro sobre
- * todo lo demás. Se modelan juntas porque para el dueño son cinco solapas.
+ * En el orden en que Nacho Badra los nombró en el video y en que aparecen en el
+ * menú (teclas 1 a 6): Por hacer, En curso, Interrumpido, Terminado, Backlog y
+ * Esperando feedback.
  */
-export const BOARD_VIEWS = ['eventos', 'promociones', 'impresiones', 'organico', 'mias'] as const
-export type BoardView = (typeof BOARD_VIEWS)[number]
-
-export const VIEW_LABELS: Record<BoardView, string> = {
-  ...CATEGORY_LABELS,
-  organico: 'Orgánico',
-  mias: 'Mis tareas',
-}
-
-export function isBoardView(value: unknown): value is BoardView {
-  return typeof value === 'string' && (BOARD_VIEWS as readonly string[]).includes(value)
-}
-
-export function isTaskCategory(value: unknown): value is TaskCategory {
-  return typeof value === 'string' && (TASK_CATEGORIES as readonly string[]).includes(value)
-}
-
-// ──────────────────────────────────────────────
-// Estado
-// ──────────────────────────────────────────────
-
-export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'done'] as const
+export const TASK_STATUSES = [
+  'todo',
+  'in_progress',
+  'blocked',
+  'done',
+  'backlog',
+  'waiting_feedback',
+] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
+
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value)
+}
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   todo: 'Por hacer',
-  in_progress: 'En proceso',
+  in_progress: 'En curso',
   blocked: 'Interrumpido',
   done: 'Terminado',
+  backlog: 'Backlog',
+  waiting_feedback: 'Esperando feedback',
+}
+
+/** Para la píldora angosta del celular. */
+export const STATUS_SHORT: Record<TaskStatus, string> = {
+  todo: 'Por hacer',
+  in_progress: 'En curso',
+  blocked: 'Interrumpido',
+  done: 'Terminado',
+  backlog: 'Backlog',
+  waiting_feedback: 'Esperando',
+}
+
+/** Lo que quiere decir cada uno, para el menú y los lectores de pantalla. */
+export const STATUS_HINTS: Record<TaskStatus, string> = {
+  todo: 'Nadie la empezó',
+  in_progress: 'Alguien la está haciendo',
+  blocked: 'Está trabada por algo',
+  done: 'Lista: pasa a Terminadas',
+  backlog: 'La dejamos para después',
+  waiting_feedback: 'Entregada, falta el visto bueno',
 }
 
 /**
- * Color del punto y del chip por estado. Tokens del design system (nunca hex):
- * `blocked` usa warning y no destructive — está trabado, no roto.
+ * Celda sólida, como en Monday (lo que Nacho Badra marcó como «mejor»). Rojo,
+ * verde y azul llevan texto claro; amarillo, naranja y gris, oscuro: así el
+ * texto pasa AA en los seis.
  */
-export const STATUS_DOT: Record<TaskStatus, string> = {
-  todo: 'bg-muted-foreground/40',
-  in_progress: 'bg-info',
-  blocked: 'bg-warning',
-  done: 'bg-success',
+export const STATUS_SOLID: Record<TaskStatus, string> = {
+  todo: 'bg-(--task-todo) text-(--task-todo-fg)',
+  in_progress: 'bg-(--task-doing) text-(--task-doing-fg)',
+  blocked: 'bg-(--task-stuck) text-(--task-stuck-fg)',
+  done: 'bg-(--task-done) text-(--task-done-fg)',
+  backlog: 'bg-(--task-backlog) text-(--task-backlog-fg)',
+  waiting_feedback: 'bg-(--task-waiting) text-(--task-waiting-fg)',
 }
 
-export const STATUS_CHIP: Record<TaskStatus, string> = {
-  todo: 'border-border bg-secondary/60 text-muted-foreground',
-  in_progress: 'border-info/30 bg-info/10 text-info',
-  blocked: 'border-warning/30 bg-warning/10 text-warning',
-  done: 'border-success/30 bg-success/10 text-success',
+/** Solo el color de fondo: la barrita del reparto de estados y los puntos. */
+export const STATUS_FILL: Record<TaskStatus, string> = {
+  todo: 'bg-(--task-todo)',
+  in_progress: 'bg-(--task-doing)',
+  blocked: 'bg-(--task-stuck)',
+  done: 'bg-(--task-done)',
+  backlog: 'bg-(--task-backlog)',
+  waiting_feedback: 'bg-(--task-waiting)',
 }
 
 // ──────────────────────────────────────────────
-// Tipo de trabajo
+// Grupos
 // ──────────────────────────────────────────────
 
-export const TASK_KINDS = [
-  'design',
-  'shoot',
-  'edit',
-  'script',
-  'ads',
-  'publish',
-  'print',
-  'coordinate',
-  'other',
+/** La paleta fija de los grupos (la misma lista que el check `mtg_color` de la DB). */
+export const GROUP_COLORS = [
+  'forest',
+  'sky',
+  'violet',
+  'rose',
+  'coral',
+  'amber',
+  'teal',
+  'slate',
 ] as const
-export type TaskKind = (typeof TASK_KINDS)[number]
+export type GroupColor = (typeof GROUP_COLORS)[number]
 
-export const KIND_LABELS: Record<TaskKind, string> = {
-  design: 'Diseñar',
-  shoot: 'Grabar contenido',
-  edit: 'Editar contenido',
-  script: 'Armar guion',
-  ads: 'Pautar',
-  publish: 'Subir contenido',
-  print: 'Imprimir',
-  coordinate: 'Coordinar',
-  other: 'Otro',
+export function isGroupColor(value: unknown): value is GroupColor {
+  return typeof value === 'string' && (GROUP_COLORS as readonly string[]).includes(value)
 }
 
+export const GROUP_COLOR_LABELS: Record<GroupColor, string> = {
+  forest: 'Verde',
+  sky: 'Azul',
+  violet: 'Violeta',
+  rose: 'Rosa',
+  coral: 'Coral',
+  amber: 'Ámbar',
+  teal: 'Petróleo',
+  slate: 'Gris',
+}
+
+/** El título del grupo (texto con contraste AA sobre la crema y sobre el fondo oscuro). */
+export const GROUP_TEXT: Record<GroupColor, string> = {
+  forest: 'text-(--task-group-forest)',
+  sky: 'text-(--task-group-sky)',
+  violet: 'text-(--task-group-violet)',
+  rose: 'text-(--task-group-rose)',
+  coral: 'text-(--task-group-coral)',
+  amber: 'text-(--task-group-amber)',
+  teal: 'text-(--task-group-teal)',
+  slate: 'text-(--task-group-slate)',
+}
+
+/** El riel de color al costado de las filas del grupo (como el borde de Monday). */
+export const GROUP_RAIL: Record<GroupColor, string> = {
+  forest: 'bg-(--task-group-forest)',
+  sky: 'bg-(--task-group-sky)',
+  violet: 'bg-(--task-group-violet)',
+  rose: 'bg-(--task-group-rose)',
+  coral: 'bg-(--task-group-coral)',
+  amber: 'bg-(--task-group-amber)',
+  teal: 'bg-(--task-group-teal)',
+  slate: 'bg-(--task-group-slate)',
+}
+
+/**
+ * El estado vacío: en vez de una pantalla en blanco, grupos sugeridos en un
+ * toque. Son las tres secciones del tablero de septiembre más dos que usan los
+ * bares para Instagram y diseño.
+ */
+export const SUGGESTED_GROUPS: ReadonlyArray<{ name: string; color: GroupColor }> = [
+  { name: 'Eventos', color: 'forest' },
+  { name: 'Promociones', color: 'coral' },
+  { name: 'Impresiones', color: 'sky' },
+  { name: 'Redes', color: 'violet' },
+  { name: 'Diseño', color: 'amber' },
+]
+
 // ──────────────────────────────────────────────
-// Filtro de "Mis tareas"
+// Personas
 // ──────────────────────────────────────────────
 
-export const MINE_MODES = ['both', 'responsible', 'involved'] as const
-export type MineMode = (typeof MINE_MODES)[number]
+export const TASK_PERSON_ROLES = ['responsible', 'involved'] as const
+export type TaskPersonRole = (typeof TASK_PERSON_ROLES)[number]
 
-export const MINE_MODE_LABELS: Record<MineMode, string> = {
-  both: 'Ambos',
+export const PERSON_ROLE_LABELS: Record<TaskPersonRole, string> = {
   responsible: 'Responsable',
-  involved: 'Involucrado',
+  involved: 'Involucrados',
 }
 
+/**
+ * Cada persona tiene su color, siempre el mismo (sale de su id): en Monday cada
+ * nombre de «Involucrado» tenía el suyo y así se reconoce de un vistazo.
+ */
+export const PERSON_COLORS = [
+  'bg-(--task-person-0)',
+  'bg-(--task-person-1)',
+  'bg-(--task-person-2)',
+  'bg-(--task-person-3)',
+  'bg-(--task-person-4)',
+  'bg-(--task-person-5)',
+  'bg-(--task-person-6)',
+  'bg-(--task-person-7)',
+  'bg-(--task-person-8)',
+  'bg-(--task-person-9)',
+] as const
+
 // ──────────────────────────────────────────────
-// Checklist semanal sugerido
+// Rutina de la semana (Orgánico)
 // ──────────────────────────────────────────────
 
 /**
- * Punto de partida para la sección Orgánico. NO se siembra en la migración: se
+ * Punto de partida para la rutina semanal. NO se siembra en la migración: se
  * carga con un click desde el estado vacío y después el bar lo edita como
- * quiera (agregar, sacar, cambiar el cupo semanal). Así un bar nuevo arranca
- * con algo usable sin que el schema imponga el contenido de nadie.
+ * quiera (agregar, sacar, cambiar el cupo semanal).
  */
 export const SUGGESTED_ROUTINES: ReadonlyArray<{
   title: string
@@ -184,3 +252,15 @@ export const SUGGESTED_ROUTINES: ReadonlyArray<{
     slots: 3,
   },
 ]
+
+// ──────────────────────────────────────────────
+// Vistas de la pantalla
+// ──────────────────────────────────────────────
+
+/** `?vista=` de /tareas: el tablero o la rutina semanal. */
+export const TASK_VIEWS = ['tablero', 'rutina'] as const
+export type TaskView = (typeof TASK_VIEWS)[number]
+
+export function isTaskView(value: unknown): value is TaskView {
+  return typeof value === 'string' && (TASK_VIEWS as readonly string[]).includes(value)
+}

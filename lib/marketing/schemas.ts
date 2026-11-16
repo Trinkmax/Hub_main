@@ -1,76 +1,185 @@
 import { z } from 'zod'
-import { TASK_CATEGORIES, TASK_KINDS, TASK_STATUSES } from './constants'
+import { GROUP_COLORS, TASK_PERSON_ROLES, TASK_STATUSES } from './constants'
+import { MAX_FILES_PER_BATCH, MAX_TASK_FILE_BYTES } from './files'
 
 /**
- * Bordes del tablero de marketing.
- *
- * Todos los opcionales llegan del FormData como `''` (un `<input>` vacío nunca
- * manda null) o como `null` si el campo directamente no vino. El schema
- * normaliza las dos formas a `null` acá, así la DB nunca ve strings vacíos
- * disfrazados de dato y `coalesce(defined_date, ideal_date)` sigue funcionando.
+ * Bordes del tablero de tareas (estilo Monday). Cada cambio del tablero es una
+ * action chica y optimista (el título, el estado, una persona…), así que cada
+ * una tiene su schema. Los textos de error salen tal cual en un toast.
  */
 
-/** `'' | null | undefined` → null; cualquier otra cosa → string recortado. */
-const optionalText = z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
-  const s = typeof v === 'string' ? v.trim() : ''
-  return s.length === 0 ? null : s
+const id = z.uuid('ID inválido')
+
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida')
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`)
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  }, 'Fecha inválida')
+
+export const taskTitleSchema = z
+  .string()
+  .trim()
+  .min(1, 'Escribí qué hay que hacer')
+  .max(160, 'El título no puede superar 160 caracteres')
+
+/** Notas: vacío → null (la DB nunca ve un string vacío disfrazado de dato). */
+export const taskNotesSchema = z
+  .union([z.string(), z.null()])
+  .transform((value) => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    return text.length === 0 ? null : text
+  })
+  .refine((value) => value === null || value.length <= 10000, 'Las notas son demasiado largas')
+
+// ──────────────────────────────────────────────
+// Tareas
+// ──────────────────────────────────────────────
+
+export const createTaskSchema = z.object({
+  groupId: id,
+  title: taskTitleSchema,
+  where: z.enum(['top', 'bottom']).default('bottom'),
 })
 
-const textUpTo = (max: number) =>
-  optionalText.refine((v) => v === null || v.length <= max, `No puede superar ${max} caracteres`)
+export const taskPatchSchema = z
+  .object({
+    title: taskTitleSchema.optional(),
+    status: z.enum(TASK_STATUSES).optional(),
+    dueDate: z.union([isoDay, z.null()]).optional(),
+    notes: taskNotesSchema.optional(),
+    groupId: id.optional(),
+  })
+  .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
+    message: 'No hay nada para cambiar',
+  })
 
-/** `<input type="date">` vacío → null; con valor → `yyyy-MM-dd`. */
-const isoDateOrNull = optionalText.refine(
-  (v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v),
-  'Fecha inválida',
-)
+export const updateTaskSchema = z.object({
+  id,
+  patch: taskPatchSchema,
+})
 
-const uuidOrNull = optionalText.refine(
-  (v) => v === null || z.uuid().safeParse(v).success,
-  'Persona inválida',
-)
+export const setTaskPeopleSchema = z.object({
+  taskId: id,
+  role: z.enum(TASK_PERSON_ROLES),
+  userIds: z.array(id).max(20, 'Demasiadas personas'),
+})
+
+export const reorderTasksSchema = z.object({
+  groupId: id,
+  ids: z.array(id).min(1).max(1000),
+})
+
+// ──────────────────────────────────────────────
+// Grupos
+// ──────────────────────────────────────────────
+
+export const groupNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Ponele un nombre al grupo')
+  .max(60, 'El nombre no puede superar 60 caracteres')
+
+export const createGroupSchema = z.object({
+  name: groupNameSchema,
+  color: z.enum(GROUP_COLORS),
+})
+
+export const updateGroupSchema = z
+  .object({
+    id,
+    name: groupNameSchema.optional(),
+    color: z.enum(GROUP_COLORS).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.color !== undefined, {
+    message: 'No hay nada para cambiar',
+  })
+
+export const reorderGroupsSchema = z.object({
+  ids: z.array(id).min(1).max(100),
+})
+
+// ──────────────────────────────────────────────
+// Actualizaciones y archivos
+// ──────────────────────────────────────────────
+
+export const updateBodySchema = z
+  .string()
+  .max(10000, 'La actualización es demasiado larga')
+  .transform((value) => value.trim())
+
+const uploadedFileSchema = z.object({
+  path: z.string().min(1).max(200),
+  fileName: z.string().min(1).max(400),
+  mimeType: z.string().min(1).max(120),
+  sizeBytes: z.number().int().min(1).max(MAX_TASK_FILE_BYTES),
+})
+
+export type UploadedTaskFile = z.infer<typeof uploadedFileSchema>
+
+export const postUpdateSchema = z
+  .object({
+    taskId: id,
+    body: updateBodySchema,
+    files: z.array(uploadedFileSchema).max(MAX_FILES_PER_BATCH).default([]),
+  })
+  .refine((value) => value.body.length > 0 || value.files.length > 0, {
+    message: 'Escribí algo o sumá un archivo',
+  })
+
+export const editUpdateSchema = z.object({
+  id,
+  body: updateBodySchema.refine((value) => value.length > 0, 'Escribí algo'),
+})
+
+export const prepareUploadsSchema = z.object({
+  taskId: id,
+  files: z
+    .array(
+      z.object({
+        fileName: z.string().min(1).max(400),
+        mimeType: z.string().min(1).max(120),
+        sizeBytes: z.number().int().min(1).max(MAX_TASK_FILE_BYTES),
+      }),
+    )
+    .min(1)
+    .max(MAX_FILES_PER_BATCH),
+})
+
+export const registerFilesSchema = z.object({
+  taskId: id,
+  files: z.array(uploadedFileSchema).min(1).max(MAX_FILES_PER_BATCH),
+})
 
 /**
- * Link al material. Sólo http/https: un `javascript:` acá terminaría en un
- * `<a href>` del panel, y el campo lo carga cualquier socio.
+ * Link al material. Solo http/https: un `javascript:` acá terminaría en un
+ * `<a href>` del panel.
  */
-const httpUrlOrNull = optionalText
-  .refine(
-    (v) => v === null || /^https?:\/\/\S+$/i.test(v),
-    'El link tiene que empezar con http:// o https://',
-  )
-  .refine((v) => v === null || v.length <= 2000, 'El link es demasiado largo')
-
-export const marketingTaskCreateSchema = z.object({
+export const addLinkSchema = z.object({
+  taskId: id,
+  url: z
+    .string()
+    .trim()
+    .regex(/^https?:\/\/\S+$/i, 'El link tiene que empezar con http:// o https://')
+    .max(2000, 'El link es demasiado largo'),
   title: z
     .string()
     .trim()
-    .min(1, 'Poné qué hay que hacer')
-    .max(160, 'El título no puede superar 160 caracteres'),
-  category: z.enum(TASK_CATEGORIES),
-  kind: z.enum(TASK_KINDS),
-  status: z.enum(TASK_STATUSES),
-  specifications: textUpTo(2000),
-  notes: textUpTo(4000),
-  file_url: httpUrlOrNull,
-  responsible_user_id: uuidOrNull,
-  involved_user_id: uuidOrNull,
-  ideal_date: isoDateOrNull,
-  defined_date: isoDateOrNull,
-})
-
-export const marketingTaskUpdateSchema = marketingTaskCreateSchema.extend({
-  id: z.uuid('ID inválido'),
-})
-
-export const marketingTaskStatusSchema = z.object({
-  id: z.uuid('ID inválido'),
-  status: z.enum(TASK_STATUSES),
+    .max(160, 'El nombre es demasiado largo')
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : undefined)),
 })
 
 // ──────────────────────────────────────────────
-// Checklist semanal
+// Rutina de la semana (Orgánico)
 // ──────────────────────────────────────────────
+
+/** `'' | null | undefined` → null; cualquier otra cosa → string recortado. */
+const optionalText = z.union([z.string(), z.null(), z.undefined()]).transform((value) => {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return text.length === 0 ? null : text
+})
 
 export const routineUpsertSchema = z.object({
   id: z.uuid('ID inválido').nullable().optional(),
@@ -79,7 +188,10 @@ export const routineUpsertSchema = z.object({
     .trim()
     .min(1, 'Poné un nombre')
     .max(160, 'El nombre no puede superar 160 caracteres'),
-  description: textUpTo(400),
+  description: optionalText.refine(
+    (value) => value === null || value.length <= 400,
+    'No puede superar 400 caracteres',
+  ),
   slots: z.coerce
     .number()
     .int('Tiene que ser un número entero')
@@ -94,7 +206,7 @@ export const routineCheckSchema = z.object({
   done: z.boolean(),
 })
 
-export type MarketingTaskCreate = z.infer<typeof marketingTaskCreateSchema>
-export type MarketingTaskUpdate = z.infer<typeof marketingTaskUpdateSchema>
+export type CreateTaskInput = z.input<typeof createTaskSchema>
+export type TaskPatch = z.input<typeof taskPatchSchema>
 export type RoutineUpsert = z.infer<typeof routineUpsertSchema>
 export type RoutineCheck = z.infer<typeof routineCheckSchema>

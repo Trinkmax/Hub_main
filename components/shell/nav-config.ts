@@ -98,8 +98,8 @@ export type ResolvedNavGroup = {
  * feature-flags de superadmin.
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
- *   editor     → sólo Carta («Ver carta» es un botón de la página)
- *   host       → Reservas (con sus cuatro pestañas) y Mis números
+ *   editor     → Carta («Ver carta» es un botón de la página) y Tareas
+ *   host       → Reservas (con sus cuatro pestañas), Mis números y Tareas
  *   accountant → sólo Administración
  */
 export const NAV_GROUPS: NavGroup[] = [
@@ -173,6 +173,16 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/menu`,
         icon: 'UtensilsCrossed',
         roles: ['owner', 'editor'],
+      },
+      {
+        // El tablero de tareas de marketing para quien no es dueño (15/11/2026): Contenido y la
+        // anfitriona trabajan sus tareas. El dueño entra por «Marketing», donde Tareas es la
+        // primera pestaña. Sin `section`: para ellos la sección tendría una sola pestaña.
+        key: 'tareas',
+        label: 'Tareas',
+        href: (s) => `/${s}/tareas`,
+        icon: 'ListChecks',
+        roles: ['editor', 'host'],
       },
       {
         // Lo que el bar muestra puertas afuera y cómo se organiza el equipo

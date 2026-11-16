@@ -218,7 +218,7 @@ describe('qué va en la barra del panel', () => {
     expect(plan?.more.map((item) => item.key)).toContain('salon-en-vivo')
   })
 
-  it('la anfitriona: las pestañas de Reservas van sueltas, más sus números, y no hay «Más»', () => {
+  it('la anfitriona: las pestañas de Reservas van sueltas; sus números y Tareas, en «Más»', () => {
     const host = resolveNavGroups('host', SLUG, HUB, false)
     const viewer = {
       role: 'host' as const,
@@ -229,15 +229,15 @@ describe('qué va en la barra del panel', () => {
     const plan = planDock(host, 'host', null, {
       reservas: resolveSection('reservas', SLUG, viewer),
     })
+    // Desde que tiene Tareas (15/11/2026) ya no entran las seis: donde trabaja el día queda suelto.
     expect(plan?.bar.map((item) => item.label)).toEqual([
       'Reservas',
       'Operativo',
       'Calendario',
       'Ventas online',
-      'Mis números',
     ])
     expect(plan?.bar.map((item) => item.short ?? item.label)[3]).toBe('Ventas')
-    expect(plan?.more).toEqual([])
+    expect(plan?.more.map((item) => item.label)).toEqual(['Mis números', 'Tareas'])
     if (!plan) throw new Error('sin barra')
     // Cada pestaña suelta se marca en su página; la lista solo en la lista (el alta no es «Reservas»).
     expect(dockActiveKey(plan, '/hub/reservas', '/hub/operativo')).toBe('reservas-operativo')
@@ -245,19 +245,22 @@ describe('qué va en la barra del panel', () => {
     expect(dockActiveKey(plan, '/hub/reservas', '/hub/eventos/programados/nuevo')).toBe(
       'reservas-calendario',
     )
-    expect(dockActiveKey(plan, '/hub/mis-numeros', '/hub/mis-numeros')).toBe('mis-numeros')
+    expect(dockActiveKey(plan, '/hub/mis-numeros', '/hub/mis-numeros')).toBe(MORE_KEY)
+    expect(dockActiveKey(plan, '/hub/tareas', '/hub/tareas')).toBe(MORE_KEY)
     expect(flattenedSections(plan)).toEqual(['reservas'])
   })
 
-  it('sin las pestañas a mano, la anfitriona igual tiene su barra (Reservas y sus números)', () => {
+  it('sin las pestañas a mano, la anfitriona igual tiene su barra (Reservas, sus números y Tareas)', () => {
     const host = resolveNavGroups('host', SLUG, HUB, false)
     const plan = planDock(host, 'host', null)
-    expect(plan?.bar.map((item) => item.label)).toEqual(['Reservas', 'Mis números'])
+    expect(plan?.bar.map((item) => item.label)).toEqual(['Reservas', 'Mis números', 'Tareas'])
     expect(flattenedSections(plan)).toEqual([])
   })
 
-  it('con una sola sección (contadora, contenido) no hay barra', () => {
-    expect(planDock(resolveNavGroups('editor', SLUG, HUB, false), 'editor', null)).toBeNull()
+  it('Contenido: Carta y Tareas sueltas; la contadora, con una sola sección, sin barra', () => {
+    const editor = planDock(resolveNavGroups('editor', SLUG, HUB, false), 'editor', null)
+    expect(editor?.bar.map((item) => item.label)).toEqual(['Carta', 'Tareas'])
+    expect(editor?.more).toEqual([])
     expect(
       planDock(
         resolveNavGroups('accountant', SLUG, HUB, false, ACCOUNTANT_ACCESS),
