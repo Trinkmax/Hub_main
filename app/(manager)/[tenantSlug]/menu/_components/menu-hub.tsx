@@ -7,7 +7,9 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { listItemTags } from '@/lib/item-tags/queries'
 import type { listMenu } from '@/lib/menu/queries'
+import type { MenuRevisionStatus } from '@/lib/menu/revision'
 import type { TenantRole } from '@/lib/tenant/types'
+import { CartaRefreshButton } from './carta-refresh-button'
 import { CartaTourButton } from './carta-tour'
 import { MenuBoard } from './menu-board'
 import { NewCategoryForm } from './new-category-form'
@@ -21,10 +23,15 @@ export type MenuHubProps = {
   tags: Awaited<ReturnType<typeof listItemTags>>
   /** Mostrar los accesos a «Precios» y «Cocina y aclaraciones» (vienen con el punto de venta). */
   showPrices?: boolean
+  /**
+   * Versión de la carta pública: último cambio y última actualización a mano
+   * (docs/features/carta-al-dia.md).
+   */
+  cartaStatus?: MenuRevisionStatus | null
 }
 
 export function MenuHub(props: MenuHubProps): React.JSX.Element {
-  const { tenantSlug, tenantId, role, menu, tags, showPrices = false } = props
+  const { tenantSlug, tenantId, role, menu, tags, showPrices = false, cartaStatus = null } = props
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -53,6 +60,8 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
               Ver carta
             </Link>
           </Button>
+          {/* Los celulares con la carta abierta ya se actualizan solos; esto lo fuerza a mano. */}
+          <CartaRefreshButton tenantSlug={tenantSlug} status={cartaStatus} />
           <TagsManagerDialog
             tenantSlug={tenantSlug}
             tags={tags}

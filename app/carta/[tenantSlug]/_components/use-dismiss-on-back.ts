@@ -16,14 +16,20 @@ export function useDismissOnBack(open: boolean, onClose: () => void): void {
 
   useEffect(() => {
     if (!open || typeof window === 'undefined') return
-    const onPop = () => onCloseRef.current()
+    let popped = false
+    const onPop = () => {
+      popped = true
+      onCloseRef.current()
+    }
     window.history.pushState({ cartaSheet: true }, '')
     window.addEventListener('popstate', onPop)
     return () => {
       window.removeEventListener('popstate', onPop)
       // Si el sheet se cerró por UI (no por "atrás"), limpiamos la entrada
-      // que metimos para no dejar history basura.
-      if (window.history.state?.cartaSheet) window.history.back()
+      // que metimos para no dejar history basura. No alcanza con la marca: un
+      // `router.refresh()` (carta-freshness, la billetera) reescribe el
+      // `history.state` de la entrada y la marca se pierde.
+      if (!popped || window.history.state?.cartaSheet) window.history.back()
     }
   }, [open])
 }

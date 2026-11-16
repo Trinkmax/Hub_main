@@ -98,6 +98,12 @@ export function CartaExperience(props: {
   }, [tree])
 
   const allItems = useMemo(() => collectItems(tree), [tree])
+  // Si la carta se actualiza con el detalle abierto (carta-freshness), el detalle muestra el ítem de
+  // la carta nueva: el precio de adentro también queda al día. Si el ítem ya no está, sigue el que era.
+  const shownItem = useMemo(
+    () => (activeItem ? (allItems.find((i) => i.id === activeItem.id) ?? activeItem) : null),
+    [activeItem, allItems],
+  )
   const featured = useMemo(() => allItems.filter((i) => i.featured), [allItems])
   const rootNodes = useMemo(() => tree.filter(hasContent), [tree])
 
@@ -249,7 +255,7 @@ export function CartaExperience(props: {
         <ClubLip onOpen={() => setSheet('club')} />
       )}
 
-      <ItemDetailSheet item={activeItem} onClose={() => setActiveItem(null)} />
+      <ItemDetailSheet item={shownItem} onClose={() => setActiveItem(null)} />
 
       <ClubSheet
         open={sheet === 'club'}

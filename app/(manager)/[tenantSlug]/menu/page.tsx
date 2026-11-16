@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { listItemTags } from '@/lib/item-tags/queries'
 import { listMenu } from '@/lib/menu/queries'
+import { getMenuRevisionStatus } from '@/lib/menu/revision'
 import { isFeatureEnabled } from '@/lib/platform/features'
 import {
   MENU_EDIT_ROLES,
@@ -44,7 +45,11 @@ export default async function MenuPage({
   }
   const tenantId = access.tenant.id
 
-  const [menu, tags] = await Promise.all([listMenu({ tenantId }), listItemTags(tenantId)])
+  const [menu, tags, cartaStatus] = await Promise.all([
+    listMenu({ tenantId }),
+    listItemTags(tenantId),
+    getMenuRevisionStatus(tenantId),
+  ])
 
   return (
     <MenuHub
@@ -56,6 +61,7 @@ export default async function MenuPage({
       // «Precios» viene con el punto de venta (mismo criterio que la página: prendido o superadmin).
       // `access.isPlatformAdmin` ya viene sin el superadmin cuando mira el panel con otro rol.
       showPrices={isFeatureEnabled(access.tenant, 'pos') || access.isPlatformAdmin}
+      cartaStatus={cartaStatus}
     />
   )
 }
