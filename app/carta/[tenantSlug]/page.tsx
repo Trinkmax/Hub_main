@@ -11,10 +11,12 @@ import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
 import { walletCookieName } from '@/lib/capture/cookie'
 import { getSupabaseClientEnv } from '@/lib/env'
 import { listActiveMenuPublic } from '@/lib/menu/queries'
+import { getMenuRev } from '@/lib/menu/revision'
 import { buildCategoryTree } from '@/lib/menu/tree'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getWalletByToken, type WalletData } from '@/lib/wallet/queries'
 import { CartaExperience } from './_components/carta-experience'
+import { CartaFreshness } from './_components/carta-freshness'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,7 +80,11 @@ export default async function CartaPage({
   const tenant = await resolveTenant(tenantSlug)
   if (!tenant) notFound()
 
-  const [{ categories, items }, wallet, captureLinkSlug] = await Promise.all([
+  // La versión de la carta (docs/features/carta-al-dia.md) va en el mismo viaje y primera: si un
+  // cambio cae justo mientras se arma la página, lo probable es número viejo con carta nueva (un
+  // refresh de más en el celular) y no al revés.
+  const [menuRev, { categories, items }, wallet, captureLinkSlug] = await Promise.all([
+    getMenuRev(tenant.id),
     listActiveMenuPublic({ tenantId: tenant.id }),
     resolveWallet(tenant.id),
     getCanonicalCaptureLink(tenant.id),
@@ -130,6 +136,8 @@ export default async function CartaPage({
           <link rel="dns-prefetch" href={storageOrigin} />
         </>
       ) : null}
+      {/* La carta abierta en el celular pregunta si cambió al volver a mirarla y se refresca sola. */}
+      <CartaFreshness tenantId={tenant.id} rev={menuRev} renderedAt={Date.now()} />
       <CartaExperience
         tenantName={tenant.name}
         logoUrl={tenant.logo_url}

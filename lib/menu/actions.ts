@@ -10,6 +10,7 @@ import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
+  type TenantAccess,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
@@ -609,4 +610,76 @@ export async function toggleFeatured(slug: string, itemId: string): Promise<Menu
 
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: nowFeatured ? 'Ítem destacado.' : 'Destacado removido.' }
+}
+
+export type ForceCartaRefreshResult =
+  | { ok: true; data: { rev: number; changedAt: string } }
+  | { ok: false; message: string }
+
+const FORCE_REFRESH_MESSAGES = {
+  session: 'Tu sesión se cerró. Volvé a entrar y tocá «Actualizar ahora» de nuevo.',
+  forbidden: 'Solo el dueño o quien edita la carta puede actualizarla en los celulares.',
+  failed: 'No pudimos actualizar la carta. Revisá la conexión y probá de nuevo en un rato.',
+} as const
+
+const slugSchema = z.string().trim().min(1).max(120)
+
+const forceRefreshResultSchema = z.object({
+  rev: z.coerce.number().int().positive(),
+  changed_at: z.string().min(1),
+})
+
+/**
+ * «Actualizar en los celulares» del editor de la carta: sube a mano la versión de la carta
+ * (`menu_force_refresh`) para que todo celular que la tenga abierta la recargue apenas la mire
+ * (app/carta/[tenantSlug]/_components/carta-freshness.tsx). Los cambios del menú ya la suben solos;
+ * esto es el «por las dudas» que pidió el socio. No toca la sesión de nadie: la cookie de la
+ * billetera del socio sigue igual. Ver docs/features/carta-al-dia.md.
+ */
+export async function forceCartaRefresh(slug: string): Promise<ForceCartaRefreshResult> {
+  const slugParsed = slugSchema.safeParse(slug)
+  if (!slugParsed.success) return { ok: false, message: FORCE_REFRESH_MESSAGES.forbidden }
+
+  let access: TenantAccess
+  try {
+    access = await requireTenantAccess(slugParsed.data)
+    requireRole(access.role, MENU_EDIT_ROLES)
+  } catch (error) {
+    if (error instanceof UnauthenticatedError) {
+      return { ok: false, message: FORCE_REFRESH_MESSAGES.session }
+    }
+    if (error instanceof RoleRequiredError || error instanceof TenantNotFoundError) {
+      return { ok: false, message: FORCE_REFRESH_MESSAGES.forbidden }
+    }
+    throw error
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('menu_force_refresh', {
+    p_tenant: access.tenant.id,
+  })
+  if (error) {
+    // La función valida sesión y rol con la base (28000 / 42501), por si el rol cambió recién.
+    if (error.code === '28000') return { ok: false, message: FORCE_REFRESH_MESSAGES.session }
+    if (error.code === '42501') return { ok: false, message: FORCE_REFRESH_MESSAGES.forbidden }
+    console.error('[menu.forceCartaRefresh]', error.code, error.message)
+    return { ok: false, message: FORCE_REFRESH_MESSAGES.failed }
+  }
+
+  const parsed = forceRefreshResultSchema.safeParse(data)
+  if (!parsed.success) {
+    console.error('[menu.forceCartaRefresh] respuesta inesperada', parsed.error.issues[0]?.path)
+    return { ok: false, message: FORCE_REFRESH_MESSAGES.failed }
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: access.user.id,
+    action: 'menu.carta_refresh_forced',
+    entity: 'menu',
+    entityId: null,
+    payload: { rev: parsed.data.rev },
+  })
+
+  return { ok: true, data: { rev: parsed.data.rev, changedAt: parsed.data.changed_at } }
 }

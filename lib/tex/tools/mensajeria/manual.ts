@@ -45,13 +45,14 @@ Lo que le llega a un cliente no se puede deshacer: nunca sin tique. Lo que escri
 - Qué hizo con cada cliente está en sus Registros.
 
 ## Tareas de marketing (Marketing › Tareas)
-- El tablero de los socios. Secciones: **Eventos**, **Promociones**, **Impresiones**; además **Mis tareas** y **Orgánico**.
-- Estados: Por hacer, En proceso, Interrumpido, Terminado.
-- **Fecha ideal** es cuándo estaría bueno; **fecha definida** es el compromiso y manda sobre la ideal. Se agrupan en fechas pasadas, hoy, esta semana (próximos 7 días), la próxima semana y más adelante.
-- **Orgánico:** lo que se repite cada semana (historias, reels). Cada rutina tiene un cupo de veces por semana, y los tildes se reinician solos cada lunes.
+- Un tablero como el de Monday. Las tareas van en **grupos** que arma el dueño (Eventos, Promociones…). Lo terminado pasa a **Terminadas** y conserva su grupo: si se reabre, vuelve ahí.
+- Estados: Por hacer, En curso, Interrumpido, Terminado, Backlog (para después) y Esperando feedback (entregada, falta el visto bueno).
+- Cada tarea tiene **responsables** (de quién es), **involucrados** (a quién se le delegó una parte), un **vencimiento** y **notas**. Las **actualizaciones** son su hilo: ahí se deja lo entregado, con archivos o links.
+- La trabajan los dueños, Contenido y la anfitriona. Borra una tarea el dueño o quien la creó.
+- **Rutina de la semana** (antes Orgánico): lo que se repite cada semana (historias, reels). Cada rutina tiene un cupo de veces por semana, y los tildes se reinician solos cada lunes.
 
 ## Lo que se hace en la pantalla
-Tex lleva y señala dónde: conectar o desconectar WhatsApp e Instagram (Canales), crear o borrar plantillas, armar o cambiar los pasos de una automatización (su editor), escribirle a alguien sin chat, la prueba de una difusión a tu propio WhatsApp (Nueva difusión), crear o editar rutinas de Orgánico, y borrar una tarea, una etiqueta o un mensaje rápido. Las audiencias y las automatizaciones no se borran desde el panel.
+Tex lleva y señala dónde: conectar o desconectar WhatsApp e Instagram (Canales), crear o borrar plantillas, armar o cambiar los pasos de una automatización (su editor), escribirle a alguien sin chat, la prueba de una difusión a tu propio WhatsApp (Nueva difusión), armar los grupos del tablero, crear o editar las rutinas, subirle archivos o links a una tarea, y borrar una tarea, una etiqueta o un mensaje rápido. Las audiencias y las automatizaciones no se borran desde el panel.
 
 ## Las palabras
 Difusión = campaña. Audiencia = lista. Plantilla = mensaje aprobado. Automatización = flow. Chat = conversación. Aceptar promos = opt-in.`

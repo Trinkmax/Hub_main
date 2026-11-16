@@ -29,6 +29,7 @@ const screenParams = {
   evento: z.string().optional().describe('El id de un formato de evento.'),
   etiqueta: z.string().optional().describe('El id de una etiqueta de clientes.'),
   estrellas: z.string().optional().describe('De 1 a 5, para ver solo esas reseñas.'),
+  tarea: z.string().optional().describe('El id de una tarea de marketing, para abrir su panel.'),
 }
 
 /** Quien llegó hasta Tex: las pantallas ya vienen filtradas por lo que ve cada uno. */

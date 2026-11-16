@@ -388,6 +388,7 @@ function validParam(name: TexScreenParam, value: string, screen: TexScreenDef): 
     case 'chat':
     case 'evento':
     case 'etiqueta':
+    case 'tarea':
       return UUID_RE.test(value)
     case 'estrellas':
       return /^[1-5]$/.test(value)
@@ -427,6 +428,7 @@ const URL_PARAM: Readonly<Record<Exclude<TexScreenParam, 'id'>, string>> = {
   evento: 'evento',
   etiqueta: 'tag',
   estrellas: 'rating',
+  tarea: 'tarea',
 }
 
 /** El nombre de un parámetro en la URL de esta pantalla. */

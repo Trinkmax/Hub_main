@@ -47,7 +47,7 @@ vi.mock('@/lib/audiences/queries', () => ({
 vi.mock('@/lib/flows/queries', () => ({ listFlows: vi.fn(), getFlow: vi.fn() }))
 vi.mock('@/lib/flows/execution-log-queries', () => ({ listFlowExecutionEvents: vi.fn() }))
 vi.mock('@/lib/marketing/queries', () => ({
-  listMarketingTasks: vi.fn(),
+  loadTaskBoard: vi.fn(),
   listMarketingTeam: vi.fn(),
   listRoutinesForWeek: vi.fn(),
 }))
@@ -70,9 +70,10 @@ vi.mock('@/lib/audiences/actions', () => ({
 }))
 vi.mock('@/lib/flows/actions', () => ({ toggleFlowActive: vi.fn() }))
 vi.mock('@/lib/marketing/actions', () => ({
-  createMarketingTask: vi.fn(),
-  updateMarketingTask: vi.fn(),
-  setMarketingTaskStatus: vi.fn(),
+  createTask: vi.fn(),
+  updateTask: vi.fn(),
+  setTaskPeople: vi.fn(),
+  postTaskUpdate: vi.fn(),
   toggleRoutineCheck: vi.fn(),
 }))
 vi.mock('@/lib/quick-messages/actions', () => ({
@@ -121,23 +122,26 @@ import { listFlowExecutionEvents } from '@/lib/flows/execution-log-queries'
 import { type FlowDetail, type FlowListRow, getFlow, listFlows } from '@/lib/flows/queries'
 import { canSendFlowTemplate } from '@/lib/flows/runtime'
 import {
-  createMarketingTask,
-  setMarketingTaskStatus,
+  createTask,
+  postTaskUpdate,
+  setTaskPeople,
   toggleRoutineCheck,
-  updateMarketingTask,
+  updateTask,
 } from '@/lib/marketing/actions'
-import { isBoardView } from '@/lib/marketing/constants'
+import type { BoardGroup, BoardTask, TeamMember } from '@/lib/marketing/board'
+import { isTaskView, TASK_STATUSES } from '@/lib/marketing/constants'
 import {
-  listMarketingTasks,
   listMarketingTeam,
   listRoutinesForWeek,
-  type MarketingTaskRow,
+  loadTaskBoard,
   type RoutineRow,
 } from '@/lib/marketing/queries'
 import {
-  marketingTaskCreateSchema,
-  marketingTaskStatusSchema,
+  createTaskSchema,
+  postUpdateSchema,
   routineCheckSchema,
+  setTaskPeopleSchema,
+  updateTaskSchema,
 } from '@/lib/marketing/schemas'
 import { sendTemplateMessage, sendTextMessage } from '@/lib/meta/actions'
 import { sendDM } from '@/lib/meta/instagram'
@@ -146,9 +150,10 @@ import { createQuickMessage, updateQuickMessage } from '@/lib/quick-messages/act
 import { listQuickMessages } from '@/lib/quick-messages/queries'
 import { quickMessageCreateSchema, quickMessageUpdateSchema } from '@/lib/quick-messages/schemas'
 import { createServiceClient } from '@/lib/supabase/service'
+import { MARKETING_TASK_ROLES } from '@/lib/tenant/roles'
 import { mensajeriaScreens } from '@/lib/tex/area-screens/mensajeria'
 import { mensajeriaArea } from '@/lib/tex/areas/mensajeria'
-import { texScreenHref } from '@/lib/tex/screens'
+import { texScreenAllowed, texScreenHref } from '@/lib/tex/screens'
 import {
   audienceCondition,
   audienceFilter,
@@ -188,7 +193,18 @@ import {
   reachableSteps,
   triggerWarnings,
 } from '@/lib/tex/tools/mensajeria/_flow-values'
-import { filterTasks, routineSlot } from '@/lib/tex/tools/mensajeria/_task-values'
+import {
+  filterTasks,
+  matchesWhen,
+  peopleIds,
+  pickTask,
+  routineSlot,
+  STATUS_OF_WORD,
+  sortForReading,
+  taskFactsOf,
+  taskPatchOf,
+  tasksData,
+} from '@/lib/tex/tools/mensajeria/_task-values'
 import { templateHoles, templateUseProblem } from '@/lib/tex/tools/mensajeria/_template-values'
 import { type TexExecution, type TexToolResult, toInputSchema } from '@/lib/tex/tools/types'
 import {
@@ -247,6 +263,10 @@ const TASK_FLYER = uuid(91)
 const TASK_REEL = uuid(92)
 const SOCIO = uuid(93)
 const ROUTINE = uuid(94)
+const GROUP_EVENTOS = uuid(95)
+const GROUP_PROMOS = uuid(96)
+const TASK_PROMO = uuid(97)
+const NEW_TASK = uuid(98)
 
 const PHONE_ANA = '543515551234'
 const SECRET_TOKEN = 'EAAGm0PX4ZCpsBAJZCTOKENSECRETO'
@@ -524,38 +544,68 @@ const FLOW_DETAILS: Record<string, FlowDetail> = {
   },
 }
 
-const TASKS: MarketingTaskRow[] = [
-  {
-    id: TASK_FLYER,
-    title: 'Flyer de la peña',
-    category: 'eventos',
-    kind: 'design',
-    status: 'todo',
-    specifications: 'Formato historia, llamar al 351 555 0000',
-    notes: null,
-    fileUrl: null,
-    responsibleId: SOCIO,
-    involvedId: null,
-    idealDate: '2026-11-03',
-    definedDate: null,
-    updatedAt: hoursAgo(5),
-  },
-  {
-    id: TASK_REEL,
-    title: 'Reel del brunch',
-    category: 'promociones',
-    kind: 'shoot',
-    status: 'done',
-    specifications: null,
-    notes: null,
-    fileUrl: 'https://drive.test/reel',
-    responsibleId: null,
-    involvedId: null,
-    idealDate: null,
-    definedDate: '2026-11-06',
-    updatedAt: hoursAgo(5),
-  },
+/** Al revés de como se ven, para probar que se ordenan por `position`. */
+const GROUPS: BoardGroup[] = [
+  { id: GROUP_PROMOS, name: 'Promociones', color: 'coral', position: 2 },
+  { id: GROUP_EVENTOS, name: 'Eventos', color: 'forest', position: 1 },
 ]
+
+/** Quien habla (`CTX.userId`) y una socia. */
+const TEAM: TeamMember[] = [
+  { id: SOCIO, name: 'Luz', role: 'owner' },
+  { id: CTX.userId, name: 'Sol', role: 'editor' },
+]
+
+function boardTask(patch: Partial<BoardTask>): BoardTask {
+  return {
+    id: TASK_FLYER,
+    groupId: GROUP_EVENTOS,
+    title: 'Flyer de la peña',
+    status: 'todo',
+    dueDate: null,
+    notes: null,
+    position: 1,
+    responsibleIds: [],
+    involvedIds: [],
+    updatesCount: 0,
+    filesCount: 0,
+    createdBy: SOCIO,
+    createdAt: hoursAgo(50),
+    completedAt: null,
+    updatedAt: hoursAgo(5),
+    ...patch,
+  }
+}
+
+/** Una vencida con teléfono en las notas, una terminada y una sin fecha ni responsable. */
+const TASKS: BoardTask[] = [
+  boardTask({
+    dueDate: '2026-11-03',
+    notes: 'Formato historia, llamar al 351 555 0000',
+    responsibleIds: [SOCIO],
+    updatesCount: 2,
+    filesCount: 1,
+  }),
+  boardTask({
+    id: TASK_REEL,
+    groupId: GROUP_PROMOS,
+    title: 'Reel del brunch',
+    status: 'done',
+    dueDate: '2026-11-06',
+    involvedIds: [SOCIO],
+    completedAt: hoursAgo(3),
+  }),
+  boardTask({
+    id: TASK_PROMO,
+    groupId: GROUP_PROMOS,
+    title: 'Promo de la merienda',
+    status: 'waiting_feedback',
+    position: 2,
+    involvedIds: [CTX.userId],
+  }),
+]
+
+const BOARD = { groups: GROUPS, tasks: TASKS, doneTotal: 1 }
 
 const ROUTINES: RoutineRow[] = [
   {
@@ -815,9 +865,10 @@ function expectNothingWritten() {
     createAudience,
     updateAudience,
     toggleFlowActive,
-    createMarketingTask,
-    updateMarketingTask,
-    setMarketingTaskStatus,
+    createTask,
+    updateTask,
+    setTaskPeople,
+    postTaskUpdate,
     toggleRoutineCheck,
     createQuickMessage,
     updateQuickMessage,
@@ -907,8 +958,8 @@ beforeEach(() => {
     ],
     total: 7,
   })
-  vi.mocked(listMarketingTasks).mockResolvedValue(TASKS)
-  vi.mocked(listMarketingTeam).mockResolvedValue([{ id: SOCIO, name: 'Luz', role: 'owner' }])
+  vi.mocked(loadTaskBoard).mockResolvedValue(BOARD)
+  vi.mocked(listMarketingTeam).mockResolvedValue(TEAM)
   vi.mocked(listRoutinesForWeek).mockResolvedValue(ROUTINES)
 })
 
@@ -1013,8 +1064,6 @@ describe('los permisos', () => {
     ver_audiencia: ['mensajeria/audiencias/[id]/page.tsx', OWNER],
     ver_flows: ['mensajeria/flows/page.tsx', OWNER],
     ver_flow: ['mensajeria/flows/[id]/page.tsx', OWNER],
-    ver_tareas: ['tareas/page.tsx', OWNER],
-    ver_checklist_organico: ['tareas/page.tsx', OWNER],
     preparar_respuesta: ['mensajeria/inbox/page.tsx', INBOX],
     preparar_plantilla_en_chat: ['mensajeria/inbox/page.tsx', INBOX],
     preparar_etiquetas_de_chat: ['mensajeria/inbox/page.tsx', INBOX],
@@ -1024,22 +1073,60 @@ describe('los permisos', () => {
     preparar_accion_difusion: ['mensajeria/difusiones/[id]/page.tsx', OWNER],
     preparar_audiencia: ['mensajeria/audiencias/nueva/page.tsx', OWNER],
     preparar_prender_o_apagar_flow: ['mensajeria/flows/[id]/page.tsx', OWNER],
-    preparar_tarea: ['tareas/page.tsx', OWNER],
-    preparar_estado_tarea: ['tareas/page.tsx', OWNER],
-    preparar_tilde_rutina: ['tareas/page.tsx', OWNER],
+  }
+
+  /**
+   * El tablero de tareas no escribe sus roles a mano: los toma de `roles.ts`, igual que sus acciones y
+   * su página (`requireRole(…, MARKETING_TASK_ROLES)`), y la RLS los repite.
+   */
+  const BOARD_TOOLS = [
+    'ver_tareas',
+    'ver_checklist_organico',
+    'preparar_tarea',
+    'preparar_estado_tarea',
+    'preparar_actualizacion_tarea',
+    'preparar_tilde_rutina',
+  ]
+
+  const rolesOf = (name: string) => {
+    const need = TOOLS.find((candidate) => candidate.name === name)?.need
+    if (!need || typeof need === 'string') throw new Error(`${name} no pide roles`)
+    return need.roles
   }
 
   it('la tabla está completa', () => {
-    expect(Object.keys(GATES).sort()).toEqual(TOOLS.map((tool) => tool.name).sort())
+    expect([...Object.keys(GATES), ...BOARD_TOOLS].sort()).toEqual(
+      TOOLS.map((tool) => tool.name).sort(),
+    )
   })
 
   it.each(Object.entries(GATES))('%s pide lo mismo que su pantalla', (name, [page, roles]) => {
-    const tool = TOOLS.find((candidate) => candidate.name === name)
-    const need = tool?.need
-    if (!need || typeof need === 'string') throw new Error(`${name} no pide roles`)
     const source = readFileSync(join(APP, page), 'utf8')
     expect(source).toContain(`, ${roles})`)
-    expect(`[${need.roles.map((role) => `'${role}'`).join(', ')}]`).toBe(roles)
+    expect(
+      `[${rolesOf(name)
+        .map((role) => `'${role}'`)
+        .join(', ')}]`,
+    ).toBe(roles)
+  })
+
+  it.each(BOARD_TOOLS)('%s pide lo mismo que el tablero y sus acciones', (name) => {
+    expect(rolesOf(name)).toBe(MARKETING_TASK_ROLES)
+    expect(readFileSync(join(APP, 'tareas/page.tsx'), 'utf8')).toContain(', MARKETING_TASK_ROLES)')
+    const actions = readFileSync(resolve(__dirname, '../../lib/marketing/actions.ts'), 'utf8')
+    expect(actions).toMatch(/roles: ReadonlyArray<TenantRole> = MARKETING_TASK_ROLES/)
+  })
+
+  it('el tablero lo trabajan dueños, Contenido y anfitriona; las ve quien entra a /tareas', () => {
+    expect([...MARKETING_TASK_ROLES].sort()).toEqual(['editor', 'host', 'owner'])
+    const board = mensajeriaScreens.find((screen) => screen.id === 'marketing.tareas')
+    if (!board) throw new Error('falta el tablero')
+    for (const role of MARKETING_TASK_ROLES) {
+      expect(texScreenAllowed(board, { role, features: {}, accounting: false }), role).toBe(true)
+    }
+    expect(texScreenAllowed(board, { role: 'accountant', features: {}, accounting: true })).toBe(
+      false,
+    )
   })
 })
 
@@ -1071,6 +1158,7 @@ describe('las pantallas', () => {
         cuenta: value,
         semana: value,
         tab: value,
+        tarea: value,
       })
       if (!link.ok) throw new Error(link.error)
       const url = new URL(link.href, 'https://hub.test')
@@ -1099,7 +1187,8 @@ describe('las pantallas', () => {
       desde: ['mensajeria/flows/[id]/registros/page.tsx', /desde: sp\.desde/],
       hasta: ['mensajeria/flows/[id]/registros/page.tsx', /hasta: sp\.hasta/],
     },
-    'marketing.tareas_organico': { semana: ['tareas/page.tsx', /isIsoDay\(sp\.semana\)/] },
+    'marketing.tareas': { tarea: ['tareas/page.tsx', /uuidOrNull\(first\(sp\.tarea\)\)/] },
+    'marketing.tareas_organico': { semana: ['tareas/page.tsx', /isIsoDay\(semana\)/] },
   }
 
   const declared = mensajeriaScreens.flatMap((screen) =>
@@ -1114,13 +1203,23 @@ describe('las pantallas', () => {
     expect(readFileSync(join(APP, file), 'utf8')).toMatch(pattern)
   })
 
-  it('la solapa fija de Tareas es una que el tablero acepta', () => {
+  it('lo fijo de Tareas es lo que el tablero entiende: «yo» y la vista de la rutina', () => {
     const source = readFileSync(join(APP, 'tareas/page.tsx'), 'utf8')
-    expect(source).toMatch(/isBoardView\(sp\.seccion\)/)
+    expect(source).toMatch(/isTaskView\(vista\)/)
+    expect(source).toMatch(/persona === 'yo'/)
     const fixed = mensajeriaScreens.filter((screen) => screen.query)
-    expect(fixed.length).toBe(4)
+    expect(fixed.map((screen) => screen.id).sort()).toEqual([
+      'marketing.tareas_mias',
+      'marketing.tareas_organico',
+    ])
     for (const screen of fixed) {
-      expect(isBoardView(new URLSearchParams(screen.query).get('seccion')), screen.id).toBe(true)
+      const query = new URLSearchParams(screen.query)
+      // `?seccion=` es del tablero de septiembre: el nuevo lo entiende, pero Tex ya no lo arma.
+      expect(query.has('seccion'), screen.id).toBe(false)
+      const view = query.get('vista')
+      if (view !== null) expect(isTaskView(view), screen.id).toBe(true)
+      const person = query.get('persona')
+      if (person !== null) expect(person, screen.id).toBe('yo')
     }
   })
 
@@ -1143,7 +1242,17 @@ describe('las pantallas', () => {
     })
     expect(
       texScreenHref('hub', 'marketing.tareas_organico', { semana: '2026-11-02' }),
-    ).toMatchObject({ href: '/hub/tareas?seccion=organico&semana=2026-11-02' })
+    ).toMatchObject({ href: '/hub/tareas?vista=rutina&semana=2026-11-02' })
+    expect(texScreenHref('hub', 'marketing.tareas', { tarea: TASK_FLYER })).toMatchObject({
+      href: `/hub/tareas?tarea=${TASK_FLYER}`,
+    })
+    // Por título no: la pantalla abre igual, sin panel.
+    expect(texScreenHref('hub', 'marketing.tareas', { tarea: 'Flyer' })).toMatchObject({
+      href: '/hub/tareas',
+    })
+    expect(texScreenHref('hub', 'marketing.tareas_mias')).toMatchObject({
+      href: '/hub/tareas?persona=yo',
+    })
     expect(texScreenHref('hub', 'mensajeria.difusion', { id: '../../login' }).ok).toBe(false)
   })
 })
@@ -1670,25 +1779,139 @@ describe('qué se puede prender', () => {
 
 describe('las tareas y las etiquetas, puras', () => {
   const base = { includeDone: false }
+  const ids = (tasks: readonly BoardTask[]) => tasks.map((task) => task.id)
+  const filter = (filters: Parameters<typeof filterTasks>[2], tasks = TASKS) =>
+    ids(filterTasks(tasks, GROUPS, filters, CTX.today))
+
+  it('las palabras de los estados son los seis del tablero; «en_proceso» es «en curso»', () => {
+    expect([...new Set(Object.values(STATUS_OF_WORD))].sort()).toEqual([...TASK_STATUSES].sort())
+    expect(STATUS_OF_WORD.en_proceso).toBe(STATUS_OF_WORD.en_curso)
+  })
 
   it('sin decir nada, las que no están terminadas', () => {
-    expect(filterTasks(TASKS, base, '2026-11-05').map((t) => t.id)).toEqual([TASK_FLYER])
-    expect(filterTasks(TASKS, { includeDone: true }, '2026-11-05')).toHaveLength(2)
-    expect(filterTasks(TASKS, { ...base, status: 'done' }, '2026-11-05')).toHaveLength(1)
+    expect(filter(base)).toEqual([TASK_FLYER, TASK_PROMO])
+    expect(filter({ includeDone: true })).toHaveLength(3)
+    expect(filter({ ...base, status: 'done' })).toEqual([TASK_REEL])
+    expect(filter({ ...base, status: 'waiting_feedback' })).toEqual([TASK_PROMO])
   })
 
-  it('por persona, cajón, sección y texto', () => {
-    expect(filterTasks(TASKS, { ...base, personId: SOCIO }, '2026-11-05')).toHaveLength(1)
-    expect(filterTasks(TASKS, { ...base, personId: uuid(999) }, '2026-11-05')).toHaveLength(0)
-    expect(filterTasks(TASKS, { ...base, bucket: 'past' }, '2026-11-05')).toHaveLength(1)
-    expect(filterTasks(TASKS, { ...base, bucket: 'today' }, '2026-11-05')).toHaveLength(0)
-    expect(filterTasks(TASKS, { ...base, category: 'impresiones' }, '2026-11-05')).toHaveLength(0)
-    expect(filterTasks(TASKS, { ...base, text: 'PENA' }, '2026-11-05')).toHaveLength(1)
+  it('por grupo, persona, vencimiento y texto', () => {
+    expect(filter({ ...base, groupId: GROUP_PROMOS })).toEqual([TASK_PROMO])
+    expect(filter({ includeDone: true, groupId: GROUP_PROMOS })).toEqual([TASK_REEL, TASK_PROMO])
+    // Responsable o involucrada.
+    expect(filter({ includeDone: true, personId: SOCIO })).toEqual([TASK_FLYER, TASK_REEL])
+    expect(filter({ ...base, personId: CTX.userId })).toEqual([TASK_PROMO])
+    expect(filter({ ...base, personId: uuid(999) })).toEqual([])
+    // `null`: las que no tienen responsable.
+    expect(filter({ ...base, personId: null })).toEqual([TASK_PROMO])
+    expect(filter({ ...base, when: 'vencidas' })).toEqual([TASK_FLYER])
+    expect(filter({ ...base, when: 'sin_fecha' })).toEqual([TASK_PROMO])
+    expect(filter({ ...base, when: 'hoy' })).toEqual([])
+    expect(filter({ includeDone: true, when: 'esta_semana' })).toEqual([TASK_REEL])
+    // Sin tildes ni mayúsculas, en el título y en las notas.
+    expect(filter({ ...base, text: 'PENA' })).toEqual([TASK_FLYER])
+    expect(filter({ ...base, text: 'historia' })).toEqual([TASK_FLYER])
   })
 
-  it('la fecha definida manda sobre la ideal', () => {
-    const task = { ...TASKS[0], definedDate: '2026-11-05', status: 'todo' } as MarketingTaskRow
-    expect(filterTasks([task], { ...base, bucket: 'today' }, '2026-11-05')).toHaveLength(1)
+  it('una tarea cuyo grupo no llegó se ve en el primero, como en el tablero', () => {
+    const orphan = boardTask({ id: uuid(501), groupId: uuid(502) })
+    expect(filter({ ...base, groupId: GROUP_EVENTOS }, [orphan])).toEqual([uuid(501)])
+    expect(taskFactsOf(orphan, GROUPS)).toMatchObject({ groupId: uuid(502), groupName: 'Eventos' })
+  })
+
+  it('lo terminado nunca está vencido', () => {
+    const late = { dueDate: '2026-11-01', status: 'done' as const }
+    expect(matchesWhen(late, 'vencidas', CTX.today)).toBe(false)
+    expect(matchesWhen({ ...late, status: 'blocked' }, 'vencidas', CTX.today)).toBe(true)
+    expect(matchesWhen({ dueDate: null, status: 'todo' }, 'mas_adelante', CTX.today)).toBe(false)
+    expect(matchesWhen({ dueDate: '2026-11-30', status: 'todo' }, 'mas_adelante', CTX.today)).toBe(
+      true,
+    )
+    expect(
+      matchesWhen({ dueDate: '2026-11-13', status: 'todo' }, 'proxima_semana', CTX.today),
+    ).toBe(true)
+  })
+
+  it('se leen de lo que vence antes a lo que no tiene fecha; lo terminado, al final', () => {
+    const tasks = [
+      boardTask({ id: uuid(511), dueDate: null }),
+      boardTask({ id: uuid(512), status: 'done', completedAt: hoursAgo(10) }),
+      boardTask({ id: uuid(513), dueDate: '2026-11-09', groupId: GROUP_PROMOS }),
+      boardTask({ id: uuid(514), dueDate: '2026-11-09' }),
+      boardTask({ id: uuid(515), status: 'done', completedAt: hoursAgo(1) }),
+      boardTask({ id: uuid(516), dueDate: '2026-11-04' }),
+    ]
+    // A igual vencimiento, en el orden de los grupos (Eventos antes que Promociones).
+    expect(ids(sortForReading(tasks, GROUPS))).toEqual([
+      uuid(516),
+      uuid(514),
+      uuid(513),
+      uuid(511),
+      uuid(515),
+      uuid(512),
+    ])
+  })
+
+  it('una tarea por id o por título; primero entre las abiertas', () => {
+    const weekly = [
+      boardTask({ id: uuid(521), title: 'Historia de Happy Hour', status: 'done' }),
+      boardTask({ id: uuid(522), title: 'Historia de Happy Hour', status: 'done' }),
+      boardTask({ id: uuid(523), title: 'Historia de Happy Hour' }),
+    ]
+    expect(pickTask(weekly, GROUPS, 'historia de happy hour')).toMatchObject({
+      ok: true,
+      value: { id: uuid(523) },
+    })
+    expect(pickTask(weekly, GROUPS, uuid(521))).toMatchObject({
+      ok: true,
+      value: { id: uuid(521) },
+    })
+    expect(pickTask(TASKS, GROUPS, 'reel')).toMatchObject({ ok: true, value: { id: TASK_REEL } })
+    expect(pickTask(TASKS, GROUPS, uuid(599))).toMatchObject({ ok: false })
+  })
+
+  it('con dos que se llaman igual pregunta, con su grupo y su id; sin ninguna, dice cuáles hay', () => {
+    const twins = [...TASKS, boardTask({ id: uuid(531), groupId: GROUP_PROMOS })]
+    const many = pickTask(twins, GROUPS, 'Flyer de la peña')
+    if (many.ok) throw new Error('eligió una')
+    expect(many.message).toContain(`en Eventos (Por hacer, id ${TASK_FLYER})`)
+    expect(many.message).toContain(`en Promociones (Por hacer, id ${uuid(531)})`)
+    expect(many.message).toContain('Preguntale cuál')
+    const none = pickTask(TASKS, GROUPS, 'cartelera')
+    if (none.ok) throw new Error('encontró una')
+    expect(none.message).toContain('«Flyer de la peña», «Promo de la merienda»')
+  })
+
+  it('el título con un teléfono se lee tapado y se encuentra igual con lo que lee Tex', () => {
+    const call = boardTask({ id: uuid(541), title: 'Llamar al 351 555 0000 por el DJ' })
+    const data = tasksData([call], GROUPS, TEAM, CTX.today)
+    expect(JSON.stringify(data)).not.toContain('555')
+    expect(pickTask([call], GROUPS, 'Llamar al …0000 por el DJ')).toMatchObject({ ok: true })
+  })
+
+  it('las personas: «yo», «nadie», sin repetir, y alguien que no está vuelve con las que hay', () => {
+    expect(peopleIds(TEAM, ['yo', 'Luz', 'luz'], CTX.userId)).toEqual({
+      ok: true,
+      value: [CTX.userId, SOCIO],
+    })
+    expect(peopleIds(TEAM, ['nadie'], CTX.userId)).toEqual({ ok: true, value: [] })
+    const unknown = peopleIds(TEAM, ['Zoe'], CTX.userId)
+    expect(unknown.ok ? null : unknown.message).toContain('Luz, Sol')
+    // Quien habla tiene que trabajar el tablero: la base no deja poner a otro.
+    expect(peopleIds([TEAM[0] as TeamMember], ['yo'], CTX.userId)).toMatchObject({ ok: false })
+  })
+
+  it('una edición manda solo lo que cambia', () => {
+    const before = taskFactsOf(TASKS[0] as BoardTask, GROUPS)
+    expect(taskPatchOf(before, before)).toBeNull()
+    expect(taskPatchOf(before, { ...before, status: 'blocked', notes: null })).toEqual({
+      status: 'blocked',
+      notes: null,
+    })
+    expect(taskPatchOf(before, { ...before, groupId: GROUP_PROMOS, dueDate: null })).toEqual({
+      groupId: GROUP_PROMOS,
+      dueDate: null,
+    })
   })
 
   it('el tilde va al primer casillero libre, y se saca del último', () => {
@@ -2204,55 +2427,120 @@ describe('mirar las automatizaciones', () => {
 })
 
 describe('mirar las tareas', () => {
-  it('ver_tareas: lo que falta, con nombres, sin teléfonos en el detalle', async () => {
+  type TasksData = {
+    cuantas: number
+    hay_mas: boolean
+    filas: Array<Record<string, unknown>>
+    terminadas?: string
+  }
+  const read = async (input: Record<string, unknown>) => {
+    const result = await run('ver_tareas', input)
+    if (result.kind !== 'data') throw new Error(`sin datos: ${JSON.stringify(result)}`)
+    return result.data as TasksData
+  }
+  const titles = (data: TasksData) => data.filas.map((row) => row.tarea)
+
+  it('ver_tareas: lo abierto, con grupo, vencimiento y personas; sin teléfonos en las notas', async () => {
     const result = await run('ver_tareas', {})
     if (result.kind !== 'data') throw new Error('sin datos')
-    expect(result.data).toMatchObject({
-      cuantas: 1,
-      por_estado: { 'Por hacer': 1 },
+    expect(result.data).toEqual({
+      cuantas: 2,
+      por_estado: { 'Por hacer': 1, 'Esperando feedback': 1 },
+      por_grupo: { Eventos: 1, Promociones: 1 },
       filas: [
         {
+          id: TASK_FLYER,
           tarea: 'Flyer de la peña',
-          seccion: 'Eventos',
-          tipo: 'Diseñar',
+          grupo: 'Eventos',
           estado: 'Por hacer',
-          responsable: 'Luz',
-          fecha: '03/11/2026',
-          cuando: 'Fechas pasadas',
-          especificaciones: 'Formato historia, llamar al …0000',
+          vence: '03/11/2026',
+          cuando: 'Vencida',
+          responsables: ['Luz'],
+          notas: 'Formato historia, llamar al …0000',
+          actualizaciones: 2,
+          archivos: 1,
+        },
+        {
+          id: TASK_PROMO,
+          tarea: 'Promo de la merienda',
+          grupo: 'Promociones',
+          estado: 'Esperando feedback',
+          involucrados: ['Sol'],
         },
       ],
+      hay_mas: false,
     })
     expectPrivate(results(result))
   })
 
-  it('ver_tareas: con muchas y largas, entra entera en lo que se puede leer', async () => {
-    vi.mocked(listMarketingTasks).mockResolvedValue(
-      Array.from({ length: 80 }, (_, index) => ({
-        ...(TASKS[0] as MarketingTaskRow),
-        id: uuid(800 + index),
-        specifications: 'x'.repeat(500),
-        notes: 'y'.repeat(500),
-        fileUrl: `https://drive.test/${'z'.repeat(400)}`,
-      })),
-    )
-    const result = await run('ver_tareas', {})
-    if (result.kind !== 'data') throw new Error('sin datos')
-    const data = result.data as { cuantas: number; hay_mas: boolean; filas: unknown[] }
-    expect(data.cuantas).toBe(80)
-    expect(data.hay_mas).toBe(true)
-    expect(data.filas[0]).toMatchObject({ tiene_link: true })
-    expect(JSON.stringify(result.data).length).toBeLessThan(14_000)
+  it('ver_tareas: lo terminado dice cuándo se terminó, y si el tablero no lo trae todo', async () => {
+    const all = await read({ con_terminadas: true })
+    expect(titles(all)).toEqual(['Flyer de la peña', 'Promo de la merienda', 'Reel del brunch'])
+    expect(all.filas[2]).toMatchObject({
+      estado: 'Terminado',
+      vence: '06/11/2026',
+      terminada: '05/11/2026 09:00',
+      involucrados: ['Luz'],
+    })
+    expect(all.filas[2]).not.toHaveProperty('cuando')
+    expect(all.terminadas).toBeUndefined()
+
+    vi.mocked(loadTaskBoard).mockResolvedValue({ ...BOARD, doneTotal: 412 })
+    expect((await read({ estado: 'terminado' })).terminadas).toContain('412')
+    expect((await read({})).terminadas).toBeUndefined()
   })
 
-  it('ver_tareas: «yo» es quien habla, y una persona que no está vuelve con las que hay', async () => {
-    const mine = await run('ver_tareas', { persona: 'yo' })
-    if (mine.kind !== 'data') throw new Error('sin datos')
-    expect((mine.data as { cuantas: number }).cuantas).toBe(0)
+  it('ver_tareas: por grupo, estado, vencimiento y texto', async () => {
+    expect(titles(await read({ grupo: 'promo' }))).toEqual(['Promo de la merienda'])
+    expect(titles(await read({ estado: 'esperando_feedback' }))).toEqual(['Promo de la merienda'])
+    expect((await read({ estado: 'en_proceso' })).cuantas).toBe(0)
+    expect(titles(await read({ cuando: 'vencidas' }))).toEqual(['Flyer de la peña'])
+    expect(titles(await read({ cuando: 'sin_fecha' }))).toEqual(['Promo de la merienda'])
+    expect(titles(await read({ texto: 'PENA' }))).toEqual(['Flyer de la peña'])
+    expect(asError(await run('ver_tareas', { grupo: 'Impresiones' }))).toContain(
+      'Eventos, Promociones',
+    )
+  })
+
+  it('ver_tareas: con muchas y largas, entra entera en lo que se puede leer', async () => {
+    vi.mocked(loadTaskBoard).mockResolvedValue({
+      ...BOARD,
+      tasks: Array.from({ length: 80 }, (_, index) =>
+        boardTask({
+          id: uuid(800 + index),
+          title: `Tarea ${'t'.repeat(150)}`,
+          notes: 'Grabar el reel con luz natural y mandarlo a la carpeta. '.repeat(90),
+          responsibleIds: [SOCIO, CTX.userId],
+          involvedIds: [SOCIO, CTX.userId],
+        }),
+      ),
+    })
+    const data = await read({})
+    expect(data.cuantas).toBe(80)
+    expect(data.hay_mas).toBe(true)
+    expect(String(data.filas[0]?.notas).length).toBeLessThanOrEqual(160)
+    expect(JSON.stringify(data).length).toBeLessThan(14_000)
+  })
+
+  it('ver_tareas: «yo» es quien habla, «nadie» es sin responsable, y alguien que no está vuelve con los que hay', async () => {
+    expect(titles(await read({ persona: 'yo' }))).toEqual(['Promo de la merienda'])
+    expect(titles(await read({ persona: 'Luz' }))).toEqual(['Flyer de la peña'])
+    expect(titles(await read({ persona: 'luz', con_terminadas: true }))).toEqual([
+      'Flyer de la peña',
+      'Reel del brunch',
+    ])
+    expect(titles(await read({ persona: 'nadie' }))).toEqual(['Promo de la merienda'])
     expect(asError(await run('ver_tareas', { persona: 'nadie así' }))).toContain('Luz')
   })
 
-  it('ver_checklist_organico: esta semana, si no se dice otra', async () => {
+  it('ver_tareas: una persona que ya no está en el equipo no se pierde', async () => {
+    vi.mocked(listMarketingTeam).mockResolvedValue([TEAM[1] as TeamMember])
+    expect((await read({})).filas[0]).toMatchObject({
+      responsables: ['Alguien que ya no está en el equipo'],
+    })
+  })
+
+  it('ver_checklist_organico: la rutina de esta semana, si no se dice otra', async () => {
     const result = await run('ver_checklist_organico', {})
     expect(listRoutinesForWeek).toHaveBeenCalledWith(TENANT, '2026-11-02')
     if (result.kind !== 'data') throw new Error('sin datos')
@@ -3421,136 +3709,397 @@ describe('preparar_prender_o_apagar_flow', () => {
 
 // ─── Preparar en el tablero ──────────────────────────────────────────────────
 
+const asFailed = (execution: TexExecution) => {
+  if (execution.ok || execution.kind !== 'failed') {
+    throw new Error(`Se esperaba que fallara: ${JSON.stringify(execution)}`)
+  }
+  return execution.message
+}
+
 describe('preparar_tarea', () => {
-  it('un alta pasa el esquema del formulario', async () => {
+  it('un alta: grupo, estado, personas, vencimiento y notas, con lo que esperan las acciones', async () => {
     const prepared = asPrepared(
       await run('preparar_tarea', {
         titulo: 'Reel de la peña',
-        seccion: 'eventos',
-        tipo: 'grabar',
-        responsable: 'yo',
-        involucrado: 'Luz',
-        fecha_definida: '2026-11-10',
-        especificaciones: 'Vertical',
-        link: 'https://drive.test/x',
+        grupo: 'eventos',
+        estado: 'en_curso',
+        responsables: ['yo'],
+        involucrados: ['Luz'],
+        vencimiento: '2026-11-10',
+        notas: '  Vertical, 30 segundos  ',
       }),
     )
     expect(prepared.executor).toBe('marketing.tarea')
-    const { id: _id, ...values } = prepared.payload as Record<string, unknown>
-    expect(marketingTaskCreateSchema.safeParse(values).success).toBe(true)
-    expect(prepared.payload).toMatchObject({
-      id: null,
+    expect(prepared.payload).toEqual({
+      mode: 'create',
+      groupId: GROUP_EVENTOS,
       title: 'Reel de la peña',
-      category: 'eventos',
-      kind: 'shoot',
-      status: 'todo',
-      responsible_user_id: CTX.userId,
-      involved_user_id: SOCIO,
-      defined_date: '2026-11-10',
-      ideal_date: null,
+      patch: { status: 'in_progress', dueDate: '2026-11-10', notes: 'Vertical, 30 segundos' },
+      responsibleIds: [CTX.userId],
+      involvedIds: [SOCIO],
     })
+    const payload = prepared.payload as {
+      groupId: string
+      title: string
+      patch: unknown
+      responsibleIds: string[]
+    }
+    // Lo que va a recibir cada acción pasa su esquema.
+    expect(createTaskSchema.safeParse(payload).success).toBe(true)
+    expect(updateTaskSchema.safeParse({ id: NEW_TASK, patch: payload.patch }).success).toBe(true)
+    expect(
+      setTaskPeopleSchema.safeParse({
+        taskId: NEW_TASK,
+        role: 'responsible',
+        userIds: payload.responsibleIds,
+      }).success,
+    ).toBe(true)
+
     const { ticket } = prepared
-    expect(rowValue(ticket, 'Sección')).toBe('Eventos')
-    expect(rowValue(ticket, 'Tipo')).toBe('Grabar contenido')
-    expect(rowValue(ticket, 'Involucrado')).toBe('Luz')
-    expect(rowValue(ticket, 'Fecha definida')).toBe('10/11/2026')
+    expect(ticket.title).toBe('Nueva tarea de marketing')
+    expect(ticket.subtitle).toBe('Reel de la peña')
+    expect(rowValue(ticket, 'Grupo')).toBe('Eventos')
+    expect(rowValue(ticket, 'Estado')).toBe('En curso')
+    expect(rowValue(ticket, 'Responsables')).toBe('Sol')
+    expect(rowValue(ticket, 'Involucrados')).toBe('Luz')
+    expect(rowValue(ticket, 'Vence')).toBe('10/11/2026')
+    expect(rowValue(ticket, 'Notas')).toBe('Vertical, 30 segundos')
+    expect(ticket.warnings).toEqual([])
     expect(ticket.confirmLabel).toBe('Crear la tarea')
     expectNothingWritten()
   })
 
-  it('una edición cambia solo lo que dijo, y puede sacar a alguien', async () => {
+  it('un alta con lo mínimo: «Por hacer», sin nadie, y nada más que crearla', async () => {
+    const prepared = asPrepared(await run('preparar_tarea', { titulo: 'Flyer', grupo: 'promo' }))
+    expect(prepared.payload).toEqual({
+      mode: 'create',
+      groupId: GROUP_PROMOS,
+      title: 'Flyer',
+      patch: null,
+      responsibleIds: null,
+      involvedIds: null,
+    })
+    expect(rowValue(prepared.ticket, 'Estado')).toBe('Por hacer')
+    expect(rowValue(prepared.ticket, 'Responsables')).toBe('Sin asignar')
+    expect(rowValue(prepared.ticket, 'Involucrados')).toBeUndefined()
+  })
+
+  it('sin decir el grupo: con uno solo va ahí; con varios pregunta; sin ninguno, lleva a armarlos', async () => {
+    expect(asError(await run('preparar_tarea', { titulo: 'Flyer' }))).toContain(
+      'Eventos, Promociones',
+    )
+    vi.mocked(loadTaskBoard).mockResolvedValue({ ...BOARD, groups: [GROUPS[1] as BoardGroup] })
+    expect(asPrepared(await run('preparar_tarea', { titulo: 'Flyer' })).payload).toMatchObject({
+      groupId: GROUP_EVENTOS,
+    })
+    vi.mocked(loadTaskBoard).mockResolvedValue({ groups: [], tasks: [], doneTotal: 0 })
+    expect(asError(await run('preparar_tarea', { titulo: 'Flyer' }))).toContain('no tiene grupos')
+  })
+
+  it('una edición cambia solo lo que dijo, y el tique muestra lo que tenía', async () => {
     const prepared = asPrepared(
       await run('preparar_tarea', {
         tarea: 'flyer',
-        fecha_ideal: '2026-11-20',
-        responsable: 'nadie',
+        vencimiento: '2026-11-20',
+        responsables: ['nadie'],
+      }),
+    )
+    expect(prepared.payload).toEqual({
+      mode: 'edit',
+      id: TASK_FLYER,
+      title: 'Flyer de la peña',
+      patch: { dueDate: '2026-11-20' },
+      responsibleIds: [],
+      involvedIds: null,
+    })
+    const { ticket } = prepared
+    expect(ticket.title).toBe('Editar una tarea')
+    expect(ticket.rows).toEqual([
+      { label: 'Responsables', value: 'Sin asignar (antes: Luz)' },
+      { label: 'Vence', value: '20/11/2026 (antes: 03/11/2026)' },
+    ])
+    expect(ticket.confirmLabel).toBe('Guardar los cambios')
+    expectNothingWritten()
+  })
+
+  it('renombrar, mover de grupo y borrar las notas avisa lo que se pierde', async () => {
+    const prepared = asPrepared(
+      await run('preparar_tarea', {
+        tarea: 'flyer',
+        titulo: 'Flyer de la peña (final)',
+        grupo: 'promociones',
+        notas: '   ',
+        vencimiento: 'sin_fecha',
       }),
     )
     expect(prepared.payload).toMatchObject({
-      id: TASK_FLYER,
-      title: 'Flyer de la peña',
-      category: 'eventos',
-      kind: 'design',
-      ideal_date: '2026-11-20',
-      responsible_user_id: null,
-      specifications: 'Formato historia, llamar al 351 555 0000',
+      patch: {
+        title: 'Flyer de la peña (final)',
+        groupId: GROUP_PROMOS,
+        notes: null,
+        dueDate: null,
+      },
     })
-    expect(rowValue(prepared.ticket, 'Responsable')).toBe('Sin asignar')
-    expect(prepared.ticket.confirmLabel).toBe('Guardar los cambios')
+    const { ticket } = prepared
+    expect(ticket.subtitle).toBe('Flyer de la peña (final)')
+    expect(rowValue(ticket, 'Antes se llamaba')).toBe('Flyer de la peña')
+    expect(rowValue(ticket, 'Grupo')).toBe('Promociones (antes: Eventos)')
+    expect(rowValue(ticket, 'Vence')).toBe('Sin fecha (antes: 03/11/2026)')
+    expect(rowValue(ticket, 'Notas')).toBe('Sin notas')
+    expect(ticket.warnings.map((warning) => warning.title)).toEqual([
+      'Se borran las notas que tenía.',
+    ])
+  })
+
+  it('un vencimiento que ya pasó se avisa; si ya está así, no hay tique', async () => {
+    const late = asPrepared(
+      await run('preparar_tarea', { titulo: 'x', grupo: 'eventos', vencimiento: '2026-11-01' }),
+    )
+    expect(late.ticket.warnings.map((warning) => warning.key)).toEqual(['due_past'])
+    expect(asError(await run('preparar_tarea', { tarea: 'flyer', estado: 'por_hacer' }))).toContain(
+      'ya está así',
+    )
   })
 
   it('un dato tapado no se guarda', async () => {
     expect(
-      asError(await run('preparar_tarea', { tarea: 'flyer', especificaciones: 'Llamar al …0000' })),
+      asError(await run('preparar_tarea', { tarea: 'flyer', notas: 'Llamar al …0000' })),
     ).toContain('dato tapado')
+    expect(
+      asError(await run('preparar_tarea', { titulo: 'Mandarle a [mail]', grupo: 'eventos' })),
+    ).toContain('dato tapado')
+    expect(loadTaskBoard).not.toHaveBeenCalled()
   })
 
-  it('lo que falta se pregunta; lo que está mal vuelve con el mensaje del formulario', async () => {
-    expect(asError(await run('preparar_tarea', { seccion: 'eventos' }))).toContain('qué hay')
-    expect(asError(await run('preparar_tarea', { titulo: 'x' }))).toContain('sección')
+  it('lo que falta se pregunta; lo que está mal vuelve con su mensaje', async () => {
+    expect(asError(await run('preparar_tarea', { grupo: 'eventos' }))).toContain('qué hay')
     expect(
       asError(
-        await run('preparar_tarea', {
-          titulo: 'x',
-          seccion: 'eventos',
-          link: 'javascript:alert(1)',
-        }),
-      ),
-    ).toContain('http')
-    expect(
-      asError(
-        await run('preparar_tarea', { titulo: 'x', seccion: 'eventos', fecha_ideal: '2026-02-30' }),
+        await run('preparar_tarea', { titulo: 'x', grupo: 'eventos', vencimiento: '2026-02-30' }),
       ),
     ).toContain('no existe')
     expect(
-      asError(await run('preparar_tarea', { titulo: 'x', seccion: 'eventos', responsable: 'Zoe' })),
+      asError(
+        await run('preparar_tarea', { titulo: 'x', grupo: 'eventos', responsables: ['Zoe'] }),
+      ),
     ).toContain('Luz')
+    expect(asError(await run('preparar_tarea', { titulo: 'x', grupo: 'Impresiones' }))).toContain(
+      'Eventos, Promociones',
+    )
+    expect(
+      asError(await run('preparar_tarea', { tarea: 'cartelera', estado: 'backlog' })),
+    ).toContain('No encontré')
   })
 
-  it('al confirmar: la acción de siempre, y queda en la solapa de su sección', async () => {
-    vi.mocked(createMarketingTask).mockResolvedValue({ ok: true })
-    vi.mocked(updateMarketingTask).mockResolvedValue({ ok: true })
+  it('al confirmar un alta: la crea, la completa y lleva al panel de esa tarea', async () => {
+    vi.mocked(createTask).mockResolvedValue({
+      ok: true,
+      data: { task: boardTask({ id: NEW_TASK, groupId: GROUP_PROMOS, title: 'Promo' }) },
+    })
+    vi.mocked(updateTask).mockResolvedValue({ ok: true })
+    vi.mocked(setTaskPeople).mockResolvedValue({ ok: true })
     const prepared = asPrepared(
-      await run('preparar_tarea', { titulo: 'Promo', seccion: 'promociones' }),
+      await run('preparar_tarea', {
+        titulo: 'Promo',
+        grupo: 'promociones',
+        estado: 'backlog',
+        responsables: ['Luz'],
+      }),
     )
     const done = asDone(await executor('marketing.tarea').run(prepared.payload, CTX))
-    const form = formOf(createMarketingTask)
-    expect(form.get('title')).toBe('Promo')
-    expect(form.get('category')).toBe('promociones')
-    expect(form.get('kind')).toBe('other')
-    expect(form.get('id')).toBeNull()
-    expect(done.href).toBe('/hub/tareas?seccion=promociones')
-    expect(done.point).toBe('Promo')
+    expect(createTask).toHaveBeenCalledWith('hub', { groupId: GROUP_PROMOS, title: 'Promo' })
+    expect(updateTask).toHaveBeenCalledWith('hub', { id: NEW_TASK, patch: { status: 'backlog' } })
+    expect(setTaskPeople).toHaveBeenCalledTimes(1)
+    expect(setTaskPeople).toHaveBeenCalledWith('hub', {
+      taskId: NEW_TASK,
+      role: 'responsible',
+      userIds: [SOCIO],
+    })
+    expect(done).toMatchObject({
+      message: 'Tarea creada.',
+      href: `/hub/tareas?tarea=${NEW_TASK}`,
+      point: 'Promo',
+    })
+  })
 
+  it('al confirmar una edición: solo lo que cambió', async () => {
+    vi.mocked(updateTask).mockResolvedValue({ ok: true })
     const edit = asPrepared(await run('preparar_tarea', { tarea: 'flyer', estado: 'en_proceso' }))
-    asDone(await executor('marketing.tarea').run(edit.payload, CTX))
-    const editForm = formOf(updateMarketingTask)
-    expect(editForm.get('id')).toBe(TASK_FLYER)
-    expect(editForm.get('status')).toBe('in_progress')
-    expect(editForm.get('notes')).toBeNull()
+    const done = asDone(await executor('marketing.tarea').run(edit.payload, CTX))
+    expect(updateTask).toHaveBeenCalledWith('hub', {
+      id: TASK_FLYER,
+      patch: { status: 'in_progress' },
+    })
+    expect(createTask).not.toHaveBeenCalled()
+    expect(setTaskPeople).not.toHaveBeenCalled()
+    expect(done.href).toBe(`/hub/tareas?tarea=${TASK_FLYER}`)
+  })
+
+  it('si algo falla después de crearla, dice qué quedó; si falla el alta, no sigue', async () => {
+    vi.mocked(createTask).mockResolvedValue({
+      ok: true,
+      data: { task: boardTask({ id: NEW_TASK }) },
+    })
+    vi.mocked(setTaskPeople).mockResolvedValue({
+      ok: false,
+      message: 'Esa persona no trabaja el tablero de este bar.',
+    })
+    const prepared = asPrepared(
+      await run('preparar_tarea', { titulo: 'Promo', grupo: 'eventos', involucrados: ['Luz'] }),
+    )
+    expect(asFailed(await executor('marketing.tarea').run(prepared.payload, CTX))).toBe(
+      'Creé la tarea, pero no pude poner a los involucrados: Esa persona no trabaja el tablero de este bar.',
+    )
+
+    vi.clearAllMocks()
+    vi.mocked(createTask).mockResolvedValue({
+      ok: false,
+      message: 'No tenés permiso para hacer esto.',
+    })
+    expect(asFailed(await executor('marketing.tarea').run(prepared.payload, CTX))).toBe(
+      'No tenés permiso para hacer esto.',
+    )
+    expect(setTaskPeople).not.toHaveBeenCalled()
+  })
+
+  it('un tique roto no llega a la acción', async () => {
+    expect(
+      asFailed(await executor('marketing.tarea').run({ mode: 'create', title: 'x' }, CTX)),
+    ).toContain('roto')
+    expect(createTask).not.toHaveBeenCalled()
   })
 })
 
 describe('preparar_estado_tarea', () => {
-  it('completar una tarea', async () => {
+  it('terminar una tarea', async () => {
     const prepared = asPrepared(
       await run('preparar_estado_tarea', { tarea: 'flyer', estado: 'terminado' }),
     )
-    expect(marketingTaskStatusSchema.safeParse(prepared.payload).success).toBe(true)
+    const payload = prepared.payload as { id: string; status: string }
+    expect(payload).toEqual({ id: TASK_FLYER, status: 'done', title: 'Flyer de la peña' })
+    expect(
+      updateTaskSchema.safeParse({ id: payload.id, patch: { status: payload.status } }).success,
+    ).toBe(true)
+    expect(prepared.ticket.title).toBe('Terminar una tarea')
     expect(prepared.ticket.confirmLabel).toBe('Marcar terminada')
+    expect(rowValue(prepared.ticket, 'Grupo')).toBe('Eventos')
     expect(rowValue(prepared.ticket, 'Queda')).toBe('Terminado')
     expectNothingWritten()
 
-    vi.mocked(setMarketingTaskStatus).mockResolvedValue({ ok: true })
+    vi.mocked(updateTask).mockResolvedValue({ ok: true })
     const done = asDone(await executor('marketing.estado_tarea').run(prepared.payload, CTX))
-    expect(setMarketingTaskStatus).toHaveBeenCalledWith('hub', { id: TASK_FLYER, status: 'done' })
-    expect(done.href).toBe('/hub/tareas')
+    expect(updateTask).toHaveBeenCalledWith('hub', { id: TASK_FLYER, patch: { status: 'done' } })
+    expect(done).toMatchObject({
+      message: 'Listo, quedó terminada.',
+      href: `/hub/tareas?tarea=${TASK_FLYER}`,
+      point: 'Flyer de la peña',
+    })
   })
 
-  it('si ya está así, lo dice', async () => {
+  it.each([
+    ['en_curso', 'En curso'],
+    ['interrumpido', 'Interrumpido'],
+    ['backlog', 'Backlog'],
+    ['esperando_feedback', 'Esperando feedback'],
+  ])('pasarla a %s', async (word, label) => {
+    const prepared = asPrepared(
+      await run('preparar_estado_tarea', { tarea: 'flyer', estado: word }),
+    )
+    expect(rowValue(prepared.ticket, 'Estaba')).toBe('Por hacer')
+    expect(rowValue(prepared.ticket, 'Queda')).toBe(label)
+    expect(prepared.ticket.confirmLabel).toBe(`Pasar a ${label}`)
+  })
+
+  it('reabrir lo terminado: vuelve a su grupo', async () => {
+    const prepared = asPrepared(
+      await run('preparar_estado_tarea', { tarea: 'reel', estado: 'por_hacer' }),
+    )
+    expect(prepared.ticket.title).toBe('Reabrir una tarea')
+    expect(rowValue(prepared.ticket, 'Grupo')).toBe('Promociones')
+    expect(prepared.payload).toMatchObject({ id: TASK_REEL, status: 'todo' })
+  })
+
+  it('si ya está así, lo dice; con dos iguales, pregunta cuál', async () => {
     expect(
       asError(await run('preparar_estado_tarea', { tarea: 'reel', estado: 'terminado' })),
-    ).toContain('ya está')
+    ).toContain('ya está en Terminado')
+    vi.mocked(loadTaskBoard).mockResolvedValue({
+      ...BOARD,
+      tasks: [...TASKS, boardTask({ id: uuid(531), groupId: GROUP_PROMOS })],
+    })
+    const many = asError(
+      await run('preparar_estado_tarea', { tarea: 'Flyer de la peña', estado: 'terminado' }),
+    )
+    expect(many).toContain(TASK_FLYER)
+    expect(many).toContain(uuid(531))
+  })
+
+  it('si la acción no deja, lo cuenta', async () => {
+    vi.mocked(updateTask).mockResolvedValue({
+      ok: false,
+      message: 'Esa tarea ya no existe. Recargá la página.',
+    })
+    const prepared = asPrepared(
+      await run('preparar_estado_tarea', { tarea: 'flyer', estado: 'terminado' }),
+    )
+    expect(asFailed(await executor('marketing.estado_tarea').run(prepared.payload, CTX))).toContain(
+      'ya no existe',
+    )
+  })
+})
+
+describe('preparar_actualizacion_tarea', () => {
+  it('deja el texto tal cual en el hilo de la tarea', async () => {
+    const prepared = asPrepared(
+      await run('preparar_actualizacion_tarea', {
+        tarea: 'flyer',
+        texto: '  Subí el arte final a la carpeta  ',
+      }),
+    )
+    expect(prepared.executor).toBe('marketing.actualizacion_tarea')
+    expect(prepared.payload).toEqual({
+      taskId: TASK_FLYER,
+      body: 'Subí el arte final a la carpeta',
+      title: 'Flyer de la peña',
+    })
+    expect(
+      postUpdateSchema.safeParse({ taskId: TASK_FLYER, body: 'Subí el arte final a la carpeta' })
+        .success,
+    ).toBe(true)
+    expect(prepared.ticket.subtitle).toBe('Flyer de la peña')
+    expect(rowValue(prepared.ticket, 'Texto')).toBe('Subí el arte final a la carpeta')
+    expect(prepared.ticket.confirmLabel).toBe('Publicar la actualización')
+    expectNothingWritten()
+
+    vi.mocked(postTaskUpdate).mockResolvedValue({ ok: true, data: { updateId: uuid(551) } })
+    const done = asDone(await executor('marketing.actualizacion_tarea').run(prepared.payload, CTX))
+    expect(postTaskUpdate).toHaveBeenCalledWith('hub', {
+      taskId: TASK_FLYER,
+      body: 'Subí el arte final a la carpeta',
+    })
+    expect(done.href).toBe(`/hub/tareas?tarea=${TASK_FLYER}`)
+  })
+
+  it('un dato tapado no se publica, y una tarea que no está vuelve con las que hay', async () => {
+    expect(
+      asError(await run('preparar_actualizacion_tarea', { tarea: 'flyer', texto: 'Al …1234' })),
+    ).toContain('dato tapado')
+    expect(
+      asError(await run('preparar_actualizacion_tarea', { tarea: 'cartelera', texto: 'Listo' })),
+    ).toContain('Flyer de la peña')
+  })
+
+  it('si la acción no deja, lo cuenta', async () => {
+    vi.mocked(postTaskUpdate).mockResolvedValue({
+      ok: false,
+      message: 'No tenés permiso para hacer esto.',
+    })
+    const prepared = asPrepared(
+      await run('preparar_actualizacion_tarea', { tarea: 'flyer', texto: 'Listo' }),
+    )
+    expect(
+      asFailed(await executor('marketing.actualizacion_tarea').run(prepared.payload, CTX)),
+    ).toBe('No tenés permiso para hacer esto.')
   })
 })
 
@@ -3564,6 +4113,7 @@ describe('preparar_tilde_rutina', () => {
       slot: 1,
       done: true,
     })
+    expect(prepared.ticket.title).toBe('Tildar en la rutina')
     expect(rowValue(prepared.ticket, 'Queda')).toBe('2 de 3')
     expectNothingWritten()
 
@@ -3575,7 +4125,7 @@ describe('preparar_tilde_rutina', () => {
       slot: 1,
       done: true,
     })
-    expect(done.href).toBe('/hub/tareas?seccion=organico&semana=2026-11-02')
+    expect(done.href).toBe('/hub/tareas?vista=rutina&semana=2026-11-02')
   })
 
   it('destildar saca el último, y lo completo o lo vacío se dice', async () => {

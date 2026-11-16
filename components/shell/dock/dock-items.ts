@@ -114,6 +114,19 @@ export function planDock(
     const flat = tabs.flatMap((item) => flatten(item, sections))
     if (flat.length >= 2 && flat.length <= DOCK_SLOTS) return { bar: flat, more: [] }
   }
+
+  // Una sola sección con pestañas y además cosas sueltas que ya no entran (la anfitriona desde que
+  // tiene Tareas, 15/11/2026): las pestañas de su sección siguen sueltas en la barra —es donde
+  // trabaja el día— y lo suelto va a «Más».
+  const withTabs = tabs.filter((item) => flatten(item, sections).length >= 2)
+  const only = withTabs.length === 1 ? withTabs[0] : undefined
+  if (only && all.length === tabs.length) {
+    const flat = flatten(only, sections)
+    const rest = tabs.filter((item) => item !== only)
+    if (flat.length <= DOCK_PINNED && flat.length + rest.length > DOCK_SLOTS) {
+      return { bar: flat, more: rest }
+    }
+  }
   if (tabs.length <= 1) return null
 
   if (all.length <= DOCK_SLOTS && tabs.length === all.length) return { bar: tabs, more: [] }

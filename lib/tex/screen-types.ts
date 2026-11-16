@@ -17,6 +17,7 @@ export type TexScreenParam =
   | 'evento'
   | 'etiqueta'
   | 'estrellas'
+  | 'tarea'
 
 export type TexScreenDef = {
   /** El nombre que usa Tex: `area.cosa`. */

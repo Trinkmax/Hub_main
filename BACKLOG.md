@@ -1681,3 +1681,38 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   Visa» (el gasto dice «Lo pagaste con Visa»): unificar el texto.
 - **HUB no tiene ninguna tarjeta cargada como cuenta** (al 16/11: una caja y una billetera). Para usar las cuotas
   hay que sumarla en Administración › Ajustes › Cajas como «Tarjeta de crédito».
+
+## Tareas estilo Monday — lo que queda (15/11/2026)
+
+- **Borrar las columnas viejas de `marketing_tasks`.** La migración
+  `20261115230118_marketing_tasks_board_v2.sql` expandió sin borrar (`category`,
+  `kind`, `specifications`, `file_url`, `responsible_user_id`,
+  `involved_user_id`, `ideal_date`, `defined_date`) para que el código anterior
+  siguiera andando entre la migración y el deploy. Ya nada las lee ni las
+  escribe: cuando el tablero nuevo esté andando, una migración de limpieza las
+  saca (con el «sí» de Nacho: tiene `drop`). Antes, re-correr el backfill de
+  personas por si alguien cargó algo con el tablero viejo en la ventana.
+- **Avisos.** Monday avisa cuando te asignan una tarea o te escriben una
+  actualización; acá todavía no (ni WhatsApp, ni mail, ni campanita). Lo más
+  barato: una marca de «nuevo» en «Mis tareas» con lo que cambió desde la última
+  vez que entraste.
+- **Pestaña «Actividad».** Monday muestra quién cambió qué (estado, personas,
+  vencimiento). Hoy queda en `audit_log` solo el alta, el borrado y el
+  «Terminado».
+- **Menciones con @ en las actualizaciones** (dependen de los avisos).
+- **Terminadas viejas.** El tablero trae las últimas 300 terminadas; el total sí
+  es el real. Si algún bar junta muchas más, falta «ver más» contra el server o
+  un archivo por mes.
+- **Barrido del bucket `marketing-files`.** El navegador borra lo que subió si no lo
+  pudo registrar, pero si se corta justo entre subir y registrar queda un archivo sin
+  fila. Falta un cron (`/api/cron`, service_role) que borre por la API de Storage los
+  objetos sin fila con más de 24 h (por SQL no se puede: Storage lo bloquea).
+- **Tex para Contenido y la anfitriona.** Las herramientas de tareas ya piden
+  `MARKETING_TASK_ROLES`, pero viven en el área de Mensajería de Tex, que solo ve el
+  dueño (`lib/tex/areas/mensajeria.ts`). Abrirla es una línea, pero también les
+  mostraría el resumen y el manual de WhatsApp: decisión de Nacho.
+- **Huecos del detector de la contadora que no son de esta tarea.** Al ensayar
+  la migración, `acc_isolation_gaps()` listó 15 tablas sin su RESTRICTIVE
+  `_no_accountant`: las `pur_*` de Compras, `ticketing_settings`,
+  `ticket_orders` y `event_experiences`. Hoy no exponen nada (sus políticas no
+  incluyen a la contadora), pero el test de CI de aislamiento las marca.

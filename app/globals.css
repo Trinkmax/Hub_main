@@ -2377,3 +2377,89 @@ html[data-tex-drag] [data-tex-ui] {
   pointer-events: none;
 }
 /* ── fin de Punto de venta ── */
+
+/* ── Tareas de marketing (tablero estilo Monday, 15/11/2026) ─────────────────
+   Los estados van con color SÓLIDO en toda la celda, como en el Monday de los
+   socios (Nacho Badra: «está un poquito mejor»). Rojo, verde y azul llevan texto
+   claro; amarillo, naranja y gris, oscuro: así el texto pasa AA en los seis
+   (≥ 4,7:1, calculado). Los grupos y las personas tienen su color para
+   reconocerlos de un vistazo. Clases en lib/marketing/constants.ts. */
+:root {
+  --task-todo: oklch(0.56 0.19 25);
+  --task-todo-fg: oklch(0.99 0.005 88);
+  --task-doing: oklch(0.84 0.15 88);
+  --task-doing-fg: oklch(0.22 0.03 60);
+  --task-stuck: oklch(0.7 0.17 50);
+  --task-stuck-fg: oklch(0.22 0.03 60);
+  --task-done: oklch(0.54 0.14 150);
+  --task-done-fg: oklch(0.99 0.005 88);
+  --task-backlog: oklch(0.78 0.012 85);
+  --task-backlog-fg: oklch(0.22 0.03 60);
+  --task-waiting: oklch(0.54 0.13 245);
+  --task-waiting-fg: oklch(0.99 0.005 88);
+
+  /* Título y riel de cada grupo: AA sobre la crema. */
+  --task-group-forest: oklch(0.42 0.08 165);
+  --task-group-sky: oklch(0.5 0.12 245);
+  --task-group-violet: oklch(0.5 0.15 300);
+  --task-group-rose: oklch(0.52 0.17 5);
+  --task-group-coral: oklch(0.53 0.16 35);
+  --task-group-amber: oklch(0.52 0.11 65);
+  --task-group-teal: oklch(0.49 0.08 195);
+  --task-group-slate: oklch(0.48 0.025 250);
+
+  /* Personas: avatar y ficha con texto claro (≥ 5:1). */
+  --task-person-0: oklch(0.52 0.1 165);
+  --task-person-1: oklch(0.55 0.15 35);
+  --task-person-2: oklch(0.52 0.14 260);
+  --task-person-3: oklch(0.53 0.16 330);
+  --task-person-4: oklch(0.54 0.1 70);
+  --task-person-5: oklch(0.5 0.08 210);
+  --task-person-6: oklch(0.54 0.17 5);
+  --task-person-7: oklch(0.5 0.14 295);
+  --task-person-8: oklch(0.52 0.12 135);
+  --task-person-9: oklch(0.5 0.035 60);
+  --task-person-fg: oklch(0.99 0.005 88);
+
+  /* La fila que brilla al terminar y el riel de «Terminadas». */
+  --task-done-glow: oklch(0.54 0.14 150 / 22%);
+}
+
+.dark {
+  /* Mismos tonos, un poco menos encendidos sobre el fondo oscuro. */
+  --task-doing: oklch(0.8 0.14 88);
+  --task-backlog: oklch(0.72 0.012 85);
+
+  --task-group-forest: oklch(0.78 0.09 165);
+  --task-group-sky: oklch(0.76 0.11 245);
+  --task-group-violet: oklch(0.76 0.12 300);
+  --task-group-rose: oklch(0.76 0.13 5);
+  --task-group-coral: oklch(0.76 0.12 35);
+  --task-group-amber: oklch(0.8 0.11 75);
+  --task-group-teal: oklch(0.78 0.08 195);
+  --task-group-slate: oklch(0.76 0.02 250);
+
+  --task-done-glow: oklch(0.7 0.135 155 / 22%);
+}
+
+/* La fila terminada: un destello verde y se pliega (la tarea se va a «Terminadas»). Dura un
+   poco menos que el tiempo que el tablero la deja en su grupo (560 ms), así no salta. */
+@keyframes task-done-leave {
+  0% { background-color: var(--task-done-glow); max-height: 6rem; opacity: 1; }
+  50% { background-color: var(--task-done-glow); max-height: 6rem; opacity: 1; }
+  100% { background-color: transparent; max-height: 0; opacity: 0; }
+}
+.task-row-leaving {
+  overflow: hidden;
+  animation: task-done-leave 540ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-row-leaving { animation: none; }
+}
+/* El contador de «Terminadas» da un saltito cuando llega una. */
+@keyframes task-count-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.18); color: var(--task-done); }
+  100% { transform: scale(1); }
+}
+/* ── fin de Tareas de marketing ── */

@@ -14,11 +14,11 @@ import {
 const describeIfRls = RLS_TESTS_ENABLED ? describe : describe.skip
 
 /**
- * El tablero de marketing y el link público son OWNER-ONLY. Estas tablas no
- * llevan la policy de aislamiento por membresía sino la de rol
- * (`user_role_in_tenant(tenant_id) = 'owner'`), así que hay dos cosas distintas
- * que probar: que un bar no ve al otro, y que dentro del MISMO bar un mozo no
- * ve nada.
+ * El link público es OWNER-ONLY; el tablero de tareas y la rutina, desde el
+ * 15/11/2026, también los trabajan Contenido y la anfitriona (lo nuevo está en
+ * `marketing-board.test.ts`). Estas tablas no llevan la policy de aislamiento por
+ * membresía sino la de rol, así que hay dos cosas distintas que probar: que un bar
+ * no ve al otro, y que dentro del MISMO bar un mozo no ve nada.
  */
 describeIfRls('RLS — marketing (tareas, rutinas y links públicos)', () => {
   let service: SupabaseClient

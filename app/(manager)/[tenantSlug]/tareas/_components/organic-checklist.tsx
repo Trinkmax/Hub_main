@@ -11,6 +11,7 @@ import { seedSuggestedRoutines, toggleRoutineCheck } from '@/lib/marketing/actio
 import type { RoutineRow } from '@/lib/marketing/queries'
 import { formatDayShort, shiftWeeks, weekEndOf } from '@/lib/marketing/week'
 import { cn } from '@/lib/utils'
+import { guard } from './guard'
 import { RoutineDialog } from './routine-dialog'
 
 type Toggle = { routineId: string; slot: number; done: boolean }
@@ -26,6 +27,8 @@ export function OrganicChecklist({
   isCurrentWeek,
   /** Sube de valor cuando el botón del header pide una rutina nueva. */
   newRoutineNonce = 0,
+  /** La rutina la arma un socio; Contenido y la anfitriona solo tildan. */
+  canEdit = true,
 }: {
   tenantSlug: string
   routines: RoutineRow[]
@@ -33,6 +36,7 @@ export function OrganicChecklist({
   weekTitle: string
   isCurrentWeek: boolean
   newRoutineNonce?: number
+  canEdit?: boolean
 }) {
   const [editing, setEditing] = useState<RoutineRow | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -60,13 +64,15 @@ export function OrganicChecklist({
   function toggle(routine: RoutineRow, slot: number, done: boolean) {
     startTransition(async () => {
       applyToggle({ routineId: routine.id, slot, done })
-      const result = await toggleRoutineCheck(tenantSlug, {
-        routineId: routine.id,
-        weekStart,
-        slot,
-        done,
+      await guard(async () => {
+        const result = await toggleRoutineCheck(tenantSlug, {
+          routineId: routine.id,
+          weekStart,
+          slot,
+          done,
+        })
+        if (!result.ok) toast.error(result.message)
       })
-      if (!result.ok) toast.error(result.message)
     })
   }
 
@@ -106,7 +112,7 @@ export function OrganicChecklist({
       <WeekBar weekStart={weekStart} weekTitle={weekTitle} isCurrentWeek={isCurrentWeek} />
 
       {optimistic.length === 0 ? (
-        <SuggestedEmptyState tenantSlug={tenantSlug} onCreate={openNew} />
+        <SuggestedEmptyState tenantSlug={tenantSlug} onCreate={openNew} canEdit={canEdit} />
       ) : (
         <>
           <div className="card-hairline flex items-center gap-4 rounded-xl border bg-card p-4">
@@ -143,19 +149,25 @@ export function OrganicChecklist({
                           tarea: en un celular `group-hover` nunca se aplica
                           (Tailwind lo envuelve en `@media (hover: hover)`), así
                           que el lápiz solo no alcanzaba como único camino. */}
-                      <button
-                        type="button"
-                        onClick={() => openEdit(routine)}
-                        className="rounded-sm text-left font-medium leading-snug tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {routine.title}
-                      </button>
-                      <span
-                        aria-hidden
-                        className="rounded-md p-2 text-muted-foreground transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-                      >
-                        <Pencil className="size-3.5" aria-hidden />
-                      </span>
+                      {canEdit ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(routine)}
+                            className="rounded-sm text-left font-medium leading-snug tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {routine.title}
+                          </button>
+                          <span
+                            aria-hidden
+                            className="rounded-md p-2 text-muted-foreground transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            <Pencil className="size-3.5" aria-hidden />
+                          </span>
+                        </>
+                      ) : (
+                        <p className="font-medium leading-snug tracking-tight">{routine.title}</p>
+                      )}
                     </div>
                     {routine.description ? (
                       <p className="mt-1 text-sm text-muted-foreground text-pretty">
@@ -197,10 +209,12 @@ export function OrganicChecklist({
             })}
           </ul>
 
-          <Button variant="outline" onClick={openNew} className="w-full sm:w-auto">
-            <Plus className="size-4" aria-hidden />
-            Sumar una rutina
-          </Button>
+          {canEdit ? (
+            <Button variant="outline" onClick={openNew} className="w-full sm:w-auto">
+              <Plus className="size-4" aria-hidden />
+              Sumar una rutina
+            </Button>
+          ) : null}
         </>
       )}
 
@@ -225,10 +239,10 @@ function WeekBar({
   isCurrentWeek: boolean
 }) {
   // La semana viaja por la URL (no por estado) para que el server traiga los
-  // tildes de esa semana. Los links mantienen `?seccion=organico` para volver
-  // a la misma solapa después de la navegación.
+  // tildes de esa semana. Los links mantienen `?vista=rutina` para volver a la
+  // misma vista después de la navegación.
   const hrefFor = (offset: number) =>
-    `?seccion=organico&semana=${shiftWeeks(weekStart, offset)}` as const
+    `?vista=rutina&semana=${shiftWeeks(weekStart, offset)}` as const
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-secondary/40 p-2">
@@ -248,7 +262,7 @@ function WeekBar({
       <div className="flex items-center gap-1">
         {isCurrentWeek ? null : (
           <Button asChild variant="ghost" size="sm">
-            <Link href="?seccion=organico" scroll={false}>
+            <Link href="?vista=rutina" scroll={false}>
               Hoy
             </Link>
           </Button>
@@ -266,11 +280,23 @@ function WeekBar({
 function SuggestedEmptyState({
   tenantSlug,
   onCreate,
+  canEdit,
 }: {
   tenantSlug: string
   onCreate: () => void
+  canEdit: boolean
 }) {
   const [pending, startTransition] = useTransition()
+
+  if (!canEdit) {
+    return (
+      <EmptyState
+        icon={ListChecks}
+        title="Todavía no hay rutina semanal"
+        description="Son las cosas que se repiten todas las semanas (historias, reels, el mensaje al canal). La arma un socio y acá se van tildando."
+      />
+    )
+  }
 
   return (
     <EmptyState
@@ -282,11 +308,13 @@ function SuggestedEmptyState({
           <Button
             disabled={pending}
             onClick={() =>
-              startTransition(async () => {
-                const result = await seedSuggestedRoutines(tenantSlug)
-                if (result.ok) toast.success('Listo, ya tenés el checklist base.')
-                else toast.error(result.message)
-              })
+              startTransition(() =>
+                guard(async () => {
+                  const result = await seedSuggestedRoutines(tenantSlug)
+                  if (result.ok) toast.success('Listo, ya tenés el checklist base.')
+                  else toast.error(result.message)
+                }),
+              )
             }
           >
             <Sparkles className="size-4" aria-hidden />

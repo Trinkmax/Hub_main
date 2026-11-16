@@ -132,20 +132,21 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       { value: 'qr', label: 'QR del club', path: 'local/captura' },
     ],
   },
-  // Owner-only: es la mesa de los socios.
+  // La mesa de los socios. Tareas también la trabajan Contenido y la anfitriona (15/11/2026): para
+  // ellos queda una sola pestaña y la barra no se dibuja (entran por su entrada «Tareas» del menú).
   marketing: {
     label: 'Secciones de Marketing',
     tabs: [
-      { value: 'tareas', label: 'Tareas', path: 'tareas' },
-      { value: 'enlaces', label: 'Link de Instagram', path: 'enlaces' },
+      { value: 'tareas', label: 'Tareas', path: 'tareas', roles: ['owner', 'editor', 'host'] },
+      { value: 'enlaces', label: 'Link de Instagram', path: 'enlaces', roles: ['owner'] },
       // Exacta a propósito: el editor de una página (/paginas/[id]) se queda sin la barra. Ocupa
       // la pantalla con sus propias alturas y su «Volver» pregunta antes de perder cambios sin
       // guardar; tres links más arriba se los saltearían.
-      { value: 'paginas', label: 'Páginas', path: 'paginas', exact: true },
+      { value: 'paginas', label: 'Páginas', path: 'paginas', exact: true, roles: ['owner'] },
       // Entradas online (26/10/2026): la cartelera, Mercado Pago y las ventas. Exacta por lo mismo
       // que Páginas: el editor de cada película (/entradas/[id]) tiene su barra de guardado y su
       // «Volver» pregunta antes de perder cambios; las pestañas de arriba se lo saltearían.
-      { value: 'entradas', label: 'Entradas', path: 'entradas', exact: true },
+      { value: 'entradas', label: 'Entradas', path: 'entradas', exact: true, roles: ['owner'] },
     ],
   },
   // Owner-only, como antes en el sidebar.
