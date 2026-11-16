@@ -39,7 +39,7 @@ import {
   padPos,
   VoucherNumberInput,
   type VoucherNumberValue,
-  voucherPart,
+  voucherParts,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/voucher-number-input'
 import { isPurchaseImputation } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/accounts'
 import { documentHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
@@ -91,6 +91,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
 import { amountLooksOff, pickTreasury } from '@/lib/accounting/defaults'
+import { isCreditCard } from '@/lib/accounting/installments'
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
@@ -133,6 +134,8 @@ import {
   TreasuryAfterHint,
   TreasuryAfterLine,
 } from './gasto-piezas'
+import { InstallmentsField } from './installments-field'
+import { saveCardInstallments } from './save-installments'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.gasto
@@ -309,10 +312,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const [amount, setAmount] = useState<number | null>(null)
   const [target, setTarget] = useState<ExpenseTarget | null>(null)
   const [treasuryId, setTreasuryId] = useState<string | null>(() => defaultTreasury(null))
+  /** Con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
+  const [installments, setInstallments] = useState(1)
   const [voucher, setVoucher] = useState<QuickVoucher>('none')
   const [vatRate, setVatRate] = useState<QuickVatRate>(2100)
   const [vatAdjust, setVatAdjust] = useState(0)
   const [voucherNumber, setVoucherNumber] = useState<VoucherNumberValue>({ pos: '', number: '' })
+  /** El punto de venta que propuso el sistema (el de la última factura del proveedor). */
+  const [suggestedPos, setSuggestedPos] = useState<string | null>(null)
   const [date, setDate] = useState<string | null>(data.today)
   const [detail, setDetail] = useState('')
   const [showDetail, setShowDetail] = useState(false)
@@ -359,8 +366,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const condition: IvaCondition | null =
     target?.kind === 'new' ? target.ivaCondition : (party?.ivaCondition ?? null)
   const hasParty = target?.kind === 'party' || target?.kind === 'new'
-  const pointOfSale = voucherPart(voucherNumber.pos)
-  const number = voucherPart(voucherNumber.number)
+  // El punto de venta propuesto no cuenta si nadie escribió el número: sin número se guarda igual.
+  const { pointOfSale, number } = voucherParts(voucherNumber, suggestedPos)
   // Cómo se nombra lo elegido en el ticket y en «recién cargado»: el proveedor (como se lo
   // conoce) y, aparte, su categoría; sin proveedor, la categoría sola.
   const targetAccount = target?.accountId ? accountById.get(target.accountId) : undefined
@@ -432,9 +439,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       }
       if (!fromRecurring.current.vatRate) setVatRate(suggestQuickVatRate(d.vatRateBp))
       if (d.pointOfSale !== null) {
-        setVoucherNumber((prev) =>
-          prev.pos === '' ? { ...prev, pos: padPos(String(d.pointOfSale)) } : prev,
-        )
+        const proposed = padPos(String(d.pointOfSale))
+        setSuggestedPos(proposed)
+        setVoucherNumber((prev) => (prev.pos === '' ? { ...prev, pos: proposed } : prev))
       }
       if (!touched.current.treasury && !fromRecurring.current.treasury && d.treasuryAccountId) {
         setTreasuryId(defaultTreasury(d.treasuryAccountId))
@@ -464,6 +471,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     touched.current.voucher = false
     setVatAdjust(0)
     setVoucherNumber({ pos: '', number: '' })
+    setSuggestedPos(null)
     posting.clearFieldErrors()
     if (next.kind === 'party') {
       setTarget(next)
@@ -621,6 +629,10 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   const onSaved = (saved: SavedState) => {
     if (treasuryId) rememberTreasury(tenantSlug, treasuryId)
+    // Con tarjeta de crédito: en cuántas cuotas (se anota aparte, después de guardar).
+    if (isCreditCard(data.treasuries.find((t) => t.id === treasuryId))) {
+      void saveCardInstallments(tenantSlug, saved.result.bundle_id, installments)
+    }
     posting.undoToast(saved.message, saved)
     const remember = rememberOnSave.current
     rememberOnSave.current = null
@@ -663,12 +675,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     setVatRate(2100)
     setVatAdjust(0)
     setVoucherNumber({ pos: '', number: '' })
+    setSuggestedPos(null)
     setDetail('')
     setShowDetail(false)
     setSubmitted(false)
     setDefaults(null)
     setDuplicate(null)
     setFiles([])
+    setInstallments(1)
     // El próximo gasto se puede ir cargando; se guarda cuando terminó de subir la foto de este.
     if (picked.length > 0) setAttaching('staying')
     // Los datos se vuelven a traer cuando terminó lo de después (la ficha ya tiene su cuenta).
@@ -1044,6 +1058,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 touched.current.voucher = false
                 setVoucher('none')
                 setVoucherNumber({ pos: '', number: '' })
+                setSuggestedPos(null)
               }}
               errors={{
                 target: errors.target ?? errors['target.partyId'] ?? errors.newParty,
@@ -1110,6 +1125,17 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               </p>
             ) : null}
             {treasury ? <TreasuryAfterLine treasury={treasury} amountCents={amount} /> : null}
+            {isCreditCard(treasury) ? (
+              <InstallmentsField
+                // Después de «Cargar otro» arranca de nuevo en un solo pago.
+                key={lastSaved?.count ?? 0}
+                value={installments}
+                onChange={setInstallments}
+                amountCents={amount}
+                disabled={posting.pending}
+                className="mt-1"
+              />
+            ) : null}
           </div>
 
           {/* ¿Qué papel te dieron?: cuatro papeles; debajo, lo que pide el elegido */}

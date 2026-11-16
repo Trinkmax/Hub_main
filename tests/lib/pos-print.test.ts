@@ -13,6 +13,7 @@ import {
   ticketTime,
 } from '@/lib/pos/print/doc'
 import { escapeHtml, renderPrintJob } from '@/lib/pos/print/html'
+import { paidItems, paymentDoc } from '@/lib/pos/print/payment'
 import { shiftDoc } from '@/lib/pos/print/shift'
 import {
   comandaDocs,
@@ -321,7 +322,10 @@ describe('la compu que tiene la comandera', () => {
       splitByStation: false,
       copies: 2,
       since: 5,
+      receiptOnCharge: false,
     })
+    expect(parsePrinter({ receiptOnCharge: true }).receiptOnCharge).toBe(true)
+    expect(parsePrinter({ receiptOnCharge: 'sí' }).receiptOnCharge).toBe(false)
     // Prendida sin fecha imprimiría toda la cola: la fecha no se inventa, queda sin imprimir nada.
     expect(duePrints(queue([ticket()]), parsePrinter({ auto: true }), {})).toEqual([])
     expect(parsePrinter({ paper: 100, copies: 9 })).toMatchObject({ paper: 80, copies: 1 })
@@ -493,6 +497,82 @@ describe('la cuenta en papel', () => {
       .lines.filter((entry) => entry.kind === 'banner')
       .map((entry) => entry.text)
     expect(banners).toEqual(['Práctica · no es una cuenta de verdad'])
+  })
+})
+
+describe('el tique de un cobro', () => {
+  const context = { barName: 'HUB! · Cerro', timeZone: TIME_ZONE }
+
+  it('un cobro por producto dice qué se pagó, con qué medio y cuánto le falta a la mesa', () => {
+    const mojitos = line('Mojito', 2, 8000)
+    const lomito = line('Lomito', 1, 14000)
+    const pay = payment('transfer', 22000, {
+      item_ids: [mojitos.id, lomito.id],
+      payer_label: '1 Mojito + 1 Lomito',
+    })
+    const bill = makeBill({ lines: [mojitos, lomito, line('Flan', 1, 6000)], payments: [pay] })
+    expect(paidItems(pay, bill.lines)).toEqual([
+      { name: 'Mojito', quantity: 1, cents: pesos(8000) },
+      { name: 'Lomito', quantity: 1, cents: pesos(14000) },
+    ])
+    const text = textOf(paymentDoc(bill, pay, context))
+    expect(text).toContain('HUB! · Cerro')
+    expect(text).toContain('Mesa 12')
+    expect(text).toContain('1 Mojito | $ 8.000')
+    expect(text).toContain('1 Lomito | $ 14.000')
+    expect(text).toContain('PAGADO | $ 22.000')
+    expect(text).toContain('Medio | Transferencia')
+    expect(text).toContain('Falta de la mesa | $ 14.000')
+    expect(text).toContain('Documento no válido como factura')
+    // No hay recargo ni propina: no hace falta abrir el consumo aparte.
+    expect(text).not.toContain('Consumo |')
+  })
+
+  it('dos unidades del mismo renglón se cuentan juntas', () => {
+    const mojitos = line('Mojito', 3, 8000)
+    const pay = payment('qr', 16000, { item_ids: [mojitos.id, mojitos.id] })
+    expect(paidItems(pay, [mojitos])).toEqual([
+      { name: 'Mojito', quantity: 2, cents: pesos(16000) },
+    ])
+    // Un renglón que ya no está en la cuenta no rompe el tique.
+    expect(paidItems({ item_ids: ['ya-no-esta'] }, [mojitos])).toEqual([])
+  })
+
+  it('efectivo con vuelto, propina y recargo: cada cosa en su renglón, y la cuenta paga', () => {
+    const pay = payment('cash', 28000, {
+      tendered_cents: pesos(30000),
+      change_cents: pesos(1000),
+      tip_cents: pesos(1000),
+      payer_label: 'Parte 2 de 2',
+    })
+    const bill = makeBill({
+      lines: [line('Lomito', 2, 14000)],
+      payments: [payment('debit', 0), pay],
+    })
+    const text = textOf(
+      paymentDoc({ ...bill, bill: { ...bill.bill, remaining_cents: 0 } }, pay, context),
+    )
+    expect(text).toContain('Parte 2 de 2')
+    expect(text).toContain('Consumo | $ 28.000')
+    expect(text).toContain('Propina | $ 1.000')
+    expect(text).toContain('PAGADO | $ 29.000')
+    expect(text).toContain('Pagó con | $ 30.000')
+    expect(text).toContain('Vuelto | $ 1.000')
+    expect(text).toContain('Cuenta paga')
+    const credit = payment('credit', 10000, { surcharge_cents: pesos(1000) })
+    expect(textOf(paymentDoc(bill, credit, context))).toContain('Recargo de crédito | $ 1.000')
+  })
+
+  it('un cobro de práctica o anulado lo dice en una franja', () => {
+    const bill = makeBill({ lines: [line('Lomito', 1, 14000)] })
+    const banners = (pay: ReturnType<typeof payment>) =>
+      paymentDoc(bill, pay, context)
+        .lines.filter((entry) => entry.kind === 'banner')
+        .map((entry) => entry.text)
+    expect(banners(payment('cash', 14000, { is_practice: true }))).toEqual([
+      'Práctica · no es un cobro de verdad',
+    ])
+    expect(banners(payment('cash', 14000, { status: 'voided' }))).toEqual(['Cobro anulado'])
   })
 })
 

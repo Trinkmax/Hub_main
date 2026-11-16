@@ -1162,11 +1162,13 @@ button.pay-sum:active {
   outline-color: var(--pos-paper);
 }
 /* Imprimir es de la compu que tiene la comandera: en el celular no se ofrece. */
-.pay-act-print {
+.pay-act-print,
+.pos-btn.pay-sheet-print {
   display: none;
 }
 @media (min-width: 900px) {
-  .pay-act-print {
+  .pay-act-print,
+  .pos-btn.pay-sheet-print {
     display: inline-flex;
   }
 }

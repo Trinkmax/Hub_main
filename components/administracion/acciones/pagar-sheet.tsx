@@ -77,6 +77,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { allocateItems, postPayment } from '@/lib/accounting/actions/documents'
 import { pickTreasury } from '@/lib/accounting/defaults'
+import { isCreditCard } from '@/lib/accounting/installments'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { PaymentValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
@@ -99,6 +100,7 @@ import { TreasurySelect } from '../treasury-select'
 import { VoucherText } from '../voucher-text'
 import { exactAmountText, ticketTotalLabel } from './gasto-papel'
 import { TreasuryAfterHint } from './gasto-piezas'
+import { InstallmentsField } from './installments-field'
 import {
   OtherThanSupplier,
   PayCover,
@@ -107,6 +109,7 @@ import {
   type UrgentSupplier,
   UrgentSuppliers,
 } from './pagar-piezas'
+import { saveCardInstallments } from './save-installments'
 import { ADD_LINK, SHEET_QUESTION_BLOCK, SheetQuestion, TEXT_LINK } from './sheet-parts'
 import type { ActionSheetProps } from './types'
 
@@ -559,6 +562,8 @@ export function PaymentForm({
   const [amount, setAmount] = useState<number | null>(null)
   const [amountTouched, setAmountTouched] = useState(false)
   const [writeOff, setWriteOff] = useState(false)
+  /** Con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
+  const [installments, setInstallments] = useState(1)
   const [rows, setRows] = useState<MethodRow[]>(() => [
     newRow(
       pickTreasury({
@@ -673,6 +678,10 @@ export function PaymentForm({
   const onSaved = (saved: SavedState) => {
     const first = rows[0]?.treasuryId
     if (first) rememberTreasury(tenantSlug, first)
+    // Si algo de este pago salió de una tarjeta de crédito: en cuántas cuotas.
+    if (rows.some((row) => isCreditCard(data.treasuries.find((t) => t.id === row.treasuryId)))) {
+      void saveCardInstallments(tenantSlug, saved.result.bundle_id, installments)
+    }
     posting.undoToast(saved.message, saved)
     router.refresh()
     // La foto va al pago (el primer comprobante; el impuesto al cheque es otro). Si alguna no sube,
@@ -838,6 +847,18 @@ export function PaymentForm({
     ? (data.treasuries.find((t) => t.id === single.treasuryId) ?? null)
     : null
   const hasTreasuries = data.treasuries.some((t) => t.active)
+  // Con una tarjeta de crédito entre los medios, se pregunta en cuántas cuotas.
+  const paysWithCard = rows.some((row) =>
+    isCreditCard(data.treasuries.find((t) => t.id === row.treasuryId)),
+  )
+  // Lo que de este pago sale de la tarjeta: con dos medios, solo esa parte va en cuotas.
+  const cardCents = resolved.methods.reduce(
+    (sum, method) =>
+      isCreditCard(data.treasuries.find((t) => t.id === method.treasuryAccountId))
+        ? sum + method.amountCents
+        : sum,
+    0,
+  )
   const labelOf = new Map(debts.map((d) => [d.lineId, d.label]))
   const ticketLines = payTicketRows(plan.applications, (lineId) => labelOf.get(lineId))
   const ticketRows: PayTicketRow[] = ticketLines.rows.map((row) => ({
@@ -1228,7 +1249,6 @@ export function PaymentForm({
                 />
               </div>
             ) : null}
-
             <DateField
               id={`${uid}-fecha`}
               label="Fecha"
@@ -1319,6 +1339,15 @@ export function PaymentForm({
             <p role="alert" className="text-xs text-destructive">
               {methodsError}
             </p>
+          ) : null}
+          {/* Con la tarjeta: en cuántas cuotas (a lo ancho, debajo de con qué se paga) */}
+          {paysWithCard ? (
+            <InstallmentsField
+              value={installments}
+              onChange={setInstallments}
+              amountCents={cardCents > 0 ? cardCents : null}
+              disabled={posting.pending}
+            />
           ) : null}
 
           {plan.canWriteOff ? (

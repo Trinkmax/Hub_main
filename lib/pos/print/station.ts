@@ -26,6 +26,8 @@ export type PrinterSettings = {
   copies: 1 | 2
   /** Desde cuándo imprime sola (ms). Lo que salió antes no se imprime. */
   since: number | null
+  /** Al cobrar en esta compu, sale el tique del cobro para el cliente. */
+  receiptOnCharge: boolean
 }
 
 export const DEFAULT_PRINTER: PrinterSettings = {
@@ -35,6 +37,7 @@ export const DEFAULT_PRINTER: PrinterSettings = {
   splitByStation: false,
   copies: 1,
   since: null,
+  receiptOnCharge: false,
 }
 
 /** Dónde se guarda en el dispositivo, por sucursal. */
@@ -61,6 +64,7 @@ export function parsePrinter(raw: unknown): PrinterSettings {
     copies: value.copies === 2 ? 2 : 1,
     // Prendida sin fecha no puede quedar: imprimiría todo lo que haya en la cola.
     since: auto ? since : null,
+    receiptOnCharge: value.receiptOnCharge === true,
   }
 }
 

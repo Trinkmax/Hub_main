@@ -317,6 +317,61 @@ describeIfRls('Administración simple', () => {
     })
   })
 
+  describe('cuotas con tarjeta', () => {
+    const args = (tenantId: string, installments: number) => ({
+      p_tenant_id: tenantId,
+      p_bundle_id: randomUUID(),
+      p_installments: installments,
+    })
+
+    it('otro bar no llega y la contadora no escribe', async () => {
+      expectForbidden(
+        (await ownerB.client.rpc('acc_set_card_installments', args(tenantA, 3))).error,
+      )
+      expectForbidden(
+        (await accountant.client.rpc('acc_set_card_installments', args(tenantA, 3))).error,
+      )
+    })
+
+    it('el dueño pasa el permiso; un paquete que no pagó con tarjeta no anota nada', async () => {
+      const { data, error } = await ownerA.client.rpc('acc_set_card_installments', args(tenantA, 3))
+      expect(error).toBeNull()
+      expect(data).toEqual({ documents: 0 })
+    })
+
+    it('de 1 a 48: ni cero ni 49', async () => {
+      for (const installments of [0, 49]) {
+        const { error } = await ownerA.client.rpc(
+          'acc_set_card_installments',
+          args(tenantA, installments),
+        )
+        expect(error?.message ?? '').toContain('invalid_payload')
+      }
+    })
+
+    it('la tabla no se escribe directo, ni siendo dueño; el otro bar no la lee', async () => {
+      expectForbidden(
+        (
+          await ownerA.client.from('acc_card_installments').insert({
+            document_id: randomUUID(),
+            tenant_id: tenantA,
+            installments: 3,
+          })
+        ).error,
+      )
+      const own = await ownerA.client
+        .from('acc_card_installments')
+        .select('document_id')
+        .eq('tenant_id', tenantA)
+      expect(own.error).toBeNull()
+      const other = await ownerB.client
+        .from('acc_card_installments')
+        .select('document_id')
+        .eq('tenant_id', tenantA)
+      expect(other.data ?? []).toEqual([])
+    })
+  })
+
   describe('reimputar', () => {
     it('otro bar no llega; la contadora sí pasa el permiso', async () => {
       const args = {

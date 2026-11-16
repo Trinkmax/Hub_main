@@ -1,6 +1,6 @@
 'use client'
 
-import { LoaderCircle } from 'lucide-react'
+import { LoaderCircle, Printer } from 'lucide-react'
 import { useState } from 'react'
 import { useLast } from '@/components/pos/order/use-last'
 import {
@@ -663,12 +663,15 @@ export function PaymentSheet({
   timeZone,
   onClose,
   onVoid,
+  onPrint,
 }: {
   payment: Payment | null
   bill: Bill
   timeZone: string
   onClose: () => void
   onVoid: (payment: Payment, reason: string) => SheetResult
+  /** Sacar de nuevo el tique de este cobro (solo en la compu que tiene la comandera). */
+  onPrint?: (payment: Payment) => void
 }) {
   const shown = useLast(payment)
   const [state, setState] = useState<{
@@ -822,6 +825,17 @@ export function PaymentSheet({
                       data-testid="payment-void"
                     >
                       Anular el cobro
+                    </button>
+                  ) : null}
+                  {onPrint && live ? (
+                    <button
+                      type="button"
+                      className="pos-btn pos-btn-quiet pay-sheet-print"
+                      onClick={() => onPrint(shown)}
+                      data-testid="payment-print"
+                    >
+                      <Printer className="size-5" aria-hidden />
+                      Imprimir tique
                     </button>
                   ) : null}
                   <button type="button" className="pos-btn pos-btn-primary" onClick={onClose}>

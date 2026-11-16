@@ -271,6 +271,11 @@ la base.
   cómo va cada uno. **«Reimprimir»** está en cada tanda de la comanda del mozo (por si se trabó el papel).
 - **La cuenta** (`billDoc`): membrete, productos juntos, descuentos y seña, total, lo ya pagado y lo que
   falta, el alias para transferir y «Documento no válido como factura».
+- **El tique del cobro** (`paymentDoc`, pedido del 16/11/2026: «imprimir un tique al cobrar»): con «Imprimir
+  un tique al cobrar» prendido en esa compu, cada cobro saca el suyo: qué se pagó (los productos, si fue por
+  producto; la parte, si se dividió), el medio, propina, recargo y vuelto, y cuánto le queda a la mesa.
+  Tocando un cobro en la cuenta, «Imprimir tique» lo saca de nuevo. No es una factura y lo dice: el punto de
+  venta marca cada cobro «con factura» o «sin factura», pero todavía no emite la factura.
 - **El cierre de caja** (`shiftDoc`): el mismo resumen del turno que se copia o se manda por WhatsApp,
   con el arqueo arriba (en negativo si no cuadra) y lugar para firmar («Contó», «Controló»). El formato
   definitivo lo van a pasar los dueños: cuando llegue se cambia en `lib/pos/print/shift.ts` y solo ahí.

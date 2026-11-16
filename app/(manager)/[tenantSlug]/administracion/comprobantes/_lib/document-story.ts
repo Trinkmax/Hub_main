@@ -33,6 +33,7 @@ import { pct, percentLabel } from '@/components/administracion/charts/scale'
 import { type PaperStamp, voucherStamp } from '@/components/administracion/voucher-stamp'
 import { dueBucket, dueLabel } from '@/lib/accounting/aging'
 import type { GuideLinkId } from '@/lib/accounting/guides'
+import { installmentsWords } from '@/lib/accounting/installments'
 import type { DocumentOrigin, LinkedDocument } from '@/lib/accounting/queries/document-origin'
 import type {
   AllocationDetail,
@@ -76,6 +77,10 @@ export type StoryContext = {
   canWrite: boolean
   /** El tipo de cada caja, para saber cuál es la tarjeta de la empresa. `null`: no se pudo leer. */
   treasuryKinds: ReadonlyMap<string, TreasuryKind> | null
+  /** En cuántas cuotas se pagó con la tarjeta, si se anotó. Sin dato = un solo pago. */
+  installments?: number | null
+  /** Lo mismo de los comprobantes unidos a este (el pago de esta factura), por id. */
+  linkedInstallments?: ReadonlyMap<string, number> | null
   /**
    * El gasto fijo del comprobante: su fila, `null` si ya no está en la lista,
    * `'error'` si no se pudo leer y `undefined` si el comprobante no es de uno.
@@ -234,6 +239,21 @@ function isCard(line: Line, ctx: Pick<StoryContext, 'treasuryKinds'>): boolean {
     line.treasuryAccountId !== null &&
     ctx.treasuryKinds?.get(line.treasuryAccountId) === 'credit_card'
   )
+}
+
+/** «, en 3 cuotas» si el pago con tarjeta se anotó en cuotas; vacío si fue un solo pago. */
+function cardInstallments(ctx: Pick<StoryContext, 'installments'>): string {
+  const words = installmentsWords(ctx.installments)
+  return words ? `, ${words}` : ''
+}
+
+/** Lo mismo, del comprobante unido a este (el pago de una factura). */
+function linkedCardInstallments(
+  documentId: string | null,
+  ctx: Pick<StoryContext, 'linkedInstallments'>,
+): string {
+  const words = installmentsWords(documentId ? ctx.linkedInstallments?.get(documentId) : null)
+  return words ? `, ${words}` : ''
 }
 
 /** «Caja» si es una sola; «2 cajas» si salió o entró por varias; `null` si no tocó ninguna. */
@@ -837,7 +857,7 @@ function payablesHero(doc: DocumentDetail, ctx: StoryContext): DocumentHero {
         sentence: [
           'La pagaste en el momento, con ',
           { id: only.otherDocumentId, text: allocationLabel(only) },
-          '.',
+          `${linkedCardInstallments(only.otherDocumentId, ctx)}.`,
         ],
       })
     }
@@ -1104,7 +1124,9 @@ export function documentHero(doc: DocumentDetail, ctx: StoryContext): DocumentHe
         return heroOf({
           label: `Lo pagaste con ${clip(where ?? 'la tarjeta', LABEL_NAME_MAX)}`,
           cents: total,
-          sentence: ['Quedó en la tarjeta: todavía no salió plata de ninguna caja.'],
+          sentence: [
+            `Quedó en la tarjeta${cardInstallments(ctx)}: todavía no salió plata de ninguna caja.`,
+          ],
         })
       }
       return heroOf({
@@ -1956,7 +1978,7 @@ function linkedDay(a: AllocationDetail, ctx: Pick<StoryContext, 'linked'>): Link
 function allocationRow(
   doc: DocumentDetail,
   a: AllocationDetail,
-  ctx: Pick<StoryContext, 'canWrite' | 'today' | 'linked'>,
+  ctx: Pick<StoryContext, 'canWrite' | 'today' | 'linked' | 'linkedInstallments'>,
   /** La fecha de la unión: vale en lo que llegó (un pago, un cobro), no en lo que se canceló. */
   dated = true,
 ): AllocationRow {
@@ -1969,6 +1991,9 @@ function allocationRow(
     a.otherDocumentId && doc.bundleSiblings.some((s) => s.id === a.otherDocumentId),
   )
   const isPayment = doc.kind === 'payment'
+  const cardWords = isPayment
+    ? ''
+    : installmentsWords(a.otherDocumentId ? ctx.linkedInstallments?.get(a.otherDocumentId) : null)
   const mine = hasNumber(doc.title) ? doc.title : `${friendlyKind(doc)} #${doc.seq}`
   const paymentLabel = isPayment ? `Pago #${doc.seq}` : label
   // Una factura con número se nombra por su número («la Factura A 0003-00001100»), sin el «#2».
@@ -1980,11 +2005,18 @@ function allocationRow(
     label: shown,
     meta: dated ? `el ${shortDay(a.appliedOn, ctx.today)}` : null,
     cents: a.amountCents,
-    note: bundled
-      ? isPayment
-        ? 'Se cargó junto con este pago.'
-        : 'Se cargó junto con esta compra.'
-      : null,
+    note:
+      [
+        bundled
+          ? isPayment
+            ? 'Se cargó junto con este pago.'
+            : 'Se cargó junto con esta compra.'
+          : null,
+        // El pago con tarjeta en cuotas se dice en la factura que pagó.
+        cardWords ? `Con la tarjeta, ${cardWords}.` : null,
+      ]
+        .filter((part) => part !== null)
+        .join(' ') || null,
     separate: canSeparate(doc, a, ctx.canWrite)
       ? {
           allocationId: a.id,
@@ -2008,7 +2040,7 @@ function separatedText(a: AllocationDetail): string {
 /** Los renglones de caja de un comprobante que no es un cierre. */
 function treasuryRows(
   doc: DocumentDetail,
-  ctx: Pick<StoryContext, 'treasuryKinds'>,
+  ctx: Pick<StoryContext, 'treasuryKinds' | 'installments'>,
 ): TreasuryRow[] {
   const byKey = new Map<string, TreasuryRow>()
   for (const line of treasuryLines(doc)) {
@@ -2027,7 +2059,7 @@ function treasuryRows(
         direction === 'in'
           ? `Entró a ${name}`
           : isCard(line, ctx)
-            ? `Quedó en ${name}`
+            ? `Quedó en ${name}${cardInstallments(ctx)}`
             : `Salió de ${name}`,
       treasuryId: line.treasuryAccountId,
       cents: line.amountCents,

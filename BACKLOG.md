@@ -1674,3 +1674,10 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   dispositivo. Si hace falta que solo una imprima (una de respaldo), la marca tiene que ir a la base.
 - **Cierre de caja en papel: falta el formato de los dueños.** Hoy imprime el resumen del turno
   (`lib/pos/print/shift.ts`); cuando lo pasen se adapta ahí.
+- **Cuotas con tarjeta: lo que no hace.** Es el dato de en cuántas cuotas se pagó (`acc_card_installments`); la
+  deuda con la tarjeta entra entera el día de la compra. No reparte la deuda por mes ni dice cuánto cae en cada
+  resumen: si lo piden, es una vista nueva (cuota × mes) sobre esa tabla. Tex todavía no pregunta por las cuotas
+  cuando carga un gasto o un pago con tarjeta. Y la ficha de un PAGO hecho con tarjeta dice arriba «Salieron de
+  Visa» (el gasto dice «Lo pagaste con Visa»): unificar el texto.
+- **HUB no tiene ninguna tarjeta cargada como cuenta** (al 16/11: una caja y una billetera). Para usar las cuotas
+  hay que sumarla en Administración › Ajustes › Cajas como «Tarjeta de crédito».

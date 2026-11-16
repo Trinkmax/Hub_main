@@ -990,6 +990,23 @@ describe('el número, su oración y el botón del momento', () => {
       bundleSiblings: [link({ seq: 6, title: 'Pago', kind: 'payment' })],
     })
     expect(sentence(enElMomento)).toBe('La pagaste en el momento, con Pago #6.')
+    // Si ese pago fue con la tarjeta en cuotas, la factura lo dice: arriba y en la unión.
+    const cuotas = ctx({ linkedInstallments: new Map([['doc-6', 3]]) })
+    expect(sentence(enElMomento, cuotas)).toBe(
+      'La pagaste en el momento, con Pago #6, en 3 cuotas.',
+    )
+    expect(node(documentLinks(enElMomento, cuotas), 'pago')?.rows.map((r) => r.note)).toEqual([
+      'Se cargó junto con esta compra. Con la tarjeta, en 3 cuotas.',
+    ])
+    // Pagada después, también con la tarjeta: solo lo de las cuotas.
+    expect(node(documentLinks(paid, cuotas), 'pago')?.rows.map((r) => r.note)).toEqual([
+      'Con la tarjeta, en 3 cuotas.',
+    ])
+    // Sin cuotas anotadas, las notas quedan como estaban.
+    expect(node(documentLinks(enElMomento, ctx()), 'pago')?.rows.map((r) => r.note)).toEqual([
+      'Se cargó junto con esta compra.',
+    ])
+    expect(node(documentLinks(paid, ctx()), 'pago')?.rows.map((r) => r.note)).toEqual([null])
   })
 
   it('un gasto: de dónde salió y en qué', () => {
@@ -1039,6 +1056,53 @@ describe('el número, su oración y el botón del momento', () => {
     expect(sentence(gasto)).toBe('Quedó en la tarjeta: todavía no salió plata de ninguna caja.')
     // Sin saber qué tipo de caja es, se dice lo que se sabe.
     expect(documentHero(gasto, ctx({ treasuryKinds: null })).label).toBe('Salieron de Visa del bar')
+  })
+
+  it('con la tarjeta en cuotas, la ficha dice en cuántas', () => {
+    const gasto = doc({
+      kind: 'expense',
+      title: 'Tique',
+      voucherType: 'tique',
+      totalCents: 900_000,
+      lines: [
+        line({
+          role: 'gross',
+          side: 'debit',
+          amountCents: 900_000,
+          accountName: 'Limpieza e higiene',
+        }),
+        treasury('Visa del bar', 900_000, 'out'),
+      ],
+    })
+    const cuotas = ctx({ installments: 3 })
+    expect(sentence(gasto, cuotas)).toBe(
+      'Quedó en la tarjeta, en 3 cuotas: todavía no salió plata de ninguna caja.',
+    )
+    expect(node(documentLinks(gasto, cuotas), 'caja')?.rows.map((r) => r.text)).toEqual([
+      'Quedó en Visa del bar, en 3 cuotas',
+    ])
+    // Un solo pago (o sin dato): como siempre.
+    for (const installments of [1, null, undefined]) {
+      const c = ctx({ installments })
+      expect(sentence(gasto, c)).toBe(
+        'Quedó en la tarjeta: todavía no salió plata de ninguna caja.',
+      )
+      expect(node(documentLinks(gasto, c), 'caja')?.rows.map((r) => r.text)).toEqual([
+        'Quedó en Visa del bar',
+      ])
+    }
+    // Las cuotas son de la tarjeta: lo que salió de una caja no las nombra.
+    const efectivo = doc({
+      kind: 'expense',
+      totalCents: 900_000,
+      lines: [
+        line({ role: 'gross', side: 'debit', amountCents: 900_000, accountName: 'Limpieza' }),
+        treasury('Caja', 900_000, 'out'),
+      ],
+    })
+    expect(node(documentLinks(efectivo, cuotas), 'caja')?.rows.map((r) => r.text)).toEqual([
+      'Salió de Caja',
+    ])
   })
 
   it('una nota de crédito de proveedor: a favor, o ya usada', () => {

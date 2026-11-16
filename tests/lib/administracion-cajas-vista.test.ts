@@ -1050,6 +1050,22 @@ describe('activityFromMovement: lo que pasó, en palabras (con las descripciones
     expect(activityFromMovement(movement({})).titleShort).toBeUndefined()
   })
 
+  it('un pago con la tarjeta en cuotas lo dice en la segunda línea', () => {
+    const gasto = {
+      documentKind: 'expense',
+      description: 'Gasto · Hielo',
+      inCents: 0,
+      outCents: 100,
+    }
+    expect(activityFromMovement(movement({ ...gasto, installments: 6 })).sub).toBe(
+      'Gasto · 6 cuotas',
+    )
+    // Un solo pago, o sin dato: queda como siempre.
+    for (const installments of [1, null, undefined]) {
+      expect(activityFromMovement(movement({ ...gasto, installments })).sub).toBe('Gasto')
+    }
+  })
+
   it('el renglón lleva al comprobante; sin comprobante, a ningún lado', () => {
     expect(activityFromMovement(movement({})).path).toBe('/comprobantes/doc-1')
     expect(activityFromMovement(movement({ documentId: null })).path).toBeNull()
