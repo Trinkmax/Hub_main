@@ -1665,9 +1665,9 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   Libro IVA. Falta un aviso en el cierre del mes («Hay N facturas sin número: no entran al Libro IVA»),
   como el de los tiques sin comercio (`tickets_without_vendor`, que sale de la base), y un filtro en
   Comprobantes para completarlas.
-- **«Nuevo gasto» adjunta la foto pero no la lee.** La lectura (QR y, si no, IA) está en la compra y en
-  la tira de gastos fijos. Llevarla a la hoja «Nuevo gasto» es completar monto, papel, número y
-  proveedor ahí.
+- ~~«Nuevo gasto» adjunta la foto pero no la lee.~~ Hecho el 16/11: botón «Leer la foto» en el encabezado
+  de la hoja (`components/administracion/acciones/gasto-lectura.ts`). Lo que se adjunta desde el bloque de
+  abajo («Foto del comprobante») sigue sin leerse: es para sumar un papel a algo ya escrito.
 - **La comanda impresa no dice quién la mandó.** `pos_kitchen_queue` no trae el nombre del mozo: sumarlo
   es tocar esa función (tanda de base).
 - **Dos compus imprimiendo la misma estación imprimen las dos.** Hoy lo impreso se anota en cada

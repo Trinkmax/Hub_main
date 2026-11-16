@@ -35,7 +35,9 @@ tradicional no quiere decir que debe ser feo».
   (proveedor por CUIT o por nombre, papel, número, fecha y total) y la pantalla pide revisarla; nada se guarda solo. Lo
   que la IA devuelve no se cree tal cual (`readFromAi` descarta un CUIT que no valida, una fecha del futuro, medio
   número). Necesita `ANTHROPIC_API_KEY`: sin la clave sigue leyendo solo el QR. Tope de 30 lecturas cada 10 minutos por
-  persona. Está en la compra y en la tira de gastos fijos; «Nuevo gasto» todavía adjunta sin leer.
+  persona. Está en la compra, en la tira de gastos fijos y en «Nuevo gasto» (botón «Leer la foto» del encabezado:
+  `quickExpenseFromRead` propone proveedor, papel, número, fecha y monto sin pisar lo que la persona ya escribió; la
+  foto queda adjunta al gasto). El aviso de «esa factura ya está cargada» funciona igual con lo leído.
 - **El número de la factura no es obligatorio** (pedido de los socios, 16/11/2026; migración `acc_factura_sin_numero`):
   en una COMPRA van el punto de venta y el número, los dos, o ninguno. Sin número se guarda igual, no entra al Libro
   IVA y no se le toma el IVA (el total va entero a la imputación); lo que solo existe en el libro (IVA por renglón,
@@ -129,6 +131,15 @@ pagar). La contadora puede usar `postManualEntry`. Ninguna compra exige punto de
 ninguno (`voucherNumberIncomplete`), y al Libro IVA entra solo la que trae número (`entersIvaBook`).
 
 ## Smoke manual
+
+**«Nuevo gasto» lee la foto (16/11/2026, `demo-administracion`)**
+1. `?accion=gasto` → «Leer la foto» → subir una Factura A de prueba sin QR. En ~5 s: «La leímos con IA: el proveedor, el
+   número, la fecha y el total». «Listo» cierra la foto.
+2. La hoja queda con $ 121.000, el proveedor encontrado por CUIT, Factura A, 0003-00001290 y la fecha del papel, y dice
+   «Completamos … con lo que leímos de la foto. Revisalo antes de cargar.»
+3. Como esa factura ya estaba cargada, «Cargar gasto» avisa «Esa factura ya está cargada» y no guarda. Con otro número
+   guarda: compra #156 con 1 adjunto + pago #157.
+4. En el celular (390 px) el botón mide 44 px y la primera pregunta arranca a 191 px del borde.
 
 **Cuotas con tarjeta (16/11/2026, `demo-administracion`, con clics de verdad por CDP y verificando en la base)**
 1. En el bar de ejemplo se creó la cuenta «Visa del bar» (Tarjeta de crédito).
