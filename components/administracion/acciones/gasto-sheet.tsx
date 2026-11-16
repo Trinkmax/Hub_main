@@ -92,6 +92,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
 import { amountLooksOff, pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
+import { type InvoiceRead, readSummary } from '@/lib/accounting/invoice-read'
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
@@ -111,8 +112,10 @@ import { AttachmentPicker } from '../adjuntos/attachment-picker'
 import { attachPendingFiles } from '../adjuntos/upload'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
+import { FotoQrButton } from '../foto-qr/foto-panel'
 import { MoneyField } from '../money-input'
 import { TreasurySelect } from '../treasury-select'
+import { quickExpenseFromRead, readPatchIsEmpty } from './gasto-lectura'
 import {
   exactAmountText,
   missingForSummary,
@@ -334,6 +337,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const rememberOnSave = useRef<{ party: SheetParty; accountId: string } | null>(null)
   // La foto o el PDF del comprobante: se elige acá y se sube después de guardar.
   const [files, setFiles] = useState<File[]>([])
+  /** Qué completó la lectura de la foto («el proveedor, el número y el total»), para avisarlo. */
+  const [readNote, setReadNote] = useState<string | null>(null)
   // Subiendo esos archivos: `closing` = la hoja espera para cerrarse; `staying` = «Cargar otro después».
   const [attaching, setAttaching] = useState<'closing' | 'staying' | null>(null)
   const mounted = useRef(true)
@@ -492,6 +497,35 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         setTreasuryId(defaultTreasury(suggestion.treasuryAccountId))
       }
     }
+  }
+
+  // ── La foto leída (el QR de ARCA o la IA): se propone, y lo que ya estaba escrito no se pisa ──
+  const applyRead = (read: InvoiceRead) => {
+    const patch = quickExpenseFromRead(
+      read,
+      { amountCents: amount, hasTarget: target !== null },
+      {
+        parties: data.parties,
+        imputableAccountIds: imputable,
+        booksStartDate: data.booksStartDate,
+        today: data.today,
+      },
+    )
+    if (readPatchIsEmpty(patch)) return
+    // Primero el proveedor: elegirlo vacía el número y propone su papel habitual; lo leído va después.
+    if (patch.target) pickTarget(patch.target, null)
+    if (patch.voucher !== null) {
+      touched.current.voucher = true
+      setVoucher(patch.voucher)
+      setVatAdjust(0)
+      setShowVatAdjust(false)
+      setStampNonce((n) => n + 1)
+    }
+    if (patch.voucherNumber) setVoucherNumber(patch.voucherNumber)
+    if (patch.amountCents !== null) setAmount(patch.amountCents)
+    if (patch.date !== null) setDate(patch.date)
+    setReadNote(readSummary(read) || 'los datos')
+    posting.clearFieldErrors()
   }
 
   // ── Un gasto fijo: su proveedor o su cuenta, y lo habitual (todo se puede cambiar) ──
@@ -682,6 +716,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     setDefaults(null)
     setDuplicate(null)
     setFiles([])
+    setReadNote(null)
     setInstallments(1)
     // El próximo gasto se puede ir cargando; se guarda cuando terminó de subir la foto de este.
     if (picked.length > 0) setAttaching('staying')
@@ -962,7 +997,25 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   return (
     <>
-      <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
+      <ActionSheetHeader title={TITLE} description={DESCRIPTION}>
+        {/* La foto primero: con el papel leído, el resto es revisar. Queda adjunta al gasto. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+          <FotoQrButton
+            tenantSlug={tenantSlug}
+            files={files}
+            onFiles={setFiles}
+            onRead={applyRead}
+            label="Leer la foto"
+            disabled={posting.pending || attaching !== null}
+          />
+          {files.length === 0 ? (
+            // En el celular el botón alcanza: el renglón de ayuda le sacaba lugar a la primera pregunta.
+            <p className="hidden text-xs text-muted-foreground text-pretty sm:block">
+              Sacale una foto a la factura o al tique y se completa sola.
+            </p>
+          ) : null}
+        </div>
+      </ActionSheetHeader>
       <form
         ref={formRef}
         onSubmit={submit}
@@ -981,6 +1034,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           {recurringMissing && target === null ? (
             <InlineNotice tone="info">
               Ese gasto fijo ya no se puede cargar desde acá. Elegí en qué se gastó y seguí.
+            </InlineNotice>
+          ) : null}
+          {readNote ? (
+            <InlineNotice tone="info">
+              Completamos {readNote} con lo que leímos de la foto. Revisalo antes de cargar.
             </InlineNotice>
           ) : null}
 

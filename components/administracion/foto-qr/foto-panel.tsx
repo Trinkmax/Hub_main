@@ -699,6 +699,12 @@ export function FotoQrButton({
               disabled={disabled}
             />
           ) : null}
+          {/* Con la foto ya puesta, una salida clara: lo leído quedó en el formulario de atrás. */}
+          {count > 0 ? (
+            <Button type="button" className="h-11 w-full md:h-9" onClick={() => setOpen(false)}>
+              Listo
+            </Button>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>
