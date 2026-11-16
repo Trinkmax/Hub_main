@@ -233,6 +233,22 @@ export function PrinterButton({ slug, branchId, branchName, timeZone, variant = 
               </div>
             </div>
 
+            <label className="prn-check">
+              <input
+                type="checkbox"
+                checked={settings.receiptOnCharge}
+                onChange={(event) => change({ receiptOnCharge: event.target.checked })}
+                data-testid="printer-receipt"
+              />
+              <span>
+                <b>Imprimir un tique al cobrar</b>
+                <span>
+                  Cada cobro que se haga en esta compu saca el tique para el cliente. No es una
+                  factura.
+                </span>
+              </span>
+            </label>
+
             <details className="prn-how">
               <summary>
                 Para que salga sin preguntar <ChevronDown aria-hidden />

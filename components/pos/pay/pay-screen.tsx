@@ -41,6 +41,7 @@ import { groupLines, type LineGroup, setChosen, tapChosen } from '@/lib/pos/pay/
 import { billMode, billName, billPeople, billTitle } from '@/lib/pos/pay/mode'
 import { initialSplit, portionOf, reconcileSplit, type Split } from '@/lib/pos/pay/split'
 import { billDoc } from '@/lib/pos/print/bill'
+import { paymentDoc } from '@/lib/pos/print/payment'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
@@ -353,7 +354,7 @@ export function PayScreen({
 
     const previous = billRef.current
     const known = previous.payments.some((payment) => payment.id === data.payment.id)
-    land({
+    const next: Bill = {
       ...previous,
       bill: data.bill,
       payments: known
@@ -364,7 +365,13 @@ export function PayScreen({
       session: data.closed
         ? { ...previous.session, status: 'paid', paid_at: data.payment.created_at }
         : previous.session,
-    })
+    }
+    land(next)
+    // En la compu que lo tiene prendido, cada cobro saca su tique (un reintento que ya había
+    // entrado no lo repite).
+    if (!data.duplicate && readPrinter(next.session.branch_id).receiptOnCharge) {
+      void printReceipt(next, data.payment)
+    }
 
     if (data.closed) {
       setClosedNow({ points: data.points, payment: data.payment })
@@ -581,6 +588,20 @@ export function PayScreen({
     bill.bill.remaining_cents > 0
   const canDiscount = open && bill.bill.remaining_cents > 0
   const canPrint = bill.lines.length > 0
+
+  /** El tique de un cobro, para el cliente. */
+  const printReceipt = async (of: Bill, payment: Payment) => {
+    try {
+      await printJob({
+        paper: readPrinter(of.session.branch_id).paper,
+        docs: [paymentDoc(of, payment, { barName: place, timeZone })],
+      })
+    } catch {
+      toast.error('No se pudo imprimir el tique', {
+        description: 'Fijate que la impresora esté prendida y con papel.',
+      })
+    }
+  }
 
   /** La cuenta en papel, por la comandera de esta compu. */
   const printBill = async () => {
@@ -848,6 +869,7 @@ export function PayScreen({
         timeZone={timeZone}
         onClose={() => setSheet(null)}
         onVoid={voidPayment}
+        onPrint={(payment) => void printReceipt(bill, payment)}
       />
       {/* Lo que haya quedado sin enviar (de esta mesa o de otra) sale desde acá también. */}
       <PosOutboxRunner slug={slug} />
