@@ -112,6 +112,10 @@ export function RegisterForm({
           id="phone-input"
           name="phone"
           international
+          // El +54 no se borra: quien lo borraba y escribía «351…» o «0351…»
+          // quedaba como un número de Portugal o de ningún país (17/11/2026).
+          countryCallingCodeEditable={false}
+          addInternationalOption={false}
           defaultCountry="AR"
           value={phone}
           onChange={setPhone}
