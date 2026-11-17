@@ -229,6 +229,40 @@ igual), `event_missing` (borraron la fecha: no hay reserva, hay que cargarla a m
 `refunded`, pone la seña de la reserva en 0 y lo anota en el comentario (la reserva
 queda: decide el bar).
 
+### El WhatsApp de quien compra (17/11/2026)
+
+El campo va en **formato nacional**: sin un «+54» adentro, con el ejemplo
+«351 555 1234» a la vista y la bandera al costado. Se escribe como cada uno lo sabe
+(con o sin 0, con o sin 15) y, apenas se lee bien, abajo dice «Te vamos a escribir al
++54 9 351 555 1234» con un tilde que se dibuja. Si falta un número, lo dice al salir
+del campo («van 10 números con la característica»), y al pagar se controla antes de ir
+al server (`canonicalPhone` + `phoneProblem` de `lib/phone.ts`).
+
+Por qué: el campo traía el «+54» como texto y había quien lo borraba y escribía su
+número como siempre. «0351…» quedaba «+0351…» (ningún país: la base lo rechazaba) y
+«351…» quedaba «+351…» (Portugal). Ambar no pudo comprar El Grinch del 13/12 con 44
+lugares libres, y la página le decía que la función «ya no estaba a la venta».
+
+- **`normalizePhone`** entiende el 0, el 15, el 9 y el 54 repetido en cualquier
+  combinación, el «00» del exterior y las marcas invisibles de un número copiado. Si
+  algo vino con «+» y otro código pero los dígitos son un número argentino («+351 555
+  1234», «+9 351…», «+3834…»), se guarda como argentino: el bar vende en Argentina. Si
+  no, tiene que tener el largo de un número de su país. Lo que sale siempre cumple la
+  regla de la base (`^\+[1-9]\d{7,14}$`).
+- **Errores de la compra** (`lib/ticketing/checkout-errors.ts`): «Esta función ya no
+  está a la venta» solo cuando es cierto (`ticketing_event_unavailable` /
+  `ticketing_experience_unavailable`). El teléfono o el nombre que la base rechace se
+  dicen en su campo. Un error que no conocemos es nuestro: «No pudimos guardar tu
+  lugar…» con **«Reservar por WhatsApp»** (película, fecha, hora, personas y nombre
+  ya escritos, `checkoutHelpMessage`), y queda en los logs sin datos personales
+  (`[ticketing.checkout]`).
+- Lo guardado en el celular de una compra anterior se normaliza al leerlo: las compras
+  viejas habían guardado «+351…».
+- El club de la carta, el registro del QR de mesa y el formulario de reservas del panel
+  siguen con el «+54» adentro (mandan el texto del campo, no el número armado), pero
+  ya no se puede borrar (`countryCallingCodeEditable={false}`) y no está la opción
+  «Internacional».
+
 ### La firma del webhook
 
 Igual que el SDK oficial (`mercadopago@3.6.1`): `HMAC-SHA256(clave, "id:<data.id>;request-id:<x-request-id>;ts:<ts>;")`.

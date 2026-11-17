@@ -8,6 +8,7 @@ import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 import { mealTypeToSave } from '@/lib/salon/segments'
 import { createServiceClient } from '@/lib/supabase/service'
 import { partySizeError } from './availability'
+import { type CheckoutResult, createOrderErrorMessage } from './checkout-errors'
 import { getMercadoPagoCredentials } from './credentials'
 import { DEFAULT_TZ, formatShortDate, formatTime } from './dates'
 import { centsToMercadoPagoAmount, paymentOptions } from './pricing'
@@ -30,46 +31,7 @@ import type { OrderEntry, OrderStatus, TicketOrderRow } from './types'
 // biome-ignore lint/suspicious/noExplicitAny: tablas nuevas, sin tipos generados todavía
 type SBAny = any
 
-export type CheckoutResult =
-  | { ok: true; redirectUrl: string; orderId: string }
-  | { ok: false; message: string; field?: string; seatsLeft?: number }
-
 const MP_DATE = "yyyy-MM-dd'T'HH:mm:ss.SSSxxx"
-
-function seatsMessage(left: number): string {
-  if (left <= 0) return 'Se acaban de agotar los lugares de esta fecha. Probá con otra.'
-  if (left === 1) return 'Queda solo 1 lugar para esta fecha.'
-  return `Quedan solo ${left} lugares para esta fecha.`
-}
-
-function createOrderErrorMessage(message: string, details: string | null): CheckoutResult {
-  if (message.includes('ticketing_not_enough_seats')) {
-    const left = Number.parseInt(details ?? '0', 10)
-    const seatsLeft = Number.isFinite(left) ? Math.max(0, left) : 0
-    return { ok: false, message: seatsMessage(seatsLeft), field: 'party_size', seatsLeft }
-  }
-  if (message.includes('ticketing_event_started')) {
-    return { ok: false, message: 'Esta función ya empezó. Elegí otra fecha.', field: 'event_id' }
-  }
-  if (message.includes('ticketing_invalid_party_size')) {
-    return { ok: false, message: 'Elegí cuántas personas van.', field: 'party_size' }
-  }
-  if (message.includes('ticketing_invalid_option')) {
-    return { ok: false, message: 'Elegí cómo querés pagar.', field: 'option' }
-  }
-  if (message.includes('ticketing_too_many_holds')) {
-    return {
-      ok: false,
-      message:
-        'Ya tenés otras reservas esperando el pago. Terminá esas o esperá unos minutos y probá de nuevo.',
-    }
-  }
-  return {
-    ok: false,
-    message: 'Esta función ya no está a la venta. Elegí otra fecha.',
-    field: 'event_id',
-  }
-}
 
 export async function startCheckout(input: CheckoutInput): Promise<CheckoutResult> {
   const ip = await getRequestIp()
@@ -87,6 +49,11 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
   const parsed = checkoutSchema.safeParse(input)
   if (!parsed.success) {
     const first = parsed.error.issues[0]
+    // Sin los datos (son de la persona): solo qué campo frenó la compra, para
+    // ver en los logs si algún campo está trabando ventas.
+    console.warn('[ticketing.checkout] datos rechazados', {
+      field: first?.path[0]?.toString() ?? null,
+    })
     return {
       ok: false,
       message: first?.message ?? 'Revisá los datos.',
@@ -163,7 +130,18 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
     p_meal_type: mealTypeToSave('dinner', { starts_at_local: event.starts_at_local }),
   })
   if (createError) {
-    return createOrderErrorMessage(createError.message ?? '', createError.details ?? null)
+    const result = createOrderErrorMessage(createError.message ?? '', createError.details ?? null)
+    if (!result.ok && result.unexpected) {
+      // El mensaje de Postgres no trae la fila (eso va en details, con el
+      // nombre y el teléfono): se puede loguear.
+      console.error('[ticketing.checkout] no se pudo guardar el lugar', {
+        tenantId: tenant.id,
+        eventId: event.id,
+        code: createError.code ?? null,
+        message: createError.message ?? null,
+      })
+    }
+    return result
   }
   const order = created as TicketOrderRow
 
@@ -257,7 +235,12 @@ export async function startCheckout(input: CheckoutInput): Promise<CheckoutResul
       orderId: order.id,
       error: error instanceof Error ? error.message : 'unknown',
     })
-    return { ok: false, message: 'No pudimos abrir Mercado Pago. Probá de nuevo en un ratito.' }
+    return {
+      ok: false,
+      message:
+        'No pudimos abrir Mercado Pago. Probá de nuevo en un ratito o escribinos y te lo reservamos.',
+      unexpected: true,
+    }
   }
 }
 
