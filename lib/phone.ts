@@ -6,15 +6,19 @@
  * agregamos el `9` móvil cuando falta — el 99% de uso real es WhatsApp.
  *
  * Reglas:
- *  - Acepta espacios, guiones, paréntesis y puntos como separadores.
- *  - `0` inicial y `15` de móvil viejo argentino se descartan.
- *  - Si llega con `+` lo respetamos para cualquier país.
- *  - Si arranca con `54` y largo válido, se completa el `+` y el `9` móvil.
- *  - 10 dígitos sin código país → asume AR móvil (`+54 9 ...`).
- *  - Cualquier cosa fuera de [8, 15] dígitos resultantes se rechaza.
+ *  - Acepta espacios, guiones, paréntesis, puntos y barras como separadores,
+ *    y descarta las marcas invisibles que trae un número copiado.
+ *  - `0` inicial, `15` de móvil viejo y `9` del formato internacional se
+ *    entienden en cualquier combinación, con o sin `+54` (y con el `54`
+ *    repetido).
+ *  - `00` adelante es el prefijo para llamar al exterior: `0054…` = `+54…`.
+ *  - Con `+` y otro código de país: primero se mira si en realidad es un
+ *    número argentino al que le borraron el `+54` (ver `normalizeForeign`);
+ *    si no, tiene que tener el largo de un número de su país.
+ *  - Lo que sale siempre cumple `^\+[1-9]\d{7,14}$`, la regla de la base.
  */
 
-import { isValidPhoneNumber } from 'libphonenumber-js'
+import { isPossiblePhoneNumber, parsePhoneNumberFromString } from 'libphonenumber-js'
 
 export class InvalidPhoneError extends Error {
   readonly code = 'invalid_phone'
@@ -26,89 +30,100 @@ export class InvalidPhoneError extends Error {
 
 const AR_CC = '54'
 
+/** Lo que la base acepta (CHECK de ticket_orders.guest_phone y compañía). */
+const E164 = /^\+[1-9]\d{7,14}$/
+
+/**
+ * Marcas invisibles que llegan al copiar un número de WhatsApp o de los
+ * contactos del celular: marcas de dirección y espacios de ancho cero. Sin
+ * sacarlas, «\u202A+54 9 351 555-1234\u202C» no parecía un teléfono.
+ */
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g
+
 function stripFormatting(input: string): string {
-  return input.replace(/[\s\-().]/g, '')
+  return input.replace(/[\s\-()./]/g, '')
 }
 
-function ensureArMobilePrefix(localDigits: string): string {
-  // localDigits aquí es el número AR sin código país, sin 0 inicial, sin 15.
-  // Si ya empieza con 9 (móvil), lo respetamos. Si no, lo agregamos.
-  return localDigits.startsWith('9') ? localDigits : `9${localDigits}`
+/**
+ * Las características argentinas empiezan con 11, 22–29 o 33–38: ninguna con
+ * 0, 12–19, 20, 21, 30–32, 39 ni del 4 al 9. Alcanza para distinguir un número
+ * argentino de uno de otro país sin cargar la lista de áreas.
+ */
+const AR_NATIONAL = /^(?:11|2[2-9]|3[3-8])\d{8}$/
+
+/** «351 15 555 1234» → «3515551234»: el 15 del celular, entre la característica y el número. */
+function stripMobile15(n: string): string | null {
+  const m = n.match(/^(\d{2,4})15(\d{6,8})$/)
+  return m?.[1] && m[2] && m[1].length + m[2].length === 10 ? `${m[1]}${m[2]}` : null
+}
+
+/**
+ * El número nacional argentino (característica + número, 10 dígitos) tal como
+ * lo escribe la gente: con o sin el 0, con o sin el 15, con el 9 del formato
+ * internacional y hasta con el 54 repetido (el campo ya traía el +54 y la
+ * persona lo volvió a escribir). null si no se lee como un número argentino.
+ *   «0351 15 555 1234» · «9 351 555 1234» · «54 9 351 555 1234» → «3515551234»
+ */
+export function argentineNationalNumber(digits: string): string | null {
+  let n = digits
+  // El 54 (y el 54 repetido): ninguna característica argentina empieza con 5.
+  while (n.startsWith(AR_CC) && n.length >= 12) n = n.slice(AR_CC.length)
+  // El 0 de larga distancia («0351 …»).
+  if (n.startsWith('0')) n = n.slice(1)
+  // El 9 del celular en formato internacional («9 351 …», «9 351 15 …»).
+  if (n.startsWith('9') && (n.length === 11 || n.length === 13)) n = n.slice(1)
+  // El 15 del celular en formato viejo («351 15 555 1234»).
+  if (n.length === 12) n = stripMobile15(n) ?? n
+  return AR_NATIONAL.test(n) ? n : null
+}
+
+/**
+ * Un número que vino con `+` y un código que no es el 54.
+ *
+ * El campo de teléfono ya trae el +54 y hay quien lo borra y escribe su número
+ * como siempre: así llegaban «+0351…» (ningún país empieza con 0, y la base lo
+ * rechazaba), «+351 555 1234» (Córdoba, que el campo tomaba por Portugal) o
+ * «+9 351…» (Afganistán). Si los dígitos se leen como un número argentino, se
+ * guarda como argentino aunque también existan en otro país: el bar vende en
+ * Argentina, y es mucho más probable un cordobés sin el +54 que un turista
+ * islandés con un número que coincide con uno de La Falda. Si no, tiene que
+ * tener el largo de un número de su país (`isPossiblePhoneNumber`: el largo,
+ * no los dígitos, para no rechazar números nuevos que la librería todavía no
+ * conoce). Los celulares de México con el 1 («+52 1 55…») pasan como vinieron:
+ * así los escribe WhatsApp.
+ */
+function normalizeForeign(digits: string): string {
+  const national = argentineNationalNumber(digits)
+  if (national) return `+${AR_CC}9${national}`
+  const e164 = `+${digits}`
+  if (!E164.test(e164)) throw new InvalidPhoneError()
+  if (!isPossiblePhoneNumber(e164) && !/^\+521\d{10}$/.test(e164)) throw new InvalidPhoneError()
+  return e164
 }
 
 export function normalizePhone(raw: string): string {
   if (typeof raw !== 'string') throw new InvalidPhoneError()
 
-  const trimmed = raw.trim()
+  const trimmed = raw.replace(INVISIBLE, '').trim()
   if (!trimmed) throw new InvalidPhoneError()
 
-  const startsWithPlus = trimmed.startsWith('+')
-  const cleaned = stripFormatting(trimmed.replace(/^\+/, ''))
+  let international = trimmed.startsWith('+')
+  let digits = stripFormatting(international ? trimmed.slice(1) : trimmed)
+  if (!/^\d+$/.test(digits)) throw new InvalidPhoneError()
 
-  if (!/^\d+$/.test(cleaned)) throw new InvalidPhoneError()
-
-  // Caso 1: vino con `+` explícito → respetar país, normalizar AR si aplica
-  if (startsWithPlus) {
-    if (cleaned.startsWith(AR_CC)) {
-      return `+${AR_CC}${normalizeArDomestic(cleaned.slice(AR_CC.length))}`
-    }
-    // Otros países: validamos rango razonable y devolvemos
-    if (cleaned.length < 8 || cleaned.length > 15) throw new InvalidPhoneError()
-    return `+${cleaned}`
+  // «00» adelante es el prefijo para llamar al exterior (ninguna
+  // característica argentina empieza con 0): «0054 9 351…» = «+54 9 351…».
+  if (!international && digits.startsWith('00')) {
+    international = true
+    digits = digits.slice(2)
   }
 
-  // Caso 2: arranca con `54` y largo plausible (12-13 dígitos) → AR sin `+`
-  if (cleaned.startsWith(AR_CC) && cleaned.length >= 12 && cleaned.length <= 13) {
-    return `+${AR_CC}${normalizeArDomestic(cleaned.slice(AR_CC.length))}`
-  }
+  if (international && !digits.startsWith(AR_CC)) return normalizeForeign(digits)
 
-  // Caso 3: arranca con 0 → drop 0 (formato AR doméstico viejo)
-  if (cleaned.startsWith('0')) {
-    return `+${AR_CC}${normalizeArDomestic(cleaned.slice(1))}`
-  }
-
-  // Caso 4: 10 dígitos sin contexto → asumir AR móvil
-  if (cleaned.length === 10) {
-    return `+${AR_CC}${ensureArMobilePrefix(cleaned)}`
-  }
-
-  // Caso 5: 11 dígitos arrancando con 9 sin país → AR móvil con 9 explícito
-  if (cleaned.length === 11 && cleaned.startsWith('9')) {
-    return `+${AR_CC}${cleaned}`
-  }
-
-  throw new InvalidPhoneError()
-}
-
-/**
- * Normaliza la porción doméstica argentina (sin código país):
- *  - Drop `15` cuando viene después del área (formato móvil viejo).
- *  - Asegura `9` móvil al inicio.
- *  - Rechaza si el largo final no es 11 dígitos (9 + 10 = 11).
- */
-function normalizeArDomestic(domestic: string): string {
-  let n = domestic
-
-  // Formato móvil viejo: <area><15><número>. Solo aplica cuando la longitud
-  // total es 12 (área 2-4 + `15` + número), para no comerse un `15` que
-  // forme parte de un número ya correcto en el formato +549...
-  if (n.length === 12) {
-    const with15 = n.match(/^(\d{2,4})15(\d{6,8})$/)
-    if (with15?.[1] && with15[2] && with15[1].length + with15[2].length === 10) {
-      n = `${with15[1]}${with15[2]}`
-    }
-  }
-
-  // Si arranca con 9 ya está marcado como móvil
-  if (n.startsWith('9')) {
-    if (n.length !== 11) throw new InvalidPhoneError()
-    return n
-  }
-
-  // Si tiene 10 dígitos sin 9 → asumimos móvil y agregamos
-  if (n.length === 10) return `9${n}`
-
-  throw new InvalidPhoneError()
+  // Argentino: con +54 o 54, con 0, con 15, con 9 o los 10 dígitos pelados.
+  const national = argentineNationalNumber(digits)
+  if (!national) throw new InvalidPhoneError()
+  return `+${AR_CC}9${national}`
 }
 
 /**
@@ -129,15 +144,41 @@ export function tryNormalizePhone(raw: string): string | null {
  * sin el 9 (así lo arma libphonenumber), y los formularios de reservas, clientes
  * y entradas lo guardaban tal cual porque ya «era válido». La misma persona
  * terminaba con dos fichas: la de la reserva sin el 9 y la del club o la entrada
- * con el 9. Ahora primero se normaliza; solo lo que normalizePhone no entiende y
- * libphonenumber sí (algún número de otro país) pasa como vino.
+ * con el 9. Ahora primero se normaliza. Lo que normalizePhone no entiende y
+ * libphonenumber sí (una interna: «+54 9 351 555 1234 int. 2») se guarda como
+ * el E.164 que arma libphonenumber, nunca como vino: la base solo acepta `+` y
+ * dígitos.
  */
 export function canonicalPhone(raw: string): string | null {
-  const trimmed = raw.trim()
+  const trimmed = raw.replace(INVISIBLE, '').trim()
   if (!trimmed) return null
   const normalized = tryNormalizePhone(trimmed)
   if (normalized) return normalized
-  return trimmed.startsWith('+') && isValidPhoneNumber(trimmed) ? trimmed : null
+  const parsed = trimmed.startsWith('+') ? parsePhoneNumberFromString(trimmed) : undefined
+  return parsed?.isPossible() ? tryNormalizePhone(parsed.number) : null
+}
+
+/**
+ * Si un teléfono escrito todavía no se puede guardar, qué clase de número es,
+ * para decir algo útil en el campo en vez de «no es válido»: `argentina` (le
+ * faltan o le sobran números, o la característica no existe) u `other` (vino
+ * con el código de otro país y allá no es un número válido). null si está bien
+ * o si está vacío: eso lo dice el formulario.
+ */
+export function phoneProblem(raw: string | null | undefined): 'argentina' | 'other' | null {
+  const clean = raw?.replace(INVISIBLE, '').trim() ?? ''
+  if (!clean || canonicalPhone(clean)) return null
+  const digits = clean.replace(/\D/g, '')
+  return !clean.startsWith('+') || digits.startsWith(AR_CC) ? 'argentina' : 'other'
+}
+
+/**
+ * Un teléfono ya normalizado, para mostrarlo: «+54 9 351 555 1234»,
+ * «+54 9 11 5555 1234», «+34 612 34 56 78». libphonenumber sabe dónde cortar
+ * cada característica (formatPhoneForDisplay asume 3 dígitos).
+ */
+export function formatPhoneInternational(e164: string): string {
+  return parsePhoneNumberFromString(e164)?.formatInternational() ?? e164
 }
 
 /**

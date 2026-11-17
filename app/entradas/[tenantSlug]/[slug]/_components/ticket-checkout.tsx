@@ -4,10 +4,12 @@ import { ArrowLeft, ArrowRight, Lock, MessageCircle, Minus, Plus } from 'lucide-
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import PhoneInput from 'react-phone-number-input'
+import countryNames from 'react-phone-number-input/locale/es.json'
 import 'react-phone-number-input/style.css'
-import { buildWaMeUrl } from '@/lib/phone'
+import { buildWaMeUrl, canonicalPhone, formatPhoneInternational, phoneProblem } from '@/lib/phone'
 import { allSoldOut, maxSelectable } from '@/lib/ticketing/availability'
 import { startCheckout } from '@/lib/ticketing/checkout-actions'
+import { checkoutHelpMessage } from '@/lib/ticketing/copy'
 import { formatLongDate, formatShortDate } from '@/lib/ticketing/dates'
 import { readLastOrder, saveLastOrder } from '@/lib/ticketing/last-order'
 import {
@@ -66,6 +68,14 @@ type VenueInfo = {
 
 const GUEST_KEY = 'hub-entradas-guest'
 
+/** Qué decir cuando el WhatsApp escrito todavía no se puede guardar (ver phoneProblem). */
+const PHONE_PROBLEM_MESSAGE = {
+  argentina: 'Revisá el número: van 10 números con la característica, por ejemplo 351 555 1234.',
+  other: 'Ese número no es de ese país. Revisalo o elegí otro país en la bandera.',
+} as const
+
+type CheckoutError = { message: string; field?: string; unexpected?: boolean }
+
 function readGuest(): { name: string; phone: string } | null {
   try {
     const raw = window.localStorage.getItem(GUEST_KEY)
@@ -116,7 +126,10 @@ export function TicketCheckout({
   const [option, setOption] = useState<PaymentOption>(depositAvailable ? 'deposit' : 'full')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState<string | undefined>(undefined)
-  const [error, setError] = useState<{ message: string; field?: string } | null>(null)
+  const [error, setError] = useState<CheckoutError | null>(null)
+  // El aviso de «revisá el número» espera a que la persona salga del campo:
+  // mientras escribe, un número a medias no es un error.
+  const [phoneTouched, setPhoneTouched] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
   // Volvió de Mercado Pago a esta página: su compra sigue ahí, con la forma de transferir.
   const [lastOrderId, setLastOrderId] = useState<string | null>(null)
@@ -145,7 +158,10 @@ export function TicketCheckout({
     const guest = readGuest()
     if (!guest) return
     if (guest.name) setName(guest.name)
-    if (guest.phone) setPhone(guest.phone)
+    // Normalizado: compras viejas guardaron números mal leídos («+3515551234»
+    // como si fuera de Portugal) y el campo los volvía a mostrar así.
+    const savedPhone = guest.phone ? canonicalPhone(guest.phone) : null
+    if (savedPhone) setPhone(savedPhone)
   }, [])
 
   // Volver con «Atrás» desde Mercado Pago restaura la página congelada
@@ -165,7 +181,7 @@ export function TicketCheckout({
     return () => window.removeEventListener('pageshow', read)
   }, [experience.slug])
 
-  function goTo(next: Step, keepError: { message: string; field?: string } | null = null) {
+  function goTo(next: Step, keepError: CheckoutError | null = null) {
     setDir(next === 'details' ? 'fwd' : 'back')
     setStep(next)
     setError(keepError)
@@ -205,6 +221,18 @@ export function TicketCheckout({
       document.getElementById(`${ids}-phone`)?.focus()
       return
     }
+    // El mismo control que hace el server, antes de ir: el aviso sale al lado
+    // del campo y no como «la función no está a la venta».
+    const normalizedPhone = canonicalPhone(phone)
+    if (!normalizedPhone) {
+      setPhoneTouched(true)
+      setError({
+        message: PHONE_PROBLEM_MESSAGE[phoneProblem(phone) ?? 'argentina'],
+        field: 'guest_phone',
+      })
+      document.getElementById(`${ids}-phone`)?.focus()
+      return
+    }
     setError(null)
     startTransition(async () => {
       const result = await startCheckout({
@@ -214,18 +242,22 @@ export function TicketCheckout({
         party_size: people,
         option,
         guest_name: name,
-        guest_phone: phone,
+        guest_phone: normalizedPhone,
         website: '',
       })
       if (result.ok) {
-        saveGuest(name.trim(), phone)
+        saveGuest(name.trim(), normalizedPhone)
         saveLastOrder(experience.slug, result.orderId)
         setRedirecting(true)
         window.location.assign(result.redirectUrl)
         return
       }
       if (result.seatsLeft !== undefined) reportSeats(selected.eventId, result.seatsLeft)
-      const failure = { message: result.message, field: result.field }
+      const failure: CheckoutError = {
+        message: result.message,
+        field: result.field,
+        unexpected: result.unexpected,
+      }
       // Si el problema es de la fecha, las personas o la forma de pago, se
       // vuelve a la primera cara de la entrada con el aviso.
       if (result.field && ['event_id', 'party_size', 'option'].includes(result.field)) {
@@ -282,6 +314,31 @@ export function TicketCheckout({
   const fieldError = (field: string) => (error?.field === field ? error.message : null)
   const generalError =
     error && !['guest_name', 'guest_phone'].includes(error.field ?? '') ? error.message : null
+  // Si falló algo nuestro (no un dato de la persona), la reserva no se pierde:
+  // un toque y nos escribe con la función, las personas y el nombre.
+  const helpWa =
+    error?.unexpected && selected
+      ? waLink(
+          checkoutHelpMessage({
+            tenantName: venue.tenantName,
+            title: experience.title,
+            dateLabel: formatLongDate(selected.date),
+            time: selected.time,
+            partySize: people,
+            guestName: name,
+          }),
+        )
+      : null
+
+  // El WhatsApp: cuando ya se lee bien, se muestra cómo quedó para que la
+  // persona lo confirme de un vistazo; si no, el aviso espera a que salga del
+  // campo (o a que toque pagar).
+  const guestPhone = phone ? canonicalPhone(phone) : null
+  const phoneMessage =
+    fieldError('guest_phone') ??
+    (phoneTouched && phone && !guestPhone
+      ? PHONE_PROBLEM_MESSAGE[phoneProblem(phone) ?? 'argentina']
+      : null)
 
   // Con precio en efectivo, las dos formas de pago se eligen por CÓMO se paga
   // el resto (pedido de los socios del 27/10): el saldo en el bar es solo en
@@ -436,12 +493,20 @@ export function TicketCheckout({
         ) : null}
 
         {generalError ? (
-          <p
-            role="alert"
-            className="mt-4 rounded-xl bg-[#b42318]/10 px-3 py-2.5 text-sm font-semibold text-[#8f1c13]"
-          >
-            {generalError}
-          </p>
+          <div role="alert" className="mt-4 rounded-xl bg-[#b42318]/10 px-3 py-2.5">
+            <p className="text-sm font-semibold text-[#8f1c13]">{generalError}</p>
+            {helpWa ? (
+              <a
+                href={helpWa}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ent-press mt-2.5 inline-flex min-h-10 items-center gap-2 rounded-full bg-(--ent-ink) px-4 text-sm font-semibold text-(--ent-paper)"
+              >
+                <MessageCircle className="size-4" aria-hidden />
+                Reservar por WhatsApp
+              </a>
+            ) : null}
+          </div>
         ) : null}
 
         {experience.terms && step === 'details' && venue.canSell ? (
@@ -679,21 +744,57 @@ export function TicketCheckout({
                 Tu WhatsApp
               </label>
               <div className="mt-2">
+                {/* Formato nacional: el número se escribe como siempre (con o
+                    sin 0 y 15) y la bandera dice el país. Con el +54 adentro
+                    del campo había quien lo borraba y escribía «0351…»: quedaba
+                    «+0351…» (ningún país) o «+351…» (Portugal) y la compra no
+                    andaba (17/11/2026). De otro país: la bandera, o + y el código. */}
                 <PhoneInput
                   id={`${ids}-phone`}
-                  international
                   defaultCountry="AR"
+                  addInternationalOption={false}
+                  labels={countryNames}
                   value={phone}
-                  onChange={setPhone}
+                  onChange={(value) => {
+                    setPhone(value)
+                    if (error?.field === 'guest_phone') setError(null)
+                  }}
+                  onBlur={() => {
+                    setPhoneTouched(true)
+                    // Escribió «+351 555 1234» y lo leemos como Córdoba: la
+                    // bandera pasa a Argentina, igual que el número de abajo.
+                    if (phone && guestPhone?.startsWith('+54') && !phone.startsWith('+54')) {
+                      setPhone(guestPhone)
+                    }
+                  }}
                   placeholder="351 555 1234"
                   className="hub-phone-input"
-                  aria-invalid={fieldError('guest_phone') ? 'true' : undefined}
+                  aria-invalid={phoneMessage ? 'true' : undefined}
                   aria-describedby={`${ids}-phone-help`}
                 />
               </div>
-              <p id={`${ids}-phone-help`} className="mt-1.5 text-xs text-(--ent-ink-2)">
-                {fieldError('guest_phone') ? (
-                  <span className="font-semibold text-[#b42318]">{fieldError('guest_phone')}</span>
+              <p
+                id={`${ids}-phone-help`}
+                aria-live="polite"
+                className="mt-1.5 min-h-4 text-xs text-(--ent-ink-2)"
+              >
+                {phoneMessage ? (
+                  <span className="font-semibold text-[#b42318]">{phoneMessage}</span>
+                ) : guestPhone ? (
+                  // Ya se lee bien: el número completo, para confirmarlo de un
+                  // vistazo (con el tilde que se dibuja cada vez que queda bien).
+                  <span key={guestPhone} className="ent-phone-ok text-(--ent-ink)">
+                    <svg viewBox="0 0 16 16" className="ent-phone-ok-mark" aria-hidden="true">
+                      <circle cx="8" cy="8" r="7.25" />
+                      <path d="M4.75 8.4l2.1 2.1 4.4-4.75" />
+                    </svg>
+                    <span>
+                      Te vamos a escribir al{' '}
+                      <strong className="font-semibold whitespace-nowrap">
+                        {formatPhoneInternational(guestPhone)}
+                      </strong>
+                    </span>
+                  </span>
                 ) : (
                   'Por si tenemos que avisarte algo de la función.'
                 )}

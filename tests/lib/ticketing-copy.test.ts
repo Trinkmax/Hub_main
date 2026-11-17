@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  checkoutHelpMessage,
   daysUntilLabel,
   guestShortName,
   holdTimeLabel,
@@ -156,5 +157,37 @@ describe('orderEntryFrom', () => {
         at,
       ).cancelled,
     ).toBe(true)
+  })
+})
+
+describe('checkoutHelpMessage', () => {
+  it('lleva lo que hace falta para cargar la reserva a mano', () => {
+    expect(
+      checkoutHelpMessage({
+        tenantName: 'HUB',
+        title: 'El Grinch',
+        dateLabel: 'domingo 13 de diciembre',
+        time: '21:00',
+        partySize: 2,
+        guestName: ' Ambar ',
+      }),
+    ).toBe(
+      '¡Hola HUB! Quiero reservar El Grinch, domingo 13 de diciembre a las 21:00 hs, 2 personas, a nombre de Ambar. La página no me dejó pagar.',
+    )
+  })
+
+  it('sin nombre escrito, sin «a nombre de»', () => {
+    expect(
+      checkoutHelpMessage({
+        tenantName: 'HUB',
+        title: 'Coraline',
+        dateLabel: 'lunes 14 de diciembre',
+        time: '21:00',
+        partySize: 1,
+        guestName: '',
+      }),
+    ).toBe(
+      '¡Hola HUB! Quiero reservar Coraline, lunes 14 de diciembre a las 21:00 hs, 1 persona. La página no me dejó pagar.',
+    )
   })
 })

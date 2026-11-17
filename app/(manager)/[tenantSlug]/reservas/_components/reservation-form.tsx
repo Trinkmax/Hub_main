@@ -2145,6 +2145,10 @@ function CustomerCombobox({
           <PhoneInput
             id="guest_phone"
             international
+            // El +54 no se borra: quien lo borraba y escribía «351…» o «0351…»
+            // quedaba como un número de Portugal o de ningún país (17/11/2026).
+            countryCallingCodeEditable={false}
+            addInternationalOption={false}
             defaultCountry="AR"
             placeholder="351 555 1234"
             value={value.guest_phone ?? undefined}

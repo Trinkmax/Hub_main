@@ -1140,6 +1140,43 @@
     font-size: 1rem;
   }
 
+  /* El WhatsApp ya se lee bien: el número completo para confirmarlo, con un
+     tilde que se dibuja (como el de «Mi entrada», en chico). */
+  .ent-phone-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    animation: ent-phone-ok-in 260ms var(--ent-ease-out) both;
+  }
+
+  .ent-phone-ok-mark {
+    width: 0.95rem;
+    height: 0.95rem;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ent-phone-ok-mark circle {
+    opacity: 0.28;
+  }
+
+  .ent-phone-ok-mark path {
+    stroke-dasharray: 12;
+    stroke-dashoffset: 12;
+    animation: ent-draw 380ms var(--ent-ease-out) 110ms forwards;
+  }
+
+  @keyframes ent-phone-ok-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 3px, 0);
+    }
+  }
+
   /* ── Accesibilidad: reducir movimiento ────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .ent-grain,
@@ -1184,6 +1221,12 @@
     .ent-step {
       animation: ent-fade 200ms ease both;
       filter: none;
+    }
+
+    .ent-phone-ok,
+    .ent-phone-ok-mark path {
+      animation: none;
+      stroke-dashoffset: 0;
     }
   }
 

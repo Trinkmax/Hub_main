@@ -58,6 +58,27 @@ export function transferProofMessage(input: {
   )
 }
 
+/**
+ * El mensaje de WhatsApp cuando la página no pudo guardar el lugar por algo
+ * nuestro (la base, Mercado Pago): con lo que hace falta para cargar la
+ * reserva a mano, así no se pierde.
+ */
+export function checkoutHelpMessage(input: {
+  tenantName: string
+  title: string
+  dateLabel: string
+  time: string
+  partySize: number
+  guestName: string
+}): string {
+  const name = input.guestName.trim()
+  return (
+    `¡Hola ${input.tenantName}! Quiero reservar ${input.title}, ${input.dateLabel} ` +
+    `a las ${input.time} hs, ${peopleLabel(input.partySize)}` +
+    `${name ? `, a nombre de ${name}` : ''}. La página no me dejó pagar.`
+  )
+}
+
 /** «19:23»: hasta cuándo se guarda el lugar, en el reloj del bar. */
 export function holdTimeLabel(holdExpiresAt: string, tz: string = DEFAULT_TZ): string {
   const at = new Date(holdExpiresAt)

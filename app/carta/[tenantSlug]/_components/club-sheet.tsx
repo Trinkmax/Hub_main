@@ -431,6 +431,10 @@ export function ClubSheet({
                     id="club-phone"
                     name="phone"
                     international
+                    // El +54 no se borra: quien lo borraba y escribía «351…» o «0351…»
+                    // quedaba como un número de Portugal o de ningún país (17/11/2026).
+                    countryCallingCodeEditable={false}
+                    addInternationalOption={false}
                     defaultCountry="AR"
                     value={phone}
                     onChange={setPhone}
@@ -526,6 +530,10 @@ export function ClubSheet({
                     id="club-login-phone"
                     name="phone"
                     international
+                    // El +54 no se borra: quien lo borraba y escribía «351…» o «0351…»
+                    // quedaba como un número de Portugal o de ningún país (17/11/2026).
+                    countryCallingCodeEditable={false}
+                    addInternationalOption={false}
                     defaultCountry="AR"
                     value={phone}
                     onChange={setPhone}
@@ -568,6 +576,10 @@ export function ClubSheet({
                     id="club-forgot-phone"
                     name="phone"
                     international
+                    // El +54 no se borra: quien lo borraba y escribía «351…» o «0351…»
+                    // quedaba como un número de Portugal o de ningún país (17/11/2026).
+                    countryCallingCodeEditable={false}
+                    addInternationalOption={false}
                     defaultCountry="AR"
                     value={phone}
                     onChange={setPhone}
