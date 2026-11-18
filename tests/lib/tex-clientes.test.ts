@@ -1796,7 +1796,7 @@ describe('preparar_puntos', () => {
       kind: 'puntos',
       subtitle: 'Juan Pérez',
       total: { label: 'Suma', value: '12 puntos' },
-      confirmLabel: 'Acreditar 12 puntos',
+      confirmLabel: 'Sumar 12 puntos',
     })
     expect(rowValue(prepared, 'Regla')).toBe('1 punto cada $ 1.000')
     expect(rowValue(prepared, 'Tiene')).toBe('1.200 puntos')
@@ -2433,7 +2433,7 @@ describe('preparar_punch_card', () => {
         tope_por_dia: 2,
       }),
     )
-    expect(rowValue(prepared, 'Se sella')).toBe('A mano, desde Acreditar')
+    expect(rowValue(prepared, 'Se sella')).toBe('A mano, desde Sumar puntos')
     await expect(confirm(prepared)).resolves.toMatchObject({
       ok: true,
       href: '/bar/club?tab=punch',

@@ -13,6 +13,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { getCurrentUser } from '@/lib/tenant/current'
+import { type EarnRate, resolveEarnRate } from './earn-rate'
 import {
   createPartnerBenefitSchema,
   createPartnerSchema,
@@ -173,6 +174,18 @@ export async function lookupCustomerByQr(
   return { ok: true, customer }
 }
 
+/**
+ * La tasa vigente del bar («1 punto cada $ X»), para que «Sumar puntos» del panel muestre cuántos
+ * puntos suma el monto mientras se escribe. La hoja se abre desde varias pantallas, así que la pide
+ * recién al abrirse en vez de cargarla en cada página. `null` si no se puede enunciar sin mentir.
+ */
+export async function loadEarnRate(slug: string): Promise<EarnRate | null> {
+  const tenant = await authorizeAnyStaff(slug)
+  if (!tenant) return null
+  const { listRules } = await import('./queries')
+  return resolveEarnRate(await listRules({ tenantId: tenant.id }))
+}
+
 async function authorizeOwner(slug: string) {
   try {
     const { tenant, role } = await requireTenantAccess(slug)
@@ -232,7 +245,7 @@ export async function createPerAmountRule(
     payload: { type: parsed.data.type, config: parsed.data.config },
   })
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Regla creada.' }
 }
@@ -277,7 +290,7 @@ export async function createPerItemRule(
     payload: { type: parsed.data.type, config: parsed.data.config },
   })
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Regla creada.' }
 }
@@ -301,7 +314,7 @@ export async function toggleRule(
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -329,7 +342,7 @@ export async function deleteRule(slug: string, ruleId: string): Promise<LoyaltyA
     entityId: idParsed.data,
   })
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -382,7 +395,7 @@ export async function createReward(
     payload: { name: parsed.data.name, cost_points: parsed.data.cost_points },
   })
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Recompensa creada.' }
 }
@@ -470,7 +483,7 @@ export async function createTier(slug: string, input: unknown): Promise<LoyaltyA
     payload: { name: parsed.data.name, min_category_points: parsed.data.min_category_points },
   })
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Nivel creado.' }
 }
@@ -505,7 +518,7 @@ export async function updateTier(slug: string, input: unknown): Promise<LoyaltyA
     return { ok: false, message: 'No pudimos actualizar el nivel.' }
   }
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -533,7 +546,7 @@ export async function deleteTier(slug: string, id: string): Promise<LoyaltyActio
     entityId: idParsed.data,
   })
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -561,7 +574,7 @@ export async function deleteReward(slug: string, id: string): Promise<LoyaltyAct
     return { ok: false, message: 'No pudimos borrar.' }
   }
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -597,7 +610,7 @@ export async function updatePointsRedemptionConfigAction(
     return { ok: false, message: 'No se pudo guardar la configuración.' }
   }
 
-  revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Configuración guardada' }
 }
@@ -659,7 +672,7 @@ export async function createTierBenefit(slug: string, input: unknown): Promise<L
     .insert(tierBenefitRow(tenant.id, parsed.data))
   if (error) return { ok: false, message: 'No pudimos crear el beneficio.' }
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Beneficio agregado.' }
 }
@@ -682,7 +695,7 @@ export async function updateTierBenefit(slug: string, input: unknown): Promise<L
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar el beneficio.' }
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -705,7 +718,7 @@ export async function toggleTierBenefit(
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -724,7 +737,7 @@ export async function deleteTierBenefit(slug: string, id: string): Promise<Loyal
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos borrar.' }
 
-  revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -754,7 +767,7 @@ export async function createPartner(slug: string, input: unknown): Promise<Loyal
   })
   if (error) return { ok: false, message: 'No pudimos crear la marca.' }
 
-  revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Marca agregada.' }
 }
@@ -784,7 +797,7 @@ export async function updatePartner(slug: string, input: unknown): Promise<Loyal
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar la marca.' }
 
-  revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -807,7 +820,7 @@ export async function togglePartner(
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -831,7 +844,7 @@ export async function deletePartner(slug: string, id: string): Promise<LoyaltyAc
     return { ok: false, message: 'No pudimos borrar.' }
   }
 
-  revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }

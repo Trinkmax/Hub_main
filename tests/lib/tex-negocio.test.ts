@@ -20,7 +20,10 @@ const mocks = vi.hoisted(() => ({
   getChurnRisk: vi.fn(),
   getEventsRanking: vi.fn(),
   getCommunicationStats: vi.fn(),
-  getStaffSummaries: vi.fn(),
+  getBarPulse: vi.fn(),
+  getSetupStatus: vi.fn(),
+  getCustomerGrowth: vi.fn(),
+  listUpcomingEvents: vi.fn(),
   getReviewInsights: vi.fn(),
   listReviews: vi.fn(),
   getReviewSettings: vi.fn(),
@@ -41,7 +44,6 @@ const mocks = vi.hoisted(() => ({
   getWelcomeRewardConfig: vi.fn(),
   updateWelcomeRewardConfig: vi.fn(),
   getAppUrl: vi.fn(),
-  getTenantConfig: vi.fn(),
   updateTotalSeatsAction: vi.fn(),
   setZoneCapacityDefaults: vi.fn(),
   revalidatePath: vi.fn(),
@@ -66,7 +68,12 @@ vi.mock('@/lib/stats/queries', () => ({
   getEventsRanking: mocks.getEventsRanking,
   getCommunicationStats: mocks.getCommunicationStats,
 }))
-vi.mock('@/lib/staff-performance/queries', () => ({ getStaffSummaries: mocks.getStaffSummaries }))
+vi.mock('@/lib/onboarding/setup', () => ({ getSetupStatus: mocks.getSetupStatus }))
+vi.mock('@/lib/stats/pulse-queries', () => ({
+  getBarPulse: mocks.getBarPulse,
+  getCustomerGrowth: mocks.getCustomerGrowth,
+  listUpcomingEvents: mocks.listUpcomingEvents,
+}))
 vi.mock('@/lib/reviews/queries', () => ({
   getReviewInsights: mocks.getReviewInsights,
   listReviews: mocks.listReviews,
@@ -102,7 +109,6 @@ vi.mock('@/lib/welcome-reward/actions', () => ({
   updateWelcomeRewardConfig: mocks.updateWelcomeRewardConfig,
 }))
 vi.mock('@/lib/app-url', () => ({ getAppUrl: mocks.getAppUrl }))
-vi.mock('@/lib/admin/tenant-config', () => ({ getTenantConfig: mocks.getTenantConfig }))
 vi.mock('@/lib/tenant/actions', () => ({
   updateTotalSeatsAction: mocks.updateTotalSeatsAction,
 }))
@@ -119,7 +125,7 @@ import { buildMonthMarketingReport, type EventMarketingRow } from '@/lib/salon/e
 import { aggregateDayReport, aggregateTemplateReport } from '@/lib/salon/events-report'
 import { MENU_EDIT_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
-import { negocioScreens, TEX_ESTADISTICAS_TABS } from '@/lib/tex/area-screens/negocio'
+import { negocioScreens } from '@/lib/tex/area-screens/negocio'
 import { negocioArea } from '@/lib/tex/areas/negocio'
 import {
   TEX_SCREENS,
@@ -373,7 +379,6 @@ const routeOf = (path: string) => path.replace(':id', '[pageId]')
 
 /** Dónde lee cada pantalla cada parámetro: un parámetro que la pantalla ignora engaña. */
 const READS: Readonly<Record<string, Readonly<Record<string, readonly [string, RegExp]>>>> = {
-  'estadisticas.resumen': { tab: ['estadisticas/page.tsx', /typeof sp\.tab === 'string'/] },
   'estadisticas.como_nos_fue': {
     fecha: ['estadisticas/como-nos-fue/page.tsx', /typeof sp\.dia === 'string'/],
   },
@@ -432,15 +437,15 @@ describe('las pantallas', () => {
     }
   })
 
-  it('las solapas de Estadísticas son las de su página', () => {
-    const source = pageSource('estadisticas/page.tsx')
-    const tabs = [...source.matchAll(/<TabsTrigger value="(\w+)"/g)].map((match) => match[1])
-    expect([...tabs].sort()).toEqual([...TEX_ESTADISTICAS_TABS].sort())
-    expect(texScreenHref('hub', 'estadisticas.resumen', { tab: 'mozos' })).toMatchObject({
-      href: '/hub/estadisticas?tab=mozos',
-    })
-    expect(texScreenHref('hub', 'estadisticas.resumen', { tab: 'nada' })).toMatchObject({
+  it('Estadísticas no tiene solapas adentro: cada parte es una pestaña de la sección', () => {
+    // Antes «Resumen» tenía cinco solapas propias (una segunda fila de pestañas). «Clientes» pasó a
+    // ser una página; «Comunicación» y «Mozos» se fueron.
+    expect(pageSource('estadisticas/page.tsx')).not.toMatch(/<TabsTrigger/)
+    expect(texScreenHref('hub', 'estadisticas.resumen')).toMatchObject({
       href: '/hub/estadisticas',
+    })
+    expect(texScreenHref('hub', 'estadisticas.clientes')).toMatchObject({
+      href: '/hub/estadisticas/clientes',
     })
   })
 
@@ -460,7 +465,9 @@ describe('las pantallas', () => {
   })
 
   it('Bienvenida abre esa pestaña del Club', () => {
-    expect(pageSource('configuracion/bienvenida/page.tsx')).toContain('/club?tab=bienvenida')
+    expect(texScreenHref('hub', 'club.bienvenida')).toMatchObject({
+      href: '/hub/club?tab=bienvenida',
+    })
   })
 
   it('una página pide su id', () => {
@@ -523,14 +530,23 @@ describe('las pantallas', () => {
       expect(owner).toContain('configuracion.equipo')
       expect(owner).not.toContain('estadisticas.resenas')
       expect(owner).not.toContain('local.mesas')
-      expect(owner).not.toContain('local.auto_aceptacion')
+      expect(owner).not.toContain('local.sucursales')
+      expect(owner).not.toContain('local.hoy')
     })
 
     it('lo que depende de una función, solo si está prendida', () => {
-      const owner = seen('owner', { reviews: true, floor_plan: true, auto_accept: true })
+      const owner = seen('owner', { reviews: true, pos: true })
       expect(owner).toContain('estadisticas.resenas')
       expect(owner).toContain('local.mesas')
-      expect(owner).toContain('local.auto_aceptacion')
+      expect(owner).toContain('local.sucursales')
+      expect(owner).toContain('local.hoy')
+    })
+
+    it('las pantallas del servicio de mesa anterior ya no existen', () => {
+      // Retirado el 18/11/2026: ni con sus interruptores viejos guardados en el bar.
+      const owner = seen('owner', { floor_plan: true, auto_accept: true, table_service: true })
+      expect(owner).not.toContain('local.auto_aceptacion')
+      expect(owner).not.toContain('local.mesas')
     })
 
     it('la portada es solo del dueño', () => {
@@ -1252,7 +1268,7 @@ describe('las etiquetas', () => {
     expect(ticket.ticket.confirmLabel).toBe('Crear la etiqueta')
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/menu/tags',
+      href: '/hub/menu?etiquetas=1',
       point: '#Sin TACC',
     })
     expect(insertOf('item_tags')).toEqual({
@@ -1294,7 +1310,7 @@ describe('las etiquetas', () => {
     })
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/menu/tags',
+      href: '/hub/menu?etiquetas=1',
       point: '#Picante',
     })
     expect(db.inserts.find((write) => write.table === 'menu_item_tag_assignments')?.values).toEqual(
@@ -1395,49 +1411,116 @@ const TODAY_OVERVIEW = {
   },
 }
 
+const PULSE = {
+  days: [],
+  current: { arrived: 120, covers: 480, noShows: 5, unmarked: 3, attendance: 0.96 },
+  previous: { arrived: 100, covers: 400, noShows: 0, unmarked: 0, attendance: 1 },
+}
+const UPCOMING = [
+  {
+    id: FERNET,
+    date: '2026-11-07',
+    time: '21:00',
+    name: 'Pizza libre',
+    color: '#aa3300',
+    capacity: 140,
+    reserved: 40,
+    privateGroup: false,
+  },
+  {
+    id: MALBEC,
+    date: '2026-11-08',
+    time: '21:00',
+    name: 'Noche de cine',
+    color: null,
+    capacity: 54,
+    reserved: 54,
+    privateGroup: true,
+  },
+]
+
 describe('ver_inicio', () => {
   beforeEach(() => {
     mocks.getKpis.mockResolvedValue(KPIS)
-    mocks.getDailyMetrics.mockResolvedValue(DAILY)
-    mocks.getTopCustomersBySpent.mockResolvedValue(TOP)
+    mocks.getBarPulse.mockResolvedValue(PULSE)
+    mocks.getCustomerGrowth.mockResolvedValue({ total: 200, added: 14 })
+    mocks.listUpcomingEvents.mockResolvedValue(UPCOMING)
     mocks.getTodaySalonOverview.mockResolvedValue(TODAY_OVERVIEW)
-    mocks.getZoneCapacityDefaults.mockResolvedValue({ planta_alta: 60, planta_baja: 0 })
+    mocks.getSetupStatus.mockResolvedValue({
+      menuReady: true,
+      clubReady: true,
+      teamReady: false,
+      capacitiesReady: false,
+      templatesReady: true,
+      eventScheduledReady: true,
+      firstReservationReady: true,
+      firstArrivalReady: true,
+    })
   })
 
-  it('lo que muestra la portada, en pesos', async () => {
+  it('hoy: por llegar y llegaron, sin los pasos que ya nadie marca', async () => {
+    mocks.getTodaySalonOverview.mockResolvedValue({
+      ...TODAY_OVERVIEW,
+      byStatus: { pending: 2, arrived: 1, seated: 1, closed: 1 },
+    })
     const out = (await data('ver_inicio')) as Record<string, unknown>
     expect(out.hoy).toEqual({
       fecha: '05/11/2026',
       reservas: 3,
       personas: 8,
-      pendientes: 2,
-      llegaron: 1,
+      por_llegar: 2,
+      // La sentada y la cerrada (reservas viejas) también llegaron.
+      llegaron: 3,
       pico: '21:00 a 22:30, 6 personas',
       por_servicio: [{ servicio: 'Cena', reservas: 3, personas: 8 }],
     })
-    expect(out.ultimos_30_dias).toMatchObject({
+  })
+
+  it('los últimos 30 días: la gente que vino, la asistencia y el club, en pesos', async () => {
+    const out = (await data('ver_inicio')) as Record<string, unknown>
+    expect(out.ultimos_30_dias).toEqual({
+      gente_que_vino: 480,
+      reservas_que_llegaron: 120,
+      gente_contra_los_30_anteriores: '+20%',
+      asistencia: '96%',
+      no_vinieron: 5,
+      reservas_sin_marcar: 3,
       clientes: 200,
-      facturacion: '$ 60.000',
-      ticket_promedio: '$ 1.000',
-      visitas_contra_antes: 'sin base',
+      clientes_nuevos: 14,
+      consumos_con_puntos: 60,
+      cargado_en_el_club: '$ 60.000',
     })
-    expect(out.falta_configurar).toEqual(['Definí la capacidad del salón'])
+    // Los pasos que faltan, con el mismo título que la lista del Resumen y en su orden.
+    expect(out.falta_configurar).toEqual(['Sumá a tu equipo', 'Definí cuánta gente entra'])
     expectClean(out)
   })
 
-  it('el top lleva el nombre y el id, sin contacto; la fecha es la de Córdoba', async () => {
-    const out = (await data('ver_inicio')) as {
-      top_clientes_por_consumo_total: Array<Record<string, unknown>>
-    }
-    expect(out.top_clientes_por_consumo_total[0]).toEqual({
-      id: FERNET,
-      nombre: 'Ana Pérez',
-      visitas: 9,
-      consumo_total: '$ 9.000',
-      ticket_promedio: '$ 1.000',
-      ultima_visita: '31/10/2026',
-      lo_que_mas_pide: 'Fernet',
+  it('sin reservas marcadas no inventa una asistencia ni una comparación', async () => {
+    mocks.getBarPulse.mockResolvedValue({
+      days: [],
+      current: { arrived: 0, covers: 0, noShows: 0, unmarked: 0, attendance: null },
+      previous: { arrived: 0, covers: 0, noShows: 0, unmarked: 0, attendance: null },
     })
+    const out = (await data('ver_inicio')) as { ultimos_30_dias: Record<string, unknown> }
+    expect(out.ultimos_30_dias).not.toHaveProperty('asistencia')
+    expect(out.ultimos_30_dias.gente_contra_los_30_anteriores).toBe('igual')
+    expect(out.ultimos_30_dias).not.toHaveProperty('reservas_sin_marcar')
+  })
+
+  it('lo que viene: cada evento con sus anotados y su cupo', async () => {
+    const out = (await data('ver_inicio')) as { lo_que_viene: unknown[] }
+    expect(out.lo_que_viene).toEqual([
+      { evento: 'Pizza libre', fecha: '07/11/2026', hora: '21:00', anotados: 40, cupo: 140 },
+      {
+        evento: 'Noche de cine',
+        fecha: '08/11/2026',
+        hora: '21:00',
+        anotados: 54,
+        cupo: 54,
+        completo: true,
+        grupo_privado: true,
+      },
+    ])
   })
 })
 
@@ -1471,26 +1554,6 @@ describe('ver_estadisticas', () => {
       failed: 1,
       opt_outs: 0,
     })
-    mocks.getStaffSummaries.mockResolvedValue([
-      {
-        user_id: FERNET,
-        email: EMAIL,
-        full_name: 'Luz Soria',
-        sessions_count: 4,
-        party_size_share: 10,
-        revenue_share_cents: 400_000,
-        items_share: 7.5,
-      },
-      {
-        user_id: MALBEC,
-        email: EMAIL,
-        full_name: null,
-        sessions_count: 1,
-        party_size_share: 2,
-        revenue_share_cents: 100_000,
-        items_share: 1,
-      },
-    ])
   })
 
   it('el resumen: por mes y los horarios fuertes', async () => {
@@ -1519,25 +1582,8 @@ describe('ver_estadisticas', () => {
     expectClean(out)
   })
 
-  it('mozos: sin el mail, ni siquiera si no cargó su nombre', async () => {
-    const out = (await data('ver_estadisticas', {
-      seccion: 'mozos',
-      periodo: 'este_mes',
-    })) as { filas: Array<{ mozo: string }> }
-    expect(out.filas.map((row) => row.mozo)).toEqual(['Luz Soria', 'Sin nombre cargado'])
-    expectClean(out)
-  })
-
-  it('mozos: las fechas a medida quedan en el día de Córdoba', async () => {
-    const out = await data('ver_estadisticas', {
-      seccion: 'mozos',
-      desde: '2026-10-01',
-      hasta: '2026-10-15',
-    })
-    expect(out).toMatchObject({ desde: '01/10/2026', hasta: '15/10/2026' })
-    expect(await errorOf('ver_estadisticas', { seccion: 'mozos', desde: '2026-10-01' })).toContain(
-      'las dos fechas',
-    )
+  it('«mozos» ya no es una sección: salía de las mesas del servicio anterior', async () => {
+    await expect(run('ver_estadisticas', { seccion: 'mozos' })).rejects.toThrow(/Entrada inválida/)
   })
 
   it('eventos: marca lo que todavía no pasó', async () => {
@@ -2059,31 +2105,6 @@ describe('ver_configuracion', () => {
     })
     expectClean(out)
   })
-
-  it('la auto-aceptación solo si el bar la tiene', async () => {
-    mocks.getTenantConfig.mockResolvedValue({
-      guest_idle_hours_to_rescan: 2,
-      session_auto_abandon_hours: 8,
-      ticket_auto_accept_enabled: true,
-      ticket_auto_accept_max_cents: 5_000_000,
-      ticket_auto_accept_max_items: null,
-      kitchen_flow_enabled: false,
-    })
-    const off = (await data('ver_configuracion')) as object
-    expect(off).not.toHaveProperty('auto_aceptacion')
-    const on = (await data(
-      'ver_configuracion',
-      {},
-      {
-        ...CTX,
-        features: { auto_accept: true } as never,
-      },
-    )) as Record<string, unknown>
-    expect(on.auto_aceptacion).toMatchObject({
-      comandas_automaticas: true,
-      hasta_monto: '$ 50.000',
-    })
-  })
 })
 
 describe('preparar_bienvenida', () => {
@@ -2114,7 +2135,7 @@ describe('preparar_bienvenida', () => {
     ])
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/configuracion/bienvenida',
+      href: '/hub/club?tab=bienvenida',
     })
     const form = mocks.updateWelcomeRewardConfig.mock.calls[0]?.[2] as FormData
     expect(form.get('enabled')).toBe('false')

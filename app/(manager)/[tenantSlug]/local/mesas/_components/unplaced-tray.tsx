@@ -22,7 +22,7 @@ type UnplacedTrayProps = {
   areaName: string
   /** Ubica la mesa en el sector. Termina cuando el servidor contestó (bien o mal). */
   onPlace: (tableId: string) => Promise<void>
-  /** Borra la mesa (y su QR) definitivamente. */
+  /** Borra la mesa definitivamente. */
   onDelete: (tableId: string) => void
 }
 

@@ -153,7 +153,7 @@ export type CustomerPunchCard = {
 }
 
 /**
- * Tarjetas del cliente para la caja (/acreditar) y la ficha del socio.
+ * Tarjetas del cliente para «Sumar puntos» (panel y salón) y la ficha del socio.
  * Parte de los TEMPLATES activos y le pega la tarjeta en curso, así las que
  * están en cero también aparecen y el cajero puede sellar la primera.
  */

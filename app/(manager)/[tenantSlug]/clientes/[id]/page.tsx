@@ -3,6 +3,7 @@ import { es } from 'date-fns/locale'
 import { ArrowLeft, Banknote, Phone, Receipt, Sparkles, Star } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AwardPointsSheet } from '@/components/loyalty/award-points-sheet'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -155,7 +156,20 @@ export default async function CustomerDetailPage({
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <Button asChild size="sm" className="gap-2">
+            {/* Ya se sabe quién es: la hoja va directo al monto, sin buscar ni escanear. */}
+            <AwardPointsSheet
+              tenantSlug={tenantSlug}
+              size="sm"
+              customer={{
+                id: c.id,
+                first_name: c.first_name,
+                last_name: c.last_name,
+                phone: c.phone,
+                points_balance: c.points_balance,
+                tier: null,
+              }}
+            />
+            <Button asChild size="sm" variant="outline" className="gap-2">
               <Link href={`/${tenantSlug}/clientes/${c.id}/canjear`}>
                 <Star className="size-3.5" />
                 Canjear puntos

@@ -1,16 +1,9 @@
 'use client'
 
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  DoorOpen,
-  ScanLine,
-  Wifi,
-  WifiOff,
-} from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Wifi, WifiOff } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
+import { AwardPointsSheet } from '@/components/loyalty/award-points-sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -35,6 +28,11 @@ function longLabel(day: string): string {
     month: 'long',
     timeZone: 'UTC',
   }).format(parseIso(day))
+}
+
+/** Solo la primera letra: «Miércoles, 18 de noviembre» (con `capitalize` salía «De Noviembre»). */
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 /** "sáb 5 sep" */
@@ -116,8 +114,8 @@ export function DayNav({
               <ChevronLeft className="size-5" aria-hidden />
             </Button>
 
-            <h1 className="min-w-0 truncate font-serif text-2xl font-semibold capitalize leading-none tracking-tight sm:text-3xl">
-              {longLabel(date)}
+            <h1 className="min-w-0 truncate font-serif text-2xl font-semibold leading-none tracking-tight sm:text-3xl">
+              {upperFirst(longLabel(date))}
             </h1>
 
             <Popover open={open} onOpenChange={setOpen}>
@@ -181,13 +179,13 @@ export function DayNav({
 
         {/* Acciones globales, siempre a mano. En mobile el buscador las repite. */}
         <div className="hidden items-center gap-2 sm:flex">
+          {/* Se abre acá mismo, sobre el tablero (antes llevaba a otra pantalla). */}
           {canAward ? (
-            <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">
-              <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
-                <ScanLine className="size-4" aria-hidden />
-                Escanear QR
-              </Link>
-            </Button>
+            <AwardPointsSheet
+              tenantSlug={tenantSlug}
+              variant="outline"
+              className="h-11 rounded-full px-4"
+            />
           ) : null}
           {canDoor ? (
             <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">
@@ -208,7 +206,7 @@ export function DayNav({
       {rel !== 'today' ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span>
-            Estás viendo <strong className="capitalize">{shortLabel(date)}</strong>
+            Estás viendo <strong>{shortLabel(date)}</strong>
             {date > today ? ' · todavía no se puede marcar llegadas.' : '.'}
           </span>
           <Button

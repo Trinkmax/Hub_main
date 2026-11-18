@@ -1,6 +1,7 @@
 'use client'
 
-import { TrendingDown, Users } from 'lucide-react'
+import { ArrowDownToLine, TrendingDown, Users } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -36,13 +37,22 @@ function fmtCents(cents: number): string {
   return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 }
 
-export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSlug: string }) {
+export function ChurnCard({
+  rows,
+  tenantSlug,
+  exportHref,
+}: {
+  rows: ChurnRiskRow[]
+  tenantSlug: string
+  /** De dónde se baja la lista en una planilla. */
+  exportHref?: string
+}) {
   const router = useRouter()
   const [state, action, pending] = useActionState(
     createAudienceFromList.bind(null, tenantSlug),
     initial,
   )
-  const [name, setName] = useState('Riesgo de churn')
+  const [name, setName] = useState('Dejaron de venir')
 
   useEffect(() => {
     if (state.ok && state.id) {
@@ -63,53 +73,73 @@ export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSl
             <TrendingDown className="size-4" />
           </div>
           <div>
-            <h2 className="font-serif text-lg font-semibold tracking-tight">Riesgo de churn</h2>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Dejaron de venir</h2>
             <p className="text-xs text-muted-foreground">
-              Clientes que eran frecuentes y no volvieron en 2× su frecuencia habitual.
+              Venían seguido y ya pasó más del doble de lo que tardaban en volver. Armá una
+              audiencia para escribirles.
             </p>
           </div>
         </div>
         {rows.length > 0 ? (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" className="gap-1.5">
-                <Users className="size-3.5" />
-                Crear audiencia
+          <div className="flex flex-wrap items-center gap-2">
+            {exportHref ? (
+              <Button asChild variant="outline" size="sm" className="gap-1.5">
+                <a href={exportHref} download>
+                  <ArrowDownToLine className="size-3.5" aria-hidden />
+                  Bajar la lista
+                </a>
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Crear audiencia desde lista</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Vamos a crear una audiencia estática con los <strong>{rows.length}</strong>{' '}
-                  clientes identificados como riesgo de churn.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <form action={action} className="space-y-3">
-                <Input
-                  name="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  maxLength={80}
-                />
-                <input type="hidden" name="customer_ids" value={ids} />
-                <AlertDialogFooter>
-                  <AlertDialogCancel type="button">Cancelar</AlertDialogCancel>
-                  <AlertDialogAction type="submit" disabled={pending}>
-                    {pending ? 'Creando…' : 'Crear audiencia'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </form>
-            </AlertDialogContent>
-          </AlertDialog>
+            ) : null}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" className="gap-1.5">
+                  <Users className="size-3.5" />
+                  Crear audiencia
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Crear una audiencia con esta lista</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Queda una audiencia fija con{' '}
+                    {rows.length === 1 ? (
+                      <>
+                        <strong>1</strong> cliente
+                      </>
+                    ) : (
+                      <>
+                        los <strong>{rows.length}</strong> clientes
+                      </>
+                    )}{' '}
+                    de esta lista, para mandarles una difusión desde Mensajería.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <form action={action} className="space-y-3">
+                  <Input
+                    name="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    maxLength={80}
+                  />
+                  <input type="hidden" name="customer_ids" value={ids} />
+                  <AlertDialogFooter>
+                    <AlertDialogCancel type="button">Cancelar</AlertDialogCancel>
+                    <AlertDialogAction type="submit" disabled={pending}>
+                      {pending ? 'Creando…' : 'Crear audiencia'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </form>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         ) : null}
       </header>
       {rows.length === 0 ? (
         <EmptyState
           icon={TrendingDown}
-          title="Nadie en riesgo"
-          description="No hay clientes en riesgo de churn según la lógica actual. Buen trabajo."
+          title="Nadie dejó de venir"
+          description="Los que venían seguido siguen viniendo."
           className="m-3 border-0 bg-transparent"
         />
       ) : (
@@ -118,24 +148,29 @@ export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSl
             <DataTableHead>
               <tr>
                 <DataTableHeader>Cliente</DataTableHeader>
-                <DataTableHeader>Visitas</DataTableHeader>
-                <DataTableHeader>Frecuencia</DataTableHeader>
-                <DataTableHeader>Sin volver</DataTableHeader>
-                <DataTableHeader>Spent</DataTableHeader>
+                <DataTableHeader>Consumos</DataTableHeader>
+                <DataTableHeader>Venía</DataTableHeader>
+                <DataTableHeader>Sin venir</DataTableHeader>
+                <DataTableHeader>Consumo total</DataTableHeader>
               </tr>
             </DataTableHead>
             <DataTableBody>
               {rows.map((r) => (
                 <tr key={r.customer_id} className="transition-colors hover:bg-secondary/40">
-                  <DataTableCell className="font-medium">
-                    {r.first_name} {r.last_name}
+                  <DataTableCell>
+                    <Link
+                      href={`/${tenantSlug}/clientes/${r.customer_id}`}
+                      className="font-medium hover:text-primary"
+                    >
+                      {r.first_name} {r.last_name}
+                    </Link>
                   </DataTableCell>
                   <DataTableCell className="tabular-nums">{r.total_visits}</DataTableCell>
                   <DataTableCell className="tabular-nums text-muted-foreground">
-                    cada {r.visit_frequency_days?.toFixed?.(1) ?? r.visit_frequency_days}d
+                    cada {Math.max(1, Math.round(Number(r.visit_frequency_days ?? 0)))} días
                   </DataTableCell>
-                  <DataTableCell className="tabular-nums text-warning">
-                    {r.days_since_last_visit}d
+                  <DataTableCell className="tabular-nums text-(--warning-text)">
+                    {r.days_since_last_visit} días
                   </DataTableCell>
                   <DataTableCell className="font-display font-semibold tabular-nums">
                     {fmtCents(r.total_spent_cents)}

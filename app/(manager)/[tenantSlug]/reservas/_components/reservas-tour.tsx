@@ -1,6 +1,5 @@
 'use client'
 
-import { ChevronRight } from 'lucide-react'
 import { TourLauncher } from '@/components/tour/tour-launcher'
 import type { TourDefinition } from '@/components/tour/types'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -163,28 +162,25 @@ const RESERVAS_TOUR: TourDefinition = (() => {
       },
       {
         id: 'estados',
-        kicker: 'El ciclo de la mesa',
-        title: 'Llegó → Sentados → Mesa cerrada',
+        kicker: 'La noche de la reserva',
+        title: 'Llegó o No vino',
         body: (
           <>
-            En el mismo panel rápido vas marcando los estados a medida que pasa la noche. La
-            comisión se calcula al marcar <strong>Llegó</strong>, sobre la gente que vino — y los
-            dueños la aprueban después desde el reporte. ¿No vinieron? <strong>No vino</strong>{' '}
-            también está ahí, y esa no paga nada. Desde los chips de hora y zona cambiás esos datos
-            al toque.
+            En el mismo panel rápido marcás lo que pasó esa noche: <strong>Llegó</strong> o{' '}
+            <strong>No vino</strong>. La comisión se calcula al marcar <strong>Llegó</strong>, sobre
+            la gente que vino, y los dueños la aprueban después desde el reporte; la que no vino no
+            paga nada. Si te equivocaste, se deshace desde ahí mismo. Desde los chips de hora y zona
+            cambiás esos datos al toque.
           </>
         ),
         demo: (
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs font-medium">
-              <span className="rounded-full bg-primary/15 px-2.5 py-1 text-primary">✓ Llegó</span>
-              <ChevronRight className="size-3.5 text-muted-foreground/60" />
-              <span className="rounded-full bg-primary px-2.5 py-1 text-primary-foreground">
-                Sentados
+              <span className="rounded-full bg-success px-2.5 py-1 text-success-foreground">
+                ✓ Llegó
               </span>
-              <ChevronRight className="size-3.5 text-muted-foreground/60" />
-              <span className="rounded-full border border-border bg-card px-2.5 py-1 text-muted-foreground">
-                Cerrar mesa
+              <span className="rounded-full border border-destructive/40 bg-card px-2.5 py-1 text-destructive">
+                No vino
               </span>
             </div>
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">

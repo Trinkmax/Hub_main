@@ -206,13 +206,7 @@ describe('qué va en la barra del panel', () => {
   })
 
   it('lo que abre en otra pestaña del navegador nunca va en la barra', () => {
-    const withSalon = resolveNavGroups(
-      'owner',
-      SLUG,
-      { ...HUB, table_service: true },
-      false,
-      OWNER_ACCESS,
-    )
+    const withSalon = resolveNavGroups('owner', SLUG, { ...HUB, pos: true }, false, OWNER_ACCESS)
     const plan = planDock(withSalon, 'owner', ['salon-en-vivo', 'reservas'])
     expect(plan?.bar.map((item) => item.key)).not.toContain('salon-en-vivo')
     expect(plan?.more.map((item) => item.key)).toContain('salon-en-vivo')

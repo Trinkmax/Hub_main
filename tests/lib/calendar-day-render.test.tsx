@@ -64,7 +64,7 @@ vi.mock(
     ScheduledEventsMonth: () => createElement('div', null, 'MES-DEL-CALENDARIO'),
   }),
 )
-vi.mock('@/app/(manager)/[tenantSlug]/eventos/templates/_components/templates-editor', () => ({
+vi.mock('@/app/(manager)/[tenantSlug]/eventos/programados/_components/templates-editor', () => ({
   TemplatesEditor: () => createElement('div', null, 'EDITOR-DE-FORMATOS'),
 }))
 

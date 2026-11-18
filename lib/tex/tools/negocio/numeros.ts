@@ -2,6 +2,8 @@ import 'server-only'
 
 import { z } from 'zod'
 import { isRealIsoDay } from '@/lib/dates'
+import { getSetupStatus } from '@/lib/onboarding/setup'
+import type { SetupStatus } from '@/lib/onboarding/steps'
 import { getReviewInsights, listReviews } from '@/lib/reviews/queries'
 import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
 import {
@@ -9,12 +11,10 @@ import {
   getMonthMarketingReport,
   getTemplateReport,
   getTodaySalonOverview,
-  getZoneCapacityDefaults,
   listEventTemplateOptions,
   listRecentReservationDays,
 } from '@/lib/salon/queries'
-import { resolveDateRange } from '@/lib/staff-performance/date-range'
-import { getStaffSummaries } from '@/lib/staff-performance/queries'
+import { getBarPulse, getCustomerGrowth, listUpcomingEvents } from '@/lib/stats/pulse-queries'
 import {
   getChurnRisk,
   getCommunicationStats,
@@ -24,7 +24,7 @@ import {
   getKpis,
   getTopCustomersBySpent,
 } from '@/lib/stats/queries'
-import { createClient } from '@/lib/supabase/server'
+import { requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { texMonth } from '../read/common'
 import {
@@ -47,10 +47,6 @@ import {
   monthPautaData,
   overviewStats,
   reviewsData,
-  type SetupFacts,
-  STAFF_PERIODS,
-  staffRangeInput,
-  staffStats,
   templateOptionsData,
   templateReportData,
 } from './_numeros-values'
@@ -59,10 +55,10 @@ import {
 const OWNER_ONLY: readonly TenantRole[] = ['owner']
 const OWNER: TexToolNeed = { roles: OWNER_ONLY }
 
-/** Lo que muestra la pantalla: 60 días para comparar contra los 30 anteriores, 90 para Estadísticas. */
-const HOME_DAYS = 60
+/** Lo que muestra cada pantalla: el Resumen mira 30 días (y los 30 anteriores); Estadísticas, 90. */
+const HOME_WINDOW_DAYS = 30
+const UPCOMING_DAYS = 7
 const STATS_DAYS = 90
-const TOP_ON_HOME = 5
 const TOP_MAX = 50
 const TOP_DEFAULT = 15
 const CHURN_READ = 200
@@ -72,84 +68,52 @@ const REVIEWS_MAX = 40
 
 const fail = (message: string): TexToolResult => ({ kind: 'error', message })
 
-/**
- * Los cinco pasos de «Configurá tu bar». `getOnboardingStatus` vive adentro de la página de la portada,
- * que no se puede importar: acá va la misma lectura, con la sesión de la persona.
- */
-async function setupFacts(ctx: TexToolContext): Promise<SetupFacts> {
-  const supabase = await createClient()
-  const [templates, scheduled, reservations, closed, caps] = await Promise.all([
-    supabase
-      .from('scheduled_event_templates')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .eq('active', true)
-      .limit(1),
-    supabase
-      .from('scheduled_events')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .gte('event_date', ctx.today)
-      .limit(1),
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .limit(1),
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .in('status', ['arrived', 'seated', 'closed'])
-      .limit(1),
-    getZoneCapacityDefaults({ tenantId: ctx.tenantId }),
-  ])
-  return {
-    capacitiesReady: caps.planta_alta > 0 && caps.planta_baja > 0,
-    templatesReady: (templates.count ?? 0) > 0,
-    eventScheduledReady: (scheduled.count ?? 0) > 0,
-    firstReservationReady: (reservations.count ?? 0) > 0,
-    firstClosedReady: (closed.count ?? 0) > 0,
-  }
+/** Los primeros pasos del bar (`lib/onboarding`): la misma lectura que hace el Resumen. */
+async function setupFacts(ctx: TexToolContext): Promise<SetupStatus> {
+  const { tenant } = await requireTenantAccess(ctx.slug)
+  return getSetupStatus({
+    tenantId: ctx.tenantId,
+    today: ctx.today,
+    settings: (tenant.settings ?? null) as Record<string, unknown> | null,
+  })
 }
 
 export const numerosTools = [
   defineTool({
     name: 'ver_inicio',
     description:
-      'El Resumen del dueño, la portada del panel: hoy en el salón, clientes, visitas y facturación de los últimos 30 días contra los anteriores, los que más consumen y lo que falta configurar.',
+      'El Resumen del dueño: cómo viene hoy, la gente que vino en 30 días contra los 30 anteriores, la asistencia, los clientes nuevos, los consumos con puntos, los eventos de la semana con sus anotados y lo que falta configurar.',
     input: noInput,
     need: OWNER,
     doing: () => 'Mirando el resumen',
     done: () => 'Miré el resumen',
     run: async (_input, ctx) => {
-      const [kpis, daily, top, today, setup] = await Promise.all([
+      const since = new Date(Date.now() - HOME_WINDOW_DAYS * 86_400_000).toISOString()
+      const [pulse, customers, club, upcoming, today, setup] = await Promise.all([
+        getBarPulse({ tenantId: ctx.tenantId, today: ctx.today, windowDays: HOME_WINDOW_DAYS }),
+        getCustomerGrowth({ tenantId: ctx.tenantId, since }),
         getKpis(ctx.tenantId),
-        getDailyMetrics(ctx.tenantId, HOME_DAYS),
-        getTopCustomersBySpent(ctx.tenantId, TOP_ON_HOME),
+        listUpcomingEvents({ tenantId: ctx.tenantId, today: ctx.today, days: UPCOMING_DAYS }),
         getTodaySalonOverview({ tenantId: ctx.tenantId, date: ctx.today }),
         setupFacts(ctx),
       ])
-      return { kind: 'data', data: homeData({ kpis, daily, top, today, setup }) }
+      return {
+        kind: 'data',
+        data: homeData({ today, pulse, customers, club, upcoming, setup }),
+      }
     },
   }),
 
   defineTool({
     name: 'ver_estadisticas',
     description:
-      'Las estadísticas del negocio: clientes, activos, visitas, facturación, ticket promedio y horarios fuertes; top de clientes y en riesgo de irse; eventos por asistencia; difusiones; mozos.',
+      'Las estadísticas de los consumos con puntos: clientes, consumos, lo cargado, ticket promedio y horarios fuertes; top de clientes y en riesgo de irse; eventos por asistencia; difusiones.',
     input: z.object({
       seccion: z
-        .enum(['resumen', 'clientes', 'eventos', 'comunicacion', 'mozos'])
+        .enum(['resumen', 'clientes', 'eventos', 'comunicacion'])
         .optional()
         .describe('Sin esto, el resumen.'),
       cantidad: z.number().int().min(1).max(TOP_MAX).optional().describe('En clientes: cuántos.'),
-      periodo: z
-        .enum(Object.keys(STAFF_PERIODS) as [keyof typeof STAFF_PERIODS])
-        .optional()
-        .describe('En mozos. Sin esto, los últimos 7 días.'),
-      desde: dayField('En mozos: desde, yyyy-MM-dd.').optional(),
-      hasta: dayField('En mozos: hasta, yyyy-MM-dd.').optional(),
     }),
     need: OWNER,
     doing: () => 'Mirando las estadísticas',
@@ -171,22 +135,6 @@ export const numerosTools = [
           }
         case 'comunicacion':
           return { kind: 'data', data: commsStats(await getCommunicationStats(ctx.tenantId)) }
-        case 'mozos': {
-          if ((input.desde === undefined) !== (input.hasta === undefined)) {
-            return fail('Para un período a medida hacen falta las dos fechas: desde y hasta.')
-          }
-          if (input.desde && input.hasta) {
-            if (!isRealIsoDay(input.desde) || !isRealIsoDay(input.hasta)) {
-              return fail('Esa fecha no existe.')
-            }
-            if (input.desde > input.hasta) return fail('El «hasta» es anterior al «desde».')
-          }
-          const range = resolveDateRange(staffRangeInput(input))
-          return {
-            kind: 'data',
-            data: staffStats(await getStaffSummaries(ctx.tenantId, range), range),
-          }
-        }
         default: {
           const [kpis, daily, heat] = await Promise.all([
             getKpis(ctx.tenantId),

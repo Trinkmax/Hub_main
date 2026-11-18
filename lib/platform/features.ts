@@ -3,22 +3,22 @@ import type { Tenant } from '@/lib/tenant/types'
 /**
  * Feature flags = "panel de visibilidad" controlado por superadmins.
  *
+ * El servicio de mesa de 2026 (salón en vivo, QR por mesa con auto-pedido, auto-aceptación, pantalla de
+ * cocina) se retiró el 18/11/2026: lo reemplazó el punto de venta (`pos`). Sus interruptores
+ * (`table_service`, `floor_plan`, `table_qr`, `auto_accept`, `kitchen`) ya no existen; si quedaron
+ * guardados en algún bar, se ignoran.
+ *
  * Defaults viven ACÁ (no en DB). En `tenants.feature_flags` solo se guardan los
  * overrides → agregar una key nueva no requiere backfill: lo no guardado cae al
  * default del registry. Módulo PURO (sin I/O) para poder usarse en el render de
  * la nav sin round-trips extra (el tenant ya viene de requireTenantAccess).
  */
 export type FeatureKey =
-  | 'table_service' // salón en vivo (mesas) + mi-turno
-  | 'floor_plan' // editor de plano /local/mesas
-  | 'table_qr' // QRs por mesa /local/captura + /print/qr* + auto-pedido /m
-  | 'auto_accept' // auto-aceptación de comandas /local/auto-aceptacion
-  | 'kitchen' // pantalla de cocina /salon/cocina
   | 'reviews' // panel de reseñas del manager (Fase 4)
   | 'accounting' // Administración: contabilidad de la SAS /administracion (Sprint 1)
   | 'ticket_door' // puerta: validar con QR las entradas compradas online /salon/puerta
   | 'purchasing' // compras: conteo de stock, pedidos a proveedores y recepción /compras + /salon/stock
-  | 'pos' // punto de venta: mapa en vivo, comanda, cocina, cobro y caja (docs/features/pos.md)
+  | 'pos' // punto de venta: plano, mapa en vivo, comanda, cocina, cobro y caja (docs/features/pos.md)
 
 export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
 
@@ -32,41 +32,6 @@ export type FeatureDef = {
 }
 
 export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
-  table_service: {
-    key: 'table_service',
-    label: 'Servicio de mesa',
-    description: 'Salón en vivo, sesiones de mesa y "mi turno" del staff.',
-    group: 'Salón',
-    defaultEnabled: false,
-  },
-  floor_plan: {
-    key: 'floor_plan',
-    label: 'Plano del salón',
-    description: 'Editor de plano y disposición de mesas.',
-    group: 'Salón',
-    defaultEnabled: false,
-  },
-  table_qr: {
-    key: 'table_qr',
-    label: 'QR por mesa',
-    description: 'Generación/impresión de QRs de mesa y auto-pedido (/m).',
-    group: 'Salón',
-    defaultEnabled: false,
-  },
-  auto_accept: {
-    key: 'auto_accept',
-    label: 'Auto-aceptación',
-    description: 'Aceptación automática de comandas bajo umbral.',
-    group: 'Salón',
-    defaultEnabled: false,
-  },
-  kitchen: {
-    key: 'kitchen',
-    label: 'Cocina',
-    description: 'Pantalla de cocina y flujo de tickets.',
-    group: 'Salón',
-    defaultEnabled: false,
-  },
   reviews: {
     key: 'reviews',
     label: 'Reseñas',
@@ -93,7 +58,7 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     key: 'pos',
     label: 'Punto de venta',
     description:
-      'El salón en vivo: mapa de mesas por sucursal, comanda del mozo, pantalla de cocina, cobro y caja por turno. Trae el plano del salón.',
+      'El salón en vivo: plano y mapa de mesas por sucursal, comanda del mozo, pantalla de cocina, cobro y caja por turno.',
     group: 'Salón',
     defaultEnabled: false,
   },
@@ -128,25 +93,13 @@ export function getTenantFeatures(tenant: Pick<Tenant, 'feature_flags'>): Tenant
 }
 
 /**
- * Lo que un interruptor trae consigo. El punto de venta no existe sin el plano del salón (el mapa en vivo
- * se dibuja ahí): prenderlo alcanza, no hace falta acordarse de prender también el plano.
- */
-const INCLUDES: Partial<Record<FeatureKey, readonly FeatureKey[]>> = {
-  pos: ['floor_plan'],
-}
-
-/**
- * Lo que el bar tiene de verdad: sus interruptores más lo que cada uno trae. Es lo que miran los menús,
- * el buscador y las guardas. `getTenantFeatures` sigue siendo la posición de cada interruptor, que es lo
- * que muestra (y cambia) el panel de superadmin.
+ * Lo que el bar tiene de verdad. Es lo que miran los menús, el buscador y las guardas. Hoy coincide con
+ * `getTenantFeatures` (ningún interruptor trae a otro: el plano del salón dejó de ser uno aparte y es
+ * parte del punto de venta), pero se llama por este nombre donde se decide qué se muestra, así un
+ * interruptor compuesto futuro se resuelve en un solo lugar.
  */
 export function getEffectiveFeatures(tenant: Pick<Tenant, 'feature_flags'>): TenantFeatures {
-  const out = getTenantFeatures(tenant)
-  for (const key of FEATURE_KEYS) {
-    if (!out[key]) continue
-    for (const included of INCLUDES[key] ?? []) out[included] = true
-  }
-  return out
+  return getTenantFeatures(tenant)
 }
 
 export function isFeatureEnabled(tenant: Pick<Tenant, 'feature_flags'>, key: FeatureKey): boolean {

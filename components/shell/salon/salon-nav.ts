@@ -3,13 +3,11 @@ import {
   Boxes,
   CalendarCheck,
   ChefHat,
-  ClipboardList,
   DoorOpen,
   LayoutGrid,
   type LucideIcon,
   QrCode,
   ScanLine,
-  User,
 } from 'lucide-react'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import { POS_CASH_ROLES } from '@/lib/pos/cash/roles'
@@ -97,9 +95,8 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     title: 'Sumar puntos',
     icon: ScanLine,
     href: (s) => `/${s}/salon/escanear`,
-    match: (p, s) => p.startsWith(`/${s}/salon/escanear`) || p.startsWith(`/${s}/salon/validar`),
-    // Sin `feature`: el club es fidelización, no servicio de mesa. Detrás de
-    // `table_service` —apagado en HUB— no aparecería nunca.
+    match: (p, s) => p.startsWith(`/${s}/salon/escanear`),
+    // Sin `feature`: el club es fidelización, lo tiene cualquier bar.
     roles: REDEMPTION_STAFF_ROLES,
   },
   {
@@ -141,34 +138,6 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     match: (p, s) => p.startsWith(`/${s}/salon/stock`),
     roles: PURCHASING_KITCHEN_ROLES,
     feature: 'purchasing',
-  },
-  {
-    key: 'mesas',
-    label: 'Mesas',
-    title: 'Mesas',
-    icon: ClipboardList,
-    href: (s) => `/${s}/salon/mesas`,
-    match: (p, s) => p === `/${s}/salon/mesas` || p.startsWith(`/${s}/salon/mesas/`),
-    feature: 'table_service',
-  },
-  {
-    key: 'cocina',
-    label: 'Cocina',
-    title: 'Cocina',
-    icon: ChefHat,
-    href: (s) => `/${s}/salon/cocina`,
-    match: (p, s) => p.startsWith(`/${s}/salon/cocina`),
-    roles: ['owner', 'cashier', 'kitchen'],
-    feature: 'kitchen',
-  },
-  {
-    key: 'mi-turno',
-    label: 'Mi turno',
-    title: 'Mi turno',
-    icon: User,
-    href: (s) => `/${s}/salon/mi-turno`,
-    match: (p, s) => p.startsWith(`/${s}/salon/mi-turno`),
-    feature: 'table_service',
   },
 ]
 

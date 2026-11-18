@@ -1782,20 +1782,6 @@
   line-height: 1;
 }
 
-/* Código del QR */
-.fpe-code {
-  display: block;
-  padding: 0.4rem 0.55rem;
-  border-radius: 0.5rem;
-  background: var(--pos-paper-2);
-  color: var(--pos-carbon);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.78rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Color de un elemento */
 .fpe-color {
   display: flex;
@@ -2287,7 +2273,7 @@
 
 /* ── Según el ancho que le queda al editor ── */
 
-/* Con lugar de sobra, los íconos van con su palabra («Imprimir QR», «Ajustes»). */
+/* Con lugar de sobra, los íconos van con su palabra («Sector», «Ajustes»). */
 @container fpe (min-width: 1240px) {
   .fpe-wide-only {
     display: inline;

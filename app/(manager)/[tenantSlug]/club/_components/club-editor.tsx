@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { ClubQrDialog } from '@/components/loyalty/club-qr-dialog'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
@@ -30,17 +31,17 @@ import type {
 } from '@/lib/points/queries'
 import type { listPunchCardTemplates } from '@/lib/punch-cards/queries'
 import type { getWelcomeRewardConfig } from '@/lib/welcome-reward/queries'
-import { PartnersManager as PartnersManagerReal } from '../aliados/_components/partners-manager'
-import { CapturePromptForm } from '../bienvenida/_components/capture-prompt-form'
-import { WelcomeRewardForm } from '../bienvenida/_components/welcome-reward-form'
-import { PunchCardsManager } from '../punch-cards/_components/punch-cards-manager'
-import { NewPerAmountForm } from '../puntos/_components/new-per-amount-form'
-import { NewPerItemForm } from '../puntos/_components/new-per-item-form'
-import { NewRewardForm } from '../puntos/_components/new-reward-form'
-import { RedemptionConfigForm } from '../puntos/_components/redemption-config-form'
-import { RewardsList } from '../puntos/_components/rewards-list'
-import { RulesList } from '../puntos/_components/rules-list'
+import { PartnersManager as PartnersManagerReal } from './aliados/partners-manager'
+import { CapturePromptForm } from './bienvenida/capture-prompt-form'
+import { WelcomeRewardForm } from './bienvenida/welcome-reward-form'
 import { ClubTourButton } from './club-tour'
+import { PunchCardsManager } from './punch-cards/punch-cards-manager'
+import { NewPerAmountForm } from './puntos/new-per-amount-form'
+import { NewPerItemForm } from './puntos/new-per-item-form'
+import { NewRewardForm } from './puntos/new-reward-form'
+import { RedemptionConfigForm } from './puntos/redemption-config-form'
+import { RewardsList } from './puntos/rewards-list'
+import { RulesList } from './puntos/rules-list'
 import { TiersList } from './tiers-list'
 
 // 'programa' fusiona lo que antes eran dos tabs (Niveles + Puntos y recompensas)
@@ -181,7 +182,8 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
   // local: así la URL y el contenido nunca se desincronizan, y los deep-links
   // (⌘K, las viejas rutas /club/*) funcionan sin remontar la página.
   const pathname = usePathname()
-  const rawTab = useSearchParams().get('tab')
+  const searchParams = useSearchParams()
+  const rawTab = searchParams.get('tab')
   const clubTab: ClubTab =
     rawTab && CLUB_TAB_VALUES.has(rawTab as ClubTab)
       ? (rawTab as ClubTab)
@@ -222,6 +224,8 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
               Ver carta
             </Link>
           </Button>
+          {/* El QR que invita a sumarse: antes era una pestaña aparte de Clientes. */}
+          <ClubQrDialog tenantSlug={tenantSlug} defaultOpen={searchParams.get('qr') === '1'} />
           <Button asChild variant="outline" size="sm" className="gap-1.5">
             <Link href={`/${tenantSlug}/club/simular`} data-tour="club-simular">
               <Wallet className="size-4" />

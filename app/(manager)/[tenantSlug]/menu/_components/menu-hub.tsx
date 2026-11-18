@@ -28,10 +28,21 @@ export type MenuHubProps = {
    * (docs/features/carta-al-dia.md).
    */
   cartaStatus?: MenuRevisionStatus | null
+  /** Entrar con el diálogo de etiquetas abierto (`?etiquetas=1`). */
+  openTags?: boolean
 }
 
 export function MenuHub(props: MenuHubProps): React.JSX.Element {
-  const { tenantSlug, tenantId, role, menu, tags, showPrices = false, cartaStatus = null } = props
+  const {
+    tenantSlug,
+    tenantId,
+    role,
+    menu,
+    tags,
+    showPrices = false,
+    cartaStatus = null,
+    openTags = false,
+  } = props
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -65,6 +76,7 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
           <TagsManagerDialog
             tenantSlug={tenantSlug}
             tags={tags}
+            defaultOpen={openTags}
             trigger={
               <Button variant="outline" size="sm" className="gap-1.5" data-tour="menu-etiquetas">
                 <Tag className="size-4" />

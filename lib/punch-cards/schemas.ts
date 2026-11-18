@@ -3,9 +3,10 @@ import { z } from 'zod'
 const nameField = z.string().trim().min(1, 'Requerido').max(80, 'Máximo 80')
 
 /**
- * Cómo avanza la tarjeta. `manual` es el default desde 2026-07: el cajero
- * aprieta "+1" en /acreditar. Los triggers automáticos (item/category/tag)
- * dependen del módulo de mesas prendido.
+ * Cómo avanza la tarjeta. `manual` es el default desde 2026-07: quien suma los
+ * puntos aprieta "+1" en la misma hoja. Los disparadores automáticos
+ * (item/category/tag) necesitan saber qué se consumió: hoy eso lo da el punto
+ * de venta.
  */
 export const PUNCH_TRIGGER_TYPES = ['manual', 'item', 'category', 'tag', 'visit_window'] as const
 export type PunchTriggerType = (typeof PUNCH_TRIGGER_TYPES)[number]

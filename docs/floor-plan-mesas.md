@@ -10,7 +10,21 @@
 > **velocidad de armado** (duplicar, crear N mesas en grilla, impresión masiva de
 > QR por área), y operación en vivo (**cambio de mesa cross-área**, tap-a-sentar).
 
-Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/mesas`).
+Ruta: `/{tenantSlug}/local/mesas` (solo `owner`). Se entra desde Configuración › Salón › Plano del salón.
+
+> **Servicio de mesa anterior retirado (2026-11-18).** Lo que sigue de esta guía describe también
+> piezas que ya no existen; valen estas correcciones:
+> - **Acceso:** el plano abre solo con `pos` (o superadmin). Los interruptores `floor_plan`,
+>   `table_service`, `kitchen`, `table_qr` y `auto_accept` se borraron de `lib/platform/features.ts`,
+>   y `getEffectiveFeatures` ya no agrega nada.
+> - **Pantalla del staff:** `/salon/mesas` (y `/salon/cocina`, `/salon/mi-turno`) no existen más. El
+>   salón del staff es el del punto de venta: `/salon/mapa`, `/salon/mesa`, `/salon/caja`.
+> - **«En vivo»:** siempre sale de las comandas del punto de venta (`use-live-model.ts` con
+>   `usePosPoke`). `live-floor.tsx`, `live-table-card.tsx`, `pan-zoom-stage.tsx` y
+>   `move-table-sheet.tsx` se borraron.
+> - **QR de mesa:** se retiraron (impresión `/print/qr`, `/print/qrs` y `lib/tables/qr-pdf.ts`). Un QR
+>   de mesa viejo que siga pegado (`/m/<token>`) redirige a la carta del bar.
+> - **`lib/tables/actions.ts`** quedó solo con `updateTable`.
 
 > **Editor por sucursal (2026-11-13).** Con el punto de venta (`docs/features/pos.md`) el plano pasó a ser de
 > cada sucursal y el editor se rehízo sobre la misma base:

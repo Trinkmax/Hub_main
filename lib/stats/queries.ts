@@ -141,19 +141,31 @@ export type EventRanking = {
   no_show_rate: number
 }
 
-export async function getEventsRanking(tenantId: string, limit = 20): Promise<EventRanking[]> {
+/**
+ * Las últimas fechas del calendario con su asistencia, de la más nueva a la más vieja.
+ *
+ * `until` (YYYY-MM-DD) deja afuera las que todavía no pasaron. Sin eso, un bar con el calendario
+ * cargado para adelante recibe solo fechas futuras —todas en cero— y no ve ninguna de las que ya
+ * tuvo: es lo que le pasaba a «Los últimos eventos» de Estadísticas.
+ */
+export async function getEventsRanking(
+  tenantId: string,
+  limit = 20,
+  until?: string,
+): Promise<EventRanking[]> {
   const supabase = await createClient()
   // Eventos del calendario (scheduled_events) rankeados por asistencia, derivada
   // de las reservas (salon_reservations) asociadas. Reemplaza la tabla `events`,
   // ya retirada.
-  const { data } = await supabase
+  let query = supabase
     .from('scheduled_events')
     .select(
-      'id, name_override, event_date, template:scheduled_event_templates(name), reservations:salon_reservations(status)',
+      // La relación va nombrada: hay dos llaves entre reservas y eventos (PGRST201 sin el nombre).
+      'id, name_override, event_date, template:scheduled_event_templates(name), reservations:salon_reservations!salon_reservations_scheduled_event_id_fkey(status)',
     )
     .eq('tenant_id', tenantId)
-    .order('event_date', { ascending: false })
-    .limit(limit)
+  if (until) query = query.lte('event_date', until)
+  const { data } = await query.order('event_date', { ascending: false }).limit(limit)
   type Joined = {
     id: string
     name_override: string | null

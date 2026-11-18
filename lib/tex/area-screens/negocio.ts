@@ -9,14 +9,11 @@ import type { TexScreenDef } from '../screen-types'
 
 const OWNER: readonly TenantRole[] = ['owner']
 
-/** Las solapas de Estadísticas (`estadisticas/page.tsx`). */
-export const TEX_ESTADISTICAS_TABS = ['overview', 'customers', 'events', 'comms', 'mozos'] as const
-
 export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'inicio',
     label: 'Resumen',
-    what: 'La portada del dueño: hoy en el salón, clientes, visitas y facturación de 30 días, los que más consumen y lo que falta configurar.',
+    what: 'La portada del dueño: cómo viene hoy, la gente que vino en los últimos 30 días, la asistencia, los clientes nuevos, los eventos de los próximos días y lo que falta configurar. Desde ahí se suman puntos y se carga una reserva.',
     path: '',
     root: true,
     roles: OWNER,
@@ -32,19 +29,26 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'carta.etiquetas',
     label: 'Carta › Etiquetas',
-    what: 'Las etiquetas de los productos (vegano, sin TACC) y a qué productos van.',
-    path: '/menu/tags',
+    what: 'El diálogo de etiquetas de la Carta (vegano, sin TACC): crear, renombrar y borrar. A qué productos va cada una se elige en el editor de cada producto.',
+    path: '/menu',
     root: true,
+    query: 'etiquetas=1',
     roles: MENU_EDIT_ROLES,
   },
   {
     id: 'estadisticas.resumen',
     label: 'Estadísticas › Resumen',
-    what: 'Clientes, visitas y facturación. Sus solapas (tab): overview (visión general), customers (top de clientes y en riesgo), events (eventos), comms (difusiones) y mozos.',
+    what: 'Los últimos 90 días en una página: la gente que vino (de las reservas marcadas «Llegó»), la asistencia, lo que se cargó en el club con sus horarios fuertes y los últimos eventos por asistencia.',
     path: '/estadisticas',
     root: true,
-    params: ['tab'],
-    tabs: TEX_ESTADISTICAS_TABS,
+    roles: OWNER,
+  },
+  {
+    id: 'estadisticas.clientes',
+    label: 'Estadísticas › Clientes',
+    what: 'Los 50 clientes que más consumieron y los que venían seguido y dejaron de venir; desde ahí se arma una audiencia para escribirles.',
+    path: '/estadisticas/clientes',
+    root: true,
     roles: OWNER,
   },
   {
@@ -125,7 +129,7 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'configuracion.inicio',
     label: 'Configuración',
-    what: 'La portada de los ajustes del bar: equipo, capacidad, tortas, apariencia y documentación.',
+    what: 'La portada de los ajustes del bar: equipo y comisiones, capacidad y tortas, reseñas, apariencia y, con el punto de venta, sucursales y plano del salón.',
     path: '/configuracion',
     root: true,
     roles: OWNER,
@@ -135,14 +139,6 @@ export const negocioScreens: readonly TexScreenDef[] = [
     label: 'Configuración › Apariencia',
     what: 'El logo y el color de marca del bar; idioma y zona horaria son fijos.',
     path: '/configuracion/apariencia',
-    root: true,
-    roles: OWNER,
-  },
-  {
-    id: 'configuracion.bienvenida',
-    label: 'Club › Bienvenida',
-    what: 'El regalo de bienvenida y sus textos, y la invitación a registrarse. Abre esa pestaña del Club.',
-    path: '/configuracion/bienvenida',
     root: true,
     roles: OWNER,
   },
@@ -171,17 +167,8 @@ export const negocioScreens: readonly TexScreenDef[] = [
     roles: OWNER,
   },
   {
-    id: 'local.auto_aceptacion',
-    label: 'Auto-aceptación',
-    what: 'Si las comandas del comensal van directo a cocina o esperan al mozo.',
-    path: '/local/auto-aceptacion',
-    root: true,
-    roles: OWNER,
-    feature: 'auto_accept',
-  },
-  {
     id: 'local.hoy',
-    label: 'Hoy en vivo',
+    label: 'Resumen › Hoy en vivo',
     what: 'Cómo va el día en el salón: lo vendido por sucursal y por medio de pago, el consumo por persona, las mesas abiertas, los turnos de caja y lo que conviene mirar (descuentos, bajas, cobros corregidos). Se puede mirar un día anterior.',
     path: '/local/hoy',
     root: true,
@@ -190,7 +177,7 @@ export const negocioScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'local.sucursales',
-    label: 'Sucursales',
+    label: 'Configuración › Sucursales',
     what: 'Los locales del bar: qué le falta a cada uno para abrir (plano, carta, cocina, caja, equipo y cobro) y los ajustes del punto de venta: recargo de crédito, propinas, alias de transferencia y quién aprueba descuentos y bajas.',
     path: '/local/sucursales',
     root: true,
@@ -199,27 +186,11 @@ export const negocioScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'local.mesas',
-    label: 'Plano y QRs de mesa',
-    what: 'El plano del local, las mesas y el QR de cada una, y el estado en vivo.',
+    label: 'Configuración › Plano del salón',
+    what: 'El plano de cada sucursal: sectores, mesas y decoración, y cómo está el salón en vivo.',
     path: '/local/mesas',
     root: true,
     roles: OWNER,
-    feature: 'floor_plan',
-  },
-  {
-    id: 'ayuda.docs',
-    label: 'Documentación',
-    what: 'La guía de todo el sistema, con preguntas frecuentes.',
-    path: '/docs',
-    root: true,
-    roles: OWNER,
-  },
-  {
-    id: 'ayuda.puesta_en_marcha',
-    label: 'Configuración inicial',
-    what: 'El asistente del primer arranque del bar; si ya se completó, abre el Resumen.',
-    path: '/onboarding',
-    root: true,
-    roles: OWNER,
+    feature: 'pos',
   },
 ]

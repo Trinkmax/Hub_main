@@ -4,6 +4,7 @@ import { Check, Loader2, Sparkles, Stamp, TriangleAlert, UserPlus } from 'lucide
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { MissingZerosCheck } from '@/components/loyalty/missing-zeros-check'
+import { PunchStamper } from '@/components/loyalty/punch-stamper'
 import { Button } from '@/components/ui/button'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import type { EarnRate } from '@/lib/points/earn-rate'
@@ -16,7 +17,6 @@ import {
 } from '@/lib/points/preview'
 import type { RecentQrAward } from '@/lib/points/queries'
 import type { ReservationWithJoins } from '@/lib/salon/types'
-import { PunchStamper } from '../../acreditar/_components/punch-stamper'
 import type { BoardActions } from './operativo-board'
 
 function fmtPesos(cents: number): string {

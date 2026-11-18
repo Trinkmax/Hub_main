@@ -1,8 +1,7 @@
 import 'server-only'
 import { notFound } from 'next/navigation'
-import { createServiceClient } from '@/lib/supabase/service'
 import type { Tenant } from '@/lib/tenant/types'
-import { type FeatureKey, getEffectiveFeatures, isFeatureEnabled } from './features'
+import { type FeatureKey, isFeatureEnabled } from './features'
 import { actsAsPlatformAdmin } from './is-admin'
 
 /**
@@ -16,26 +15,6 @@ export async function requireFeature(
   key: FeatureKey,
 ): Promise<void> {
   if (isFeatureEnabled(tenant, key)) return
-  if (await actsAsPlatformAdmin()) return
-  notFound()
-}
-
-/**
- * Variante para rutas que resuelven el tenant por id vía service-role (ej. páginas
- * públicas/print que no usan requireTenantAccess). Lee feature_flags con el service
- * client (bypass RLS) y aplica la misma regla (flag ON o superadmin).
- */
-export async function requireFeatureByTenantId(tenantId: string, key: FeatureKey): Promise<void> {
-  const service = createServiceClient()
-  const { data } = await service
-    .from('tenants')
-    .select('feature_flags')
-    .eq('id', tenantId)
-    .maybeSingle()
-  const features = getEffectiveFeatures({
-    feature_flags: (data?.feature_flags ?? {}) as Record<string, boolean>,
-  })
-  if (features[key]) return
   if (await actsAsPlatformAdmin()) return
   notFound()
 }
