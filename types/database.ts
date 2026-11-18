@@ -647,6 +647,48 @@ export type Database = {
           },
         ]
       }
+      acc_card_installments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          document_id: string
+          installments: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          installments: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          installments?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "acc_card_installments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aci_document_same_tenant"
+            columns: ["document_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "acc_documents"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       acc_daily_cash_counts: {
         Row: {
           amount_cents: number
@@ -3446,11 +3488,15 @@ export type Database = {
           color: string
           created_at: string
           created_by: string | null
+          feedback_whatsapp_phone: string | null
+          google_maps_review_url: string | null
           id: string
           is_default: boolean
           name: string
+          opened_on: string | null
           position: number
           practice_until: string | null
+          seat_capacity: number | null
           short_name: string | null
           slug: string
           tenant_id: string
@@ -3462,11 +3508,15 @@ export type Database = {
           color?: string
           created_at?: string
           created_by?: string | null
+          feedback_whatsapp_phone?: string | null
+          google_maps_review_url?: string | null
           id?: string
           is_default?: boolean
           name: string
+          opened_on?: string | null
           position?: number
           practice_until?: string | null
+          seat_capacity?: number | null
           short_name?: string | null
           slug: string
           tenant_id: string
@@ -3478,11 +3528,15 @@ export type Database = {
           color?: string
           created_at?: string
           created_by?: string | null
+          feedback_whatsapp_phone?: string | null
+          google_maps_review_url?: string | null
           id?: string
           is_default?: boolean
           name?: string
+          opened_on?: string | null
           position?: number
           practice_until?: string | null
+          seat_capacity?: number | null
           short_name?: string | null
           slug?: string
           tenant_id?: string
@@ -5989,6 +6043,45 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "marketing_task_groups"
             referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
+      membership_branches: {
+        Row: {
+          branch_id: string
+          created_at: string
+          created_by: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          branch_id: string
+          created_at?: string
+          created_by?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          branch_id?: string
+          created_at?: string
+          created_by?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_branches_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "membership_branches_member_fk"
+            columns: ["tenant_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["tenant_id", "user_id"]
           },
         ]
       }
@@ -9341,7 +9434,7 @@ export type Database = {
           arrived_at: string | null
           arrived_by: string | null
           assistant_manager_id: string | null
-          branch_id: string | null
+          branch_id: string
           cake_count: number
           cake_option_id: string | null
           cancelled_at: string | null
@@ -9376,14 +9469,14 @@ export type Database = {
           table_label: string | null
           tenant_id: string
           updated_at: string
-          zone: Database["public"]["Enums"]["salon_zone"]
+          zone: Database["public"]["Enums"]["salon_zone"] | null
         }
         Insert: {
           actual_guests?: number | null
           arrived_at?: string | null
           arrived_by?: string | null
           assistant_manager_id?: string | null
-          branch_id?: string | null
+          branch_id: string
           cake_count?: number
           cake_option_id?: string | null
           cancelled_at?: string | null
@@ -9418,14 +9511,14 @@ export type Database = {
           table_label?: string | null
           tenant_id: string
           updated_at?: string
-          zone: Database["public"]["Enums"]["salon_zone"]
+          zone?: Database["public"]["Enums"]["salon_zone"] | null
         }
         Update: {
           actual_guests?: number | null
           arrived_at?: string | null
           arrived_by?: string | null
           assistant_manager_id?: string | null
-          branch_id?: string | null
+          branch_id?: string
           cake_count?: number
           cake_option_id?: string | null
           cancelled_at?: string | null
@@ -9460,7 +9553,7 @@ export type Database = {
           table_label?: string | null
           tenant_id?: string
           updated_at?: string
-          zone?: Database["public"]["Enums"]["salon_zone"]
+          zone?: Database["public"]["Enums"]["salon_zone"] | null
         }
         Relationships: [
           {
@@ -9537,6 +9630,7 @@ export type Database = {
       }
       salon_segment_capacities: {
         Row: {
+          branch_id: string
           capacity: number
           created_at: string
           id: string
@@ -9547,6 +9641,7 @@ export type Database = {
           warn_at: number | null
         }
         Insert: {
+          branch_id: string
           capacity: number
           created_at?: string
           id?: string
@@ -9557,6 +9652,7 @@ export type Database = {
           warn_at?: number | null
         }
         Update: {
+          branch_id?: string
           capacity?: number
           created_at?: string
           id?: string
@@ -9568,6 +9664,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "salon_segment_capacities_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
             foreignKeyName: "salon_segment_capacities_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -9578,6 +9681,7 @@ export type Database = {
       }
       salon_segment_capacity_overrides: {
         Row: {
+          branch_id: string
           capacity: number
           created_at: string
           id: string
@@ -9590,6 +9694,7 @@ export type Database = {
           warn_at: number | null
         }
         Insert: {
+          branch_id: string
           capacity: number
           created_at?: string
           id?: string
@@ -9602,6 +9707,7 @@ export type Database = {
           warn_at?: number | null
         }
         Update: {
+          branch_id?: string
           capacity?: number
           created_at?: string
           id?: string
@@ -9615,6 +9721,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "salon_segment_capacity_overrides_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
             foreignKeyName: "salon_segment_capacity_overrides_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -9625,6 +9738,7 @@ export type Database = {
       }
       salon_segment_settings: {
         Row: {
+          branch_id: string
           created_at: string
           default_time: string
           id: string
@@ -9634,6 +9748,7 @@ export type Database = {
           warn_note: string | null
         }
         Insert: {
+          branch_id: string
           created_at?: string
           default_time: string
           id?: string
@@ -9643,6 +9758,7 @@ export type Database = {
           warn_note?: string | null
         }
         Update: {
+          branch_id?: string
           created_at?: string
           default_time?: string
           id?: string
@@ -9652,6 +9768,13 @@ export type Database = {
           warn_note?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "salon_segment_settings_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "salon_segment_settings_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -9830,6 +9953,7 @@ export type Database = {
       scheduled_events: {
         Row: {
           attendance_points: number
+          branch_id: string
           capacity: number
           created_at: string
           ends_at_local: string | null
@@ -9847,6 +9971,7 @@ export type Database = {
         }
         Insert: {
           attendance_points?: number
+          branch_id: string
           capacity: number
           created_at?: string
           ends_at_local?: string | null
@@ -9864,6 +9989,7 @@ export type Database = {
         }
         Update: {
           attendance_points?: number
+          branch_id?: string
           capacity?: number
           created_at?: string
           ends_at_local?: string | null
@@ -9880,6 +10006,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "scheduled_events_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "scheduled_events_template_id_fkey"
             columns: ["template_id"]
@@ -10355,6 +10488,7 @@ export type Database = {
         Row: {
           attention: string | null
           balance_cash_only: boolean
+          branch_id: string
           client_ip: string | null
           created_at: string
           customer_id: string | null
@@ -10390,6 +10524,7 @@ export type Database = {
         Insert: {
           attention?: string | null
           balance_cash_only?: boolean
+          branch_id: string
           client_ip?: string | null
           created_at?: string
           customer_id?: string | null
@@ -10425,6 +10560,7 @@ export type Database = {
         Update: {
           attention?: string | null
           balance_cash_only?: boolean
+          branch_id?: string
           client_ip?: string | null
           created_at?: string
           customer_id?: string | null
@@ -10458,6 +10594,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ticket_orders_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "ticket_orders_customer_id_fkey"
             columns: ["customer_id"]
@@ -12344,6 +12487,14 @@ export type Database = {
         }
         Returns: Json
       }
+      acc_set_card_installments: {
+        Args: {
+          p_bundle_id: string
+          p_installments: number
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       acc_set_treasury_bank_tax: {
         Args: { p_tenant_id: string; p_treasury_id: string; p_value: boolean }
         Returns: undefined
@@ -12626,6 +12777,7 @@ export type Database = {
       }
       ensure_scheduled_event_for_template: {
         Args: {
+          p_branch_id?: string
           p_capacity?: number
           p_event_date: string
           p_starts_at_local?: string
@@ -12824,6 +12976,7 @@ export type Database = {
         Args: { p_new_physical_table_id: string; p_session_id: string }
         Returns: Json
       }
+      my_branches: { Args: { p_tenant_id: string }; Returns: Json }
       pos_add_discount: {
         Args: {
           p_kind: string
@@ -13128,6 +13281,10 @@ export type Database = {
         Returns: string
       }
       set_active_tenant: { Args: { p_tenant: string }; Returns: undefined }
+      set_membership_branches: {
+        Args: { p_branch_ids: string[]; p_tenant_id: string; p_user_id: string }
+        Returns: Json
+      }
       set_reservation_table_label: {
         Args: {
           p_reservation_id: string
@@ -13199,7 +13356,10 @@ export type Database = {
         }
         Returns: Json
       }
-      ticket_door_today: { Args: { p_tenant_id: string }; Returns: Json }
+      ticket_door_today: {
+        Args: { p_branch_id?: string; p_tenant_id: string }
+        Returns: Json
+      }
       ticket_door_undo: {
         Args: { p_order_id: string; p_tenant_id: string }
         Returns: Json
@@ -13220,6 +13380,7 @@ export type Database = {
         Returns: {
           attention: string | null
           balance_cash_only: boolean
+          branch_id: string
           client_ip: string | null
           created_at: string
           customer_id: string | null
@@ -13297,7 +13458,7 @@ export type Database = {
           arrived_at: string | null
           arrived_by: string | null
           assistant_manager_id: string | null
-          branch_id: string | null
+          branch_id: string
           cake_count: number
           cake_option_id: string | null
           cancelled_at: string | null
@@ -13332,7 +13493,7 @@ export type Database = {
           table_label: string | null
           tenant_id: string
           updated_at: string
-          zone: Database["public"]["Enums"]["salon_zone"]
+          zone: Database["public"]["Enums"]["salon_zone"] | null
         }
         SetofOptions: {
           from: "*"
@@ -13358,7 +13519,7 @@ export type Database = {
           arrived_at: string | null
           arrived_by: string | null
           assistant_manager_id: string | null
-          branch_id: string | null
+          branch_id: string
           cake_count: number
           cake_option_id: string | null
           cancelled_at: string | null
@@ -13393,7 +13554,7 @@ export type Database = {
           table_label: string | null
           tenant_id: string
           updated_at: string
-          zone: Database["public"]["Enums"]["salon_zone"]
+          zone: Database["public"]["Enums"]["salon_zone"] | null
         }
         SetofOptions: {
           from: "*"
@@ -13417,6 +13578,7 @@ export type Database = {
         }
         Returns: Json
       }
+      user_branch_ids: { Args: { p_tenant_id: string }; Returns: string[] }
       user_has_kitchen_role: { Args: { p_tenant_id: string }; Returns: boolean }
       user_role_in_tenant: {
         Args: { p_tenant: string }
