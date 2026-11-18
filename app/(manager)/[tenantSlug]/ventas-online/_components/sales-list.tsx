@@ -8,6 +8,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import Link from 'next/link'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
@@ -35,7 +36,7 @@ import {
   peopleLabel,
 } from '@/lib/ticketing/order-view'
 import { formatPesos } from '@/lib/ticketing/pricing'
-import type { AdminOrder } from '@/lib/ticketing/queries'
+import type { AdminOrder, SalesOrder } from '@/lib/ticketing/queries'
 import {
   type SalesDay,
   type SalesPage,
@@ -49,7 +50,7 @@ import { RefundOrderButton } from './refund-order-button'
 import { RetryButton } from './retry-button'
 
 export type SalesResult =
-  | { ok: true; days: SalesDay<AdminOrder>[]; previousTo: string | null }
+  | { ok: true; days: SalesDay<SalesOrder>[]; previousTo: string | null }
   | { ok: false }
 
 const TONE_CLASS: Record<OrderTone, string> = {
@@ -78,6 +79,9 @@ type RowContext = {
  *
  * El estado se calcula en el server con la hora del render: un «Pagando…» que vence mientras
  * la pestaña está abierta se corrige al volver a la página (RefreshOnReturn del panel).
+ *
+ * Son las compras de la sucursal que se mira; en «Todas», cada una lleva la suya al final de su
+ * primera línea (la de su función: la película es del bar).
  */
 export function SalesList({
   tenantSlug,
@@ -150,7 +154,7 @@ function SalesDayCard({
   today,
   row,
 }: {
-  group: SalesDay<AdminOrder>
+  group: SalesDay<SalesOrder>
   today: string
   row: RowContext
 }) {
@@ -382,7 +386,7 @@ function Amount({ order }: { order: AdminOrder }) {
   )
 }
 
-function OrderCard({ order, row }: { order: AdminOrder; row: RowContext }) {
+function OrderCard({ order, row }: { order: SalesOrder; row: RowContext }) {
   return (
     <article
       aria-label={`Compra de ${order.guest_name}`}
@@ -390,7 +394,10 @@ function OrderCard({ order, row }: { order: AdminOrder; row: RowContext }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium">{order.guest_name}</p>
+          <p className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-medium">{order.guest_name}</span>
+            <BranchTag branchId={order.branch_id} />
+          </p>
           <p className="text-xs text-muted-foreground tabular-nums">
             {formatPhoneForDisplay(order.guest_phone)}
           </p>
@@ -433,7 +440,7 @@ function OrderCard({ order, row }: { order: AdminOrder; row: RowContext }) {
   )
 }
 
-function OrdersTable({ orders, row }: { orders: AdminOrder[]; row: RowContext }) {
+function OrdersTable({ orders, row }: { orders: SalesOrder[]; row: RowContext }) {
   return (
     <Table>
       <TableHeader>
@@ -462,7 +469,10 @@ function OrdersTable({ orders, row }: { orders: AdminOrder[]; row: RowContext })
               </div>
             </TableCell>
             <TableCell className="align-top">
-              <div className="max-w-[14rem] truncate">{order.title}</div>
+              <div className="flex max-w-[18rem] items-center gap-1.5">
+                <span className="max-w-[14rem] truncate">{order.title}</span>
+                <BranchTag branchId={order.branch_id} />
+              </div>
               <div className="text-xs text-muted-foreground">{orderFunctionLabel(order)}</div>
             </TableCell>
             <TableCell className="align-top text-right tabular-nums">{order.party_size}</TableCell>

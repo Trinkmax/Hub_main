@@ -9,6 +9,7 @@ import {
   type DoorVerdict,
   doorBalanceCents,
   formatShortCode,
+  otherBranchNote,
 } from '@/lib/ticketing/door'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { tornClipBottom, tornClipTop, tornProfile } from '@/lib/ticketing/ticket-art'
@@ -27,7 +28,7 @@ function capitalize(text: string): string {
 }
 
 /** La pantalla dice una sola cosa y grande: pasan o no pasan, y por qué. */
-function wordsFor(verdict: DoorVerdict, stage: DoorStage, guests: number): Words {
+function wordsFor(verdict: DoorVerdict, stage: DoorStage, guests: number, title: string): Words {
   if (stage === 'falling' || stage === 'done' || stage === 'undoing') {
     return { tone: 'pass', word: '¡Adentro!', note: null, name: true }
   }
@@ -52,6 +53,14 @@ function wordsFor(verdict: DoorVerdict, stage: DoorStage, guests: number): Words
         name: true,
       }
     }
+    case 'other_branch':
+      // No se deja pasar: la reserva es de allá (sus sillas, su lista). Dorado, como otro día.
+      return {
+        tone: 'wait',
+        word: 'Otra sucursal',
+        note: otherBranchNote(title, verdict),
+        name: true,
+      }
     case 'other_day':
       return {
         tone: 'wait',
@@ -119,7 +128,7 @@ export function DoorVerdictView({
   undoNote?: string | null
   errorMessage?: string | null
 }) {
-  const words = wordsFor(verdict, stage, guests)
+  const words = wordsFor(verdict, stage, guests, ticket.title)
   const balance = doorBalanceCents(ticket)
   const canAdmit = verdict.kind === 'admit' && stage !== 'falling' && stage !== 'done'
   const left = verdict.kind === 'admit' ? verdict.left : 0

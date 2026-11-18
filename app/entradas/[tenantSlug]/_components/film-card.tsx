@@ -10,7 +10,8 @@ import { Poster } from '../../_components/poster'
 
 /**
  * Una película en la cartelera: afiche, de qué se trata y sus fechas como
- * talones. Tocar una fecha lleva a la película con esa fecha ya elegida.
+ * talones. Tocar una fecha lleva a la película con esa fecha ya elegida (y su
+ * sucursal: la misma película puede ir la misma noche en las dos).
  */
 export function FilmCard({
   experience,
@@ -21,6 +22,8 @@ export function FilmCard({
   priority = false,
   soldOut: soldOutProp,
   onlyAvailable = false,
+  branch = null,
+  branchLabel,
 }: {
   experience: PublicExperience
   index: number
@@ -32,8 +35,12 @@ export function FilmCard({
   soldOut?: boolean
   /** La cartelera está filtrada por «Disponibles»: la película tampoco muestra las agotadas. */
   onlyAvailable?: boolean
+  /** La sucursal elegida arriba: la película arranca con una función de ahí. */
+  branch?: string | null
+  /** El nombre de la sucursal de cada función, si hay que decirlo (más de una con funciones). */
+  branchLabel?: (slug: string | null) => string | null
 }) {
-  const href = filmHref(tenantSlug, experience.slug, { onlyAvailable })
+  const href = filmHref(tenantSlug, experience.slug, { onlyAvailable, branch })
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
   const soldOut =
     soldOutProp ?? (experience.functions.length > 0 && allSoldOut(experience.functions))
@@ -133,7 +140,12 @@ export function FilmCard({
               <li key={fn.eventId} className="snap-start">
                 <FunctionStub
                   fn={fn}
-                  href={filmHref(tenantSlug, experience.slug, { date: fn.date, onlyAvailable })}
+                  branchLabel={branchLabel?.(fn.branch) ?? null}
+                  href={filmHref(tenantSlug, experience.slug, {
+                    date: fn.date,
+                    onlyAvailable,
+                    branch: branchLabel?.(fn.branch) ? fn.branch : null,
+                  })}
                 />
               </li>
             ))}

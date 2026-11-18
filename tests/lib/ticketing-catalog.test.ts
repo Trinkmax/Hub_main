@@ -26,6 +26,7 @@ function fn(date: string, left: number, eventId = date): PublicFunction {
     capacity: 50,
     left,
     state: left <= 0 ? 'sold_out' : left <= 10 ? 'last' : 'available',
+    branch: null,
   }
 }
 
@@ -231,6 +232,7 @@ describe('filtros de la cartelera', () => {
       month: '2026-11',
       film: 'shrek-2',
       availability: 'available',
+      branch: null,
     })
     expect(visible).toEqual([])
   })
@@ -263,7 +265,12 @@ describe('filtros de la cartelera', () => {
 
   it('la URL ida y vuelta, y lo que no se entiende se ignora', () => {
     const filters = parseCatalogFilters({ mes: '2026-11', pelicula: 'shrek-2', ver: 'disponibles' })
-    expect(filters).toEqual({ month: '2026-11', film: 'shrek-2', availability: 'available' })
+    expect(filters).toEqual({
+      month: '2026-11',
+      film: 'shrek-2',
+      availability: 'available',
+      branch: null,
+    })
     expect(catalogFiltersQuery(filters)).toBe('?mes=2026-11&pelicula=shrek-2&ver=disponibles')
     expect(catalogFiltersQuery(NO_FILTERS)).toBe('')
     expect(parseCatalogFilters({ ver: 'agotadas' }).availability).toBe('sold_out')
@@ -276,10 +283,10 @@ describe('filtros de la cartelera', () => {
     const options = catalogFilterOptions(cartelera)
     expect(
       sanitizeCatalogFilters(
-        { month: '2026-09', film: 'chihiro', availability: 'available' },
+        { month: '2026-09', film: 'chihiro', availability: 'available', branch: 'cerro' },
         options,
       ),
-    ).toEqual({ month: null, film: null, availability: 'available' })
+    ).toEqual({ month: null, film: null, availability: 'available', branch: null })
   })
 
   it('el link a la película lleva la fecha y, si se filtró, «Disponibles»', () => {

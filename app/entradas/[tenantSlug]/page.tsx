@@ -63,11 +63,12 @@ export default async function CarteleraPage({
     mes?: string | string[]
     pelicula?: string | string[]
     ver?: string | string[]
+    sucursal?: string | string[]
   }>
 }) {
   const [{ tenantSlug }, sp] = await Promise.all([params, searchParams])
   const catalog = await resolveCatalog(tenantSlug)
   if (!catalog) notFound()
-  // Un link puede llegar ya filtrado (?ver=disponibles): se arma así desde el server.
+  // Un link puede llegar ya filtrado (?ver=disponibles, ?sucursal=cerro): se arma así desde el server.
   return <CarteleraView catalog={catalog} filters={parseCatalogFilters(sp)} />
 }

@@ -312,7 +312,10 @@ export function OrderView({
   const filmUrl = order.experienceSlug
     ? `/entradas/${tenantSlug}/${order.experienceSlug}`
     : `/entradas/${tenantSlug}`
-  const retryFilmUrl = order.experienceSlug ? `${filmUrl}?fecha=${order.date}` : filmUrl
+  // La misma función: la fecha y, con varias sucursales, dónde (la misma noche puede ir en dos).
+  const retryFilmUrl = order.experienceSlug
+    ? `${filmUrl}?fecha=${order.date}${order.branch ? `&sucursal=${encodeURIComponent(order.branch.slug)}` : ''}`
+    : filmUrl
   const balanceCents =
     order.option === 'deposit' ? (order.fullPriceCents - order.unitPriceCents) * order.partySize : 0
 
@@ -339,7 +342,8 @@ export function OrderView({
 
   const share = async () => {
     const url = `${window.location.origin}${filmUrl}`
-    const text = `Voy a ${order.title} en ${tenantName} el ${formatLongDate(order.date)} 🎬`
+    const place = order.branch ? `${tenantName} ${order.branch.name}` : tenantName
+    const text = `Voy a ${order.title} en ${place} el ${formatLongDate(order.date)} 🎬`
     if (navigator.share) {
       try {
         await navigator.share({ title: order.title, text, url })
@@ -565,6 +569,7 @@ function transferProofUrl(
       amountLabel: formatPesos(order.totalCents),
       alias: transfer.alias,
       code: order.shortCode,
+      branchName: order.branch?.name ?? null,
     }),
   )
 }
@@ -868,6 +873,8 @@ export function ApprovedTicket({
 
             <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-sm">
               <Row label="Fecha" value={capitalizeFirst(formatLongDate(order.date))} />
+              {/* Con más de una sucursal, dónde es: la dirección de «Cómo llegar» es la de esta. */}
+              {order.branch ? <Row label="Sucursal" value={order.branch.name} /> : null}
               <Row
                 label="Hora"
                 value={countdown && !torn ? `${order.time} hs · ${countdown}` : `${order.time} hs`}

@@ -2,6 +2,7 @@ import { ArrowLeft, MapPin, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { buildWaMeUrl } from '@/lib/phone'
+import type { FooterPlace } from '@/lib/ticketing/branches'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { GalleryItem, PublicVenue } from '@/lib/ticketing/types'
 import { BrandMark } from './brand'
@@ -232,7 +233,13 @@ export function HowItWorks({
   )
 }
 
-export function Footer({ venue }: { venue: PublicVenue }) {
+/**
+ * El pie: la marca, dónde queda y cómo escribir. `places` son las direcciones de las sucursales
+ * con funciones (ver `footerPlaces`): con varias, cada una con su nombre. Sin `places`, la del bar.
+ */
+export function Footer({ venue, places }: { venue: PublicVenue; places?: FooterPlace[] }) {
+  const addresses: FooterPlace[] =
+    places ?? (venue.address ? [{ label: null, address: venue.address }] : [])
   const wa = venue.whatsapp
     ? buildWaMeUrl(
         venue.whatsapp,
@@ -244,17 +251,23 @@ export function Footer({ venue }: { venue: PublicVenue }) {
       <div className="mx-auto flex max-w-6xl flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-3">
           <BrandMark name={venue.tenantName} logoUrl={venue.logoUrl} />
-          {venue.address ? (
+          {addresses.map((place) => (
             <a
-              href={mapsUrl(venue.address)}
+              key={`${place.label ?? ''}·${place.address}`}
+              href={mapsUrl(place.address)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-(--ent-cream-2) underline-offset-4 hover:underline"
+              className="flex w-fit items-center gap-2 text-sm text-(--ent-cream-2) underline-offset-4 hover:underline"
             >
-              <MapPin className="size-4" aria-hidden />
-              {venue.address}
+              <MapPin className="size-4 shrink-0" aria-hidden />
+              <span>
+                {place.label ? (
+                  <span className="font-semibold text-(--ent-cream)">{place.label} · </span>
+                ) : null}
+                {place.address}
+              </span>
             </a>
-          ) : null}
+          ))}
         </div>
         <div className="flex flex-col gap-2 text-sm text-(--ent-muted) sm:items-end">
           {wa ? (

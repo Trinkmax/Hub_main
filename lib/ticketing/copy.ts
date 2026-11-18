@@ -38,7 +38,10 @@ export function rejectionReason(statusDetail: string | null | undefined): string
   }
 }
 
-/** El WhatsApp de quien transfirió, con todo lo que hace falta para cargarle la reserva. */
+/**
+ * El WhatsApp de quien transfirió, con todo lo que hace falta para cargarle la reserva (con
+ * varias sucursales, también dónde es la función).
+ */
 export function transferProofMessage(input: {
   tenantName: string
   title: string
@@ -49,11 +52,14 @@ export function transferProofMessage(input: {
   amountLabel: string
   alias: string
   code: string
+  /** La sucursal de la función, si el bar tiene más de una. */
+  branchName?: string | null
 }): string {
+  const where = input.branchName ? ` en ${input.branchName}` : ''
   return (
     `¡Hola ${input.tenantName}! Mercado Pago me rechazó el pago, así que transferí ` +
     `${input.amountLabel} al alias ${input.alias}. Es para ${input.title}, ${input.dateLabel} ` +
-    `a las ${input.time} hs, ${peopleLabel(input.partySize)}, a nombre de ${input.guestName} ` +
+    `a las ${input.time} hs${where}, ${peopleLabel(input.partySize)}, a nombre de ${input.guestName} ` +
     `(entrada #${input.code}). Te paso el comprobante.`
   )
 }
@@ -61,7 +67,7 @@ export function transferProofMessage(input: {
 /**
  * El mensaje de WhatsApp cuando la página no pudo guardar el lugar por algo
  * nuestro (la base, Mercado Pago): con lo que hace falta para cargar la
- * reserva a mano, así no se pierde.
+ * reserva a mano, así no se pierde. Con varias sucursales, también dónde.
  */
 export function checkoutHelpMessage(input: {
   tenantName: string
@@ -70,11 +76,14 @@ export function checkoutHelpMessage(input: {
   time: string
   partySize: number
   guestName: string
+  /** La sucursal de la función, si el bar tiene más de una con funciones. */
+  branchName?: string | null
 }): string {
   const name = input.guestName.trim()
+  const where = input.branchName ? ` en ${input.branchName}` : ''
   return (
     `¡Hola ${input.tenantName}! Quiero reservar ${input.title}, ${input.dateLabel} ` +
-    `a las ${input.time} hs, ${peopleLabel(input.partySize)}` +
+    `a las ${input.time} hs${where}, ${peopleLabel(input.partySize)}` +
     `${name ? `, a nombre de ${name}` : ''}. La página no me dejó pagar.`
   )
 }

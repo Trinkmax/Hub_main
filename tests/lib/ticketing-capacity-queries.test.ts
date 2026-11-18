@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * Las funciones de la pestaña Funciones y la que se va a tocar al guardar un cupo. Lo que se
  * fija: solo las de películas del bar, sin las privadas ni las que ya empezaron, con lo
- * reservado y lo que se está pagando por separado, y todo filtrado por el bar.
+ * reservado y lo que se está pagando por separado, todo filtrado por el bar y, si se pide, por
+ * la sucursal que se mira.
  */
 
 type Row = Record<string, unknown>
@@ -70,6 +71,8 @@ import { getCapacityFunction, listCapacityFunctions } from '@/lib/ticketing/quer
 const T = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const OTHER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const id = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`
+const ALTA = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+const CERRO = 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2'
 
 const event = (n: number, template: string, date: string, extra: Row = {}): Row => ({
   id: id(n),
@@ -79,6 +82,7 @@ const event = (n: number, template: string, date: string, extra: Row = {}): Row 
   starts_at_local: '21:00:00',
   capacity: 54,
   private_group: false,
+  branch_id: ALTA,
   ...extra,
 })
 
@@ -114,7 +118,7 @@ beforeEach(() => {
   ]
   db.events = [
     event(1, 'tpl-cora', '2026-11-15'),
-    event(2, 'tpl-chi', '2026-11-16', { capacity: 100 }),
+    event(2, 'tpl-chi', '2026-11-16', { capacity: 100, branch_id: CERRO }),
     // Hoy a las 18:00: ya empezó.
     event(3, 'tpl-cora', '2026-11-11', { starts_at_local: '18:00:00' }),
     // Hoy a las 21:00: todavía no.
@@ -156,18 +160,43 @@ describe('listCapacityFunctions', () => {
       title: 'Coraline',
       accent: '#2f4f7f',
       published: true,
+      branchId: ALTA,
     })
     // Con más reservas que cupo no quedan lugares negativos.
     expect(list[0]?.left).toBe(0)
     // La película apagada aparece (el cupo se puede dejar listo), con el color de siempre.
-    expect(list[2]).toMatchObject({ published: false, accent: '#c0573e', capacity: 100 })
+    expect(list[2]).toMatchObject({
+      published: false,
+      accent: '#c0573e',
+      capacity: 100,
+      branchId: CERRO,
+    })
     expect(db.tenantFilters.every(([, tenant]) => tenant === T)).toBe(true)
+  })
+
+  it('mirando una sucursal, solo sus funciones (el cupo nunca se suma entre dos)', async () => {
+    expect((await listCapacityFunctions(T, { ids: [CERRO] })).map((fn) => fn.eventId)).toEqual([
+      id(2),
+    ])
+    expect((await listCapacityFunctions(T, { ids: [ALTA] })).map((fn) => fn.eventId)).toEqual([
+      id(4),
+      id(1),
+    ])
+    // «Todas» de un dueño: sin filtro.
+    expect(await listCapacityFunctions(T, { ids: null })).toHaveLength(3)
+    // Alguien sin sucursales no ve nada.
+    expect(await listCapacityFunctions(T, { ids: [] })).toEqual([])
   })
 })
 
 describe('getCapacityFunction', () => {
-  it('una función que viene: sus números', async () => {
-    expect(await getCapacityFunction(T, id(1))).toEqual({ capacity: 54, reserved: 46, paying: 2 })
+  it('una función que viene: sus números y su sucursal', async () => {
+    expect(await getCapacityFunction(T, id(1))).toEqual({
+      capacity: 54,
+      reserved: 46,
+      paying: 2,
+      branchId: ALTA,
+    })
   })
 
   it('la que ya empezó, la privada, la que no es película o la de otro bar: no', async () => {

@@ -20,15 +20,22 @@ type Mode = 'camera' | 'denied' | 'manual'
 /**
  * La pestaña Puerta: la cámara prendida y, arriba, cómo va la sala. Solo entiende
  * entradas: si le muestran otro QR del bar, lo dice en vez de abrir otra pantalla.
+ *
+ * La puerta es de la sucursal de este equipo (`branchId`): el cartel cuenta sus funciones y una
+ * entrada de otra sucursal no pasa. `branchName` va en el cartel cuando hay más de una.
  */
 export function DoorScreen({
   tenantSlug,
   initialCode,
   today,
+  branchId = null,
+  branchName = null,
 }: {
   tenantSlug: string
   initialCode: string | null
   today: DoorFunction[]
+  branchId?: string | null
+  branchName?: string | null
 }) {
   const [token, setToken] = useState<string | null>(initialCode)
   const [mode, setMode] = useState<Mode>('camera')
@@ -57,6 +64,7 @@ export function DoorScreen({
       <TicketDoorPanel
         tenantSlug={tenantSlug}
         token={token}
+        branchId={branchId}
         onDone={() => {
           recent.remember(token)
           setToken(null)
@@ -73,7 +81,7 @@ export function DoorScreen({
 
   return (
     <div className="door door-scan -mx-4 -mt-3">
-      <RoomSign today={today} />
+      <RoomSign today={today} branchName={branchName} />
 
       {mode === 'camera' ? (
         <>
@@ -185,17 +193,28 @@ export function DoorScreen({
   )
 }
 
-/** El cartel de la sala: qué función hay hoy y cuántos entraron. */
-function RoomSign({ today }: { today: DoorFunction[] }) {
+/** El cartel de la sala: qué función hay hoy y cuántos entraron (en esta sucursal). */
+function RoomSign({ today, branchName }: { today: DoorFunction[]; branchName: string | null }) {
+  const where = branchName ? (
+    <p className="text-xs font-semibold tracking-[0.14em] uppercase opacity-70">
+      Puerta · {branchName}
+    </p>
+  ) : null
   if (today.length === 0) {
     return (
-      <div className="door-sign">
-        <p className="text-sm opacity-80">Hoy no hay funciones con entrada.</p>
+      <div className="door-sign space-y-1">
+        {where}
+        <p className="text-sm opacity-80">
+          {branchName
+            ? 'Hoy no hay funciones con entrada en esta sucursal.'
+            : 'Hoy no hay funciones con entrada.'}
+        </p>
       </div>
     )
   }
   return (
     <div className="door-sign space-y-1">
+      {where}
       {today.map((f) => (
         <div key={f.event_id} className="flex items-baseline justify-between gap-3">
           <p className="min-w-0 truncate font-[family-name:var(--door-serif)] text-xl font-semibold tracking-[-0.02em]">

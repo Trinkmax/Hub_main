@@ -77,6 +77,8 @@ export type ExperienceRow = {
 export type TicketOrderRow = {
   id: string
   tenant_id: string
+  /** La sucursal de la función, copiada por la base al comprar (`private.tg_ticket_order_branch`). */
+  branch_id: string
   experience_id: string | null
   scheduled_event_id: string | null
   title: string
@@ -141,6 +143,26 @@ export type PublicFunction = {
   capacity: number
   left: number
   state: FunctionState
+  /**
+   * En qué sucursal es: el `slug` de su `PublicBranch` (la película es del bar; cada función, de una
+   * sucursal). `null` = no se sabe (un bar sin sucursales cargadas).
+   */
+  branch: string | null
+}
+
+/**
+ * Una sucursal como la ven las páginas públicas: solo lo que se muestra. Nada de cupos, teléfonos
+ * ni links de reseñas; tampoco su id (la URL la nombra por el `slug`).
+ */
+export type PublicBranch = {
+  slug: string
+  name: string
+  /** Para donde no entra el nombre entero (los talones). Vacío = el nombre. */
+  shortName: string | null
+  /** La dirección de la sucursal. Vacía = la del bar (`PublicVenue.address`). */
+  address: string | null
+  /** `#rrggbb`. */
+  color: string
 }
 
 export type PublicExperience = {
@@ -188,6 +210,10 @@ export type PublicVenue = {
   logoUrl: string | null
   headline: string | null
   intro: string | null
+  /**
+   * La dirección del bar (Entradas › Configuración). Donde se sabe la función, manda la de su
+   * sucursal (`PublicBranch.address`) y esta queda para cuando la sucursal no cargó la suya.
+   */
   address: string | null
   whatsapp: string | null
   /** A dónde transferir si Mercado Pago rechaza el pago. */
@@ -250,6 +276,11 @@ export type PublicOrder = {
   terms: string | null
   /** Hoy en el bar (día de servicio): para saber si la función es hoy o ya pasó. */
   today: string
+  /**
+   * En qué sucursal es la función, solo si el bar tiene más de una (con una sola no hace falta
+   * decirlo). Sale de la reserva, que sigue al evento; sin reserva, de la compra.
+   */
+  branch: { slug: string; name: string } | null
   /** Quiénes ya entraron: sale de la reserva. */
   entry: OrderEntry
   /** El QR de la puerta. Solo si la entrada está paga y todavía sirve. */

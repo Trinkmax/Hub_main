@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/audit'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   getAccount,
   MercadoPagoError,
@@ -24,6 +25,7 @@ import type { CurrentUser } from '@/lib/tenant/current'
 import { TICKET_SALES_ROLES } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { seatsLeft } from './availability'
+import { branchVisible } from './branches'
 import {
   capacityBelowReserved,
   type FunctionCapacityInput,
@@ -104,6 +106,28 @@ const NO_ACCESS: TicketingActionState = {
 const NO_TRANSFER_ACCESS: TicketingActionState = {
   ok: false,
   message: 'Tu usuario no puede confirmar transferencias. Pedíselo a un dueño.',
+}
+
+const OTHER_BRANCH_ORDER: TicketingActionState = {
+  ok: false,
+  message: 'Esa compra es de una sucursal que no tenés asignada.',
+}
+
+/**
+ * ¿Lo que se va a tocar (una compra, una función) es de una sucursal que esta persona ve? Un
+ * dueño las ve todas; la anfitriona, las que tenga marcadas en Equipo. La pantalla ya muestra
+ * solo lo de la sucursal que se mira: esto frena una acción mandada a mano sobre lo de otra. Si
+ * no se puede saber, no (es plata y son lugares).
+ */
+async function seesBranch(slug: string, branchId: string | null | undefined): Promise<boolean> {
+  try {
+    return branchVisible(await getBranchScope(slug), branchId)
+  } catch (error) {
+    console.error('[ticketing.seesBranch]', {
+      error: error instanceof Error ? error.name : 'unknown',
+    })
+    return false
+  }
 }
 
 function revalidateTicketing(slug: string): void {
@@ -728,7 +752,9 @@ export async function refundTicketOrder(
   const service = createServiceClient() as SBAny
   const { data, error } = await service
     .from('ticket_orders')
-    .select('id, status, mp_payment_id, mp_payment_type, reservation_id, paid_cents, total_cents')
+    .select(
+      'id, branch_id, status, mp_payment_id, mp_payment_type, reservation_id, paid_cents, total_cents',
+    )
     .eq('tenant_id', tenantId)
     .eq('id', orderId)
     .maybeSingle()
@@ -741,6 +767,7 @@ export async function refundTicketOrder(
     return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
   }
   const order = data as {
+    branch_id: string | null
     status: string
     mp_payment_id: string | null
     mp_payment_type: string | null
@@ -749,6 +776,7 @@ export async function refundTicketOrder(
     total_cents: number
   } | null
   if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  if (!(await seesBranch(slug, order.branch_id))) return OTHER_BRANCH_ORDER
   if (order.status === 'refunded') return { ok: true, message: 'Esa compra ya estaba devuelta.' }
   if (isManualTransfer(order.mp_payment_type)) {
     // Mercado Pago no conoce esta plata: no hay nada que pedirle.
@@ -852,6 +880,7 @@ export async function refundTicketOrder(
 // ──────────────────────────────────────────────
 
 type TransferOrderRow = {
+  branch_id: string | null
   status: string
   event_date: string
   total_cents: number
@@ -867,7 +896,9 @@ async function readTransferOrder(
   const service = createServiceClient() as SBAny
   const { data, error } = await service
     .from('ticket_orders')
-    .select('status, event_date, total_cents, mp_payment_id, mp_payment_type, reservation_id')
+    .select(
+      'branch_id, status, event_date, total_cents, mp_payment_id, mp_payment_type, reservation_id',
+    )
     .eq('tenant_id', tenantId)
     .eq('id', orderId)
     .maybeSingle()
@@ -950,6 +981,8 @@ export async function confirmTicketTransfer(
   if (!read.ok) return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
   const order = read.order
   if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  // La anfitriona confirma las de su sucursal (un dueño, las de todas).
+  if (!(await seesBranch(slug, order.branch_id))) return OTHER_BRANCH_ORDER
   // También cubre el segundo toque y a Mercado Pago aprobando mientras tanto.
   if (order.status === 'approved') return { ok: true, message: 'Esa compra ya está paga.' }
   if (!canConfirmTransfer(order)) {
@@ -1027,6 +1060,7 @@ export async function voidTicketTransfer(
   if (!read.ok) return { ok: false, message: 'No pudimos leer la compra. Probá de nuevo.' }
   const order = read.order
   if (!order) return { ok: false, message: 'No encontramos esa compra.' }
+  if (!(await seesBranch(slug, order.branch_id))) return OTHER_BRANCH_ORDER
   if (order.status === 'refunded') {
     return { ok: true, message: 'Esa transferencia ya estaba anulada.' }
   }
@@ -1132,6 +1166,10 @@ export async function setFunctionCapacity(
     return { ok: false, message: 'No pudimos leer la función. Probá de nuevo.' }
   }
   if (!fn) return { ok: false, message: 'Esa función ya empezó o no está en la cartelera.' }
+  // El cupo es de la sala de esa sucursal: lo cambia quien trabaja ahí (un dueño, cualquiera).
+  if (!(await seesBranch(slug, fn.branchId))) {
+    return { ok: false, message: 'Esa función es de una sucursal que no tenés asignada.' }
+  }
   const below = capacityBelowReserved(capacity, fn.reserved)
   if (below) return { ok: false, message: below, field: 'capacity' }
   if (capacity === fn.capacity) return { ok: true, message: `Ya entraban ${capacity}.` }

@@ -20,6 +20,7 @@ function fn(partial: Partial<PublicFunction>): PublicFunction {
     capacity: 50,
     left: 50,
     state: 'available',
+    branch: null,
     ...partial,
   }
 }

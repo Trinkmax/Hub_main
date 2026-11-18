@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getAppUrl } from '@/lib/app-url'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   RoleRequiredError,
   requireRole,
@@ -57,9 +59,11 @@ export default async function VentasOnlinePage({
   const page = salesPage(hasta, now)
   const { fromIso, toIso } = salesPageRange(page)
   const tenantId = access.tenant.id
+  // Las compras de la sucursal que se mira (la de su función); en «Todas», cada una dice la suya.
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
   const [result, transferEnabled, appUrl] = await Promise.all([
     // Los «Deshacer» de la puerta salen de audit_log, que es del dueño: la anfitriona no los ve.
-    listOrdersBetween(tenantId, fromIso, toIso, { undos: access.role === 'owner' }).then(
+    listOrdersBetween(tenantId, fromIso, toIso, { undos: access.role === 'owner', branch }).then(
       ({ orders, olderCreatedAt }): SalesResult => ({
         ok: true,
         days: groupSalesByDay(orders),

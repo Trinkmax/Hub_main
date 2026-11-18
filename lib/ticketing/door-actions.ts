@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef } from '@/lib/branches/types'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -11,7 +13,13 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
-import { type DoorTicket, doorTicketSchema, parseDoorToken } from './door'
+import {
+  type DoorElsewhere,
+  type DoorTicket,
+  doorTicketSchema,
+  isOtherBranch,
+  parseDoorToken,
+} from './door'
 import { orderIdFromEntryCode } from './entry-code'
 import { orderIdSchema } from './schemas'
 
@@ -20,30 +28,39 @@ import { orderIdSchema } from './schemas'
  * el rol los vuelve a controlar la base (`ticket_door_*`), que es la única que
  * puede leer los pedidos para alguien que no sea dueño. El rastro también lo deja
  * la base, en la misma transacción.
+ *
+ * La sucursal (docs/features/sucursales.md): la puerta es un lugar, la sucursal de
+ * este equipo. Las funciones de la base no la miran (son de antes de las
+ * sucursales), así que acá se compara la sucursal de la reserva de la entrada con
+ * la de la puerta: si es de otra, se avisa dónde es y no se deja pasar.
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: funciones nuevas, sin tipos generados todavía
 type SBAny = any
 
 export type DoorLookupResult =
-  | { ok: true; ticket: DoorTicket }
+  /** `elsewhere`: la entrada es de otra sucursal (dónde es). `null` = de esta, o no se sabe. */
+  | { ok: true; ticket: DoorTicket; elsewhere: DoorElsewhere | null }
   /** No es una entrada de este bar (o el código no existe). */
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'error'; message: string }
 
-const NO_ACCESS: DoorLookupResult = {
+type Failure = Exclude<DoorLookupResult, { ok: true }>
+type Parsed = { ok: true; ticket: DoorTicket } | Failure
+
+const NO_ACCESS: Failure = {
   ok: false,
   reason: 'error',
   message: 'No tenés permiso para validar entradas.',
 }
 
-const SESSION_EXPIRED: DoorLookupResult = {
+const SESSION_EXPIRED: Failure = {
   ok: false,
   reason: 'error',
   message: 'Tu sesión venció. Volvé a entrar para seguir validando.',
 }
 
-const TRY_AGAIN: DoorLookupResult = {
+const TRY_AGAIN: Failure = {
   ok: false,
   reason: 'error',
   message: 'No pudimos consultar la entrada. Revisá la señal y probá de nuevo.',
@@ -53,13 +70,12 @@ const slugSchema = z.string().min(1).max(80)
 const tokenSchema = z.string().min(1).max(200)
 const guestsSchema = z.number().int().min(1).max(99)
 const insideSchema = z.number().int().min(0).max(99)
+const branchIdSchema = z.uuid().nullish()
 
 type Access = Awaited<ReturnType<typeof requireTenantAccess>>
 
 /** El acceso, o por qué no: «sin permiso» solo si de verdad no lo tiene. */
-async function authorize(
-  slug: string,
-): Promise<{ access: Access } | { refusal: DoorLookupResult }> {
+async function authorize(slug: string): Promise<{ access: Access } | { refusal: Failure }> {
   if (!slugSchema.safeParse(slug).success) return { refusal: NO_ACCESS }
   try {
     const access = await requireTenantAccess(slug)
@@ -78,7 +94,7 @@ async function authorize(
   }
 }
 
-function parseTicket(data: unknown): DoorLookupResult {
+function parseTicket(data: unknown): Parsed {
   if (data === null || data === undefined) return { ok: false, reason: 'not_found' }
   const parsed = doorTicketSchema.safeParse(data)
   if (!parsed.success) {
@@ -90,8 +106,111 @@ function parseTicket(data: unknown): DoorLookupResult {
   return { ok: true, ticket: parsed.data }
 }
 
-/** Escanear: mira la entrada y no toca nada. */
-export async function lookupDoorTicket(slug: string, token: string): Promise<DoorLookupResult> {
+type DoorPlace = {
+  /** La sucursal de esta puerta. `null` = no se sabe: no se frena a nadie por la sucursal. */
+  door: BranchRef | null
+  /** Las sucursales que ve quien recibe: de ahí sale el nombre de la otra, si la tiene. */
+  branches: BranchRef[]
+}
+
+/**
+ * La sucursal de esta puerta: la que mandó la pantalla (con la que se dibujó, si la persona la
+ * tiene) o, si no mandó ninguna (el escáner del salón), la de este equipo.
+ */
+async function doorPlace(slug: string, requested: string | null | undefined): Promise<DoorPlace> {
+  try {
+    const scope = await getBranchScope(slug, 'device')
+    const asked = requested ? scope.branches.find((branch) => branch.id === requested) : undefined
+    return { door: asked ?? scope.current, branches: scope.branches }
+  } catch (error) {
+    // Sin saber dónde está la puerta, se valida como siempre: lo importante es poder escanear.
+    console.error('[ticketing.door.place]', {
+      error: error instanceof Error ? error.name : 'unknown',
+    })
+    return { door: null, branches: [] }
+  }
+}
+
+/** El nombre de una sucursal que quien recibe quizás no tiene (la policy de branches deja leerla). */
+async function branchName(
+  supabase: SBAny,
+  tenantId: string,
+  branchId: string,
+  known: ReadonlyArray<BranchRef>,
+): Promise<string | null> {
+  const mine = known.find((branch) => branch.id === branchId)
+  if (mine) return mine.name
+  const { data, error } = await supabase
+    .from('branches')
+    .select('name')
+    .eq('tenant_id', tenantId)
+    .eq('id', branchId)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.door.branchName]', { tenantId, code: error.code })
+    return null
+  }
+  return (data as { name: string } | null)?.name ?? null
+}
+
+/**
+ * ¿La entrada es de otra sucursal? Se mira la de su reserva, que sigue al evento (si lo mudaron,
+ * vale la de ahora). Sin reserva no hay a quién dejar pasar (la base lo dice) y, si algo no se
+ * puede leer, la puerta no frena a nadie por eso.
+ */
+async function elsewhereOf(
+  supabase: SBAny,
+  tenantId: string,
+  ticket: DoorTicket,
+  place: DoorPlace,
+): Promise<DoorElsewhere | null> {
+  if (!place.door || !ticket.reservation) return null
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select('branch_id')
+    .eq('tenant_id', tenantId)
+    .eq('id', ticket.reservation.id)
+    .maybeSingle()
+  if (error) {
+    console.error('[ticketing.door.branch]', { tenantId, code: error.code })
+    return null
+  }
+  const branchId = (data as { branch_id: string | null } | null)?.branch_id ?? null
+  if (!branchId || !isOtherBranch(branchId, place.door.id)) return null
+  return {
+    branch: await branchName(supabase, tenantId, branchId, place.branches),
+    here: place.door.name,
+  }
+}
+
+async function placed(
+  supabase: SBAny,
+  tenantId: string,
+  parsed: Parsed,
+  place: DoorPlace,
+): Promise<DoorLookupResult> {
+  if (!parsed.ok) return parsed
+  return {
+    ok: true,
+    ticket: parsed.ticket,
+    elsewhere: await elsewhereOf(supabase, tenantId, parsed.ticket, place),
+  }
+}
+
+function lookupFailure(tenantId: string, error: { code?: string; message?: string }): Failure {
+  console.error('[ticketing.door.lookup]', { tenantId, code: error.code })
+  return error.message?.includes('forbidden') ? NO_ACCESS : TRY_AGAIN
+}
+
+/**
+ * Escanear: mira la entrada y no toca nada. `branchId` es la sucursal con la que se dibujó la
+ * puerta; sin ella, la de este equipo.
+ */
+export async function lookupDoorTicket(
+  slug: string,
+  token: string,
+  branchId?: string | null,
+): Promise<DoorLookupResult> {
   const auth = await authorize(slug)
   if ('refusal' in auth) return auth.refusal
 
@@ -99,6 +218,7 @@ export async function lookupDoorTicket(slug: string, token: string): Promise<Doo
   if (!cleanToken.success) return { ok: false, reason: 'not_found' }
   const parsedToken = parseDoorToken(cleanToken.data)
   if (!parsedToken) return { ok: false, reason: 'not_found' }
+  const cleanBranch = branchIdSchema.safeParse(branchId)
 
   let orderId: string | null = null
   if ('entryCode' in parsedToken) {
@@ -106,17 +226,18 @@ export async function lookupDoorTicket(slug: string, token: string): Promise<Doo
     if (!orderId) return { ok: false, reason: 'not_found' }
   }
 
+  const tenantId = auth.access.tenant.id
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase.rpc('ticket_door_lookup', {
-    p_tenant_id: auth.access.tenant.id,
-    p_order_id: orderId,
-    p_short_code: 'shortCode' in parsedToken ? parsedToken.shortCode : null,
-  })
-  if (error) {
-    console.error('[ticketing.door.lookup]', { tenantId: auth.access.tenant.id, code: error.code })
-    return error.message?.includes('forbidden') ? NO_ACCESS : TRY_AGAIN
-  }
-  return parseTicket(data)
+  const [{ data, error }, place] = await Promise.all([
+    supabase.rpc('ticket_door_lookup', {
+      p_tenant_id: tenantId,
+      p_order_id: orderId,
+      p_short_code: 'shortCode' in parsedToken ? parsedToken.shortCode : null,
+    }),
+    doorPlace(slug, cleanBranch.success ? cleanBranch.data : null),
+  ])
+  if (error) return lookupFailure(tenantId, error)
+  return placed(supabase, tenantId, parseTicket(data), place)
 }
 
 /** Lo que la base se niega a hacer no es un error de la pantalla: es otro veredicto. */
@@ -145,12 +266,16 @@ function revalidateDoor(slug: string) {
  * la pantalla: si otro celular se adelantó, o es un reintento de algo que ya entró,
  * la base no suma. Si la base no lo permite (también si la devolvieron, etc.), vuelve
  * a mirar la entrada: la pantalla muestra cómo está ahora, no un error.
+ *
+ * Antes de pedírselo a la base, la sucursal: una entrada de otra sucursal no pasa por esta
+ * puerta aunque la pantalla lo pida (vuelve con `elsewhere` y sin `admitted`).
  */
 export async function admitDoorTicket(
   slug: string,
   orderId: string,
   guests: number,
   expectedInside: number,
+  branchId?: string | null,
 ): Promise<DoorLookupResult & { admitted?: boolean }> {
   const auth = await authorize(slug)
   if ('refusal' in auth) return auth.refusal
@@ -161,9 +286,23 @@ export async function admitDoorTicket(
   ) {
     return { ok: false, reason: 'not_found' }
   }
+  const cleanBranch = branchIdSchema.safeParse(branchId)
   const tenantId = auth.access.tenant.id
 
   const supabase = (await createClient()) as SBAny
+  const [{ data: current, error: currentError }, place] = await Promise.all([
+    supabase.rpc('ticket_door_lookup', {
+      p_tenant_id: tenantId,
+      p_order_id: orderId,
+      p_short_code: null,
+    }),
+    doorPlace(slug, cleanBranch.success ? cleanBranch.data : null),
+  ])
+  if (currentError) return lookupFailure(tenantId, currentError)
+  const before = await placed(supabase, tenantId, parseTicket(current), place)
+  if (!before.ok) return before
+  if (before.elsewhere) return { ...before, admitted: false }
+
   const { data, error } = await supabase.rpc('ticket_door_admit', {
     p_tenant_id: tenantId,
     p_order_id: orderId,
@@ -178,15 +317,17 @@ export async function admitDoorTicket(
         p_order_id: orderId,
         p_short_code: null,
       })
-      return freshError ? TRY_AGAIN : parseTicket(fresh)
+      return freshError ? TRY_AGAIN : placed(supabase, tenantId, parseTicket(fresh), place)
     }
     console.error('[ticketing.door.admit]', { tenantId, code: error.code })
     return TRY_AGAIN
   }
 
   const result = parseTicket(data)
-  if (result.ok) revalidateDoor(slug)
-  return { ...result, admitted: result.ok }
+  if (!result.ok) return result
+  revalidateDoor(slug)
+  // Entró por esta puerta: es de esta sucursal.
+  return { ok: true, ticket: result.ticket, elsewhere: null, admitted: true }
 }
 
 /** Por qué no se pudo deshacer, y adónde ir. */
@@ -218,6 +359,8 @@ export async function undoDoorTicket(slug: string, orderId: string): Promise<Doo
   }
 
   const result = parseTicket(data)
-  if (result.ok) revalidateDoor(slug)
-  return result
+  if (!result.ok) return result
+  revalidateDoor(slug)
+  // Se deshace lo que se dejó pasar por esta puerta: es de esta sucursal.
+  return { ok: true, ticket: result.ticket, elsewhere: null }
 }
