@@ -70,7 +70,7 @@ export function BranchGate({
         router.refresh()
       })
     },
-    [chosen, pending, router, slug],
+    [chosen, pending, router, slug, surface],
   )
 
   // 1, 2… elige una sucursal; 0, todas juntas.
@@ -91,7 +91,7 @@ export function BranchGate({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [branches, canAll, choose])
+  }, [branches, canAll, choose, surface])
 
   return (
     <main className="branch-gate bg-app-gradient">
