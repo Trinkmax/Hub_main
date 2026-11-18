@@ -277,10 +277,11 @@ export type ReservationSearchResult = {
 
 /**
  * Select del buscador: lo que muestra cada resultado más el evento, que define
- * el servicio (R3). El teléfono se filtra en la query pero no se devuelve.
+ * el servicio (R3). El teléfono se filtra en la query pero no se devuelve. La
+ * relación con el evento va nombrada (hay dos llaves: ver RESERVATION_JOIN_SELECT).
  */
 export const SEARCH_RES_SELECT =
-  'id, guest_name, reservation_date, reservation_time_local, estimated_guests, actual_guests, status, meal_type, scheduled_event_id, scheduled_event:scheduled_events(id, starts_at_local, name_override, template:scheduled_event_templates(name, color_hex))'
+  'id, guest_name, reservation_date, reservation_time_local, estimated_guests, actual_guests, status, meal_type, scheduled_event_id, scheduled_event:scheduled_events!salon_reservations_scheduled_event_id_fkey(id, starts_at_local, name_override, template:scheduled_event_templates(name, color_hex))'
 
 /**
  * Fila del buscador → resultado. El servicio sale con la MISMA regla que el

@@ -18,9 +18,10 @@ import { EVENTS_REPORT_MAX_ROWS, getManagerForUser } from './queries'
 const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
 
 // `scheduled_event(private_group)`: un cumple dentro de un grupo privado no es
-// «dentro de un evento» (02/10). La FK es simple (`scheduled_event_id`).
+// «dentro de un evento» (02/10). La relación va nombrada: hay dos llaves de la reserva al evento
+// (ver RESERVATION_JOIN_SELECT en queries.ts) y sin el nombre PostgREST contesta PGRST201.
 const BIRTHDAY_ROW_SELECT =
-  'id, reservation_date, created_at, status, estimated_guests, actual_guests, scheduled_event_id, scheduled_event:scheduled_events(private_group)'
+  'id, reservation_date, created_at, status, estimated_guests, actual_guests, scheduled_event_id, scheduled_event:scheduled_events!salon_reservations_scheduled_event_id_fkey(private_group)'
 
 /** La fila como la devuelve PostgREST, con la fecha embebida (objeto, o array en algún cliente). */
 type BirthdayDbRow = Omit<BirthdayReservationRow, 'in_private_group'> & {

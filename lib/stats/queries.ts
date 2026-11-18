@@ -149,7 +149,8 @@ export async function getEventsRanking(tenantId: string, limit = 20): Promise<Ev
   const { data } = await supabase
     .from('scheduled_events')
     .select(
-      'id, name_override, event_date, template:scheduled_event_templates(name), reservations:salon_reservations(status)',
+      // La relación va nombrada: hay dos llaves entre reservas y eventos (PGRST201 sin el nombre).
+      'id, name_override, event_date, template:scheduled_event_templates(name), reservations:salon_reservations!salon_reservations_scheduled_event_id_fkey(status)',
     )
     .eq('tenant_id', tenantId)
     .order('event_date', { ascending: false })
