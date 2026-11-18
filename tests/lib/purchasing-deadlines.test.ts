@@ -523,6 +523,44 @@ describe('lo de la semana', () => {
   })
 })
 
+describe('un día antes del evento (lo que pidió Tomás el 18/11/2026)', () => {
+  // «Está puesto para que todo llegue dos días antes del evento: lo corramos para que quede un día antes.»
+  const UN_DIA: CountSchedule = { ...HUB, arriveDaysBefore: 1 }
+  // Miércoles 18, con el conteo de hoy abierto (cubre hasta el lunes 23); el último mandado, el domingo 15.
+  const today = '2026-11-18'
+  const hoy = {
+    today,
+    lastSent: '2026-11-15',
+    openCount: { countDate: today, eventsUntil: '2026-11-23' },
+  }
+
+  it('las ventanas de los conteos no se mueven: las fijó Tomás', () => {
+    expect(countWindowsText(UN_DIA)).toBe(
+      'Los domingos cubre los eventos hasta el jueves; los miércoles, hasta el lunes.',
+    )
+    expect(defaultEventsUntil('2026-11-22', UN_DIA)).toBe('2026-11-26')
+  })
+
+  it('viernes 20: con dos días ya era tarde; con uno, lo trae el conteo de hoy y llega el jueves', () => {
+    expect(only({ ...hoy, events: [event('2026-11-20')] }).status).toBe('late')
+    const row = only({ ...hoy, events: [event('2026-11-20')], schedule: UN_DIA })
+    expect(row.mustArriveBy).toBe('2026-11-19')
+    expect(row.orderBy).toBe(today)
+    expect(row.status).toBe('count')
+    expect(row.countDate).toBe(today)
+    expect(row.arrives).toBe('2026-11-19')
+  })
+
+  it('martes 24: con dos días había que pedirlo aparte; con uno, lo trae el conteo del domingo', () => {
+    expect(only({ ...hoy, events: [event('2026-11-24')] }).status).toBe('todo')
+    const row = only({ ...hoy, events: [event('2026-11-24')], schedule: UN_DIA })
+    expect(row.mustArriveBy).toBe('2026-11-23')
+    expect(row.status).toBe('count')
+    expect(row.countDate).toBe('2026-11-22')
+    expect(row.arrives).toBe('2026-11-23')
+  })
+})
+
 describe('lo que ve Tex', () => {
   it('cada evento con hasta cuándo pedirle a cada proveedor', () => {
     const carnes = supplier({ id: 's-carnes', name: 'Carnes La Recta', leadDays: 2 })

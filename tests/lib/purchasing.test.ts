@@ -323,7 +323,7 @@ describe('lo que piden los eventos', () => {
 })
 
 describe('qué se cuenta', () => {
-  const needs = new Map([['ev', { qty: 3, events: ['Shrek · mar 27/10'] }]])
+  const needs = new Map([['ev', { qty: 3, events: ['Shrek · mar 27/10'], parts: [] }]])
   it('frecuentes siempre, secundarios una vez por mes, eventuales si un evento los pide', () => {
     const list = itemsForCount({
       items: [
@@ -358,7 +358,7 @@ describe('el pedido sugerido', () => {
     const l = suggestLine({
       item: item({ targetQty: 15, packSize: 1 }),
       line: { state: 'exact', quantity: 3 },
-      need: { qty: 5, events: ['Shrek · mar 27/10'] },
+      need: { qty: 5, events: ['Shrek · mar 27/10'], parts: [] },
       inTransitQty: 2,
       lowFraction: 0.5,
     })
@@ -401,7 +401,7 @@ describe('el pedido sugerido', () => {
     const ev = suggestLine({
       item: item({ name: 'Pata de pollo', unit: 'unidad', packSize: null, targetQty: null }),
       line: undefined,
-      need: { qty: 66, events: ['Shrek · mar 27/10'] },
+      need: { qty: 66, events: ['Shrek · mar 27/10'], parts: [] },
       inTransitQty: 0,
       lowFraction: 0.5,
     })

@@ -55,7 +55,7 @@ export type PurSettings = {
    * Un día sin ventana fijada cubre hasta que el próximo conteo llegue a tiempo (`defaultEventsUntil`).
    */
   countWindows: Record<number, number>
-  /** La mercadería tiene que llegar estos días antes del evento (HUB: 2). */
+  /** La mercadería tiene que llegar estos días antes del evento (HUB: 1 desde el 18/11/2026; antes, 2). */
   arriveDaysBefore: number
   recipeBaseGuests: number
   reviewerName: string | null

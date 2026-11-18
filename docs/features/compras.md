@@ -38,7 +38,8 @@ pruebas en `tests/lib/purchasing.test.ts`.
 ### Qué se cuenta
 
 - **Frecuente**: en todos los conteos. **Secundario**: una vez por mes. **Eventual**: solo si un evento lo pide.
-- Lo que pide un evento se cuenta con el **número exacto** (no hay «Alcanza» ni «Poco»).
+- Lo que pide un evento se cuenta con el **número exacto** (no hay «Alcanza» ni «Poco»). Cada etiqueta dice cuánto
+  lleva ese evento y arriba a la derecha está lo que tiene que haber (ver «Cuánto lleva cada evento»).
 - Hay un solo conteo abierto por bar: si se corta, se sigue el mismo, también entre dos personas. Se guarda solo.
 - **Pedido** es el conteo de siempre. **Refuerzo**, uno extra: lo que cuenta reemplaza, producto por producto, lo que
   había en los borradores; lo demás queda (`pur_submit_count`).
@@ -55,6 +56,32 @@ pruebas en `tests/lib/purchasing.test.ts`.
 - Si la receta usa otra unidad que el insumo: kg↔g y L↔ml se pasan solos; si no hay cuenta segura (unidad contra
   kg), suma como viene y queda en «Datos para corregir».
 
+### Cuánto lleva cada evento (18/11/2026)
+
+Lo pidió Tomás con una captura del conteo de Flor: «me dice cebolla blanca que se usa también para esos eventos, pero
+necesito que me diga también la cantidad que trae en la receta. Es decir: cebolla blanca, objetivo 15 kilos; para
+Ratatouille se usan 3 kilos, para Comida Coreana se usan 3 kilos más».
+
+```
+Cebolla Blanca                                         23,5 kg
+kg · objetivo 15                                tiene que haber
+[Para Ratatouille · mié 18/11  +4,5 kg]
+[Para Comida Coreana · jue 19/11  +4 kg]
+```
+
+- Cada etiqueta violeta lleva la cantidad de **esa fecha**: la de la receta por las personas (las recetas son para
+  60 y se multiplican si hay más reservas), en la unidad del insumo. Sale de `EventNeed.parts`
+  (`lib/purchasing/events.ts`), que suma lo mismo que `qty`: si la receta nombra el insumo dos veces, la fecha va
+  una sola vez con las dos cantidades.
+- **Tiene que haber** = el objetivo de la carta + lo de cada evento (`mustHaveQty` en `suggest.ts`): es contra lo que
+  la cuenta compara lo contado. Sin objetivo y con una sola fecha no aparece (ya lo dice la etiqueta).
+- El **resumen** antes de enviar también lo dice por fecha: «Hay 10 kg · objetivo 15 · +4,5 para Ratatouille
+  (mié 18/11) · +4 para Comida Coreana (jue 19/11)».
+- El renglón del pedido guarda el total de los eventos y sus nombres (`event_qty`, `event_names`), no el detalle por
+  fecha: el panel de quien compra sigue mostrando «eventos +8,5» con las etiquetas sin cantidad. Para tenerlo ahí
+  hace falta una columna nueva en `pur_order_lines` y tocar `pur_submit_count` (coordinar con la tanda de sucursales,
+  que también la reescribe).
+
 ## Plazos de los eventos (11/11/2026)
 
 Lo pidió Tomás: «linkear los eventos de la semana con los días antes que tenés que pedir los insumos, con los días
@@ -64,8 +91,9 @@ jueves** de esa semana y el del miércoles, la carta y los eventos **hasta el lu
 
 - **Ajustes de Compras**: los días de conteo, hasta qué día cubre los eventos cada uno (`pur_settings.count_windows`,
   `{"0": 4, "3": 5}`: días después del conteo) y cuántos días antes del evento tiene que llegar la mercadería
-  (`arrive_days_before`, 2). Un día de conteo sin ventana fijada cubre hasta el día antes de que el próximo conteo
-  pueda traer la mercadería a tiempo (`defaultEventsUntil`: con 2 días, da lo mismo que pidió Tomás).
+  (`arrive_days_before`: 2 al principio, **1 desde el 18/11/2026**). Un día de conteo sin ventana fijada cubre hasta
+  el día antes de que el próximo conteo pueda traer la mercadería a tiempo (`defaultEventsUntil`: con 2 días, da lo
+  mismo que pidió Tomás; HUB tiene las ventanas fijadas, así que pasar a 1 día no las mueve).
 - **Nuevo conteo**: «Contar para los eventos hasta» sale de esa ventana y cambia con la fecha (mientras no lo
   toquen). Debajo dice «Los domingos cubre los eventos hasta el jueves; los miércoles, hasta el lunes.».
 - **La cuenta** (`lib/purchasing/deadlines.ts`, puro, con pruebas en `tests/lib/purchasing-deadlines.test.ts`). Para
@@ -94,9 +122,17 @@ jueves** de esa semana y el del miércoles, la carta y los eventos **hasta el lu
   Ramen»); si hay que mandarlo hoy para que llegue, también.
 - **Tex**: `ver_pedidos` trae `eventos_de_la_semana` con el estado de cada proveedor; el manual explica la regla.
 
-Con las ventanas de Tomás y un proveedor que pide con un día, los eventos de martes y de viernes no llegan dos días
-antes con ningún conteo (el del domingo llega el lunes; el del miércoles, el jueves): el panel los marca «Pedilo
+Con las ventanas de Tomás y un proveedor que pide con un día, los eventos de martes y de viernes no llegaban dos días
+antes con ningún conteo (el del domingo llega el lunes; el del miércoles, el jueves): el panel los marcaba «Pedilo
 aparte» para que se pidan a mano.
+
+**Un día antes (18/11/2026).** Tomás, por audio: «viste que está puesto para que todo llegue dos días antes del
+evento: lo corramos para que quede un día antes». Se cambió el ajuste de HUB por soporte (`arrive_days_before` 2 → 1,
+auditoría `purchasing.settings_updated` con `via: soporte`); se puede volver a cambiar desde Compras › Ajustes. Con un
+día, el conteo del domingo (llega el lunes) alcanza a los eventos del martes y el del miércoles (llega el jueves), a
+los del viernes. Ese mismo día, en el panel de HUB: «Tapeo y Malbec» del vie 20/11 pasó de «tarde» a «lo trae el
+conteo de hoy» con 7 proveedores, «Sushi en pasos» del 27/11 dejó de pedir 6 cosas aparte, y quedaron «tarde»
+Ratatouille (mié 18) y Comida Coreana (jue 19) con varios proveedores, porque el domingo 15 no se mandó conteo.
 
 ## Proveedores: una sola ficha con Administración (11/11/2026)
 
@@ -229,6 +265,21 @@ entrega de los proveedores: sin eso no se abre el chat ni se calcula la fecha.
 - Probar con el teclado de un iPhone de verdad, y el botón de WhatsApp de Tex con WhatsApp instalado (ir y volver de
   la app con la charla abierta).
 - Un botón «Nuevo pedido» en el panel (hoy un pedido a mano solo lo arma Tex).
+
+## Smoke de «cuánto lleva cada evento» (18/11/2026, bar de ejemplo; celular 390 × 844 y 360 × 780, notebook 1190 × 660)
+
+Con dos fechas de Shrek en la ventana del conteo (vie 20/11 y lun 23/11; la receta lleva 3 kg de cebolla blanca):
+
+1. Stock › Nuevo conteo › Empezar: el cartel dice «Eventos hasta el lun 23/11 · Shrek · vie 20/11 · 60 personas ·
+   Shrek · lun 23/11 · 60 personas».
+2. Cámara de frío › Cebolla Blanca: «kg · objetivo 15», a la derecha «21 kg · tiene que haber», y dos etiquetas «Para
+   Shrek · vie 20/11 +3 kg» y «Para Shrek · lun 23/11 +3 kg» (en la notebook, una al lado de la otra).
+3. Escribir 10: queda «10 kg», «Guardado 13:34».
+4. Para los eventos › Café en grano (sin objetivo, dos fechas): «2 kg · tiene que haber» con «+1 kg» en cada una.
+5. Con etiquetas largas a 360 px, la de «Peli y comida: El viaje de Chihiro · dom 22/11» se parte en dos renglones y
+   la cantidad queda a la derecha.
+6. Resumen › Matias Mondino › Cebolla Blanca: «Hay 10 kg · objetivo 15 · +3 para Shrek (vie 20/11) · +3 para Shrek
+   (lun 23/11)» → 11 kg.
 
 ## Smoke manual (06/11/2026, bar de ejemplo, celular 390 × 844 y compu 1440 × 900)
 

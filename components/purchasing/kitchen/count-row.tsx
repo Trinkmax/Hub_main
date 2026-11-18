@@ -2,9 +2,10 @@
 
 import { Check, X } from 'lucide-react'
 import { memo, useEffect, useId, useState } from 'react'
-import type { EventNeed } from '@/lib/purchasing/events'
+import type { EventNeed, EventShare } from '@/lib/purchasing/events'
+import { mustHaveQty } from '@/lib/purchasing/suggest'
 import type { CountState, PurItem } from '@/lib/purchasing/types'
-import { formatQty, parseQty, roundQty, unitShort } from '@/lib/purchasing/units'
+import { formatAmount, formatQty, parseQty, roundQty, unitShort } from '@/lib/purchasing/units'
 import { cn } from '@/lib/utils'
 
 export type LocalLine = { state: CountState; quantity: number | null }
@@ -114,6 +115,22 @@ function QtyField({
   )
 }
 
+/**
+ * La etiqueta violeta de un evento, con lo que lleva su receta para esa fecha (ya multiplicado por las
+ * personas): «Para Ratatouille · mié 18/11 · +4,5 kg».
+ */
+function EventTag({ share, unit }: { share: EventShare; unit: string }) {
+  return (
+    <li className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-pur-event-soft py-0.5 pr-0.5 pl-2 text-[0.8rem] font-semibold leading-snug text-pur-event">
+      <span className="min-w-0">{`Para ${share.label}`}</span>
+      <span className="shrink-0 rounded-md bg-pur-event px-1.5 tabular-nums text-pur-event-soft">
+        <span className="sr-only">lleva </span>
+        {`+${formatAmount(share.qty, unit)}`}
+      </span>
+    </li>
+  )
+}
+
 function ChangeLink({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -146,6 +163,8 @@ export const CountRow = memo(function CountRow({
   const unit = unitShort(item.unit)
   const target = item.targetQty
   const forEvent = Boolean(need)
+  // Contra esto se compara lo contado: el objetivo de la carta más lo de cada fecha.
+  const mustHave = mustHaveQty(target, need)
   const set = (next: LocalLine | null) => onMark(item.id, next)
 
   return (
@@ -163,18 +182,24 @@ export const CountRow = memo(function CountRow({
             {target != null ? ` · objetivo ${formatQty(target)}` : ''}
           </p>
         </div>
-      </div>
-      {need ? (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {need.events.map((label) => (
-            <span
-              key={label}
-              className="rounded-lg bg-pur-event-soft px-2 py-0.5 text-[0.8rem] font-semibold text-pur-event"
-            >
-              Para {label}
+        {mustHave != null ? (
+          <p className="shrink-0 text-right">
+            <span className="sr-only">Tiene que haber </span>
+            <span className="block text-[1.05rem] font-semibold leading-snug tabular-nums">
+              {formatAmount(mustHave, item.unit)}
             </span>
+            <span className="block text-sm text-muted-foreground" aria-hidden>
+              tiene que haber
+            </span>
+          </p>
+        ) : null}
+      </div>
+      {need?.parts.length ? (
+        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Lo que piden los eventos">
+          {need.parts.map((share) => (
+            <EventTag key={share.eventId} share={share} unit={item.unit} />
           ))}
-        </div>
+        </ul>
       ) : null}
 
       <div className="mt-2.5">

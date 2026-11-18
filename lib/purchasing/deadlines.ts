@@ -1,8 +1,9 @@
 /**
  * Cuándo hay que pedir lo de cada evento. Puro.
  *
- * La regla de HUB (Tomás, 11/11/2026): la mercadería tiene que entrar N días antes del evento (N = 2, en los
- * Ajustes de Compras). Para cada fecha que suma insumos y cada proveedor que trae algo de su receta:
+ * La regla de HUB (Tomás, 11/11/2026): la mercadería tiene que entrar N días antes del evento (N en los Ajustes
+ * de Compras: 2 al principio, 1 desde el 18/11/2026). Para cada fecha que suma insumos y cada proveedor que trae
+ * algo de su receta:
  *
  *   tiene que llegar hasta = la fecha − N
  *   llega                  = el último día de entrega del proveedor que no pasa de eso
