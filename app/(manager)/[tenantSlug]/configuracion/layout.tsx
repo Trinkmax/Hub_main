@@ -20,11 +20,7 @@ export default async function ConfiguracionLayout({
 
   return (
     <div className="mx-auto w-full max-w-7xl gap-8 px-4 py-6 sm:px-6 lg:flex lg:py-8">
-      <aside className="hidden w-60 shrink-0 lg:block">
-        <div className="sticky top-20">
-          <SettingsNav tenantSlug={tenantSlug} features={features} />
-        </div>
-      </aside>
+      <SettingsNav tenantSlug={tenantSlug} features={features} />
 
       <div className="min-w-0 flex-1">{children}</div>
     </div>

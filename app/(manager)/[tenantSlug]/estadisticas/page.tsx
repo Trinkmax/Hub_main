@@ -99,15 +99,15 @@ export default async function EstadisticasPage({
         <SectionTitle id="stats-people" title="La gente que vino">
           Sale de las reservas marcadas «Llegó». El detalle de cada noche está en Cómo nos fue.
         </SectionTitle>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             icon={Users}
             iconClassName="text-primary"
-            label={`Personas · ${WINDOW_DAYS} días`}
+            label="Personas"
             numberValue={current.covers}
             numberFormatKind="integer"
             hint={`En ${numberFmt.format(current.arrived)} ${current.arrived === 1 ? 'reserva' : 'reservas'}`}
-            delta={<Delta pct={delta} />}
+            delta={delta === null ? undefined : <Delta pct={delta} />}
             deltaTone={
               delta === null || delta === 0 ? 'muted' : delta > 0 ? 'positive' : 'negative'
             }
@@ -115,11 +115,11 @@ export default async function EstadisticasPage({
           <StatCard
             icon={Moon}
             iconClassName="text-info"
-            label="Promedio por día con gente"
+            label="Promedio por día"
             value={nights > 0 ? numberFmt.format(Math.round(current.covers / nights)) : '—'}
             hint={
               nights > 0
-                ? `${numberFmt.format(nights)} ${nights === 1 ? 'día' : 'días'} con reservas que llegaron`
+                ? `Personas por día, en ${numberFmt.format(nights)} ${nights === 1 ? 'día' : 'días'} con gente`
                 : 'Todavía no hay reservas marcadas'
             }
           />
@@ -139,12 +139,12 @@ export default async function EstadisticasPage({
           <StatCard
             icon={Receipt}
             iconClassName="text-warning"
-            label="Reservas sin marcar"
+            label="Sin marcar"
             value={numberFmt.format(current.unmarked)}
             hint={
               current.unmarked === 0
                 ? 'Todas tienen «Llegó» o «No vino»'
-                : 'Ya pasaron y nadie dijo si vinieron: no entran en la cuenta'
+                : 'Reservas que ya pasaron y nadie marcó. No entran en la cuenta.'
             }
           />
         </div>
@@ -164,7 +164,7 @@ export default async function EstadisticasPage({
           <StatCard
             icon={Receipt}
             iconClassName="text-primary"
-            label="Consumos con puntos · 30 días"
+            label="Consumos · 30 días"
             numberValue={kpis.visits_30d}
             numberFormatKind="integer"
             hint={
@@ -282,8 +282,7 @@ function SectionTitle({
   )
 }
 
-function Delta({ pct }: { pct: number | null }) {
-  if (pct === null) return <>sin comparación</>
+function Delta({ pct }: { pct: number }) {
   if (pct === 0) return <>igual</>
   return pct > 0 ? (
     <>

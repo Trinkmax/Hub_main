@@ -234,8 +234,16 @@ describe('Configuración: su menú lateral', () => {
     expect(current[0]).toContain('href="/hub/configuracion/equipo"')
   })
 
-  it('Sucursales y el Plano del salón aparecen solo con el punto de venta', async () => {
+  it('en la portada no se dibuja: la lista ya está en la página', async () => {
     nav.pathname = '/hub/configuracion'
+    const { SettingsNav } = await import(
+      '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
+    )
+    expect(renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))).toBe('')
+  })
+
+  it('Sucursales y el Plano del salón aparecen solo con el punto de venta', async () => {
+    nav.pathname = '/hub/configuracion/apariencia'
     const { SettingsNav } = await import(
       '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
     )

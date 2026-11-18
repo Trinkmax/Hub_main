@@ -1,7 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, PartyPopper, Sparkles, UserCheck, Users } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { PeopleChart } from '@/components/charts/people-chart'
-import { Sparkline } from '@/components/charts/sparkline'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { formatCentsShort } from '@/lib/money/format'
@@ -18,7 +17,6 @@ import { getKpis } from '@/lib/stats/queries'
 import { homePathForRole, requireTenantAccess } from '@/lib/tenant'
 import type { Tenant } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
-import { PosTodayCard } from './_components/pos-today-card'
 import { QuickActions } from './_components/quick-actions'
 import { TodaySalonOverview } from './_components/today-salon-overview'
 import { UpcomingEventsCard } from './_components/upcoming-events-card'
@@ -112,9 +110,9 @@ export default async function TenantHomePage({
   ])
 
   const { current, previous } = pulse
-  const coversDelta = deltaLabel(pulseDelta(current.covers, previous.covers))
+  const coversPct = pulseDelta(current.covers, previous.covers)
+  const coversDelta = deltaLabel(coversPct)
   const attendancePct = current.attendance === null ? null : Math.round(current.attendance * 100)
-  const sparkData = pulse.days.map((day) => ({ value: day.covers }))
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -128,76 +126,86 @@ export default async function TenantHomePage({
       {/* Para un bar que recién arranca es lo primero: todavía no tiene números que mirar. */}
       {setup ? <OnboardingChecklist tenantSlug={tenantSlug} steps={setup} /> : null}
 
-      {pos.shown ? <PosTodayCard tenantSlug={tenantSlug} sales={pos.sales} /> : null}
+      <TodaySalonOverview
+        tenantSlug={tenantSlug}
+        overview={todayOverview}
+        sales={pos.shown ? pos.sales : undefined}
+      />
 
-      <TodaySalonOverview tenantSlug={tenantSlug} overview={todayOverview} />
-
-      <section
-        aria-label={`Los últimos ${WINDOW_DAYS} días`}
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <StatCard
-          icon={Users}
-          iconClassName="text-primary"
-          label={`Gente que vino · ${WINDOW_DAYS} días`}
-          numberValue={current.covers}
-          numberFormatKind="integer"
-          hint={
-            current.arrived > 0
-              ? `En ${numberFmt.format(current.arrived)} ${current.arrived === 1 ? 'reserva' : 'reservas'}`
-              : 'Todavía no hay reservas marcadas «Llegó»'
-          }
-          delta={<DeltaContent label={coversDelta.label} tone={coversDelta.tone} />}
-          deltaTone={coversDelta.tone}
-          sparkline={
-            <Sparkline data={sparkData} dataKey="value" color="var(--chart-1)" height={48} />
-          }
-        />
-        <StatCard
-          icon={UserCheck}
-          iconClassName="text-success"
-          label="Asistencia"
-          value={attendancePct === null ? '—' : `${attendancePct}%`}
-          hint={
-            <>
-              {attendancePct === null
-                ? 'Se calcula con las reservas marcadas'
-                : current.noShows === 0
-                  ? 'Ninguna marcada «No vino»'
-                  : `${numberFmt.format(current.noShows)} no ${current.noShows === 1 ? 'vino' : 'vinieron'}`}
-              {current.unmarked > 0 ? (
-                <span className="mt-0.5 block text-(--warning-text)">
-                  {numberFmt.format(current.unmarked)}{' '}
-                  {current.unmarked === 1 ? 'reserva quedó' : 'reservas quedaron'} sin marcar
-                </span>
-              ) : null}
-            </>
-          }
-        />
-        <StatCard
-          icon={Sparkles}
-          iconClassName="text-info"
-          label="Clientes"
-          numberValue={customers.total}
-          numberFormatKind="integer"
-          hint={
-            customers.added > 0
-              ? `+${numberFmt.format(customers.added)} en ${WINDOW_DAYS} días`
-              : `Sin altas en ${WINDOW_DAYS} días`
-          }
-        />
-        <StatCard
-          icon={PartyPopper}
-          iconClassName="text-warning"
-          label={`Consumos con puntos · ${WINDOW_DAYS} días`}
-          numberValue={club.visits_30d}
-          numberFormatKind="integer"
-          hint={
-            club.visits_30d > 0
-              ? `${formatCentsShort(club.revenue_30d_cents)} cargados en el club`
-              : 'Nadie sumó puntos todavía'
-          }
-        />
+      <section aria-labelledby="home-window" className="space-y-3">
+        <h2
+          id="home-window"
+          className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
+        >
+          Los últimos {WINDOW_DAYS} días
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            icon={Users}
+            iconClassName="text-primary"
+            label="Gente que vino"
+            numberValue={current.covers}
+            numberFormatKind="integer"
+            hint={
+              current.arrived > 0
+                ? `En ${numberFmt.format(current.arrived)} ${current.arrived === 1 ? 'reserva' : 'reservas'}`
+                : 'Todavía no hay reservas marcadas «Llegó»'
+            }
+            // Sin días anteriores con los que comparar no se muestra nada: una etiqueta «sin
+            // comparación» ocupa lugar y no dice nada.
+            delta={
+              coversPct === null ? undefined : (
+                <DeltaContent label={coversDelta.label} tone={coversDelta.tone} />
+              )
+            }
+            deltaTone={coversDelta.tone}
+          />
+          <StatCard
+            icon={UserCheck}
+            iconClassName="text-success"
+            label="Asistencia"
+            value={attendancePct === null ? '—' : `${attendancePct}%`}
+            hint={
+              <>
+                {attendancePct === null
+                  ? 'Se calcula con las reservas marcadas'
+                  : current.noShows === 0
+                    ? 'Ninguna marcada «No vino»'
+                    : `${numberFmt.format(current.noShows)} no ${current.noShows === 1 ? 'vino' : 'vinieron'}`}
+                {current.unmarked > 0 ? (
+                  <span className="mt-0.5 block text-(--warning-text)">
+                    {numberFmt.format(current.unmarked)}{' '}
+                    {current.unmarked === 1 ? 'reserva quedó' : 'reservas quedaron'} sin marcar
+                  </span>
+                ) : null}
+              </>
+            }
+          />
+          <StatCard
+            icon={Sparkles}
+            iconClassName="text-info"
+            label="Clientes"
+            numberValue={customers.total}
+            numberFormatKind="integer"
+            hint={
+              customers.added > 0
+                ? `+${numberFmt.format(customers.added)} nuevos`
+                : 'Sin altas en estos días'
+            }
+          />
+          <StatCard
+            icon={PartyPopper}
+            iconClassName="text-warning"
+            label="Consumos con puntos"
+            numberValue={club.visits_30d}
+            numberFormatKind="integer"
+            hint={
+              club.visits_30d > 0
+                ? `${formatCentsShort(club.revenue_30d_cents)} cargados en el club`
+                : 'Nadie sumó puntos todavía'
+            }
+          />
+        </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -208,9 +216,7 @@ export default async function TenantHomePage({
           <header className="px-5 py-4">
             <h2 className="font-serif text-lg font-semibold tracking-tight">Gente por día</h2>
             <p className="text-xs text-muted-foreground">
-              {current.covers > 0
-                ? `${numberFmt.format(current.covers)} personas en los últimos ${WINDOW_DAYS} días, según las reservas marcadas «Llegó».`
-                : `Los últimos ${WINDOW_DAYS} días, según las reservas marcadas «Llegó».`}
+              Los últimos {WINDOW_DAYS} días, según las reservas marcadas «Llegó».
             </p>
           </header>
           <div className="h-64 px-2 pb-4">

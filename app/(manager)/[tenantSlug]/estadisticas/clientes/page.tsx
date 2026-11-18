@@ -46,10 +46,13 @@ export default async function EstadisticasClientesPage({
     throw error
   }
 
-  const [top, churn] = await Promise.all([
+  const [ranking, churn] = await Promise.all([
     getTopCustomersBySpent(access.tenant.id, 50),
     getChurnRisk(access.tenant.id, 200),
   ])
+  // Quien nunca tuvo un consumo cargado no es «de los que más consumen»: en un bar que recién
+  // empieza a sumar puntos la lista se llenaba de ceros.
+  const top = ranking.filter((customer) => customer.total_visits > 0)
   const exportHref = (type: 'top_customers' | 'churn_risk') =>
     `/api/stats/export?slug=${encodeURIComponent(tenantSlug)}&type=${type}`
 

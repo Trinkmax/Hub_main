@@ -47,10 +47,12 @@ const STATUS_BADGE: Record<
   cancelled: 'muted',
 }
 
+// Reloj de 24 horas, como en el resto del panel («20:24», no «08:24 p. m.»).
 const CLOCK = new Intl.DateTimeFormat('es-AR', {
   timeZone: 'America/Argentina/Cordoba',
   hour: '2-digit',
   minute: '2-digit',
+  hourCycle: 'h23',
 })
 const DAY_AND_CLOCK = new Intl.DateTimeFormat('es-AR', {
   timeZone: 'America/Argentina/Cordoba',
@@ -58,6 +60,7 @@ const DAY_AND_CLOCK = new Intl.DateTimeFormat('es-AR', {
   month: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
+  hourCycle: 'h23',
 })
 
 function stamp(iso: string | null, withDay = false): string | null {

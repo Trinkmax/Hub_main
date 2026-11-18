@@ -1,45 +1,66 @@
-import { ArrowRight, CalendarCheck, Clock3, UsersRound } from 'lucide-react'
+import { ArrowRight, Banknote, CalendarCheck, Clock3, UsersRound } from 'lucide-react'
 import Link from 'next/link'
+import { formatCentsShort } from '@/lib/money/format'
+import type { SalesDay } from '@/lib/pos/today/types'
 import type { TodaySalonOverview as Overview } from '@/lib/salon/queries'
 import { MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 
+/** «Miércoles 18 de noviembre»: solo la primera letra en mayúscula. */
 function formatDateLong(date: string): string {
   const [y, m, d] = date.split('-').map(Number)
   if (!y || !m || !d) return date
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  return new Intl.DateTimeFormat('es-AR', {
+  const text = new Intl.DateTimeFormat('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     timeZone: 'UTC',
-  }).format(dt)
+  })
+    .format(new Date(Date.UTC(y, m - 1, d)))
+    .replace(',', '')
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+/**
+ * «Hoy»: una sola ficha con lo del día. Las reservas, la gente y la hora pico; y, en un bar con
+ * punto de venta, lo vendido en el salón (que abre «Hoy en vivo», el detalle cobro por cobro).
+ *
+ * Antes lo vendido era otra pantalla con su entrada en el menú, y acá arriba otra ficha: dos lugares
+ * para la misma pregunta («¿cómo viene hoy?»).
+ */
 export function TodaySalonOverview({
   tenantSlug,
   overview,
+  sales,
 }: {
   tenantSlug: string
   overview: Overview
+  /**
+   * Lo vendido hoy en el salón. `undefined` = el bar no usa el punto de venta (la columna no se
+   * dibuja); `null` = lo usa y todavía no hubo cobros.
+   */
+  sales?: SalesDay | null
 }) {
   const { reservationsCount, estimatedGuests, peak, byStatus, byMeal, date } = overview
   const hasReservations = reservationsCount > 0
+  const hasSales = sales !== undefined
   const activeMeals = MEAL_ORDER.filter((m) => byMeal[m].count > 0)
 
   return (
     <section
-      aria-label="Hoy en el salón"
+      aria-label="Hoy"
       className="card-hairline relative overflow-hidden rounded-2xl border bg-card"
     >
       <header className="flex items-baseline justify-between gap-3 px-5 pt-4">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Hoy en el salón
+            Hoy
           </p>
-          <h2 className="font-serif text-lg font-semibold capitalize">{formatDateLong(date)}</h2>
+          <h2 className="font-serif text-lg font-semibold">{formatDateLong(date)}</h2>
         </div>
         {/* El tablero de la noche del panel (antes llevaba a la pantalla del mozo). */}
         <Link
@@ -51,14 +72,19 @@ export function TodaySalonOverview({
         </Link>
       </header>
 
-      {hasReservations ? (
+      {hasReservations || hasSales ? (
         <>
-          <div className="grid gap-4 px-5 py-4 sm:grid-cols-3 sm:gap-6">
+          <div
+            className={cn(
+              'grid gap-4 px-5 py-4 sm:gap-6',
+              hasSales ? 'grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3',
+            )}
+          >
             <Stat
               icon={CalendarCheck}
-              label="Reservas de hoy"
+              label="Reservas"
               value={reservationsCount}
-              hint={arrivedLine(byStatus)}
+              hint={hasReservations ? arrivedLine(byStatus) : 'Todavía no hay ninguna'}
             />
             <Stat
               icon={UsersRound}
@@ -78,9 +104,36 @@ export function TodaySalonOverview({
               hint={
                 peak
                   ? `${peak.guests} personas a la vez (calculando 1 h 30 por mesa)`
-                  : 'Todavía no se puede calcular'
+                  : hasReservations
+                    ? 'Todavía no se puede calcular'
+                    : null
               }
             />
+            {hasSales ? (
+              <Link
+                href={`/${tenantSlug}/local/hoy`}
+                aria-label="Vendido hoy en el salón: ver el día cobro por cobro"
+                className="group -m-2 rounded-xl p-2 transition-colors hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none"
+              >
+                <Stat
+                  icon={Banknote}
+                  label="Vendido en el salón"
+                  value={formatCentsShort(sales?.salesCents ?? 0)}
+                  valueAsString
+                  hint={
+                    <span className="inline-flex items-center gap-1">
+                      {sales && sales.payments > 0
+                        ? `${count(sales.payments, 'cobro', 'cobros')} de ${count(sales.tables, 'mesa', 'mesas')}`
+                        : 'Todavía no se cobró nada'}
+                      <ArrowRight
+                        className="size-3 transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </span>
+                  }
+                />
+              </Link>
+            ) : null}
           </div>
 
           {activeMeals.length > 0 ? (
@@ -101,19 +154,11 @@ export function TodaySalonOverview({
           ) : null}
         </>
       ) : (
-        <div className="flex items-center justify-between gap-4 px-5 py-6">
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">Todavía no hay reservas para hoy.</p>
-            <p className="text-xs text-muted-foreground">
-              Cuando alguien cargue una, aparece acá y en el Operativo.
-            </p>
-          </div>
-          <Link
-            href={`/${tenantSlug}/reservas/nuevo`}
-            className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-          >
-            Nueva reserva
-          </Link>
+        <div className="px-5 pt-2 pb-5">
+          <p className="text-sm text-muted-foreground">
+            Todavía no hay reservas para hoy. Cuando alguien cargue una, aparece acá y en el
+            Operativo.
+          </p>
         </div>
       )}
     </section>
