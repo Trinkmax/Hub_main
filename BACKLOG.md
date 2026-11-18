@@ -1773,8 +1773,17 @@ tocó:
 - **Estadísticas › «Cargado por día»** une con una curva los días que tienen
   consumos y no dibuja los días en cero (con pocos datos parece una subida
   continua). El gráfico de gente, al lado, sí muestra todos los días.
-- **Sin auditar todavía:** la navegación interna de Mensajería (rail + pestañas),
-  `/menu/tags` y el armado de flows por pasos.
+- **`/menu/tags` («Tags de carta») es una pantalla duplicada a la que solo se llega
+  por ⌘K y por Tex.** La Carta ya tiene el diálogo de etiquetas
+  (`menu/_components/tags-manager-dialog.tsx`: crear, renombrar, borrar) y cada
+  ítem asigna las suyas desde su editor. Lo único propio de la página es la
+  grilla de todos los ítems contra todas las etiquetas, para etiquetar de a
+  muchos. HUB tiene 4 etiquetas. No se borró porque es una decisión de Nacho:
+  o se borra (y se quita de `command-config.ts` y de
+  `lib/tex/area-screens/negocio.ts`), o la grilla pasa a ser una vista del
+  diálogo.
+- **Sin auditar todavía:** la navegación interna de Mensajería (rail + pestañas)
+  y el armado de flows por pasos.
 - **Piezas de Administración que hoy solo usan las pruebas** (`aging-bar`,
   `treasury-display`, `close-strip`, `target-race`, `section-nav`,
   `lib/accounting/numbering`, `lib/csv/index`, `lib/fiscal/comprobante`): se
