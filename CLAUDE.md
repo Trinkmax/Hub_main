@@ -130,11 +130,13 @@ bloquea a staff fuera de `/salon` — ver §4 punto 6.
 **Retirado el 18/11/2026 — no recrear.** El servicio de mesa anterior
 (`/salon/{mesas,cocina,mi-turno,validar}`, `/api/{kitchen,sessions}`,
 `/print/{qr,qrs}`, la carta de `/m`) lo reemplaza el punto de venta (`pos`).
-Tampoco existen más `/acreditar`, `/visitas`, `/local/captura`, `/docs`,
-`/[slug]/onboarding` ni `/accept-invite`: sumar puntos es la hoja de
+Tampoco existen más `/acreditar`, `/visitas`, `/local/captura`, `/menu/tags`,
+`/docs`, `/[slug]/onboarding` ni `/accept-invite`: sumar puntos es la hoja de
 `components/loyalty/award-points-sheet.tsx` (se abre desde Resumen, Clientes,
-la ficha y el Operativo), el QR del club es un diálogo de `/club` y la guía de
-arranque vive en el Resumen.
+la ficha y el Operativo), el QR del club es un diálogo de `/club`, las etiquetas
+de la carta un diálogo de `/menu` y la guía de arranque vive en el Resumen. Las
+direcciones viejas redirigen desde `lib/tenant/legacy-redirects.ts` (con
+pruebas): al retirar una pantalla se suma su regla ahí.
 
 ---
 

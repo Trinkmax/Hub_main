@@ -150,7 +150,7 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     ['/hub/clientes?segment=reserva&page=2', 'Clientes'],
     ['/hub/clientes/abc/canjear', 'Clientes'],
     ['/hub/menu', 'Carta'],
-    ['/hub/menu/tags', 'Carta'],
+    ['/hub/menu?etiquetas=1', 'Carta'],
     // El Club es una pestaña de Clientes (15/11/2026).
     ['/hub/club', 'Clientes'],
     ['/hub/club?tab=aliados', 'Clientes'],

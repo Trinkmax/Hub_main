@@ -29,9 +29,10 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'carta.etiquetas',
     label: 'Carta › Etiquetas',
-    what: 'Las etiquetas de los productos (vegano, sin TACC) y a qué productos van.',
-    path: '/menu/tags',
+    what: 'El diálogo de etiquetas de la Carta (vegano, sin TACC): crear, renombrar y borrar. A qué productos va cada una se elige en el editor de cada producto.',
+    path: '/menu',
     root: true,
+    query: 'etiquetas=1',
     roles: MENU_EDIT_ROLES,
   },
   {

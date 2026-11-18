@@ -1085,12 +1085,12 @@ export const commandEntries: CommandEntry[] = [
   },
   {
     id: 'tags',
-    label: 'Tags de carta',
+    label: 'Etiquetas de la carta',
     icon: Tags,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu/tags`,
-    keywords: ['etiquetas'],
+    href: (s) => `/${s}/menu?etiquetas=1`,
+    keywords: ['etiquetas', 'tags'],
     roles: ['owner', 'editor'],
   },
   {

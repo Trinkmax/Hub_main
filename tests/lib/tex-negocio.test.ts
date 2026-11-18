@@ -1268,7 +1268,7 @@ describe('las etiquetas', () => {
     expect(ticket.ticket.confirmLabel).toBe('Crear la etiqueta')
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/menu/tags',
+      href: '/hub/menu?etiquetas=1',
       point: '#Sin TACC',
     })
     expect(insertOf('item_tags')).toEqual({
@@ -1310,7 +1310,7 @@ describe('las etiquetas', () => {
     })
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/menu/tags',
+      href: '/hub/menu?etiquetas=1',
       point: '#Picante',
     })
     expect(db.inserts.find((write) => write.table === 'menu_item_tag_assignments')?.values).toEqual(
