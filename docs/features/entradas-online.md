@@ -41,6 +41,28 @@ los días, no solo los últimos. Antes la lista eran las últimas 60 compras: en
   `20261106190000`); el «¿hay alias?» se lee con service_role porque la configuración es del dueño
   y el alias igual es público. Los «Deshacer» de la puerta los ve solo el dueño (`audit_log`).
 
+### Sucursales (18/11/2026)
+
+La película (`event_experiences`) y su formato son del bar; cada función (`scheduled_events.branch_id`)
+es de una sucursal, y la compra copia la de su función (`ticket_orders.branch_id`, por disparador: la
+compra pública nunca la manda). Ver `docs/features/sucursales.md` y `lib/ticketing/branches.ts`.
+
+- **Panel.** Entradas, el editor de la película, Ventas online y Funciones y cupos muestran lo de la
+  sucursal que se mira; en «Todas», cada función o compra lleva su etiqueta. El cupo es de cada sala:
+  nunca se suma entre sucursales. Devolver, anular, confirmar una transferencia y cambiar un cupo
+  verifican que sea de una sucursal que la persona ve (la anfitriona, las suyas; un dueño, todas).
+  Mirando una sucursal, «Tu cartelera» da el link de esa (`?sucursal=`).
+- **Puerta.** Es un lugar: la sucursal del equipo. El cartel cuenta las funciones de hoy de esa
+  sucursal y una entrada de otra no pasa: «Esta entrada es para Shrek 2 de hoy a las 21:00 hs en
+  Cerro». Lo compara la acción con la sucursal de la reserva, antes de llamar a `ticket_door_admit`
+  (la base no la mira).
+- **Cartelera.** Con funciones en más de una sucursal, cada talón dice dónde es y arriba se elige la
+  sucursal (`?sucursal=cerro`, filtra lo ya cargado). La película arranca con la función de la
+  sucursal pedida (la misma película puede ir la misma noche en las dos). La dirección de la portada,
+  la entrada, el comprobante, «Cómo llegar» y el agendar es la de la sucursal de la función
+  (`branches.address`), y la del bar (`ticketing_settings.venue_address`) si la sucursal no cargó
+  una. De las sucursales, lo público solo ve nombre, nombre corto, dirección y color, por su `slug`.
+
 ---
 
 ## 1. El modelo
