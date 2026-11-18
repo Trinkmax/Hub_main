@@ -328,6 +328,12 @@ con el teclado; estación «Parrilla QA» creada y borrada; opción «Vuelta y v
 
 ## Hoy en vivo (los dueños)
 
+> **Desde el 18/11/2026 no tiene entrada propia en el menú.** Convivía con el Operativo y con la ficha de
+> hoy del Resumen: tres lugares para la misma pregunta. Ahora el Resumen tiene una sola ficha «Hoy»
+> (`_components/today-salon-overview.tsx`) y, si el bar usa el punto de venta, una de sus columnas es
+> «Vendido en el salón», que abre esta pantalla como detalle. El menú del panel muestra una única entrada
+> del salón, «Salón en vivo» (abre `/salon`); Sucursales y Plano se entran desde Configuración › Salón.
+
 `/[bar]/local/hoy` (solo el dueño, con `pos`). Cómo va el día en el salón, pensado para mirarlo desde el
 celular. Sale todo de lo que el salón ya cargó: lee con el cliente de la persona las tablas que el dueño ya
 puede ver (`pos_payments`, `pos_closed_bills`, `pos_shifts`, mesas y comandas), sin funciones nuevas en la

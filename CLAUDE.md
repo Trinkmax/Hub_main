@@ -64,52 +64,55 @@ bloquea a staff fuera de `/salon` — ver §4 punto 6.
 /proxy.ts                          ← Next 16 (ex middleware.ts); auth + redirect-by-role
 /app
   /layout.tsx                      ← root + ThemeProvider + no-flash script
-  /(auth)
-    /login
-    /forgot-password
-  /(manager)/[tenantSlug]          ← owner workspace (sidebar + topbar + ⌘K)
-    /clientes /audiencias          ← Clientes
-    /difusiones /flows /eventos    ← Marketing
-    /menu /puntos /punch-cards     ← Catálogo
-    /estadisticas                  ← Insights
-    /configuracion                 ← Ajustes (Equipo/Local/Mensajería/Apariencia)
-    /reservas /bandeja /visitas
-    /acreditar /onboarding /docs
-  /(salon)/[tenantSlug]/salon      ← staff workspace (bottom-tab, PWA)
-    /mesas /cocina /bandeja /mi-turno /reservas-operativo
-  /accept-invite/[token]           ← acepta invitación con token
-  /onboarding                      ← primer login del owner
+  /(auth)/{login,forgot-password}
+  /(manager)/[tenantSlug]          ← panel del dueño (sidebar + topbar + ⌘K + Tex)
+    /page.tsx                      ← Resumen: hoy, últimos 30 días y la guía de arranque
+    /reservas /operativo /eventos/programados /ventas-online   ← Reservas (pestañas)
+    /clientes /club                ← Clientes (Personas · Club)
+    /mensajeria                    ← WhatsApp e Instagram: bandeja, difusiones, flows, plantillas
+    /menu                          ← Carta
+    /tareas /enlaces /paginas /entradas   ← Marketing
+    /estadisticas /reviews         ← Estadísticas (/mis-numeros para los roles acotados)
+    /compras /administracion       ← por interruptor (`purchasing`, `accounting`)
+    /configuracion                 ← Ajustes: Equipo, Reservas, Salón, Reseñas, Apariencia
+    /local/{sucursales,mesas,hoy}  ← del punto de venta (`pos`): sucursales, plano, el día cobro por cobro
+  /(salon)/[tenantSlug]/salon      ← staff (bottom-tab, PWA)
+    /reservas-operativo /escanear /qr-club /puerta /stock
+    /mapa /mesa /caja /tele        ← punto de venta (`pos`)
+  /(platform)/admin                ← superadmin: bares e interruptores
+  /onboarding                      ← primer login: crear el bar
   /auth/{callback,update-password} ← Supabase auth flow
+  /carta/[tenantSlug]              ← carta pública única, con el club y la billetera
+  /c/[token]                       ← billetera del cliente (puntos, QR)
   /capture/[linkSlug]              ← captura pública del cliente (QR genérico)
-  /m/[qrToken]                     ← QR de mesa físico → abre carta
-  /c/[token]                       ← panel personal del cliente (puntos, QR)
-  /print/{c-qr,qr}                 ← páginas para imprimir QRs
+  /entradas/[tenantSlug]/…         ← cartelera y venta de entradas; /e/[code] es el QR de la entrada
+  /v/[token] /r/[token] /l/[tenantSlug] /p/[slug] /subir/[token]
+                                   ← canje, reseña, link de la bio, landings, foto del comprobante
+  /m/[qrToken]                     ← QR de mesa del servicio anterior: solo redirige a la carta
+  /print/{c-qr,carta,comprobante-interno,factura}
   /api
-    /webhooks/{whatsapp,instagram,meta-verify}
+    /webhooks/{whatsapp,instagram,mercadopago,meta-verify}
     /meta/{whatsapp,instagram}     ← OAuth/Embedded Signup callbacks
-    /audiences /kitchen /sessions /stats
-    /cron                          ← 9 jobs, todos validan CRON_SECRET
-      auto-abandon-stale evaluate-time-flows expire-punch-cards
-      finish-past-events process-broadcasts process-flows
-      process-jobs refresh-stats sync-templates
+    /audiences /stats /tex /wallet /reservas /senas /como-nos-fue /compras /administracion
+    /cron                          ← todos validan CRON_SECRET
 /components
   /ui                              ← shadcn new-york (no editar a mano)
-  /shell                           ← AppShell, sidebar, topbar, salon nav
+  /shell                           ← AppShell, sidebar, pestañas de sección, dock, salon nav
   /command-palette                 ← ⌘K
-  /charts /theme
+  /charts /theme /tour
+  /loyalty                         ← sumar puntos (una sola hoja), escáner, QR del club
   /<dominio>                       ← componentes de negocio
 /lib
   /supabase   server | browser | service | middleware (helper SSR)
-  /tenant     access (requireTenantAccess, requireRole) | actions | slugify
+  /tenant     access (requireTenantAccess, requireRole) | roles | actions | slugify
+  /platform   features (interruptores por bar) | guards
   /auth       actions + recovery-cookie + schemas
   /meta       whatsapp instagram templates webhook-parser signature crypto oauth …
-  /points     engine + queries + actions
-  /audiences  evaluador de filtros
-  /flows      runtime de flows
-  /salon /tables /tickets /sessions-waiter
-  /broadcasts /capture /customers /events /visits /punch-cards /item-tags /tags
-  /jobs /commissions /stats /bandeja /m-session /c-panel /admin /onboarding /email
-  /realtime /theme
+  /points /punch-cards /redemptions /wallet /welcome-reward        ← club
+  /salon /floor-plan /tables /pos /ticketing /commissions          ← reservas, plano, punto de venta, entradas
+  /broadcasts /flows /audiences /bandeja /marketing /public-links /landings
+  /accounting /arca /fiscal /imports /purchasing /mercadopago      ← Administración y Compras
+  /stats /onboarding /tex /customers /menu /capture /visits /reviews /jobs /email /realtime /theme
   env.ts phone.ts qr.ts rate-limit.ts audit.ts ip.ts utils.ts
 /supabase
   /migrations                      ← versionado, NO editar las aplicadas
@@ -123,6 +126,15 @@ bloquea a staff fuera de `/salon` — ver §4 punto 6.
   database.ts                      ← generado por `npm run db:types`
 /docs                              ← design-system, redesign-2026, reservas, …
 ```
+
+**Retirado el 18/11/2026 — no recrear.** El servicio de mesa anterior
+(`/salon/{mesas,cocina,mi-turno,validar}`, `/api/{kitchen,sessions}`,
+`/print/{qr,qrs}`, la carta de `/m`) lo reemplaza el punto de venta (`pos`).
+Tampoco existen más `/acreditar`, `/visitas`, `/local/captura`, `/docs`,
+`/[slug]/onboarding` ni `/accept-invite`: sumar puntos es la hoja de
+`components/loyalty/award-points-sheet.tsx` (se abre desde Resumen, Clientes,
+la ficha y el Operativo), el QR del club es un diálogo de `/club` y la guía de
+arranque vive en el Resumen.
 
 ---
 

@@ -46,7 +46,6 @@ const PUBLIC_PREFIXES = [
   '/api/cron/', // jobs de fondo: se auto-protegen con Bearer CRON_SECRET en cada route handler
   '/_next/',
   '/auth/',
-  '/accept-invite/',
   '/icons/',
   '/forgot-password',
 ]
