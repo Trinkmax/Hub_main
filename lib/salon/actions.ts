@@ -672,11 +672,27 @@ export async function updateSalonReservation(
     if (check.state) return check.state
   }
 
-  // Con la sucursal elegida, la planta se acomoda a ella (sin plantas, ninguna).
-  // Sin sucursal en el pedido, la planta viaja tal cual la tenía la reserva.
+  // La planta se acomoda a la sucursal de la reserva (sin plantas, ninguna):
+  // la elegida en el pedido o, si no vino (la edición rápida, Tex), la que ya
+  // tiene. Así una pantalla vieja no le pone planta a una reserva del Cerro.
+  let zoneBranchId = branchId
+  if (!zoneBranchId) {
+    const { data: current } = await supabase
+      .from('salon_reservations')
+      .select('branch_id')
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', id)
+      .maybeSingle()
+    zoneBranchId = (current as { branch_id: string | null } | null)?.branch_id ?? null
+  }
   let zone: SalonZone | null = patch.zone
-  if (branchId) {
-    const fixed = zoneForBranchWrite(scope, branchId, patch.zone, Boolean(patch.scheduled_event_id))
+  if (zoneBranchId) {
+    const fixed = zoneForBranchWrite(
+      scope,
+      zoneBranchId,
+      patch.zone,
+      Boolean(patch.scheduled_event_id),
+    )
     if (!fixed.ok) return fixed.state
     zone = fixed.zone
   }
