@@ -502,7 +502,7 @@ export const clientesActionTools = [
   defineTool({
     name: 'preparar_puntos',
     description:
-      'Prepara acreditarle puntos a un cliente por lo que consumió, en pesos, igual que Acreditar en la caja: calcula los puntos con la regla por monto y suma una visita. Es lo único que suma puntos a mano: no se cargan ni se restan puntos sueltos. No guarda nada: muestra un tique para confirmar.',
+      'Prepara sumarle puntos a un cliente por lo que consumió, en pesos, igual que el botón Sumar puntos: calcula los puntos con la regla por monto y suma una visita. Es lo único que suma puntos a mano: no se cargan ni se restan puntos sueltos. No guarda nada: muestra un tique para confirmar.',
     input: z.object({
       cliente: clienteField,
       monto: pesosField('Lo que consumió, en pesos.'),
@@ -532,7 +532,7 @@ export const clientesActionTools = [
       const amountRules = rules.filter((r) => r.active && r.type === 'per_amount').length
       return prepared('clientes.puntos', payload.data, {
         kind: 'puntos',
-        title: 'Acreditar puntos',
+        title: 'Sumar puntos',
         subtitle: customerName(customer),
         rows: rowsOf([
           ['Consumo', money(cents)],
@@ -563,7 +563,7 @@ export const clientesActionTools = [
               ]
             : []),
         ],
-        confirmLabel: points > 0 ? `Acreditar ${pointsWord(points)}` : 'Cargar la visita',
+        confirmLabel: points > 0 ? `Sumar ${pointsWord(points)}` : 'Cargar la visita',
       })
     },
   }),
@@ -627,7 +627,7 @@ export const clientesActionTools = [
   defineTool({
     name: 'preparar_visita',
     description:
-      'Prepara registrar una visita de un cliente con lo que consumió de la carta, ítem por ítem, como Cerrar mesa: suma los puntos de todas las reglas activas. Si solo sabés el monto, usá preparar_puntos. No guarda nada: muestra un tique para confirmar.',
+      'Prepara registrar una visita de un cliente con lo que consumió de la carta, ítem por ítem: suma los puntos de todas las reglas activas. Si solo sabés el monto, usá preparar_puntos. No guarda nada: muestra un tique para confirmar.',
     input: z.object({
       cliente: clienteField,
       consumo: z
@@ -708,7 +708,7 @@ export const clientesActionTools = [
   defineTool({
     name: 'preparar_sello',
     description:
-      'Prepara ponerle o sacarle un sello a la punch card de un cliente: un sello por vez, como el «+1» de Acreditar. No guarda nada: muestra un tique para confirmar.',
+      'Prepara ponerle o sacarle un sello a la punch card de un cliente: un sello por vez, como el «+1» de Sumar puntos. No guarda nada: muestra un tique para confirmar.',
     input: z.object({
       cliente: clienteField,
       tarjeta: z

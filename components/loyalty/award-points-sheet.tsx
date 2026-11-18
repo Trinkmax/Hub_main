@@ -144,6 +144,14 @@ export function AwardPointsSheet({
         <SheetContent
           side={wide ? 'right' : 'bottom'}
           showClose={false}
+          onOpenAutoFocus={(event) => {
+            // Con el dedo el foco queda en la hoja: si cayera en el primer botón, se vería un anillo
+            // de foco sobre «Buscar persona» aunque esté elegido «Escanear QR». Con teclado sigue su
+            // camino (al buscador, que lo pide).
+            if (!isTouchPointer()) return
+            event.preventDefault()
+            if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus()
+          }}
           className={cn(
             'gap-0 p-0 outline-none',
             wide ? 'w-full sm:max-w-md' : 'h-[calc(100dvh-2.5rem)]',

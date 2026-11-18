@@ -139,7 +139,7 @@ export default async function TenantHomePage({
         >
           Los últimos {WINDOW_DAYS} días
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             icon={Users}
             iconClassName="text-primary"
@@ -196,13 +196,18 @@ export default async function TenantHomePage({
           <StatCard
             icon={PartyPopper}
             iconClassName="text-warning"
-            label="Consumos con puntos"
+            label="Club"
             numberValue={club.visits_30d}
             numberFormatKind="integer"
             hint={
-              club.visits_30d > 0
-                ? `${formatCentsShort(club.revenue_30d_cents)} cargados en el club`
-                : 'Nadie sumó puntos todavía'
+              club.visits_30d > 0 ? (
+                <>
+                  {club.visits_30d === 1 ? 'consumo' : 'consumos'} con puntos
+                  <span className="block">{formatCentsShort(club.revenue_30d_cents)} cargados</span>
+                </>
+              ) : (
+                'Nadie sumó puntos todavía'
+              )
             }
           />
         </div>

@@ -10,28 +10,40 @@ import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
+/** «13/11, 20:24»: hora de Córdoba y reloj de 24 horas, igual que el bloque de estado. */
+const STEP_TIME = new Intl.DateTimeFormat('es-AR', {
+  timeZone: 'America/Argentina/Cordoba',
+  day: '2-digit',
+  month: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
 function formatRelative(iso: string | null): string {
   if (!iso) return '—'
-  const date = new Date(iso)
-  return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return STEP_TIME.format(new Date(iso))
 }
 
-export function ReservationDetailSidebar({
+/**
+ * Lo que se HACE con la reserva: marcarla (llegó, no vino…) y escribirle al cliente.
+ *
+ * Va aparte del resto de la columna para que la página lo ponga primero en el celular: antes
+ * quedaba debajo de todo el formulario y había que bajar varias pantallas para marcar «Llegó».
+ */
+export function ReservationStatusBlock({
   tenantSlug,
   reservation,
+  className,
 }: {
   tenantSlug: string
   reservation: ReservationWithJoins
+  className?: string
 }) {
   const contactPhone = reservation.customer?.phone ?? reservation.guest_phone ?? null
 
   return (
-    <aside className="space-y-4">
+    <div className={cn('space-y-4', className)}>
       <ReservationStatusControls tenantSlug={tenantSlug} reservation={reservation} />
 
       {contactPhone || reservation.guest_instagram ? (
@@ -49,7 +61,20 @@ export function ReservationDetailSidebar({
           ) : null}
         </div>
       ) : null}
+    </div>
+  )
+}
 
+/** Lo que se MIRA de la reserva: lo que prepara el bar, la seña con la nota y el recorrido. */
+export function ReservationDetailSidebar({
+  reservation,
+  className,
+}: {
+  reservation: ReservationWithJoins
+  className?: string
+}) {
+  return (
+    <aside className={cn('space-y-4', className)}>
       {/* Lo que el bar tiene que PRODUCIR para esta mesa. Va arriba de la seña:
           la torta hay que encargarla con días, la seña se mira el mismo día. */}
       {reservation.cake_count > 0 || reservation.champagne_count > 0 ? (

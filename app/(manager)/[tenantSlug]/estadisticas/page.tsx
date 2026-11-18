@@ -78,7 +78,9 @@ export default async function EstadisticasPage({
     getKpis(tenantId),
     getDailyMetrics(tenantId, WINDOW_DAYS),
     getHeatmap(tenantId),
-    getEventsRanking(tenantId, 20),
+    // Solo las que ya pasaron: con el calendario cargado para adelante, las 20 más nuevas serían
+    // todas futuras y en cero.
+    getEventsRanking(tenantId, 20, today),
   ])
 
   const { current, previous } = pulse
@@ -99,7 +101,7 @@ export default async function EstadisticasPage({
         <SectionTitle id="stats-people" title="La gente que vino">
           Sale de las reservas marcadas «Llegó». El detalle de cada noche está en Cómo nos fue.
         </SectionTitle>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             icon={Users}
             iconClassName="text-primary"
@@ -211,14 +213,14 @@ export default async function EstadisticasPage({
 
       <section aria-labelledby="stats-events" className="space-y-4">
         <SectionTitle id="stats-events" title="Los últimos eventos">
-          Las últimas 20 fechas del calendario, con cuántas reservas llegaron y cuántas no vinieron.
+          Las últimas 20 fechas que ya pasaron, con cuántas reservas llegaron y cuántas no vinieron.
         </SectionTitle>
         <DataTableShell>
           {events.length === 0 ? (
             <EmptyState
               icon={Receipt}
-              title="Todavía no hay eventos"
-              description="Cuando pongas eventos en el calendario, acá vas a ver cuántas reservas llegaron a cada uno."
+              title="Todavía no pasó ningún evento"
+              description="Cuando pase la primera fecha del calendario, acá vas a ver cuántas reservas llegaron."
               className="m-3 border-0 bg-transparent"
             />
           ) : (

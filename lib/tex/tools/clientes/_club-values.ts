@@ -54,7 +54,7 @@ export function activeAmountRule(rules: readonly PointsRule[]): PointsRule | nul
   return top ?? null
 }
 
-/** Lo que va a sumar «Acreditar»: el mismo cálculo de `award_points_by_amount`. */
+/** Lo que va a sumar «Sumar puntos»: el mismo cálculo de `award_points_by_amount`. */
 export function awardPoints(rule: PointsRule | null, cents: number): number {
   if (!rule) return 0
   const { every_cents: every, points } = rule.config as PerAmountConfig
@@ -200,7 +200,7 @@ export function partnerRow(
 }
 
 const TRIGGER_WORDS: Readonly<Record<string, string>> = {
-  manual: 'A mano: se sella desde Acreditar',
+  manual: 'A mano: se sella desde Sumar puntos',
   item: 'Al consumir un ítem',
   category: 'Al consumir una categoría',
   tag: 'Al consumir una etiqueta de la carta',

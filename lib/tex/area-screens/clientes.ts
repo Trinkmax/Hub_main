@@ -3,7 +3,7 @@ import type { TexScreenDef } from '../screen-types'
 
 /** Lo que exige la página: `requireRole(access.role, ['owner'])`. */
 const OWNER: readonly TenantRole[] = ['owner']
-/** `requireRole(access.role, ['owner', 'cashier'])`: el canje y cerrar mesa. */
+/** `requireRole(access.role, ['owner', 'cashier'])`: el canje. */
 const OWNER_OR_CASHIER: readonly TenantRole[] = ['owner', 'cashier']
 
 /** Las solapas de `/club` (`CLUB_TABS` de su página). */

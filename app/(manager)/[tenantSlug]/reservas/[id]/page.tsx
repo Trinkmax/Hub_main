@@ -28,7 +28,10 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { ReservationDetailSidebar } from '../_components/reservation-detail-sidebar'
+import {
+  ReservationDetailSidebar,
+  ReservationStatusBlock,
+} from '../_components/reservation-detail-sidebar'
 import { ReservationForm } from '../_components/reservation-form'
 
 export const metadata = { title: 'Reserva' }
@@ -164,54 +167,68 @@ export default async function ReservaDetailPage({
         )
       })()}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <ReservationForm
-          mode="edit"
+      {/* En el celular: el estado, el formulario y después lo demás. En la compu el formulario va a
+          la izquierda (ocupa las dos filas) y el estado arriba de la columna derecha, como siempre. */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:grid-rows-[auto_1fr] lg:gap-y-4">
+        <ReservationStatusBlock
           tenantSlug={tenantSlug}
-          returnTo={returnTo}
-          initialDate={reservation.reservation_date}
-          today={todayInCordoba()}
-          initialSnapshot={snapshot}
-          reservationStatus={reservation.status}
-          managers={managers}
-          templates={templates}
-          initialEventsForDate={eventsForDate}
-          cakeOptions={cakeOptions.filter((c) => c.active || c.id === reservation?.cake_option_id)}
-          canManageCakes={access.role === 'owner'}
-          rateTiers={tiers}
-          bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
-          linkedManagerId={linkedManager?.id ?? null}
-          canManageManagers={access.role === 'owner'}
-          reservationId={reservation.id}
-          customerServiceAlerts={reservation.customer?.service_alerts ?? []}
-          initialValues={{
-            customer_id: reservation.customer_id ?? undefined,
-            guest_name: reservation.guest_name,
-            guest_phone: reservation.guest_phone ?? undefined,
-            guest_email: reservation.guest_email ?? undefined,
-            guest_instagram: reservation.guest_instagram ?? '',
-            kind: reservation.kind,
-            meal_type: reservation.meal_type,
-            reservation_date: reservation.reservation_date,
-            reservation_time_local: reservation.reservation_time_local,
-            reservation_end_time_local: reservation.reservation_end_time_local?.slice(0, 5) ?? '',
-            zone: reservation.zone,
-            scheduled_event_id: reservation.scheduled_event_id ?? undefined,
-            estimated_guests: reservation.estimated_guests,
-            cake_count: reservation.cake_count,
-            cake_option_id: reservation.cake_option_id,
-            champagne_count: reservation.champagne_count,
-            deposit_cents: reservation.deposit_cents,
-            origin: reservation.origin,
-            primary_manager_id: reservation.primary_manager_id,
-            assistant_manager_id: reservation.assistant_manager_id ?? undefined,
-            comments: reservation.comments ?? undefined,
-            actual_guests: reservation.actual_guests,
-            service_alerts: reservation.service_alerts,
-            highlight_comment: reservation.highlight_comment,
-          }}
+          reservation={reservation}
+          className="lg:col-start-2 lg:row-start-1"
         />
-        <ReservationDetailSidebar tenantSlug={tenantSlug} reservation={reservation} />
+        <div className="min-w-0 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+          <ReservationForm
+            mode="edit"
+            tenantSlug={tenantSlug}
+            returnTo={returnTo}
+            initialDate={reservation.reservation_date}
+            today={todayInCordoba()}
+            initialSnapshot={snapshot}
+            reservationStatus={reservation.status}
+            managers={managers}
+            templates={templates}
+            initialEventsForDate={eventsForDate}
+            cakeOptions={cakeOptions.filter(
+              (c) => c.active || c.id === reservation?.cake_option_id,
+            )}
+            canManageCakes={access.role === 'owner'}
+            rateTiers={tiers}
+            bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
+            linkedManagerId={linkedManager?.id ?? null}
+            canManageManagers={access.role === 'owner'}
+            reservationId={reservation.id}
+            customerServiceAlerts={reservation.customer?.service_alerts ?? []}
+            initialValues={{
+              customer_id: reservation.customer_id ?? undefined,
+              guest_name: reservation.guest_name,
+              guest_phone: reservation.guest_phone ?? undefined,
+              guest_email: reservation.guest_email ?? undefined,
+              guest_instagram: reservation.guest_instagram ?? '',
+              kind: reservation.kind,
+              meal_type: reservation.meal_type,
+              reservation_date: reservation.reservation_date,
+              reservation_time_local: reservation.reservation_time_local,
+              reservation_end_time_local: reservation.reservation_end_time_local?.slice(0, 5) ?? '',
+              zone: reservation.zone,
+              scheduled_event_id: reservation.scheduled_event_id ?? undefined,
+              estimated_guests: reservation.estimated_guests,
+              cake_count: reservation.cake_count,
+              cake_option_id: reservation.cake_option_id,
+              champagne_count: reservation.champagne_count,
+              deposit_cents: reservation.deposit_cents,
+              origin: reservation.origin,
+              primary_manager_id: reservation.primary_manager_id,
+              assistant_manager_id: reservation.assistant_manager_id ?? undefined,
+              comments: reservation.comments ?? undefined,
+              actual_guests: reservation.actual_guests,
+              service_alerts: reservation.service_alerts,
+              highlight_comment: reservation.highlight_comment,
+            }}
+          />
+        </div>
+        <ReservationDetailSidebar
+          reservation={reservation}
+          className="lg:col-start-2 lg:row-start-2"
+        />
       </div>
     </div>
   )

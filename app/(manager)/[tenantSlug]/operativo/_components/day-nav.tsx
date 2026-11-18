@@ -30,6 +30,11 @@ function longLabel(day: string): string {
   }).format(parseIso(day))
 }
 
+/** Solo la primera letra: «Miércoles, 18 de noviembre» (con `capitalize` salía «De Noviembre»). */
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 /** "sáb 5 sep" */
 function shortLabel(day: string): string {
   return new Intl.DateTimeFormat('es-AR', {
@@ -109,8 +114,8 @@ export function DayNav({
               <ChevronLeft className="size-5" aria-hidden />
             </Button>
 
-            <h1 className="min-w-0 truncate font-serif text-2xl font-semibold capitalize leading-none tracking-tight sm:text-3xl">
-              {longLabel(date)}
+            <h1 className="min-w-0 truncate font-serif text-2xl font-semibold leading-none tracking-tight sm:text-3xl">
+              {upperFirst(longLabel(date))}
             </h1>
 
             <Popover open={open} onOpenChange={setOpen}>
@@ -201,7 +206,7 @@ export function DayNav({
       {rel !== 'today' ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span>
-            Estás viendo <strong className="capitalize">{shortLabel(date)}</strong>
+            Estás viendo <strong>{shortLabel(date)}</strong>
             {date > today ? ' · todavía no se puede marcar llegadas.' : '.'}
           </span>
           <Button

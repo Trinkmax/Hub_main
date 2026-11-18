@@ -301,7 +301,7 @@ export const clubActionTools = [
                 ? [
                     warn(
                       'two_amount_rules',
-                      'Quedan dos reglas por monto activas: en Cerrar mesa se suman las dos y en Acreditar cuenta solo la de más prioridad.',
+                      'Quedan dos reglas por monto activas: en Sumar puntos cuenta solo la de más prioridad; en una visita con detalle se suman las dos.',
                     ),
                   ]
                 : [warn('from_now', 'Rige de acá en más: lo ya acreditado no cambia.')],
@@ -419,7 +419,7 @@ export const clubActionTools = [
           warnings: [
             warn(
               'from_now',
-              'Rige de acá en más, y solo al registrar visitas con su consumo: Acreditar suma por monto.',
+              'Rige de acá en más, y solo al registrar visitas con su consumo: Sumar puntos suma por monto.',
             ),
           ],
           confirmLabel: 'Guardar la regla',
@@ -938,7 +938,7 @@ export const clubActionTools = [
   defineTool({
     name: 'preparar_punch_card',
     description:
-      'Prepara crear, editar o pausar una punch card (tarjeta de sellos): cuántos sellos pide, qué recompensa da, para qué niveles, tope por día. Las nuevas se sellan a mano desde Acreditar; las que se sellan solas, con horario, foto o ícono se arman en su pantalla. No guarda nada: muestra un tique para confirmar.',
+      'Prepara crear, editar o pausar una punch card (tarjeta de sellos): cuántos sellos pide, qué recompensa da, para qué niveles, tope por día. Las nuevas se sellan a mano desde Sumar puntos; las que se sellan solas, con horario, foto o ícono se arman en su pantalla. No guarda nada: muestra un tique para confirmar.',
     input: z.object({
       tarjeta: z
         .string()
@@ -1090,7 +1090,7 @@ export const clubActionTools = [
                   ? 'Sin tope'
                   : String(change.max_per_day),
             ],
-            ['Se sella', current ? null : 'A mano, desde Acreditar'],
+            ['Se sella', current ? null : 'A mano, desde Sumar puntos'],
           ]),
           warnings:
             current && change.threshold !== undefined
