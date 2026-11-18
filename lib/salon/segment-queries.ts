@@ -184,17 +184,17 @@ async function readSegmentConfig(opts: {
   // En «Todas» no hay cupo: la grilla y los especiales ni se piden.
   const readsCaps = scope === undefined || scope.capacity !== null
 
-  let overridesQuery = byBranch(
-    supabase
-      .from('salon_segment_capacity_overrides')
-      .select('segment, override_date, capacity, warn_at, reason')
-      .eq('tenant_id', opts.tenantId)
-      .gte('override_date', opts.overridesFrom),
-  )
-  if (opts.overridesTo) overridesQuery = overridesQuery.lte('override_date', opts.overridesTo)
-  overridesQuery = overridesQuery
-    .order('override_date', { ascending: true })
-    .order('segment', { ascending: true })
+  const overridesQuery = () => {
+    let query = byBranch(
+      supabase
+        .from('salon_segment_capacity_overrides')
+        .select('segment, override_date, capacity, warn_at, reason')
+        .eq('tenant_id', opts.tenantId)
+        .gte('override_date', opts.overridesFrom),
+    )
+    if (opts.overridesTo) query = query.lte('override_date', opts.overridesTo)
+    return query.order('override_date', { ascending: true }).order('segment', { ascending: true })
+  }
 
   const [weeklyRows, settingRows, overrideRows, zoneCaps] = await Promise.all([
     readsCaps
@@ -218,7 +218,7 @@ async function readSegmentConfig(opts: {
       ),
     ),
     readsCaps
-      ? readConfigTable('salon_segment_capacity_overrides', overridesQuery)
+      ? readConfigTable('salon_segment_capacity_overrides', overridesQuery())
       : Promise.resolve([]),
     readsZones ? readZoneCaps(supabase, opts.tenantId) : Promise.resolve({ ...NO_ZONE_CAPS }),
   ])

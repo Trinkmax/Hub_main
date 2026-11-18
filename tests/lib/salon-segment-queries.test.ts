@@ -1209,6 +1209,65 @@ describe('config: guardar la grilla y los cupos especiales', () => {
   })
 })
 
+describe('el cupo de cada sucursal (nunca se suma)', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    vi.mocked(createClient).mockReset()
+    asRole('host')
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => errorSpy.mockRestore())
+
+  it('una sucursal sin plantas usa sus sillas y ni lee las plantas del bar', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], branchRef(CERRO)))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDaySegments('hub', '2026-09-10', CERRO)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.caps.dinner).toMatchObject({ capacity: 40, source: 'fallback' })
+    expect(calls.some((c) => c.table === 'tenants')).toBe(false)
+    const reservations = calls.find((c) => c.table === 'salon_reservations')
+    expect(reservations?.filters).toContainEqual(['eq', 'branch_id', CERRO])
+    const weekly = calls.find((c) => c.table === 'salon_segment_capacities')
+    expect(weekly?.filters).toContainEqual(['eq', 'branch_id', CERRO])
+  })
+
+  it('una sucursal que no es de la persona no se pide', async () => {
+    asScope(scopeOf([branchRef(MAIN)], branchRef(MAIN)))
+    const calls = fakeSupabase(() => OK_EMPTY)
+    const res = await fetchDaySegments('hub', '2026-09-10', CERRO)
+    expect(res).toEqual({
+      ok: false,
+      message: 'Esa sucursal no es tuya. Elegí otra.',
+      field: 'branch_id',
+    })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('mirando «Todas» el día se cuenta sin cupo, con las plantas de la principal', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDayOverview('hub', '2026-09-10', { ids: null })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.caps.dinner).toMatchObject({ capacity: null, source: 'none' })
+    expect(res.data.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
+    // Ni la grilla ni los especiales: no hay cupo que resolver.
+    expect(calls.some((c) => c.table === 'salon_segment_capacities')).toBe(false)
+    expect(calls.some((c) => c.table === 'salon_segment_capacity_overrides')).toBe(false)
+  })
+
+  it('lo que pide el navegador se recorta a las sucursales de la persona', async () => {
+    const OTHER = 'dddddddd-0000-4000-8000-000000000009'
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDayOverview('hub', '2026-09-10', { ids: [OTHER] })
+    expect(res.ok).toBe(true)
+    const reservations = calls.find((c) => c.table === 'salon_reservations')
+    expect(reservations?.filters).toContainEqual(['in', 'branch_id', []])
+  })
+})
+
 describe('createSalonReservation: hub_event legacy', () => {
   beforeEach(() => {
     vi.mocked(createClient).mockReset()
