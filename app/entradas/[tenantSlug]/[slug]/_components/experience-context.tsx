@@ -9,7 +9,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { firstAvailable, functionState } from '@/lib/ticketing/availability'
+import { functionState } from '@/lib/ticketing/availability'
 import { functionAddress, pickFunction, publicBranchLabel } from '@/lib/ticketing/branches'
 import type { PublicBranch, PublicFunction } from '@/lib/ticketing/types'
 
@@ -131,10 +131,10 @@ export function ExperienceProvider({
     [minPartySize],
   )
 
-  // Si la elegida se agotó, pasar a la próxima con lugar.
+  // Si la elegida se agotó, pasar a la próxima con lugar (de la misma sucursal, si hay).
   useEffect(() => {
     if (selected?.state !== 'sold_out') return
-    setSelectedId(firstAvailable(functions)?.eventId ?? null)
+    setSelectedId(pickFunction(functions, { date: null, branch: selected.branch })?.eventId ?? null)
   }, [functions, selected])
 
   const value = useMemo(
