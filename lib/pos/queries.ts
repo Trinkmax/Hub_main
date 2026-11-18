@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
+import { branchCookieName, cookieDeviceId, parseBranchCookie } from '@/lib/branches/cookie'
 import { createClient } from '@/lib/supabase/server'
 import { type PosError, toPosError } from './errors'
 import type { FloorSnapshot, KitchenQueue, PosBranch, PosMenu, SessionDetail } from './types'
@@ -51,10 +52,11 @@ export const listBranches = cache(async (tenantId: string): Promise<BranchRow[]>
   return (data ?? []) as BranchRow[]
 })
 
-/** Dónde se guarda en qué sucursal trabaja este dispositivo. */
-export function branchCookieName(tenantId: string): string {
-  return `hub_branch_${tenantId}`
-}
+/**
+ * Dónde se guarda en qué sucursal trabaja este dispositivo. Es la cookie de todo el sistema (lib/branches/cookie.ts):
+ * también recuerda si el panel mira «Todas», sin perder la sucursal del dispositivo.
+ */
+export { branchCookieName } from '@/lib/branches/cookie'
 
 /**
  * La sucursal en la que está trabajando este dispositivo: la que eligió (queda
@@ -70,7 +72,9 @@ export async function getActiveBranch(
   if (branches.length === 0) return { branches, active: null, chosen: false }
   const bySlug = preferSlug ? branches.find((b) => b.slug === preferSlug) : undefined
   if (bySlug) return { branches, active: bySlug, chosen: true }
-  const stored = (await cookies()).get(branchCookieName(tenantId))?.value
+  const stored = cookieDeviceId(
+    parseBranchCookie((await cookies()).get(branchCookieName(tenantId))?.value),
+  )
   const byCookie = stored ? branches.find((b) => b.id === stored) : undefined
   if (byCookie) return { branches, active: byCookie, chosen: true }
   const fallback = branches.find((b) => b.is_default) ?? branches[0] ?? null

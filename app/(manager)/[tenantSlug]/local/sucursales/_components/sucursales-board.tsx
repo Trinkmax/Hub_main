@@ -19,6 +19,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { Panel } from '@/components/administracion/kit/panel'
 import { PillLink } from '@/components/administracion/kit/pill'
+import { Storefront } from '@/components/branches/storefront'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -96,7 +97,6 @@ import { cn } from '@/lib/utils'
 import { AutosaveField, type FieldRead } from './autosave-field'
 import { notify } from './notify'
 import { SettingsPane } from './settings-pane'
-import { Storefront } from './storefront'
 import './sucursales.css'
 
 /**

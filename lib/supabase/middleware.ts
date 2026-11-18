@@ -18,7 +18,12 @@ import {
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
 import { routingRole, VIEW_AS_COOKIE } from '@/lib/tenant/view-as'
-import { PATH_HEADER, WORKSPACE_HEADER } from '@/lib/workspace'
+import {
+  BRANCH_PARAM_HEADER,
+  PATH_HEADER,
+  sanitizeBranchParam,
+  WORKSPACE_HEADER,
+} from '@/lib/workspace'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -229,6 +234,17 @@ export async function updateSession(request: NextRequest) {
   } catch {
     // Sin el header el layout no hace el backstop (nunca rebota sin saber el
     // path): quedan este proxy, las páginas y la RLS.
+  }
+
+  // La sucursal del link (`?sucursal=cerro`): el layout no recibe los parámetros de la URL y tiene que dibujar la
+  // misma sucursal que la página. Se pisa siempre (vacío si no hay), así que un valor del navegador no pasa.
+  try {
+    request.headers.set(
+      BRANCH_PARAM_HEADER,
+      sanitizeBranchParam(request.nextUrl.searchParams.get('sucursal')),
+    )
+  } catch {
+    // Sin el header se usa lo que eligió el dispositivo: el link directo pierde la sucursal, nada más.
   }
 
   let response = NextResponse.next({ request })
