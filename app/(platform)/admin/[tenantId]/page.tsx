@@ -11,11 +11,12 @@ export const dynamic = 'force-dynamic'
 
 type TenantRow = { id: string; name: string; slug: string; feature_flags: Record<string, boolean> }
 
+// Lo del punto de venta, para entrar a prepararlo antes de prenderlo (un superadmin pasa igual).
 const HIDDEN_PANELS = [
+  { label: 'Salón en vivo', href: (s: string) => `/${s}/salon` },
+  { label: 'Sucursales', href: (s: string) => `/${s}/local/sucursales` },
   { label: 'Plano del salón', href: (s: string) => `/${s}/local/mesas` },
-  { label: 'Salón en vivo', href: (s: string) => `/${s}/salon/mesas` },
-  { label: 'Cocina', href: (s: string) => `/${s}/salon/cocina` },
-  { label: 'Auto-aceptación', href: (s: string) => `/${s}/local/auto-aceptacion` },
+  { label: 'Hoy en vivo', href: (s: string) => `/${s}/local/hoy` },
 ]
 
 export default async function PlatformTenantPage({

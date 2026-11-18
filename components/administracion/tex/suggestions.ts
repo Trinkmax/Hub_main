@@ -44,7 +44,7 @@ const BY_SCREEN: ReadonlyArray<{ path: RegExp; items: readonly string[] }> = [
     ],
   },
   {
-    path: /\/club|\/puntos|\/punch-cards/,
+    path: /\/club/,
     items: ['¿Cómo funciona el club?', '¿Cuántos socios hay por nivel?', 'Explicame esta pantalla'],
   },
   {

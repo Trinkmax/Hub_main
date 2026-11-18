@@ -1,15 +1,7 @@
-import {
-  Armchair,
-  ArrowRight,
-  BookOpen,
-  Cake,
-  type LucideIcon,
-  Palette,
-  UsersRound,
-} from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Card } from '@/components/ui/card'
+import { sectionViewer } from '@/components/shell/section-tabs-config'
 import { PageHeader } from '@/components/ui/page-header'
 import {
   RoleRequiredError,
@@ -17,60 +9,15 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { visibleSettingsGroups } from './_components/settings-sections'
 
 export const metadata = { title: 'Configuración' }
 
-type SettingsCard = {
-  icon: LucideIcon
-  title: string
-  description: string
-  topics: string[]
-  href: (slug: string) => string
-}
-
-const CARDS: SettingsCard[] = [
-  {
-    icon: UsersRound,
-    title: 'Equipo',
-    description: 'Sumá owners, cajeros, mozos y cocineros con el rol que corresponde.',
-    topics: ['Miembros', 'Roles e invitaciones'],
-    href: (s) => `/${s}/configuracion/equipo`,
-  },
-  {
-    icon: Armchair,
-    title: 'Capacidad del salón',
-    description: 'Cuánta gente entra por zona y los cupos puntuales de un día.',
-    topics: ['Planta Alta · Planta Baja', 'Cupos por fecha'],
-    href: (s) => `/${s}/configuracion/salon`,
-  },
-  {
-    // Card propia y no un "topic" de Capacidad: el nav lateral de esta sección
-    // es `lg:block`, así que en un celular esta card es la ÚNICA forma de llegar
-    // a Tortas — y la app es mobile-first.
-    icon: Cake,
-    title: 'Tortas de cumpleaños',
-    description: 'El menú de tortas que hace el bar. Es lo que se elige al cargar una reserva.',
-    topics: ['Bizcochuelos', 'Rellenos'],
-    href: (s) => `/${s}/configuracion/tortas`,
-  },
-  {
-    icon: Palette,
-    title: 'Apariencia',
-    description: 'Logo del bar, idioma y zona horaria. El acento de tenant llega pronto.',
-    topics: ['Logo', 'Idioma · TZ'],
-    href: (s) => `/${s}/configuracion/apariencia`,
-  },
-  {
-    // Como Tortas: en el celular el nav lateral no está y esta card es la forma de llegar a la
-    // guía, que ya no tiene entrada propia en el menú principal.
-    icon: BookOpen,
-    title: 'Documentación',
-    description: 'La guía de todo el sistema, para cuando tengas una duda.',
-    topics: ['Guías', 'Preguntas frecuentes'],
-    href: (s) => `/${s}/docs`,
-  },
-]
-
+/**
+ * La portada de Configuración: cada grupo con sus pantallas, las mismas del menú lateral
+ * (`settings-sections.ts`). En el celular el menú lateral no se dibuja y esta lista es la única
+ * forma de llegar a cada una.
+ */
 export default async function ConfiguracionIndexPage({
   params,
 }: {
@@ -78,8 +25,9 @@ export default async function ConfiguracionIndexPage({
 }) {
   const { tenantSlug } = await params
 
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
+    access = await requireTenantAccess(tenantSlug)
     requireRole(access.role, ['owner'])
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
@@ -87,49 +35,58 @@ export default async function ConfiguracionIndexPage({
     throw error
   }
 
+  const viewer = sectionViewer(access)
+  const groups = visibleSettingsGroups(
+    (feature) => viewer.isPlatformAdmin || viewer.features[feature],
+  )
+
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow="Ajustes"
         title="Configuración"
-        description="Cada grupo con lo que se toca junto, para que encuentres rápido."
+        description="Lo que se prepara una vez y se toca cada tanto, agrupado por tema."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {CARDS.map((card) => {
-          const Icon = card.icon
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group) => {
+          const Icon = group.icon
           return (
-            <Link
-              key={card.title}
-              href={card.href(tenantSlug)}
-              className="group block focus-visible:outline-none"
+            <section
+              key={group.label}
+              aria-label={group.label}
+              className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card/85"
             >
-              <Card className="card-hairline relative h-full gap-3 border-border/70 bg-card/85 p-6 transition-[transform,box-shadow,background-color] duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 hover:bg-card hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/40">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-lg border border-primary/20 bg-[--cream-tint] text-primary shadow-2xs">
-                    <Icon className="size-5" aria-hidden />
-                  </div>
-                  <ArrowRight
-                    className="size-4 text-muted-foreground transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5 group-hover:text-foreground"
-                    aria-hidden
-                  />
-                </div>
-                <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
-                  {card.title}
-                </h2>
-                <p className="text-sm text-muted-foreground">{card.description}</p>
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {card.topics.map((topic) => (
-                    <li
-                      key={topic}
-                      className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+              <header className="flex items-center gap-2.5 px-5 pt-4 pb-2">
+                <span className="flex size-8 items-center justify-center rounded-lg border border-primary/20 bg-(--cream-tint) text-primary">
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <h2 className="font-serif text-lg font-semibold tracking-tight">{group.label}</h2>
+              </header>
+              <ul className="divide-y divide-border/50">
+                {group.items.map((item) => (
+                  <li key={item.label}>
+                    <Link
+                      href={item.href(tenantSlug)}
+                      className="group flex items-center gap-3 px-5 py-3 transition-colors duration-[var(--duration-fast)] hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none"
                     >
-                      {topic}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            </Link>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-foreground">
+                          {item.label}
+                        </span>
+                        <span className="block text-sm text-muted-foreground text-pretty">
+                          {item.description}
+                        </span>
+                      </span>
+                      <ChevronRight
+                        className="size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5 group-hover:text-foreground"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )
         })}
       </div>

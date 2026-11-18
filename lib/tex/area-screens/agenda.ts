@@ -45,13 +45,6 @@ export const agendaScreens: readonly TexScreenDef[] = [
     urlNames: { fecha: 'date' },
   },
   {
-    id: 'eventos.inicio',
-    label: 'Eventos',
-    what: 'Lleva al Calendario: los eventos viven ahí.',
-    path: '/eventos',
-    root: true,
-  },
-  {
     id: 'eventos.calendario',
     label: 'Calendario',
     what: 'El mes con sus eventos y, por día, cada servicio contra su cupo; desde un día se reserva. Solapas: calendario, eventos (los formatos). Con mes abre ese mes; con fecha, ese día.',
@@ -88,10 +81,11 @@ export const agendaScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'eventos.formatos',
-    label: 'Formatos de evento',
-    what: 'El catálogo de formatos que se programan en el calendario, con su cupo y su color.',
-    path: '/eventos/templates',
+    label: 'Calendario › Formatos',
+    what: 'El catálogo de formatos que se programan en el calendario, con su cupo y su color. Es la solapa «Formatos» del Calendario.',
+    path: '/eventos/programados',
     root: true,
+    query: 'tab=eventos',
   },
   {
     id: 'comisiones.mis_numeros',

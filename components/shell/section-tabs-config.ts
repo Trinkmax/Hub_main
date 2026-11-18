@@ -99,8 +99,8 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
         roles: ['owner', 'host'],
         icon: 'MonitorSmartphone',
       },
-      // Los eventos del mes; los formatos viven en su propia pestaña adentro de la página (la vieja
-      // /eventos/templates redirige ahí).
+      // Los eventos del mes; los formatos viven en su propia pestaña adentro de la página
+      // (`?tab=eventos`).
       {
         value: 'calendario',
         label: 'Calendario',
@@ -120,6 +120,9 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
     ],
   },
   // Toda la sección es del dueño (el proxy, el layout del panel y cada página lo exigen).
+  // Dos pestañas (18/11/2026): «Acreditar» y «QR del club» eran pantallas enteras para una sola
+  // acción cada una. Ahora son botones donde se usan: «Sumar puntos» en Personas (y en cada ficha)
+  // y «QR del club» en el Club.
   clientes: {
     label: 'Secciones de Clientes',
     tabs: [
@@ -128,8 +131,6 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       // El programa (puntos, niveles, aliados, bienvenida, tarjetas de sellos): era su propia entrada
       // del menú hasta el 15/11/2026. Por prefijo: sus pantallas (/club/simular…) quedan acá.
       { value: 'club', label: 'Club', path: 'club' },
-      { value: 'acreditar', label: 'Acreditar', path: 'acreditar' },
-      { value: 'qr', label: 'QR del club', path: 'local/captura' },
     ],
   },
   // La mesa de los socios. Tareas también la trabajan Contenido y la anfitriona (15/11/2026): para
@@ -154,6 +155,8 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
     label: 'Secciones de Estadísticas',
     tabs: [
       { value: 'resumen', label: 'Resumen', path: 'estadisticas', exact: true },
+      // Los que más consumen y los que dejaron de venir: era una solapa adentro de «Resumen».
+      { value: 'clientes', label: 'Clientes', path: 'estadisticas/clientes' },
       { value: 'como-nos-fue', label: 'Cómo nos fue', path: 'estadisticas/como-nos-fue' },
       { value: 'senas', label: 'Señas', path: 'estadisticas/senas' },
       // Por prefijo: la liquidación de cada gestor (/comisiones/[id]) queda en Comisiones.

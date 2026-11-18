@@ -119,14 +119,7 @@ const OWNER_WITH_ACCESS: AccountingAccess = {
 }
 /** Todo prendido: así se ven también las entradas del Salón y Administración. */
 const EVERYTHING: TenantFeatures = getTenantFeatures({
-  feature_flags: {
-    reviews: true,
-    accounting: true,
-    table_service: true,
-    floor_plan: true,
-    auto_accept: true,
-    kitchen: true,
-  },
+  feature_flags: { reviews: true, accounting: true, pos: true, purchasing: true },
 })
 const owner = resolveNavGroups('owner', SLUG, EVERYTHING, false, OWNER_WITH_ACCESS)
 const ownerHub = resolveNavGroups(
@@ -156,10 +149,8 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     ['/hub/clientes?segment=walkin', 'Clientes'],
     ['/hub/clientes?segment=reserva&page=2', 'Clientes'],
     ['/hub/clientes/abc/canjear', 'Clientes'],
-    ['/hub/acreditar', 'Clientes'],
-    ['/hub/local/captura', 'Clientes'],
     ['/hub/menu', 'Carta'],
-    ['/hub/menu/tags', 'Carta'],
+    ['/hub/menu?etiquetas=1', 'Carta'],
     // El Club es una pestaña de Clientes (15/11/2026).
     ['/hub/club', 'Clientes'],
     ['/hub/club?tab=aliados', 'Clientes'],
@@ -177,11 +168,13 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     ['/hub/reviews', 'Estadísticas'],
     ['/hub/administracion', 'Administración'],
     ['/hub/administracion/libros/diario', 'Administración'],
-    ['/hub/local/mesas', 'Plano y QRs de mesa'],
-    ['/hub/local/auto-aceptacion', 'Auto-aceptación'],
+    // Lo del punto de venta que no es del día a día se abre desde Configuración…
+    ['/hub/local/mesas', 'Configuración'],
+    ['/hub/local/sucursales', 'Configuración'],
+    // …y las ventas del día son el detalle del Resumen.
+    ['/hub/local/hoy', 'Resumen'],
     ['/hub/configuracion', 'Configuración'],
     ['/hub/configuracion/equipo', 'Configuración'],
-    ['/hub/docs', 'Configuración'],
   ]
 
   for (const [url, label] of CASES) {
@@ -190,9 +183,21 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     })
   }
 
-  it('/hub/local/mesas NO resalta Clientes (con o sin el plano prendido)', () => {
-    expect(activeLabels('/hub/local/mesas', owner)).not.toContain('Clientes')
-    expect(activeLabels('/hub/local/mesas', ownerHub)).toEqual([])
+  it('/hub/local/mesas es de Configuración, con o sin el punto de venta prendido', () => {
+    expect(activeLabels('/hub/local/mesas', owner)).toEqual(['Configuración'])
+    expect(activeLabels('/hub/local/mesas', ownerHub)).toEqual(['Configuración'])
+  })
+
+  it('lo que salió del panel no resalta nada', () => {
+    for (const gone of [
+      '/hub/acreditar',
+      '/hub/local/captura',
+      '/hub/local/auto-aceptacion',
+      '/hub/docs',
+      '/hub/onboarding',
+    ]) {
+      expect(activeLabels(gone, owner), gone).toEqual([])
+    }
   })
 
   it('el Resumen es exacto: ninguna sub-ruta lo resalta', () => {
@@ -205,9 +210,9 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     expect(activeLabels('/hub/clientes-viejos', owner)).toEqual([])
   })
 
-  it('lo que abre en otra pestaña (Salón en vivo, Cocina) no se resalta', () => {
-    expect(activeLabels('/hub/salon/mesas', owner)).toEqual([])
-    expect(activeLabels('/hub/salon/cocina', owner)).toEqual([])
+  it('lo que abre en otra pestaña (Salón en vivo) no se resalta', () => {
+    expect(activeLabels('/hub/salon', owner)).toEqual([])
+    expect(activeLabels('/hub/salon/mapa', owner)).toEqual([])
   })
 
   it('el host: Reservas (con sus pestañas) y sus números', () => {
@@ -224,34 +229,29 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
   it('en ninguna página del panel quedan dos entradas resaltadas', () => {
     const PAGES = [
       '/hub',
-      '/hub/acreditar',
       '/hub/administracion/compras/nueva',
       '/hub/administracion/libros/sumas-y-saldos',
       '/hub/clientes/nuevo',
-      '/hub/club/punch-cards',
       '/hub/configuracion/resenas',
       '/hub/configuracion/tortas',
-      '/hub/docs',
       '/hub/enlaces',
       '/hub/estadisticas/comisiones',
       '/hub/entradas',
       '/hub/entradas/abc',
       '/hub/eventos/programados/abc',
-      '/hub/local/auto-aceptacion',
-      '/hub/local/captura',
+      '/hub/local/hoy',
       '/hub/local/mesas',
+      '/hub/local/sucursales',
       '/hub/mensajeria/audiencias/nueva',
       '/hub/mensajeria/difusiones/abc',
       '/hub/menu',
       '/hub/mis-numeros',
-      '/hub/onboarding',
       '/hub/operativo',
       '/hub/paginas/abc',
       '/hub/reservas/nuevo',
       '/hub/reviews',
       '/hub/tareas',
       '/hub/ventas-online',
-      '/hub/visitas/nueva',
     ]
     for (const groups of [owner, ownerHub, host]) {
       for (const url of PAGES) {

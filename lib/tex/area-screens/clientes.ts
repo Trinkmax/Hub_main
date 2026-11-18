@@ -1,18 +1,16 @@
-import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import type { TexScreenDef } from '../screen-types'
 
 /** Lo que exige la página: `requireRole(access.role, ['owner'])`. */
 const OWNER: readonly TenantRole[] = ['owner']
-/** `requireRole(access.role, ['owner', 'cashier'])`: el canje y cerrar mesa. */
+/** `requireRole(access.role, ['owner', 'cashier'])`: el canje. */
 const OWNER_OR_CASHIER: readonly TenantRole[] = ['owner', 'cashier']
 
 /** Las solapas de `/club` (`CLUB_TABS` de su página). */
 export const TEX_CLUB_TABS = ['programa', 'aliados', 'bienvenida', 'punch'] as const
 
 /**
- * Clientes y Club. Las solapas del Club abren `/club?tab=` directo: las viejas rutas `/club/aliados`,
- * `/club/puntos`… hoy solo redirigen ahí.
+ * Clientes y Club. Las solapas del Club abren `/club?tab=` directo.
  */
 export const clientesScreens: readonly TexScreenDef[] = [
   {
@@ -88,27 +86,21 @@ export const clientesScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'clientes.acreditar',
-    label: 'Clientes › Acreditar',
-    what: 'El escáner de la caja: QR del socio para acreditar y sellar, QR de canje para entregarlo.',
-    path: '/acreditar',
+    label: 'Clientes › Sumar puntos',
+    what: 'La hoja para sumarle puntos a alguien: se lo busca por nombre o teléfono, o se le escanea el QR (el mismo escáner sella tarjetas y entrega canjes). Se abre sobre la lista de Clientes.',
+    path: '/clientes',
     root: true,
-    roles: REDEMPTION_STAFF_ROLES,
-  },
-  {
-    id: 'clientes.qr',
-    label: 'Clientes › QR del club',
-    what: 'Los dos QR para imprimir o mostrar: el de la carta y el del club.',
-    path: '/local/captura',
-    root: true,
+    query: 'sumar=1',
     roles: OWNER,
   },
   {
-    id: 'clientes.cerrar_mesa',
-    label: 'Cerrar mesa',
-    what: 'Registrar la visita de un cliente con lo que consumió de la carta y otorgar los puntos.',
-    path: '/visitas/nueva',
+    id: 'clientes.qr',
+    label: 'Club › QR del club',
+    what: 'El QR que invita a sumarse al club, para bajar o copiar su link. Se abre sobre la pantalla del Club. El de la carta está en Carta.',
+    path: '/club',
     root: true,
-    roles: OWNER_OR_CASHIER,
+    query: 'qr=1',
+    roles: OWNER,
   },
   {
     id: 'club.inicio',

@@ -1227,7 +1227,7 @@ export function ReservationForm({
                     <div className="px-3 py-2 text-sm text-muted-foreground">
                       No hay templates configurados.{' '}
                       <a
-                        href={`/${tenantSlug}/eventos/templates`}
+                        href={`/${tenantSlug}/eventos/programados?tab=eventos`}
                         target="_blank"
                         rel="noopener"
                         className="text-primary underline"

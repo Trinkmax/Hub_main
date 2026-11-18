@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
+import { ScanScreen } from '@/components/loyalty/scan-screen'
 import { resolveEarnRate } from '@/lib/points/earn-rate'
 import { listRules } from '@/lib/points/queries'
 import { requireRole, requireTenantAccess } from '@/lib/tenant'
 import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
-import { ScanScreen } from './_components/scan-screen'
 
 export const metadata = { title: 'Salón · Sumar puntos' }
 export const dynamic = 'force-dynamic'

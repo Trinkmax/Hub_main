@@ -35,12 +35,15 @@ export function TagsManagerDialog({
   tenantSlug,
   tags,
   trigger,
+  defaultOpen = false,
 }: {
   tenantSlug: string
   tags: ItemTagRow[]
   trigger: React.ReactNode
+  /** Abierto al entrar (`/menu?etiquetas=1`): así llegan el buscador ⌘K y Tex. */
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [editing, setEditing] = useState<EditingState>(null)
   const [toDelete, setToDelete] = useState<ItemTagRow | null>(null)
   const [newName, setNewName] = useState('')

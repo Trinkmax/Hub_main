@@ -2,7 +2,6 @@ import 'server-only'
 
 import { z } from 'zod'
 import type { AccSimpleState } from '@/lib/accounting/action-state'
-import { getTenantConfig } from '@/lib/admin/tenant-config'
 import { getAppUrl } from '@/lib/app-url'
 import { getLandingViewSeries, listLandingPages } from '@/lib/landings/queries'
 import { getLandingsBase } from '@/lib/landings/urls'
@@ -32,9 +31,7 @@ import {
 } from '../types'
 import { pickNamed, ticketWarning } from './_carta-values'
 import {
-  type AutoAcceptConfig,
   appearanceData,
-  autoAcceptData,
   barData,
   landingDetail,
   landingsData,
@@ -103,14 +100,13 @@ export const configuracionTools = [
       }
       const access =
         wants('bar') || wants('apariencia') ? await requireTenantAccess(ctx.slug) : null
-      const [appUrl, welcome, reviews, seats, zones, editor, autoAccept] = await Promise.all([
+      const [appUrl, welcome, reviews, seats, zones, editor] = await Promise.all([
         wants('bar') ? getAppUrl() : null,
         wants('bienvenida') ? getWelcomeRewardConfig(ctx.tenantId) : null,
         wants('resenas') ? getReviewSettings(ctx.tenantId) : null,
         wants('salon') ? totalSeats(ctx) : null,
         wants('salon') ? getZoneCapacityDefaults({ tenantId: ctx.tenantId }) : null,
         wants('salon') ? getSegmentEditorData({ tenantId: ctx.tenantId, today: ctx.today }) : null,
-        wants('bar') && ctx.features.auto_accept ? getTenantConfig(ctx.slug) : null,
       ])
       const tenant = access?.tenant
       return {
@@ -140,9 +136,6 @@ export const configuracionTools = [
             ? { salon: salonData({ totalSeats: seats ?? null, zones, editor }) }
             : {}),
           ...(reviews ? { resenas: reviewSettingsData(reviews) } : {}),
-          ...(autoAccept
-            ? { auto_aceptacion: autoAcceptData(autoAccept as AutoAcceptConfig) }
-            : {}),
         },
       }
     },
@@ -217,7 +210,7 @@ export const configuracionTools = [
       if (!valid.success) {
         return fail(
           valid.error.issues.some((issue) => issue.path[0] === 'reward_id')
-            ? 'Para activarlo falta elegir qué recompensa se regala: se hace en Club › Bienvenida. Llevalo con ir_a a configuracion.bienvenida.'
+            ? 'Para activarlo falta elegir qué recompensa se regala: se hace en Club › Bienvenida. Llevalo con ir_a a club.bienvenida.'
             : zodIssuesText(valid.error),
         )
       }
@@ -384,7 +377,7 @@ export const configuracionExecutors: Readonly<Record<string, TexExecutor>> = {
         : { ok: false, code: 'error', message: state.message }
     },
     (_data, _payload, ctx) => {
-      const link = texScreenHref(ctx.slug, 'configuracion.bienvenida')
+      const link = texScreenHref(ctx.slug, 'club.bienvenida')
       return { href: link.ok ? link.href : null }
     },
   ),

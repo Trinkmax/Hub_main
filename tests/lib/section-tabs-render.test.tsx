@@ -11,7 +11,7 @@ import { getTenantFeatures } from '@/lib/platform/features'
 /**
  * Las pestañas de sección en el primer paint (SSR): lo que tiene que estar para el teclado, los
  * lectores y el celular (aria-current, aria-label, 44 px, anillo de foco, sin barra de scroll), la
- * barra de cada sección según la URL y la Documentación adentro de Configuración.
+ * barra de cada sección según la URL y el menú lateral de Configuración.
  */
 
 const nav = vi.hoisted(() => ({ pathname: '/hub' }))
@@ -206,17 +206,55 @@ describe('SectionTabsBar: la barra de cada sección según la URL', () => {
   })
 })
 
-describe('Configuración: la Documentación vive adentro', () => {
-  it('el nav de Configuración tiene «Ayuda › Documentación» → /hub/docs', async () => {
+describe('Configuración: su menú lateral', () => {
+  it('trae cada pantalla de ajustes; la Documentación vieja ya no está', async () => {
     nav.pathname = '/hub/configuracion/equipo'
     const { SettingsNav } = await import(
       '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
     )
-    const html = renderToString(createElement(SettingsNav, { tenantSlug: 'hub' }))
+    const html = renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))
     expect(html).toContain('aria-label="Secciones de Configuración"')
-    expect(html).toContain('Ayuda')
-    const docs = anchors(html).find((a) => a.includes('href="/hub/docs"'))
-    expect(docs).toBeDefined()
-    expect(html).toMatch(/href="\/hub\/docs"[^>]*>Documentación<\/a>/)
+    for (const href of [
+      '/hub/configuracion/equipo',
+      '/hub/configuracion/comisiones',
+      '/hub/configuracion/salon',
+      '/hub/configuracion/tortas',
+      '/hub/configuracion/resenas',
+      '/hub/configuracion/apariencia',
+    ]) {
+      expect(
+        anchors(html).some((a) => a.includes(`href="${href}"`)),
+        href,
+      ).toBe(true)
+    }
+    // Describía el sistema de mayo (mesas con QR, auto-pedido): se retiró el 18/11/2026.
+    expect(html).not.toContain('/hub/docs')
+    const current = anchors(html).filter((a) => a.includes('aria-current="page"'))
+    expect(current).toHaveLength(1)
+    expect(current[0]).toContain('href="/hub/configuracion/equipo"')
+  })
+
+  it('en la portada no se dibuja: la lista ya está en la página', async () => {
+    nav.pathname = '/hub/configuracion'
+    const { SettingsNav } = await import(
+      '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
+    )
+    expect(renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))).toBe('')
+  })
+
+  it('Sucursales y el Plano del salón aparecen solo con el punto de venta', async () => {
+    nav.pathname = '/hub/configuracion/apariencia'
+    const { SettingsNav } = await import(
+      '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
+    )
+    const without = renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))
+    expect(without).not.toContain('/hub/local/sucursales')
+    expect(without).not.toContain('/hub/local/mesas')
+
+    const withPos = renderToString(
+      createElement(SettingsNav, { tenantSlug: 'hub', features: ['pos'] }),
+    )
+    expect(withPos).toMatch(/href="\/hub\/local\/sucursales"[^>]*>Sucursales<\/a>/)
+    expect(withPos).toMatch(/href="\/hub\/local\/mesas"[^>]*>Plano del salón<\/a>/)
   })
 })

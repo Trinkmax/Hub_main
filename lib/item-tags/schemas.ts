@@ -19,11 +19,6 @@ export const updateItemTagSchema = z.object({
 
 export const tagIdSchema = z.object({ id: z.string().uuid() })
 
-export const assignTagSchema = z.object({
-  menu_item_id: z.string().uuid(),
-  tag_id: z.string().uuid(),
-})
-
 // Reemplaza el set completo de tags asignadas a un ítem. tag_ids puede ser
 // vacío (significa "borrar todas las tags de este ítem").
 export const setItemTagsSchema = z.object({

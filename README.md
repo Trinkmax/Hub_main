@@ -50,14 +50,16 @@ LOGIN (cream/forest neutral)
    └── role staff     →  /[slug]/salon          (Salón POS, PWA)
 ```
 
-**Manager** (desktop-first): sidebar persistente por dominios
-(Hoy / Agenda / Clientes / Crecimiento / Marketing / Negocio, con
-Configuración anclada abajo), topbar con búsqueda ⌘K, tenant switcher y
-theme toggle. Pensado para uso prolongado con teclado/mouse.
+**Manager** (desktop-first): sidebar con una entrada por sección
+(Resumen, Reservas, Clientes, Mensajería, Carta, Marketing, Estadísticas
+y, según el bar, Compras, Administración y Salón en vivo; Configuración
+anclada abajo). Las partes de cada sección son pestañas arriba de la
+página. Topbar con búsqueda ⌘K, tenant switcher y theme toggle.
 
-**Salón** (mobile-first): bottom-tab nav (Mesas, Cocina, Bandeja,
-Mi turno), gestos de swipe-left y pull-to-refresh, instalable como
-PWA con su propio service worker. Pensado para celular en turno.
+**Salón** (mobile-first): bottom-tab nav (Reservas, Sumar puntos, QR del
+club, Puerta, Stock y, con el punto de venta, Salón, Caja y Cocina),
+instalable como PWA con su propio service worker. Pensado para celular
+en turno.
 
 ### Superficies públicas (sin login)
 

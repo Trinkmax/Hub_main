@@ -1,6 +1,6 @@
 'use client'
 
-import { QrCode, RefreshCw, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -18,7 +18,6 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { deleteTablePermanentlyAction, setTableActiveAction } from '@/lib/floor-plan/actions'
 import type { ListedTable } from '@/lib/floor-plan/model'
-import { regenerateQrToken } from '@/lib/tables/actions'
 import { cn } from '@/lib/utils'
 import { PAPEL } from './papel'
 
@@ -27,8 +26,6 @@ type FallbackTable = ListedTable
 type TablesListFallbackProps = {
   slug: string
   tables: FallbackTable[]
-  /** El bar tiene prendidos los QR de mesa (imprimir, cambiar). */
-  qrEnabled: boolean
   /** La sucursal cuyas mesas se listan (solo si el bar tiene más de una). */
   branchName?: string | null
 }
@@ -40,12 +37,7 @@ type TablesListFallbackProps = {
  * pie si el editor visual falla. También es donde se reactiva una mesa
  * desactivada.
  */
-export function TablesListFallback({
-  slug,
-  tables,
-  qrEnabled,
-  branchName,
-}: TablesListFallbackProps) {
+export function TablesListFallback({ slug, tables, branchName }: TablesListFallbackProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -124,67 +116,6 @@ export function TablesListFallback({
                 </td>
                 <td>
                   <div className="fpe-list-actions">
-                    {qrEnabled ? (
-                      <>
-                        <button
-                          type="button"
-                          className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
-                          aria-label={`Imprimir el QR de la mesa ${table.label}`}
-                          title="Imprimir QR"
-                          onClick={() =>
-                            window.open(
-                              `/print/qr/${encodeURIComponent(table.qr_token)}`,
-                              '_blank',
-                              'width=600,height=800',
-                            )
-                          }
-                        >
-                          <QrCode aria-hidden />
-                        </button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <button
-                              type="button"
-                              className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
-                              disabled={busy}
-                              aria-label={`Cambiar el QR de la mesa ${table.label}`}
-                              title="Cambiar QR"
-                            >
-                              <RefreshCw aria-hidden />
-                            </button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                ¿Cambiar el QR de la mesa {table.label}?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                El QR que está pegado en la mesa deja de funcionar. Vas a tener que
-                                imprimir el nuevo y cambiarlo.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
-                                Dejarlo
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="fpe-btn fpe-btn-primary"
-                                onClick={() =>
-                                  run(
-                                    table,
-                                    () => regenerateQrToken(slug, table.id),
-                                    `QR nuevo para la mesa ${table.label}.`,
-                                  )
-                                }
-                              >
-                                Cambiar el QR
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </>
-                    ) : null}
-
                     <Switch
                       checked={table.active}
                       disabled={busy}

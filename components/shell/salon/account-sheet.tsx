@@ -19,11 +19,8 @@ import { useViewAs, ViewAsDot, ViewAsSheetSection } from '../view-as'
 /**
  * La cuenta del staff, colgada del topbar del salón.
  *
- * Existe porque hasta acá el mozo de HUB **no tenía forma de cerrar sesión**: el
- * único botón vivía en `/salon/mi-turno`, que está detrás del feature flag
- * `table_service` — apagado en HUB — así que la página devolvía notFound y con
- * ella se iba el logout. Un celular compartido entre turnos quedaba logueado con
- * la cuenta del anterior.
+ * Es el único lugar del salón para cerrar sesión: un celular compartido entre
+ * turnos no puede quedar con la cuenta del anterior.
  *
  * Va en el topbar y no en una tab: no es una tarea de la operativa, es chrome.
  */

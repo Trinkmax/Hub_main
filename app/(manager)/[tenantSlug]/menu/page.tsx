@@ -58,6 +58,9 @@ export default async function MenuPage({
       role={access.role}
       menu={menu}
       tags={tags}
+      // `?etiquetas=1`: así llegan el buscador ⌘K y Tex al diálogo de etiquetas (antes era la
+      // pantalla aparte /menu/tags).
+      openTags={sp.etiquetas === '1'}
       // «Precios» viene con el punto de venta (mismo criterio que la página: prendido o superadmin).
       // `access.isPlatformAdmin` ya viene sin el superadmin cuando mira el panel con otro rol.
       showPrices={isFeatureEnabled(access.tenant, 'pos') || access.isPlatformAdmin}

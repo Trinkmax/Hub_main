@@ -8,8 +8,6 @@ import {
   Minus,
   Plus,
   PowerOff,
-  QrCode,
-  RefreshCw,
   RotateCw,
   Split,
   Trash2,
@@ -36,7 +34,7 @@ import {
 } from '@/lib/floor-plan/actions'
 import { DEFAULT_SEATS, type ElementPatch } from '@/lib/floor-plan/model'
 import type { ElementRow, FloorShape } from '@/lib/floor-plan/queries'
-import { regenerateQrToken, updateTable } from '@/lib/tables/actions'
+import { updateTable } from '@/lib/tables/actions'
 import { cn } from '@/lib/utils'
 import { BanquetteGlyph, RoundTableGlyph, TableGlyph } from './glyphs'
 import { PAPEL } from './papel'
@@ -46,8 +44,6 @@ export type TableInspectorProps = {
   element: ElementRow
   /** Las otras mesas dibujadas en la sucursal (para juntar). */
   others: { id: string; label: string }[]
-  /** El bar tiene prendidos los QR de mesa. */
-  qrEnabled: boolean
   /** Cambia al instante lo que se ve en el plano y en la maqueta. */
   onPatch: (elementId: string, patch: ElementPatch) => void
   /**
@@ -85,7 +81,7 @@ const SHAPES: {
  * La ficha de una mesa: una hojita que flota al lado de la mesa elegida. Arriba, lo
  * que se cambia siempre (número, lugares, forma) y lo que se le hace (girar,
  * duplicar, quitar); lo de vez en cuando (dividir, juntar eligiendo de una lista,
- * cambiar el QR, desactivar) espera plegado en «Más opciones».
+ * desactivar) espera plegado en «Más opciones».
  *
  * Nombre, lugares y forma cambian al toque (se ven en el plano y en la maqueta
  * antes de que conteste el servidor); solo se confirma lo que no tiene vuelta fácil.
@@ -96,7 +92,6 @@ export function TableInspector({
   slug,
   element,
   others,
-  qrEnabled,
   onPatch,
   onHold,
   flushGeometry,
@@ -213,18 +208,6 @@ export function TableInspector({
     })
   }
 
-  const regenerate = () => {
-    start(async () => {
-      const r = await regenerateQrToken(slug, tableId)
-      if (r.ok) {
-        toast.success('QR nuevo listo. Imprimilo y cambiá el de la mesa.')
-        onChanged(true)
-      } else {
-        toast.error(r.message)
-      }
-    })
-  }
-
   const split = () => {
     start(async () => {
       const r = await splitTableAction(slug, element.id)
@@ -261,12 +244,6 @@ export function TableInspector({
         toast.error(r.message)
       }
     })
-  }
-
-  const printQr = () => {
-    const token = meta?.qr_token
-    if (!token) return
-    window.open(`/print/qr/${encodeURIComponent(token)}`, '_blank', 'width=600,height=800')
   }
 
   const mergeLabel = others.find((t) => t.id === mergeTarget)?.label ?? ''
@@ -368,12 +345,7 @@ export function TableInspector({
 
         <div className="fpe-group">
           {/* biome-ignore lint/a11y/useSemanticElements: un grupo de botones con nombre, no un formulario */}
-          <div
-            className="fpe-acts"
-            data-cols={qrEnabled && meta?.qr_token ? 4 : 3}
-            role="group"
-            aria-label="Qué hacer con la mesa"
-          >
+          <div className="fpe-acts" data-cols="3" role="group" aria-label="Qué hacer con la mesa">
             <button
               type="button"
               className="fpe-act"
@@ -392,17 +364,6 @@ export function TableInspector({
               <Copy aria-hidden />
               Duplicar
             </button>
-            {qrEnabled && meta?.qr_token ? (
-              <button
-                type="button"
-                className="fpe-act"
-                onClick={printQr}
-                title="Imprimir el QR de esta mesa"
-              >
-                <QrCode aria-hidden />
-                Imprimir QR
-              </button>
-            ) : null}
             <button
               type="button"
               className="fpe-act is-danger"
@@ -523,44 +484,6 @@ export function TableInspector({
                   </button>
                 </div>
               </div>
-
-              {qrEnabled && meta?.qr_token ? (
-                <div className="fpe-field">
-                  <span className="fpe-label">Código del QR</span>
-                  <code className="fpe-code" title={meta.qr_token}>
-                    {meta.qr_token}
-                  </code>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <button
-                        type="button"
-                        className="fpe-btn fpe-btn-quiet fpe-btn-sm"
-                        disabled={pending}
-                      >
-                        <RefreshCw aria-hidden />
-                        Cambiar el QR
-                      </button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent className={cn(PAPEL, 'fpe-dialog')}>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>¿Cambiar el QR de la {theTable}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          El QR que está pegado en la mesa deja de funcionar. Vas a tener que
-                          imprimir el nuevo y cambiarlo.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel className="fpe-btn fpe-btn-quiet">
-                          Dejarlo
-                        </AlertDialogCancel>
-                        <AlertDialogAction className="fpe-btn fpe-btn-primary" onClick={regenerate}>
-                          Cambiar el QR
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              ) : null}
 
               <div className="fpe-field">
                 <AlertDialog>

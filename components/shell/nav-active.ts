@@ -61,8 +61,8 @@ function bestMatch(
  *  1. Cada entrada matchea por su href o por cualquiera de sus `activePaths`,
  *     por prefijo con borde de segmento (`/x/reservas` no matchea
  *     `/x/reservas-viejas`); las `exact`, sólo por igualdad.
- *  2. Gana el match más largo (el más específico): `/x/local/captura` es de
- *     Clientes y `/x/local/mesas` es del plano, aunque compartan `/x/local`.
+ *  2. Gana el match más largo (el más específico): `/x/local/hoy` es del
+ *     Resumen y `/x/local/mesas` es de Configuración, aunque compartan `/x/local`.
  *  3. Un target con query (`?segment=…`) sólo matchea si la query actual la
  *     contiene, y a igual path le gana al que no pide nada. Si empatan del
  *     todo, gana la primera en el orden del menú.

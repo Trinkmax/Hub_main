@@ -16,9 +16,8 @@ export const BARE = /^\/[^/]+\/salon\/tele(\/|$)/
 /**
  * La mesa es una pantalla de un solo trabajo: se llega desde el mapa y se vuelve con la flecha. Sin las
  * pestañas, la acción principal (enviar, servir, cobrar) queda al borde del pulgar y las tandas ganan lugar.
- * Lo mismo la cuenta de una mesa del servicio de mesas (`/salon/mesas/<id>`), que trae su barra fija abajo.
  */
-export const NO_TABBAR = /^\/[^/]+\/salon\/(mesa(\/|$)|mesas\/[^/]+)/
+export const NO_TABBAR = /^\/[^/]+\/salon\/mesa(\/|$)/
 
 export function SalonMain({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

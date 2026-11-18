@@ -1724,3 +1724,79 @@ Lo que quedó afuera de la primera versión (ver `docs/features/entradas-online.
   `_no_accountant`: las `pur_*` de Compras, `ticketing_settings`,
   `ticket_orders` y `event_experiences`. Hoy no exponen nada (sus políticas no
   incluyen a la contadora), pero el test de CI de aislamiento las marca.
+
+
+## Limpieza de pantallas — lo que queda (18/11/2026)
+
+Del pedido de Nacho del 18/11 («eliminá todo lo duplicado y lo redundante»). Se
+retiró el servicio de mesa anterior, se juntaron pantallas y se rehicieron el
+Resumen, Estadísticas y el estado de la reserva. Esto es lo que se vio y no se
+tocó:
+
+- **La base del servicio de mesa anterior NO se limpió, y no es mecánico.** El
+  punto de venta nuevo está montado sobre las mismas tablas: `table_sessions`,
+  `tickets`, `ticket_items`, `physical_tables` y `kitchen_stations` las lee el
+  código de `lib/pos`, y las funciones `pos_*` escriben en
+  `table_session_events` y `menu_stockouts`. Lo que sí quedó sin ningún llamador
+  desde la app son las funciones del flujo viejo (`join_session_as_guest`,
+  `submit_ticket`, `request_bill`, `add_staff_ticket`, `cancel_pending_ticket`,
+  `split_session`, `get_session_state`, `register_customer_for_session`,
+  `mark_session_paid`…) y la tabla `session_guests` (14 filas). Antes de borrar
+  algo: revisar función por función qué comparte con `pos_*` y hacerlo con la
+  sesión del punto de venta.
+- **El cron `auto-abandon-stale` se dejó.** Llama a `auto_abandon_stale_sessions`,
+  que trabaja sobre `table_sessions`: las mismas sesiones que abre el punto de
+  venta. Confirmar con quien lleva el POS si le sirve, le estorba o hay que
+  reemplazarlo.
+- **`invitations` (1 fila) y sus funciones `accept_invitation` y
+  `get_invitation_preview`** quedaron sin pantalla: el equipo se da de alta con
+  usuario y contraseña desde Configuración › Equipo. `accept-invite` sigue como
+  slug reservado para que nadie lo use de nombre de bar.
+- **Interruptores viejos en `tenants.feature_flags`.** Las claves `table_service`,
+  `kitchen`, `table_qr`, `auto_accept` y `floor_plan` ya no existen en
+  `lib/platform/features.ts`; si algún bar las tiene guardadas en el JSON, no
+  hacen nada. Se pueden borrar del JSON cuando haya una tanda de base.
+- **Estados «sentada» y «cerrada» de la reserva.** La pantalla ya no ofrece
+  «Sentar»: se marca «Llegó» y listo (la comisión y los puntos del evento se dan
+  ahí). «Cerrar mesa» quedó como acción chica. En `lib/salon/actions.ts` quedan
+  `markSeated` y `markClosed` sin llamadores (no se tocó `lib/salon` porque lo
+  está trabajando la tanda de sucursales) y el Operativo conserva la pestaña
+  «Terminadas». Decidir si «cerrada» se sigue usando o si el modelo se achica a
+  por llegar / llegó / no vino / cancelada.
+- **«Hoy en vivo» (`/local/hoy`) dejó de estar en el menú** y se entra desde la
+  ficha «Hoy» del Resumen (columna «Vendido en el salón»), solo en bares con
+  punto de venta. Si Nacho la quiere fuera del todo, es borrar la carpeta y el
+  link de `today-salon-overview.tsx`.
+- **Formulario de reserva: la barra fija de «Guardar cambios» ocupa casi un
+  cuarto de la ventana de notebook** (1190 × 660) y tapa campos mientras se baja.
+  Achicarla a una sola línea.
+- **Estadísticas › «Cargado por día»** une con una curva los días que tienen
+  consumos y no dibuja los días en cero (con pocos datos parece una subida
+  continua). El gráfico de gente, al lado, sí muestra todos los días.
+- **Las direcciones viejas ahora viven en `lib/tenant/legacy-redirects.ts`**, con
+  pruebas (`tests/lib/legacy-redirects.test.ts`): cada destino tiene que ser una
+  pantalla que existe, ninguna regla puede tapar una pantalla de hoy y ninguna
+  agarra rutas públicas. Antes estaban sueltas en `next.config.ts`, varias
+  apuntaban a páginas borradas y `/:slug/marketing` agarraba también una landing
+  `/p/marketing`. Al retirar una pantalla: sumar su regla ahí, no una página que
+  redirige.
+- **Sin auditar todavía:** la navegación interna de Mensajería (rail + pestañas)
+  y el armado de flows por pasos.
+- **Piezas de Administración que hoy solo usan las pruebas** (`aging-bar`,
+  `treasury-display`, `close-strip`, `target-race`, `section-nav`,
+  `lib/accounting/numbering`, `lib/csv/index`, `lib/fiscal/comprobante`): se
+  dejaron porque parecen trabajo en curso de esa sección. Confirmar y borrar o
+  enchufar.
+- **Configuración › Equipo, alta de miembro:** los roles todavía se describen
+  como «Cajero — cierra mesas» y «Cocina — pantalla KDS» (texto del sistema
+  anterior). Lo corrige la tanda de sucursales cuando pase por ese formulario.
+- **`docs/guia-uso.md` y su PDF (mayo 2026)** describen el sistema de entonces
+  (bottom sheet con «Llegó → Sentar → Cerrar mesa», pestañas Mesas / Cocina /
+  Bandeja). Rehacerla con las pantallas de hoy o retirarla: hoy confunde.
+- **Regla que salió del incidente del 18/11** (reservas caídas ~10 minutos): si
+  una migración agrega una segunda llave foránea entre dos tablas que el código
+  embebe con PostgREST sin nombrar la relación, toda esa consulta pasa a
+  contestar `PGRST201`. Ningún test local lo ve. Antes de aplicar una llave
+  nueva, buscar los embebidos entre ese par de tablas (`tabla(`, `tabla!inner(`)
+  y nombrar la relación (`tabla!nombre_de_la_fk(`). Las cuatro consultas entre
+  `salon_reservations` y `scheduled_events` ya la nombran.

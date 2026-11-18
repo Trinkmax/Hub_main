@@ -1,4 +1,5 @@
 import { isoDayInCordoba } from '@/lib/dates'
+import { pendingSetupTitles, type SetupStatus } from '@/lib/onboarding/steps'
 import type { ReviewInsights, ReviewListItem } from '@/lib/reviews/queries'
 import type { BirthdayTile, MonthBirthdayReport } from '@/lib/salon/birthdays-report'
 import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
@@ -25,8 +26,8 @@ import {
 } from '@/lib/salon/private-groups'
 import type { EventTemplateOption, TodaySalonOverview } from '@/lib/salon/queries'
 import { MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
-import type { DateRange, DateRangeInput } from '@/lib/staff-performance/date-range'
-import type { StaffSummaryRow } from '@/lib/staff-performance/queries'
+import { type BarPulse, pulseDelta } from '@/lib/stats/pulse'
+import type { UpcomingEvent } from '@/lib/stats/pulse-queries'
 import type {
   ChurnRiskRow,
   CommunicationStats,
@@ -72,34 +73,8 @@ export type DailyMetric = {
   customers_new: number | null
 }
 
-/** La misma cuenta de la portada: `+12%`, `-3%`, `0%` o «sin base» si antes no hubo nada. */
-export function deltaText(current: number, previous: number): string {
-  if (previous === 0) return current === 0 ? '0%' : 'sin base'
-  const rounded = Math.round(((current - previous) / previous) * 100)
-  return rounded > 0 ? `+${rounded}%` : `${rounded}%`
-}
-
 function sumOf(rows: readonly DailyMetric[], read: (row: DailyMetric) => unknown): number {
   return rows.reduce((total, row) => total + Number(read(row) ?? 0), 0)
-}
-
-/** Lo que falta de los cinco pasos de «Configurá tu bar» (`onboarding-checklist.tsx`). */
-export type SetupFacts = {
-  capacitiesReady: boolean
-  templatesReady: boolean
-  eventScheduledReady: boolean
-  firstReservationReady: boolean
-  firstClosedReady: boolean
-}
-
-export function setupPending(facts: SetupFacts): string[] {
-  return [
-    ...(facts.capacitiesReady ? [] : ['Definí la capacidad del salón']),
-    ...(facts.templatesReady ? [] : ['Creá los templates de eventos']),
-    ...(facts.eventScheduledReady ? [] : ['Programá el primer evento del mes']),
-    ...(facts.firstReservationReady ? [] : ['Cargá la primera reserva']),
-    ...(facts.firstClosedReady ? [] : ['Cerrá la primera mesa']),
-  ]
 }
 
 const MEAL_ORDER: readonly MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
@@ -110,10 +85,9 @@ export function todayData(overview: TodaySalonOverview) {
     fecha: dayText(overview.date),
     reservas: overview.reservationsCount,
     personas: overview.estimatedGuests,
-    pendientes: byStatus.pending || null,
-    llegaron: byStatus.arrived || null,
-    sentadas: byStatus.seated || null,
-    cerradas: byStatus.closed || null,
+    por_llegar: byStatus.pending || null,
+    // «Sentada» y «cerrada» son pasos que ya nadie marca: una reserva vieja en esos estados llegó.
+    llegaron: byStatus.arrived + byStatus.seated + byStatus.closed || null,
     pico: peak ? `${peak.startHHMM} a ${peak.endHHMM}, ${peak.guests} personas` : null,
     por_servicio: MEAL_ORDER.filter((meal) => overview.byMeal[meal].count > 0).map((meal) => ({
       servicio: MEAL_TYPE_LABELS[meal],
@@ -135,45 +109,56 @@ function topCustomerRow(row: TopCustomerRow) {
   })
 }
 
+/** Un evento de «Lo que viene», como lo muestra el Resumen. */
+function upcomingRow(event: UpcomingEvent) {
+  return compact({
+    evento: event.name,
+    fecha: dayText(event.date),
+    hora: event.time,
+    anotados: event.reserved,
+    cupo: event.capacity,
+    completo: event.capacity > 0 && event.reserved >= event.capacity ? true : null,
+    grupo_privado: event.privateGroup ? true : null,
+  })
+}
+
+/** `+12%`, `-3%`, `igual` o «sin comparación» si antes no hubo nada: lo que dice la ficha del Resumen. */
+function pulseDeltaText(current: number, previous: number): string {
+  const pct = pulseDelta(current, previous)
+  if (pct === null) return 'sin comparación'
+  if (pct === 0) return 'igual'
+  return pct > 0 ? `+${pct}%` : `${pct}%`
+}
+
+/**
+ * El Resumen del dueño (`app/(manager)/[tenantSlug]/page.tsx`): cómo viene hoy, la gente que vino en
+ * los últimos 30 días (de las reservas marcadas «Llegó») y lo que viene en el calendario.
+ */
 export function homeData(input: {
-  kpis: Kpis
-  daily: readonly DailyMetric[]
-  top: readonly TopCustomerRow[]
   today: TodaySalonOverview
-  setup: SetupFacts
+  pulse: BarPulse
+  customers: { total: number; added: number }
+  club: Pick<Kpis, 'visits_30d' | 'revenue_30d_cents'>
+  upcoming: readonly UpcomingEvent[]
+  setup: SetupStatus
 }) {
-  const { kpis, daily } = input
-  // La misma partición de la portada: las últimas 30 filas contra las anteriores.
-  const last = daily.slice(-30)
-  const previous = daily.slice(0, Math.max(0, daily.length - 30))
-  const visits = sumOf(last, (row) => row.visits)
-  const revenue = sumOf(last, (row) => row.revenue_cents)
-  const fresh = sumOf(last, (row) => row.customers_new)
+  const { current, previous } = input.pulse
   return compact({
     hoy: todayData(input.today),
-    ultimos_30_dias: {
-      clientes: kpis.customers_total,
-      clientes_nuevos: fresh,
-      nuevos_contra_antes: deltaText(
-        fresh,
-        sumOf(previous, (row) => row.customers_new),
-      ),
-      activos: kpis.customers_active_30d,
-      visitas: kpis.visits_30d,
-      visitas_contra_antes: deltaText(
-        visits,
-        sumOf(previous, (row) => row.visits),
-      ),
-      facturacion: pesos(kpis.revenue_30d_cents),
-      facturacion_contra_antes: deltaText(
-        revenue,
-        sumOf(previous, (row) => row.revenue_cents),
-      ),
-      ticket_promedio: pesos(kpis.avg_ticket_30d_cents),
-    },
-    // La tarjeta de la portada se titula «del mes», pero suma toda la historia de cada cliente.
-    top_clientes_por_consumo_total: input.top.map(topCustomerRow),
-    falta_configurar: setupPending(input.setup),
+    ultimos_30_dias: compact({
+      gente_que_vino: current.covers,
+      reservas_que_llegaron: current.arrived,
+      gente_contra_los_30_anteriores: pulseDeltaText(current.covers, previous.covers),
+      asistencia: current.attendance === null ? null : `${Math.round(current.attendance * 100)}%`,
+      no_vinieron: current.noShows || null,
+      reservas_sin_marcar: current.unmarked || null,
+      clientes: input.customers.total,
+      clientes_nuevos: input.customers.added,
+      consumos_con_puntos: input.club.visits_30d,
+      cargado_en_el_club: pesos(input.club.revenue_30d_cents),
+    }),
+    lo_que_viene: input.upcoming.map(upcomingRow),
+    falta_configurar: pendingSetupTitles(input.setup),
   })
 }
 
@@ -290,48 +275,6 @@ export function commsStats(stats: CommunicationStats) {
     leidos: stats.read,
     fallaron: stats.failed,
     nota: 'Cada destinatario cuenta una sola vez, en su último estado: un leído no suma en entregados.',
-  }
-}
-
-export const STAFF_PERIODS = {
-  hoy: 'today',
-  ultimos_7: 'last7',
-  ultimos_30: 'last30',
-  este_mes: 'this_month',
-  mes_pasado: 'last_month',
-} as const
-
-/**
- * El período de la pestaña Mozos. Las fechas van con la hora de Córdoba: a medianoche UTC serían el día
- * anterior acá.
- */
-export function staffRangeInput(input: {
-  periodo?: keyof typeof STAFF_PERIODS
-  desde?: string
-  hasta?: string
-}): DateRangeInput {
-  if (input.desde && input.hasta) {
-    return {
-      preset: 'custom',
-      from: new Date(`${input.desde}T12:00:00-03:00`),
-      to: new Date(`${input.hasta}T12:00:00-03:00`),
-    }
-  }
-  return { preset: STAFF_PERIODS[input.periodo ?? 'ultimos_7'] }
-}
-
-/** Sin el mail: si un mozo no cargó su nombre, no se dice quién es por el mail. */
-export function staffStats(rows: readonly StaffSummaryRow[], range: DateRange) {
-  return {
-    desde: dayText(isoDayInCordoba(range.from)),
-    hasta: dayText(isoDayInCordoba(range.to)),
-    filas: rows.map((row) => ({
-      mozo: row.full_name?.trim() || 'Sin nombre cargado',
-      mesas: row.sessions_count,
-      personas: Number(row.party_size_share.toFixed(1)),
-      facturacion: money(row.revenue_share_cents),
-      items: Number(row.items_share.toFixed(1)),
-    })),
   }
 }
 

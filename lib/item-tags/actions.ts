@@ -13,7 +13,6 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import {
-  assignTagSchema,
   bulkItemTagsSchema,
   createItemTagSchema,
   setItemTagsSchema,
@@ -98,7 +97,6 @@ export async function createItemTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, tagId: data.id }
 }
@@ -145,7 +143,6 @@ export async function updateItemTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, tagId: parsed.data.id }
 }
@@ -187,7 +184,6 @@ export async function deleteItemTag(slug: string, id: string): Promise<TagAction
     payload: { assignments_removed: assignedCount ?? 0 },
   })
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return {
     ok: true,
@@ -196,64 +192,6 @@ export async function deleteItemTag(slug: string, id: string): Promise<TagAction
         ? `Tag eliminado. Se quitó de ${assignedCount} ítems.`
         : 'Tag eliminado.',
   }
-}
-
-export async function toggleTagOnMenuItem(
-  slug: string,
-  menuItemId: string,
-  tagId: string,
-  enable: boolean,
-): Promise<TagActionState> {
-  const access = await authorize(slug)
-  if (!access) return { ok: false, message: 'No tenés permiso.' }
-
-  const parsed = assignTagSchema.safeParse({ menu_item_id: menuItemId, tag_id: tagId })
-  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
-
-  const supabase = await createClient()
-
-  // Defensa en profundidad (además de RLS): el ítem Y el tag tienen que ser de
-  // este tenant. Sin esto, un id de tag de otro bar pasaría el schema (solo
-  // valida formato uuid) y quedaría a merced de la policy; validamos también acá.
-  const [{ data: itemRow }, { data: tagRow }] = await Promise.all([
-    supabase
-      .from('menu_items')
-      .select('id')
-      .eq('id', parsed.data.menu_item_id)
-      .eq('tenant_id', access.tenant.id)
-      .maybeSingle(),
-    supabase
-      .from('item_tags')
-      .select('id')
-      .eq('id', parsed.data.tag_id)
-      .eq('tenant_id', access.tenant.id)
-      .maybeSingle(),
-  ])
-  if (!itemRow) return { ok: false, message: 'El ítem no pertenece a este bar.' }
-  if (!tagRow) return { ok: false, message: 'La etiqueta no pertenece a este bar.' }
-
-  if (enable) {
-    const { error } = await supabase
-      .from('menu_item_tag_assignments')
-      .insert({ menu_item_id: parsed.data.menu_item_id, tag_id: parsed.data.tag_id })
-    if (error && !error.message.includes('duplicate')) {
-      console.error('[item-tags.assign]', error.message)
-      return { ok: false, message: 'No se pudo asignar.' }
-    }
-  } else {
-    const { error } = await supabase
-      .from('menu_item_tag_assignments')
-      .delete()
-      .eq('menu_item_id', parsed.data.menu_item_id)
-      .eq('tag_id', parsed.data.tag_id)
-    if (error) {
-      console.error('[item-tags.unassign]', error.message)
-      return { ok: false, message: 'No se pudo desasignar.' }
-    }
-  }
-  revalidatePath(`/${slug}/menu/tags`)
-  revalidatePath(`/${slug}/menu`)
-  return { ok: true }
 }
 
 // Reemplaza el set completo de tags de un ítem con la lista entregada.
@@ -362,7 +300,6 @@ export async function setItemTags(
     })
   }
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -471,7 +408,6 @@ export async function addTagsToItems(
     },
   })
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return {
     ok: true,
@@ -529,7 +465,6 @@ export async function removeTagsFromItems(
     payload: { item_ids: resolved.itemIds, tag_ids: resolved.tagIds },
   })
 
-  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return {
     ok: true,

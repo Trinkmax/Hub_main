@@ -59,11 +59,15 @@ import type {
 // biome-ignore lint/suspicious/noExplicitAny: <generated types pending>
 type SBAny = any
 
+// La relación con el evento va NOMBRADA (`!salon_reservations_scheduled_event_id_fkey`): desde el
+// 18/11/2026 hay dos llaves de `salon_reservations` a `scheduled_events` (la de siempre y la que
+// exige que reserva y evento sean de la misma sucursal). Sin el nombre, PostgREST no sabe cuál usar
+// y contesta PGRST201: se caían la lista de Reservas, el Operativo y la ficha.
 const RESERVATION_JOIN_SELECT = `
   *,
   primary_manager:reservation_managers!salon_reservations_primary_manager_id_fkey(id, display_name),
   assistant_manager:reservation_managers!salon_reservations_assistant_manager_id_fkey(id, display_name),
-  scheduled_event:scheduled_events(
+  scheduled_event:scheduled_events!salon_reservations_scheduled_event_id_fkey(
     id, capacity, starts_at_local, meal_type,
     template:scheduled_event_templates(id, name, slug, color_hex, consume_special_reservations)
   ),

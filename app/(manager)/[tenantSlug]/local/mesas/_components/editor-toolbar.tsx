@@ -1,6 +1,6 @@
 'use client'
 
-import { Keyboard, MapPin, Minus, Plus, QrCode, Redo2, Undo2 } from 'lucide-react'
+import { Keyboard, MapPin, Minus, Plus, Redo2, Undo2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { UnplacedTable } from '@/lib/floor-plan/queries'
@@ -34,14 +34,12 @@ export type EditorToolbarProps = {
   /** El lienzo, para acercar y alejar. Mirando solo la maqueta no hay nada que acercar. */
   stage: React.RefObject<StageApi | null>
   zoomLabelRef: React.RefObject<HTMLSpanElement | null>
-  /** `null` = el bar no tiene prendidos los QR de mesa: no se ofrece imprimirlos. */
-  qr: { ready: boolean; onPrint: () => void } | null
 }
 
 /**
  * La fila de arriba del tablero, flotando sobre el plano. A la izquierda, lo que se sabe del sector
  * (deshacer, cuántas mesas y lugares, y las que faltan ubicar); a la derecha, cómo mirarlo (zoom,
- * plano o maqueta) y lo que se hace de vez en cuando (imprimir los QR, ver los atajos).
+ * plano o maqueta) y los atajos del teclado.
  *
  * Agregar cosas no está acá: está en la paleta del costado, que es de donde se arrastran.
  */
@@ -61,7 +59,6 @@ export function EditorToolbar({
   onDeleteTable,
   stage,
   zoomLabelRef,
-  qr,
 }: EditorToolbarProps) {
   // Sin ancho para partir, «plano y maqueta» se ve como plano.
   const shown: EditorView = view === 'split' && !canSplit ? 'plan' : view
@@ -197,19 +194,6 @@ export function EditorToolbar({
             <span>Maqueta</span>
           </button>
         </fieldset>
-
-        {qr ? (
-          <button
-            type="button"
-            className="fpe-btn fpe-btn-ghost fpe-btn-sm fpe-btn-icon"
-            disabled={!qr.ready}
-            aria-label="Imprimir los QR de este sector"
-            title={qr.ready ? 'Imprimir el QR de cada mesa de este sector' : 'Todavía no hay mesas'}
-            onClick={qr.onPrint}
-          >
-            <QrCode aria-hidden />
-          </button>
-        ) : null}
 
         <Popover>
           <PopoverTrigger asChild>

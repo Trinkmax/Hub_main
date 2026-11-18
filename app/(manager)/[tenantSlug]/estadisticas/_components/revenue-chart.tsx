@@ -30,14 +30,14 @@ export function RevenueChart({
     return (
       <EmptyState
         icon={LineChartIcon}
-        title="Sin datos en el rango"
-        description="Cuando empieces a cerrar mesas, vas a ver acá la evolución día a día."
+        title="Todavía no hay consumos cargados"
+        description="Cuando le sumes puntos a alguien por lo que consumió, acá vas a ver cuánto se cargó cada día."
         className="h-full border-0 bg-transparent py-8"
       />
     )
   }
 
-  const labelY = metric === 'visits' ? 'Visitas' : 'Revenue'
+  const labelY = metric === 'visits' ? 'Consumos' : 'Cargado'
   const fmtY =
     metric === 'revenue_cents'
       ? (v: number) => `$${(v / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`

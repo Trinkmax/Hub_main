@@ -9,7 +9,7 @@ import { SEGMENT_LABELS } from '@/lib/salon/segments-copy'
 import { roleLabel } from '@/lib/tenant/roles'
 import type { WelcomeRewardConfigWithReward } from '@/lib/welcome-reward/queries'
 import { compact, shortText } from '../read/common'
-import { capped, dayText, money } from '../types'
+import { capped, dayText } from '../types'
 
 /**
  * Lo que Tex lee de la configuración y del marketing del bar, puro. Sin secretos ni contactos: del
@@ -126,29 +126,6 @@ export function teamData(rows: ReadonlyArray<{ full_name: string | null; role: s
       rol: roleLabel(row.role),
     })),
   }
-}
-
-export type AutoAcceptConfig = {
-  guest_idle_hours_to_rescan: number
-  session_auto_abandon_hours: number
-  ticket_auto_accept_enabled: boolean
-  ticket_auto_accept_max_cents: number | null
-  ticket_auto_accept_max_items: number | null
-  kitchen_flow_enabled: boolean
-}
-
-export function autoAcceptData(config: AutoAcceptConfig) {
-  return compact({
-    comandas_automaticas: config.ticket_auto_accept_enabled,
-    hasta_monto:
-      config.ticket_auto_accept_max_cents === null
-        ? null
-        : money(config.ticket_auto_accept_max_cents),
-    hasta_items: config.ticket_auto_accept_max_items,
-    pasa_por_cocina: config.kitchen_flow_enabled,
-    pedir_escanear_de_nuevo_a_las_horas: config.guest_idle_hours_to_rescan,
-    abandonar_mesa_a_las_horas: config.session_auto_abandon_hours,
-  })
 }
 
 // ─── Marketing ───────────────────────────────────────────────────────────────

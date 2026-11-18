@@ -15,7 +15,7 @@ export const negocioManual = `## La Carta
 Hoy en el salón: reservas en pie, personas y pico estimado (asume 1h30 por reserva). Clientes, activos, visitas y facturación, contra el período anterior. El top de clientes es por consumo de toda su historia, aunque la tarjeta diga «del mes». Y lo que falta de los primeros pasos.
 
 ## Estadísticas
-- Visitas y facturación salen de lo que se carga a un cliente al cerrar una mesa o acreditar. No es la venta del bar: esa está en Administración › Ventas. Se actualizan cada 10 minutos.
+- Visitas y facturación salen de lo que se le carga a un cliente al sumarle puntos. No es la venta del bar: esa está en Administración › Ventas. Se actualizan cada 10 minutos.
 - Activos 30d: el día con más clientes distintos de los últimos 30, no el total del mes. Ticket promedio: facturación ÷ visitas.
 - En riesgo de irse: 3 visitas o más, venía al menos cada 30 días y ya pasó más del doble de su frecuencia.
 - Eventos: los últimos 20 del calendario, con su % de no-show.
@@ -47,7 +47,7 @@ Las deja el cliente desde su panel del club: de 1 a 5 estrellas y un comentario.
 ## Dónde está cada cosa (compu: menú lateral; celular: la barra de abajo y su «Más»; las partes de una sección son pestañas arriba)
 - Resumen: la portada.
 - Reservas: lista, alta y ficha; pestañas Operativo (el tablero de la noche), Calendario (eventos y formatos) y Ventas online (las compras de la cartelera, día por día, y «Confirmar transferencia»).
-- Clientes: Personas, Club (puntos y niveles, aliados, bienvenida y tarjetas de sellos), Acreditar y el QR del club.
+- Clientes: Personas y Club (puntos y niveles, aliados, bienvenida, sellos y el QR del club). Sumar puntos es un botón.
 - Mensajería: bandeja, difusiones, flows, audiencias y plantillas.
 - Carta.
 - Marketing: Tareas, Link de Instagram, Páginas y Entradas (la cartelera, Mercado Pago y las películas).

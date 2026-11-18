@@ -1,8 +1,9 @@
 'use client'
 
-import { CalendarPlus, DoorOpen, ScanLine, Search, X } from 'lucide-react'
+import { CalendarPlus, DoorOpen, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import type { Ref } from 'react'
+import { AwardPointsSheet } from '@/components/loyalty/award-points-sheet'
 import { Button } from '@/components/ui/button'
 import { BOARD_FILTER_LABELS, type BoardFilter, type FilterCounts } from '@/lib/salon/operativo'
 import { cn } from '@/lib/utils'
@@ -108,17 +109,13 @@ export function ServiceBar({
         {/* En pantallas chicas las acciones globales viven acá, a mano. */}
         <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
           {canAward ? (
-            <Button
-              asChild
+            <AwardPointsSheet
+              tenantSlug={tenantSlug}
               variant="outline"
-              size="icon"
+              iconOnly
+              label="Sumar puntos: escanear el QR del socio"
               className="size-11 rounded-full"
-              aria-label="Escanear QR del socio"
-            >
-              <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
-                <ScanLine className="size-5" aria-hidden />
-              </Link>
-            </Button>
+            />
           ) : null}
           {canDoor ? (
             <Button
