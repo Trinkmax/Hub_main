@@ -15,7 +15,7 @@ export function BranchShared({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground',
+        'mt-1 flex w-fit items-center gap-1 text-[11px] font-medium text-muted-foreground',
         className,
       )}
     >

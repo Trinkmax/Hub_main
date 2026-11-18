@@ -17,6 +17,7 @@
  * operativo y la planilla, y se testea sin DB.
  */
 
+import { type BranchRef, branchShortLabel } from '@/lib/branches/types'
 import type { FloorZone } from './segments'
 import { type SalonZone, ZONE_LABELS } from './types'
 
@@ -180,4 +181,37 @@ export function zoneBreakdown(byZone: Record<SalonZone, number>): string {
   const zones: SalonZone[] = ['planta_alta', 'planta_baja']
   if ((byZone.event_floating ?? 0) > 0) zones.push('event_floating')
   return zones.map((z) => `${floorLabel(z)} ${byZone[z] ?? 0}`).join(' · ')
+}
+
+/**
+ * «En la cena: …» del operativo, según dónde se mira:
+ * - una sucursal con plantas: las plantas (aunque estén en 0) y «Sin ubicar» (`zoneBreakdown`);
+ * - una sin plantas (el Cerro): «Salón» y «Sin ubicar»: nombrar plantas que no tiene confunde;
+ * - «Todas»: cada sucursal, porque las plantas de una mezcladas con el salón de otra no dicen nada.
+ */
+export function placeBreakdown(
+  load: { people: number; byZone: Record<SalonZone, number>; byBranch?: Record<string, number> },
+  where: {
+    hasFloors: boolean
+    branches?: ReadonlyArray<Pick<BranchRef, 'id' | 'name' | 'shortName'>>
+  },
+): string {
+  if (where.branches && where.branches.length > 1 && load.byBranch) {
+    const byBranch = load.byBranch
+    const parts = where.branches.flatMap((branch) => {
+      const people = byBranch[branch.id] ?? 0
+      return people > 0 ? [`${branchShortLabel(branch)} ${people}`] : []
+    })
+    if (parts.length > 0) return parts.join(' · ')
+  }
+  if (where.hasFloors) return zoneBreakdown(load.byZone)
+  const unplaced = load.byZone.event_floating ?? 0
+  const inFloors = (load.byZone.planta_alta ?? 0) + (load.byZone.planta_baja ?? 0)
+  const salon = Math.max(0, load.people - inFloors - unplaced)
+  return [
+    salon > 0 ? `${NO_FLOOR_LABEL} ${salon}` : null,
+    unplaced > 0 ? `${UNPLACED_LABEL} ${unplaced}` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
 }

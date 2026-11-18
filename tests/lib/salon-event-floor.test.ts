@@ -5,6 +5,7 @@ import {
   isEventReservation,
   pickEventTile,
   pickFloorTile,
+  placeBreakdown,
   placeSelection,
   UNPLACED_LABEL,
   zoneBreakdown,
@@ -135,5 +136,42 @@ describe('zoneBreakdown', () => {
     expect(zoneBreakdown({ planta_alta: 29, planta_baja: 0, event_floating: 5 })).not.toContain(
       'eventos',
     )
+  })
+})
+
+describe('placeBreakdown (sucursales)', () => {
+  const ac = { id: 'ac', name: 'Alta Córdoba', shortName: 'A. Córdoba' }
+  const ce = { id: 'ce', name: 'Cerro', shortName: null }
+  const load = {
+    people: 28,
+    byZone: { planta_alta: 4, planta_baja: 2, event_floating: 14 },
+    byBranch: { ac: 12, ce: 16 },
+  }
+
+  it('con plantas, lo de siempre', () => {
+    expect(placeBreakdown(load, { hasFloors: true })).toBe(
+      'Planta Alta 4 · Planta Baja 2 · Sin ubicar 14',
+    )
+  })
+
+  it('sin plantas: «Salón» con lo que no tiene planta, sin nombrar plantas que no existen', () => {
+    const cerro = { people: 16, byZone: { planta_alta: 0, planta_baja: 0, event_floating: 8 } }
+    expect(placeBreakdown(cerro, { hasFloors: false })).toBe('Salón 8 · Sin ubicar 8')
+    expect(
+      placeBreakdown(
+        { people: 5, byZone: { planta_alta: 0, planta_baja: 0, event_floating: 0 } },
+        { hasFloors: false },
+      ),
+    ).toBe('Salón 5')
+  })
+
+  it('en «Todas», cada sucursal con su nombre corto, en el orden de las sucursales', () => {
+    expect(placeBreakdown(load, { hasFloors: true, branches: [ac, ce] })).toBe(
+      'A. Córdoba 12 · Cerro 16',
+    )
+    // Una sucursal sin gente en el servicio no aparece.
+    expect(
+      placeBreakdown({ ...load, byBranch: { ce: 16 } }, { hasFloors: true, branches: [ac, ce] }),
+    ).toBe('Cerro 16')
   })
 })
