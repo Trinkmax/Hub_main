@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { RollCallDialog } from '@/app/(manager)/[tenantSlug]/reservas/_components/roll-call-dialog'
+import { useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { keepOpenOnToast } from '@/components/reservations/reservation-quick-view'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PICK_BRANCH_FOR_CAPACITY } from '@/lib/salon/branch-scope'
 import { editEventHref, newReservationHref } from '@/lib/salon/calendar-links'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { nowMinutesInCordoba } from '@/lib/salon/operativo'
@@ -205,6 +208,13 @@ export function DayView({
   onClose,
 }: DayViewProps) {
   const zone = zoneFilter ? zoneOfFilter(zoneFilter) : null
+  // La sucursal (docs/features/sucursales.md): el día se pide con el filtro con
+  // el que se dibujó el calendario; el cupo especial es de una sucursal concreta
+  // (la que se mira). Mirando «Todas» no hay cupo que tocar.
+  const branchContext = useBranchScope()
+  const branchFilter = branchContext?.filter
+  const capacityBranchId = useDefaultBranchId()
+  const capacityHidden = Boolean(branchContext?.scope.multi && !capacityBranchId)
   // Último día abierto: el contenido sigue en pantalla durante la animación
   // de cierre en lugar de vaciarse de golpe.
   const [shownDate, setShownDate] = useState(date)
@@ -251,7 +261,7 @@ export function DayView({
 
       let res: SegmentActionResult<DayOverview>
       try {
-        res = await fetchDayOverview(tenantSlug, target)
+        res = await fetchDayOverview(tenantSlug, target, branchFilter)
       } catch (error) {
         // Red caída o deploy nuevo en el medio: sin datos del bar en el log.
         console.error('[calendario.dia.load]', error instanceof Error ? error.message : error)
@@ -278,7 +288,7 @@ export function DayView({
           : { date: target, status: 'error', overview: null, refreshing: false, stale: false },
       )
     },
-    [tenantSlug],
+    [tenantSlug, branchFilter],
   )
 
   const viewDate = view?.date ?? null
@@ -316,6 +326,11 @@ export function DayView({
   )
   const rowsBySegment = useMemo(
     () => (overview ? groupReservationsBySegment(overview.reservations, overview.events) : null),
+    [overview],
+  )
+  // De qué sucursal es cada fecha del día (la etiqueta de la tarjeta en «Todas»).
+  const eventBranches = useMemo(
+    () => new Map((overview?.events ?? []).map((e) => [e.id, e.branch_id])),
     [overview],
   )
   // El desayuno solo se dibuja el día que tiene algo (un evento, gente o una
@@ -389,13 +404,18 @@ export function DayView({
       try {
         res = previous
           ? await upsertSegmentOverride(tenantSlug, {
+              branch_id: capacityBranchId ?? undefined,
               override_date: previous.override_date,
               segment: previous.segment,
               capacity: previous.capacity,
               warn_at: previous.warn_at,
               reason: previous.reason,
             })
-          : await removeSegmentOverride(tenantSlug, { override_date: targetDate, segment })
+          : await removeSegmentOverride(tenantSlug, {
+              branch_id: capacityBranchId ?? undefined,
+              override_date: targetDate,
+              segment,
+            })
       } catch (error) {
         console.error(
           '[calendario.dia.undoOverride]',
@@ -408,7 +428,7 @@ export function DayView({
       if (res.ok) toast.success('Listo: el cupo quedó como estaba.')
       else toast.error(res.message)
     },
-    [tenantSlug],
+    [tenantSlug, capacityBranchId],
   )
 
   const saveOverride = useCallback(
@@ -416,6 +436,7 @@ export function DayView({
       setBusySegment(input.segment)
       try {
         const res = await upsertSegmentOverride(tenantSlug, {
+          branch_id: capacityBranchId ?? undefined,
           override_date: targetDate,
           segment: input.segment,
           capacity: input.capacity,
@@ -450,7 +471,7 @@ export function DayView({
         setBusySegment(null)
       }
     },
-    [tenantSlug, undoOverride],
+    [tenantSlug, undoOverride, capacityBranchId],
   )
 
   const removeOverride = useCallback(
@@ -458,6 +479,7 @@ export function DayView({
       setBusySegment(s.key)
       try {
         const res = await removeSegmentOverride(tenantSlug, {
+          branch_id: capacityBranchId ?? undefined,
           override_date: targetDate,
           segment: s.key,
         })
@@ -491,7 +513,7 @@ export function DayView({
         setBusySegment(null)
       }
     },
-    [tenantSlug, undoOverride],
+    [tenantSlug, undoOverride, capacityBranchId],
   )
 
   // ── Navegación entre días ──
@@ -515,10 +537,12 @@ export function DayView({
   }
 
   const canBook = RESERVATION_STAFF_ROLES.includes(role)
+  // El cupo es de una sucursal: mirando «Todas» no se edita (no hay cuál).
   const isOwner = role === 'owner'
+  const canEditCapacity = isOwner && !capacityHidden
   // "Subir a N" crea el cupo especial de ESTE día: en un día que ya pasó no
   // tiene nada que resolver.
-  const canRaise = isOwner && shownDate !== null && shownDate >= today
+  const canRaise = canEditCapacity && shownDate !== null && shownDate >= today
   const canRollCall =
     shownDate !== null && shownDate <= today && RESERVATION_OPERATOR_ROLES.includes(role)
   const longLabel = shownDate ? longDayLabel(shownDate) : 'Día'
@@ -624,12 +648,16 @@ export function DayView({
             </div>
           ) : null}
 
-          {shownDate && (canRollCall || isOwner) ? (
+          {capacityHidden ? (
+            <p className="text-center text-xs text-muted-foreground">{PICK_BRANCH_FOR_CAPACITY}</p>
+          ) : null}
+
+          {shownDate && (canRollCall || canEditCapacity) ? (
             <div className="flex flex-wrap items-center justify-center gap-2">
               {canRollCall ? (
                 <RollCallDialog tenantSlug={tenantSlug} day={shownDate} dayLabel={longLabel} />
               ) : null}
-              {isOwner && isoDow !== null ? (
+              {canEditCapacity && isoDow !== null ? (
                 // Mientras el día carga, `segments` es null y el botón queda
                 // deshabilitado en su lugar (sin saltos en el header).
                 <DayCapacityEditor
@@ -714,6 +742,7 @@ export function DayView({
                     segment={daySegments.segments[key]}
                     defaultTime={overview.settings[key].defaultTime}
                     reservations={rowsBySegment[key]}
+                    eventBranches={eventBranches}
                     canBook={canBook}
                     canRaise={canRaise}
                     isToday={isToday}

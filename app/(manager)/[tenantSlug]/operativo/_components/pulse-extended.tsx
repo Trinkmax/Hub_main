@@ -15,7 +15,7 @@ import {
   segmentStatusLine,
   segmentTone,
 } from '@/lib/salon/segments-copy'
-import { type DayCapacityBucket, describeCake, type ReservationWithJoins } from '@/lib/salon/types'
+import { describeCake, type ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 export function PulseExtended({
   pulse,
   reservations,
-  capacity,
+  usedByEvent,
   segments,
   focus,
   events,
@@ -39,8 +39,11 @@ export function PulseExtended({
 }: {
   pulse: NightPulse
   reservations: ReservationWithJoins[]
-  /** Solo para las barras por evento (bucket event:*). */
-  capacity: DayCapacityBucket[]
+  /**
+   * La gente de cada evento (id → personas), de la misma cuenta por servicio que el resto del tablero
+   * (`eventUsedById`): sale de las reservas de la sucursal que se mira.
+   */
+  usedByEvent: ReadonlyMap<string, number>
   segments: DaySegments
   /** El servicio en juego (el del reloj hoy; la cena si se mira otro día). */
   focus: SegmentKey
@@ -121,8 +124,7 @@ export function PulseExtended({
           </p>
         ) : null}
         {events.map((e) => {
-          const bucket = capacity.find((b) => b.bucket === `event:${e.id}`)
-          const used = bucket?.used ?? 0
+          const used = usedByEvent.get(e.id) ?? 0
           const pct = e.capacity > 0 ? Math.min(100, (used / e.capacity) * 100) : 0
           const full = e.capacity > 0 && used >= e.capacity
           return (

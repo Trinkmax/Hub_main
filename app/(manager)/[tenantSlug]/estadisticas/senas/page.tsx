@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import type { DepositBasis } from '@/lib/salon/deposits'
 import { getDepositsBounds, getDepositsByDay } from '@/lib/salon/queries'
@@ -61,11 +63,15 @@ export default async function SenasPage({
   const currentYM =
     typeof sp.month === 'string' && YM_RE.test(sp.month) ? sp.month : todayInCordoba().slice(0, 7)
   const wantsAll = sp.periodo === 'todo'
+  // Por la sucursal de cada reserva (docs/features/sucursales.md).
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
 
   // "Todo el histórico" pregunta primero hasta dónde llegan los datos. Si el bar
   // todavía no cargó una reserva, se cae al mes actual y la pantalla muestra su
   // estado vacío en vez de un rango inventado.
-  const bounds = wantsAll ? await getDepositsBounds({ tenantId: access.tenant.id, basis }) : null
+  const bounds = wantsAll
+    ? await getDepositsBounds({ tenantId: access.tenant.id, basis, branch })
+    : null
   const period: 'mes' | 'todo' = bounds ? 'todo' : 'mes'
   const range = bounds ?? monthRange(currentYM)
 
@@ -74,6 +80,7 @@ export default async function SenasPage({
     basis,
     from: range.from,
     to: range.to,
+    branch,
   })
 
   return (

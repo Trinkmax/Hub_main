@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import { BRANCH_FILTER_PARAM, parseBranchFilterParam } from '@/lib/salon/branch-scope'
 import { exportFilename, reservationsToCsv } from '@/lib/salon/export'
 import { partySizeBucketSchema } from '@/lib/salon/party-size'
 import { listSalonReservationsForExport } from '@/lib/salon/queries'
@@ -63,9 +66,16 @@ export async function GET(request: Request) {
     const managerRaw = p.get('manager')
     const managerId = managerRaw && UUID_RE.test(managerRaw) ? managerRaw : undefined
     const q = p.get('q')?.trim() || undefined
+    // Las sucursales que se estaban viendo (las manda el link), recortadas a las de
+    // la persona. Un link sin sucursales baja todo lo que la persona ve.
+    const branch = clampBranchFilter(
+      parseBranchFilterParam(p.get(BRANCH_FILTER_PARAM)),
+      await getBranchScope(slug),
+    )
 
     const { rows, truncated } = await listSalonReservationsForExport({
       tenantId: access.tenant.id,
+      branch,
       dateFrom: dateFrom ?? undefined,
       dateTo: dateTo ?? undefined,
       status: status.success ? status.data : undefined,
@@ -95,6 +105,7 @@ export async function GET(request: Request) {
         meal_type: mealType.success ? mealType.data : null,
         party_size: partySize.success ? partySize.data : null,
         manager_id: managerId ?? null,
+        branch_ids: branch.ids,
         with_query: Boolean(q),
         rows: rows.length,
         truncated,

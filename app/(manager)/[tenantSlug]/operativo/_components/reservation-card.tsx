@@ -2,6 +2,7 @@
 
 import { Check, GlassWater, MessageSquareMore, RotateCcw, Sparkles, Users } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { CelebrationChip } from '@/components/reservations/celebration-chip'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
@@ -258,6 +259,8 @@ export function ReservationCard({
           {r.champagne_count > 0 ? (
             <GlassWater className="size-3.5 shrink-0 text-primary" aria-label="Champagne" />
           ) : null}
+          {/* Mirando «Todas»: de qué sucursal es (en una sola sucursal no se dibuja). */}
+          <BranchTag branchId={r.branch_id} />
         </div>
 
         {/* Chips: lo crítico primero, siempre visible. */}

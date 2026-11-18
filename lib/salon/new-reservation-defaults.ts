@@ -101,12 +101,13 @@ export function resolveNewReservationDefaults(input: {
 /** Cupo de un formato sin `default_capacity`: el mismo 30 que usa el server. */
 const REQUESTED_TEMPLATE_DEFAULT_CAPACITY = 30
 
-export type ReservationCandidateFormValues = {
+export type ReservationCandidateFormValues<Z extends SalonZone | null = SalonZone | null> = {
   reservation_date: string
   meal_type: MealType
   reservation_time_local: string
   scheduled_event_id?: string | null
-  zone: SalonZone
+  /** `null` en una sucursal sin plantas (el Cerro). */
+  zone: Z
   estimated_guests: number
   kind: ReservationKind
   cake_count: number
@@ -126,14 +127,15 @@ export type ReservationCandidateFormValues = {
  *   la hora de la reserva, que acá se simula como `virtualEvent` para que el
  *   medidor y la confirmación ya descuenten su cupo.
  */
-export function buildReservationCandidate(input: {
+export function buildReservationCandidate<Z extends SalonZone | null>(input: {
   mode: 'create' | 'edit'
   reservationId?: string | null
-  values: ReservationCandidateFormValues
+  /** Con planta devuelve una `ReservationCandidate`; sin planta, la misma sin planta (la acepta `projectReservation`). */
+  values: ReservationCandidateFormValues<Z>
   loadedActualGuests: number | null
   templates: ReadonlyArray<{ id: string; name: string; default_capacity: number | null }>
   eventsForDate: ReadonlyArray<{ id: string; event_date: string; template: { id: string } | null }>
-}): ReservationCandidate {
+}): Omit<ReservationCandidate, 'zone'> & { zone: Z } {
   const { mode, values } = input
   const guests =
     mode === 'edit' && input.loadedActualGuests !== null

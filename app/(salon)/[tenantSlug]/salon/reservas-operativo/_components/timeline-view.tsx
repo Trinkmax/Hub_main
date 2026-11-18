@@ -3,18 +3,21 @@
 import { CalendarPlus, CalendarX2, ChevronLeft, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { type BranchFilter, inBranchFilter } from '@/lib/branches/filter'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
+import { branchFilterKey } from '@/lib/salon/branch-scope'
 import { newReservationHref } from '@/lib/salon/calendar-links'
 import { fetchDayExtras, fetchReservationsForDate } from '@/lib/salon/client-actions'
+import { eventUsedById } from '@/lib/salon/day-counter'
 import { nowMinutesInCordoba } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
-import type { DayCapacityBucket, ReservationWithJoins } from '@/lib/salon/types'
+import type { ReservationWithJoins } from '@/lib/salon/types'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
@@ -72,8 +75,8 @@ export function TimelineView({
   role,
   date,
   isToday,
+  branchFilter,
   initialReservations,
-  initialCapacity,
   initialSegmentCaps,
   initialEvents,
 }: {
@@ -82,15 +85,18 @@ export function TimelineView({
   role: TenantRole
   date: string
   isToday: boolean
+  /**
+   * La sucursal de este dispositivo (el salón no mira «Todas»): lo que se vuelve a pedir lleva este filtro y lo que
+   * llega en vivo de otra sucursal se descarta.
+   */
+  branchFilter: BranchFilter
   initialReservations: ReservationWithJoins[]
-  initialCapacity: DayCapacityBucket[]
   /** Cupos resueltos de almuerzo/merienda/cena para `date` (el cálculo corre acá). */
   initialSegmentCaps: DaySegmentCaps
   initialEvents: ScheduledEventWithTemplate[]
 }) {
   const router = useRouter()
   const [reservations, setReservations] = useState(initialReservations)
-  const [capacity, setCapacity] = useState(initialCapacity)
   const [segmentCaps, setSegmentCaps] = useState(initialSegmentCaps)
   const [events, setEvents] = useState(initialEvents)
   // Minutos del reloj del bar, solo hoy. Arranca en null también en el cliente:
@@ -104,12 +110,20 @@ export function TimelineView({
   // la fecha que se está mirando: el alta abre en ese día, no en hoy.
   const canCreate = RESERVATION_STAFF_ROLES.includes(role)
 
-  // Una sola server action (capacidad + eventos + cupos por servicio): cada
-  // action es una invocación de función aparte en Vercel.
+  // El filtro por ref: lo que se pide de nuevo va con la sucursal con la que se
+  // dibujó la pantalla (el servidor lo recorta). Cambiar de sucursal la remonta.
+  const branchRef = useRef(branchFilter)
+  branchRef.current = branchFilter
+  const branchKey = branchFilterKey(branchFilter)
+  // Las reservas que ya se ven, por ref: el aviso en vivo decide con lo actual.
+  const reservationsRef = useRef(reservations)
+  reservationsRef.current = reservations
+
+  // Una sola server action (eventos + cupos por servicio): cada action es una
+  // invocación de función aparte en Vercel.
   const refreshExtras = useCallback(async () => {
-    const r = await fetchDayExtras(tenantSlug, date)
+    const r = await fetchDayExtras(tenantSlug, date, branchRef.current)
     if (!r.ok) return
-    setCapacity(r.buckets)
     setSegmentCaps(r.caps)
     setEvents(r.events)
   }, [tenantSlug, date])
@@ -118,7 +132,6 @@ export function TimelineView({
 
   // Resetear estado al cambiar de fecha (el RSC re-renderea con props nuevas).
   useEffect(() => setReservations(initialReservations), [initialReservations])
-  useEffect(() => setCapacity(initialCapacity), [initialCapacity])
   useEffect(() => setSegmentCaps(initialSegmentCaps), [initialSegmentCaps])
   useEffect(() => setEvents(initialEvents), [initialEvents])
 
@@ -147,13 +160,13 @@ export function TimelineView({
     // venir del Client Router Cache con reservas de hasta 30 s; Realtime sólo
     // trae cambios FUTUROS y el safety net de abajo no refresca reservas.
     let cancelled = false
-    void fetchReservationsForDate(tenantSlug, date).then((res) => {
+    void fetchReservationsForDate(tenantSlug, date, branchRef.current).then((res) => {
       if (!cancelled && res.ok) setReservations(res.reservations)
     })
     void refreshExtras()
 
     const cleanup = subscribeChanges({
-      channel: `salon-res-${tenantId}-${date}`,
+      channel: `salon-res-${tenantId}-${date}-${branchKey}`,
       events: [
         {
           event: '*',
@@ -161,13 +174,24 @@ export function TimelineView({
           filter: `tenant_id=eq.${tenantId}`,
           onChange: (raw) => {
             const payload = raw as AnyRealtimePayload
-            // Filtro por fecha en JS — Realtime no permite filter por date.eq.
+            const next = payload.new as ReservationWithJoins | undefined
+            // Filtro por fecha y por sucursal en JS: Realtime no permite filter
+            // por date.eq y la suscripción es por bar. Lo de otra sucursal se
+            // descarta (si estaba, porque se mudó, `mergeRow` la saca).
+            if (
+              next &&
+              !inBranchFilter(next.branch_id, branchRef.current) &&
+              !reservationsRef.current.some((r) => r.id === next.id)
+            ) {
+              return
+            }
             setReservations((prev) =>
               mergeRow<ReservationWithJoins>(
                 prev,
                 payload,
                 (r) => r.id,
-                (r) => r.reservation_date === date,
+                (r) =>
+                  r.reservation_date === date && inBranchFilter(r.branch_id, branchRef.current),
               ),
             )
             debouncedCapacity()
@@ -186,7 +210,7 @@ export function TimelineView({
       cancelled = true
       cleanup()
     }
-  }, [tenantId, tenantSlug, date, refreshExtras, debouncedCapacity])
+  }, [tenantId, tenantSlug, date, branchKey, refreshExtras, debouncedCapacity])
 
   useVisibleInterval(refreshExtras, SAFETY_NET_INTERVAL_MS)
 
@@ -208,6 +232,9 @@ export function TimelineView({
     [date, reservations, events, segmentCaps],
   )
   const focus = focusSegment(daySegments, isToday ? nowMinutes : null)
+  // La gente de cada evento, de la misma cuenta (ya no de `evaluate_day_capacity`,
+  // que no sabe de sucursales).
+  const usedByEvent = useMemo(() => eventUsedById(daySegments), [daySegments])
 
   // Agrupadas por hora, en orden. Es como el mozo lee la noche.
   const groups = useMemo(() => {
@@ -282,7 +309,12 @@ export function TimelineView({
           </Button>
         </div>
 
-        <CapacityHeader segments={daySegments} focus={focus} capacity={capacity} events={events} />
+        <CapacityHeader
+          segments={daySegments}
+          focus={focus}
+          usedByEvent={usedByEvent}
+          events={events}
+        />
       </div>
 
       {groups.length === 0 ? (

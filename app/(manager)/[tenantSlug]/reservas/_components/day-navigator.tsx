@@ -3,6 +3,7 @@
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { SegmentChip } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,6 +38,9 @@ function formatDayLong(day: string): string {
  * calendario ("Cena 46/120"). El viejo "Cubiertos 171/130" sumaba el día entero
  * contra PA + PB y pintaba de rojo un jueves sin sobrecupo; el dueño pidió que
  * no vuelva (22/09/2026). Los números llegan resueltos desde el server.
+ *
+ * Mirando «Todas», una fila de chips por sucursal con su etiqueta: el cupo nunca
+ * se suma entre sucursales (no comparten sillas).
  */
 export function DayNavigator({
   tenantSlug,
@@ -48,8 +52,11 @@ export function DayNavigator({
   tenantSlug: string
   day: string
   today: string
-  /** Los servicios del día con actividad, en orden (ver `activeDaySegments`). */
-  segments: SegmentLoad[]
+  /**
+   * Los servicios del día con actividad, en orden (ver `activeDaySegments`), de cada sucursal que se mira.
+   * `branchId: null` = una sola cuenta (se mira una sucursal): sin etiqueta.
+   */
+  segments: Array<{ branchId: string | null; segments: SegmentLoad[] }>
   /** 'jue 10/09', para la etiqueta completa de cada chip. */
   dayLabel: string
 }) {
@@ -113,20 +120,36 @@ export function DayNavigator({
         </Button>
       ) : null}
 
-      {segments.length > 0 ? (
+      {segments.some((b) => b.segments.length > 0) ? (
         // En el celu envuelve a su propia fila; en la compu se va a la
         // derecha. El color nunca es la única señal: el chip dice el número y
         // el title/sr-only da la causa ("te pasaste por 13…").
-        <ul
-          aria-label="Cómo viene cada servicio"
-          className="flex w-full flex-wrap items-center gap-1.5 sm:ml-auto sm:w-auto sm:justify-end"
-        >
-          {segments.map((s) => (
-            <li key={s.key}>
-              <SegmentChip segment={s} label="short" ariaLabel={segmentAriaLabel(s, dayLabel)} />
-            </li>
-          ))}
-        </ul>
+        <div className="flex w-full flex-col gap-1.5 sm:ml-auto sm:w-auto sm:items-end">
+          {segments
+            .filter((b) => b.segments.length > 0)
+            .map((b) => (
+              <ul
+                key={b.branchId ?? 'una'}
+                aria-label="Cómo viene cada servicio"
+                className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end"
+              >
+                {b.branchId ? (
+                  <li className="flex items-center">
+                    <BranchTag branchId={b.branchId} when="always" />
+                  </li>
+                ) : null}
+                {b.segments.map((s) => (
+                  <li key={s.key}>
+                    <SegmentChip
+                      segment={s}
+                      label="short"
+                      ariaLabel={segmentAriaLabel(s, dayLabel)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </div>
       ) : null}
     </div>
   )

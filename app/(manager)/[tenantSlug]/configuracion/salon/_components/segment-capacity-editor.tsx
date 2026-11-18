@@ -242,14 +242,20 @@ function segmentHasErrors(validation: Validation, segment: ConfigurableSegmentKe
 
 export function SegmentCapacityEditor({
   tenantSlug,
+  branchId,
   weekly,
   settings,
   fallbackTotal,
 }: {
   tenantSlug: string
+  /** La sucursal de esta grilla: el cupo es de un lugar (docs/features/sucursales.md). */
+  branchId: string | null
   weekly: SegmentWeeklyCapRow[]
   settings: SegmentSettingRow[]
-  /** PA + PB: lo que usa un día sin fila. 0 = sin tope. */
+  /**
+   * El cupo general: lo que usa un día sin fila (PA + PB en la sucursal con plantas, sus sillas en una sin plantas).
+   * 0 = sin tope.
+   */
   fallbackTotal: number
 }) {
   const baseId = useId()
@@ -272,7 +278,7 @@ export function SegmentCapacityEditor({
   const emptyMeaning =
     fallbackTotal > 0
       ? `Vacío = usa el cupo general (${fallbackTotal}).`
-      : 'Vacío = sin tope (el cupo general por planta está en 0).'
+      : 'Vacío = sin tope (el cupo general de la sucursal está en 0).'
 
   function setCell(
     segment: ConfigurableSegmentKey,
@@ -345,7 +351,10 @@ export function SegmentCapacityEditor({
     startTransition(async () => {
       let result: SegmentActionResult<null>
       try {
-        result = await saveSegmentConfig(tenantSlug, payload)
+        result = await saveSegmentConfig(tenantSlug, {
+          ...payload,
+          ...(branchId ? { branch_id: branchId } : {}),
+        })
       } catch (error) {
         console.error(
           '[configuracion.salon.saveSegmentConfig]',

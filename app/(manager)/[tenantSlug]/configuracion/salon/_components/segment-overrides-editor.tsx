@@ -57,6 +57,8 @@ import { cn } from '@/lib/utils'
 
 type Props = {
   tenantSlug: string
+  /** La sucursal de estos especiales: el cupo es de un lugar (docs/features/sucursales.md). */
+  branchId: string | null
   /** Hoy en Córdoba ('YYYY-MM-DD'): piso de la fecha y corte de la lista. */
   today: string
   initialOverrides: SegmentOverrideRow[]
@@ -140,11 +142,14 @@ async function callAction<T>(
 
 export function SegmentOverridesEditor({
   tenantSlug,
+  branchId,
   today,
   initialOverrides,
   weekly,
   fallbackTotal,
 }: Props) {
+  // Cada especial es de la sucursal de esta pantalla (el cupo es de un lugar).
+  const branch = branchId ? { branch_id: branchId } : {}
   const baseId = useId()
   const titleId = `${baseId}-title`
   const formRef = useRef<HTMLFormElement>(null)
@@ -263,9 +268,12 @@ export function SegmentOverridesEditor({
     setBusyKey(rowKey(key))
     startTransition(async () => {
       const result = previous
-        ? await callAction('undoOverride', () => upsertSegmentOverride(tenantSlug, previous))
+        ? await callAction('undoOverride', () =>
+            upsertSegmentOverride(tenantSlug, { ...previous, ...branch }),
+          )
         : await callAction('undoOverride', () =>
             removeSegmentOverride(tenantSlug, {
+              ...branch,
               override_date: key.override_date,
               segment: key.segment,
             }),
@@ -302,7 +310,7 @@ export function SegmentOverridesEditor({
     }
     startTransition(async () => {
       const result = await callAction('saveOverride', () =>
-        upsertSegmentOverride(tenantSlug, input),
+        upsertSegmentOverride(tenantSlug, { ...input, ...branch }),
       )
       if (!result.ok) {
         // Lo cargado se queda en el form para corregir o reintentar.
@@ -332,6 +340,7 @@ export function SegmentOverridesEditor({
     startTransition(async () => {
       const result = await callAction('removeOverride', () =>
         removeSegmentOverride(tenantSlug, {
+          ...branch,
           override_date: row.override_date,
           segment: row.segment,
         }),

@@ -1,14 +1,13 @@
 import type { Viewport } from 'next'
 import { notFound } from 'next/navigation'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { isFeatureEnabled } from '@/lib/platform/features'
 import { resolveEarnRate } from '@/lib/points/earn-rate'
 import { listRecentQrAwards, listRules } from '@/lib/points/queries'
+import { branchFilterKey, segmentScopeFromFilter } from '@/lib/salon/branch-scope'
 import { serviceDayEndIso, serviceDayInCordoba, serviceDayStartIso } from '@/lib/salon/operativo'
-import {
-  getDayCapacitySnapshot,
-  listScheduledEventsForDate,
-  listTimelineForDate,
-} from '@/lib/salon/queries'
+import { listScheduledEventsForDate, listTimelineForDate } from '@/lib/salon/queries'
 import { getDaySegmentCaps } from '@/lib/salon/segment-queries'
 import {
   RESERVATION_OPERATOR_ROLES,
@@ -75,16 +74,22 @@ export default async function OperativoPage({
   const date = typeof sp.date === 'string' && isRealDate(sp.date) ? sp.date : today
   const tenantId = access.tenant.id
 
+  // La sucursal que se mira (docs/features/sucursales.md): sus reservas, sus
+  // eventos y su cupo. En «Todas» se cuenta la gente sin cupo (no se suman
+  // sillas de dos sucursales).
+  const branchScope = await getBranchScope(tenantSlug)
+  const branch = branchFilterOf(branchScope)
+  const segmentScope = segmentScopeFromFilter(branch, branchScope.branches)
+
   // Los cupos por servicio llegan RESUELTOS (almuerzo/merienda/cena de ese
   // día): la cuenta corre en el cliente sobre las reservas vivas, con la misma
   // función que el calendario, así el pulso late con Realtime y no dice otro
-  // número que el mes.
-  const [reservations, capacity, events, rules, segmentCaps] = await Promise.all([
-    listTimelineForDate({ tenantId, date }),
-    getDayCapacitySnapshot({ tenantId, date }),
-    listScheduledEventsForDate({ tenantId, date }),
+  // número que el mes. La gente de cada evento sale de esa misma cuenta.
+  const [reservations, events, rules, segmentCaps] = await Promise.all([
+    listTimelineForDate({ tenantId, date, branch }),
+    listScheduledEventsForDate({ tenantId, date, branch }),
     listRules({ tenantId }),
-    getDaySegmentCaps({ tenantId, date }),
+    getDaySegmentCaps({ tenantId, date, scope: segmentScope }),
   ])
 
   // Acreditaciones de puntos de ESTA noche para los socios que tienen reserva:
@@ -105,15 +110,16 @@ export default async function OperativoPage({
 
   return (
     <OperativoBoard
-      // Cambiar de día es empezar de cero: nada del día anterior sobrevive.
-      key={date}
+      // Cambiar de día (o de sucursal) es empezar de cero: nada del anterior sobrevive.
+      key={`${date}:${branchFilterKey(branch)}`}
       tenantSlug={tenantSlug}
       tenantId={tenantId}
       role={access.role}
       date={date}
       today={today}
+      branchFilter={branch}
+      capacityHidden={branchScope.multi && segmentScope.capacity === null}
       initialReservations={reservations}
-      initialCapacity={capacity}
       initialSegmentCaps={segmentCaps}
       initialEvents={events}
       initialAwards={awards}

@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import { BRANCH_FILTER_PARAM, parseBranchFilterParam } from '@/lib/salon/branch-scope'
 import { isRealIsoDay } from '@/lib/salon/date-presets'
 import { type DepositBasis, depositsExportFilename, depositsToCsv } from '@/lib/salon/deposits'
 import { getDepositsByDay } from '@/lib/salon/queries'
@@ -52,7 +55,18 @@ export async function GET(request: Request) {
     const basis: DepositBasis =
       url.searchParams.get('fecha') === 'carga' ? 'created' : 'reservation'
 
-    const report = await getDepositsByDay({ tenantId: access.tenant.id, basis, from, to })
+    // Las sucursales que se estaban viendo (las manda el link), recortadas a las de la persona.
+    const branch = clampBranchFilter(
+      parseBranchFilterParam(url.searchParams.get(BRANCH_FILTER_PARAM)),
+      await getBranchScope(slug),
+    )
+    const report = await getDepositsByDay({
+      tenantId: access.tenant.id,
+      basis,
+      from,
+      to,
+      branch,
+    })
     const csv = depositsToCsv(report)
     const filename = depositsExportFilename(access.tenant.slug, report)
 
@@ -65,6 +79,7 @@ export async function GET(request: Request) {
         from,
         to,
         basis,
+        branch_ids: branch.ids,
         days: report.days.length,
         total_cents: report.totals.total_cents,
         truncated: report.truncated,

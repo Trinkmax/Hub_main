@@ -45,6 +45,8 @@ export function CalendarTabs({
   defaultTab,
   role,
   initialOverview,
+  capacityHidden,
+  hasFloors,
 }: {
   tenantSlug: string
   ym: string
@@ -57,6 +59,10 @@ export function CalendarTabs({
   role: TenantRole
   /** El día de ?day precargado por la página (null si no hay día abierto). */
   initialOverview: DayOverview | null
+  /** Mirando varias sucursales: se cuenta la gente sin cupo (el cupo no se suma). */
+  capacityHidden: boolean
+  /** Lo que se mira tiene plantas (la principal): si no, no hay filtro de planta. */
+  hasFloors: boolean
 }) {
   const canEditTemplates = TEMPLATE_EDIT_ROLES.includes(role)
 
@@ -129,6 +135,8 @@ export function CalendarTabs({
           today={today}
           role={role}
           initialOverview={initialOverview}
+          capacityHidden={capacityHidden}
+          hasFloors={hasFloors}
         />
       </TabsContent>
 

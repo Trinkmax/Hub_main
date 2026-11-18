@@ -39,8 +39,10 @@ import {
   useTransition,
 } from 'react'
 import { toast } from 'sonner'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
+import { PICK_BRANCH_FOR_CAPACITY } from '@/lib/salon/branch-scope'
 import { calendarHref, hrefWithoutZone, newReservationHref } from '@/lib/salon/calendar-links'
 import { PRIVATE_GROUP_CALENDAR_TITLE, PRIVATE_GROUP_LABEL } from '@/lib/salon/private-groups'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
@@ -123,6 +125,8 @@ export function ScheduledEventsMonth({
   today,
   role,
   initialOverview,
+  capacityHidden = false,
+  hasFloors = true,
 }: {
   tenantSlug: string
   ym: string
@@ -135,6 +139,13 @@ export function ScheduledEventsMonth({
   role: TenantRole
   /** El día de ?day precargado por la página: al volver de guardar no hay flash de carga. */
   initialOverview: DayOverview | null
+  /**
+   * Mirando varias sucursales (docs/features/sucursales.md): el cupo no se suma, así que el mes cuenta gente sin
+   * cupo y lo dice.
+   */
+  capacityHidden?: boolean
+  /** Lo que se mira tiene plantas (la principal). Sin plantas no hay filtro de planta. */
+  hasFloors?: boolean
 }) {
   const router = useRouter()
   const [events, setEvents] = useState(initialEvents)
@@ -396,7 +407,7 @@ export function ScheduledEventsMonth({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        {role === 'owner' && !monthSegments.configured ? (
+        {role === 'owner' && !monthSegments.configured && !capacityHidden ? (
           <UnconfiguredBanner tenantSlug={tenantSlug} fallbackTotal={monthSegments.fallbackTotal} />
         ) : null}
 
@@ -445,10 +456,13 @@ export function ScheduledEventsMonth({
             </Button>
           </header>
 
-          {/* Filtro de planta: «Todo» es la vista por servicio de siempre. */}
-          <div className="mb-2 flex justify-center">
-            <ZoneFilterControl value={zoneFilter} onChange={changeZone} />
-          </div>
+          {/* Filtro de planta: «Todo» es la vista por servicio de siempre. Las
+              plantas son de la principal: sin ella en lo que se mira, no hay. */}
+          {hasFloors || zoneFilter ? (
+            <div className="mb-2 flex justify-center">
+              <ZoneFilterControl value={zoneFilter} onChange={changeZone} />
+            </div>
+          ) : null}
 
           {/* Leyenda única: explica el número una vez en lugar de en cada celda.
               Con una planta elegida dice que el número es de esa planta. */}
@@ -457,7 +471,9 @@ export function ScheduledEventsMonth({
             aria-live="polite"
             className="mb-3 text-center text-[11px] text-muted-foreground text-pretty"
           >
-            {calendarLegend(zoneFilter, monthSegments.zoneCaps)}
+            {capacityHidden && zoneFilter === null
+              ? `Alm · Mer · Cena = personas de las sucursales que mirás · ${PICK_BRANCH_FOR_CAPACITY}`
+              : calendarLegend(zoneFilter, monthSegments.zoneCaps)}
           </p>
 
           {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
@@ -788,6 +804,7 @@ function MonthAgenda({
                           </span>
                           <span className="truncate">{eventDisplayName(e)}</span>
                           <PrivateMark event={e} />
+                          <BranchTag branchId={e.branch_id} />
                           <span className="ml-auto shrink-0 text-[10px] opacity-70">
                             <EventLoad load={load} capacity={e.capacity} />
                           </span>
@@ -1250,6 +1267,11 @@ function DraggableEvent({
           />
           <span className="truncate">{eventDisplayName(event)}</span>
           <PrivateMark event={event} />
+          {/* En la celda solo entra el toldito: el nombre queda para el lector de pantalla y el title. */}
+          <BranchTag
+            branchId={event.branch_id}
+            className="border-0 bg-transparent p-0 [&>span]:sr-only"
+          />
         </span>
         <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
           {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
