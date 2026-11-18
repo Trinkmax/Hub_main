@@ -148,6 +148,7 @@ export function SucursalesBoard({
   view,
   timeZone,
   tele,
+  pos,
 }: {
   tenantSlug: string
   snapshot: BranchBoardSnapshot
@@ -157,6 +158,11 @@ export function SucursalesBoard({
   timeZone: string
   /** El link de la pantalla de cocina de cada sucursal (y su QR), por id. */
   tele: Readonly<Record<string, TeleLink>>
+  /**
+   * ¿El bar usa el punto de venta? Sin él, la pantalla queda en los datos de cada local: sin lista
+   * de apertura, sin modo práctica y sin los ajustes de cobro (docs/features/sucursales.md).
+   */
+  pos: boolean
 }) {
   const router = useRouter()
   const [overlay, setOverlay] = useState<Overlay>(EMPTY_OVERLAY)
@@ -505,27 +511,33 @@ export function SucursalesBoard({
     <AdmPage width="comfortable">
       <AdmHeader
         title="Sucursales"
-        description="Cada local con su plano, su cocina y su caja. La carta, el club y el equipo son de todo el bar."
+        description={
+          pos
+            ? 'Cada local con su agenda, su plano, su cocina y su caja. La carta, el club y los clientes son de todo el bar.'
+            : 'Cada local con sus reservas, sus fechas y su equipo. La carta, el club y los clientes son de todo el bar.'
+        }
         actions={
-          <>
-            <PillLink
-              href={branchHref(tenantSlug, selected?.slug)}
-              active={view === 'sucursales'}
-              icon={Store}
-              scroll={false}
-            >
-              Sucursales
-            </PillLink>
-            <PillLink
-              href={settingsHref(tenantSlug)}
-              active={view === 'ajustes'}
-              icon={Wrench}
-              scroll={false}
-              data-testid="ver-ajustes"
-            >
-              Ajustes del punto de venta
-            </PillLink>
-          </>
+          pos ? (
+            <>
+              <PillLink
+                href={branchHref(tenantSlug, selected?.slug)}
+                active={view === 'sucursales'}
+                icon={Store}
+                scroll={false}
+              >
+                Sucursales
+              </PillLink>
+              <PillLink
+                href={settingsHref(tenantSlug)}
+                active={view === 'ajustes'}
+                icon={Wrench}
+                scroll={false}
+                data-testid="ver-ajustes"
+              >
+                Ajustes del punto de venta
+              </PillLink>
+            </>
+          ) : undefined
         }
       />
 
@@ -573,7 +585,7 @@ export function SucursalesBoard({
                     size="mini"
                     label={chipLabel(branch)}
                     color={branch.color}
-                    open={ratio(branch)}
+                    open={pos ? ratio(branch) : 1}
                     muted={!branch.active}
                     className="w-24"
                   />
@@ -585,7 +597,7 @@ export function SucursalesBoard({
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {branch.active
-                      ? opening
+                      ? pos && opening
                         ? openingHeadline(opening, branch, alone).short
                         : ''
                       : 'Desactivada'}
@@ -683,6 +695,7 @@ export function SucursalesBoard({
               facts={snapshot.facts[selected.id] ?? emptyFacts(cashReady)}
               alone={alone}
               tele={tele[selected.id] ?? null}
+              pos={pos}
               saving={(field) => overlaySaving(overlay, fieldKey(selected.id, field))}
               errors={fieldErrors}
               busy={busy}
@@ -750,6 +763,7 @@ function BranchSheet({
   facts,
   alone,
   tele,
+  pos,
   saving,
   errors,
   busy,
@@ -770,6 +784,7 @@ function BranchSheet({
   facts: BranchBoardSnapshot['facts'][string]
   alone: boolean
   tele: TeleLink | null
+  pos: boolean
   saving: (field: BranchField) => boolean
   errors: Readonly<Record<string, string>>
   busy: string | null
@@ -796,9 +811,10 @@ function BranchSheet({
 
   return (
     // En el teléfono la lista de apertura va justo después de la vidriera (es lo que hay que hacer);
-    // en la compu, al lado. Por eso la columna izquierda se «desarma» en pantallas chicas.
+    // en la compu, al lado. Por eso la columna izquierda se «desarma» en pantallas chicas. Sin punto
+    // de venta no hay lista: «Sus datos» ocupa la columna de la derecha y el resto queda a la izquierda.
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
-      <div className="contents lg:block lg:space-y-6">
+      <div className={pos ? 'contents lg:block lg:space-y-6' : 'contents'}>
         <section
           aria-label={`La vidriera de ${branch.name}`}
           className="card-hairline order-1 rounded-2xl border bg-card p-5 shadow-xs"
@@ -806,7 +822,7 @@ function BranchSheet({
           <Storefront
             label={chipLabel(branch)}
             color={branch.color}
-            open={open}
+            open={pos ? open : 1}
             muted={!branch.active}
             principal={branch.isDefault}
             className="mx-auto w-full max-w-[17rem]"
@@ -816,12 +832,14 @@ function BranchSheet({
               className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance"
               data-testid="sucursal-titular"
             >
-              {branch.active ? (headline?.title ?? branch.name) : 'Desactivada'}
+              {branch.active ? ((pos ? headline?.title : null) ?? branch.name) : 'Desactivada'}
             </h2>
             <p className="mx-auto max-w-prose text-sm text-muted-foreground text-pretty">
               {branch.active
-                ? headline?.sentence
-                : 'No aparece en el salón ni en la caja. Sus datos y su historia siguen guardados.'}
+                ? pos
+                  ? headline?.sentence
+                  : 'Sus reservas, sus fechas y su equipo se ven eligiéndola arriba, en el toldito.'
+                : 'No aparece para elegirla, ni en el salón ni en la caja. Sus datos y su historia siguen guardados.'}
             </p>
           </div>
         </section>
@@ -829,7 +847,7 @@ function BranchSheet({
         <Panel
           title="Sus datos"
           description="Se guardan solos, y cada cambio se puede deshacer."
-          className="order-3"
+          className={pos ? 'order-3' : 'order-3 lg:col-start-2 lg:row-span-2 lg:row-start-1'}
         >
           <div className="space-y-4">
             <AutosaveField<string>
@@ -911,29 +929,31 @@ function BranchSheet({
           </div>
         </Panel>
 
-        <Panel
-          title="Modo práctica"
-          description="Para enseñar a usar el sistema sin ensuciar los números."
-          className="order-4"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <p
-              className="min-w-0 text-sm text-muted-foreground text-pretty"
-              data-testid="practica-texto"
-            >
-              {inPractice
-                ? `Prendido hasta las ${clockAt(practiceUntil, timeZone)}. Cada mesa que se abra ahora es de prueba: se carga, sale en cocina con su cinta de «Prueba» y se cobra, pero no entra en la caja ni suma puntos. Al apagarlo, las mesas de prueba se levantan.`
-                : 'Con la práctica prendida, cada mesa que se abra en esta sucursal es de prueba: se carga, sale en cocina y se cobra, pero no entra en la caja, no suma puntos y no toca las reservas. Se apaga sola a las 5 de la mañana.'}
-            </p>
-            <Switch
-              checked={inPractice}
-              disabled={busy !== null || !branch.active}
-              aria-label={`Modo práctica en ${branch.name}`}
-              data-testid="sucursal-practica"
-              onCheckedChange={onPractice}
-            />
-          </div>
-        </Panel>
+        {pos ? (
+          <Panel
+            title="Modo práctica"
+            description="Para enseñar a usar el sistema sin ensuciar los números."
+            className="order-4"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <p
+                className="min-w-0 text-sm text-muted-foreground text-pretty"
+                data-testid="practica-texto"
+              >
+                {inPractice
+                  ? `Prendido hasta las ${clockAt(practiceUntil, timeZone)}. Cada mesa que se abra ahora es de prueba: se carga, sale en cocina con su cinta de «Prueba» y se cobra, pero no entra en la caja ni suma puntos. Al apagarlo, las mesas de prueba se levantan.`
+                  : 'Con la práctica prendida, cada mesa que se abra en esta sucursal es de prueba: se carga, sale en cocina y se cobra, pero no entra en la caja, no suma puntos y no toca las reservas. Se apaga sola a las 5 de la mañana.'}
+              </p>
+              <Switch
+                checked={inPractice}
+                disabled={busy !== null || !branch.active}
+                aria-label={`Modo práctica en ${branch.name}`}
+                data-testid="sucursal-practica"
+                onCheckedChange={onPractice}
+              />
+            </div>
+          </Panel>
+        ) : null}
 
         {alone ? null : (
           <Panel title="Su lugar en el bar" className="order-5">
@@ -942,9 +962,9 @@ function BranchSheet({
                 title="Principal"
                 text={
                   branch.isDefault
-                    ? 'Es la principal: la que se abre primero en un dispositivo que todavía no eligió.'
+                    ? 'Es la principal: la ve quien no tiene sucursal marcada en Equipo, y abre primero en un dispositivo nuevo.'
                     : principal.ok
-                      ? 'La principal es la que se abre primero en un dispositivo que todavía no eligió.'
+                      ? 'La principal la ve quien no tiene sucursal marcada en Equipo, y abre primero en un dispositivo nuevo.'
                       : principal.why
                 }
               >
@@ -999,9 +1019,9 @@ function BranchSheet({
                 text={
                   branch.active
                     ? deactivate.ok
-                      ? 'Desactivada no aparece en el salón ni en la caja. No se pierde nada.'
+                      ? 'Desactivada no aparece para elegirla, ni en el salón ni en la caja. No se pierde nada.'
                       : deactivate.why
-                    : 'Activala para que vuelva a aparecer en el salón y en la caja.'
+                    : 'Activala para que vuelva a aparecer para elegirla, en el salón y en la caja.'
                 }
               >
                 <Switch
@@ -1019,7 +1039,7 @@ function BranchSheet({
                 title="Borrar"
                 text={
                   erase.ok
-                    ? 'Todavía no tiene plano, mesas ni historia: se puede borrar.'
+                    ? 'Todavía no tiene plano, mesas, reservas ni historia: se puede borrar.'
                     : erase.why
                 }
               >
@@ -1039,28 +1059,30 @@ function BranchSheet({
         )}
       </div>
 
-      <Panel
-        className="order-2 lg:order-none"
-        title="Lista de apertura"
-        description={
-          opening
-            ? `${opening.done} de ${opening.counted} listos. Nadie tilda nada a mano: cada paso se tilda solo cuando está cargado.`
-            : undefined
-        }
-      >
-        <ol className="divide-y divide-border/60">
-          {(opening?.steps ?? []).map((step, index) => (
-            <Step
-              key={step.id}
-              step={step}
-              number={index + 1}
-              tenantSlug={tenantSlug}
-              branchSlug={branch.slug}
-              tele={tele}
-            />
-          ))}
-        </ol>
-      </Panel>
+      {pos ? (
+        <Panel
+          className="order-2 lg:order-none"
+          title="Lista de apertura"
+          description={
+            opening
+              ? `${opening.done} de ${opening.counted} listos. Nadie tilda nada a mano: cada paso se tilda solo cuando está cargado.`
+              : undefined
+          }
+        >
+          <ol className="divide-y divide-border/60">
+            {(opening?.steps ?? []).map((step, index) => (
+              <Step
+                key={step.id}
+                step={step}
+                number={index + 1}
+                tenantSlug={tenantSlug}
+                branchSlug={branch.slug}
+                tele={tele}
+              />
+            ))}
+          </ol>
+        </Panel>
+      ) : null}
     </div>
   )
 }

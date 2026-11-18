@@ -27,6 +27,11 @@ nunca se suma entre sucursales (no comparten sillas); en una sucursal sin planta
 - **Qué se mira** (`lib/branches/resolve.ts`): `?sucursal=<slug|todas>` (el proxy lo pasa en `x-hub-sucursal`) →
   la cookie, recortada a lo permitido → la única sucursal → si tiene varias y nunca eligió, la entrada pregunta.
 - **En el servidor:** `getBranchScope(slug)` (una vez por pedido). En el navegador: `useBranchScope()`.
+- **Dónde se crean.** «Sucursales» (`/local/sucursales`, Configuración › Salón) la tiene cualquier dueño, con o sin
+  punto de venta: nombre, nombre corto, color, dirección, la principal, el orden, activa y borrar (`authorizeSetup(slug,
+  { requirePos: false })`). Con el punto de venta suma la lista de apertura, el modo práctica y los ajustes de cobro.
+  Una sucursal con reservas o fechas no se borra (`hasAgenda`; la base igual lo frena con `on delete restrict`): se
+  desactiva, y desactivada deja de aparecer para elegirla.
 
 ## La regla para cada pantalla
 

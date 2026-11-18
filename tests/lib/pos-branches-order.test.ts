@@ -204,6 +204,17 @@ describe('canDelete', () => {
     })
   })
 
+  it('con reservas o fechas tampoco: la agenda queda guardada (sucursales)', () => {
+    expect(canDelete({ isDefault: false }, { ...empty, hasAgenda: true })).toMatchObject({
+      ok: false,
+      why: expect.stringContaining('reservas o fechas'),
+    })
+    // Sin el dato (una lectura vieja), manda lo demás: la base igual frena el borrado.
+    expect(canDelete({ isDefault: false }, { ...empty, hasAgenda: undefined })).toEqual({
+      ok: true,
+    })
+  })
+
   it('si alguna vez tuvo mesas abiertas, tampoco: su historia queda guardada', () => {
     expect(canDelete({ isDefault: false }, { ...empty, hasHistory: true })).toMatchObject({
       ok: false,

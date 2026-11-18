@@ -137,9 +137,14 @@ export async function readBranchWeight(
   supabase: SupabaseClient,
   tenantId: string,
   branchId: string,
-): Promise<Pick<BranchFacts, 'sectors' | 'tables' | 'looseTables' | 'hasHistory' | 'openTables'>> {
+): Promise<
+  Pick<
+    BranchFacts,
+    'sectors' | 'tables' | 'looseTables' | 'hasHistory' | 'hasAgenda' | 'openTables'
+  >
+> {
   const head = { count: 'exact' as const, head: true }
-  const [areas, tables, sessions, open] = await Promise.all([
+  const [areas, tables, sessions, open, agenda] = await Promise.all([
     supabase
       .from('floor_plan_areas')
       .select('id', head)
@@ -161,6 +166,7 @@ export async function readBranchWeight(
       .eq('tenant_id', tenantId)
       .eq('branch_id', branchId)
       .eq('status', 'open'),
+    readHasAgenda(supabase, tenantId, branchId),
   ])
   for (const [what, result] of [
     ['weight.areas', areas],
@@ -179,6 +185,7 @@ export async function readBranchWeight(
     tables: tables.count ?? 0,
     looseTables: 0,
     hasHistory: (sessions.count ?? 0) > 0,
+    hasAgenda: agenda,
     openTables: open.count ?? 0,
   }
 }
@@ -396,12 +403,14 @@ export async function getBranchBoard(tenantId: string): Promise<BranchBoardSnaps
     branches.map(async (branch) => {
       const entry = facts[branch.id]
       if (!entry) return
-      const [seenAt, history] = await Promise.all([
+      const [seenAt, history, agenda] = await Promise.all([
         readKitchenSeen(supabase, tenantId, branch.id),
         entry.hasHistory ? Promise.resolve(true) : readHasHistory(supabase, tenantId, branch.id),
+        readHasAgenda(supabase, tenantId, branch.id),
       ])
       entry.kitchenSeenAt = seenAt
       entry.hasHistory = history
+      entry.hasAgenda = agenda
     }),
   )
 
@@ -517,6 +526,41 @@ async function readKitchenSeen(
 }
 
 /** ¿Alguna vez tuvo una mesa abierta? */
+/**
+ * ¿La sucursal tiene agenda? Una reserva o una fecha del calendario alcanza (docs/features/sucursales.md):
+ * la base no deja borrar una sucursal con agenda, y así la pantalla lo dice antes de intentarlo.
+ */
+async function readHasAgenda(
+  supabase: SupabaseClient,
+  tenantId: string,
+  branchId: string,
+): Promise<boolean> {
+  const [reservations, events] = await Promise.all([
+    supabase
+      .from('salon_reservations')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .limit(1),
+    supabase
+      .from('scheduled_events')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .limit(1),
+  ])
+  for (const [what, result] of [
+    ['agenda.reservations', reservations],
+    ['agenda.events', events],
+  ] as const) {
+    if (result.error) {
+      console.error(`[pos.branches.${what}]`, result.error.code, result.error.message)
+      throw new BranchReadError(what)
+    }
+  }
+  return (reservations.data ?? []).length > 0 || (events.data ?? []).length > 0
+}
+
 async function readHasHistory(
   supabase: SupabaseClient,
   tenantId: string,

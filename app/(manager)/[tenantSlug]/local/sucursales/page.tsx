@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { PanelError } from '@/components/administracion/kit/panel-states'
 import { getAppUrl } from '@/lib/app-url'
-import { requireFeature } from '@/lib/platform/guards'
+import { isFeatureEnabled } from '@/lib/platform/features'
+import { actsAsPlatformAdmin } from '@/lib/platform/is-admin'
 import { POS_SETUP_ROLES } from '@/lib/pos/branches/authorize'
 import { kitchenScreenUrl } from '@/lib/pos/branches/links'
 import { getBranchBoard } from '@/lib/pos/branches/queries'
@@ -20,8 +21,9 @@ import { SucursalesBoard } from './_components/sucursales-board'
 export const metadata: Metadata = { title: 'Sucursales' }
 
 /**
- * «Sucursales» (docs/features/pos.md): los locales del bar, lo que le falta a cada uno para
- * abrir y los ajustes del punto de venta. Es del dueño, y viene con el punto de venta.
+ * «Sucursales» (docs/features/sucursales.md): los locales del bar. Es del dueño y la tiene cualquier
+ * bar: nombre, color, dirección, la principal y el orden. Con el punto de venta (docs/features/pos.md)
+ * suma lo que le falta a cada uno para abrir y los ajustes de cobro.
  *
  * `?sucursal=<slug>` elige la sucursal; `?ver=ajustes` muestra los ajustes, que valen para
  * todo el bar. Lee todo de una vez (`getBranchBoard`).
@@ -43,7 +45,8 @@ export default async function SucursalesPage({
     if (error instanceof TenantNotFoundError || error instanceof RoleRequiredError) notFound()
     throw error
   }
-  await requireFeature(access.tenant, 'pos')
+  // Como `requireFeature`: un superadmin ve la parte del punto de venta aunque esté apagado.
+  const pos = isFeatureEnabled(access.tenant, 'pos') || (await actsAsPlatformAdmin())
 
   let snapshot: BranchBoardSnapshot
   try {
@@ -65,7 +68,7 @@ export default async function SucursalesPage({
   const origin = await getAppUrl()
   const tele: Record<string, { url: string; qr: string | null }> = {}
   await Promise.all(
-    snapshot.branches.map(async (branch) => {
+    (pos ? snapshot.branches : []).map(async (branch) => {
       const url = kitchenScreenUrl(origin, tenantSlug, branch.slug)
       let qr: string | null = null
       try {
@@ -82,7 +85,8 @@ export default async function SucursalesPage({
       tenantSlug={tenantSlug}
       snapshot={snapshot}
       selectedSlug={typeof query.sucursal === 'string' ? query.sucursal : null}
-      view={query.ver === 'ajustes' ? 'ajustes' : 'sucursales'}
+      view={pos && query.ver === 'ajustes' ? 'ajustes' : 'sucursales'}
+      pos={pos}
       timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
       tele={tele}
     />
