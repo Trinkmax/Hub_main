@@ -60,7 +60,7 @@ function isEditable(target: EventTarget | null): boolean {
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
-export function BranchSwitcher({ isOwner }: { isOwner: boolean }) {
+export function BranchSwitcher({ canManage }: { canManage: boolean }) {
   const context = useBranchScope()
   const display = useBranchDisplay()
   const pathname = usePathname()
@@ -145,7 +145,7 @@ export function BranchSwitcher({ isOwner }: { isOwner: boolean }) {
           <p className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
             ¿Qué sucursal mirás?
           </p>
-          {isOwner ? (
+          {canManage ? (
             <Link
               href={`/${slug}/local/sucursales`}
               onClick={() => setOpen(false)}

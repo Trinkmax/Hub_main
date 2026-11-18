@@ -47,7 +47,7 @@ export function Topbar({
 
       {/* La sucursal que se mira: siempre a la vista en la compu, también con el menú lateral plegado. */}
       <div className="hidden lg:block">
-        <BranchSwitcher isOwner={role === 'owner'} />
+        <BranchSwitcher canManage={role === 'owner' && (features.pos || isPlatformAdmin)} />
       </div>
 
       <div className="hidden flex-1 items-center md:flex">
@@ -65,7 +65,7 @@ export function Topbar({
           <ThemeToggle />
           <UserMenu email={email} role={ROLE_LABELS[role]} />
         </div>
-        <BranchMobileButton isOwner={role === 'owner'} />
+        <BranchMobileButton canManage={role === 'owner' && (features.pos || isPlatformAdmin)} />
         <MobileAccountButton email={email} roleLabel={ROLE_LABELS[role]} tenantName={tenant.name} />
       </div>
 

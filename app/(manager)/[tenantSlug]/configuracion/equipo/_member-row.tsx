@@ -1,7 +1,7 @@
 'use client'
 
 import { Crown, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { type ReactNode, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -70,10 +70,13 @@ export function MemberRow({
   member,
   tenantSlug,
   isCurrentUser,
+  branches,
 }: {
   member: Member
   tenantSlug: string
   isCurrentUser: boolean
+  /** Dónde trabaja (las fichas de sucursal), cuando el bar tiene más de una. */
+  branches?: ReactNode
 }) {
   const [isPending, startTransition] = useTransition()
   const [role, setRole] = useState<TenantRole>(member.role)
@@ -132,6 +135,7 @@ export function MemberRow({
           {member.role === 'owner' ? <Crown aria-hidden className="size-3 text-primary" /> : null}
         </div>
         <p className="truncate text-xs text-muted-foreground font-mono">{member.email}</p>
+        {branches}
       </div>
       <Select value={role} onValueChange={handleRoleChange} disabled={isPending}>
         <SelectTrigger

@@ -62,16 +62,16 @@
   background: linear-gradient(90deg, var(--branch-a), var(--branch-b));
 }
 .branch-fringe::after {
-  /* Las ondas: una cada 14 px, alternando los dos colores (con una sola sucursal los dos son el mismo). */
+  /* Las ondas: una cada 16 px, alternando los dos colores (con una sola sucursal los dos son el mismo). */
   content: "";
   position: absolute;
   inset-inline: 0;
   top: 1px;
   height: 5px;
   background:
-    radial-gradient(circle at 7px 0, var(--branch-a) 3.6px, transparent 4.1px) 0 0 / 28px 5px
+    radial-gradient(circle at 8px 0, var(--branch-a) 4.4px, transparent 4.9px) 0 0 / 32px 5px
     repeat-x,
-    radial-gradient(circle at 21px 0, var(--branch-b) 3.6px, transparent 4.1px) 0 0 / 28px 5px
+    radial-gradient(circle at 24px 0, var(--branch-b) 4.4px, transparent 4.9px) 0 0 / 32px 5px
     repeat-x;
 }
 .branch-fringe[data-mode="bar"] {
@@ -89,8 +89,8 @@
   }
   to {
     background-position:
-      28px 0,
-      28px 0;
+      32px 0,
+      32px 0;
   }
 }
 
@@ -224,6 +224,24 @@
   background: var(--branch-a);
   color: #fdfcf7;
   box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+
+/* En la hoja del celular: la vidriera a la izquierda y el nombre al lado (un renglón por sucursal). */
+.branch-option[data-layout="list"] {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+}
+.branch-option[data-layout="list"] .branch-option-art {
+  width: 6.5rem;
+  height: 4rem;
+  flex-shrink: 0;
+}
+.branch-option[data-layout="list"] .branch-option-check {
+  top: auto;
+  left: auto;
+  right: 0.75rem;
 }
 
 /* ─── La entrada: «¿A dónde entrás hoy?» ─────────────────────────────────────────────────────────────── */

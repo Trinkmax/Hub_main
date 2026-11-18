@@ -16,7 +16,7 @@ import { BranchChipLabel, useBranchDisplay } from './branch-switcher'
  * El selector de sucursal en el celular: una ficha chica al lado de tu avatar (arriba a la derecha, donde llega el
  * pulgar), que abre una hoja con las vidrieras de cada sucursal. Con una sola sucursal no aparece.
  */
-export function BranchMobileButton({ isOwner }: { isOwner: boolean }) {
+export function BranchMobileButton({ canManage }: { canManage: boolean }) {
   const context = useBranchScope()
   const display = useBranchDisplay()
   const pathname = usePathname()
@@ -54,7 +54,7 @@ export function BranchMobileButton({ isOwner }: { isOwner: boolean }) {
         title="Sucursal"
         description="Elegí qué sucursal mirás en el panel."
         headerAction={
-          isOwner ? (
+          canManage ? (
             <Link
               href={`/${slug}/local/sucursales`}
               onClick={() => setOpen(false)}

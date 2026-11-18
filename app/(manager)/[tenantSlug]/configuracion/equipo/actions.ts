@@ -423,3 +423,53 @@ export async function setMemberPassword(
   revalidatePath(`/${slug}/configuracion/equipo`)
   return { ok: true, message: 'Contraseña actualizada.' }
 }
+
+// ──────────────────────────────────────────────────────────
+// Sucursales de una persona (docs/features/sucursales.md)
+//   - Solo un dueño. A otro dueño o a la contadora no se le asigna: ven todas.
+//   - Vacío = solo la principal. Lo valida y lo audita la base (set_membership_branches).
+// ──────────────────────────────────────────────────────────
+
+const branchAssignment = z.object({
+  userId: z.uuid(),
+  branchIds: z.array(z.uuid()).max(50),
+})
+
+export async function setMemberBranches(
+  slug: string,
+  userId: string,
+  branchIds: string[],
+): Promise<ActionState> {
+  const parsed = branchAssignment.safeParse({ userId, branchIds })
+  if (!parsed.success) return { ok: false, message: 'Faltan datos o hay alguno mal.' }
+
+  const access = await authorizeOwner(slug)
+  if (!access) return { ok: false, message: 'Solo un dueño puede cambiar dónde trabaja cada uno.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('set_membership_branches', {
+    p_tenant_id: access.tenant.id,
+    p_user_id: parsed.data.userId,
+    p_branch_ids: parsed.data.branchIds,
+  })
+  if (error) {
+    const message = error.message ?? ''
+    if (message.includes('role_sees_all')) {
+      return {
+        ok: false,
+        message: 'Un dueño o la contadora ven todas las sucursales: no se les asigna.',
+      }
+    }
+    if (message.includes('member_not_found')) {
+      return { ok: false, message: 'Esa persona ya no está en el equipo. Recargá la página.' }
+    }
+    if (message.includes('branch_not_found')) {
+      return { ok: false, message: 'Alguna de esas sucursales está apagada o ya no existe.' }
+    }
+    console.error('[equipo.setMemberBranches]', error.code, error.message)
+    return { ok: false, message: 'No pudimos guardar las sucursales. Probá de nuevo.' }
+  }
+
+  revalidatePath(`/${slug}/configuracion/equipo`)
+  return { ok: true, message: 'Sucursales actualizadas.' }
+}

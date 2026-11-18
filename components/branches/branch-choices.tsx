@@ -85,7 +85,8 @@ export function BranchChoices({
             role="radio"
             aria-checked={checked}
             data-branch-choice={value}
-            className={cn('branch-option', layout === 'list' && 'flex-row items-center')}
+            className="branch-option"
+            data-layout={layout}
             style={style}
             onClick={() => {
               if (!checked) switchTo(value)
@@ -93,7 +94,7 @@ export function BranchChoices({
             }}
           >
             <span
-              className={cn('branch-option-art', layout === 'list' && 'w-28 shrink-0')}
+              className="branch-option-art"
               data-street={choice.kind === 'all' ? '' : undefined}
             >
               {choice.kind === 'all' ? (

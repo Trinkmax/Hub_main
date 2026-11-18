@@ -266,13 +266,13 @@ export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
                 <span className="font-medium">Dueño</span> — control total
               </SelectItem>
               <SelectItem value="cashier">
-                <span className="font-medium">Cajero</span> — cierra mesas
+                <span className="font-medium">Cajero</span> — cobra y maneja la caja
               </SelectItem>
               <SelectItem value="waiter">
                 <span className="font-medium">Mozo</span> — registra clientes
               </SelectItem>
               <SelectItem value="kitchen">
-                <span className="font-medium">Cocina</span> — pantalla KDS
+                <span className="font-medium">Cocina</span> — pantalla de cocina y stock
               </SelectItem>
               <SelectItem value="editor">
                 <span className="font-medium">Contenido</span> — edita la carta

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
  * las opciones para elegir). Es el mismo toldo de la vidriera de Sucursales, en chico.
  *
  * - Una sucursal: franjas de su color y crema.
- * - Varias («Todas»): franjas de los colores de cada una.
+ * - Varias («Todas»): franjas de los colores de cada una, con crema en el medio.
  * - `muted`: una sección de todo el bar (el toldo sin color).
  *
  * Es un dibujo: el nombre siempre va escrito al lado, así que va oculto para los lectores de pantalla.
@@ -41,7 +41,12 @@ export function awningStripeColors(colors: ReadonlyArray<string>, muted = false)
       shape.index % 2 === 0 ? (only ?? 'var(--awning-muted)') : 'var(--awning-cream)',
     )
   }
-  return SHAPES.map((shape) => colors[shape.index % colors.length] ?? 'var(--awning-muted)')
+  // Varias: los colores de cada una, con crema en el medio (c1, crema, c2, crema, c1…).
+  return SHAPES.map((shape) =>
+    shape.index % 2 === 1
+      ? 'var(--awning-cream)'
+      : (colors[(shape.index / 2) % colors.length] ?? 'var(--awning-muted)'),
+  )
 }
 
 export function BranchAwning({
