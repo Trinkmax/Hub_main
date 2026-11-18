@@ -74,7 +74,6 @@ export async function updateTotalSeatsAction(
     }
 
     revalidatePath(`/${slug}/configuracion/salon`)
-    revalidatePath(`/${slug}/salon/mesas`)
     return { ok: true, totalSeats: parsed.data }
   } catch (e) {
     if (

@@ -1,16 +1,9 @@
 'use client'
 
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  DoorOpen,
-  ScanLine,
-  Wifi,
-  WifiOff,
-} from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Wifi, WifiOff } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
+import { AwardPointsSheet } from '@/components/loyalty/award-points-sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -181,13 +174,13 @@ export function DayNav({
 
         {/* Acciones globales, siempre a mano. En mobile el buscador las repite. */}
         <div className="hidden items-center gap-2 sm:flex">
+          {/* Se abre acá mismo, sobre el tablero (antes llevaba a otra pantalla). */}
           {canAward ? (
-            <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">
-              <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
-                <ScanLine className="size-4" aria-hidden />
-                Escanear QR
-              </Link>
-            </Button>
+            <AwardPointsSheet
+              tenantSlug={tenantSlug}
+              variant="outline"
+              className="h-11 rounded-full px-4"
+            />
           ) : null}
           {canDoor ? (
             <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">

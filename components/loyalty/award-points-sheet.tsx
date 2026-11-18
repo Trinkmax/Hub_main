@@ -73,6 +73,7 @@ export function AwardPointsSheet({
   variant = 'default',
   size = 'default',
   label = 'Sumar puntos',
+  iconOnly = false,
   className,
 }: {
   tenantSlug: string
@@ -83,6 +84,8 @@ export function AwardPointsSheet({
   variant?: 'default' | 'outline'
   size?: 'default' | 'sm'
   label?: string
+  /** Solo el ícono (una barra angosta en el celular): `label` queda como nombre accesible. */
+  iconOnly?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -128,12 +131,13 @@ export function AwardPointsSheet({
       <Button
         type="button"
         variant={variant}
-        size={size}
+        size={iconOnly ? 'icon' : size}
         className={cn('gap-2', className)}
+        aria-label={iconOnly ? label : undefined}
         onClick={openSheet}
       >
-        <ScanLine className="size-4" aria-hidden />
-        {label}
+        <ScanLine className={iconOnly ? 'size-5' : 'size-4'} aria-hidden />
+        {iconOnly ? null : label}
       </Button>
 
       <Sheet open={shown} onOpenChange={setOpen}>
