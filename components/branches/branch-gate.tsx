@@ -32,6 +32,7 @@ export function BranchGate({
   pulses,
   email,
   signOut,
+  surface = 'view',
 }: {
   slug: string
   tenantName: string
@@ -40,6 +41,11 @@ export function BranchGate({
   pulses: BranchPulses | null
   email: string
   signOut: () => Promise<void>
+  /**
+   * `view` (el panel): «¿A dónde entrás hoy?», con «Todas juntas» si corresponde. `device` (el salón): «¿Dónde
+   * trabajás hoy?», siempre una: el mapa, la caja y la tele son de un lugar.
+   */
+  surface?: 'view' | 'device'
 }) {
   const router = useRouter()
   const [chosen, setChosen] = useState<string | null>(null)
@@ -53,7 +59,7 @@ export function BranchGate({
       setError(null)
       startTransition(async () => {
         const [result] = await Promise.all([
-          setBranchScope(slug, choice, 'view'),
+          setBranchScope(slug, choice, surface),
           new Promise((resolve) => setTimeout(resolve, SHUTTER_MS)),
         ])
         if (!result.ok) {
@@ -71,7 +77,7 @@ export function BranchGate({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.altKey || event.metaKey || event.ctrlKey) return
-      if (event.key === '0' && canAll) {
+      if (event.key === '0' && canAll && surface === 'view') {
         event.preventDefault()
         choose('all')
         return
@@ -95,10 +101,12 @@ export function BranchGate({
             {tenantName}
           </p>
           <h1 className="font-display text-[2rem] leading-[1.05] font-semibold text-balance sm:text-[2.6rem]">
-            ¿A dónde entrás hoy?
+            {surface === 'device' ? '¿Dónde trabajás hoy?' : '¿A dónde entrás hoy?'}
           </h1>
           <p className="mx-auto mt-3 max-w-[26rem] text-sm text-balance text-muted-foreground">
-            Elegí la sucursal. Este equipo se acuerda y la cambiás cuando quieras desde arriba.
+            {surface === 'device'
+              ? 'Elegí la sucursal. Este equipo se acuerda: el mapa, la caja y la cocina van a ser de ahí.'
+              : 'Elegí la sucursal. Este equipo se acuerda y la cambiás cuando quieras desde arriba.'}
           </p>
         </header>
 
@@ -147,7 +155,7 @@ export function BranchGate({
           })}
         </ul>
 
-        {canAll ? (
+        {canAll && surface === 'view' ? (
           <div className="mt-5 flex justify-center">
             <button
               type="button"

@@ -63,12 +63,18 @@ export { branchCookieName } from '@/lib/branches/cookie'
  * guardada en el dispositivo, así la caja y la tele nunca preguntan), o la
  * principal. `chosen` dice si alguna vez eligió: con más de una sucursal y sin
  * elegir, la pantalla pregunta «¿dónde trabajás hoy?».
+ *
+ * `allowedIds`: las sucursales que esta persona tiene (`access.branches`). Un mozo del Cerro no ve ni puede pasar a
+ * Alta Córdoba aunque la cookie o el link digan otra cosa.
  */
 export async function getActiveBranch(
   tenantId: string,
   preferSlug?: string | null,
+  allowedIds?: ReadonlyArray<string>,
 ): Promise<{ branches: BranchRow[]; active: BranchRow | null; chosen: boolean }> {
-  const branches = await listBranches(tenantId)
+  const all = await listBranches(tenantId)
+  const allowed = allowedIds ? new Set(allowedIds) : null
+  const branches = allowed ? all.filter((branch) => allowed.has(branch.id)) : all
   if (branches.length === 0) return { branches, active: null, chosen: false }
   const bySlug = preferSlug ? branches.find((b) => b.slug === preferSlug) : undefined
   if (bySlug) return { branches, active: bySlug, chosen: true }

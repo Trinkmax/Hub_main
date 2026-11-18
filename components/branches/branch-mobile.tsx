@@ -8,6 +8,7 @@ import { AppSheet } from '@/components/shell/mobile/app-sheet'
 import { fetchBranchPulses } from '@/lib/branches/actions'
 import type { BranchPulses } from '@/lib/branches/pulse-line'
 import { barSectionName } from '@/lib/branches/sections'
+import { cn } from '@/lib/utils'
 import { BranchChoices } from './branch-choices'
 import { useBranchScope } from './branch-scope-provider'
 import { BranchChipLabel, useBranchDisplay } from './branch-switcher'
@@ -16,7 +17,14 @@ import { BranchChipLabel, useBranchDisplay } from './branch-switcher'
  * El selector de sucursal en el celular: una ficha chica al lado de tu avatar (arriba a la derecha, donde llega el
  * pulgar), que abre una hoja con las vidrieras de cada sucursal. Con una sola sucursal no aparece.
  */
-export function BranchMobileButton({ canManage }: { canManage: boolean }) {
+export function BranchMobileButton({
+  canManage,
+  always = false,
+}: {
+  canManage: boolean
+  /** En el salón se ve también en la compu y la tablet (la caja). En el panel, solo en el celular. */
+  always?: boolean
+}) {
   const context = useBranchScope()
   const display = useBranchDisplay()
   const pathname = usePathname()
@@ -42,7 +50,10 @@ export function BranchMobileButton({ canManage }: { canManage: boolean }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 max-w-[8.5rem] items-center gap-1 rounded-full border border-border/70 bg-card/70 pr-2 pl-2.5 backdrop-blur-md active:scale-[0.97] lg:hidden"
+        className={cn(
+          'inline-flex h-9 max-w-[8.5rem] items-center gap-1 rounded-full border border-border/70 bg-card/70 pr-2 pl-2.5 backdrop-blur-md active:scale-[0.97]',
+          !always && 'lg:hidden',
+        )}
         aria-label={`Sucursal: ${display.label}. Cambiar de sucursal`}
       >
         <BranchChipLabel />
@@ -52,7 +63,11 @@ export function BranchMobileButton({ canManage }: { canManage: boolean }) {
         open={open}
         onOpenChange={setOpen}
         title="Sucursal"
-        description="Elegí qué sucursal mirás en el panel."
+        description={
+          context.surface === 'device'
+            ? 'Elegí en qué sucursal trabaja este equipo.'
+            : 'Elegí qué sucursal mirás en el panel.'
+        }
         headerAction={
           canManage ? (
             <Link
@@ -78,7 +93,9 @@ export function BranchMobileButton({ canManage }: { canManage: boolean }) {
           ) : null}
           <BranchChoices pulses={pulses} layout="list" onChosen={() => setOpen(false)} />
           <p className="px-1 text-xs text-muted-foreground">
-            Este celular se acuerda de lo que elijas.
+            {context.surface === 'device'
+              ? 'Este equipo se acuerda: el mapa, la caja y la cocina pasan a ser de la que elijas.'
+              : 'Este celular se acuerda de lo que elijas.'}
           </p>
         </div>
       </AppSheet>

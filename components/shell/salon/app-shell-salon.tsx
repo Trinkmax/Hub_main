@@ -1,5 +1,7 @@
+import { BranchScopeProvider } from '@/components/branches/branch-scope-provider'
 import { PosPrintStation } from '@/components/pos/print/print-station'
 import { signOutAction } from '@/components/shell/sign-out-action'
+import type { BranchScopeClient } from '@/lib/branches/types'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { ViewAsProvider, type ViewAsState } from '../view-as'
@@ -35,6 +37,7 @@ export function AppShellSalon({
   email,
   viewAs = null,
   printStation = null,
+  branchScope,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'feature_flags'>
@@ -49,46 +52,50 @@ export function AppShellSalon({
    * dispositivo que no prendió «Imprimir las comandas acá» (se guarda por sucursal en cada uno).
    */
   printStation?: { branchIds: string[]; timeZone: string } | null
+  /** La sucursal en la que trabaja este dispositivo (`getBranchScope(slug, 'device')`). */
+  branchScope: BranchScopeClient
   children: React.ReactNode
 }) {
   const features = getEffectiveFeatures(tenant)
 
   return (
-    <ViewAsProvider value={viewAs}>
-      <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
-        <SalonTopbar
-          tenant={tenant}
-          account={
-            <AccountSheet
-              email={email}
-              role={role}
-              tenantName={tenant.name}
-              tenantSlug={tenant.slug}
-              signOut={signOutAction}
-            />
-          }
-        />
-
-        <SalonMain>{children}</SalonMain>
-
-        <BottomTabBar
-          tenantSlug={tenant.slug}
-          role={role}
-          features={features}
-          isPlatformAdmin={isPlatformAdmin}
-        />
-
-        {printStation?.branchIds.map((branchId) => (
-          <PosPrintStation
-            key={branchId}
-            slug={tenant.slug}
-            branchId={branchId}
-            timeZone={printStation.timeZone}
+    <BranchScopeProvider slug={tenant.slug} scope={branchScope} surface="device">
+      <ViewAsProvider value={viewAs}>
+        <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
+          <SalonTopbar
+            tenant={tenant}
+            account={
+              <AccountSheet
+                email={email}
+                role={role}
+                tenantName={tenant.name}
+                tenantSlug={tenant.slug}
+                signOut={signOutAction}
+              />
+            }
           />
-        ))}
-        <ServiceWorkerRegistration />
-        <PwaInstallPrompt />
-      </div>
-    </ViewAsProvider>
+
+          <SalonMain>{children}</SalonMain>
+
+          <BottomTabBar
+            tenantSlug={tenant.slug}
+            role={role}
+            features={features}
+            isPlatformAdmin={isPlatformAdmin}
+          />
+
+          {printStation?.branchIds.map((branchId) => (
+            <PosPrintStation
+              key={branchId}
+              slug={tenant.slug}
+              branchId={branchId}
+              timeZone={printStation.timeZone}
+            />
+          ))}
+          <ServiceWorkerRegistration />
+          <PwaInstallPrompt />
+        </div>
+      </ViewAsProvider>
+    </BranchScopeProvider>
   )
 }

@@ -45,7 +45,11 @@ export default async function PosFloorPage({
   }
   await requireFeature(access.tenant, 'pos')
 
-  const { branches, active, chosen } = await getActiveBranch(access.tenant.id, sucursal)
+  const { branches, active, chosen } = await getActiveBranch(
+    access.tenant.id,
+    sucursal,
+    access.branches.map((branch) => branch.id),
+  )
   if (!active) notFound()
 
   // Más de una sucursal y este dispositivo nunca eligió: se pregunta una vez, antes de mostrar nada.

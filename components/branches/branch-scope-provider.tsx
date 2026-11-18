@@ -24,6 +24,8 @@ import type { BranchRef, BranchScopeClient, BranchSurface } from '@/lib/branches
 
 type BranchScopeValue = {
   slug: string
+  /** `view` en el panel; `device` en el salón. */
+  surface: BranchSurface
   scope: BranchScopeClient
   current: BranchRef | null
   /** La sucursal de cada id, para las etiquetas. */
@@ -44,10 +46,13 @@ const CHANNEL = 'hub-branch'
 export function BranchScopeProvider({
   slug,
   scope,
+  surface = 'view',
   children,
 }: {
   slug: string
   scope: BranchScopeClient
+  /** `view` en el panel (puede mirar «Todas»); `device` en el salón (elegir mueve al dispositivo). */
+  surface?: BranchSurface
   children: ReactNode
 }) {
   const router = useRouter()
@@ -76,10 +81,10 @@ export function BranchScopeProvider({
   }, [router, slug])
 
   const switchTo = useCallback(
-    (choice: string, surface: BranchSurface = 'view') => {
+    (choice: string, chosenSurface: BranchSurface = surface) => {
       setPendingChoice(choice)
       startTransition(async () => {
-        const result = await setBranchScope(slug, choice, surface)
+        const result = await setBranchScope(slug, choice, chosenSurface)
         if (!result.ok) {
           setPendingChoice(null)
           toast.error(result.message)
@@ -102,7 +107,7 @@ export function BranchScopeProvider({
         }
       })
     },
-    [router, searchParams, slug],
+    [router, searchParams, slug, surface],
   )
 
   // Cuando llega la pantalla nueva, lo pendiente ya es lo actual.
@@ -112,8 +117,8 @@ export function BranchScopeProvider({
   }, [scope.currentId, scope.isAll])
 
   const value = useMemo<BranchScopeValue>(
-    () => ({ slug, scope, current, byId, filter, switching, pendingChoice, switchTo }),
-    [byId, current, filter, pendingChoice, scope, slug, switchTo, switching],
+    () => ({ slug, surface, scope, current, byId, filter, switching, pendingChoice, switchTo }),
+    [byId, current, filter, pendingChoice, scope, slug, surface, switchTo, switching],
   )
 
   return <BranchScopeContext.Provider value={value}>{children}</BranchScopeContext.Provider>
