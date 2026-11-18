@@ -12,6 +12,8 @@
  * resumen, el onboarding y el salón.
  */
 
+import type { BranchFilter } from '@/lib/branches/filter'
+import { BRANCH_FILTER_PARAM, branchFilterToParam } from './branch-scope'
 import type { SegmentKey, ZoneFilter } from './segments'
 
 function withQuery(path: string, params: ReadonlyArray<readonly [string, string | undefined]>) {
@@ -108,6 +110,8 @@ export type ReservasExportHrefOptions = {
   /** El tamaño de mesa (`?mesa=` en la lista): '1'…'6' o '7mas'. */
   partySize?: string
   managerId?: string
+  /** Las sucursales que se están viendo: la planilla baja eso y nada más. */
+  branch?: BranchFilter
 }
 
 /**
@@ -130,6 +134,7 @@ export function reservasExportHref(slug: string, opts: ReservasExportHrefOptions
     ['servicio', opts.mealType],
     ['mesa', opts.partySize],
     ['manager', opts.managerId],
+    [BRANCH_FILTER_PARAM, opts.branch ? branchFilterToParam(opts.branch) : undefined],
   ])
 }
 

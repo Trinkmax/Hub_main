@@ -139,8 +139,11 @@ export function groupByService<T extends ServiceRow>(rows: T[]): Array<ServiceBu
     const guests = coversOf(r)
     b.activeCount += 1
     b.covers += guests
-    b.byZone[r.zone] += guests
-    b.tablesByZone[r.zone] += 1
+    // En una sucursal sin plantas la base guarda la reserva sin planta: suma al servicio, a ninguna planta.
+    if (r.zone) {
+      b.byZone[r.zone] += guests
+      b.tablesByZone[r.zone] += 1
+    }
     if (r.kind === 'birthday') b.birthdays += 1
     b.cakes += r.cake_count
 

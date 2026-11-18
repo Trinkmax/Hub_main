@@ -14,6 +14,14 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { type BranchFilter, branchFilterOf, clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef } from '@/lib/branches/types'
+import {
+  type SegmentBranchScope,
+  segmentScopeFromFilter,
+  singleBranchSegmentScope,
+} from '@/lib/salon/branch-scope'
 import {
   editReservationHref,
   newReservationHref,
@@ -43,7 +51,7 @@ import {
 import { mealTypeEnum, salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import { getDaySegmentsSnapshot } from '@/lib/salon/segment-queries'
 import { isoDaySchema } from '@/lib/salon/segment-schemas'
-import { computeDaySegments } from '@/lib/salon/segments'
+import { computeDaySegments, type DaySegments, type SegmentEventInput } from '@/lib/salon/segments'
 import { groupByService } from '@/lib/salon/services'
 import {
   RESERVATION_OPERATOR_ROLES,
@@ -86,6 +94,50 @@ const PAGE_SIZE_RANGE = 100
 // filtro por estado en vez de paginar un bloque que casi nadie abre.
 const CANCELLED_PREVIEW_SIZE = 30
 
+/**
+ * El día por servicio para el contador y los hitos, con el cupo de cada sucursal
+ * (el cupo nunca se suma entre sucursales). Mirando una sucursal, una cuenta;
+ * mirando «Todas», una por sucursal, cada una contra su cupo.
+ */
+async function loadDaySegments(opts: {
+  tenantId: string
+  date: string
+  segmentScope: SegmentBranchScope
+  branches: ReadonlyArray<BranchRef>
+}): Promise<{
+  events: SegmentEventInput[]
+  days: Array<{ branchId: string | null; day: DaySegments }>
+}> {
+  const compute = (snapshot: Awaited<ReturnType<typeof getDaySegmentsSnapshot>>) =>
+    computeDaySegments({
+      date: opts.date,
+      reservations: snapshot.reservations,
+      events: snapshot.events,
+      caps: snapshot.caps,
+    })
+  if (opts.segmentScope.capacity || opts.branches.length <= 1) {
+    const snapshot = await getDaySegmentsSnapshot({
+      tenantId: opts.tenantId,
+      date: opts.date,
+      scope: opts.segmentScope,
+    })
+    return { events: snapshot.events, days: [{ branchId: null, day: compute(snapshot) }] }
+  }
+  const snapshots = await Promise.all(
+    opts.branches.map((branch) =>
+      getDaySegmentsSnapshot({
+        tenantId: opts.tenantId,
+        date: opts.date,
+        scope: singleBranchSegmentScope(branch),
+      }).then((snapshot) => ({ branchId: branch.id, snapshot })),
+    ),
+  )
+  return {
+    events: snapshots.flatMap((s) => s.snapshot.events),
+    days: snapshots.map((s) => ({ branchId: s.branchId, day: compute(s.snapshot) })),
+  }
+}
+
 export default async function ReservasPage({
   params,
   searchParams,
@@ -105,6 +157,13 @@ export default async function ReservasPage({
     if (error instanceof RoleRequiredError) notFound()
     throw error
   }
+
+  // La sucursal que se mira (docs/features/sucursales.md): cada lectura de la
+  // pantalla va con el mismo filtro; la reserva recién creada se busca en todas
+  // las que la persona ve (puede haberse cargado en otra).
+  const branchScope = await getBranchScope(tenantSlug)
+  const branch: BranchFilter = branchFilterOf(branchScope)
+  const segmentScope = segmentScopeFromFilter(branch, branchScope.branches)
 
   const q = typeof sp.q === 'string' ? sp.q : undefined
   const status =
@@ -172,7 +231,7 @@ export default async function ReservasPage({
   let loaded: [
     Awaited<ReturnType<typeof listSalonReservations>>,
     Awaited<ReturnType<typeof listManagers>>,
-    Awaited<ReturnType<typeof getDaySegmentsSnapshot>> | null,
+    Awaited<ReturnType<typeof loadDaySegments>> | null,
     Awaited<ReturnType<typeof getRangeReservationTotals>> | null,
     Awaited<ReturnType<typeof getSalonReservation>> | null,
     Awaited<ReturnType<typeof listSalonReservations>> | null,
@@ -184,6 +243,7 @@ export default async function ReservasPage({
     loaded = await Promise.all([
       listSalonReservations({
         tenantId: access.tenant.id,
+        branch,
         q,
         status,
         zone,
@@ -207,12 +267,20 @@ export default async function ReservasPage({
       // lo mismo que usa el calendario, así la cena dice lo mismo en los dos
       // lados. Sus eventos alimentan también el renglón de hitos. En modo
       // rango, el volumen del período (un cupo no significa nada sumando días).
-      day ? getDaySegmentsSnapshot({ tenantId: access.tenant.id, date: day }) : null,
+      day
+        ? loadDaySegments({
+            tenantId: access.tenant.id,
+            date: day,
+            segmentScope,
+            branches: branchScope.branches,
+          })
+        : null,
       !day && (dateFrom || dateTo)
         ? getRangeReservationTotals({
             tenantId: access.tenant.id,
             from: dateFrom ?? dateTo ?? today,
             to: dateTo ?? dateFrom ?? today,
+            branch,
           })
         : null,
       // Reserva recién creada: venimos redirigidos a SU día con ?nueva=<id>. Es la
@@ -221,7 +289,13 @@ export default async function ReservasPage({
       // Se pide puntual en paralelo (aunque suela venir en la página cargada) para
       // no pagar un hop extra justo el día más cargado del mes o con un filtro
       // activo que la deja afuera: si no, ese es el único caso sin aviso.
-      nuevaId ? getSalonReservation({ tenantId: access.tenant.id, id: nuevaId }) : null,
+      nuevaId
+        ? getSalonReservation({
+            tenantId: access.tenant.id,
+            id: nuevaId,
+            branch: clampBranchFilter(null, branchScope),
+          })
+        : null,
       // Canceladas del mismo período. Va en el Promise.all para no sumar un hop
       // secuencial. Solo en la vista por defecto: si el usuario eligió un estado
       // está haciendo una búsqueda puntual, no trabajando la agenda — y si eligió
@@ -233,6 +307,7 @@ export default async function ReservasPage({
         ? null
         : listSalonReservations({
             tenantId: access.tenant.id,
+            branch,
             q,
             zone,
             mealType,
@@ -250,6 +325,7 @@ export default async function ReservasPage({
         ? listDayServiceRows({
             tenantId: access.tenant.id,
             date: day,
+            branch,
             // Todo menos el servicio: el chip cuenta lo que vas a ver si lo tocás.
             zone,
             status,
@@ -260,7 +336,7 @@ export default async function ReservasPage({
       // Los festejos del día, con su propia query: los hitos hablan del DÍA, no de la
       // página filtrada (si no, filtrar por zona escondía el cumple y dejaba el
       // evento — el moco original de vuelta).
-      day ? listDayCelebrations({ tenantId: access.tenant.id, date: day }) : null,
+      day ? listDayCelebrations({ tenantId: access.tenant.id, date: day, branch }) : null,
       // Los tamaños de mesa del PERÍODO (modo rango). En modo día los mismos
       // números salen de `dayServiceRows`, que ya se pide acá al lado: pedirlos
       // de nuevo sería un hop al pedo. Van todos los filtros de la pantalla
@@ -268,6 +344,7 @@ export default async function ReservasPage({
       !day && (dateFrom || dateTo)
         ? listPartySizeRows({
             tenantId: access.tenant.id,
+            branch,
             dateFrom,
             dateTo,
             zone,
@@ -290,7 +367,7 @@ export default async function ReservasPage({
   const [
     { rows, total },
     managers,
-    daySnapshot,
+    dayLoad,
     rangeTotals,
     nuevaPuntual,
     cancelled,
@@ -305,16 +382,11 @@ export default async function ReservasPage({
   if (page > 1 && rows.length === 0 && total > 0) redirect(firstPageHref)
 
   // El día cortado por servicio con la cuenta única (lib/salon/segments.ts):
-  // cada servicio contra su cupo, nunca el total del día contra PA + PB.
-  const daySegments =
-    day && daySnapshot
-      ? computeDaySegments({
-          date: day,
-          reservations: daySnapshot.reservations,
-          events: daySnapshot.events,
-          caps: daySnapshot.caps,
-        })
-      : null
+  // cada servicio contra su cupo, nunca el total del día contra PA + PB. Mirando
+  // «Todas», una cuenta por sucursal (cada una contra el suyo).
+  const dayBranches = dayLoad?.days ?? []
+  // La gente de cada evento: los eventos son de una sucursal, así que se juntan sin pisarse.
+  const usedByEvent = new Map(dayBranches.flatMap(({ day: d }) => [...eventUsedById(d)]))
 
   // Registrar asistencia es una operación de servicio: mismo conjunto que
   // enforcean `updateActualGuests` y `transitionStatus` (incluye al mozo).
@@ -364,11 +436,11 @@ export default async function ReservasPage({
   // Eventos + cumpleaños del día, al mismo nivel: es lo que hay que PREPARAR.
   // La gente de cada evento sale de la misma cuenta que el calendario.
   const dayHighlights =
-    day && daySnapshot && daySegments
+    day && dayLoad
       ? buildDayHighlights({
-          events: daySnapshot.events,
+          events: dayLoad.events,
           reservations: dayCelebrations ?? [],
-          usedByEvent: eventUsedById(daySegments),
+          usedByEvent,
         })
       : []
 
@@ -397,6 +469,7 @@ export default async function ReservasPage({
     mealType,
     partySize,
     managerId,
+    branch,
   })
 
   return (
@@ -504,7 +577,10 @@ export default async function ReservasPage({
             tenantSlug={tenantSlug}
             day={day}
             today={today}
-            segments={daySegments ? activeDaySegments(daySegments) : []}
+            segments={dayBranches.map(({ branchId, day: d }) => ({
+              branchId,
+              segments: activeDaySegments(d),
+            }))}
             dayLabel={counterDayLabel(day)}
           />
         ) : null}
@@ -569,6 +645,8 @@ export default async function ReservasPage({
       <div data-tour="reservas-filtros">
         <ReservationsFilters
           tenantSlug={tenantSlug}
+          // Las zonas son las plantas de la principal: sin ella en lo que se mira, no hay zona.
+          showZone={segmentScope.floors !== null}
           managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
           defaults={{
             q,

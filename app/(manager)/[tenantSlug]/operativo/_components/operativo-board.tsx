@@ -13,6 +13,7 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetGrabber, SheetTitle } from '@/components/ui/sheet'
+import { type BranchFilter, inBranchFilter } from '@/lib/branches/filter'
 import { awardPointsByAmount } from '@/lib/points/actions'
 import type { EarnRate } from '@/lib/points/earn-rate'
 import type { RecentQrAward } from '@/lib/points/queries'
@@ -31,8 +32,10 @@ import {
   updateReservationTableLabel,
   updateSalonReservation,
 } from '@/lib/salon/actions'
+import { branchFilterKey, PICK_BRANCH_FOR_CAPACITY } from '@/lib/salon/branch-scope'
 import { fetchOperativoExtras, fetchReservationsForDate } from '@/lib/salon/client-actions'
-import { buildDayHighlights, usedByEventMap } from '@/lib/salon/day-highlights'
+import { eventUsedById } from '@/lib/salon/day-counter'
+import { buildDayHighlights } from '@/lib/salon/day-highlights'
 import {
   type BoardFilter,
   countByFilter,
@@ -48,11 +51,7 @@ import { type PartySizeBucket, tallyPartySizes } from '@/lib/salon/party-size'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
 import { groupByService } from '@/lib/salon/services'
-import type {
-  DayCapacityBucket,
-  ReservationWithJoins,
-  SalonReservationStatus,
-} from '@/lib/salon/types'
+import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
 import { fullUpdatePayload } from '@/lib/salon/update-payload'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
@@ -95,8 +94,14 @@ type Props = {
   role: TenantRole
   date: string
   today: string
+  /**
+   * Las sucursales que mira el tablero (docs/features/sucursales.md): lo que se vuelve a pedir lleva este filtro y lo
+   * que llega en vivo de otra sucursal se descarta.
+   */
+  branchFilter: BranchFilter
+  /** Mirando varias sucursales: el cupo no se suma, se pide elegir una. */
+  capacityHidden: boolean
   initialReservations: ReservationWithJoins[]
-  initialCapacity: DayCapacityBucket[]
   /** Cupos resueltos de almuerzo/merienda/cena para `date` (el cálculo corre acá). */
   initialSegmentCaps: DaySegmentCaps
   initialEvents: ScheduledEventWithTemplate[]
@@ -141,8 +146,9 @@ export function OperativoBoard({
   tenantId,
   date,
   today,
+  branchFilter,
+  capacityHidden,
   initialReservations,
-  initialCapacity,
   initialSegmentCaps,
   initialEvents,
   initialAwards,
@@ -158,7 +164,6 @@ export function OperativoBoard({
   const [, startTransition] = useTransition()
 
   const [reservations, setReservations] = useState(initialReservations)
-  const [capacity, setCapacity] = useState(initialCapacity)
   const [segmentCaps, setSegmentCaps] = useState(initialSegmentCaps)
   const [events, setEvents] = useState(initialEvents)
   const [awards, setAwards] = useState<AwardsByCustomer>(() => toAwardMap(initialAwards))
@@ -219,7 +224,6 @@ export function OperativoBoard({
 
   // ── Estado inicial y re-sync ─────────────────────────────────────────
   useEffect(() => mergeFresh(initialReservations), [initialReservations, mergeFresh])
-  useEffect(() => setCapacity(initialCapacity), [initialCapacity])
   useEffect(() => setSegmentCaps(initialSegmentCaps), [initialSegmentCaps])
   useEffect(() => setEvents(initialEvents), [initialEvents])
   useEffect(() => setAwards(toAwardMap(initialAwards)), [initialAwards])
@@ -246,17 +250,27 @@ export function OperativoBoard({
   const customerIdsRef = useRef(customerIds)
   customerIdsRef.current = customerIds
 
+  // El filtro por ref: las acciones lo mandan tal cual se dibujó el tablero (el
+  // servidor lo recorta); cambiar de sucursal remonta el tablero (page.tsx).
+  const branchRef = useRef(branchFilter)
+  branchRef.current = branchFilter
+  const branchKey = branchFilterKey(branchFilter)
+
   const refreshExtras = useCallback(async () => {
-    const r = await fetchOperativoExtras(tenantSlug, date, customerIdsRef.current)
+    const r = await fetchOperativoExtras(
+      tenantSlug,
+      date,
+      customerIdsRef.current,
+      branchRef.current,
+    )
     if (!r.ok || activeDate.current !== date) return
-    setCapacity(r.buckets)
     setSegmentCaps(r.caps)
     setEvents(r.events)
     setAwards(toAwardMap(r.awards))
   }, [tenantSlug, date])
 
   const refreshReservations = useCallback(async () => {
-    const res = await fetchReservationsForDate(tenantSlug, date)
+    const res = await fetchReservationsForDate(tenantSlug, date, branchRef.current)
     if (!res.ok || activeDate.current !== date) return
     mergeFresh(res.reservations)
   }, [tenantSlug, date, mergeFresh])
@@ -277,7 +291,7 @@ export function OperativoBoard({
     void refreshExtras()
 
     const cleanup = subscribeChanges({
-      channel: `operativo-${tenantId}-${date}`,
+      channel: `operativo-${tenantId}-${date}-${branchKey}`,
       events: [
         {
           event: '*',
@@ -290,6 +304,15 @@ export function OperativoBoard({
             const id = (next?.id ?? (payload.old as { id?: string } | undefined)?.id) as
               | string
               | undefined
+            // La suscripción es por bar: lo de otra sucursal no es de este tablero.
+            // Si estaba (se mudó de sucursal), `mergeRow` la saca con el `accept`.
+            if (
+              next &&
+              !inBranchFilter(next.branch_id, branchRef.current) &&
+              !reservationsRef.current.some((r) => r.id === next.id)
+            ) {
+              return
+            }
             const own = id ? ownPending.current.get(id) : undefined
             const isOwnEcho = Boolean(own && Date.now() - (own ?? 0) < 4000)
             let fkChanged = false
@@ -318,7 +341,8 @@ export function OperativoBoard({
                 prev,
                 payload,
                 (r) => r.id,
-                (r) => r.reservation_date === date,
+                (r) =>
+                  r.reservation_date === date && inBranchFilter(r.branch_id, branchRef.current),
               )
             })
             if (id) {
@@ -381,7 +405,15 @@ export function OperativoBoard({
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
-  }, [tenantId, date, refreshReservations, refreshExtras, debouncedExtras, debouncedReservations])
+  }, [
+    tenantId,
+    date,
+    branchKey,
+    refreshReservations,
+    refreshExtras,
+    debouncedExtras,
+    debouncedReservations,
+  ])
 
   // Red de seguridad: reservas Y extras (al volver de segundo plano, Realtime
   // puede haberse perdido cambios).
@@ -427,15 +459,6 @@ export function OperativoBoard({
         .map((r) => r.table_label as string),
     [reservations],
   )
-  const highlights = useMemo(
-    () =>
-      buildDayHighlights({
-        events,
-        reservations,
-        usedByEvent: usedByEventMap(capacity),
-      }),
-    [events, reservations, capacity],
-  )
   const cancelled = useMemo(
     () => reservations.filter((r) => r.status === 'cancelled'),
     [reservations],
@@ -446,6 +469,13 @@ export function OperativoBoard({
   const daySegments = useMemo(
     () => computeDaySegments({ date, reservations, events, caps: segmentCaps }),
     [date, reservations, events, segmentCaps],
+  )
+  // La gente de cada evento, de la misma cuenta (y de las mismas reservas, ya de
+  // esta sucursal): antes salía de `evaluate_day_capacity`, que sumaba las dos.
+  const usedByEvent = useMemo(() => eventUsedById(daySegments), [daySegments])
+  const highlights = useMemo(
+    () => buildDayHighlights({ events, reservations, usedByEvent }),
+    [events, reservations, usedByEvent],
   )
   // El servicio que se está jugando: el del reloj si es hoy (a la 01:30 sigue
   // siendo la cena), la cena si se mira otro día.
@@ -841,6 +871,9 @@ export function OperativoBoard({
               onEventFilter={setEventFilter}
               onInViewChange={setPulseInView}
             />
+            {capacityHidden ? (
+              <p className="mt-2 px-1 text-xs text-muted-foreground">{PICK_BRANCH_FOR_CAPACITY}</p>
+            ) : null}
 
             <ServiceBar
               ref={searchRef}
@@ -920,7 +953,7 @@ export function OperativoBoard({
                   key="extended"
                   pulse={pulse}
                   reservations={reservations}
-                  capacity={capacity}
+                  usedByEvent={usedByEvent}
                   segments={daySegments}
                   focus={focus}
                   events={events}

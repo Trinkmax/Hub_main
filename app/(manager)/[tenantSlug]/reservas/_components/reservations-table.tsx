@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, GlassWater } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment } from 'react'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { AttendanceCell } from '@/components/reservations/attendance-cell'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
@@ -244,6 +245,8 @@ export function ReservationsTable({
                                   M {r.table_label}
                                 </span>
                               ) : null}
+                              {/* Mirando «Todas»: de qué sucursal es. */}
+                              <BranchTag branchId={r.branch_id} className="ml-1.5" />
                             </span>
                             {r.customer ? (
                               <span className="text-[11px] text-muted-foreground">

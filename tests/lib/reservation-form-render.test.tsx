@@ -49,6 +49,7 @@ const CAPS: DaySegmentCaps = {
 const PIZZA: ScheduledEventWithTemplate = {
   id: PIZZA_ID,
   tenant_id: 't',
+  branch_id: 'b',
   template_id: 'tpl',
   name_override: null,
   event_date: DAY,

@@ -67,6 +67,8 @@ export type ScheduledEventTemplateRow = {
 export type ScheduledEventRow = {
   id: string
   tenant_id: string
+  /** La sucursal de la fecha. Los formatos (`scheduled_event_templates`) son de todo el bar. */
+  branch_id: string
   template_id: string
   name_override: string | null
   event_date: string // YYYY-MM-DD
@@ -148,7 +150,15 @@ export type SalonReservationRow = {
    * cruza la medianoche. Informativa: no toca cupos ni comisiones.
    */
   reservation_end_time_local: string | null
+  /**
+   * La planta. En una sucursal sin plantas (el Cerro) la base la guarda vacía: el tipo todavía dice `SalonZone`
+   * porque Tex (lib/tex) la lee como planta y no es de esta tanda; lo de acá que la muestra o la cuenta ya tolera
+   * `null` (ver `placeLabel`, `floorLabel`, `computeDaySegments`). TODO(sucursales): pasar a `SalonZone | null`
+   * cuando Tex aprenda las sucursales.
+   */
   zone: SalonZone
+  /** La sucursal de la reserva. Con evento, la del evento (lo asegura el disparador `salon_reservations_branch`). */
+  branch_id: string
   scheduled_event_id: string | null
   estimated_guests: number
   actual_guests: number | null

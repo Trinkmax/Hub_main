@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { branchErrorMessage, branchForWrite } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { openTable } from '@/lib/imports/detect'
 import type { Cell } from '@/lib/imports/types'
 import { createClient } from '@/lib/supabase/server'
@@ -36,6 +38,11 @@ import type { MealType } from './types'
  * Owner y anfitrión (`TEMPLATE_EDIT_ROLES`): los que arman la agenda. Las
  * escrituras van con su sesión (RLS) y cada fecha queda en `audit_log` con
  * `source: 'excel'`.
+ *
+ * Un Excel carga UNA sucursal (docs/features/sucursales.md): la que se mira, o la
+ * que se elige en la pantalla si se mira «Todas» (campo `branch_id`). Lo que ya
+ * está se busca en esa sucursal y nada más: la misma película la misma noche en
+ * la otra sucursal es otra fecha, no un repetido.
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: tablas sin tipos generados (como lib/salon/actions)
@@ -115,6 +122,25 @@ const FILE_MESSAGES: Record<string, string> = {
   file_too_many_rows: 'El archivo tiene demasiadas filas para una lista de fechas.',
 }
 
+/** La sucursal del Excel: la elegida en la pantalla (si la persona la ve) o la que se mira. */
+async function readBranch(
+  slug: string,
+  formData: FormData,
+): Promise<{ ok: true; branchId: string } | { ok: false; message: string }> {
+  const raw = formData.get('branch_id')
+  const requested = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null
+  if (requested && !z.uuid().safeParse(requested).success) {
+    return { ok: false, message: 'Esa sucursal no existe.' }
+  }
+  try {
+    return { ok: true, branchId: branchForWrite(await getBranchScope(slug), requested) }
+  } catch (error) {
+    const message = branchErrorMessage(error)
+    if (message) return { ok: false, message }
+    throw error
+  }
+}
+
 /** El archivo del formulario → sus filas, o el porqué en castellano. */
 async function readFile(
   formData: FormData,
@@ -160,6 +186,7 @@ type FormatRow = {
 async function loadFormats(
   supabase: SBAny,
   tenantId: string,
+  branchId: string,
   films: boolean,
 ): Promise<ImportFormat[]> {
   const [{ data: templates, error }, { data: filmRows }, { data: recent }] = await Promise.all([
@@ -171,10 +198,12 @@ async function loadFormats(
     films
       ? supabase.from('event_experiences').select('template_id, title').eq('tenant_id', tenantId)
       : Promise.resolve({ data: [] }),
+    // La hora y el cupo de siempre son los de ESTA sucursal (el cine del Cerro no tiene el cupo de Alta Córdoba).
     supabase
       .from('scheduled_events')
       .select('template_id, starts_at_local, capacity, event_date')
       .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
       .order('event_date', { ascending: false })
       .limit(1000),
   ])
@@ -216,6 +245,7 @@ async function loadFormats(
 async function loadExisting(
   supabase: SBAny,
   tenantId: string,
+  branchId: string,
   formatIds: string[],
   months: string[],
   today: string,
@@ -226,6 +256,7 @@ async function loadExisting(
     .from('scheduled_events')
     .select('id, template_id, event_date, starts_at_local, capacity')
     .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
     .in('template_id', formatIds)
     .gte('event_date', range.from > today ? range.from : today)
     .lte('event_date', range.to)
@@ -290,15 +321,16 @@ type Built = {
 async function build(
   supabase: SBAny,
   tenantId: string,
+  branchId: string,
   rows: Cell[][],
   films: boolean,
 ): Promise<Built> {
   const today = todayInCordoba()
-  const formats = await loadFormats(supabase, tenantId, films)
+  const formats = await loadFormats(supabase, tenantId, branchId, films)
   const read = readImportRows(rows, formats, today)
   const months = [...new Set(read.entries.map((e) => e.date.slice(0, 7)))].sort()
   const formatIds = [...new Set(read.entries.map((e) => e.formatId))]
-  const existing = await loadExisting(supabase, tenantId, formatIds, months, today)
+  const existing = await loadExisting(supabase, tenantId, branchId, formatIds, months, today)
   return {
     plan: planImport(read.entries, existing, today),
     formats: new Map(formats.map((f) => [f.id, f])),
@@ -370,11 +402,19 @@ export async function previewCalendarImport(
 ): Promise<CalendarImportPreviewState> {
   const access = await authorize(slug)
   if (!access) return { ok: false, message: NO_ACCESS }
+  const branch = await readBranch(slug, formData)
+  if (!branch.ok) return branch
   const file = await readFile(formData)
   if (!file.ok) return file
   const supabase = (await createClient()) as SBAny
   try {
-    const built = await build(supabase, access.tenant.id, file.rows, access.role === 'owner')
+    const built = await build(
+      supabase,
+      access.tenant.id,
+      branch.branchId,
+      file.rows,
+      access.role === 'owner',
+    )
     return {
       ok: true,
       preview: {
@@ -407,6 +447,9 @@ export async function applyCalendarImport(
   })
   if (!options.success) return { ok: false, message: 'Pedido inválido.' }
   const removeMissing = options.data.removeMissing === '1'
+  const branch = await readBranch(slug, formData)
+  if (!branch.ok) return branch
+  const branchId = branch.branchId
   const file = await readFile(formData)
   if (!file.ok) return file
   const supabase = (await createClient()) as SBAny
@@ -414,7 +457,7 @@ export async function applyCalendarImport(
 
   let built: Built
   try {
-    built = await build(supabase, tenantId, file.rows, access.role === 'owner')
+    built = await build(supabase, tenantId, branchId, file.rows, access.role === 'owner')
   } catch (error) {
     return {
       ok: false,
@@ -431,7 +474,7 @@ export async function applyCalendarImport(
       action,
       entity: 'scheduled_event',
       entityId,
-      payload: { source: 'excel', file: file.fileName, ...payload },
+      payload: { source: 'excel', file: file.fileName, branch_id: branchId, ...payload },
     })
 
   // 1. Las nuevas, todas juntas: o entran todas o ninguna.
@@ -444,6 +487,7 @@ export async function applyCalendarImport(
           const format = formats.get(c.formatId)
           return {
             tenant_id: tenantId,
+            branch_id: branchId,
             template_id: c.formatId,
             event_date: c.date,
             starts_at_local: c.time,
@@ -487,6 +531,7 @@ export async function applyCalendarImport(
       .from('scheduled_events')
       .update(changes)
       .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
       .eq('id', u.eventId)
     if (error) {
       skipped.push({
@@ -517,6 +562,7 @@ export async function applyCalendarImport(
         .from('scheduled_events')
         .delete()
         .eq('tenant_id', tenantId)
+        .eq('branch_id', branchId)
         .eq('id', r.eventId)
       if (error) {
         // La pauta de «Cómo nos fue» frena el borrado (FK sin cascade, a propósito).

@@ -3,6 +3,10 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef } from '@/lib/branches/types'
+import { branchHasFloors, singleBranchSegmentScope } from '@/lib/salon/branch-scope'
 import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { lastManagerCookieName } from '@/lib/salon/managers'
@@ -40,13 +44,20 @@ export const metadata = { title: 'Nueva reserva' }
 export const dynamic = 'force-dynamic'
 
 /**
- * El cupo del día para el medidor del form. No puede tirar la página: sin él
- * el form arranca con el skeleton, lo vuelve a pedir y guardar sigue andando
- * (la confirmación de sobrecupo nunca bloquea).
+ * El cupo del día para el medidor del form, de UNA sucursal (el cupo no se suma
+ * entre sucursales). No puede tirar la página: sin él el form arranca con el
+ * skeleton, lo vuelve a pedir y guardar sigue andando (la confirmación de
+ * sobrecupo nunca bloquea). Sin sucursal (mirando «Todas») no hay cupo hasta
+ * que se elija una.
  */
-async function snapshotOrNull(tenantId: string, date: string): Promise<DaySegmentsSnapshot | null> {
+async function snapshotOrNull(
+  tenantId: string,
+  date: string,
+  branch: BranchRef | null,
+): Promise<DaySegmentsSnapshot | null> {
+  if (!branch) return null
   try {
-    return await getDaySegmentsSnapshot({ tenantId, date })
+    return await getDaySegmentsSnapshot({ tenantId, date, scope: singleBranchSegmentScope(branch) })
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code
     console.error('[reservas.nuevo.snapshot]', {
@@ -77,6 +88,15 @@ export default async function NuevaReservaPage({
     throw e
   }
   const tenantId = access.tenant.id
+
+  // La sucursal (docs/features/sucursales.md): la que se mira, o la del evento si
+  // se reserva adentro de uno. Mirando «Todas» el form pide elegirla.
+  const branchScope = await getBranchScope(tenantSlug)
+  const [onlyBranch] = branchScope.branches
+  const viewBranch =
+    branchScope.current ?? (branchScope.branches.length === 1 && onlyBranch ? onlyBranch : null)
+  const branchOf = (id: string | null | undefined) =>
+    id ? (branchScope.branches.find((b) => b.id === id) ?? null) : null
 
   // ?date, ?event (alta adentro de un evento), ?meal (servicio), ?time (hora
   // puntual), ?guest_name y ?volver. Cada param tiene su .catch: uno roto se
@@ -118,29 +138,54 @@ export default async function NuevaReservaPage({
     // El menú de tortas viaja en el mismo round-trip: el desplegable tiene que
     // estar listo apenas se marca el cumpleaños, sin un fetch extra al tocarlo.
     listCakeOptions({ tenantId, onlyActive: true }),
-    query.event ? getScheduledEvent({ tenantId, id: query.event }) : Promise.resolve(null),
-    listScheduledEventsForDate({ tenantId, date: date0 }),
-    snapshotOrNull(tenantId, date0),
+    // Un evento de una sucursal que la persona no ve no se abre (queda como alta común).
+    query.event
+      ? getScheduledEvent({
+          tenantId,
+          id: query.event,
+          branch: clampBranchFilter(null, branchScope),
+        })
+      : Promise.resolve(null),
+    viewBranch
+      ? listScheduledEventsForDate({ tenantId, date: date0, branch: { ids: [viewBranch.id] } })
+      : Promise.resolve([]),
+    snapshotOrNull(tenantId, date0, viewBranch),
   ])
 
-  // Reservar adentro de un evento es reservar en SU fecha. Si el link no traía
-  // ?date (o traía otra), se vuelven a pedir los eventos y el cupo de ese día.
-  // Es el camino raro: el calendario siempre manda ?date junto con ?event.
+  // Reservar adentro de un evento es reservar en SU fecha y en SU sucursal. Si
+  // el link no traía ?date (o traía otra), o el evento es de otra sucursal que
+  // la que se mira, se vuelven a pedir los eventos y el cupo de ese día y esa
+  // sucursal. Es el camino raro: el calendario siempre manda ?date junto con ?event.
+  const branch = branchOf(requestedEvent?.branch_id) ?? viewBranch
   let eventsForDate: ScheduledEventWithTemplate[] = eventsForDate0
   let snapshot = snapshot0
-  if (requestedEvent && requestedEvent.event_date !== date0) {
+  if (
+    requestedEvent &&
+    (requestedEvent.event_date !== date0 || (branch?.id ?? null) !== (viewBranch?.id ?? null))
+  ) {
     ;[eventsForDate, snapshot] = await Promise.all([
-      listScheduledEventsForDate({ tenantId, date: requestedEvent.event_date }),
-      snapshotOrNull(tenantId, requestedEvent.event_date),
+      branch
+        ? listScheduledEventsForDate({
+            tenantId,
+            date: requestedEvent.event_date,
+            branch: { ids: [branch.id] },
+          })
+        : Promise.resolve([]),
+      snapshotOrNull(tenantId, requestedEvent.event_date, branch),
     ])
   }
 
-  const defaults = resolveNewReservationDefaults({
+  const resolved = resolveNewReservationDefaults({
     params: query,
     today,
     event: requestedEvent,
     settings: snapshot?.settings ?? resolveSegmentSettings([]),
   })
+  // Sin plantas (una sucursal como el Cerro) la reserva de evento tampoco lleva planta.
+  const defaults =
+    branch && !branchHasFloors(branch) && resolved.initialValues.zone
+      ? { ...resolved, initialValues: { ...resolved.initialValues, zone: null } }
+      : resolved
   const { initialDate, segment } = defaults
   const targetEvent = requestedEvent && defaults.targetEventId ? requestedEvent : null
   const [, mm, dd] = initialDate.split('-')
@@ -179,6 +224,7 @@ export default async function NuevaReservaPage({
         initialDate={initialDate}
         today={today}
         initialSnapshot={snapshot}
+        initialBranchId={branch?.id ?? null}
         initialValues={defaults.initialValues}
         managers={managers}
         templates={templates}

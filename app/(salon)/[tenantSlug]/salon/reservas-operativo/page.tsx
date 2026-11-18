@@ -1,9 +1,8 @@
 import { notFound } from 'next/navigation'
-import {
-  getDayCapacitySnapshot,
-  listScheduledEventsForDate,
-  listTimelineForDate,
-} from '@/lib/salon/queries'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import { branchFilterKey, segmentScopeFromFilter } from '@/lib/salon/branch-scope'
+import { listScheduledEventsForDate, listTimelineForDate } from '@/lib/salon/queries'
 import { getDaySegmentCaps } from '@/lib/salon/segment-queries'
 import { isoDaySchema } from '@/lib/salon/segment-schemas'
 import { requireTenantAccess, SALON_READ_ROLES, TenantNotFoundError } from '@/lib/tenant'
@@ -48,13 +47,18 @@ export default async function ReservasOperativoPage({
   const date = parsedDate.success ? parsedDate.data : today
   const tenantId = access.tenant.id
 
+  // El salón es un lugar (docs/features/sucursales.md): la sucursal de ESTE
+  // dispositivo, nunca «Todas». Sus reservas, sus eventos y su cupo.
+  const branchScope = await getBranchScope(tenantSlug, 'device')
+  const branch = branchFilterOf(branchScope)
+  const segmentScope = segmentScopeFromFilter(branch, branchScope.branches)
+
   // Los cupos por servicio llegan RESUELTOS: la cuenta corre en el cliente
   // sobre las reservas vivas (Realtime), con la misma función que el calendario.
-  const [reservations, capacity, scheduledEvents, segmentCaps] = await Promise.all([
-    listTimelineForDate({ tenantId, date }),
-    getDayCapacitySnapshot({ tenantId, date }),
-    listScheduledEventsForDate({ tenantId, date }),
-    getDaySegmentCaps({ tenantId, date }),
+  const [reservations, scheduledEvents, segmentCaps] = await Promise.all([
+    listTimelineForDate({ tenantId, date, branch }),
+    listScheduledEventsForDate({ tenantId, date, branch }),
+    getDaySegmentCaps({ tenantId, date, scope: segmentScope }),
   ])
 
   // Sin wrapper `h-[100dvh]`: el shell del salón es el único scroller (ver
@@ -62,13 +66,15 @@ export default async function ReservasOperativoPage({
   // contenedor scrolleable dentro de una página que ya scrolleaba.
   return (
     <TimelineView
+      // Otra sucursal en este dispositivo es otro salón: se empieza de cero.
+      key={branchFilterKey(branch)}
       tenantSlug={tenantSlug}
       tenantId={tenantId}
       role={access.role}
       date={date}
       isToday={date === today}
+      branchFilter={branch}
       initialReservations={reservations}
-      initialCapacity={capacity}
       initialSegmentCaps={segmentCaps}
       initialEvents={scheduledEvents}
     />

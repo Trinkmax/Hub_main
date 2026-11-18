@@ -135,7 +135,8 @@ export function buildDayHighlights(opts: {
       zoneLabel:
         r.zone === 'event_floating'
           ? (r.scheduled_event?.template?.name ?? 'Evento')
-          : zoneLabels[r.zone],
+          : // Sin planta (una sucursal sin plantas): el evento si tiene, si no el salón.
+            ((r.zone ? zoneLabels[r.zone] : null) ?? r.scheduled_event?.template?.name ?? 'Salón'),
       eventName: r.scheduled_event?.template?.name ?? null,
       eventColorHex: r.scheduled_event?.template?.color_hex ?? null,
       cakeCount: r.cake_count,

@@ -469,7 +469,8 @@ function QuickEditPanel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: las deps "de más" (personas/zona/estado/hora/servicio) fuerzan el refetch del snapshot cuando el server refresca la reserva tras guardar — sin eso la proyección queda desfasada.
   useEffect(() => {
     let alive = true
-    fetchDaySegments(tenantSlug, r.reservation_date)
+    // El cupo de la sucursal de la reserva (nunca se suma entre sucursales).
+    fetchDaySegments(tenantSlug, r.reservation_date, r.branch_id)
       .then((res) => {
         if (alive && res.ok) setDaySnapshot(res.data)
       })

@@ -1,5 +1,7 @@
 import 'server-only'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import { createClient } from '@/lib/supabase/server'
+import type { SegmentBranchScope } from './branch-scope'
 import { instagramSearchTerm } from './instagram'
 import {
   listScheduledEventsForDate,
@@ -142,45 +144,100 @@ async function readZoneCaps(supabase: SBAny, tenantId: string): Promise<ZoneCaps
 }
 
 /**
- * Las 3 tablas de config + el cupo general (PA + PB) en UN Promise.all.
+ * Las 3 tablas de config + el cupo general en UN Promise.all.
  * `overridesFrom`/`overridesTo` acotan los especiales por fecha: el mes pide
  * su rango, el día una sola fecha y el editor "desde hoy" sin tope.
+ *
+ * La sucursal (docs/features/sucursales.md › el cupo nunca se suma):
+ * - `scope.capacity` = una sucursal: su grilla, sus especiales y sus ajustes. Su
+ *   cupo general es PA + PB si tiene plantas (la principal) o sus sillas
+ *   (`branches.seat_capacity`) si no.
+ * - `scope.capacity` = null («Todas»): sin cupo (cada servicio sin tope); viajan
+ *   igual los ajustes y el cupo de cada planta de la sucursal con plantas, para
+ *   las horas sugeridas y el filtro de planta.
+ * - sin `scope`: el de siempre, todo el bar con PA + PB (Tex y las tareas). Hasta
+ *   que haya una segunda sucursal con cupo propio da lo mismo que la principal.
  */
 async function readSegmentConfig(opts: {
   tenantId: string
+  scope?: SegmentBranchScope
   overridesFrom: string
   overridesTo?: string
 }): Promise<SegmentConfig> {
   const supabase = (await createClient()) as SBAny
+  const scope = opts.scope
+  // La sucursal de la que se leen las filas de config; null = ninguna (sin cupo y sin ajustes).
+  const configBranch = scope === undefined ? undefined : (scope.capacity ?? scope.floors)
+  if (configBranch === null) {
+    return {
+      weekly: [],
+      overrides: [],
+      settings: [],
+      fallbackTotal: 0,
+      zoneCaps: { ...NO_ZONE_CAPS },
+    }
+  }
+  const byBranch = <Q>(query: Q): Q =>
+    configBranch ? ((query as SBAny).eq('branch_id', configBranch.id) as Q) : query
+  // PA + PB son de la sucursal con plantas: sin plantas no hace falta leerlas.
+  const readsZones = configBranch === undefined || configBranch.isDefault
+  // En «Todas» no hay cupo: la grilla y los especiales ni se piden.
+  const readsCaps = scope === undefined || scope.capacity !== null
 
-  let overridesQuery = supabase
-    .from('salon_segment_capacity_overrides')
-    .select('segment, override_date, capacity, warn_at, reason')
-    .eq('tenant_id', opts.tenantId)
-    .gte('override_date', opts.overridesFrom)
+  let overridesQuery = byBranch(
+    supabase
+      .from('salon_segment_capacity_overrides')
+      .select('segment, override_date, capacity, warn_at, reason')
+      .eq('tenant_id', opts.tenantId)
+      .gte('override_date', opts.overridesFrom),
+  )
   if (opts.overridesTo) overridesQuery = overridesQuery.lte('override_date', opts.overridesTo)
   overridesQuery = overridesQuery
     .order('override_date', { ascending: true })
     .order('segment', { ascending: true })
 
   const [weeklyRows, settingRows, overrideRows, zoneCaps] = await Promise.all([
-    readConfigTable(
-      'salon_segment_capacities',
-      supabase
-        .from('salon_segment_capacities')
-        .select('segment, iso_dow, capacity, warn_at')
-        .eq('tenant_id', opts.tenantId),
-    ),
+    readsCaps
+      ? readConfigTable(
+          'salon_segment_capacities',
+          byBranch(
+            supabase
+              .from('salon_segment_capacities')
+              .select('segment, iso_dow, capacity, warn_at')
+              .eq('tenant_id', opts.tenantId),
+          ),
+        )
+      : Promise.resolve([]),
     readConfigTable(
       'salon_segment_settings',
-      supabase
-        .from('salon_segment_settings')
-        .select('segment, default_time, warn_note')
-        .eq('tenant_id', opts.tenantId),
+      byBranch(
+        supabase
+          .from('salon_segment_settings')
+          .select('segment, default_time, warn_note')
+          .eq('tenant_id', opts.tenantId),
+      ),
     ),
-    readConfigTable('salon_segment_capacity_overrides', overridesQuery),
-    readZoneCaps(supabase, opts.tenantId),
+    readsCaps
+      ? readConfigTable('salon_segment_capacity_overrides', overridesQuery)
+      : Promise.resolve([]),
+    readsZones ? readZoneCaps(supabase, opts.tenantId) : Promise.resolve({ ...NO_ZONE_CAPS }),
   ])
+
+  // «Todas»: los ajustes y las plantas de la sucursal con plantas, sin ningún cupo.
+  if (!readsCaps) {
+    return {
+      weekly: [],
+      overrides: [],
+      settings: toSettingRows(settingRows),
+      fallbackTotal: 0,
+      zoneCaps,
+    }
+  }
+
+  // El cupo general: PA + PB con plantas; las sillas de la sucursal sin plantas (0 = sin cargar: sin tope).
+  const fallbackTotal = readsZones
+    ? zoneCaps.planta_alta + zoneCaps.planta_baja
+    : Math.max(0, configBranch?.seatCapacity ?? 0)
 
   return {
     weekly: toWeeklyCapRows(weeklyRows),
@@ -189,7 +246,7 @@ async function readSegmentConfig(opts: {
     // El cupo general por planta SIN los overrides por zona: esos quedaron sin
     // UI y los reemplaza el cupo especial por servicio. Las dos plantas por
     // separado viajan para el filtro de planta del calendario (misma lectura).
-    fallbackTotal: zoneCaps.planta_alta + zoneCaps.planta_baja,
+    fallbackTotal,
     zoneCaps,
   }
 }
@@ -198,9 +255,12 @@ export async function getSegmentConfig(opts: {
   tenantId: string
   from: string
   to: string
+  /** De qué sucursal es el cupo (ver `readSegmentConfig`). Sin decir, todo el bar (Tex). */
+  scope?: SegmentBranchScope
 }): Promise<SegmentConfig> {
   return readSegmentConfig({
     tenantId: opts.tenantId,
+    scope: opts.scope,
     overridesFrom: opts.from,
     overridesTo: opts.to,
   })
@@ -210,8 +270,15 @@ export async function getSegmentConfig(opts: {
 export async function getDaySegmentCaps(opts: {
   tenantId: string
   date: string
+  /** Sin decir, todo el bar (Tex). En «Todas» cada servicio queda sin tope. */
+  scope?: SegmentBranchScope
 }): Promise<DaySegmentCaps> {
-  const config = await getSegmentConfig({ tenantId: opts.tenantId, from: opts.date, to: opts.date })
+  const config = await getSegmentConfig({
+    tenantId: opts.tenantId,
+    from: opts.date,
+    to: opts.date,
+    scope: opts.scope,
+  })
   return resolveDaySegmentCaps(opts.date, config)
 }
 
@@ -228,22 +295,33 @@ export async function getDaySegmentCaps(opts: {
 export async function getDaySegmentsSnapshot(opts: {
   tenantId: string
   date: string
+  /** Las reservas, los eventos y el cupo de qué sucursal. Sin decir, todo el bar (Tex). */
+  scope?: SegmentBranchScope
 }): Promise<DaySegmentsSnapshot> {
   const supabase = (await createClient()) as SBAny
+  const branch: BranchFilter = opts.scope?.filter ?? WHOLE_BAR
   const [rows, events, config] = await Promise.all([
     collectPages<Record<string, unknown>>((from, to) =>
-      supabase
-        .from('salon_reservations')
-        .select(SEGMENT_RES_SELECT)
-        .eq('tenant_id', opts.tenantId)
-        .eq('reservation_date', opts.date)
-        .not('status', 'in', '(cancelled,no_show)')
+      applyBranchFilter(
+        supabase
+          .from('salon_reservations')
+          .select(SEGMENT_RES_SELECT)
+          .eq('tenant_id', opts.tenantId)
+          .eq('reservation_date', opts.date)
+          .not('status', 'in', '(cancelled,no_show)'),
+        branch,
+      )
         .order('reservation_time_local', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to),
     ),
-    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.date }),
-    getSegmentConfig({ tenantId: opts.tenantId, from: opts.date, to: opts.date }),
+    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.date, branch }),
+    getSegmentConfig({
+      tenantId: opts.tenantId,
+      from: opts.date,
+      to: opts.date,
+      scope: opts.scope,
+    }),
   ])
 
   return {
@@ -264,11 +342,19 @@ export async function getDaySegmentsSnapshot(opts: {
 export async function getDayOverview(opts: {
   tenantId: string
   date: string
+  /** Sin decir, todo el bar (Tex). En «Todas» el día se ve sin cupo. */
+  scope?: SegmentBranchScope
 }): Promise<DayOverview> {
+  const branch: BranchFilter = opts.scope?.filter ?? WHOLE_BAR
   const [reservations, events, config] = await Promise.all([
-    listTimelineForDate({ tenantId: opts.tenantId, date: opts.date }),
-    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.date }),
-    getSegmentConfig({ tenantId: opts.tenantId, from: opts.date, to: opts.date }),
+    listTimelineForDate({ tenantId: opts.tenantId, date: opts.date, branch }),
+    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.date, branch }),
+    getSegmentConfig({
+      tenantId: opts.tenantId,
+      from: opts.date,
+      to: opts.date,
+      scope: opts.scope,
+    }),
   ])
   const caps = resolveDaySegmentCaps(opts.date, config)
 
@@ -303,7 +389,10 @@ const YM_RE = /^(\d{4})-(0[1-9]|1[0-2])$/
 export async function getMonthSegments(opts: {
   tenantId: string
   ym: string
+  /** Los de la página, ya filtrados por la misma sucursal. */
   events: ReadonlyArray<SegmentEventInput>
+  /** Sin decir, todo el bar. En «Todas» el mes cuenta gente sin cupo. */
+  scope?: SegmentBranchScope
 }): Promise<MonthSegments> {
   const match = YM_RE.exec(opts.ym)
   if (!match) throw new Error('getMonthSegments: mes inválido (YYYY-MM)')
@@ -312,22 +401,26 @@ export async function getMonthSegments(opts: {
   const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
 
   const supabase = (await createClient()) as SBAny
+  const branch: BranchFilter = opts.scope?.filter ?? WHOLE_BAR
   const [rows, config] = await Promise.all([
     collectPages<Record<string, unknown>>((rangeFrom, rangeTo) =>
-      supabase
-        .from('salon_reservations')
-        .select(SEGMENT_RES_SELECT)
-        .eq('tenant_id', opts.tenantId)
-        .gte('reservation_date', from)
-        .lte('reservation_date', to)
-        .not('status', 'in', '(cancelled,no_show)')
+      applyBranchFilter(
+        supabase
+          .from('salon_reservations')
+          .select(SEGMENT_RES_SELECT)
+          .eq('tenant_id', opts.tenantId)
+          .gte('reservation_date', from)
+          .lte('reservation_date', to)
+          .not('status', 'in', '(cancelled,no_show)'),
+        branch,
+      )
         // Orden por una clave única: sin orden estable dos páginas podrían
         // repetir o saltearse reservas.
         .order('reservation_date', { ascending: true })
         .order('id', { ascending: true })
         .range(rangeFrom, rangeTo),
     ),
-    getSegmentConfig({ tenantId: opts.tenantId, from, to }),
+    getSegmentConfig({ tenantId: opts.tenantId, from, to, scope: opts.scope }),
   ])
 
   return computeMonthSegments({
@@ -342,12 +435,20 @@ export async function getMonthSegments(opts: {
 // Configuración → Capacidad
 // ──────────────────────────────────────────────────────────
 
-/** Lo que muestra el editor: la grilla semanal, los ajustes y los especiales desde hoy. */
+/**
+ * Lo que muestra el editor: la grilla semanal, los ajustes y los especiales desde hoy, de UNA sucursal (el editor
+ * nunca mira «Todas»). Sin decir, todo el bar (Tex).
+ */
 export async function getSegmentEditorData(opts: {
   tenantId: string
   today: string
+  scope?: SegmentBranchScope
 }): Promise<SegmentEditorData> {
-  const config = await readSegmentConfig({ tenantId: opts.tenantId, overridesFrom: opts.today })
+  const config = await readSegmentConfig({
+    tenantId: opts.tenantId,
+    scope: opts.scope,
+    overridesFrom: opts.today,
+  })
   return {
     weekly: config.weekly,
     settings: config.settings,
@@ -370,6 +471,8 @@ export async function searchReservationsByGuest(opts: {
   tenantId: string
   q: string
   limit?: number
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<ReservationSearchResult[]> {
   const { name, digits } = searchTerms(opts.q)
   if (!name && !digits) return []
@@ -377,10 +480,10 @@ export async function searchReservationsByGuest(opts: {
   const limit = Math.min(50, Math.max(1, Math.floor(opts.limit ?? 20)))
 
   const supabase = (await createClient()) as SBAny
-  let query = supabase
-    .from('salon_reservations')
-    .select(SEARCH_RES_SELECT)
-    .eq('tenant_id', opts.tenantId)
+  let query = applyBranchFilter(
+    supabase.from('salon_reservations').select(SEARCH_RES_SELECT).eq('tenant_id', opts.tenantId),
+    opts.branch ?? WHOLE_BAR,
+  )
   if (digits || handle) {
     // `searchTerms` ya sacó `,` `(` `)` y `"`, y el usuario de Instagram solo
     // trae letras, números, punto y guion bajo: no pueden romper la sintaxis del or().

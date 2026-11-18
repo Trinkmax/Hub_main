@@ -3,6 +3,15 @@
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
+import {
+  applyBranchFilter,
+  type BranchFilter,
+  branchErrorMessage,
+  branchForWrite,
+  clampBranchFilter,
+} from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchScope } from '@/lib/branches/types'
 import { formatARS } from '@/lib/commissions/calculate'
 import { payableUpperBound, resolveCommissionPeriod } from '@/lib/commissions/period'
 import { findCustomerIdByPhone } from '@/lib/customers/phone-lookup'
@@ -26,6 +35,7 @@ import {
   personScopedAlerts,
   type ServiceAlert,
 } from './alerts'
+import { branchHasFloors } from './branch-scope'
 import { isRealIsoDay, todayInCordoba } from './date-presets'
 import { eventDateMismatchCode, humanizeSalonError } from './humanize'
 import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
@@ -53,7 +63,7 @@ import {
   zoneCapacityOverrideSchema,
 } from './schemas'
 import { uniqueSlugFrom } from './slug-dedupe'
-import type { SalonReservationStatus } from './types'
+import type { SalonReservationStatus, SalonZone } from './types'
 
 // ──────────────────────────────────────────────────────────
 // Tipos comunes
@@ -286,22 +296,29 @@ async function syncCustomerServiceAlerts(
 }
 
 /**
- * Chequea que el evento programado sea de este bar y de la MISMA fecha que la
- * reserva. El trigger `trg_validate_reservation_event_date` es la garantía
- * dura; esto lo adelanta para devolver un error de campo (se pinta abajo del
- * combo de evento) en vez de una excepción cruda de Postgres.
+ * Chequea que el evento programado sea de este bar, de la MISMA fecha que la
+ * reserva y de una sucursal que la persona ve. El trigger
+ * `trg_validate_reservation_event_date` es la garantía dura de la fecha; esto lo
+ * adelanta para devolver un error de campo (se pinta abajo del combo de evento)
+ * en vez de una excepción cruda de Postgres.
  *
- * Devuelve el `ActionState` de error, o `null` si está todo bien.
+ * Con `expectedBranchId` (la sucursal que eligió el form), el evento tiene que
+ * ser de esa sucursal: el disparador de la base pondría la reserva en la
+ * sucursal del evento y la anfitriona vería su reserva aparecer en otro lado.
+ *
+ * Devuelve el `ActionState` de error (o `null` si está todo bien) y la sucursal
+ * del evento (`null` si no se pudo leer).
  */
 async function checkEventMatchesDate(
   supabase: SBAny,
   tenantId: string,
   eventId: string,
   reservationDate: string,
-): Promise<ActionState | null> {
+  branch: { scope: Pick<BranchScope, 'branches'>; expectedBranchId: string | null },
+): Promise<{ state: ActionState | null; branchId: string | null }> {
   const { data, error } = await supabase
     .from('scheduled_events')
-    .select('event_date, tenant_id')
+    .select('event_date, tenant_id, branch_id')
     .eq('id', eventId)
     .maybeSingle()
 
@@ -312,20 +329,84 @@ async function checkEventMatchesDate(
       error: error.message,
     })
     // Sin lectura no bloqueamos: el trigger sigue cubriendo el caso.
-    return null
+    return { state: null, branchId: null }
   }
   if (!data) {
-    return badInput(humanizeSalonError('reservation_event_not_found'), 'scheduled_event_id')
+    return {
+      state: badInput(humanizeSalonError('reservation_event_not_found'), 'scheduled_event_id'),
+      branchId: null,
+    }
   }
 
-  const row = data as { event_date: string; tenant_id: string }
+  const row = data as { event_date: string; tenant_id: string; branch_id: string | null }
   if (row.tenant_id !== tenantId) {
-    return badInput(humanizeSalonError('reservation_event_tenant_mismatch'), 'scheduled_event_id')
+    return {
+      state: badInput(
+        humanizeSalonError('reservation_event_tenant_mismatch'),
+        'scheduled_event_id',
+      ),
+      branchId: null,
+    }
   }
   if (row.event_date !== reservationDate) {
-    return badInput(humanizeSalonError(eventDateMismatchCode(row.event_date)), 'scheduled_event_id')
+    return {
+      state: badInput(
+        humanizeSalonError(eventDateMismatchCode(row.event_date)),
+        'scheduled_event_id',
+      ),
+      branchId: row.branch_id,
+    }
   }
-  return null
+  if (row.branch_id && !branch.scope.branches.some((b) => b.id === row.branch_id)) {
+    return {
+      state: badInput('Ese evento es de una sucursal que no es tuya.', 'scheduled_event_id'),
+      branchId: row.branch_id,
+    }
+  }
+  if (branch.expectedBranchId && row.branch_id && row.branch_id !== branch.expectedBranchId) {
+    return {
+      state: badInput(
+        'Ese evento es de otra sucursal. Elegí un evento de esta sucursal o cambiá la sucursal.',
+        'scheduled_event_id',
+      ),
+      branchId: row.branch_id,
+    }
+  }
+  return { state: null, branchId: row.branch_id }
+}
+
+/**
+ * La sucursal de una reserva que se escribe (`branchForWrite`), o el error en castellano para el campo
+ * «Sucursal» del form.
+ */
+function resolveWriteBranch(
+  scope: BranchScope,
+  requested: string | null | undefined,
+): { ok: true; branchId: string } | { ok: false; state: ActionState } {
+  try {
+    return { ok: true, branchId: branchForWrite(scope, requested) }
+  } catch (error) {
+    const message = branchErrorMessage(error)
+    if (message) return { ok: false, state: badInput(message, 'branch_id') }
+    throw error
+  }
+}
+
+/**
+ * La planta que se guarda según la sucursal: en una sucursal sin plantas, ninguna (aunque el pedido traiga una);
+ * en una con plantas, la pedida, la de «Sin definir» si es de evento, o el pedido de elegirla.
+ */
+function zoneForBranchWrite(
+  scope: Pick<BranchScope, 'branches'>,
+  branchId: string,
+  zone: SalonZone | null,
+  hasEvent: boolean,
+): { ok: true; zone: SalonZone | null } | { ok: false; state: ActionState } {
+  const branch = scope.branches.find((b) => b.id === branchId)
+  if (branch && !branchHasFloors(branch)) return { ok: true, zone: null }
+  if (zone) return { ok: true, zone }
+  if (hasEvent) return { ok: true, zone: 'event_floating' }
+  return { ok: false, state: badInput('Elegí en qué planta se sientan.', 'zone') }
 }
 
 // ──────────────────────────────────────────────────────────
@@ -399,12 +480,32 @@ export async function createSalonReservation(
     data: { user },
   } = await supabase.auth.getUser()
 
+  // La sucursal (docs/features/sucursales.md): la que eligió el form. Si no mandó
+  // ninguna (Tex, un pedido viejo), la del evento elegido o la que se está
+  // mirando; en «Todas» sin evento hay que elegir. Nunca se guarda sin sucursal.
+  const scope = await getBranchScope(slug)
+  let branchId: string | null = null
+  if (parsed.data.branch_id) {
+    const chosen = resolveWriteBranch(scope, parsed.data.branch_id)
+    if (!chosen.ok) return chosen.state
+    branchId = chosen.branchId
+  }
+
   // Reserva especial pidiendo un formato calendarizado (ej. Pizza Libre en una
   // recibida del martes sin pizza libre programada): aseguramos que exista
   // una scheduled_event ese día via helper SQL. Pisa cualquier scheduled_event_id
   // del input — la prioridad de las reservas especiales es el formato pedido.
+  // La fecha se busca (y si no está, se crea) en la sucursal de la reserva.
   let scheduledEventIdFinal = parsed.data.scheduled_event_id ?? null
-  if (parsed.data.requested_template_id && parsed.data.kind !== 'normal') {
+  const usesRequestedTemplate = Boolean(
+    parsed.data.requested_template_id && parsed.data.kind !== 'normal',
+  )
+  if (usesRequestedTemplate && !branchId) {
+    const fallback = resolveWriteBranch(scope, null)
+    if (!fallback.ok) return fallback.state
+    branchId = fallback.branchId
+  }
+  if (usesRequestedTemplate && parsed.data.requested_template_id) {
     const { data: ensuredId, error: ensureErr } = await supabase.rpc(
       'ensure_scheduled_event_for_template',
       {
@@ -412,6 +513,7 @@ export async function createSalonReservation(
         p_event_date: parsed.data.reservation_date,
         p_starts_at_local: parsed.data.reservation_time_local,
         p_capacity: null,
+        p_branch_id: branchId,
       },
     )
     if (ensureErr) {
@@ -421,19 +523,31 @@ export async function createSalonReservation(
   }
 
   if (scheduledEventIdFinal) {
-    const mismatch = await checkEventMatchesDate(
+    const check = await checkEventMatchesDate(
       supabase,
       access.tenant.id,
       scheduledEventIdFinal,
       parsed.data.reservation_date,
+      { scope, expectedBranchId: branchId },
     )
-    if (mismatch) return mismatch
+    if (check.state) return check.state
+    // Sin sucursal elegida, la reserva es de la sucursal de su evento.
+    if (!branchId && check.branchId) branchId = check.branchId
   }
+  if (!branchId) {
+    const fallback = resolveWriteBranch(scope, null)
+    if (!fallback.ok) return fallback.state
+    branchId = fallback.branchId
+  }
+
+  const zone = zoneForBranchWrite(scope, branchId, parsed.data.zone, Boolean(scheduledEventIdFinal))
+  if (!zone.ok) return zone.state
 
   const { data, error } = await supabase
     .from('salon_reservations')
     .insert({
       tenant_id: access.tenant.id,
+      branch_id: branchId,
       customer_id: customerId,
       guest_name: parsed.data.guest_name,
       guest_phone: parsed.data.guest_phone ?? null,
@@ -444,7 +558,7 @@ export async function createSalonReservation(
       reservation_date: parsed.data.reservation_date,
       reservation_time_local: parsed.data.reservation_time_local,
       reservation_end_time_local: parsed.data.reservation_end_time_local ?? null,
-      zone: parsed.data.zone,
+      zone: zone.zone,
       scheduled_event_id: scheduledEventIdFinal,
       estimated_guests: parsed.data.estimated_guests,
       cake_count: parsed.data.cake_count,
@@ -497,6 +611,7 @@ export async function createSalonReservation(
       estimated_guests: parsed.data.estimated_guests,
       manager: parsed.data.primary_manager_id,
       origin: parsed.data.origin,
+      branch_id: branchId,
     },
   })
 
@@ -535,14 +650,35 @@ export async function updateSalonReservation(
   const supabase = (await createClient()) as SBAny
   const { id, ...patch } = parsed.data
 
+  // La sucursal: solo cambia si el pedido la trae (el form completo). La edición
+  // rápida y Tex no la mandan y no la tocan: con evento nuevo, la base la pone en
+  // la del evento (disparador `salon_reservations_branch`).
+  const scope = await getBranchScope(slug)
+  let branchId: string | null = null
+  if (patch.branch_id) {
+    const chosen = resolveWriteBranch(scope, patch.branch_id)
+    if (!chosen.ok) return chosen.state
+    branchId = chosen.branchId
+  }
+
   if (patch.scheduled_event_id) {
-    const mismatch = await checkEventMatchesDate(
+    const check = await checkEventMatchesDate(
       supabase,
       access.tenant.id,
       patch.scheduled_event_id,
       patch.reservation_date,
+      { scope, expectedBranchId: branchId },
     )
-    if (mismatch) return mismatch
+    if (check.state) return check.state
+  }
+
+  // Con la sucursal elegida, la planta se acomoda a ella (sin plantas, ninguna).
+  // Sin sucursal en el pedido, la planta viaja tal cual la tenía la reserva.
+  let zone: SalonZone | null = patch.zone
+  if (branchId) {
+    const fixed = zoneForBranchWrite(scope, branchId, patch.zone, Boolean(patch.scheduled_event_id))
+    if (!fixed.ok) return fixed.state
+    zone = fixed.zone
   }
 
   // El socio vinculado tiene que ser de ESTE bar: la FK no lo garantiza y un
@@ -559,9 +695,10 @@ export async function updateSalonReservation(
     if (!owned) return badInput('El cliente no pertenece a este bar.', 'customer_id')
   }
 
-  const { error } = await supabase
-    .from('salon_reservations')
-    .update({
+  // Solo las reservas de las sucursales que la persona ve (un dueño, todas).
+  const { data: updatedRows, error } = await applyBranchFilter(
+    supabase.from('salon_reservations').update({
+      ...(branchId ? { branch_id: branchId } : {}),
       customer_id: patch.customer_id ?? null,
       guest_name: patch.guest_name,
       guest_phone: patch.guest_phone ?? null,
@@ -578,7 +715,7 @@ export async function updateSalonReservation(
       ...(patch.reservation_end_time_local !== undefined
         ? { reservation_end_time_local: patch.reservation_end_time_local }
         : {}),
-      zone: patch.zone,
+      zone,
       scheduled_event_id: patch.scheduled_event_id ?? null,
       estimated_guests: patch.estimated_guests,
       // Ausente ≠ vacío, igual que los avisos y el horario de fin. El form de
@@ -612,10 +749,16 @@ export async function updateSalonReservation(
       // Ausente ≠ vacío: la mesa se asigna en el servicio, desde la pantalla
       // operativa. Editar la reserva desde el form no tiene por qué borrarla.
       ...(patch.table_label !== undefined ? { table_label: patch.table_label } : {}),
-    })
+    }),
+    clampBranchFilter(null, scope),
+  )
     .eq('tenant_id', access.tenant.id)
     .eq('id', id)
+    .select('id')
   if (error) return { ok: false, message: humanizeSalonError(error.message) }
+  if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+    return { ok: false, message: 'No encontramos esa reserva en tus sucursales.' }
+  }
 
   // Re-vincular un cliente desde la edición cuenta igual que vincularlo al
   // crear: si no, la reserva queda linkeada pero el cliente sigue fuera de
@@ -1266,8 +1409,51 @@ export async function upsertScheduledEvent(
     privateGroup = (tpl as { default_private_group: boolean }).default_private_group === true
   }
 
+  // La sucursal de la fecha (docs/features/sucursales.md). En el alta, la que
+  // eligió el form o la que se mira (en «Todas» hay que elegir). En la edición
+  // solo cambia si el pedido la trae, y solo sin reservas: las reservas de una
+  // fecha son de su sucursal y no se mudan solas.
+  const scope = await getBranchScope(slug)
+  let branchId: string | null = null
+  if (!parsed.data.id || parsed.data.branch_id) {
+    const target = resolveWriteBranch(scope, parsed.data.branch_id)
+    if (!target.ok) return target.state
+    branchId = target.branchId
+  }
+  if (parsed.data.id && branchId) {
+    const { data: current, error: currentError } = await supabase
+      .from('scheduled_events')
+      .select('branch_id')
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', parsed.data.id)
+      .maybeSingle()
+    if (currentError) return { ok: false, message: humanizeSalonError(currentError.message) }
+    if (!current) return badInput('Ese evento no es de este bar.', 'id')
+    const currentBranch = (current as { branch_id: string }).branch_id
+    if (!scope.branches.some((b) => b.id === currentBranch)) {
+      return badInput('Ese evento es de una sucursal que no es tuya.', 'branch_id')
+    }
+    if (currentBranch === branchId) {
+      branchId = null
+    } else {
+      const { count: linked, error: linkedError } = await supabase
+        .from('salon_reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', access.tenant.id)
+        .eq('scheduled_event_id', parsed.data.id)
+      if (linkedError) return { ok: false, message: humanizeSalonError(linkedError.message) }
+      if ((linked ?? 0) > 0) {
+        return badInput(
+          'Esta fecha ya tiene reservas: no se puede pasar a otra sucursal. Creala de nuevo en la otra sucursal.',
+          'branch_id',
+        )
+      }
+    }
+  }
+
   const payload = {
     tenant_id: access.tenant.id,
+    ...(branchId ? { branch_id: branchId } : {}),
     template_id: parsed.data.template_id,
     name_override: parsed.data.name_override ?? null,
     event_date: parsed.data.event_date,
@@ -1306,8 +1492,10 @@ export async function upsertScheduledEvent(
     entity: 'scheduled_event',
     entityId: id ?? null,
     // Sacar una fecha de los reportes del dueño queda registrado, y quién.
-    payload:
-      privateGroup === undefined ? undefined : { private_group: privateGroup, role: access.role },
+    payload: {
+      ...(privateGroup === undefined ? {} : { private_group: privateGroup, role: access.role }),
+      ...(branchId ? { branch_id: branchId } : {}),
+    },
   })
 
   revalidatePath(`/${slug}/eventos/programados`)
@@ -1780,9 +1968,15 @@ const MARK_PAID_BATCH = 500
 export async function markCommissionRangePaid(
   slug: string,
   input: FormData | Record<string, unknown>,
+  /**
+   * El filtro con el que se dibujó la liquidación (`useBranchScope().filter`): mirando una sucursal se paga lo de
+   * esa sucursal y nada más. Se recorta a las sucursales de la persona; sin él, todo lo que ve.
+   */
+  branch?: BranchFilter | null,
 ): Promise<ActionState> {
   const access = await authorize(slug, OWNER_ONLY)
   if (!access) return noAccess()
+  const branchFilter = clampBranchFilter(branch ?? null, await getBranchScope(slug))
 
   const parsed = markPaidRangeSchema.safeParse(asObject(input))
   if (!parsed.success) {
@@ -1811,6 +2005,7 @@ export async function markCommissionRangePaid(
     managerId,
     from: period.from,
     to: payableTo,
+    branch: branchFilter,
   })
   if (pending.ids.length === 0) {
     return { ok: true, message: 'No había nada pendiente en ese período.' }
@@ -1852,6 +2047,8 @@ export async function markCommissionRangePaid(
       // Solo cuando el borde de arriba se topeó contra hoy: así se lee de una
       // hasta dónde se pagó de verdad, sin tener que deducirlo de la fecha.
       ...(payableTo !== period.to ? { to_effective: payableTo } : {}),
+      // Qué sucursales se liquidaron (null = todo el bar).
+      branch_ids: branchFilter.ids,
       count_marked: marked,
       count_read: pending.ids.length,
       cents_read: pending.totalCents,
@@ -1874,6 +2071,7 @@ export async function markCommissionRangePaid(
           managerId,
           from: period.from,
           to: payableTo,
+          branch: branchFilter,
         })
 
   const truncated = pending.truncated

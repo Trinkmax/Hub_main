@@ -77,6 +77,7 @@ function reservation(over: Partial<ReservationWithJoins>): ReservationWithJoins 
   return {
     id: 'r',
     tenant_id: 't',
+    branch_id: 'b',
     customer_id: null,
     guest_name: 'Nombre',
     guest_phone: null,

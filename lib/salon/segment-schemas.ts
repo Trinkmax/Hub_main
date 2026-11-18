@@ -51,6 +51,12 @@ const warnAtField = z
 
 const WARN_OVER_CAP = 'El aviso tiene que ser menor o igual al cupo'
 
+/**
+ * De qué sucursal es el cupo que se guarda (docs/features/sucursales.md). Opcional en el borde: sin ella vale la
+ * que se está mirando (`branchForWrite`); la pantalla de Configuración la manda siempre.
+ */
+const branchIdField = z.uuid('Sucursal inválida').optional()
+
 /** '' o solo espacios → null: una nota vacía es "sin nota", no un string vacío en la DB. */
 function optionalText(max: number) {
   return z
@@ -95,6 +101,7 @@ export const segmentSettingInputSchema = z.object({
  */
 export const segmentConfigSaveSchema = z
   .object({
+    branch_id: branchIdField,
     weekly: z.array(segmentWeeklyCellSchema).max(21),
     settings: z.array(segmentSettingInputSchema).max(3),
   })
@@ -119,6 +126,7 @@ export const segmentConfigSaveSchema = z
 /** Cupo especial de un servicio en una fecha ("abrimos la terraza", feriado). */
 export const segmentOverrideSchema = z
   .object({
+    branch_id: branchIdField,
     override_date: isoDaySchema,
     segment: configurableSegmentKeySchema,
     capacity: capacityField,
@@ -132,8 +140,23 @@ export const segmentOverrideSchema = z
   })
 
 export const segmentOverrideKeySchema = z.object({
+  branch_id: branchIdField,
   override_date: isoDaySchema,
   segment: configurableSegmentKeySchema,
+})
+
+/**
+ * El cupo general de una sucursal SIN plantas (sus sillas). La principal no: su cupo general sale de sus plantas
+ * (Planta Alta + Planta Baja). Vacío = sin cargar (cada servicio sin tope hasta que se cargue).
+ */
+export const branchSeatCapacitySchema = z.object({
+  branch_id: z.uuid('Sucursal inválida'),
+  seat_capacity: z
+    .number({ error: 'Entre 1 y 2000' })
+    .int('Entre 1 y 2000')
+    .min(1, 'Entre 1 y 2000')
+    .max(2000, 'Entre 1 y 2000')
+    .nullable(),
 })
 
 /**

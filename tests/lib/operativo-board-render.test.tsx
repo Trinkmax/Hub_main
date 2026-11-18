@@ -51,6 +51,7 @@ function reservation(over: Partial<ReservationWithJoins>): ReservationWithJoins 
   return {
     id: 'r',
     tenant_id: 't',
+    branch_id: 'b',
     customer_id: null,
     guest_name: 'Nombre',
     guest_phone: null,
@@ -119,6 +120,7 @@ function scheduledEvent(over: Partial<ScheduledEventWithTemplate>): ScheduledEve
   return {
     id: 'ev',
     tenant_id: 't',
+    branch_id: 'b',
     template_id: 'tpl',
     name_override: null,
     event_date: '2026-09-05',
@@ -247,12 +249,8 @@ describe('OperativoBoard (SSR)', () => {
         date: '2026-09-05',
         today: '2026-09-05',
         initialReservations: NIGHT,
-        initialCapacity: [
-          { bucket: 'zone:planta_alta', used: 44, capacity: 60, available: 16 },
-          { bucket: 'zone:planta_baja', used: 26, capacity: 80, available: 54 },
-          { bucket: 'zone:event_floating', used: 22, capacity: 0, available: 0 },
-          { bucket: 'event:ev', used: 22, capacity: 140, available: 118 },
-        ],
+        branchFilter: { ids: ['b'] },
+        capacityHidden: false,
         initialSegmentCaps: SAT_CAPS,
         initialEvents: [scheduledEvent({})],
         initialAwards: [
@@ -368,7 +366,8 @@ describe('OperativoBoard (SSR)', () => {
           at('x1', { estimated_guests: 10, status: 'cancelled' }),
           at('x2', { estimated_guests: 6, status: 'no_show' }),
         ],
-        initialCapacity: [],
+        branchFilter: { ids: ['b'] },
+        capacityHidden: false,
         initialSegmentCaps: {
           breakfast: weekly(130),
           lunch: weekly(70, { at: 50, note: 'Conviene abrir la terraza' }),
@@ -421,7 +420,8 @@ describe('OperativoBoard (SSR)', () => {
       tenantSlug: 'hub',
       tenantId: 't',
       role: 'host' as const,
-      initialCapacity: [],
+      branchFilter: { ids: ['b'] },
+      capacityHidden: false,
       initialSegmentCaps: SAT_CAPS,
       initialEvents: [],
       initialAwards: [],
@@ -461,6 +461,7 @@ describe('CapacityHeader del salón (SSR)', () => {
       '@/app/(salon)/[tenantSlug]/salon/reservas-operativo/_components/capacity-header'
     )
     const { computeDaySegments } = await import('@/lib/salon/segments')
+    const { eventUsedById } = await import('@/lib/salon/day-counter')
     const event = scheduledEvent({})
     const segments = computeDaySegments({
       date: '2026-09-05',
@@ -472,11 +473,8 @@ describe('CapacityHeader del salón (SSR)', () => {
       createElement(CapacityHeader, {
         segments,
         focus: 'dinner',
-        capacity: [
-          { bucket: 'zone:planta_alta', used: 44, capacity: 60, available: 16 },
-          { bucket: 'zone:planta_baja', used: 26, capacity: 80, available: 54 },
-          { bucket: 'event:ev', used: 22, capacity: 140, available: 118 },
-        ],
+        // La gente del evento sale de la misma cuenta por servicio (ya no de la RPC por bar).
+        usedByEvent: eventUsedById(segments),
         events: [event],
       }),
     )
@@ -507,7 +505,7 @@ describe('CapacityHeader del salón (SSR)', () => {
           caps: SAT_CAPS,
         }),
         focus: 'dinner',
-        capacity: [],
+        usedByEvent: new Map(),
         events: [],
       }),
     )

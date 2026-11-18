@@ -24,6 +24,8 @@ import { useForm } from 'react-hook-form'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { CakeOptionPicker } from '@/components/reservations/cake-option-picker'
 import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
@@ -50,6 +52,7 @@ import {
   SERVICE_ALERTS,
   type ServiceAlert,
 } from '@/lib/salon/alerts'
+import { branchHasFloors } from '@/lib/salon/branch-scope'
 import { type ReservationReturnTo, reservationSavedHref } from '@/lib/salon/calendar-links'
 import { fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import {
@@ -58,9 +61,11 @@ import {
   type FloorZone,
   floorLabel,
   isEventReservation,
+  NO_FLOOR_LABEL,
   pickEventTile,
   pickFloorTile,
   placeSelection,
+  zoneForBranch,
 } from '@/lib/salon/event-floor'
 import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
 import { parseInstagramHandle } from '@/lib/salon/instagram'
@@ -135,6 +140,13 @@ type Props = {
    * lo vuelve a pedir y guardar nunca depende de esto).
    */
   initialSnapshot: DaySegmentsSnapshot | null
+  /**
+   * La sucursal con la que arranca el form (docs/features/sucursales.md): en la edición, la de la reserva; en el
+   * alta dentro de un evento, la del evento. Sin ella, la que se mira (en «Todas» hay que elegir). El cupo, los
+   * eventos y las plantas que se ofrecen son los de esta sucursal: `initialSnapshot` e `initialEventsForDate`
+   * llegan de ella.
+   */
+  initialBranchId?: string | null
   /**
    * Estado de la reserva editada. Una cancelada o "no vino" no ocupa lugar:
    * sin esto la proyección la sumaba y editarle el comentario en una cena
@@ -268,6 +280,7 @@ export function ReservationForm({
   initialDate,
   today,
   initialSnapshot,
+  initialBranchId,
   reservationStatus,
   managers,
   templates: templatesProp,
@@ -284,6 +297,20 @@ export function ReservationForm({
   customerServiceAlerts,
 }: Props) {
   const router = useRouter()
+  const branchContext = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  // La sucursal con la que se dibujó el form: a la que corresponden el cupo y los
+  // eventos que vinieron del servidor.
+  const startBranchId = initialBranchId ?? viewedBranchId
+  const branchesById = branchContext?.byId
+  // Sin sucursales (un bar que todavía no las tiene) vale como siempre: con plantas.
+  const floorsOf = useCallback(
+    (id: string | null | undefined) => {
+      const branch = id ? branchesById?.get(id) : undefined
+      return branch ? branchHasFloors(branch) : !branchesById || branchesById.size === 0
+    },
+    [branchesById],
+  )
   const [templates, setTemplates] = useState<ScheduledEventTemplateRow[]>(templatesProp)
   const [submitting, startSubmit] = useTransition()
   const [, startSnapshot] = useTransition()
@@ -329,7 +356,9 @@ export function ReservationForm({
       reservation_date: initialDate,
       reservation_time_local: initialSettings.dinner.defaultTime,
       reservation_end_time_local: '',
-      zone: 'planta_alta',
+      // En una sucursal sin plantas (el Cerro) la reserva no lleva planta.
+      zone: floorsOf(startBranchId) ? 'planta_alta' : null,
+      branch_id: startBranchId ?? undefined,
       scheduled_event_id: undefined,
       requested_template_id: undefined,
       estimated_guests: 2,
@@ -416,14 +445,28 @@ export function ReservationForm({
     form.setValue('primary_manager_id', saved, { shouldValidate: true })
   }, [mode, lastManagerId, legacyLastManagerKey, managers, initialValues?.primary_manager_id, form])
 
-  // Refetch eventos cuando cambia la fecha
+  // La sucursal elegida: sus eventos, su cupo y sus plantas. Sin elegir («Todas»),
+  // no hay eventos que ofrecer ni cupo que medir hasta que se elija.
+  const branchId = values.branch_id ?? null
+  const hasFloors = floorsOf(branchId)
+  const needsBranch = Boolean(branchContext?.scope.multi) && !branchId
+
+  // Refetch eventos cuando cambia la fecha o la sucursal
   useEffect(() => {
-    if (values.reservation_date === initialDate) {
+    if (values.reservation_date === initialDate && branchId === (startBranchId ?? null)) {
       setEventsForDate(initialEventsForDate)
       return
     }
+    if (!branchId && branchContext?.scope.multi) {
+      setEventsForDate([])
+      return
+    }
     startEvents(async () => {
-      const r = await fetchScheduledEventsForDate(tenantSlug, values.reservation_date)
+      const r = await fetchScheduledEventsForDate(
+        tenantSlug,
+        values.reservation_date,
+        branchId ? { ids: [branchId] } : undefined,
+      )
       if (r.ok) {
         setEventsForDate(r.events)
         setEventDates((prev) => {
@@ -433,7 +476,15 @@ export function ReservationForm({
         })
       }
     })
-  }, [values.reservation_date, initialDate, initialEventsForDate, tenantSlug])
+  }, [
+    values.reservation_date,
+    initialDate,
+    initialEventsForDate,
+    tenantSlug,
+    branchId,
+    startBranchId,
+    branchContext?.scope.multi,
+  ])
 
   // Pide el cupo de un día. Guard de respuesta vieja: si la anfitriona toca
   // "Mañana" y enseguida "Viernes", la respuesta de mañana no puede pisar la
@@ -441,12 +492,12 @@ export function ReservationForm({
   // «Reintentar» del medidor: limpiar el error al arrancar vuelve a mostrar el
   // skeleton mientras se pide, así el reintento se nota.
   const requestSnapshot = useCallback(
-    (date: string) => {
+    (date: string, branch: string | null) => {
       const request = ++snapshotRequest.current
       setSnapshotFailedFor(null)
       startSnapshot(async () => {
         try {
-          const r = await fetchDaySegments(tenantSlug, date)
+          const r = await fetchDaySegments(tenantSlug, date, branch)
           if (request !== snapshotRequest.current) return
           if (r.ok) {
             setSnapshot(r.data)
@@ -463,18 +514,31 @@ export function ReservationForm({
     [tenantSlug],
   )
 
-  // Cupo del día cuando cambia la fecha. La fecha inicial usa la foto que vino
-  // del server.
+  // Cupo del día cuando cambia la fecha o la sucursal. La fecha inicial usa la
+  // foto que vino del server (que es de la sucursal con la que arrancó el form).
   useEffect(() => {
     const date = values.reservation_date
     if (!date || !ISO_DAY_RE.test(date)) return
-    if (initialSnapshot && initialSnapshot.date === date) {
+    if (initialSnapshot && initialSnapshot.date === date && branchId === (startBranchId ?? null)) {
       snapshotRequest.current += 1
       setSnapshot(initialSnapshot)
       return
     }
-    requestSnapshot(date)
-  }, [values.reservation_date, initialSnapshot, requestSnapshot])
+    // Sin sucursal elegida no hay cupo que medir: el medidor espera.
+    if (!branchId && branchContext?.scope.multi) {
+      snapshotRequest.current += 1
+      setSnapshot(null)
+      return
+    }
+    requestSnapshot(date, branchId)
+  }, [
+    values.reservation_date,
+    initialSnapshot,
+    requestSnapshot,
+    branchId,
+    startBranchId,
+    branchContext?.scope.multi,
+  ])
 
   // (Acá había un efecto que borraba `scheduled_event_id` apenas la zona era
   // una planta. Con eso una reserva de evento no podía tener planta, y abrir
@@ -612,6 +676,22 @@ export function ReservationForm({
 
   const timeField = form.register('reservation_time_local')
 
+  // Cambiar de sucursal: un evento es de una sucursal, así que la reserva sale del
+  // evento elegido (la lista se rearma con los de la nueva), y la planta se
+  // acomoda (sin plantas, ninguna).
+  function changeBranch(next: string) {
+    if (next === branchId) return
+    form.setValue('branch_id', next, { shouldValidate: true })
+    form.clearErrors('branch_id')
+    form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
+    form.clearErrors('scheduled_event_id')
+    form.setValue(
+      'zone',
+      zoneForBranch({ zone: values.zone, scheduled_event_id: null }, floorsOf(next)),
+      { shouldValidate: true },
+    )
+  }
+
   // Preview de comisión client-side
   const commissionPreviewCents = useMemo(() => {
     const primary = managers.find((m) => m.id === values.primary_manager_id)
@@ -744,7 +824,7 @@ export function ReservationForm({
     })
     let base = snapshot
     try {
-      const r = await fetchDaySegments(tenantSlug, data.reservation_date)
+      const r = await fetchDaySegments(tenantSlug, data.reservation_date, data.branch_id ?? null)
       if (r.ok) {
         base = r.data
         // El medidor pasa a mostrar los mismos números que la confirmación.
@@ -766,6 +846,12 @@ export function ReservationForm({
         ? (eventsForDate.find((e) => e.id === raw.scheduled_event_id) ?? null)
         : null
       const data = { ...raw, meal_type: mealTypeToSave(raw.meal_type, event) }
+      // Mirando «Todas» hay que decir dónde: nunca se guarda una reserva sin sucursal.
+      if (needsBranch) {
+        form.setError('branch_id', { message: 'Elegí en qué sucursal.' })
+        toast.error('Elegí en qué sucursal es la reserva.')
+        return
+      }
       if (eventDateMismatch) {
         form.setError('scheduled_event_id', {
           message: 'La fecha no coincide con el evento.',
@@ -793,6 +879,7 @@ export function ReservationForm({
         guest_phone: 'Teléfono',
         guest_email: 'Email',
         guest_instagram: 'Instagram',
+        branch_id: 'Sucursal',
         meal_type: 'Servicio',
         reservation_date: 'Fecha',
         reservation_time_local: 'Horario',
@@ -840,6 +927,15 @@ export function ReservationForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      {/* Sucursal: arriba de todo porque define el cupo, los eventos y las plantas
+          que se ofrecen. Con una sola sucursal no se ve (va en un campo oculto). */}
+      <BranchField
+        value={branchId}
+        onChange={changeBranch}
+        error={form.formState.errors.branch_id?.message}
+        disabled={submitting}
+      />
+
       {/* Cliente */}
       <FieldGroup title="Cliente" icon={UserIcon}>
         <CustomerCombobox
@@ -1011,7 +1107,8 @@ export function ReservationForm({
           value={selectedSegment}
           settings={settings}
           segments={daySegments?.segments ?? null}
-          segmentsFailed={snapshotFailed}
+          // Sin sucursal elegida no hay cupo: el «—» en vez de un esqueleto eterno.
+          segmentsFailed={snapshotFailed || needsBranch}
           lockedSegment={lockedSegment}
           onSelect={selectSegment}
           timeMismatch={timeMismatch}
@@ -1032,7 +1129,27 @@ export function ReservationForm({
           evento elegido aparece abajo, opcional, en qué planta se sientan. */}
       <FieldGroup title="Dónde se sienta" icon={Users}>
         <div className="grid gap-2 sm:grid-cols-3">
-          {FLOOR_ZONES.map((z) => {
+          {/* Una sucursal sin plantas (el Cerro) reserva en el salón, sin planta. */}
+          {!hasFloors ? (
+            <button
+              type="button"
+              aria-pressed={!hasEvent}
+              onClick={() => {
+                form.setValue('zone', null, { shouldValidate: true })
+                form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
+                form.clearErrors('scheduled_event_id')
+              }}
+              className={cn(ZONE_TILE, !hasEvent ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
+            >
+              <span>{NO_FLOOR_LABEL}</span>
+              {projection ? (
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {projection.before.people} en {SEGMENT_WITH_ARTICLE[projection.segment]}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+          {(hasFloors ? FLOOR_ZONES : []).map((z) => {
             // Activa solo como reserva normal: una de Pizza libre en Planta
             // Alta muestra activo el evento, y la planta en la pregunta de abajo.
             const isActive = place.floorTile === z
@@ -1075,8 +1192,9 @@ export function ReservationForm({
               load={eventLoads[e.id] ?? null}
               onSelect={() => {
                 // Entra al evento. La planta arranca "Sin definir", salvo que
-                // ya fuera este evento (volver a tocarlo no la borra).
-                const next = pickEventTile(values, e.id)
+                // ya fuera este evento (volver a tocarlo no la borra). Sin
+                // plantas, la reserva de evento tampoco lleva planta.
+                const next = pickEventTile(values, e.id, hasFloors)
                 form.setValue('zone', next.zone, { shouldValidate: true })
                 form.setValue('scheduled_event_id', next.scheduled_event_id, {
                   shouldValidate: true,
@@ -1104,7 +1222,7 @@ export function ReservationForm({
         {/* La planta DENTRO del evento ("si lo requiere", pidió el dueño): la
             reserva sigue siendo del evento y cuenta en su cupo; esto solo dice
             dónde se sienta. Sin elegir queda "Sin ubicar", como siempre. */}
-        {hasEvent ? (
+        {hasEvent && hasFloors ? (
           <EventFloorChooser
             value={place.eventFloor ?? 'event_floating'}
             byZone={projection?.before.byZone ?? null}
@@ -1112,7 +1230,11 @@ export function ReservationForm({
             onChange={(z) => form.setValue('zone', z, { shouldValidate: true })}
           />
         ) : null}
-        {eventsForDate.length === 0 && !eventDateMismatch ? (
+        {needsBranch ? (
+          <p className="text-xs text-muted-foreground">
+            Elegí la sucursal arriba para ver sus eventos y su cupo.
+          </p>
+        ) : eventsForDate.length === 0 && !eventDateMismatch ? (
           <p className="text-xs text-muted-foreground">
             Sin eventos programados para el {ddMM(values.reservation_date)}. Si la reserva es para
             un evento,{' '}
@@ -1165,9 +1287,14 @@ export function ReservationForm({
                   // Sacarla del evento: vuelve a una planta para que el form
                   // quede válido aunque ese día no haya otros eventos. Si ya
                   // tenía planta elegida dentro del evento, se queda en esa.
-                  const next = pickFloorTile(
-                    values.zone === 'event_floating' ? 'planta_alta' : values.zone,
-                  )
+                  // Sin plantas, al salón.
+                  const next = hasFloors
+                    ? pickFloorTile(
+                        values.zone && values.zone !== 'event_floating'
+                          ? values.zone
+                          : 'planta_alta',
+                      )
+                    : { zone: null, scheduled_event_id: undefined }
                   form.setValue('zone', next.zone, { shouldValidate: true })
                   form.setValue('scheduled_event_id', next.scheduled_event_id, {
                     shouldValidate: true,
@@ -1306,11 +1433,13 @@ export function ReservationForm({
                 ? 'inactive'
                 : !ISO_DAY_RE.test(values.reservation_date ?? '')
                   ? 'no-date'
-                  : snapshotFailed
-                    ? 'error'
-                    : 'loading'
+                  : needsBranch
+                    ? 'no-branch'
+                    : snapshotFailed
+                      ? 'error'
+                      : 'loading'
             }
-            onRetry={() => requestSnapshot(values.reservation_date)}
+            onRetry={() => requestSnapshot(values.reservation_date, branchId)}
           />
         </div>
       </FieldGroup>
@@ -1940,6 +2069,7 @@ function BringsItemControl({
 
 const METER_FALLBACK_TEXT = {
   'no-date': 'Elegí la fecha para ver el cupo del servicio.',
+  'no-branch': 'Elegí la sucursal para ver el cupo del servicio.',
   error: 'No pudimos leer el cupo de ese día. Igual podés guardar.',
   inactive: 'Esta reserva está cancelada o marcada como que no vino: no ocupa lugar en el cupo.',
 } as const
@@ -1957,7 +2087,7 @@ function SegmentMeter({
   onRetry,
 }: {
   projection: SegmentProjection | null
-  fallback: 'loading' | 'error' | 'no-date' | 'inactive'
+  fallback: 'loading' | 'error' | 'no-date' | 'no-branch' | 'inactive'
   /** Vuelve a pedir el cupo del día. Sin esto, la única salida era cambiar de fecha y volver. */
   onRetry: () => void
 }) {
