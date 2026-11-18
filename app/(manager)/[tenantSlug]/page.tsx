@@ -1,58 +1,57 @@
-import { ArrowDownRight, ArrowUpRight, Banknote, Receipt, Sparkles, Users } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, PartyPopper, Sparkles, UserCheck, Users } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { Sparkline } from '@/components/charts/sparkline'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
+import { formatCentsShort } from '@/lib/money/format'
+import { isFeatureEnabled } from '@/lib/platform/features'
+import { serviceDayAt } from '@/lib/pos/cash/screen'
+import { getSalesDays } from '@/lib/pos/today/queries'
+import type { SalesDay } from '@/lib/pos/today/types'
+import { todayInCordoba } from '@/lib/salon/date-presets'
 import { getTodaySalonOverview } from '@/lib/salon/queries'
-import { getDailyMetrics, getKpis, getTopCustomersBySpent } from '@/lib/stats/queries'
+import { pulseDelta } from '@/lib/stats/pulse'
+import { getBarPulse, getCustomerGrowth, listUpcomingEvents } from '@/lib/stats/pulse-queries'
+import { getKpis } from '@/lib/stats/queries'
 import { createClient } from '@/lib/supabase/server'
 import { homePathForRole, requireTenantAccess } from '@/lib/tenant'
-import type { TenantRole } from '@/lib/tenant/types'
+import type { Tenant } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
+import { PeopleChart } from '@/components/charts/people-chart'
+import { PosTodayCard } from './_components/pos-today-card'
 import { QuickActions } from './_components/quick-actions'
 import { TodaySalonOverview } from './_components/today-salon-overview'
-import { TopCustomersCard } from './_components/top-customers-card'
-import { RevenueChart } from './estadisticas/_components/revenue-chart'
-
-function todayCordoba(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Cordoba',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
-}
+import { UpcomingEventsCard } from './_components/upcoming-events-card'
 
 export const dynamic = 'force-dynamic'
 
+/** Los días que mira el Resumen hacia atrás (y otros tantos antes, para comparar). */
+const WINDOW_DAYS = 30
+
 const numberFmt = new Intl.NumberFormat('es-AR')
 
-function fmtCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
-}
-
 function greet(): string {
-  const hour = new Date().getHours()
+  const hour = Number(
+    new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'America/Argentina/Cordoba',
+      hour: 'numeric',
+      hour12: false,
+    }).format(new Date()),
+  )
   if (hour < 6) return 'Buenas noches'
   if (hour < 13) return 'Buen día'
   if (hour < 20) return 'Buenas tardes'
   return 'Buenas noches'
 }
 
-function diffPct(curr: number, prev: number): number | null {
-  if (prev === 0) return curr === 0 ? 0 : null
-  return ((curr - prev) / prev) * 100
-}
-
 function deltaLabel(pct: number | null): {
   label: string
   tone: 'positive' | 'negative' | 'muted'
 } {
-  if (pct === null) return { label: 'sin base', tone: 'muted' }
-  const rounded = Math.round(pct)
-  if (rounded === 0) return { label: '0%', tone: 'muted' }
-  if (rounded > 0) return { label: `+${rounded}%`, tone: 'positive' }
-  return { label: `${rounded}%`, tone: 'negative' }
+  if (pct === null) return { label: 'sin comparación', tone: 'muted' }
+  if (pct === 0) return { label: 'igual', tone: 'muted' }
+  if (pct > 0) return { label: `+${pct}%`, tone: 'positive' }
+  return { label: `${pct}%`, tone: 'negative' }
 }
 
 async function getOnboardingStatus(
@@ -60,9 +59,9 @@ async function getOnboardingStatus(
   tenantSettings: Record<string, unknown> | null,
 ) {
   const supabase = await createClient()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInCordoba()
 
-  const [templates, scheduled, reservations, closed] = await Promise.all([
+  const [templates, scheduled, reservations, attended] = await Promise.all([
     supabase
       .from('scheduled_event_templates')
       .select('id', { head: true, count: 'exact' })
@@ -80,9 +79,7 @@ async function getOnboardingStatus(
       .select('id', { head: true, count: 'exact' })
       .eq('tenant_id', tenantId)
       .limit(1),
-    // "Se atendió al menos una reserva". Desde que el salón marca sólo "Llegó"
-    // (rediseño del panel de mozos), esperar `closed` dejaba este paso del
-    // checklist sin completar para siempre.
+    // «Ya se recibió a alguien»: alcanza con que una reserva esté marcada «Llegó».
     supabase
       .from('salon_reservations')
       .select('id', { head: true, count: 'exact' })
@@ -104,10 +101,36 @@ async function getOnboardingStatus(
     templatesReady: (templates.count ?? 0) > 0,
     eventScheduledReady: (scheduled.count ?? 0) > 0,
     firstReservationReady: (reservations.count ?? 0) > 0,
-    firstClosedReady: (closed.count ?? 0) > 0,
+    firstArrivalReady: (attended.count ?? 0) > 0,
   }
 }
 
+/**
+ * Lo vendido hoy en el salón, solo si el bar usa el punto de venta (para un superadmin en un bar que
+ * no lo tiene sería un cero que no dice nada). Si la lectura falla, el Resumen va sin la ficha.
+ */
+async function posSalesToday(
+  tenant: Pick<Tenant, 'id' | 'timezone'>,
+  usesPos: boolean,
+): Promise<{ shown: boolean; sales: SalesDay | null }> {
+  if (!usesPos) return { shown: false, sales: null }
+  const timeZone = tenant.timezone || 'America/Argentina/Cordoba'
+  // El día de servicio: hasta las 5 de la mañana sigue siendo la noche anterior.
+  const day = serviceDayAt(new Date().toISOString(), timeZone) ?? todayInCordoba()
+  const rows = await getSalesDays(tenant.id, day, day, null)
+  if (rows === null) return { shown: false, sales: null }
+  return { shown: true, sales: rows.find((row) => row.day === day) ?? null }
+}
+
+/**
+ * El Resumen: lo primero que ve el dueño. Cómo viene hoy (reservas, gente, eventos de la noche y,
+ * con punto de venta, lo vendido) y cómo viene el mes (la gente que vino de verdad, contra el mes
+ * anterior), más lo que viene en el calendario.
+ *
+ * Hasta el 18/11/2026 mostraba «visitas» y «facturación», que salen solo de los consumos con puntos
+ * cargados (uno o dos por día), y su botón principal era «Cerrar mesa», una pantalla del sistema
+ * anterior. Esos números siguen en Estadísticas, con su nombre: consumos del club.
+ */
 export default async function TenantHomePage({
   params,
 }: {
@@ -117,156 +140,133 @@ export default async function TenantHomePage({
   const { tenant, role } = await requireTenantAccess(tenantSlug)
   // El home es del dueño: cualquier otro rol va al suyo (backstop del proxy).
   if (role !== 'owner') redirect(homePathForRole(role, tenantSlug))
-  const isOwner = role === 'owner'
 
-  // Si el owner no completó el onboarding wizard, redirigirlo allí.
-  if (isOwner) {
-    const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    const onboardingFlag = (settings.onboarding ?? {}) as { completed?: boolean }
-    if (!onboardingFlag.completed) {
-      redirect(`/${tenantSlug}/onboarding`)
-    }
-  }
-
+  // Si el dueño no completó la configuración inicial, va ahí primero.
   const tenantSettings = (tenant.settings ?? {}) as Record<string, unknown>
-  const today = todayCordoba()
+  const onboardingFlag = (tenantSettings.onboarding ?? {}) as { completed?: boolean }
+  if (!onboardingFlag.completed) redirect(`/${tenantSlug}/onboarding`)
 
-  const [kpis, daily60, topCustomers, onboarding, todayOverview] = await Promise.all([
+  const today = todayInCordoba()
+  const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString()
+
+  const [pulse, customers, club, upcoming, onboarding, todayOverview, pos] = await Promise.all([
+    getBarPulse({ tenantId: tenant.id, today, windowDays: WINDOW_DAYS }),
+    getCustomerGrowth({ tenantId: tenant.id, since }),
     getKpis(tenant.id),
-    getDailyMetrics(tenant.id, 60),
-    isOwner ? getTopCustomersBySpent(tenant.id, 5) : Promise.resolve([]),
-    isOwner ? getOnboardingStatus(tenant.id, tenantSettings) : Promise.resolve(null),
+    listUpcomingEvents({ tenantId: tenant.id, today, days: 7 }),
+    getOnboardingStatus(tenant.id, tenantSettings),
     getTodaySalonOverview({ tenantId: tenant.id, date: today }),
+    posSalesToday(tenant, isFeatureEnabled(tenant, 'pos')),
   ])
 
-  const last30 = daily60.slice(-30)
-  const prev30 = daily60.slice(0, Math.max(0, daily60.length - 30))
-
-  const visitsLast = last30.reduce((acc, d) => acc + (d.visits ?? 0), 0)
-  const visitsPrev = prev30.reduce((acc, d) => acc + (d.visits ?? 0), 0)
-  const revenueLast = last30.reduce((acc, d) => acc + Number(d.revenue_cents ?? 0), 0)
-  const revenuePrev = prev30.reduce((acc, d) => acc + Number(d.revenue_cents ?? 0), 0)
-  const newLast = last30.reduce((acc, d) => acc + (d.customers_new ?? 0), 0)
-  const newPrev = prev30.reduce((acc, d) => acc + (d.customers_new ?? 0), 0)
-
-  const visitsDelta = deltaLabel(diffPct(visitsLast, visitsPrev))
-  const revenueDelta = deltaLabel(diffPct(revenueLast, revenuePrev))
-  const newCustomersDelta = deltaLabel(diffPct(newLast, newPrev))
-
-  const visitsSparkData = last30.map((d) => ({ value: d.visits ?? 0 }))
-  const revenueSparkData = last30.map((d) => ({ value: Number(d.revenue_cents ?? 0) }))
-  const activitySparkData = last30.map((d) => ({ value: d.customers_active ?? 0 }))
-
-  const chartData = last30.map((d) => ({
-    day: d.day,
-    visits: d.visits ?? 0,
-    revenue_cents: Number(d.revenue_cents ?? 0),
-  }))
-
-  const showOnboarding = isOwner && onboarding !== null
+  const { current, previous } = pulse
+  const coversDelta = deltaLabel(pulseDelta(current.covers, previous.covers))
+  const attendancePct = current.attendance === null ? null : Math.round(current.attendance * 100)
+  const sparkData = pulse.days.map((day) => ({ value: day.covers }))
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={`${greet()}, ${tenant.name}`}
         title="Resumen"
-        description="Lo que pasó en tu bar en los últimos 30 días."
-        actions={<QuickActions tenantSlug={tenantSlug} role={role as TenantRole} />}
+        description="Cómo viene hoy y cómo viene el mes."
+        actions={<QuickActions tenantSlug={tenantSlug} />}
       />
+
+      {pos.shown ? <PosTodayCard tenantSlug={tenantSlug} sales={pos.sales} /> : null}
 
       <TodaySalonOverview tenantSlug={tenantSlug} overview={todayOverview} />
 
-      <section aria-label="Indicadores clave" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label={`Los últimos ${WINDOW_DAYS} días`}
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <StatCard
           icon={Users}
           iconClassName="text-primary"
-          label="Clientes"
-          numberValue={kpis.customers_total}
+          label={`Gente que vino · ${WINDOW_DAYS} días`}
+          numberValue={current.covers}
           numberFormatKind="integer"
-          hint={newLast > 0 ? `+${numberFmt.format(newLast)} nuevos en 30d` : 'Sin altas en 30d'}
-          delta={newCustomersDelta.label}
-          deltaTone={newCustomersDelta.tone}
+          hint={
+            current.arrived > 0
+              ? `En ${numberFmt.format(current.arrived)} ${current.arrived === 1 ? 'reserva' : 'reservas'}`
+              : 'Todavía no hay reservas marcadas «Llegó»'
+          }
+          delta={<DeltaContent label={coversDelta.label} tone={coversDelta.tone} />}
+          deltaTone={coversDelta.tone}
+          sparkline={
+            <Sparkline data={sparkData} dataKey="value" color="var(--chart-1)" height={48} />
+          }
+        />
+        <StatCard
+          icon={UserCheck}
+          iconClassName="text-success"
+          label="Asistencia"
+          value={attendancePct === null ? '—' : `${attendancePct}%`}
+          hint={
+            <>
+              {attendancePct === null
+                ? 'Se calcula con las reservas marcadas'
+                : current.noShows === 0
+                  ? 'Ninguna marcada «No vino»'
+                  : `${numberFmt.format(current.noShows)} no ${current.noShows === 1 ? 'vino' : 'vinieron'}`}
+              {current.unmarked > 0 ? (
+                <span className="mt-0.5 block text-(--warning-text)">
+                  {numberFmt.format(current.unmarked)}{' '}
+                  {current.unmarked === 1 ? 'reserva quedó' : 'reservas quedaron'} sin marcar
+                </span>
+              ) : null}
+            </>
+          }
         />
         <StatCard
           icon={Sparkles}
           iconClassName="text-info"
-          label="Activos 30d"
-          numberValue={kpis.customers_active_30d}
+          label="Clientes"
+          numberValue={customers.total}
           numberFormatKind="integer"
           hint={
-            kpis.customers_total > 0
-              ? `${Math.round((kpis.customers_active_30d / kpis.customers_total) * 100)}% del total`
-              : 'Aún sin clientes'
-          }
-          sparkline={
-            <Sparkline
-              data={activitySparkData}
-              dataKey="value"
-              color="var(--chart-2)"
-              height={48}
-            />
+            customers.added > 0
+              ? `+${numberFmt.format(customers.added)} en ${WINDOW_DAYS} días`
+              : `Sin altas en ${WINDOW_DAYS} días`
           }
         />
         <StatCard
-          icon={Receipt}
+          icon={PartyPopper}
           iconClassName="text-warning"
-          label="Visitas 30d"
-          numberValue={kpis.visits_30d}
+          label={`Consumos con puntos · ${WINDOW_DAYS} días`}
+          numberValue={club.visits_30d}
           numberFormatKind="integer"
           hint={
-            visitsLast > 0 ? `Promedio ${(visitsLast / 30).toFixed(1)}/día` : 'Sin visitas todavía'
-          }
-          delta={<DeltaContent label={visitsDelta.label} tone={visitsDelta.tone} />}
-          deltaTone={visitsDelta.tone}
-          sparkline={
-            <Sparkline data={visitsSparkData} dataKey="value" color="var(--chart-1)" height={48} />
-          }
-        />
-        <StatCard
-          icon={Banknote}
-          iconClassName="text-success"
-          label="Revenue 30d"
-          numberValue={kpis.revenue_30d_cents}
-          numberFormatKind="currency-cents-ars"
-          hint={
-            kpis.visits_30d > 0
-              ? `Ticket promedio ${fmtCents(kpis.avg_ticket_30d_cents)}`
-              : 'Sin revenue todavía'
-          }
-          delta={<DeltaContent label={revenueDelta.label} tone={revenueDelta.tone} />}
-          deltaTone={revenueDelta.tone}
-          sparkline={
-            <Sparkline data={revenueSparkData} dataKey="value" color="var(--chart-3)" height={48} />
+            club.visits_30d > 0
+              ? `${formatCentsShort(club.revenue_30d_cents)} cargados en el club`
+              : 'Nadie sumó puntos todavía'
           }
         />
       </section>
 
-      {showOnboarding ? <OnboardingChecklist tenantSlug={tenantSlug} steps={onboarding} /> : null}
-
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="card-hairline relative overflow-hidden rounded-xl border bg-card lg:col-span-2">
-          <header className="flex items-center justify-between gap-3 px-5 py-4">
-            <div>
-              <h2 className="font-serif text-lg font-semibold tracking-tight">
-                Visitas últimos 30 días
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {visitsLast > 0
-                  ? `${numberFmt.format(visitsLast)} visitas en total`
-                  : 'Sin visitas en el rango'}
-              </p>
-            </div>
-            <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              30d
-            </span>
+        <section
+          aria-label="Gente por día"
+          className="card-hairline relative overflow-hidden rounded-xl border bg-card lg:col-span-2"
+        >
+          <header className="px-5 py-4">
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Gente por día</h2>
+            <p className="text-xs text-muted-foreground">
+              {current.covers > 0
+                ? `${numberFmt.format(current.covers)} personas en los últimos ${WINDOW_DAYS} días, según las reservas marcadas «Llegó».`
+                : `Los últimos ${WINDOW_DAYS} días, según las reservas marcadas «Llegó».`}
+            </p>
           </header>
-          <div className="h-72 px-2 pb-4">
-            <RevenueChart data={chartData} metric="visits" />
+          <div className="h-64 px-2 pb-4">
+            <PeopleChart data={pulse.days} />
           </div>
-        </div>
+        </section>
 
-        {isOwner ? <TopCustomersCard tenantSlug={tenantSlug} customers={topCustomers} /> : null}
+        <UpcomingEventsCard tenantSlug={tenantSlug} events={upcoming} today={today} />
       </div>
+
+      <OnboardingChecklist tenantSlug={tenantSlug} steps={onboarding} />
     </div>
   )
 }

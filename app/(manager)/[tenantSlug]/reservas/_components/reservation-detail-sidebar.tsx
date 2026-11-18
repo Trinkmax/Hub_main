@@ -77,7 +77,7 @@ export function ReservationDetailSidebar({
         </section>
       ) : null}
 
-      {/* Seña + nota: los dos datos que el dueño mira antes de sentar la mesa.
+      {/* Seña + nota: los dos datos que el dueño mira antes de recibir a la mesa.
           Se leen acá sin tener que bajar hasta el bloque "Extras" del form. */}
       <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
         <header className="flex items-center gap-2">
@@ -119,17 +119,19 @@ export function ReservationDetailSidebar({
         </div>
       </section>
 
-      {/* Timeline operativo */}
+      {/* Lo que pasó con la reserva. «Cerrada» aparece solo si alguien la cerró: en el día a día el
+          recorrido termina en «Llegó». */}
       <section className="rounded-xl border border-border/70 bg-card p-4">
         <header className="mb-3 flex items-center gap-2">
           <Clock4 className="size-4 text-muted-foreground" />
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">Timeline</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Recorrido</span>
         </header>
         <ol className="space-y-2 text-sm">
-          <Step label="Creada" at={reservation.created_at} done />
+          <Step label="Se cargó" at={reservation.created_at} done />
           <Step label="Llegó" at={reservation.arrived_at} done={!!reservation.arrived_at} />
-          <Step label="Sentada" at={reservation.seated_at} done={!!reservation.seated_at} />
-          <Step label="Cerrada" at={reservation.closed_at} done={!!reservation.closed_at} />
+          {reservation.closed_at ? (
+            <Step label="Se fueron" at={reservation.closed_at} done />
+          ) : null}
           {reservation.cancelled_at ? (
             <Step
               label="Cancelada"

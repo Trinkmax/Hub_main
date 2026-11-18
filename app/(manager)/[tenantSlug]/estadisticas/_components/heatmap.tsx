@@ -13,10 +13,12 @@ export function Heatmap({ data }: { data: HeatmapPoint[] }) {
     <div className="card-hairline rounded-xl border bg-card">
       <header className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
         <div>
-          <h2 className="font-serif text-lg font-semibold tracking-tight">
-            Mapa de calor de visitas
-          </h2>
-          <p className="text-xs text-muted-foreground">Cuándo viene tu gente, día por hora.</p>
+          <h3 className="font-serif text-lg font-semibold tracking-tight">
+            A qué hora se cargan los consumos
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Cada casillero es una hora de un día de la semana: cuanto más oscuro, más consumos.
+          </p>
         </div>
         {max > 0 ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">

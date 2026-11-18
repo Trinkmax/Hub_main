@@ -9,14 +9,11 @@ import type { TexScreenDef } from '../screen-types'
 
 const OWNER: readonly TenantRole[] = ['owner']
 
-/** Las solapas de Estadísticas (`estadisticas/page.tsx`). */
-export const TEX_ESTADISTICAS_TABS = ['overview', 'customers', 'events', 'comms', 'mozos'] as const
-
 export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'inicio',
     label: 'Resumen',
-    what: 'La portada del dueño: hoy en el salón, clientes, visitas y facturación de 30 días, los que más consumen y lo que falta configurar.',
+    what: 'La portada del dueño: cómo viene hoy, la gente que vino en los últimos 30 días, la asistencia, los clientes nuevos, los eventos de los próximos días y lo que falta configurar. Desde ahí se suman puntos y se carga una reserva.',
     path: '',
     root: true,
     roles: OWNER,
@@ -40,11 +37,17 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'estadisticas.resumen',
     label: 'Estadísticas › Resumen',
-    what: 'Clientes, visitas y facturación. Sus solapas (tab): overview (visión general), customers (top de clientes y en riesgo), events (eventos), comms (difusiones) y mozos.',
+    what: 'Los últimos 90 días en una página: la gente que vino (de las reservas marcadas «Llegó»), la asistencia, lo que se cargó en el club con sus horarios fuertes y los últimos eventos por asistencia.',
     path: '/estadisticas',
     root: true,
-    params: ['tab'],
-    tabs: TEX_ESTADISTICAS_TABS,
+    roles: OWNER,
+  },
+  {
+    id: 'estadisticas.clientes',
+    label: 'Estadísticas › Clientes',
+    what: 'Los 50 clientes que más consumieron y los que venían seguido y dejaron de venir; desde ahí se arma una audiencia para escribirles.',
+    path: '/estadisticas/clientes',
+    root: true,
     roles: OWNER,
   },
   {
@@ -125,7 +128,7 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'configuracion.inicio',
     label: 'Configuración',
-    what: 'La portada de los ajustes del bar: equipo, capacidad, tortas, apariencia y documentación.',
+    what: 'La portada de los ajustes del bar: equipo y comisiones, capacidad y tortas, reseñas, apariencia, documentación y, con el punto de venta, sucursales y plano del salón.',
     path: '/configuracion',
     root: true,
     roles: OWNER,

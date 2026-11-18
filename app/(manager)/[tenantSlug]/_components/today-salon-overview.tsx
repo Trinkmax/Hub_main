@@ -41,8 +41,9 @@ export function TodaySalonOverview({
           </p>
           <h2 className="font-serif text-lg font-semibold capitalize">{formatDateLong(date)}</h2>
         </div>
+        {/* El tablero de la noche del panel (antes llevaba a la pantalla del mozo). */}
         <Link
-          href={`/${tenantSlug}/salon/reservas-operativo?date=${date}`}
+          href={`/${tenantSlug}/operativo`}
           className="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
           Operativo
@@ -55,50 +56,29 @@ export function TodaySalonOverview({
           <div className="grid gap-4 px-5 py-4 sm:grid-cols-3 sm:gap-6">
             <Stat
               icon={CalendarCheck}
-              label="Reservas esperadas"
+              label="Reservas de hoy"
               value={reservationsCount}
-              hint={
-                <span className="space-x-1.5">
-                  {byStatus.pending > 0 ? (
-                    <span className="text-amber-700 dark:text-amber-300">
-                      {byStatus.pending} pend
-                    </span>
-                  ) : null}
-                  {byStatus.arrived > 0 ? (
-                    <span className="text-blue-600 dark:text-blue-400">
-                      · {byStatus.arrived} llegó
-                    </span>
-                  ) : null}
-                  {byStatus.seated > 0 ? (
-                    <span className="text-emerald-600 dark:text-emerald-400">
-                      · {byStatus.seated} sent
-                    </span>
-                  ) : null}
-                  {byStatus.closed > 0 ? (
-                    <span className="text-slate-500">· {byStatus.closed} cerr</span>
-                  ) : null}
-                </span>
-              }
+              hint={arrivedLine(byStatus)}
             />
             <Stat
               icon={UsersRound}
-              label="Personas estimadas"
+              label="Personas"
               value={estimatedGuests}
               hint={
                 estimatedGuests > 0 && reservationsCount > 0
-                  ? `${(estimatedGuests / reservationsCount).toFixed(1)} promedio por reserva`
+                  ? `${(estimatedGuests / reservationsCount).toLocaleString('es-AR', { maximumFractionDigits: 1 })} por reserva, en promedio`
                   : null
               }
             />
             <Stat
               icon={Clock3}
-              label="Pico estimado"
+              label="Hora pico"
               value={peak ? `${peak.startHHMM}–${peak.endHHMM}` : '—'}
               valueAsString
               hint={
                 peak
-                  ? `${peak.guests} simultáneas · asume 1h30 por reserva`
-                  : 'Sin datos suficientes'
+                  ? `${peak.guests} personas a la vez (calculando 1 h 30 por mesa)`
+                  : 'Todavía no se puede calcular'
               }
             />
           </div>
@@ -123,11 +103,9 @@ export function TodaySalonOverview({
       ) : (
         <div className="flex items-center justify-between gap-4 px-5 py-6">
           <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">
-              No hay reservas cargadas para hoy todavía.
-            </p>
+            <p className="text-sm text-muted-foreground">Todavía no hay reservas para hoy.</p>
             <p className="text-xs text-muted-foreground">
-              Cuando alguien las cargue aparecerán acá y en el panel operativo.
+              Cuando alguien cargue una, aparece acá y en el Operativo.
             </p>
           </div>
           <Link
@@ -140,6 +118,15 @@ export function TodaySalonOverview({
       )}
     </section>
   )
+}
+
+/** «18 por llegar · 6 llegaron», sin los pasos que ya nadie marca (sentada, cerrada). */
+function arrivedLine(byStatus: Overview['byStatus']): string | null {
+  const inside = byStatus.arrived + byStatus.seated + byStatus.closed
+  const parts: string[] = []
+  if (byStatus.pending > 0) parts.push(`${byStatus.pending} por llegar`)
+  if (inside > 0) parts.push(`${inside} ${inside === 1 ? 'llegó' : 'llegaron'}`)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 function Stat({

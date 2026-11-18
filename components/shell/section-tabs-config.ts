@@ -155,6 +155,8 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
     label: 'Secciones de Estadísticas',
     tabs: [
       { value: 'resumen', label: 'Resumen', path: 'estadisticas', exact: true },
+      // Los que más consumen y los que dejaron de venir: era una solapa adentro de «Resumen».
+      { value: 'clientes', label: 'Clientes', path: 'estadisticas/clientes' },
       { value: 'como-nos-fue', label: 'Cómo nos fue', path: 'estadisticas/como-nos-fue' },
       { value: 'senas', label: 'Señas', path: 'estadisticas/senas' },
       // Por prefijo: la liquidación de cada gestor (/comisiones/[id]) queda en Comisiones.

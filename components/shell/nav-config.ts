@@ -200,7 +200,7 @@ export const NAV_GROUPS: NavGroup[] = [
         activePaths: (s) => [`/${s}/enlaces`, `/${s}/paginas`, `/${s}/entradas`],
       },
       {
-        // Resumen, Cómo nos fue, Señas, Comisiones y Reseñas (con su flag) son
+        // Resumen, Clientes, Cómo nos fue, Señas, Comisiones y Reseñas (con su flag) son
         // pestañas arriba de la página.
         key: 'estadisticas',
         label: 'Estadísticas',

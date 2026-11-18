@@ -118,14 +118,16 @@ describe('pestañas de sección: qué ve cada uno', () => {
   })
 
   describe('Estadísticas: Reseñas con la misma regla que tenía el menú', () => {
-    const BASE = ['Resumen', 'Cómo nos fue', 'Señas', 'Comisiones']
+    // «Clientes» era una solapa adentro de «Resumen» hasta el 18/11/2026.
+    const BASE = ['Resumen', 'Clientes', 'Cómo nos fue', 'Señas', 'Comisiones']
 
-    it('las cuatro de siempre, en orden y con sus rutas', () => {
+    it('las cinco de siempre, en orden y con sus rutas', () => {
       expect(sectionNeedsViewer('estadisticas')).toBe(true)
       const section = resolveSection('estadisticas', SLUG, viewer())
       expect(labels(section)).toEqual(BASE)
       expect(hrefs(section)).toEqual([
         '/hub/estadisticas',
+        '/hub/estadisticas/clientes',
         '/hub/estadisticas/como-nos-fue',
         '/hub/estadisticas/senas',
         '/hub/estadisticas/comisiones',

@@ -14,7 +14,7 @@ export type OnboardingSteps = {
   templatesReady: boolean
   eventScheduledReady: boolean
   firstReservationReady: boolean
-  firstClosedReady: boolean
+  firstArrivalReady: boolean
 }
 
 export function OnboardingChecklist({
@@ -27,43 +27,42 @@ export function OnboardingChecklist({
   const items: Step[] = [
     {
       done: steps.capacitiesReady,
-      title: 'Definí la capacidad del salón',
+      title: 'Definí cuánta gente entra',
       description:
-        'Cuántas personas entran en Planta Alta y Planta Baja. Es la base de las barras de capacidad en el panel operativo.',
+        'El cupo de cada servicio. Con eso el sistema te avisa cuando una noche se está llenando.',
       href: `/${tenantSlug}/configuracion/salon`,
-      cta: 'Configurar capacidad',
+      cta: 'Cargar la capacidad',
     },
     {
       done: steps.templatesReady,
-      title: 'Creá los templates de eventos',
+      title: 'Creá los formatos de tus eventos',
       description:
-        'Sushi Libre, Pizza Libre, Ramen, etc. — el catálogo de formatos que después se programan en fechas concretas.',
-      href: `/${tenantSlug}/eventos/templates`,
-      cta: 'Crear templates',
+        'Sushi libre, Pizza libre, Noche de cine: lo que después ponés en una fecha del calendario.',
+      href: `/${tenantSlug}/eventos/programados?tab=eventos`,
+      cta: 'Crear formatos',
     },
     {
       done: steps.eventScheduledReady,
-      title: 'Programá el primer evento del mes',
+      title: 'Poné el primer evento en el calendario',
       description:
-        'Elegí una fecha y un template (ej: Sushi Libre el sábado 27). Después las reservas pueden engancharse a ese evento.',
+        'Elegí un formato y una fecha. Las reservas de esa noche se anotan en ese evento.',
       href: `/${tenantSlug}/eventos/programados`,
-      cta: 'Programar evento',
+      cta: 'Abrir el calendario',
     },
     {
       done: steps.firstReservationReady,
       title: 'Cargá la primera reserva',
-      description:
-        'Reemplaza al Google Form. Probá el flow completo de < 30 segundos con autocomplete + capacidad + comisión en vivo.',
+      description: 'Nombre, teléfono, cuántos son y a qué hora. Menos de medio minuto.',
       href: `/${tenantSlug}/reservas/nuevo`,
       cta: 'Nueva reserva',
     },
     {
-      done: steps.firstClosedReady,
-      title: 'Cerrá la primera mesa',
+      done: steps.firstArrivalReady,
+      title: 'Marcá la primera llegada',
       description:
-        'Marcá Llegó → Sentar → Cerrar en el panel operativo. Eso genera la primera comisión y alimenta las estadísticas.',
-      href: `/${tenantSlug}/salon/reservas-operativo`,
-      cta: 'Abrir panel',
+        'La noche de la reserva, tocá «Llegó» en el Operativo. Con eso se calcula la comisión y se llenan los números de este Resumen.',
+      href: `/${tenantSlug}/operativo`,
+      cta: 'Abrir el Operativo',
     },
   ]
 
@@ -85,7 +84,7 @@ export function OnboardingChecklist({
               Empezá por acá
             </p>
             <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">
-              Configurá tu bar en {items.length} pasos
+              Tu bar en marcha en {items.length} pasos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {completed} de {items.length} pasos completados
