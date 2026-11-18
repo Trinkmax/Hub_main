@@ -270,6 +270,8 @@ describe('CalendarTabs · un día pedido deja el Calendario a la vista', () => {
         defaultTab,
         role: 'owner',
         initialOverview: null,
+        capacityHidden: false,
+        hasFloors: true,
       }),
     )
   }

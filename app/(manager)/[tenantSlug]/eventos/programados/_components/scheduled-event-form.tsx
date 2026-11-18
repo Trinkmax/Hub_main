@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,10 +60,14 @@ export function ScheduledEventForm({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // La fecha es de una sucursal (los formatos son de todo el bar): la que se mira;
+  // en «Todas» hay que elegir. En la edición arranca en la de la fecha.
+  const viewedBranchId = useDefaultBranchId()
 
   const form = useForm<ScheduledEventFormInput>({
     resolver: zodResolver(scheduledEventSchema) as never,
     defaultValues: {
+      branch_id: viewedBranchId ?? undefined,
       template_id: templates[0]?.id ?? '',
       event_date: presetDate ?? new Date().toISOString().slice(0, 10),
       ...(presetTemplateId ? { template_id: presetTemplateId } : {}),
@@ -104,6 +109,7 @@ export function ScheduledEventForm({
    */
   const onInvalid = (errors: Record<string, unknown>) => {
     const LABELS: Record<string, string> = {
+      branch_id: 'Sucursal',
       template_id: 'Formato',
       event_date: 'Fecha',
       starts_at_local: 'Hora de inicio',
@@ -134,6 +140,7 @@ export function ScheduledEventForm({
         router.push(`/${tenantSlug}/eventos/programados`)
         router.refresh()
       } else {
+        if (!r.ok && r.field === 'branch_id') form.setError('branch_id', { message: r.message })
         toast.error(r.message)
       }
     })
@@ -156,6 +163,15 @@ export function ScheduledEventForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5 rounded-xl border bg-card/60 p-5">
+      <BranchField
+        value={form.watch('branch_id') ?? null}
+        onChange={(id) => {
+          form.setValue('branch_id', id, { shouldValidate: true })
+          form.clearErrors('branch_id')
+        }}
+        error={form.formState.errors.branch_id?.message}
+        disabled={pending}
+      />
       <div className="grid gap-1.5">
         <Label htmlFor="template_id">Template</Label>
         <Select

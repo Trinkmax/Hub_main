@@ -2,6 +2,7 @@
 
 import { ArrowUpRight, CalendarPlus, Info, Loader2, Pencil } from 'lucide-react'
 import Link from 'next/link'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import {
@@ -76,6 +77,7 @@ export function DaySegmentSection({
   suggestedRaise,
   zone = null,
   zoneCaps = NO_ZONE_CAPS,
+  eventBranches,
   raising,
   focusReservationId,
   openReservationId,
@@ -102,6 +104,8 @@ export function DaySegmentSection({
   suggestedRaise: number | null
   /** Planta del filtro del calendario; null = «Todo» (el servicio entero). */
   zone?: SalonZone | null
+  /** De qué sucursal es cada evento (id → sucursal), para la etiqueta mirando «Todas». */
+  eventBranches?: ReadonlyMap<string, string>
   /** Cupo de cada planta (el denominador cuando hay `zone`). */
   zoneCaps?: ZoneCaps
   raising: boolean
@@ -264,6 +268,7 @@ export function DaySegmentSection({
                 tenantSlug={tenantSlug}
                 date={date}
                 event={e}
+                branchId={eventBranches?.get(e.id) ?? null}
                 canBook={canBook}
                 zoneLine={zone ? eventZoneLine(e, zone) : null}
               />
@@ -345,12 +350,15 @@ function EventCard({
   tenantSlug,
   date,
   event: e,
+  branchId,
   canBook,
   zoneLine,
 }: {
   tenantSlug: string
   date: string
   event: SegmentEventLoad
+  /** La sucursal de la fecha: la etiqueta aparece mirando «Todas». */
+  branchId: string | null
   canBook: boolean
   /** Con el día filtrado por planta: cuántos de este evento van en esa planta. */
   zoneLine: string | null
@@ -373,6 +381,7 @@ function EventCard({
           style={{ backgroundColor: color }}
         />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.name}</span>
+        <BranchTag branchId={branchId} />
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
           {e.startsAt}
         </span>
@@ -448,7 +457,11 @@ function reservationRow(r: ReservationWithJoins, where: string, focused: boolean
         {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)}
       </span>
       <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate font-medium">{r.guest_name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium">{r.guest_name}</span>
+          {/* Mirando «Todas»: de qué sucursal es. */}
+          <BranchTag branchId={r.branch_id} />
+        </span>
         {/* La torta viaja con la fila: es lo que el bar tiene que producir, no
             un detalle del cliente. */}
         {r.cake_count > 0 ? (
