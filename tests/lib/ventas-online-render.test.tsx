@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { AdminOrder } from '@/lib/ticketing/queries'
+import type { SalesOrder } from '@/lib/ticketing/queries'
 import { groupSalesByDay, salesPage } from '@/lib/ticketing/sales-days'
 
 /**
@@ -39,8 +39,9 @@ const text = (html: string) =>
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
 
-function order(over: Partial<AdminOrder>): AdminOrder {
+function order(over: Partial<SalesOrder>): SalesOrder {
   return {
+    branch_id: 'b-alta',
     reservation: null,
     undo: null,
     mp_payment_type: null,
@@ -66,7 +67,7 @@ function order(over: Partial<AdminOrder>): AdminOrder {
 }
 
 function render(
-  orders: AdminOrder[],
+  orders: SalesOrder[],
   opts: {
     transferEnabled?: boolean
     canManageMoney?: boolean

@@ -49,6 +49,7 @@ const order = {
   paidAtLabel: null,
   terms: null,
   today: '2026-11-04',
+  branch: null,
   entry: { inside: 0, total: 2, atLabel: null, cancelled: false },
   qr: null,
 } satisfies PublicOrder

@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageShell } from '@/components/ui/page-shell'
 import { getAppUrl } from '@/lib/app-url'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   RoleRequiredError,
   requireRole,
@@ -40,8 +42,10 @@ export default async function EditarPeliculaPage({
     throw error
   }
 
+  // La película es del bar; las funciones que lista, las de la sucursal que se mira.
+  const scope = await getBranchScope(tenantSlug)
   const [experience, appUrl] = await Promise.all([
-    getAdminExperience(access.tenant.id, experienceId),
+    getAdminExperience(access.tenant.id, experienceId, branchFilterOf(scope)),
     getAppUrl(),
   ])
 

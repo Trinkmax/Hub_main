@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { eventInk } from '@/lib/salon/event-ink'
 import { formatShortDate } from '@/lib/ticketing/dates'
-import type { PublicFunction } from '@/lib/ticketing/types'
+import type { AdminFunction } from '@/lib/ticketing/queries'
 import { cn } from '@/lib/utils'
 import { occupancyPercent, seatsText } from '../_lib/overview'
 
@@ -9,8 +10,10 @@ import { occupancyPercent, seatsText } from '../_lib/overview'
  * Una función (fecha) con su barrita de lugares: lo vendido se pinta con la
  * tinta del formato y lo libre queda gris. La barrita es decorativa: el texto
  * de abajo («Quedan 32 de 40», «Agotado») dice lo mismo para el lector.
+ *
+ * Mirando «Todas», abajo dice de qué sucursal es (cada función es de una; la película, del bar).
  */
-export function FunctionChip({ fn, className }: { fn: PublicFunction; className?: string }) {
+export function FunctionChip({ fn, className }: { fn: AdminFunction; className?: string }) {
   const soldOut = fn.state === 'sold_out'
   return (
     <div
@@ -44,6 +47,7 @@ export function FunctionChip({ fn, className }: { fn: PublicFunction; className?
           {seatsText(fn)}
         </div>
       )}
+      <BranchTag branchId={fn.branchId} className="mt-1.5 max-w-full" />
     </div>
   )
 }
@@ -59,7 +63,7 @@ export function FunctionsStrip({
   empty,
   label = 'Funciones a la venta',
 }: {
-  functions: PublicFunction[]
+  functions: AdminFunction[]
   /** Hex del formato: la tinta de las barritas. */
   color: string | null
   limit?: number

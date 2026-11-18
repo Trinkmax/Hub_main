@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getAppUrl } from '@/lib/app-url'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   RoleRequiredError,
   requireRole,
@@ -42,14 +44,22 @@ export default async function EntradasPage({
   }
 
   const tenantId = access.tenant.id
+  // Las películas son del bar; sus funciones, de la sucursal que se mira (en «Todas», de todas).
+  const scope = await getBranchScope(tenantSlug)
   const [overview, settings, managers, appUrl] = await Promise.all([
-    getAdminOverview(tenantId),
+    getAdminOverview(tenantId, branchFilterOf(scope)),
     getTicketingSettings(tenantId),
     listActiveManagers(tenantId),
     getAppUrl(),
   ])
 
-  const publicUrl = `${appUrl}/entradas/${tenantSlug}`
+  // Mirando una sucursal de un bar con varias, el link es el de su cartelera (?sucursal=): el
+  // resumen de abajo cuenta sus funciones, y es lo que manda quien trabaja ahí.
+  const carteleraUrl = `${appUrl}/entradas/${tenantSlug}`
+  const publicUrl =
+    scope.multi && scope.current
+      ? `${carteleraUrl}?sucursal=${encodeURIComponent(scope.current.slug)}`
+      : carteleraUrl
   const webhookUrl = `${appUrl}/api/webhooks/mercadopago?t=${tenantId}`
   const canSell = Boolean(settings.mp_connected_at)
 

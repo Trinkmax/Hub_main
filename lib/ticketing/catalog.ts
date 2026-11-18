@@ -1,6 +1,7 @@
+import { parseBranchParam } from './branches'
 import { monthLong } from './dates'
 import { balanceCashOnly, paymentOptions } from './pricing'
-import type { GalleryItem, PublicExperience, PublicFunction } from './types'
+import type { GalleryItem, PublicBranch, PublicExperience, PublicFunction } from './types'
 
 /**
  * Lo que la cartelera dice de sí misma: cuántas películas y funciones hay,
@@ -159,6 +160,10 @@ export function stepsSummary(steps: PublicExperience['steps']): string | null {
 // disponibilidad, para que quien quiere ver qué queda no tenga que mirar
 // todas las agotadas. Viven en la URL (?mes=2026-11&pelicula=shrek-2&ver=
 // disponibles): así un link puede llegar ya filtrado.
+//
+// Y por sucursal (18/11/2026, docs/features/sucursales.md): con funciones en
+// más de una, arriba se elige dónde (?sucursal=cerro). La película es del
+// bar; cada función, de una sucursal.
 
 /** Qué fechas se ven: todas, solo las que tienen lugar o solo las agotadas. */
 export type AvailabilityFilter = 'all' | 'available' | 'sold_out'
@@ -169,11 +174,21 @@ export type CatalogFilters = {
   /** El slug de la película, o null = todas. */
   film: string | null
   availability: AvailabilityFilter
+  /** El slug de la sucursal, o null = todas. */
+  branch: string | null
 }
 
-export const NO_FILTERS: CatalogFilters = { month: null, film: null, availability: 'all' }
+export const NO_FILTERS: CatalogFilters = {
+  month: null,
+  film: null,
+  availability: 'all',
+  branch: null,
+}
 
 export type FilterOption = { value: string; label: string }
+
+/** Una sucursal para elegir arriba de la cartelera: con su color, como en todo el sistema. */
+export type BranchOption = FilterOption & { color: string }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,59}$/
@@ -185,6 +200,7 @@ export function parseCatalogFilters(params: {
   mes?: string | string[]
   pelicula?: string | string[]
   ver?: string | string[]
+  sucursal?: string | string[]
 }): CatalogFilters {
   const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : null)
   const month = one(params.mes)
@@ -199,6 +215,7 @@ export function parseCatalogFilters(params: {
         : ver === AVAILABILITY_PARAM.sold_out
           ? 'sold_out'
           : 'all',
+    branch: parseBranchParam(params.sucursal),
   }
 }
 
@@ -208,22 +225,33 @@ export function catalogFiltersQuery(filters: CatalogFilters): string {
   if (filters.month) qs.set('mes', filters.month)
   if (filters.film) qs.set('pelicula', filters.film)
   if (filters.availability !== 'all') qs.set('ver', AVAILABILITY_PARAM[filters.availability])
+  if (filters.branch) qs.set('sucursal', filters.branch)
   const out = qs.toString()
   return out ? `?${out}` : ''
 }
 
 export function hasActiveFilters(filters: CatalogFilters): boolean {
-  return filters.month !== null || filters.film !== null || filters.availability !== 'all'
+  return (
+    filters.month !== null ||
+    filters.film !== null ||
+    filters.availability !== 'all' ||
+    filters.branch !== null
+  )
 }
 
 /**
  * Las opciones de cada filtro, sacadas de la cartelera: los meses que tienen
- * funciones («Octubre», «Noviembre»; con el año si cruza de año) y las
- * películas en el orden en que se muestran.
+ * funciones («Octubre», «Noviembre»; con el año si cruza de año), las
+ * películas en el orden en que se muestran y, si hay funciones en más de una,
+ * las sucursales (con una sola no hay nada que elegir).
  */
-export function catalogFilterOptions(experiences: PublicExperience[]): {
+export function catalogFilterOptions(
+  experiences: PublicExperience[],
+  branches: ReadonlyArray<PublicBranch> = [],
+): {
   months: FilterOption[]
   films: FilterOption[]
+  branches: BranchOption[]
 } {
   const keys = [
     ...new Set(experiences.flatMap((e) => e.functions.map((f) => monthKey(f.date)))),
@@ -235,7 +263,16 @@ export function catalogFilterOptions(experiences: PublicExperience[]): {
     return { value: key, label: years.size > 1 ? `${label} ${key.slice(0, 4)}` : label }
   })
   const films = experiences.map((e) => ({ value: e.slug, label: e.title }))
-  return { months, films }
+  const used = new Set(experiences.flatMap((e) => e.functions.map((f) => f.branch)))
+  const selling = branches.filter((b) => used.has(b.slug))
+  return {
+    months,
+    films,
+    branches:
+      selling.length > 1
+        ? selling.map((b) => ({ value: b.slug, label: b.name, color: b.color }))
+        : [],
+  }
 }
 
 /**
@@ -245,17 +282,22 @@ export function catalogFilterOptions(experiences: PublicExperience[]): {
  */
 export function sanitizeCatalogFilters(
   filters: CatalogFilters,
-  options: { months: FilterOption[]; films: FilterOption[] },
+  options: { months: FilterOption[]; films: FilterOption[]; branches?: FilterOption[] },
 ): CatalogFilters {
   return {
     month:
       filters.month && options.months.some((o) => o.value === filters.month) ? filters.month : null,
     film: filters.film && options.films.some((o) => o.value === filters.film) ? filters.film : null,
     availability: filters.availability,
+    branch:
+      filters.branch && (options.branches ?? []).some((o) => o.value === filters.branch)
+        ? filters.branch
+        : null,
   }
 }
 
 function functionMatches(fn: PublicFunction, filters: CatalogFilters): boolean {
+  if (filters.branch && fn.branch !== filters.branch) return false
   if (filters.month && monthKey(fn.date) !== filters.month) return false
   if (filters.availability === 'available' && fn.state === 'sold_out') return false
   if (filters.availability === 'sold_out' && fn.state !== 'sold_out') return false
@@ -264,14 +306,16 @@ function functionMatches(fn: PublicFunction, filters: CatalogFilters): boolean {
 
 /**
  * La cartelera filtrada: cada película con las funciones que pasan el filtro.
- * Con mes o disponibilidad, una película sin ninguna función que pase no se
- * muestra (con «Disponibles», Ratatouille agotada desaparece entera).
+ * Con mes, disponibilidad o sucursal, una película sin ninguna función que
+ * pase no se muestra (con «Disponibles», Ratatouille agotada desaparece
+ * entera; eligiendo el Cerro, las que solo van en Alta Córdoba).
  */
 export function filterCatalog(
   experiences: PublicExperience[],
   filters: CatalogFilters,
 ): PublicExperience[] {
-  const byFunction = filters.month !== null || filters.availability !== 'all'
+  const byFunction =
+    filters.month !== null || filters.availability !== 'all' || filters.branch !== null
   const out: PublicExperience[] = []
   for (const e of experiences) {
     if (filters.film && e.slug !== filters.film) continue
@@ -288,15 +332,18 @@ export function filterCatalog(
 /**
  * El link a la página de una película. Con «Disponibles» elegido, la película
  * también esconde las fechas agotadas (?ver=disponibles): quien filtró no
- * quiere volver a verlas al pagar.
+ * quiere volver a verlas al pagar. Con `branch` (?sucursal=), la película
+ * arranca con una función de esa sucursal elegida: la misma película puede ir
+ * la misma noche en las dos.
  */
 export function filmHref(
   tenantSlug: string,
   slug: string,
-  opts: { date?: string; onlyAvailable?: boolean } = {},
+  opts: { date?: string; onlyAvailable?: boolean; branch?: string | null } = {},
 ): string {
   const qs = new URLSearchParams()
   if (opts.date) qs.set('fecha', opts.date)
+  if (opts.branch) qs.set('sucursal', opts.branch)
   if (opts.onlyAvailable) qs.set('ver', AVAILABILITY_PARAM.available)
   const query = qs.toString()
   return `/entradas/${tenantSlug}/${slug}${query ? `?${query}` : ''}`

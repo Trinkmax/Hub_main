@@ -1,9 +1,17 @@
 import 'server-only'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getAppUrl } from '@/lib/app-url'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { functionState, isOnSale, seatsLeft } from './availability'
+import {
+  branchSlugLookup,
+  functionAddress,
+  sellingBranches,
+  type TicketBranchRow,
+  toPublicBranch,
+} from './branches'
 import { checkoutUrl, guestShortName } from './copy'
 import { DEFAULT_TZ, formatTime, nowLocalIn, serviceDayIn, todayIn } from './dates'
 import { orderEntryFrom } from './door'
@@ -15,6 +23,7 @@ import type {
   ExperienceRow,
   OrderEntry,
   OrderStatus,
+  PublicBranch,
   PublicExperience,
   PublicFunction,
   PublicOrder,
@@ -30,12 +39,17 @@ import type {
  * service_role, igual que la carta (/carta/[slug]): las abre gente sin cuenta
  * y no hay grant para `anon`. Cada consulta lleva el tenant_id explícito y lo
  * que sale de acá es solo lo que la página muestra (nada de la cuenta de
- * Mercado Pago, nada de teléfonos).
+ * Mercado Pago, nada de teléfonos; de las sucursales, nombre, dirección y color).
  *
  * Las del PANEL usan la sesión de quien mira (RLS: el dueño, y las ventas
  * también la anfitriona); solo el conteo de lugares, el «¿hay alias?» y el
  * título de cada película en la pestaña Funciones pasan por service_role
  * porque son del server o del dueño (y la cartelera ya los muestra).
+ *
+ * Sucursales (docs/features/sucursales.md): la película es del bar y cada
+ * función es de una sucursal (`scheduled_events.branch_id`); la compra copia la
+ * de su función. Lo del panel recibe el filtro de lo que se mira (`BranchFilter`,
+ * de `getBranchScope`); lo público trae todas y dice en cuál es cada función.
  */
 
 // biome-ignore lint/suspicious/noExplicitAny: tablas nuevas, sin tipos generados todavía
@@ -58,9 +72,29 @@ type TenantRow = {
 type EventRow = {
   id: string
   template_id: string
+  /** La sucursal de la función. Obligatoria en la base; acá puede faltar si el código sale antes. */
+  branch_id: string | null
   event_date: string
   starts_at_local: string
   capacity: number
+}
+
+const BRANCH_COLUMNS = 'id, slug, name, short_name, address, color, is_default, position, active'
+
+/**
+ * Las sucursales del bar, también las apagadas (una función ya programada sigue siendo allá). Si no
+ * se pueden leer, la cartelera sigue: las funciones no dicen dónde y vale la dirección del bar.
+ */
+async function loadBranches(service: SBAny, tenantId: string): Promise<TicketBranchRow[]> {
+  const { data, error } = await service
+    .from('branches')
+    .select(BRANCH_COLUMNS)
+    .eq('tenant_id', tenantId)
+  if (error) {
+    console.error('[ticketing.loadBranches]', { tenantId, code: error.code })
+    return []
+  }
+  return (data as TicketBranchRow[] | null) ?? []
 }
 
 type SeatsRow = {
@@ -136,22 +170,28 @@ type FunctionSeats = {
 /**
  * Las funciones de los formatos pedidos, desde hoy, con sus lugares. Las que ya
  * empezaron (hoy, pasada la hora) y las de grupos privados no se ofrecen.
+ *
+ * `branch`: las de qué sucursales (el panel pasa lo que se mira; lo público, todo el bar).
  */
 async function loadFunctionSeats(
   service: SBAny,
   tenantId: string,
   templateIds: string[],
   tz: string,
+  branch: BranchFilter = WHOLE_BAR,
 ): Promise<FunctionSeats[]> {
   if (templateIds.length === 0) return []
 
-  const { data: events, error } = await service
-    .from('scheduled_events')
-    .select('id, template_id, event_date, starts_at_local, capacity')
-    .eq('tenant_id', tenantId)
-    .in('template_id', templateIds)
-    .eq('private_group', false)
-    .gte('event_date', todayIn(tz))
+  const { data: events, error } = await applyBranchFilter(
+    service
+      .from('scheduled_events')
+      .select('id, template_id, branch_id, event_date, starts_at_local, capacity')
+      .eq('tenant_id', tenantId)
+      .in('template_id', templateIds)
+      .eq('private_group', false)
+      .gte('event_date', todayIn(tz)),
+    branch,
+  )
     .order('event_date', { ascending: true })
     .order('starts_at_local', { ascending: true })
   if (error) {
@@ -189,6 +229,12 @@ async function loadFunctionSeats(
 }
 
 /**
+ * Una función del panel: la de la cartelera con el id de su sucursal en vez del `slug` (la
+ * etiqueta de cada una mirando «Todas» la busca por id).
+ */
+export type AdminFunction = Omit<PublicFunction, 'branch'> & { branchId: string | null }
+
+/**
  * Las funciones de los formatos pedidos, desde hoy, con su disponibilidad.
  * Las que ya empezaron (hoy, pasada la hora) no se ofrecen.
  */
@@ -197,18 +243,20 @@ async function loadFunctions(
   tenantId: string,
   templateIds: string[],
   tz: string,
-): Promise<Map<string, PublicFunction[]>> {
-  const byTemplate = new Map<string, PublicFunction[]>()
-  const rows = await loadFunctionSeats(service, tenantId, templateIds, tz)
+  branch: BranchFilter = WHOLE_BAR,
+): Promise<Map<string, AdminFunction[]>> {
+  const byTemplate = new Map<string, AdminFunction[]>()
+  const rows = await loadFunctionSeats(service, tenantId, templateIds, tz, branch)
   for (const { event: e, capacity, taken, held } of rows) {
     const left = seatsLeft(capacity, taken, held)
-    const fn: PublicFunction = {
+    const fn: AdminFunction = {
       eventId: e.id,
       date: e.event_date,
       time: formatTime(e.starts_at_local),
       capacity,
       left,
       state: functionState(left, capacity),
+      branchId: e.branch_id ?? null,
     }
     const list = byTemplate.get(e.template_id) ?? []
     list.push(fn)
@@ -217,7 +265,26 @@ async function loadFunctions(
   return byTemplate
 }
 
-function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): PublicExperience {
+/** Lo que viaja a las páginas públicas: la sucursal por su `slug`, nunca por su id. */
+function toPublicFunctions(
+  functions: ReadonlyArray<AdminFunction>,
+  slugOf: (id: string | null) => string | null,
+): PublicFunction[] {
+  return functions.map((fn) => ({
+    eventId: fn.eventId,
+    date: fn.date,
+    time: fn.time,
+    capacity: fn.capacity,
+    left: fn.left,
+    state: fn.state,
+    branch: slugOf(fn.branchId),
+  }))
+}
+
+function toPublicExperience<F extends Omit<PublicFunction, 'branch'>>(
+  row: ExperienceRow,
+  functions: F[],
+): Omit<PublicExperience, 'functions'> & { functions: F[] } {
   const minPartySize = Math.max(1, row.min_party_size ?? 1)
   return {
     id: row.id,
@@ -255,6 +322,11 @@ function toPublicExperience(row: ExperienceRow, functions: PublicFunction[]): Pu
 export type PublicCatalog = {
   venue: PublicVenue
   experiences: PublicExperience[]
+  /**
+   * Las sucursales con funciones en la cartelera, la principal primero. Con más de una, cada
+   * función dice dónde es y arriba se elige la sucursal.
+   */
+  branches: PublicBranch[]
   today: string
   /** La está viendo el dueño con las películas sin publicar incluidas. */
   preview?: boolean
@@ -270,7 +342,7 @@ export async function getPublicCatalog(
   if (!tenant) return null
   const tz = tenant.timezone ?? DEFAULT_TZ
 
-  const [venue, { data: rows, error }] = await Promise.all([
+  const [venue, { data: rows, error }, branchRows] = await Promise.all([
     loadVenue(service, tenant),
     (() => {
       let query = service
@@ -281,6 +353,7 @@ export async function getPublicCatalog(
       if (!opts.includeUnpublished) query = query.eq('published', true)
       return query.order('sort_order', { ascending: true }).order('title', { ascending: true })
     })(),
+    loadBranches(service, tenant.id),
   ])
   if (error) {
     console.error('[ticketing.getPublicCatalog]', { tenantId: tenant.id, code: error.code })
@@ -293,12 +366,65 @@ export async function getPublicCatalog(
     experiences.map((e) => e.template_id),
     tz,
   )
+  const slugOf = branchSlugLookup(branchRows)
   return {
     venue,
     today: todayIn(tz),
-    experiences: experiences.map((e) => toPublicExperience(e, functions.get(e.template_id) ?? [])),
+    experiences: experiences.map((e) =>
+      toPublicExperience(e, toPublicFunctions(functions.get(e.template_id) ?? [], slugOf)),
+    ),
+    branches: sellingBranches(
+      branchRows,
+      [...functions.values()].flatMap((list) => list.map((fn) => fn.branchId)),
+    ),
     preview: Boolean(opts.includeUnpublished) && experiences.some((e) => !e.published),
   }
+}
+
+/**
+ * Las sucursales que venden algo en la cartelera (todas las películas publicadas, no solo una):
+ * con más de una, la página de una película dice dónde es cada función aunque esa vaya en una sola.
+ * No suma lugares: solo mira qué sucursales tienen funciones por delante.
+ */
+async function loadSellingBranchIds(
+  service: SBAny,
+  tenantId: string,
+  tz: string,
+): Promise<string[]> {
+  const { data: films, error } = await service
+    .from('event_experiences')
+    .select('template_id')
+    .eq('tenant_id', tenantId)
+    .eq('published', true)
+  if (error) {
+    console.error('[ticketing.loadSellingBranchIds]', { tenantId, code: error.code })
+    return []
+  }
+  const templateIds = ((films as Array<{ template_id: string }> | null) ?? []).map(
+    (f) => f.template_id,
+  )
+  if (templateIds.length === 0) return []
+  const { data: events, error: eventsError } = await service
+    .from('scheduled_events')
+    .select('branch_id, event_date, starts_at_local')
+    .eq('tenant_id', tenantId)
+    .in('template_id', templateIds)
+    .eq('private_group', false)
+    .gte('event_date', todayIn(tz))
+  if (eventsError) {
+    console.error('[ticketing.loadSellingBranchIds.events]', { tenantId, code: eventsError.code })
+    return []
+  }
+  const nowLocal = nowLocalIn(tz)
+  return (
+    (events as Array<{
+      branch_id: string | null
+      event_date: string
+      starts_at_local: string
+    }> | null) ?? []
+  )
+    .filter((e) => e.branch_id && isOnSale(e.event_date, e.starts_at_local, nowLocal))
+    .map((e) => e.branch_id as string)
 }
 
 export type PublicExperiencePage = {
@@ -306,6 +432,11 @@ export type PublicExperiencePage = {
   experience: PublicExperience
   /** Las otras películas publicadas (para «Seguí mirando»). */
   others: Array<Pick<PublicExperience, 'slug' | 'title' | 'posterUrl' | 'accent'>>
+  /**
+   * Las sucursales que venden en la cartelera, más las de esta película. Con más de una, cada
+   * función dice dónde es; la dirección es siempre la de la sucursal de la función elegida.
+   */
+  branches: PublicBranch[]
   today: string
   /** La está viendo el dueño sin publicar (vista previa). */
   preview: boolean
@@ -339,7 +470,7 @@ export async function getPublicExperience(
   if (!experience) return null
   if (!experience.published && !opts.allowUnpublished) return null
 
-  const [venue, functions, { data: otherRows }] = await Promise.all([
+  const [venue, functions, { data: otherRows }, branchRows, sellingIds] = await Promise.all([
     loadVenue(service, tenant),
     loadFunctions(service, tenant.id, [experience.template_id], tz),
     service
@@ -350,7 +481,10 @@ export async function getPublicExperience(
       .neq('id', experience.id)
       .order('sort_order', { ascending: true })
       .limit(6),
+    loadBranches(service, tenant.id),
+    loadSellingBranchIds(service, tenant.id, tz),
   ])
+  const own = functions.get(experience.template_id) ?? []
 
   const others = (
     (otherRows as Array<{
@@ -370,8 +504,14 @@ export async function getPublicExperience(
 
   return {
     venue,
-    experience: toPublicExperience(experience, functions.get(experience.template_id) ?? []),
+    experience: toPublicExperience(
+      experience,
+      toPublicFunctions(own, branchSlugLookup(branchRows)),
+    ),
     others,
+    // Las de la película también: en la vista previa de una apagada, sus funciones no están en
+    // la cartelera, pero igual tienen que decir dónde son.
+    branches: sellingBranches(branchRows, [...sellingIds, ...own.map((fn) => fn.branchId)]),
     today: todayIn(tz),
     preview: !experience.published,
   }
@@ -382,12 +522,13 @@ export async function getPublicExperience(
 // ──────────────────────────────────────────────
 
 const ORDER_PUBLIC_COLUMNS =
-  'id, tenant_id, experience_id, scheduled_event_id, reservation_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, paid_at, mp_status_detail, mp_preference_id, mp_payment_id, mp_payment_type, terms'
+  'id, tenant_id, branch_id, experience_id, scheduled_event_id, reservation_id, title, event_date, event_time, party_size, payment_option, unit_price_cents, full_price_cents, total_cents, balance_cash_only, guest_name, status, hold_expires_at, paid_cents, paid_at, mp_status_detail, mp_preference_id, mp_payment_id, mp_payment_type, terms'
 
 type OrderPublicRow = Pick<
   TicketOrderRow,
   | 'id'
   | 'tenant_id'
+  | 'branch_id'
   | 'experience_id'
   | 'scheduled_event_id'
   | 'reservation_id'
@@ -413,7 +554,7 @@ type OrderPublicRow = Pick<
 >
 
 const ORDER_RESERVATION_COLUMNS =
-  'status, reservation_date, reservation_time_local, estimated_guests, actual_guests, arrived_at'
+  'status, reservation_date, reservation_time_local, estimated_guests, actual_guests, arrived_at, branch_id'
 
 type OrderReservationRow = {
   status: string
@@ -422,6 +563,27 @@ type OrderReservationRow = {
   estimated_guests: number
   actual_guests: number | null
   arrived_at: string | null
+  /** La reserva sigue al evento: si lo mudaron de sucursal, esta es la de ahora. */
+  branch_id: string | null
+}
+
+/**
+ * Dónde es una entrada: la sucursal de su reserva (sigue al evento) o, sin reserva, la de la
+ * compra. La dirección es la de esa sucursal (o la del bar si no cargó una), y el nombre se dice
+ * solo si el bar tiene más de una sucursal abierta.
+ */
+function orderPlace(
+  branchRows: ReadonlyArray<TicketBranchRow>,
+  branchId: string | null,
+  venueAddress: string | null,
+): { address: string | null; branch: PublicOrder['branch'] } {
+  const row = branchId ? branchRows.find((b) => b.id === branchId) : undefined
+  const branch = row ? toPublicBranch(row) : null
+  const several = branchRows.filter((b) => b.active).length > 1
+  return {
+    address: functionAddress(branch, venueAddress),
+    branch: several && branch ? { slug: branch.slug, name: branch.name } : null,
+  }
 }
 
 export function isOrderExpired(
@@ -480,6 +642,8 @@ export async function orderHasRoom(
 export type PublicOrderPage = {
   venue: PublicVenue
   order: PublicOrder
+  /** Dónde es la función: la dirección de su sucursal o, si no cargó, la del bar. */
+  address: string | null
 }
 
 /**
@@ -510,30 +674,37 @@ export async function getPublicOrder(
 
   const tz = tenant.timezone ?? DEFAULT_TZ
   const expired = isOrderExpired(order.status, order.hold_expires_at)
-  const [venue, { data: exp }, { data: mode }, { data: res, error: resError }, roomLeft] =
-    await Promise.all([
-      loadVenue(service, tenant),
-      order.experience_id
-        ? service
-            .from('event_experiences')
-            .select('slug, poster_url, accent_hex, price_note')
-            .eq('tenant_id', tenant.id)
-            .eq('id', order.experience_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
-      order.reservation_id
-        ? service
-            .from('salon_reservations')
-            .select(ORDER_RESERVATION_COLUMNS)
-            .eq('tenant_id', tenant.id)
-            .eq('id', order.reservation_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-      order.status === 'rejected' && expired
-        ? orderHasRoom(service, tenant.id, order.scheduled_event_id, order.party_size, tz)
-        : Promise.resolve(false),
-    ])
+  const [
+    venue,
+    { data: exp },
+    { data: mode },
+    { data: res, error: resError },
+    roomLeft,
+    branchRows,
+  ] = await Promise.all([
+    loadVenue(service, tenant),
+    order.experience_id
+      ? service
+          .from('event_experiences')
+          .select('slug, poster_url, accent_hex, price_note')
+          .eq('tenant_id', tenant.id)
+          .eq('id', order.experience_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    service.from('ticketing_settings').select('mp_live').eq('tenant_id', tenant.id).maybeSingle(),
+    order.reservation_id
+      ? service
+          .from('salon_reservations')
+          .select(ORDER_RESERVATION_COLUMNS)
+          .eq('tenant_id', tenant.id)
+          .eq('id', order.reservation_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    order.status === 'rejected' && expired
+      ? orderHasRoom(service, tenant.id, order.scheduled_event_id, order.party_size, tz)
+      : Promise.resolve(false),
+    loadBranches(service, tenant.id),
+  ])
   const experience = exp as {
     slug: string
     poster_url: string | null
@@ -552,9 +723,14 @@ export async function getPublicOrder(
   const entry = orderEntryFrom(reservation, order.party_size, (iso) =>
     formatInTimeZone(new Date(iso), tz, 'HH:mm'),
   )
-  // La reserva sigue al evento: si lo movieron, la entrada dice la fecha nueva.
+  // La reserva sigue al evento: si lo movieron, la entrada dice la fecha nueva (y la sucursal).
   const date = reservation?.reservation_date ?? order.event_date
   const time = formatTime(reservation?.reservation_time_local ?? order.event_time)
+  const place = orderPlace(
+    branchRows,
+    reservation?.branch_id ?? order.branch_id ?? null,
+    venue.address,
+  )
   // El QR solo si todavía puede usarse. Un pedido sin reserva (la función ya no
   // existe) también lo lleva: en la puerta avisa, y quien recibe lo resuelve.
   const usable =
@@ -574,6 +750,7 @@ export async function getPublicOrder(
 
   return {
     venue,
+    address: place.address,
     order: {
       id: order.id,
       shortCode: shortCodeFromOrderId(order.id),
@@ -607,6 +784,7 @@ export async function getPublicOrder(
         : null,
       terms: order.terms,
       today,
+      branch: place.branch,
       entry,
       qr: usable ? buildTicketQr(`${await getAppUrl()}/e/${entryCodeFromOrderId(order.id)}`) : null,
     },
@@ -692,11 +870,11 @@ export async function getSampleOrder(
   if (!experience) return null
 
   const today = serviceDayIn(tz)
-  const [venue, { data: next }] = await Promise.all([
+  const [venue, { data: next }, branchRows] = await Promise.all([
     loadVenue(service, tenant),
     service
       .from('scheduled_events')
-      .select('event_date, starts_at_local')
+      .select('event_date, starts_at_local, branch_id')
       .eq('tenant_id', tenant.id)
       .eq('template_id', experience.template_id)
       // Una función que todavía no fue: sin el botón fijo de la noche, que taparía la escena.
@@ -704,8 +882,19 @@ export async function getSampleOrder(
       .order('event_date', { ascending: true })
       .limit(1)
       .maybeSingle(),
+    loadBranches(service, tenant.id),
   ])
-  const event = next as { event_date: string; starts_at_local: string } | null
+  const event = next as {
+    event_date: string
+    starts_at_local: string
+    branch_id: string | null
+  } | null
+  // Sin función por delante, la principal: es donde cae lo que no dice sucursal.
+  const place = orderPlace(
+    branchRows,
+    event?.branch_id ?? branchRows.find((b) => b.is_default)?.id ?? null,
+    venue.address,
+  )
 
   const partySize = Math.min(Math.max(options.people ?? 2, 1), 10)
   const deposit = Number(experience.deposit_cents) > 0
@@ -715,6 +904,7 @@ export async function getSampleOrder(
   const now = new Date()
   return {
     venue,
+    address: place.address,
     order: {
       id: SAMPLE_ORDER_ID,
       shortCode: 'MUESTRA0',
@@ -746,6 +936,7 @@ export async function getSampleOrder(
       paidAtLabel: formatInTimeZone(now, tz, 'dd/MM/yyyy HH:mm'),
       terms: experience.terms,
       today,
+      branch: place.branch,
       entry: { inside: 0, total: partySize, atLabel: null, cancelled: false },
       qr: buildTicketQr(`${await getAppUrl()}/e/${entryCodeFromOrderId(SAMPLE_ORDER_ID)}`),
       sample: true,
@@ -791,7 +982,9 @@ export async function getTicketingSettings(tenantId: string): Promise<TicketingS
   )
 }
 
-export type AdminExperience = PublicExperience & {
+export type AdminExperience = Omit<PublicExperience, 'functions'> & {
+  /** Las funciones de la sucursal que se mira (en «Todas», las de todas, cada una con la suya). */
+  functions: AdminFunction[]
   published: boolean
   templateId: string
   templateName: string
@@ -822,8 +1015,14 @@ export type AdminOverview = {
   today: string
 }
 
-/** Todo lo de la pestaña Entradas: las películas, sus funciones y los formatos libres. */
-export async function getAdminOverview(tenantId: string): Promise<AdminOverview> {
+/**
+ * Todo lo de la pestaña Entradas: las películas (del bar), sus funciones (de la sucursal que se
+ * mira, `branch`) y los formatos libres.
+ */
+export async function getAdminOverview(
+  tenantId: string,
+  branch: BranchFilter = WHOLE_BAR,
+): Promise<AdminOverview> {
   const supabase = (await createClient()) as SBAny
   const [templates, { data: rows, error }] = await Promise.all([
     loadTemplates(supabase, tenantId),
@@ -845,6 +1044,7 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
     tenantId,
     experiences.map((e) => e.template_id),
     DEFAULT_TZ,
+    branch,
   )
   const used = new Set(experiences.map((e) => e.template_id))
 
@@ -868,9 +1068,11 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
   }
 }
 
+/** El editor de una película: la película (del bar) y sus funciones de la sucursal que se mira. */
 export async function getAdminExperience(
   tenantId: string,
   id: string,
+  branch: BranchFilter = WHOLE_BAR,
 ): Promise<AdminExperience | null> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
@@ -887,7 +1089,7 @@ export async function getAdminExperience(
   if (!row) return null
   const [templates, functions] = await Promise.all([
     loadTemplates(supabase, tenantId),
-    loadFunctions(createServiceClient() as SBAny, tenantId, [row.template_id], DEFAULT_TZ),
+    loadFunctions(createServiceClient() as SBAny, tenantId, [row.template_id], DEFAULT_TZ, branch),
   ])
   const tpl = templates.find((t) => t.id === row.template_id)
   return {
@@ -921,6 +1123,8 @@ export type CapacityFunction = {
   accent: string
   /** La película está apagada: no se vende, pero el cupo se puede dejar listo. */
   published: boolean
+  /** La sucursal de la función: el cupo es de esa sala y nunca se suma con el de otra. */
+  branchId: string | null
 }
 
 type FilmRow = {
@@ -969,11 +1173,15 @@ async function loadFilmsByTemplate(
  * cupo. Para Ventas online › Funciones: los socios pidieron el 11/11/2026 poder cambiar cuántos
  * entran sin pedírselo a nadie («normalmente va a ser 54, el del cine»), y que lo pueda hacer
  * Luz. Las que ya empezaron y las de grupos privados no aparecen, igual que en la cartelera.
+ * Solo las de la sucursal que se mira (`branch`).
  */
-export async function listCapacityFunctions(tenantId: string): Promise<CapacityFunction[]> {
+export async function listCapacityFunctions(
+  tenantId: string,
+  branch: BranchFilter = WHOLE_BAR,
+): Promise<CapacityFunction[]> {
   const service = createServiceClient() as SBAny
   const films = await loadFilmsByTemplate(service, tenantId)
-  const rows = await loadFunctionSeats(service, tenantId, [...films.keys()], DEFAULT_TZ)
+  const rows = await loadFunctionSeats(service, tenantId, [...films.keys()], DEFAULT_TZ, branch)
   return rows.flatMap(({ event: e, capacity, taken, held }) => {
     const film = films.get(e.template_id)
     if (!film) return []
@@ -990,6 +1198,7 @@ export async function listCapacityFunctions(tenantId: string): Promise<CapacityF
         title: film.title,
         accent: film.accent,
         published: film.published,
+        branchId: e.branch_id ?? null,
       },
     ]
   })
@@ -997,12 +1206,12 @@ export async function listCapacityFunctions(tenantId: string): Promise<CapacityF
 
 /**
  * Una función de la cartelera que todavía se puede tocar (es de una película, no es de un grupo
- * privado y no empezó) con sus lugares, para cambiarle el cupo. `null` si no lo es.
+ * privado y no empezó) con sus lugares y su sucursal, para cambiarle el cupo. `null` si no lo es.
  */
 export async function getCapacityFunction(
   tenantId: string,
   eventId: string,
-): Promise<Pick<CapacityFunction, 'capacity' | 'reserved' | 'paying'> | null> {
+): Promise<Pick<CapacityFunction, 'capacity' | 'reserved' | 'paying' | 'branchId'> | null> {
   const service = createServiceClient() as SBAny
   const { data, error } = await service
     .from('scheduled_events')
@@ -1021,7 +1230,12 @@ export async function getCapacityFunction(
   const rows = await loadFunctionSeats(service, tenantId, [templateId], DEFAULT_TZ)
   const row = rows.find((r) => r.event.id === eventId)
   if (!row) return null
-  return { capacity: row.capacity, reserved: row.taken, paying: row.held }
+  return {
+    capacity: row.capacity,
+    reserved: row.taken,
+    paying: row.held,
+    branchId: row.event.branch_id ?? null,
+  }
 }
 
 export type AdminOrder = Pick<
@@ -1120,11 +1334,11 @@ const ADMIN_ORDER_COLUMNS =
  * Le suma a cada compra pagada su «Deshacer» de la puerta. Lo lee solo el dueño (audit_log es
  * suyo por RLS): para la anfitriona sale vacío, y está bien, porque es lo que los dueños miran.
  */
-async function withUndos(
+async function withUndos<T extends Omit<AdminOrder, 'undo'>>(
   supabase: SBAny,
   tenantId: string,
-  orders: Omit<AdminOrder, 'undo'>[],
-): Promise<AdminOrder[]> {
+  orders: T[],
+): Promise<Array<T & { undo: OrderUndo | null }>> {
   const undos = await loadOrderUndos(
     supabase,
     tenantId,
@@ -1149,6 +1363,15 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
   return withUndos(supabase, tenantId, (data as Omit<AdminOrder, 'undo'>[] | null) ?? [])
 }
 
+/** Una compra de Ventas online: la de siempre, con la sucursal de su función. */
+export type SalesOrder = AdminOrder & {
+  /** La copia la base de la función al comprar. Mirando «Todas», cada renglón la dice. */
+  branch_id: string | null
+}
+
+/** Las mismas columnas y el mismo embebido de siempre (una sola relación con la reserva), más la sucursal. */
+const SALES_ORDER_COLUMNS = `branch_id, ${ADMIN_ORDER_COLUMNS}`
+
 /**
  * Ventas online, una página (lib/ticketing/sales-days.ts): las compras que entraron entre
  * `fromIso` (inclusive) y `toIso` (exclusivo), de la más nueva a la más vieja, y cuándo entró la
@@ -1158,27 +1381,36 @@ export async function listRecentOrders(tenantId: string, limit = 60): Promise<Ad
  * `undos: false` no busca los «Deshacer» de la puerta: es lo que ve la anfitriona, que no lee
  * audit_log. Lo pasa la página según el rol, así «Ver como» (lib/tenant/view-as.ts) muestra lo
  * mismo que ve ella aunque la sesión sea la del dueño.
+ *
+ * `branch`: las de la sucursal que se mira (`ticket_orders.branch_id`). «Ver días anteriores»
+ * también, así salta a la venta anterior de esa sucursal y no a una semana vacía.
  */
 export async function listOrdersBetween(
   tenantId: string,
   fromIso: string,
   toIso: string,
-  options: { undos?: boolean } = {},
-): Promise<{ orders: AdminOrder[]; olderCreatedAt: string | null }> {
+  options: { undos?: boolean; branch?: BranchFilter } = {},
+): Promise<{ orders: SalesOrder[]; olderCreatedAt: string | null }> {
   const supabase = (await createClient()) as SBAny
+  const branch = options.branch ?? WHOLE_BAR
   const [page, older] = await Promise.all([
-    supabase
-      .from('ticket_orders')
-      .select(ADMIN_ORDER_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .gte('created_at', fromIso)
-      .lt('created_at', toIso)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('ticket_orders')
-      .select('created_at')
-      .eq('tenant_id', tenantId)
-      .lt('created_at', fromIso)
+    applyBranchFilter(
+      supabase
+        .from('ticket_orders')
+        .select(SALES_ORDER_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .gte('created_at', fromIso)
+        .lt('created_at', toIso),
+      branch,
+    ).order('created_at', { ascending: false }),
+    applyBranchFilter(
+      supabase
+        .from('ticket_orders')
+        .select('created_at')
+        .eq('tenant_id', tenantId)
+        .lt('created_at', fromIso),
+      branch,
+    )
       .order('created_at', { ascending: false })
       .limit(1),
   ])
@@ -1190,7 +1422,7 @@ export async function listOrdersBetween(
     throw new Error('No pudimos cargar las ventas.')
   }
   const olderRows = (older.data as Array<{ created_at: string }> | null) ?? []
-  const rows = (page.data as Omit<AdminOrder, 'undo'>[] | null) ?? []
+  const rows = (page.data as Omit<SalesOrder, 'undo'>[] | null) ?? []
   return {
     orders:
       options.undos === false
