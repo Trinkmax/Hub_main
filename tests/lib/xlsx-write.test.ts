@@ -131,6 +131,32 @@ describe('el XML', () => {
     expect(xml).toContain('Salsa &lt;picante&gt; &amp; &quot;ahumada&quot;')
   })
 
+  it('una lista que avisa en vez de no dejar (las zonas: un lugar nuevo se puede escribir)', async () => {
+    const xml = await entryText(
+      buildXlsx([
+        {
+          name: 'Insumos',
+          rows: [['Zona'], ['Almacén']],
+          validations: [
+            {
+              range: 'A2:A100',
+              source: { sheet: 'Listas', range: 'A2:A3' },
+              strict: true,
+              warnOnly: true,
+              error: { title: 'No está', text: 'Si es nueva, dejala.' },
+            },
+          ],
+        },
+        { name: 'Listas', rows: [['Zonas'], ['Almacén'], ['Cámara']] },
+      ]),
+      'xl/worksheets/sheet1.xml',
+    )
+    expect(xml).toContain(
+      'errorStyle="warning" allowBlank="1" showInputMessage="1" showErrorMessage="1"',
+    )
+    expect(xml).not.toContain('errorStyle="stop"')
+  })
+
   it('el libro: hojas ocultas y el rango del filtro', async () => {
     const xml = await entryText(buildXlsx(SHEETS), 'xl/workbook.xml')
     expect(xml).toContain('<sheet name="Listas" sheetId="3" state="hidden" r:id="rId3"/>')

@@ -13,7 +13,11 @@
  * - Una columna que no viene no se toca. Una celda vacía borra el dato (sin objetivo, sin proveedor…), salvo
  *   Frecuencia y Activo, que quedan como estaban.
  * - Borrar una fila no borra el insumo: queda como está. Para que deje de contarse, «No» en Activo.
- * - Zona y proveedor tienen que existir en HUB (nunca se elige uno parecido solo: se sugiere).
+ * - El proveedor tiene que existir en HUB (nunca se elige uno parecido solo: se sugiere).
+ * - Una zona que HUB no tiene la decide quien sube (pedido de Tomás, 18/11/2026: «yo las modifiqué desde el
+ *   Excel nomás»): es nueva y se arma, es una que ya está escrita de otra forma, o es una que ya está con el
+ *   nombre cambiado. Por defecto, nueva; mal escrita por una o dos letras, esa; y si sus insumos vienen de una
+ *   zona que la planilla ya no nombra, el nombre nuevo de esa (ver `sheetZones`).
  * - Una fila con un problema no se carga entera; las demás sí.
  */
 
@@ -171,21 +175,36 @@ function levenshtein(a: string, b: string): number {
   return prev[b.length] ?? 0
 }
 
-/** El nombre más parecido de la lista, para sugerirlo (nunca se elige solo). */
-function closest(text: string, names: readonly string[]): string | null {
+/**
+ * El más parecido de la lista, con cuánto se parece: `prefix` cuando uno empieza con el otro («Fractal» y
+ * «Fractal Agricultura»), si no la cantidad de letras distintas. `null` si ninguno se parece lo suficiente.
+ */
+function nearest<T extends { name: string }>(
+  text: string,
+  list: readonly T[],
+): { item: T; distance: number; prefix: boolean } | null {
   const key = nameKey(text)
   if (!key) return null
-  let best: { name: string; distance: number } | null = null
-  for (const name of names) {
-    const other = nameKey(name)
+  let best: { item: T; distance: number; prefix: boolean } | null = null
+  for (const item of list) {
+    const other = nameKey(item.name)
     if (!other) continue
-    // «Fractal» y «Fractal Agricultura»: uno empieza con el otro.
-    const distance =
-      other.startsWith(`${key} `) || key.startsWith(`${other} `) ? 0.5 : levenshtein(key, other)
-    if (!best || distance < best.distance) best = { name, distance }
+    const prefix = other.startsWith(`${key} `) || key.startsWith(`${other} `)
+    const distance = prefix ? 0.5 : levenshtein(key, other)
+    if (!best || distance < best.distance) best = { item, distance, prefix }
   }
   if (!best) return null
-  return best.distance <= Math.max(1, Math.floor(key.length / 3)) ? best.name : null
+  return best.distance <= Math.max(1, Math.floor(key.length / 3)) ? best : null
+}
+
+/** El nombre más parecido de la lista, para sugerirlo (nunca se elige solo). */
+function closest(text: string, names: readonly string[]): string | null {
+  return (
+    nearest(
+      text,
+      names.map((name) => ({ name })),
+    )?.item.name ?? null
+  )
 }
 
 /**
@@ -225,6 +244,50 @@ function notFound(
   if (found.suggestion) return `${what} «${text}» no está en HUB. ¿Es «${found.suggestion}»?`
   return `${what} «${text}» no está en HUB. ${otherwise}`
 }
+
+// ─── Zonas que la planilla trae y HUB no tiene ───────────────────────────────
+
+/** Qué es una zona que la planilla trae y HUB no tiene. La elige quien sube. */
+export type ZoneChoice =
+  /** Un lugar nuevo: se arma al guardar, al final del recorrido. */
+  | { readonly kind: 'create' }
+  /** Es esa zona de HUB escrita de otra forma: las filas van ahí y la zona queda como está. */
+  | { readonly kind: 'existing'; readonly zoneId: string }
+  /** Es esa zona de HUB con el nombre cambiado: toma el nombre de la planilla, con todos sus insumos. */
+  | { readonly kind: 'rename'; readonly zoneId: string }
+
+export type SheetNewZone = {
+  /** `nameKey` del nombre: así se juntan las filas que la escriben igual (con o sin tildes). */
+  readonly key: string
+  /** Como vino escrita la primera vez. */
+  readonly name: string
+  /** Las filas que la usan y se cargan (las que tienen otro problema no cuentan). */
+  readonly lines: readonly number[]
+  /** Dónde están hoy los insumos de esas filas (`null`: sin zona, o un insumo nuevo). */
+  readonly from: ReadonlyArray<{ readonly zoneId: string | null; readonly count: number }>
+  /** La zona de HUB que más se le parece, para ofrecerla primero. */
+  readonly similarId: string | null
+  readonly choice: ZoneChoice
+  /** Cómo se llama hoy la zona elegida (va en la huella: si alguien la cambia, se vuelve a mostrar). */
+  readonly targetName: string | null
+}
+
+export type ZoneChoices = Readonly<Record<string, ZoneChoice>>
+
+const NEW_ZONE = 'nueva:'
+
+/** El lugar de una zona que se va a armar al guardar: hasta entonces, el insumo apunta acá. */
+export function newZoneRef(key: string): string {
+  return `${NEW_ZONE}${key}`
+}
+
+/** La clave de la zona nueva a la que apunta un insumo, o `null` si apunta a una de HUB. */
+export function newZoneKeyOf(zoneId: string | null): string | null {
+  return zoneId?.startsWith(NEW_ZONE) ? zoneId.slice(NEW_ZONE.length) : null
+}
+
+/** Hasta dos letras distintas, sin que una empiece con la otra: es la misma, mal escrita. */
+const TYPO_DISTANCE = 2
 
 // ─── Celdas ──────────────────────────────────────────────────────────────────
 
@@ -388,6 +451,14 @@ export type SheetPlan = {
   readonly same: number
   /** Insumos de HUB que no están en la planilla: quedan como están. */
   readonly notInSheet: number
+  /** Las zonas que la planilla trae y HUB no tiene, con lo que se va a hacer con cada una. */
+  readonly newZones: readonly SheetNewZone[]
+  /** Las zonas de HUB, en el orden del recorrido, con cuántos insumos tiene hoy cada una. */
+  readonly zoneList: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly items: number
+  }>
 }
 
 const EMPTY_PLAN: SheetPlan = {
@@ -399,6 +470,8 @@ const EMPTY_PLAN: SheetPlan = {
   problems: [],
   same: 0,
   notInSheet: 0,
+  newZones: [],
+  zoneList: [],
 }
 
 /** «Bondiola de cerdo (INS-006)». */
@@ -497,6 +570,16 @@ type RowRead = {
   name: string
   fields: Partial<ItemValues>
   reasons: string[]
+  /** La zona nueva que nombra la fila (su `nameKey`), si nombra una que HUB no tiene. */
+  newZoneKey: string | null
+}
+
+/** Una zona escrita en la planilla que no es de HUB, o el porqué no puede ser una. */
+function unknownZone(text: string): { key: string } | { reason: string } {
+  const key = nameKey(text)
+  if (!key) return { reason: `Zona: «${text}» no es un nombre de zona.` }
+  if (text.length > 60) return { reason: 'Zona: el nombre va hasta 60 letras.' }
+  return { key }
 }
 
 /** Una fila de la planilla → lo que dice de cada columna que vino (sin decidir todavía a qué insumo va). */
@@ -505,6 +588,7 @@ function readRow(
   line: number,
   columns: Partial<Record<SheetField, number>>,
   catalog: SheetCatalog,
+  zoneChoice: (key: string) => ZoneChoice | undefined,
 ): RowRead {
   const at = (field: SheetField): Cell | undefined => {
     const index = columns[field]
@@ -536,21 +620,24 @@ function readRow(
   }
   if (has('brand')) take('brand', boundedText(at('brand'), 'Marca', 60))
 
+  let newZoneKey: string | null = null
   if (has('zone')) {
     const text = cellText(at('zone'))
     if (!text || nameKey(text) === 'sin zona') fields.zoneId = null
     else {
       const found = lookup(text, catalog.zones)
       if (found.ok) fields.zoneId = found.id
-      else
-        reasons.push(
-          notFound(
-            'La zona',
-            text,
-            found,
-            'Armala en Insumos › Zonas del recorrido o elegí una de la lista.',
-          ),
-        )
+      else if (found.twins.length > 1) reasons.push(notFound('La zona', text, found, ''))
+      else {
+        // Una que HUB no tiene: lo que es lo decide quien sube (ver `ZoneChoice`).
+        const unknown = unknownZone(text)
+        const choice = 'key' in unknown ? zoneChoice(unknown.key) : undefined
+        if ('reason' in unknown) reasons.push(unknown.reason)
+        else if (choice) {
+          newZoneKey = unknown.key
+          fields.zoneId = choice.kind === 'create' ? newZoneRef(unknown.key) : choice.zoneId
+        }
+      }
     }
   }
 
@@ -595,16 +682,134 @@ function readRow(
   }
   if (has('notes')) take('notes', boundedText(at('notes'), 'Notas', 500))
 
-  return { line, key, code, name, fields, reasons }
+  return { line, key, code, name, fields, reasons, newZoneKey }
+}
+
+/**
+ * Las zonas que la planilla trae y HUB no tiene, en el orden en que aparecen, con lo que se va a hacer con cada
+ * una. Primero lo que eligió quien sube (si sigue valiendo); para las demás, lo de siempre:
+ * - mal escrita por una o dos letras → es esa zona;
+ * - sus insumos vienen de una zona que la planilla ya no nombra → le cambiaron el nombre a esa (si la vacían
+ *   entre dos zonas nuevas, el nombre lo toma la que se lleva más);
+ * - si no, es nueva.
+ * A una zona se le cambia el nombre una sola vez: si dos lo piden, la segunda va a esa zona tal como está.
+ */
+function sheetZones(
+  rows: readonly (readonly Cell[])[],
+  from: number,
+  columns: Partial<Record<SheetField, number>>,
+  catalog: SheetCatalog,
+  asked: ZoneChoices,
+): Map<string, { name: string; similarId: string | null; choice: ZoneChoice }> {
+  const out = new Map<string, { name: string; similarId: string | null; choice: ZoneChoice }>()
+  const column = columns.zone
+  if (column === undefined) return out
+  const zones = catalog.zones
+  const byId = new Map(zones.map((z) => [z.id, z]))
+
+  // El insumo de cada fila, como lo busca la lectura (clave, código, nombre), para saber de dónde viene.
+  const itemById = new Map(catalog.items.map((i) => [i.id, i]))
+  const itemByCode = new Map<string, PurItem>()
+  const itemsByName = new Map<string, PurItem[]>()
+  for (const item of catalog.items) {
+    if (item.code) itemByCode.set(item.code.trim().toUpperCase(), item)
+    const k = nameKey(item.name)
+    itemsByName.set(k, [...(itemsByName.get(k) ?? []), item])
+  }
+  const textAt = (row: readonly Cell[], field: SheetField) => {
+    const index = columns[field]
+    return index === undefined ? '' : cellText(row[index])
+  }
+  const itemOf = (row: readonly Cell[]): PurItem | undefined => {
+    for (const text of [textAt(row, 'key'), textAt(row, 'code')]) {
+      if (UUID_RE.test(text) && itemById.has(text)) return itemById.get(text)
+    }
+    const code = textAt(row, 'code').toUpperCase()
+    if (code && itemByCode.has(code)) return itemByCode.get(code)
+    const homonyms = itemsByName.get(nameKey(textAt(row, 'name'))) ?? []
+    return homonyms.length === 1 ? homonyms[0] : undefined
+  }
+
+  const stillNamed = new Set<string>()
+  const seen = new Map<
+    string,
+    { name: string; similar: ReturnType<typeof nearest<PurZone>>; fromZones: Map<string, number> }
+  >()
+  for (let i = from; i < rows.length; i++) {
+    const row = rows[i] ?? []
+    const text = cellText(row[column])
+    if (!text || nameKey(text) === 'sin zona') continue
+    const found = lookup(text, zones)
+    if (found.ok) {
+      stillNamed.add(found.id)
+      continue
+    }
+    // Dos de HUB que se escriben igual: es un problema de la fila, no una zona nueva.
+    if (found.twins.length > 1) continue
+    const unknown = unknownZone(text)
+    if (!('key' in unknown)) continue
+    let entry = seen.get(unknown.key)
+    if (!entry) {
+      entry = { name: text, similar: nearest(text, zones), fromZones: new Map() }
+      seen.set(unknown.key, entry)
+    }
+    const zoneId = itemOf(row)?.zoneId
+    if (zoneId) entry.fromZones.set(zoneId, (entry.fromZones.get(zoneId) ?? 0) + 1)
+  }
+
+  const choices = new Map<string, ZoneChoice>()
+  const renamed = new Set<string>()
+  for (const key of seen.keys()) {
+    const want = asked[key]
+    if (!want) continue
+    if (want.kind === 'create') choices.set(key, want)
+    else if (byId.has(want.zoneId)) {
+      const choice: ZoneChoice =
+        want.kind === 'rename' && renamed.has(want.zoneId)
+          ? { kind: 'existing', zoneId: want.zoneId }
+          : want
+      if (choice.kind === 'rename') renamed.add(choice.zoneId)
+      choices.set(key, choice)
+    }
+  }
+  for (const [key, entry] of seen) {
+    if (choices.has(key)) continue
+    const { similar } = entry
+    if (similar && !similar.prefix && similar.distance <= TYPO_DISTANCE)
+      choices.set(key, { kind: 'existing', zoneId: similar.item.id })
+  }
+  // Los cambios de nombre que se adivinan: de la que más insumos se lleva a la que menos.
+  const candidates = [...seen]
+    .filter(([key]) => !choices.has(key))
+    .flatMap(([key, entry]) => {
+      const [top] = [...entry.fromZones].sort((a, b) => b[1] - a[1])
+      return top && !stillNamed.has(top[0]) ? [{ key, zoneId: top[0], count: top[1] }] : []
+    })
+    .sort((a, b) => b.count - a.count)
+  for (const c of candidates) {
+    if (renamed.has(c.zoneId)) continue
+    renamed.add(c.zoneId)
+    choices.set(c.key, { kind: 'rename', zoneId: c.zoneId })
+  }
+  for (const [key, entry] of seen) {
+    out.set(key, {
+      name: entry.name,
+      similarId: entry.similar?.item.id ?? null,
+      choice: choices.get(key) ?? { kind: 'create' },
+    })
+  }
+  return out
 }
 
 /**
  * Lee la planilla y la compara con HUB: qué insumos cambian (y cómo), cuáles son nuevos, qué filas tienen
- * problemas y cuántas quedan igual.
+ * problemas, cuántas quedan igual y qué zonas trae que HUB no tiene (con lo que eligió quien sube, o lo de
+ * siempre: nueva, salvo una mal escrita por una o dos letras).
  */
 export function readItemsSheet(
   rows: readonly (readonly Cell[])[],
   catalog: SheetCatalog,
+  options: { readonly zoneChoices?: ZoneChoices } = {},
 ): SheetPlan {
   const header = findHeaderRow(
     rows,
@@ -630,12 +835,21 @@ export function readItemsSheet(
     zone: new Map(catalog.zones.map((z) => [z.id, z.name])),
     supplier: new Map(catalog.suppliers.map((s) => [s.id, s.name])),
   }
+  const sheet = sheetZones(rows, header.index + 1, columns, catalog, options.zoneChoices ?? {})
+  // Cómo se leen en los cambios: «Zona: Freezer congelados → Freezer congelados y papas (nueva)»; la que cambia
+  // de nombre, ya con el nombre nuevo.
+  for (const [key, z] of sheet) {
+    if (z.choice.kind === 'create') names.zone.set(newZoneRef(key), `${z.name} (nueva)`)
+    if (z.choice.kind === 'rename') names.zone.set(z.choice.zoneId, z.name)
+  }
 
   const claimed = new Map<string, number>()
   const newNames = new Map<string, number>()
   const updates: SheetUpdate[] = []
   const creates: SheetCreate[] = []
   const problems: SheetProblem[] = []
+  // Las filas que se cargan (o quedan igual) con una zona nueva, y dónde está hoy su insumo.
+  const zoneUse = new Map<number, { key: string; fromZoneId: string | null }>()
   let same = 0
   let read = 0
 
@@ -643,7 +857,7 @@ export function readItemsSheet(
     const row = rows[i] ?? []
     if (row.every((c) => cellText(c) === '')) continue
     read++
-    const r = readRow(row, i + 1, columns, catalog)
+    const r = readRow(row, i + 1, columns, catalog, (key) => sheet.get(key)?.choice)
 
     // ¿A qué insumo va? Clave, código, nombre.
     let item: PurItem | undefined = r.key ? byId.get(r.key) : undefined
@@ -689,6 +903,7 @@ export function readItemsSheet(
       const changes = describeChanges(before, next, names)
       if (changes.length === 0) same++
       else updates.push({ itemId: item.id, line: r.line, label, changes, before, next })
+      if (r.newZoneKey) zoneUse.set(r.line, { key: r.newZoneKey, fromZoneId: item.zoneId })
       continue
     }
 
@@ -723,6 +938,7 @@ export function readItemsSheet(
       unit: r.fields.unit ?? 'unidad',
     }
     creates.push({ line: r.line, label, detail: describeNew(next, names), next })
+    if (r.newZoneKey) zoneUse.set(r.line, { key: r.newZoneKey, fromZoneId: null })
   }
 
   // Códigos repetidos: el que lo trae nuevo no se carga. Se repite hasta que no quede ninguno (sacar una fila
@@ -782,6 +998,31 @@ export function readItemsSheet(
     keptCreates = keptCreates.filter((_, i) => !badCreates.has(String(i)))
   }
 
+  // Las zonas nuevas, con las filas que se cargan: una que solo nombran filas con problemas no se arma.
+  const withProblems = new Set(problems.map((p) => p.line))
+  const zoneById = new Map(catalog.zones.map((z) => [z.id, z]))
+  const newZones: SheetNewZone[] = []
+  for (const [key, z] of sheet) {
+    const uses = [...zoneUse].filter(([line, use]) => use.key === key && !withProblems.has(line))
+    if (uses.length === 0) continue
+    const from = new Map<string | null, number>()
+    for (const [, use] of uses) from.set(use.fromZoneId, (from.get(use.fromZoneId) ?? 0) + 1)
+    newZones.push({
+      key,
+      name: z.name,
+      lines: uses.map(([line]) => line),
+      from: [...from]
+        .map(([zoneId, count]) => ({ zoneId, count }))
+        .sort((a, b) => b.count - a.count),
+      similarId: z.similarId,
+      choice: z.choice,
+      targetName: z.choice.kind === 'create' ? null : (zoneById.get(z.choice.zoneId)?.name ?? null),
+    })
+  }
+  const itemsIn = new Map<string, number>()
+  for (const item of catalog.items)
+    if (item.zoneId) itemsIn.set(item.zoneId, (itemsIn.get(item.zoneId) ?? 0) + 1)
+
   return {
     noColumns: false,
     missing,
@@ -791,6 +1032,27 @@ export function readItemsSheet(
     problems: problems.sort((a, b) => a.line - b.line),
     same,
     notInSheet: catalog.items.filter((item) => !claimed.has(item.id)).length,
+    newZones,
+    zoneList: [...catalog.zones]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'es'))
+      .map((z) => ({ id: z.id, name: z.name, items: itemsIn.get(z.id) ?? 0 })),
+  }
+}
+
+/** Lo que guarda la planilla además de los insumos: las zonas que se arman y las que cambian de nombre. */
+export function zoneWrites(plan: SheetPlan): {
+  creates: Array<{ key: string; name: string }>
+  renames: Array<{ zoneId: string; from: string | null; to: string }>
+} {
+  return {
+    creates: plan.newZones
+      .filter((z) => z.choice.kind === 'create')
+      .map((z) => ({ key: z.key, name: z.name })),
+    renames: plan.newZones.flatMap((z) =>
+      z.choice.kind === 'rename'
+        ? [{ zoneId: z.choice.zoneId, from: z.targetName, to: z.name }]
+        : [],
+    ),
   }
 }
 
@@ -803,6 +1065,10 @@ export function sheetFingerprint(plan: SheetPlan): string {
     JSON.stringify({
       u: plan.updates.map((u) => [u.itemId, u.before, u.next]),
       c: plan.creates.map((c) => [c.line, c.next]),
+      // Lo elegido para cada zona nueva y cómo se llama hoy la de HUB elegida.
+      ...(plan.newZones.length
+        ? { z: plan.newZones.map((z) => [z.key, z.name, z.choice, z.targetName]) }
+        : {}),
     }),
   )
 }
@@ -901,9 +1167,11 @@ export function itemsWorkbook(input: {
           range: span('zone'),
           source: listRange(0),
           strict: true,
+          // Un lugar nuevo se puede escribir acá: Excel avisa y deja; al subirla, HUB pregunta qué es.
+          warnOnly: true,
           error: {
-            title: 'Esa zona no está',
-            text: 'Elegí una zona de la lista. Las zonas nuevas se arman en HUB › Compras › Insumos › Zonas del recorrido.',
+            title: 'Esa zona no está en la lista',
+            text: 'Si es un lugar nuevo, dejala: al subir la planilla, HUB te pregunta si la arma, si es una que ya está o si le cambiaste el nombre.',
           },
         }
       : null,
@@ -938,6 +1206,7 @@ export function itemsWorkbook(input: {
     'Para agregar un insumo, sumá una fila con el nombre y la unidad (kg, L, unidad…).',
     'Para que uno deje de contarse, poné «No» en Activo. Borrar la fila no lo saca de HUB: queda como está.',
     'Zona, Proveedor, Frecuencia y Activo se eligen de la lista. Un proveedor nuevo se carga primero en HUB › Compras › Proveedores.',
+    'Una zona nueva (un lugar de guardado que HUB no tiene) se puede escribir en la celda o en la lista de Zonas de la hoja Listas. Al subirla, HUB te pregunta si es nueva, si es una que ya está o si le cambiaste el nombre a una.',
     'Una columna que borres no se toca en HUB. Una celda vacía borra ese dato (sin objetivo, sin proveedor…).',
     'Cuando termines, subila en HUB › Compras › Insumos › Planilla: antes de guardar te mostramos qué cambia.',
     'En Google Sheets: abrila desde Drive y, para subirla, Archivo › Descargar › Microsoft Excel (.xlsx).',
