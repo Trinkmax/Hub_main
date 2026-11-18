@@ -226,8 +226,9 @@ Reglas (`lib/purchasing/sheet.ts`, puro; las acciones en `sheet-actions.ts`):
 - Una **columna que no viene no se toca**. Una **celda vacía borra** el dato (sin objetivo, sin proveedor…), salvo
   Frecuencia y Activo, que quedan como estaban.
 - **Borrar una fila no borra el insumo.** Para que deje de contarse: «No» en Activo.
-- Zona y proveedor tienen que existir: el parecido se sugiere («¿Es «Matias Mondino»?»), nunca se elige solo. Un
-  proveedor nuevo se carga primero en Proveedores.
+- El proveedor tiene que existir: el parecido se sugiere («¿Es «Matias Mondino»?»), nunca se elige solo. Un
+  proveedor nuevo se carga primero en Proveedores. Una zona que HUB no tiene ya no es un problema: ver «Zonas nuevas
+  desde la planilla».
 - Una fila con un problema no se carga entera; las demás sí.
 - Guardar vuelve a leer el archivo y lo compara con HUB en ese momento; si alguien cambió uno de esos insumos mientras
   tanto (la huella incluye cómo estaba cada uno), no guarda y muestra la vista previa nueva. Todo va en un solo
@@ -239,6 +240,43 @@ Smoke (09/11/2026, bar de ejemplo, compu 1440 × 900 y celular 390 × 844 con to
 5 listas; cambiar con otro programa (objetivo, proveedor, presentación, desactivar, uno nuevo y un proveedor mal
 escrito) → «4 cambian · 1 se agrega · 1 fila con problemas · 262 quedan igual» → Guardar 5 cambios → la base quedó
 igual que la vista previa; volver a subir la original deshizo todo.
+
+### Zonas nuevas desde la planilla (18/11/2026)
+
+Tomás cambió la lista de zonas de la planilla (la hoja oculta «Listas»: «modifiqué el desplegable de los lugares de
+guardado») y al subirla 29 filas no entraron: «La zona «Freezer congelados y papas» no está en HUB. ¿Es «Freezer
+congelados»?». La planilla le decía que las armara antes en el panel; él contestó «yo los modifiqué desde el Excel
+nomás». Ahora la planilla también trae las zonas:
+
+- Una zona que HUB no tiene aparece arriba de la vista previa, en **Zonas nuevas**: cuántos insumos lleva, dónde están
+  hoy («Hoy: Freezer congelados (8) y Freezer carnes y panes (1)») y qué es, con tres opciones: **Es nueva** (se arma al
+  guardar, al final del recorrido), **Es una que ya está** (las filas van a esa, que queda con su nombre) o **Le cambié
+  el nombre** (esa zona toma el nombre de la planilla, con todos sus insumos y su lugar en el recorrido). Debajo dice
+  lo que va a pasar. Cada elección vuelve a pedir la vista previa, así lo que se ve es lo que se guarda.
+- Lo que viene elegido (`sheetZones` en `lib/purchasing/sheet.ts`): mal escrita por una o dos letras → esa zona; si
+  sus insumos vienen de una zona que la planilla ya no nombra → le cambiaron el nombre a esa (si la reparten entre dos
+  zonas nuevas, el nombre lo toma la que se lleva más); si no, nueva. A una zona se le cambia el nombre una sola vez.
+- Una zona que solo nombran filas con otro problema no se arma. Un nombre de más de 60 letras, o sin letras, es un
+  problema de la fila; dos zonas de HUB que se escriben igual, también.
+- Guardar arma las nuevas (`pur_zones`, después de la última del recorrido), cambia los nombres y recién ahí guarda
+  los insumos. Si los insumos fallan después de armar las zonas, lo dice: volver a subir la planilla termina el trabajo
+  (las zonas ya van a estar). La huella incluye lo elegido y el nombre de hoy de la zona elegida. La auditoría suma
+  `zones_created` y `zones_renamed`. Al terminar, «Acomodar las zonas» abre Zonas del recorrido.
+- En el Excel, escribir una zona que no está en la lista ya no se bloquea: avisa («Esa zona no está en la lista»,
+  `warnOnly` en `lib/xlsx/write.ts`) y deja. El proveedor sigue sin dejar.
+- Excel no cambia las celdas cuando se cambia la lista: si se renombró una zona y alguna fila quedó con el nombre
+  viejo, en esa misma subida va a la zona de siempre; si se vuelve a subir el mismo archivo después, ese nombre viejo
+  aparece como zona nueva, con «Hoy: …» diciendo dónde está.
+
+Smoke (18/11/2026, bar de ejemplo, compu 1190 × 660 y celular 390 × 844): bajar la planilla → en «Listas»,
+«Freezer congelados» → «Freezer congelados y papas», y 14 insumos a «Freezer congelados y papas», «Freezer carnes
+deposito» y «Frezzer panes deposito» → subirla: «6 cambian · 3 zonas nuevas en la planilla · 262 quedan igual»,
+«Freezer congelados y papas» viene como «Le cambié el nombre» (sus 8 insumos y ninguna fila con el nombre viejo) y
+las otras dos como nuevas → «Es una que ya está» muestra «¿Cuál es?» y «El insumo va a «Freezer carnes y panes»…» →
+volver a «Es nueva» → Guardar 9 cambios → «Se armaron las zonas … al final del recorrido» y «Freezer congelados ahora se
+llama Freezer congelados y papas»; en la base, las nuevas en 70 y 80 y la renombrada en su lugar con su planta. Subir
+la original lo deshizo (propuso solo devolverle el nombre) y las dos zonas de prueba se borraron desde Zonas del
+recorrido.
 
 ## Datos para corregir
 
