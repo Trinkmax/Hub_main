@@ -22,7 +22,10 @@ import { cn } from '@/lib/utils'
 import type { LocalLine } from './count-row'
 import type { CountScreenProps } from './count-screen'
 
-/** De dónde sale el número: «Hay 2 kg · objetivo 10 · +66 para Shrek · en camino 3». */
+/**
+ * De dónde sale el número: «Hay 2 kg · objetivo 10 · +4,5 para Ratatouille (mié 18/11) · +4 para Comida
+ * Coreana (jue 19/11) · en camino 3».
+ */
 export function lineReason(l: SuggestedLine): string {
   const u = l.item.unit
   const parts: string[] = []
@@ -34,7 +37,13 @@ export function lineReason(l: SuggestedLine): string {
   else parts.push(`Hay ${formatAmount(l.countedQty, u)}`)
   // Lo que no se contó se pide solo por el evento: el objetivo no entra en la cuenta.
   if (l.targetQty != null && l.countState != null) parts.push(`objetivo ${formatQty(l.targetQty)}`)
-  if (l.eventQty > 0) parts.push(`+${formatQty(l.eventQty)} para ${l.eventNames.join(', ')}`)
+  if (l.eventParts.length) {
+    for (const p of l.eventParts) {
+      parts.push(`+${formatQty(p.qty)} para ${p.name} (${formatWeekdayDayMonth(p.date)})`)
+    }
+  } else if (l.eventQty > 0) {
+    parts.push(`+${formatQty(l.eventQty)} para ${l.eventNames.join(', ')}`)
+  }
   if (l.inTransitQty > 0) parts.push(`en camino ${formatAmount(l.inTransitQty, u)}`)
   if (l.suggestedPacks == null) parts.push('sin objetivo: la cantidad la define quien compra')
   return parts.join(' · ')

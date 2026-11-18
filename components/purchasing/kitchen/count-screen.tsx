@@ -402,7 +402,7 @@ export function CountScreen(props: CountScreenProps) {
           )}
           {shownEvents.some((e) => e.status === 'sums') ? (
             <p className="mt-1.5 text-sm opacity-90">
-              Lo que piden los eventos aparece marcado: contalo exacto.
+              Lo que piden los eventos aparece marcado, con cuánto lleva cada uno: contalo exacto.
             </p>
           ) : null}
         </div>

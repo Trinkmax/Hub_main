@@ -10,7 +10,7 @@
  */
 import { monthOf } from '@/lib/dates'
 import { nextDeliveryDate } from './dates'
-import type { EventNeed } from './events'
+import type { EventNeed, EventShare } from './events'
 import type { CountState, PurCountLine, PurItem, PurSupplier, PurZone } from './types'
 import { packsFor, roundQty } from './units'
 
@@ -55,6 +55,18 @@ export function countedQty(
   }
 }
 
+/**
+ * Lo que tiene que haber de un insumo que piden los eventos: el objetivo de la carta más lo de cada fecha (es
+ * contra lo que la cuenta compara lo contado). `null` cuando no dice nada que la etiqueta del evento no diga
+ * sola: sin objetivo y con una sola fecha.
+ */
+export function mustHaveQty(targetQty: number | null, need: EventNeed | undefined): number | null {
+  if (!need || need.qty <= EPSILON) return null
+  const target = targetQty != null && targetQty > EPSILON ? targetQty : 0
+  if (!target && need.parts.length <= 1) return null
+  return roundQty(target + need.qty)
+}
+
 /** Para las barras del resumen: un número exacto también cae en alcanza / poco / no hay. */
 export function stockLevel(
   line: Pick<PurCountLine, 'state' | 'quantity'>,
@@ -77,6 +89,8 @@ export type SuggestedLine = {
   targetQty: number | null
   eventQty: number
   eventNames: string[]
+  /** Cuánto lleva cada fecha (suma `eventQty`). No viaja al pedido: el renglón guarda el total y los nombres. */
+  eventParts: EventShare[]
   inTransitQty: number
   /** En la unidad del insumo. `null` si es «a definir». */
   needQty: number | null
@@ -100,6 +114,7 @@ export function suggestLine(input: {
     targetQty: item.targetQty,
     eventQty,
     eventNames: need?.events ?? [],
+    eventParts: need?.parts ?? [],
     inTransitQty: inTransit,
   }
 

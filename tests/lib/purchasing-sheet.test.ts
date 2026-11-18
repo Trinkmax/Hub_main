@@ -3,7 +3,8 @@
  * - bajar la planilla y subirla sin tocarla no cambia nada (la ida y la vuelta pasan por el `.xlsx` de verdad);
  * - cada fila va a su insumo por la clave oculta, el código o el nombre, y nunca dos filas al mismo;
  * - una columna que no viene no se toca; una celda vacía borra el dato; borrar una fila no borra el insumo;
- * - zona y proveedor tienen que existir (se sugiere el parecido, nunca se elige solo);
+ * - el proveedor tiene que existir (se sugiere el parecido, nunca se elige solo); una zona que HUB no tiene la
+ *   decide quien sube: nueva, una que ya está o una con el nombre cambiado (pedido de Tomás, 18/11/2026);
  * - guardar escribe todo junto, no pisa quién creó cada insumo, y si algo cambió desde la vista previa no
  *   guarda; solo el dueño, con Compras prendido.
  */
@@ -57,6 +58,7 @@ import {
   readItemsSheet,
   type SheetCatalog,
   sheetFingerprint,
+  zoneWrites,
 } from '@/lib/purchasing/sheet'
 import { applyItemsSheet, previewItemsSheet } from '@/lib/purchasing/sheet-actions'
 import { buildXlsx } from '@/lib/xlsx/write'
@@ -475,23 +477,16 @@ describe('a qué insumo va cada fila', () => {
 })
 
 describe('los problemas', () => {
-  it('zona o proveedor que no están: se sugiere el parecido, nunca se elige solo', async () => {
+  it('un proveedor que no está: se sugiere el parecido, nunca se elige solo', async () => {
     const catalog = catalogOf(seed())
     const rows = await downloadedRows(catalog)
     edit(rows, 'Bondiola de cerdo', 'Proveedor', 'Va Foods')
-    edit(rows, 'Tomate perita', 'Zona', 'Terraza')
     edit(rows, 'Carne Molida Burger', 'Objetivo', 'mucho')
     const plan = readItemsSheet(rows, catalog)
     expect(plan.updates).toEqual([])
     expect(plan.problems.map((p) => [p.line, p.reasons])).toEqual([
       [2, ['El proveedor «Va Foods» no está en HUB. ¿Es «Va Food»?']],
       [3, ['Objetivo: «mucho» no es un número.']],
-      [
-        4,
-        [
-          'La zona «Terraza» no está en HUB. Armala en Insumos › Zonas del recorrido o elegí una de la lista.',
-        ],
-      ],
     ])
   })
 
@@ -648,6 +643,174 @@ describe('la huella', () => {
   })
 })
 
+describe('zonas que la planilla trae y HUB no tiene (pedido de Tomás, 18/11/2026)', () => {
+  // Tomás cambió la lista de zonas del Excel y la subió: «yo los modifiqué desde el Excel nomás». La carne
+  // molida sigue en «Freezer carnes y panes» y el tomate en la cámara: esas zonas siguen en la planilla.
+  async function tomas() {
+    const catalog = catalogOf(seed())
+    const rows = await downloadedRows(catalog)
+    edit(rows, 'Bondiola de cerdo', 'Zona', 'Freezer carnes deposito')
+    edit(rows, 'Tomate perita', 'Zona', 'Camara de frioo')
+    edit(rows, 'Alcaparras', 'Zona', 'Frezzer panes deposito')
+    edit(rows, 'Romero seco', 'Zona', 'freezer carnes depósito')
+    return { catalog, rows }
+  }
+
+  it('ya no es un problema: por defecto es nueva, y si se parece por una o dos letras, es esa', async () => {
+    const { catalog, rows } = await tomas()
+    const plan = readItemsSheet(rows, catalog)
+    expect(plan.problems).toEqual([])
+    expect(plan.newZones.map((z) => [z.name, z.lines, z.choice, z.similarId])).toEqual([
+      ['Freezer carnes deposito', [2, 6], { kind: 'create' }, Z.freezer],
+      ['Camara de frioo', [4], { kind: 'existing', zoneId: Z.camara }, Z.camara],
+      ['Frezzer panes deposito', [5], { kind: 'create' }, null],
+    ])
+    // Dónde están hoy: la bondiola en el freezer y el romero sin zona.
+    expect(plan.newZones[0]?.from).toEqual([
+      { zoneId: Z.freezer, count: 1 },
+      { zoneId: null, count: 1 },
+    ])
+    expect(plan.updates.map((u) => [u.label, u.changes.map((c) => c.text)])).toEqual([
+      [
+        'Bondiola de cerdo (INS-006)',
+        ['Zona: Freezer carnes y panes → Freezer carnes deposito (nueva)'],
+      ],
+      ['Alcaparras (EV-002)', ['Zona: sin zona → Frezzer panes deposito (nueva)']],
+      ['Romero seco (INS-200)', ['Zona: sin zona → Freezer carnes deposito (nueva)']],
+    ])
+    // La carne molida no cambió y el tomate ya estaba en la cámara.
+    expect(plan.same).toBe(2)
+    expect(zoneWrites(plan)).toEqual({
+      creates: [
+        { key: 'freezer carnes deposito', name: 'Freezer carnes deposito' },
+        { key: 'frezzer panes deposito', name: 'Frezzer panes deposito' },
+      ],
+      renames: [],
+    })
+  })
+
+  it('si la planilla ya no nombra una zona y sus insumos van a una nueva, le cambiaron el nombre', async () => {
+    const catalog = catalogOf(seed())
+    const rows = await downloadedRows(catalog)
+    edit(rows, 'Bondiola de cerdo', 'Zona', 'Freezer carnes deposito')
+    edit(rows, 'Carne Molida Burger', 'Zona', 'Freezer carnes deposito')
+    const plan = readItemsSheet(rows, catalog)
+    expect(plan.newZones.map((z) => [z.name, z.choice, z.targetName])).toEqual([
+      ['Freezer carnes deposito', { kind: 'rename', zoneId: Z.freezer }, 'Freezer carnes y panes'],
+    ])
+    // Los dos siguen en la misma zona, que cambia de nombre: no se mueve ningún insumo.
+    expect(plan.updates).toEqual([])
+    expect(zoneWrites(plan)).toEqual({
+      creates: [],
+      renames: [
+        { zoneId: Z.freezer, from: 'Freezer carnes y panes', to: 'Freezer carnes deposito' },
+      ],
+    })
+  })
+
+  it('si la vacían entre dos zonas nuevas, el nombre lo toma la que se lleva más', async () => {
+    const tables = seed()
+    tables.pur_items?.push(itemRow(id(26), 'Pan de papa', { zone_id: Z.freezer }))
+    const catalog = catalogOf(tables)
+    const rows = await downloadedRows(catalog)
+    edit(rows, 'Bondiola de cerdo', 'Zona', 'Frezzer panes deposito')
+    edit(rows, 'Carne Molida Burger', 'Zona', 'Freezer carnes deposito')
+    edit(rows, 'Pan de papa', 'Zona', 'Freezer carnes deposito')
+    const plan = readItemsSheet(rows, catalog)
+    expect(plan.newZones.map((z) => [z.name, z.choice])).toEqual([
+      ['Frezzer panes deposito', { kind: 'create' }],
+      ['Freezer carnes deposito', { kind: 'rename', zoneId: Z.freezer }],
+    ])
+  })
+
+  it('lo que elige quien sube: una que ya está, o una con el nombre cambiado', async () => {
+    const { catalog, rows } = await tomas()
+    const plan = readItemsSheet(rows, catalog, {
+      zoneChoices: {
+        'freezer carnes deposito': { kind: 'rename', zoneId: Z.freezer },
+        'frezzer panes deposito': { kind: 'existing', zoneId: Z.camara },
+        'camara de frioo': { kind: 'create' },
+      },
+    })
+    expect(plan.newZones.map((z) => [z.key, z.choice, z.targetName])).toEqual([
+      ['freezer carnes deposito', { kind: 'rename', zoneId: Z.freezer }, 'Freezer carnes y panes'],
+      ['camara de frioo', { kind: 'create' }, null],
+      ['frezzer panes deposito', { kind: 'existing', zoneId: Z.camara }, 'Cámara de frío'],
+    ])
+    // La bondiola ya está en el freezer que cambia de nombre: no se mueve. El resto, ya con los nombres nuevos.
+    expect(plan.updates.map((u) => [u.label, u.changes.map((c) => c.text)])).toEqual([
+      ['Tomate perita (INS-111)', ['Zona: Cámara de frío → Camara de frioo (nueva)']],
+      ['Alcaparras (EV-002)', ['Zona: sin zona → Cámara de frío']],
+      ['Romero seco (INS-200)', ['Zona: sin zona → Freezer carnes deposito']],
+    ])
+    expect(zoneWrites(plan)).toEqual({
+      creates: [{ key: 'camara de frioo', name: 'Camara de frioo' }],
+      renames: [
+        { zoneId: Z.freezer, from: 'Freezer carnes y panes', to: 'Freezer carnes deposito' },
+      ],
+    })
+  })
+
+  it('a una zona se le cambia el nombre una sola vez; una elección que ya no vale vuelve a lo de siempre', async () => {
+    const { catalog, rows } = await tomas()
+    const plan = readItemsSheet(rows, catalog, {
+      zoneChoices: {
+        'freezer carnes deposito': { kind: 'rename', zoneId: Z.freezer },
+        'frezzer panes deposito': { kind: 'rename', zoneId: Z.freezer },
+        'camara de frioo': { kind: 'existing', zoneId: id(99) },
+      },
+    })
+    expect(plan.newZones.map((z) => z.choice)).toEqual([
+      { kind: 'rename', zoneId: Z.freezer },
+      { kind: 'existing', zoneId: Z.camara },
+      { kind: 'existing', zoneId: Z.freezer },
+    ])
+  })
+
+  it('una zona que solo nombran filas con problemas no se arma; un nombre imposible es un problema', async () => {
+    const catalog = catalogOf(seed())
+    const rows = await downloadedRows(catalog)
+    edit(rows, 'Bondiola de cerdo', 'Zona', 'Terraza')
+    edit(rows, 'Bondiola de cerdo', 'Objetivo', 'mucho')
+    edit(rows, 'Carne Molida Burger', 'Zona', 'x'.repeat(61))
+    edit(rows, 'Tomate perita', 'Zona', '—')
+    const plan = readItemsSheet(rows, catalog)
+    expect(plan.newZones).toEqual([])
+    expect(plan.problems.map((p) => [p.line, p.reasons])).toEqual([
+      [2, ['Objetivo: «mucho» no es un número.']],
+      [3, ['Zona: el nombre va hasta 60 letras.']],
+      [4, ['Zona: «—» no es un nombre de zona.']],
+    ])
+  })
+
+  it('la huella cambia con lo elegido', async () => {
+    const { catalog, rows } = await tomas()
+    const nueva = sheetFingerprint(readItemsSheet(rows, catalog))
+    const otra = sheetFingerprint(
+      readItemsSheet(rows, catalog, {
+        zoneChoices: { 'frezzer panes deposito': { kind: 'existing', zoneId: Z.freezer } },
+      }),
+    )
+    expect(otra).not.toBe(nueva)
+  })
+
+  it('en el Excel, una zona fuera de la lista avisa en vez de no dejar', () => {
+    const [sheet, help] = itemsWorkbook({
+      ...catalogOf(seed()),
+      barName: 'HUB',
+      downloadedAt: '18/11/2026 14:10',
+    })
+    const zone = sheet?.validations?.find((v) => v.range.startsWith('D'))
+    expect(zone).toMatchObject({ strict: true, warnOnly: true })
+    expect(zone?.error?.title).toBe('Esa zona no está en la lista')
+    expect(JSON.stringify(help?.rows)).toContain('Una zona nueva')
+    // El proveedor sigue sin dejar: uno nuevo se carga primero en Proveedores.
+    const supplier = sheet?.validations?.find((v) => v.range.startsWith('I'))
+    expect(supplier).toMatchObject({ strict: true })
+    expect(supplier?.warnOnly).toBeUndefined()
+  })
+})
+
 // ─── Las acciones ────────────────────────────────────────────────────────────
 
 async function xlsxFile(rows: Cell[][]): Promise<File> {
@@ -711,7 +874,14 @@ describe('subir y guardar', () => {
     const preview = await previewItemsSheet('hub', form(file))
     if (!preview.ok) throw new Error(preview.message)
     const result = await applyItemsSheet('hub', form(file, preview.preview.fingerprint))
-    expect(result).toEqual({ ok: true, updated: 2, created: 1, skipped: 1 })
+    expect(result).toEqual({
+      ok: true,
+      updated: 2,
+      created: 1,
+      skipped: 1,
+      zonesCreated: [],
+      zonesRenamed: [],
+    })
 
     expect(fake.db.writes.map((w) => [w.table, w.kind])).toEqual([['pur_items', 'upsert']])
     const items = fake.db.rows('pur_items')
@@ -795,5 +965,129 @@ describe('subir y guardar', () => {
     const file = new File([new TextEncoder().encode(csv)], 'insumos.csv', { type: 'text/csv' })
     const result = await previewItemsSheet('hub', form(file))
     expect(result.ok && result.preview.updates[0]?.changes).toEqual(['Objetivo: 10 kg → 12,5 kg'])
+  })
+})
+
+describe('subir y guardar con zonas nuevas', () => {
+  beforeEach(() => {
+    fake.db = new FakeDb(seed())
+    access.role = 'owner'
+    access.purchasing = true
+    vi.mocked(logAudit).mockClear()
+  })
+
+  async function tomasFile(): Promise<File> {
+    const rows = await downloadedRows(catalogOf(fake.db.tables))
+    edit(rows, 'Bondiola de cerdo', 'Zona', 'Freezer carnes deposito')
+    edit(rows, 'Alcaparras', 'Zona', 'Frezzer panes deposito')
+    edit(rows, 'Romero seco', 'Zona', 'Freezer congelados y papas')
+    return xlsxFile(rows)
+  }
+
+  function withZones(file: File, fingerprint: string | undefined, zones: unknown): FormData {
+    const data = form(file, fingerprint)
+    data.set('zones', JSON.stringify(zones))
+    return data
+  }
+
+  it('la vista previa trae las zonas nuevas y las de HUB para elegir', async () => {
+    const result = await previewItemsSheet('hub', form(await tomasFile()))
+    if (!result.ok) throw new Error(result.message)
+    expect(result.preview.problems).toEqual([])
+    expect(
+      result.preview.newZones.map((z) => [z.name, z.count, z.fromText, z.choice.kind]),
+    ).toEqual([
+      ['Freezer carnes deposito', 1, 'Freezer carnes y panes (1)', 'create'],
+      ['Frezzer panes deposito', 1, 'sin zona (1)', 'create'],
+      ['Freezer congelados y papas', 1, 'sin zona (1)', 'create'],
+    ])
+    expect(result.preview.zoneOptions).toEqual([
+      { id: Z.freezer, name: 'Freezer carnes y panes', items: 2 },
+      { id: Z.camara, name: 'Cámara de frío', items: 1 },
+    ])
+    expect(fake.db.writes).toEqual([])
+  })
+
+  it('guardar arma las nuevas al final del recorrido y cambia el nombre de la elegida', async () => {
+    const file = await tomasFile()
+    const zones = {
+      'freezer carnes deposito': { kind: 'rename', zoneId: Z.freezer },
+      'frezzer panes deposito': { kind: 'create' },
+      'freezer congelados y papas': { kind: 'create' },
+    }
+    const preview = await previewItemsSheet('hub', withZones(file, undefined, zones))
+    if (!preview.ok) throw new Error(preview.message)
+    const result = await applyItemsSheet('hub', withZones(file, preview.preview.fingerprint, zones))
+    expect(result).toEqual({
+      ok: true,
+      updated: 2,
+      created: 0,
+      skipped: 0,
+      zonesCreated: ['Frezzer panes deposito', 'Freezer congelados y papas'],
+      zonesRenamed: [{ from: 'Freezer carnes y panes', to: 'Freezer carnes deposito' }],
+    })
+    // Primero las zonas, después los insumos.
+    expect(fake.db.writes.map((w) => [w.table, w.kind])).toEqual([
+      ['pur_zones', 'insert'],
+      ['pur_zones', 'update'],
+      ['pur_items', 'upsert'],
+    ])
+    const zonesNow = fake.db.rows('pur_zones')
+    expect(zonesNow.map((z) => [z.name, z.sort_order, z.tenant_id])).toEqual([
+      ['Freezer carnes deposito', 10, TENANT],
+      ['Cámara de frío', 20, TENANT],
+      ['Frezzer panes deposito', 30, TENANT],
+      ['Freezer congelados y papas', 40, TENANT],
+    ])
+    const zoneId = (name: string) => zonesNow.find((z) => z.name === name)?.id
+    const items = fake.db.rows('pur_items')
+    expect(items.find((r) => r.id === I.bondiola)?.zone_id).toBe(Z.freezer)
+    expect(items.find((r) => r.id === I.alcaparras)?.zone_id).toBe(zoneId('Frezzer panes deposito'))
+    expect(items.find((r) => r.id === I.viejo)?.zone_id).toBe(zoneId('Freezer congelados y papas'))
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'purchasing.items_sheet_imported',
+        payload: expect.objectContaining({
+          zones_created: ['Frezzer panes deposito', 'Freezer congelados y papas'],
+          zones_renamed: [{ from: 'Freezer carnes y panes', to: 'Freezer carnes deposito' }],
+        }),
+      }),
+    )
+    // Subir la misma de nuevo: las zonas armadas ya están. La carne molida todavía dice el nombre viejo del
+    // freezer (Excel no cambia las celdas cuando se cambia la lista): se ofrece como nueva y dice dónde está hoy.
+    const again = await previewItemsSheet('hub', form(file))
+    if (!again.ok) throw new Error(again.message)
+    expect(again.preview.newZones.map((z) => [z.name, z.fromText, z.choice.kind])).toEqual([
+      ['Freezer carnes y panes', 'Freezer carnes deposito (1)', 'create'],
+    ])
+    expect(again.preview.updates.map((u) => u.label)).toEqual(['Carne Molida Burger (INS-057)'])
+  })
+
+  it('si se guarda con otra elección que la que se vio, no guarda y muestra la nueva', async () => {
+    const file = await tomasFile()
+    const preview = await previewItemsSheet('hub', form(file))
+    if (!preview.ok) throw new Error(preview.message)
+    const result = await applyItemsSheet(
+      'hub',
+      withZones(file, preview.preview.fingerprint, {
+        'frezzer panes deposito': { kind: 'existing', zoneId: Z.freezer },
+      }),
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.preview?.newZones[1]?.choice).toEqual({ kind: 'existing', zoneId: Z.freezer })
+    expect(fake.db.writes).toEqual([])
+  })
+
+  it('lo elegido mal armado no rompe nada: vale lo de siempre', async () => {
+    const file = await tomasFile()
+    const data = form(file)
+    data.set('zones', '{"frezzer panes deposito": {"kind": "borrar"}}')
+    const result = await previewItemsSheet('hub', data)
+    expect(result.ok && result.preview.newZones.map((z) => z.choice.kind)).toEqual([
+      'create',
+      'create',
+      'create',
+    ])
   })
 })

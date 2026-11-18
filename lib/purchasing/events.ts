@@ -37,7 +37,27 @@ export type PlannedEvent = {
   notice: string | null
 }
 
-export type EventNeed = { qty: number; events: string[] }
+/** Lo que lleva una fecha de un insumo, en la unidad del insumo y ya multiplicado por las personas. */
+export type EventShare = {
+  eventId: string
+  /** «Ratatouille · mié 18/11», la misma etiqueta de `events`. */
+  label: string
+  name: string
+  date: string
+  qty: number
+}
+
+export type EventNeed = {
+  /** Lo de todas las fechas juntas: es lo que suma la cuenta del pedido. */
+  qty: number
+  /** Las etiquetas, sin repetir: es lo que queda en el renglón del pedido. */
+  events: string[]
+  /**
+   * Cuánto lleva cada fecha, en el orden del calendario (lo pidió Tomás el 18/11/2026: «cebolla blanca,
+   * objetivo 15; para Ratatouille se usan 3 kilos, para Comida Coreana 3 más»). Suma `qty`.
+   */
+  parts: EventShare[]
+}
 
 export type InHouseReminder = {
   eventLabel: string
@@ -135,11 +155,22 @@ export function computeEventNeeds(input: {
       const qty = convertQty(line.quantity, line.unit, item.unit) ?? line.quantity
       const prev = needs.get(item.id)
       const amount = roundQty(qty * planned.factor)
+      const share: EventShare = {
+        eventId: planned.event.id,
+        label: planned.label,
+        name: planned.event.name,
+        date: planned.event.date,
+        qty: amount,
+      }
       if (prev) {
         prev.qty = roundQty(prev.qty + amount)
         if (!prev.events.includes(planned.label)) prev.events.push(planned.label)
+        // Una receta puede nombrar el mismo insumo dos veces (la salsa y la guarnición): es una sola fecha.
+        const same = prev.parts.find((p) => p.eventId === planned.event.id)
+        if (same) same.qty = roundQty(same.qty + amount)
+        else prev.parts.push(share)
       } else {
-        needs.set(item.id, { qty: amount, events: [planned.label] })
+        needs.set(item.id, { qty: amount, events: [planned.label], parts: [share] })
       }
     }
   }

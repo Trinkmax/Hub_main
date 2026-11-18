@@ -39,6 +39,11 @@ export type XlsxListValidation = {
   readonly source: { readonly sheet: string; readonly range: string }
   /** `true`: Excel no deja escribir otra cosa. `false`: muestra la lista pero acepta cualquier valor. */
   readonly strict: boolean
+  /**
+   * Con `strict`, en vez de no dejar, avisa y pregunta si se deja igual (`errorStyle="warning"`): para una lista
+   * que se puede agrandar desde la planilla, como las zonas.
+   */
+  readonly warnOnly?: boolean
   /** El cartel cuando no está en la lista (título hasta 32 letras, texto hasta 255). */
   readonly error?: { readonly title: string; readonly text: string }
 }
@@ -174,8 +179,9 @@ function sheetXml(sheet: XlsxSheetSpec, selected: boolean): string {
       const error = v.error
         ? ` errorTitle="${xmlText(v.error.title)}" error="${xmlText(v.error.text)}"`
         : ''
+      const style = v.strict && v.warnOnly ? 'warning' : 'stop'
       parts.push(
-        `<dataValidation type="list" errorStyle="stop" allowBlank="1" showInputMessage="1" showErrorMessage="${v.strict ? 1 : 0}"${error} sqref="${v.range}"><formula1>${sheetRef(v.source.sheet)}!${absolute(v.source.range)}</formula1></dataValidation>`,
+        `<dataValidation type="list" errorStyle="${style}" allowBlank="1" showInputMessage="1" showErrorMessage="${v.strict ? 1 : 0}"${error} sqref="${v.range}"><formula1>${sheetRef(v.source.sheet)}!${absolute(v.source.range)}</formula1></dataValidation>`,
       )
     }
     parts.push('</dataValidations>')

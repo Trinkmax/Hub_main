@@ -10,14 +10,16 @@ import {
   Save,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { FileDropZone } from '@/components/administracion/importar/file-drop-zone'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import type { ZoneChoice, ZoneChoices } from '@/lib/purchasing/sheet'
 import {
   applyItemsSheet,
   type ItemsSheetApplyState,
+  type ItemsSheetNewZone,
   type ItemsSheetPreview,
   previewItemsSheet,
 } from '@/lib/purchasing/sheet-actions'
@@ -35,9 +37,21 @@ function listText(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`
 }
 
+/** Lo que se va a hacer con cada zona nueva, tal como lo muestra la vista previa. */
+function choicesOf(preview: ItemsSheetPreview | null): ZoneChoices {
+  return Object.fromEntries((preview?.newZones ?? []).map((z) => [z.key, z.choice]))
+}
+
+/** Cuántas zonas se arman o cambian de nombre al guardar. */
+function zoneWritesOf(preview: ItemsSheetPreview): number {
+  return preview.newZones.filter((z) => z.choice.kind !== 'existing').length
+}
+
 /**
  * Compras › Insumos › Planilla: bajar la lista, cambiarla afuera y subirla. Subir muestra primero qué cambia
- * (`previewItemsSheet`); guardar vuelve a leer el archivo y solo guarda si sigue siendo lo que se vio.
+ * (`previewItemsSheet`); guardar vuelve a leer el archivo y solo guarda si sigue siendo lo que se vio. Si la
+ * planilla trae zonas que HUB no tiene, cada elección («es nueva», «es una que ya está», «le cambié el nombre»)
+ * vuelve a pedir la vista previa, así lo que se ve es lo que se guarda.
  */
 export function ItemsSheetImport({
   tenantSlug,
@@ -52,7 +66,10 @@ export function ItemsSheetImport({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [reading, startReading] = useTransition()
+  const [refreshing, startRefreshing] = useTransition()
   const [applying, startApplying] = useTransition()
+  // La última vista previa pedida: si se eligen dos zonas seguido, la respuesta vieja no pisa la nueva.
+  const asked = useRef(0)
   const downloadHref = `/api/compras/insumos/planilla?slug=${encodeURIComponent(tenantSlug)}`
 
   function pick(next: File) {
@@ -61,16 +78,40 @@ export function ItemsSheetImport({
     setApplied(null)
     setError(null)
     setNotice(null)
+    const ticket = ++asked.current
     startReading(async () => {
       const form = new FormData()
       form.set('file', next)
       try {
         const result = await previewItemsSheet(tenantSlug, form)
+        if (ticket !== asked.current) return
         if (result.ok) setPreview(result.preview)
         else setError(result.message)
       } catch {
         // Sin conexión (o se cortó): que se pueda volver a elegir, sin tirar la pantalla.
         setError('No pudimos subir la planilla. Revisá la conexión y elegila de nuevo.')
+      }
+    })
+  }
+
+  /** Lo que es una zona nueva: se vuelve a pedir la vista previa con esa elección. */
+  function chooseZone(key: string, choice: ZoneChoice) {
+    if (!file || !preview) return
+    const choices = { ...choicesOf(preview), [key]: choice }
+    setError(null)
+    setNotice(null)
+    const ticket = ++asked.current
+    startRefreshing(async () => {
+      const form = new FormData()
+      form.set('file', file)
+      form.set('zones', JSON.stringify(choices))
+      try {
+        const result = await previewItemsSheet(tenantSlug, form)
+        if (ticket !== asked.current) return
+        if (result.ok) setPreview(result.preview)
+        else setError(result.message)
+      } catch {
+        setError('No pudimos actualizar la vista previa. Revisá la conexión y probá de nuevo.')
       }
     })
   }
@@ -91,6 +132,7 @@ export function ItemsSheetImport({
       const form = new FormData()
       form.set('file', file)
       form.set('fingerprint', preview.fingerprint)
+      form.set('zones', JSON.stringify(choicesOf(preview)))
       let result: ItemsSheetApplyState
       try {
         result = await applyItemsSheet(tenantSlug, form)
@@ -162,6 +204,10 @@ export function ItemsSheetImport({
                 </Link>
                 .
               </li>
+              <li>
+                Una <strong>zona nueva</strong> se puede escribir en la planilla: al subirla te
+                preguntamos si es nueva, si es una que ya está o si le cambiaste el nombre.
+              </li>
             </ul>
             <details className="text-sm">
               <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground pointer-coarse:py-2">
@@ -215,7 +261,14 @@ export function ItemsSheetImport({
       </div>
 
       {preview ? (
-        <PreviewView preview={preview} applying={applying} onApply={apply} onReset={reset} />
+        <PreviewView
+          preview={preview}
+          applying={applying}
+          refreshing={refreshing}
+          onApply={apply}
+          onReset={reset}
+          onChooseZone={chooseZone}
+        />
       ) : null}
     </div>
   )
@@ -244,13 +297,17 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 function PreviewView({
   preview,
   applying,
+  refreshing,
   onApply,
   onReset,
+  onChooseZone,
 }: {
   preview: ItemsSheetPreview
   applying: boolean
+  refreshing: boolean
   onApply: () => void
   onReset: () => void
+  onChooseZone: (key: string, choice: ZoneChoice) => void
 }) {
   if (preview.noColumns) {
     return (
@@ -271,10 +328,13 @@ function PreviewView({
     )
   }
 
-  const changes = preview.updates.length + preview.creates.length
+  const changes = preview.updates.length + preview.creates.length + zoneWritesOf(preview)
   const summary = [
     preview.updates.length ? plural(preview.updates.length, 'cambia', 'cambian') : null,
     preview.creates.length ? plural(preview.creates.length, 'se agrega', 'se agregan') : null,
+    preview.newZones.length
+      ? plural(preview.newZones.length, 'zona nueva en la planilla', 'zonas nuevas en la planilla')
+      : null,
     preview.problems.length
       ? plural(preview.problems.length, 'fila con problemas', 'filas con problemas')
       : null,
@@ -298,6 +358,15 @@ function PreviewView({
           </p>
         ) : null}
       </div>
+
+      {preview.newZones.length > 0 ? (
+        <NewZonesGroup
+          zones={preview.newZones}
+          options={preview.zoneOptions}
+          busy={refreshing || applying}
+          onChoose={onChooseZone}
+        />
+      ) : null}
 
       {preview.updates.length > 0 ? (
         <Group title="Cambian" tone="info">
@@ -370,18 +439,20 @@ function PreviewView({
           type="button"
           className="h-11 gap-2 md:h-10"
           onClick={onApply}
-          disabled={applying || changes === 0}
+          disabled={applying || refreshing || changes === 0}
         >
-          {applying ? (
+          {applying || refreshing ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : (
             <Save className="size-4" aria-hidden />
           )}
           {applying
             ? 'Guardando…'
-            : changes === 0
-              ? 'No hay cambios para guardar'
-              : `Guardar ${plural(changes, 'cambio', 'cambios')}`}
+            : refreshing
+              ? 'Actualizando…'
+              : changes === 0
+                ? 'No hay cambios para guardar'
+                : `Guardar ${plural(changes, 'cambio', 'cambios')}`}
         </Button>
         <Button
           type="button"
@@ -395,6 +466,179 @@ function PreviewView({
         </Button>
       </div>
     </div>
+  )
+}
+
+type ZoneOption = ItemsSheetPreview['zoneOptions'][number]
+
+/**
+ * Las zonas que la planilla trae y HUB no tiene (Tomás las cambia desde el Excel). De cada una: cuántos insumos
+ * lleva, dónde están hoy y qué es, con lo que va a pasar escrito abajo.
+ */
+function NewZonesGroup({
+  zones,
+  options,
+  busy,
+  onChoose,
+}: {
+  zones: ItemsSheetNewZone[]
+  options: ZoneOption[]
+  busy: boolean
+  onChoose: (key: string, choice: ZoneChoice) => void
+}) {
+  // A una zona de HUB se le cambia el nombre una sola vez: la que ya lo cambia otra no se ofrece para eso.
+  const renamedBy = new Map(
+    zones.flatMap((z) => (z.choice.kind === 'rename' ? [[z.choice.zoneId, z.key] as const] : [])),
+  )
+  return (
+    <section
+      aria-labelledby="pur-new-zones"
+      aria-busy={busy}
+      className="card-hairline rounded-xl border border-warning/50 bg-card px-4 py-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="warning" id="pur-new-zones">
+          {zones.length === 1 ? 'Zona nueva' : 'Zonas nuevas'}
+        </Badge>
+        <p className="text-xs text-muted-foreground text-pretty">
+          La planilla trae {zones.length === 1 ? 'un lugar' : 'lugares'} que HUB no tiene. Decí qué
+          es cada uno antes de guardar.
+        </p>
+      </div>
+      <ul className="mt-1 divide-y">
+        {zones.map((zone) => (
+          <NewZoneRow
+            key={zone.key}
+            zone={zone}
+            options={options}
+            busy={busy}
+            renamedBy={renamedBy}
+            onChoose={(choice) => onChoose(zone.key, choice)}
+          />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+const ZONE_KINDS: ReadonlyArray<{ kind: ZoneChoice['kind']; label: string }> = [
+  { kind: 'create', label: 'Es nueva' },
+  { kind: 'existing', label: 'Es una que ya está' },
+  { kind: 'rename', label: 'Le cambié el nombre' },
+]
+
+function NewZoneRow({
+  zone,
+  options,
+  busy,
+  renamedBy,
+  onChoose,
+}: {
+  zone: ItemsSheetNewZone
+  options: ZoneOption[]
+  busy: boolean
+  renamedBy: ReadonlyMap<string, string>
+  onChoose: (choice: ZoneChoice) => void
+}) {
+  const { choice } = zone
+  // La zona de HUB que se ofrece: la elegida, o la que más se le parece, o la primera del recorrido.
+  const targetId =
+    choice.kind === 'create' ? (zone.similarId ?? options[0]?.id ?? null) : choice.zoneId
+  const target = options.find((o) => o.id === targetId) ?? null
+  const freeToRename = (id: string) => (renamedBy.get(id) ?? zone.key) === zone.key
+  const choose = (kind: ZoneChoice['kind'], zoneId: string | null = targetId) => {
+    if (kind === 'create') onChoose({ kind: 'create' })
+    else if (zoneId) onChoose({ kind, zoneId })
+  }
+  const insumos = zone.count === 1 ? 'El insumo va' : `Los ${zone.count} insumos van`
+  const consequence =
+    choice.kind === 'create'
+      ? 'Se arma al guardar, al final del recorrido. Después la acomodás en Zonas del recorrido.'
+      : choice.kind === 'existing'
+        ? `${insumos} a «${target?.name ?? 'esa zona'}», que queda con su nombre.`
+        : `«${target?.name ?? 'Esa zona'}» pasa a llamarse «${zone.name}»${
+            target?.items
+              ? `, con ${target.items === 1 ? 'el insumo que tiene' : `los ${target.items} insumos que tiene`} hoy`
+              : ''
+          }.`
+  const groupName = `pur-zone-${zone.key}`
+
+  return (
+    <li className="grid gap-2.5 py-3.5">
+      <div className="grid gap-0.5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <span className="font-semibold text-pretty">{zone.name}</span>
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {plural(zone.count, 'insumo', 'insumos')}
+          </span>
+        </div>
+        {zone.fromText ? (
+          <p className="text-sm text-muted-foreground text-pretty">Hoy: {zone.fromText}</p>
+        ) : null}
+      </div>
+      <fieldset disabled={busy} className="flex flex-wrap gap-2">
+        <legend className="sr-only">¿Qué es «{zone.name}»?</legend>
+        {ZONE_KINDS.map(({ kind, label }) => {
+          const checked = choice.kind === kind
+          const unavailable =
+            kind !== 'create' && (!target || (kind === 'rename' && !freeToRename(target.id)))
+          return (
+            <label
+              key={kind}
+              className={cn(
+                'inline-flex min-h-10 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50 pointer-coarse:min-h-11',
+                checked
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card hover:bg-muted',
+                unavailable && 'cursor-not-allowed opacity-50 hover:bg-card',
+              )}
+            >
+              <input
+                type="radio"
+                name={groupName}
+                value={kind}
+                checked={checked}
+                disabled={unavailable}
+                onChange={() => choose(kind)}
+                className="sr-only"
+              />
+              {label}
+            </label>
+          )
+        })}
+      </fieldset>
+      {choice.kind !== 'create' ? (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {choice.kind === 'rename' ? '¿A cuál le cambiaste el nombre?' : '¿Cuál es?'}
+          </span>
+          <select
+            value={targetId ?? ''}
+            disabled={busy}
+            onChange={(e) => choose(choice.kind, e.target.value)}
+            className="h-10 min-w-0 max-w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground pointer-coarse:h-11"
+          >
+            {options.map((o) => (
+              <option
+                key={o.id}
+                value={o.id}
+                disabled={choice.kind === 'rename' && !freeToRename(o.id)}
+              >
+                {o.name} ({plural(o.items, 'insumo', 'insumos')})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <p
+        className={cn(
+          'text-sm text-pretty',
+          choice.kind === 'rename' ? 'font-medium text-warning-text' : 'text-foreground',
+        )}
+      >
+        {consequence}
+      </p>
+    </li>
   )
 }
 
@@ -450,6 +694,17 @@ function AppliedSummary({
           {parts.length > 0 ? `${listText(parts as string[])}.` : 'No hubo nada para cambiar.'} La
           cocina ya cuenta con los datos nuevos y los próximos pedidos salen con ellos.
         </p>
+        {applied.zonesCreated.length > 0 ? (
+          <p className="text-sm text-pretty">
+            {applied.zonesCreated.length === 1 ? 'Se armó la zona ' : 'Se armaron las zonas '}
+            {listText(applied.zonesCreated.map((name) => `«${name}»`))}, al final del recorrido.
+          </p>
+        ) : null}
+        {applied.zonesRenamed.map((r) => (
+          <p key={r.to} className="text-sm text-pretty">
+            «{r.from ?? 'La zona'}» ahora se llama «{r.to}».
+          </p>
+        ))}
         {applied.skipped > 0 ? (
           <p className="text-sm text-warning-text text-pretty">
             {applied.skipped === 1
@@ -459,7 +714,16 @@ function AppliedSummary({
         ) : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button asChild className="h-11 md:h-10">
+        {applied.zonesCreated.length > 0 ? (
+          <Button asChild className="h-11 md:h-10">
+            <Link href={`/${tenantSlug}/compras/insumos?zonas=1`}>Acomodar las zonas</Link>
+          </Button>
+        ) : null}
+        <Button
+          asChild
+          variant={applied.zonesCreated.length > 0 ? 'outline' : 'default'}
+          className="h-11 md:h-10"
+        >
           <Link href={`/${tenantSlug}/compras/insumos`}>Ver los insumos</Link>
         </Button>
         <Button type="button" variant="ghost" className="h-11 gap-2 md:h-10" onClick={onAgain}>
