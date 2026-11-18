@@ -96,20 +96,12 @@ import { type PaletteKind, usePaletteDrag } from './use-palette-drag'
 
 export type FloorPlanEditorProps = {
   slug: string
-  tenantId: string
   /** La sucursal en la que está parado el editor. `null` = el bar no tiene sucursales cargadas. */
   branch: PlanBranch | null
   /** Las sucursales activas del bar. Con una sola no se muestra el selector. */
   branches: PlanBranch[]
   /** El plano de ESA sucursal: sus sectores, lo dibujado y sus mesas sin ubicar. */
   initial: FloorPlanData
-  /**
-   * Punto de venta prendido. «En vivo» es siempre la maqueta del salón con los estados reales; esto
-   * dice de dónde salen (las comandas del punto de venta, o el servicio de mesa de siempre).
-   */
-  posEnabled: boolean
-  /** QR de mesa prendidos: se ofrece imprimirlos y cambiarlos. */
-  qrEnabled: boolean
   timeZone: string
 }
 
@@ -242,12 +234,9 @@ function removedMessage(rows: ElementRow[]): string {
 
 export function FloorPlanEditor({
   slug,
-  tenantId,
   branch,
   branches,
   initial,
-  posEnabled,
-  qrEnabled,
   timeZone,
 }: FloorPlanEditorProps) {
   const router = useRouter()
@@ -1274,8 +1263,8 @@ export function FloorPlanEditor({
     [activeArea, freeSpot, reserveSpot, markGone, slug, onChanged, selectSet],
   )
 
-  // Borra una mesa de la bandeja de forma definitiva (mesa + QR). El renglón se va al toque y, si
-  // la base no la deja borrar (tuvo sesiones: «desactivala en su lugar»), vuelve.
+  // Borra una mesa de la bandeja de forma definitiva. El renglón se va al toque y, si la base no
+  // la deja borrar (tuvo sesiones: «desactivala en su lugar»), vuelve.
   const onDeleteTrayTable = useCallback(
     (tableId: string) => {
       markGone(tableId, true)
@@ -1523,9 +1512,7 @@ export function FloorPlanEditor({
   const live = useLiveModel({
     enabled: mode === 'vivo' && branch !== null,
     slug,
-    tenantId,
     branchId: branch?.id ?? null,
-    posEnabled,
     timeZone,
   })
 
@@ -1650,7 +1637,6 @@ export function FloorPlanEditor({
               <TablesListFallback
                 slug={slug}
                 tables={listed}
-                qrEnabled={qrEnabled}
                 branchName={multiBranch ? (branch?.name ?? null) : null}
               />
             ) : !activeArea ? (
@@ -1685,7 +1671,6 @@ export function FloorPlanEditor({
                 areaId={activeArea.id}
                 areaName={activeArea.name}
                 live={live}
-                posEnabled={posEnabled}
               />
             ) : (
               <div className="fpe-work" data-view={view} data-split={splitShown ? 'on' : undefined}>
@@ -1722,15 +1707,6 @@ export function FloorPlanEditor({
                     onDeleteTable={onDeleteTrayTable}
                     stage={stageApiRef}
                     zoomLabelRef={zoomLabelRef}
-                    qr={
-                      qrEnabled
-                        ? {
-                            ready: areaTables.length > 0,
-                            onPrint: () =>
-                              window.open(`/print/qrs/${activeArea.id}`, '_blank', 'noopener'),
-                          }
-                        : null
-                    }
                   />
 
                   <div ref={planRef} className="fpe-pane fpe-pane-plan">
@@ -1831,7 +1807,6 @@ export function FloorPlanEditor({
                             slug={slug}
                             element={selectedSingle}
                             others={mergeCandidates}
-                            qrEnabled={qrEnabled}
                             onPatch={patchElement}
                             onHold={holdPatch}
                             flushGeometry={queue.flushNow}

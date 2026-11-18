@@ -49,7 +49,6 @@ import {
   Wallet,
   Workflow,
   Wrench,
-  Zap,
 } from 'lucide-react'
 import type { AccountingAction } from '@/components/administracion/acciones/types'
 import type { FeatureKey } from '@/lib/platform/features'
@@ -792,37 +791,18 @@ export const commandEntries: CommandEntry[] = [
     // acción quedaba primera (y elegida) al buscar los importadores de Administración.
     keywords: ['landing', 'html', 'evento', 'pagina', 'publicar', 'promo'],
   },
-  {
-    id: 'close-table-legacy',
-    label: 'Cerrar mesa (legacy)',
-    icon: Receipt,
-    group: 'Acciones rápidas',
-    type: 'navigate',
-    href: (s) => `/${s}/visitas/nueva`,
-    keywords: ['cerrar', 'mesa', 'cobrar'],
-    feature: 'table_service',
-  },
 
   // Operación (turno en vivo)
   {
+    // El espacio del salón del punto de venta: el mapa en vivo, la comanda, la caja y la cocina.
     id: 'live-sessions',
     label: 'Salón en vivo',
-    icon: ClipboardList,
+    icon: LayoutGrid,
     group: 'Operación',
     type: 'navigate',
-    href: (s) => `/${s}/salon/mesas`,
-    keywords: ['mesas', 'sesiones', 'salón', 'live'],
-    feature: 'table_service',
-  },
-  {
-    id: 'kitchen',
-    label: 'Cocina',
-    icon: ChefHat,
-    group: 'Operación',
-    type: 'navigate',
-    href: (s) => `/${s}/salon/cocina`,
-    keywords: ['kitchen', 'tickets', 'pedidos'],
-    feature: 'kitchen',
+    href: (s) => `/${s}/salon`,
+    keywords: ['mesas', 'mapa', 'salón', 'comanda', 'cobrar', 'caja', 'cocina', 'punto de venta'],
+    feature: 'pos',
   },
   {
     id: 'inbox',
@@ -884,23 +864,34 @@ export const commandEntries: CommandEntry[] = [
     keywords: ['clientes', 'crm'],
   },
   {
-    // Desde el 07/10/2026 son pestañas de Clientes, no ítems del menú lateral.
+    // Abre la hoja «Sumar puntos» sobre la lista de Clientes (buscar a la persona o escanear su QR).
     id: 'accredit',
-    label: 'Acreditar puntos',
+    label: 'Sumar puntos',
     icon: ScanLine,
-    group: 'Ir a',
+    group: 'Acciones rápidas',
     type: 'navigate',
-    href: (s) => `/${s}/acreditar`,
-    keywords: ['acreditar', 'puntos', 'club', 'cliente', 'sumar'],
+    href: (s) => `/${s}/clientes?sumar=1`,
+    keywords: ['acreditar', 'puntos', 'club', 'cliente', 'sumar', 'escanear', 'qr', 'consumo'],
   },
   {
+    // Abre el QR que invita a sumarse, en la pantalla del Club. El de la carta está en Carta.
     id: 'club-qr',
     label: 'QR del club',
     icon: QrCode,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/local/captura`,
-    keywords: ['qr', 'club', 'carta', 'imprimir', 'mesa'],
+    href: (s) => `/${s}/club?qr=1`,
+    keywords: ['qr', 'club', 'imprimir', 'sumarse', 'socios'],
+  },
+  {
+    id: 'menu-qr',
+    label: 'QR de la carta',
+    icon: QrCode,
+    group: 'Ir a',
+    type: 'navigate-new',
+    href: (s) => `/print/carta/${s}`,
+    keywords: ['qr', 'carta', 'imprimir', 'mesa', 'menú', 'menu'],
+    roles: ['owner', 'editor'],
   },
   {
     // Pestaña de Estadísticas (antes, ítem del menú).
@@ -1152,18 +1143,9 @@ export const commandEntries: CommandEntry[] = [
     group: 'Ir a',
     type: 'navigate',
     href: (s) => `/${s}/local/mesas`,
-    keywords: ['mesas', 'floor', 'plano', 'salón'],
-    feature: 'floor_plan',
-  },
-  {
-    id: 'auto-accept',
-    label: 'Auto-aceptación',
-    icon: Zap,
-    group: 'Ir a',
-    type: 'navigate',
-    href: (s) => `/${s}/local/auto-aceptacion`,
-    keywords: ['settings'],
-    feature: 'auto_accept',
+    keywords: ['mesas', 'floor', 'plano', 'salón', 'sector', 'maqueta'],
+    roles: ['owner'],
+    feature: 'pos',
   },
   {
     id: 'templates',

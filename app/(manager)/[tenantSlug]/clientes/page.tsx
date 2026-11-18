@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, QrCode, UserPlus, Users } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AwardPointsSheet } from '@/components/loyalty/award-points-sheet'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -70,18 +71,22 @@ export default async function ClientesPage({
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      {/* «QR del club» ya no va acá: es una pestaña de la sección, justo arriba. */}
+      {/* «Sumar puntos» era la pestaña «Acreditar»: ahora es una hoja sobre esta lista (buscar a la
+          persona o escanear su QR). `?sumar=1` la abre de una: así llegan el buscador ⌘K y Tex. */}
       <PageHeader
         eyebrow="Personas"
         title="Clientes"
         description={headerDescription}
         actions={
-          <Button asChild className="gap-2">
-            <Link href={`/${tenantSlug}/clientes/nuevo`}>
-              <UserPlus className="size-4" />
-              Nuevo cliente
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <AwardPointsSheet tenantSlug={tenantSlug} defaultOpen={sp.sumar === '1'} />
+            <Button asChild variant="outline" className="gap-2">
+              <Link href={`/${tenantSlug}/clientes/nuevo`}>
+                <UserPlus className="size-4" />
+                Nuevo cliente
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -104,7 +109,7 @@ export default async function ClientesPage({
               ? 'Probá ajustar la búsqueda o quitar filtros para ver más clientes.'
               : segmentLabel === 'Reservas'
                 ? 'Cuando cargues una reserva con teléfono, el cliente aparece acá automáticamente.'
-                : 'Empezá registrando un cliente manualmente o imprimí un QR de captura para que se carguen solos.'
+                : 'Empezá registrando un cliente a mano o imprimí el QR del club para que se sumen solos.'
           }
           action={
             !hasFilters && !segmentLabel ? (
@@ -116,7 +121,7 @@ export default async function ClientesPage({
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="gap-2">
-                  <Link href={`/${tenantSlug}/local/captura`}>
+                  <Link href={`/${tenantSlug}/club?qr=1`}>
                     <QrCode className="size-4" />
                     QR del club
                   </Link>

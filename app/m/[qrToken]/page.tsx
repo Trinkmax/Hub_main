@@ -1,61 +1,35 @@
-import { notFound } from 'next/navigation'
-import { requireFeatureByTenantId } from '@/lib/platform/guards'
+import { notFound, redirect } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/service'
-import { MesaScreen } from './_components/mesa-screen'
-import { WaitingForWaiter } from './_components/waiting-for-waiter'
 
-export const metadata = { title: 'Mesa' }
 export const dynamic = 'force-dynamic'
 
-export default async function MesaPage({ params }: { params: Promise<{ qrToken: string }> }) {
+/**
+ * El QR de mesa del servicio de mesa anterior (`/m/<token>`), retirado el 18/11/2026.
+ *
+ * Abría una carta por mesa con auto-pedido. Esa pantalla ya no existe, pero puede quedar algún QR
+ * impreso pegado en una mesa: en vez de un «no existe», quien lo escanea llega a la carta del bar,
+ * que es lo que vino a buscar. El token solo sirve para saber de qué bar es la mesa.
+ */
+export default async function MesaQrRedirect({ params }: { params: Promise<{ qrToken: string }> }) {
   const { qrToken } = await params
+  // Los tokens son 16 alfanuméricos; cualquier otra cosa no es un QR nuestro.
+  if (!/^[A-Za-z0-9]{8,64}$/.test(qrToken)) notFound()
 
-  // Validamos el QR token con service client (bypass RLS — el comensal es anon).
+  // Service client: quien escanea no tiene sesión. Solo se lee a qué bar pertenece la mesa.
   const service = createServiceClient()
   const { data: table } = await service
     .from('physical_tables')
-    .select('id, label, tenant_id, active')
+    .select('tenant_id')
     .eq('qr_token', qrToken)
     .maybeSingle()
-
-  if (!table?.active) notFound()
-
-  // Auto-pedido por mesa oculto detrás del feature-flag table_qr (producto
-  // loyalty-first: el QR de mesa no se autogestiona salvo que el bar lo habilite).
-  await requireFeatureByTenantId(table.tenant_id, 'table_qr')
+  if (!table) notFound()
 
   const { data: tenant } = await service
     .from('tenants')
-    .select('name')
+    .select('slug')
     .eq('id', table.tenant_id)
     .maybeSingle()
-
   if (!tenant) notFound()
 
-  // Buscamos si la mesa tiene una sesión activa. La activación la hace el mozo
-  // vía RPC autenticada — el comensal nunca crea sesiones.
-  const { data: activeSession } = await service
-    .from('table_sessions')
-    .select('id')
-    .eq('physical_table_id', table.id)
-    .eq('status', 'open')
-    .maybeSingle()
-
-  if (!activeSession) {
-    return (
-      <main className="min-h-screen bg-background">
-        <WaitingForWaiter
-          physicalTableId={table.id}
-          tableLabel={table.label}
-          tenantName={tenant.name}
-        />
-      </main>
-    )
-  }
-
-  return (
-    <main className="min-h-screen bg-background">
-      <MesaScreen qrToken={qrToken} tableLabel={table.label} tenantName={tenant.name} />
-    </main>
-  )
+  redirect(`/carta/${tenant.slug}`)
 }

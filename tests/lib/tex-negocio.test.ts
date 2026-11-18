@@ -41,7 +41,6 @@ const mocks = vi.hoisted(() => ({
   getWelcomeRewardConfig: vi.fn(),
   updateWelcomeRewardConfig: vi.fn(),
   getAppUrl: vi.fn(),
-  getTenantConfig: vi.fn(),
   updateTotalSeatsAction: vi.fn(),
   setZoneCapacityDefaults: vi.fn(),
   revalidatePath: vi.fn(),
@@ -102,7 +101,6 @@ vi.mock('@/lib/welcome-reward/actions', () => ({
   updateWelcomeRewardConfig: mocks.updateWelcomeRewardConfig,
 }))
 vi.mock('@/lib/app-url', () => ({ getAppUrl: mocks.getAppUrl }))
-vi.mock('@/lib/admin/tenant-config', () => ({ getTenantConfig: mocks.getTenantConfig }))
 vi.mock('@/lib/tenant/actions', () => ({
   updateTotalSeatsAction: mocks.updateTotalSeatsAction,
 }))
@@ -460,7 +458,9 @@ describe('las pantallas', () => {
   })
 
   it('Bienvenida abre esa pestaña del Club', () => {
-    expect(pageSource('configuracion/bienvenida/page.tsx')).toContain('/club?tab=bienvenida')
+    expect(texScreenHref('hub', 'club.bienvenida')).toMatchObject({
+      href: '/hub/club?tab=bienvenida',
+    })
   })
 
   it('una página pide su id', () => {
@@ -523,14 +523,23 @@ describe('las pantallas', () => {
       expect(owner).toContain('configuracion.equipo')
       expect(owner).not.toContain('estadisticas.resenas')
       expect(owner).not.toContain('local.mesas')
-      expect(owner).not.toContain('local.auto_aceptacion')
+      expect(owner).not.toContain('local.sucursales')
+      expect(owner).not.toContain('local.hoy')
     })
 
     it('lo que depende de una función, solo si está prendida', () => {
-      const owner = seen('owner', { reviews: true, floor_plan: true, auto_accept: true })
+      const owner = seen('owner', { reviews: true, pos: true })
       expect(owner).toContain('estadisticas.resenas')
       expect(owner).toContain('local.mesas')
-      expect(owner).toContain('local.auto_aceptacion')
+      expect(owner).toContain('local.sucursales')
+      expect(owner).toContain('local.hoy')
+    })
+
+    it('las pantallas del servicio de mesa anterior ya no existen', () => {
+      // Retirado el 18/11/2026: ni con sus interruptores viejos guardados en el bar.
+      const owner = seen('owner', { floor_plan: true, auto_accept: true, table_service: true })
+      expect(owner).not.toContain('local.auto_aceptacion')
+      expect(owner).not.toContain('local.mesas')
     })
 
     it('la portada es solo del dueño', () => {
@@ -2059,31 +2068,6 @@ describe('ver_configuracion', () => {
     })
     expectClean(out)
   })
-
-  it('la auto-aceptación solo si el bar la tiene', async () => {
-    mocks.getTenantConfig.mockResolvedValue({
-      guest_idle_hours_to_rescan: 2,
-      session_auto_abandon_hours: 8,
-      ticket_auto_accept_enabled: true,
-      ticket_auto_accept_max_cents: 5_000_000,
-      ticket_auto_accept_max_items: null,
-      kitchen_flow_enabled: false,
-    })
-    const off = (await data('ver_configuracion')) as object
-    expect(off).not.toHaveProperty('auto_aceptacion')
-    const on = (await data(
-      'ver_configuracion',
-      {},
-      {
-        ...CTX,
-        features: { auto_accept: true } as never,
-      },
-    )) as Record<string, unknown>
-    expect(on.auto_aceptacion).toMatchObject({
-      comandas_automaticas: true,
-      hasta_monto: '$ 50.000',
-    })
-  })
 })
 
 describe('preparar_bienvenida', () => {
@@ -2114,7 +2098,7 @@ describe('preparar_bienvenida', () => {
     ])
     expect(await execute(ticket)).toMatchObject({
       ok: true,
-      href: '/hub/configuracion/bienvenida',
+      href: '/hub/club?tab=bienvenida',
     })
     const form = mocks.updateWelcomeRewardConfig.mock.calls[0]?.[2] as FormData
     expect(form.get('enabled')).toBe('false')

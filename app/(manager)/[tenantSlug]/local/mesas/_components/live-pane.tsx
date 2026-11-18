@@ -1,8 +1,7 @@
 'use client'
 
-import { ArrowRightLeft, ExternalLink, WifiOff, X } from 'lucide-react'
+import { ExternalLink, WifiOff, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { MoveTableSheet } from '@/components/floor-plan/move-table-sheet'
 import { FloorModel, STATE_ICON } from '@/components/pos/floor/floor-model'
 import type { LiveEntry } from '@/lib/floor-plan/live-model'
 import { liveSummaryLine } from '@/lib/floor-plan/live-model'
@@ -18,11 +17,6 @@ export type LivePaneProps = {
   areaId: string
   areaName: string
   live: LiveModel
-  /**
-   * El bar usa el punto de venta. Sin él, las mesas son las del servicio de mesa de siempre: se ven
-   * igual, y desde acá se puede cambiar a alguien de mesa (lo único que el dueño hacía en esta vista).
-   */
-  posEnabled: boolean
 }
 
 // Qué mide el reloj de cada estado.
@@ -36,16 +30,7 @@ const SINCE: Record<TableStateKey, string> = {
   bill: 'Pidió la cuenta hace',
 }
 
-function TableCard({
-  entry,
-  onClose,
-  onMove,
-}: {
-  entry: LiveEntry
-  onClose: () => void
-  /** `null` = desde acá no se mueve (con punto de venta se hace en el salón). */
-  onMove: (() => void) | null
-}) {
+function TableCard({ entry, onClose }: { entry: LiveEntry; onClose: () => void }) {
   const { state, session } = entry
   const Icon = STATE_ICON[state.key]
   const late = state.urgency === 'late'
@@ -117,12 +102,6 @@ function TableCard({
           </div>
         ) : null}
       </dl>
-      {session && onMove ? (
-        <button type="button" className="fpe-btn fpe-btn-quiet fpe-btn-sm" onClick={onMove}>
-          <ArrowRightLeft aria-hidden />
-          Cambiar de mesa
-        </button>
-      ) : null}
     </div>
   )
 }
@@ -132,12 +111,10 @@ function TableCard({
  * estados reales (nadie los marca: salen de las comandas). Es para mirar: abrir
  * una mesa, cargar un pedido o cobrar se hace en el salón.
  *
- * Es la misma vista en cualquier bar, use o no el punto de venta (antes, sin él,
- * acá aparecía otro plano distinto).
+ * Cambiar a alguien de mesa también: el mozo arrastra la mesa en el mapa.
  */
-export function LivePane({ slug, branch, areaId, areaName, live, posEnabled }: LivePaneProps) {
+export function LivePane({ slug, branch, areaId, areaName, live }: LivePaneProps) {
   const [openId, setOpenId] = useState<string | null>(null)
-  const [moving, setMoving] = useState(false)
 
   const elements = useMemo(
     () => (live.snapshot ? live.snapshot.elements.filter((el) => el.area_id === areaId) : []),
@@ -149,17 +126,16 @@ export function LivePane({ slug, branch, areaId, areaName, live, posEnabled }: L
   // biome-ignore lint/correctness/useExhaustiveDependencies: areaId es el disparador
   useEffect(() => {
     setOpenId(null)
-    setMoving(false)
   }, [areaId])
 
   useEffect(() => {
-    if (!openId || moving) return
+    if (!openId) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenId(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [openId, moving])
+  }, [openId])
 
   if (!live.snapshot) {
     return live.error ? (
@@ -178,9 +154,7 @@ export function LivePane({ slug, branch, areaId, areaName, live, posEnabled }: L
   }
 
   const tableCount = elements.filter((el) => el.kind === 'table' && el.table_id).length
-  const salonHref = posEnabled
-    ? `/${slug}/salon/mapa${branch ? `?sucursal=${encodeURIComponent(branch.slug)}` : ''}`
-    : `/${slug}/salon/mesas`
+  const salonHref = `/${slug}/salon/mapa${branch ? `?sucursal=${encodeURIComponent(branch.slug)}` : ''}`
 
   return (
     <div className="fpe-pane fpe-live">
@@ -238,29 +212,7 @@ export function LivePane({ slug, branch, areaId, areaName, live, posEnabled }: L
         </a>
       </div>
 
-      {opened ? (
-        <TableCard
-          entry={opened}
-          onClose={() => setOpenId(null)}
-          onMove={posEnabled ? null : () => setMoving(true)}
-        />
-      ) : null}
-
-      {!posEnabled && opened?.session ? (
-        <MoveTableSheet
-          slug={slug}
-          sessionId={opened.session.id}
-          currentTableId={opened.tableId}
-          currentLabel={opened.label}
-          open={moving}
-          onOpenChange={setMoving}
-          onMoved={() => {
-            setMoving(false)
-            setOpenId(null)
-            void live.reload()
-          }}
-        />
-      ) : null}
+      {opened ? <TableCard entry={opened} onClose={() => setOpenId(null)} /> : null}
     </div>
   )
 }

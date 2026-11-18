@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canUseFloorPlan, canUseTableQr } from '@/lib/floor-plan/access'
+import { canUseFloorPlan } from '@/lib/floor-plan/access'
 import {
   hasBranchChoice,
   inkOn,
@@ -146,26 +146,20 @@ describe('inkOn', () => {
 describe('quién puede abrir el editor', () => {
   const flags = (feature_flags: Record<string, boolean>) => ({ feature_flags })
 
-  it('alcanza con el plano o con el punto de venta (cualquiera de los dos)', () => {
-    expect(canUseFloorPlan(flags({ floor_plan: true }), false)).toBe(true)
+  it('se abre con el punto de venta prendido', () => {
     expect(canUseFloorPlan(flags({ pos: true }), false)).toBe(true)
-    expect(canUseFloorPlan(flags({ floor_plan: true, pos: true }), false)).toBe(true)
   })
 
-  it('con los dos apagados no se abre', () => {
+  it('con el punto de venta apagado no se abre', () => {
     expect(canUseFloorPlan(flags({}), false)).toBe(false)
-    expect(canUseFloorPlan(flags({ floor_plan: false, pos: false, table_qr: true }), false)).toBe(
-      false,
-    )
+    expect(canUseFloorPlan(flags({ pos: false }), false)).toBe(false)
+  })
+
+  it('los interruptores que ya no existen (el del plano, el de los QR de mesa) no lo abren', () => {
+    expect(canUseFloorPlan(flags({ floor_plan: true, table_qr: true }), false)).toBe(false)
   })
 
   it('un superadmin pasa siempre', () => {
     expect(canUseFloorPlan(flags({}), true)).toBe(true)
-  })
-
-  it('los QR de mesa siguen a su propio interruptor', () => {
-    expect(canUseTableQr(flags({ pos: true }), false)).toBe(false)
-    expect(canUseTableQr(flags({ table_qr: true }), false)).toBe(true)
-    expect(canUseTableQr(flags({}), true)).toBe(true)
   })
 })

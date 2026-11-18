@@ -68,9 +68,10 @@ describe('visibleSalonTabs — con el punto de venta manda el salón en vivo', (
     expect(host).not.toContain('caja')
   })
 
-  it('lo que no tiene lugar en el orden queda al final, como estaba', () => {
-    const all = keys('owner', { ...on, table_service: true, kitchen: true })
-    expect(all.slice(-3)).toEqual(['mesas', 'cocina', 'mi-turno'])
+  it('las pestañas del servicio de mesa anterior ya no existen para nadie', () => {
+    // Retirado el 18/11/2026. Ni un superadmin (que ve lo apagado) las encuentra.
+    const all = keys('owner', on, true)
+    for (const gone of ['mesas', 'cocina', 'mi-turno']) expect(all).not.toContain(gone)
   })
 })
 
@@ -93,13 +94,7 @@ describe('splitSalonTabs — cinco lugares; con más, cuatro y «Más»', () => 
   })
 
   it('nunca pierde una pestaña', () => {
-    const tabs = tabsFor('owner', {
-      pos: true,
-      ticket_door: true,
-      purchasing: true,
-      table_service: true,
-      kitchen: true,
-    })
+    const tabs = tabsFor('owner', { pos: true, ticket_door: true, purchasing: true })
     const { bar, more } = splitSalonTabs(tabs)
     expect([...bar, ...more]).toEqual(tabs)
     expect(bar.length).toBe(SALON_TABBAR_SLOTS - 1)

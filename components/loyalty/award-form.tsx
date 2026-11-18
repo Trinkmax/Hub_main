@@ -25,17 +25,12 @@ export type AwardResultData = {
 }
 
 /**
- * "¿Cuánto gastó?" → puntos. El paso que faltaba en el salón.
+ * "¿Cuánto gastó?" → puntos.
  *
- * Estaba implementado SOLO en /acreditar (workspace manager), al que el proxy
- * rebota a cualquier mozo: el mozo escaneaba el QR del socio, veía el saldo y
- * las tarjetas de sellos, y no tenía dónde cargar el consumo. Los permisos
- * siempre estuvieron bien (`awardPointsByAmount` autoriza waiter, y la RPC
- * también) — lo que no existía era el camino.
- *
- * Ahora vive acá y lo consumen las DOS cajas (salón y /acreditar), como ya pasa
- * con PunchStamper y RedemptionPanel: el mozo con el celular y el cajero con la
- * tablet tienen que ver exactamente lo mismo.
+ * Lo consumen el salón y «Sumar puntos» del panel (por `AwardFlow`), igual que
+ * PunchStamper y RedemptionPanel: el mozo con el celular y el dueño en el panel
+ * ven exactamente lo mismo, y la base autoriza a los dos por igual
+ * (`awardPointsByAmount` y la RPC).
  *
  * El monto se pide en PESOS y se convierte a centavos en el borde (la DB guarda
  * centavos; al mostrador los centavos no le sirven para nada).

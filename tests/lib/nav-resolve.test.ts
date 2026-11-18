@@ -106,7 +106,7 @@ describe('resolveNavGroups — una entrada por sección, por rol', () => {
     expect(entry(groups, 'Tareas')?.href).toBe('/hub/tareas')
     expect(entry(groups, 'Reservas')?.activePaths).toEqual([
       '/hub/operativo',
-      '/hub/eventos',
+      '/hub/eventos/programados',
       '/hub/ventas-online',
     ])
     expect(entry(groups, 'Mis números')?.href).toBe('/hub/mis-numeros')
@@ -221,21 +221,23 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
   it('las otras rutas de cada sección también la resaltan (activePaths con el slug)', () => {
     expect(entry(groups, 'Reservas')?.activePaths).toEqual([
       '/hub/operativo',
-      '/hub/eventos',
+      '/hub/eventos/programados',
       '/hub/ventas-online',
     ])
-    expect(entry(groups, 'Clientes')?.activePaths).toEqual([
-      '/hub/club',
-      '/hub/acreditar',
-      '/hub/local/captura',
-    ])
+    expect(entry(groups, 'Clientes')?.activePaths).toEqual(['/hub/club'])
     expect(entry(groups, 'Marketing')?.activePaths).toEqual([
       '/hub/enlaces',
       '/hub/paginas',
       '/hub/entradas',
     ])
     expect(entry(groups, 'Estadísticas')?.activePaths).toEqual(['/hub/reviews'])
-    expect(entry(groups, 'Configuración')?.activePaths).toEqual(['/hub/docs'])
+    // «Hoy en vivo» es el detalle del Resumen; Docs, Sucursales y el Plano se abren desde Configuración.
+    expect(entry(groups, 'Resumen')?.activePaths).toEqual(['/hub/local/hoy'])
+    expect(entry(groups, 'Configuración')?.activePaths).toEqual([
+      '/hub/docs',
+      '/hub/local/sucursales',
+      '/hub/local/mesas',
+    ])
   })
 
   it('cada entrada conserva el ícono de siempre', () => {
@@ -256,26 +258,21 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
   })
 })
 
-describe('resolveNavGroups — bloque Salón (feature-flags de superadmin)', () => {
-  it('el dueño sin features NO ve el bloque Salón', () => {
+describe('resolveNavGroups — bloque Salón (el punto de venta)', () => {
+  it('el dueño sin punto de venta NO ve el bloque Salón', () => {
     expect(cluster(resolveNavGroups('owner', SLUG, allOff, false), 'Salón')).toBeUndefined()
   })
 
-  it('prender una feature revela sólo su entrada', () => {
-    const groups = resolveNavGroups('owner', SLUG, withFeature('kitchen'), false)
-    expect(itemLabels(groups, 'Salón')).toEqual(['Cocina'])
+  it('con el punto de venta: una sola entrada, que abre el salón en otra pestaña', () => {
+    const groups = resolveNavGroups('owner', SLUG, withFeature('pos'), false)
+    expect(itemLabels(groups, 'Salón')).toEqual(['Salón en vivo'])
+    expect(entry(groups, 'Salón en vivo')?.href).toBe('/hub/salon')
+    expect(entry(groups, 'Salón en vivo')?.newTab).toBe(true)
   })
 
-  it('el superadmin ve las seis, planas y sin cambios, antes de Configuración', () => {
+  it('el superadmin la ve aunque esté apagado, antes de Configuración', () => {
     const groups = resolveNavGroups('owner', SLUG, allOff, true)
-    expect(itemLabels(groups, 'Salón')).toEqual([
-      'Salón en vivo',
-      'Cocina',
-      'Hoy en vivo',
-      'Sucursales',
-      'Plano y QRs de mesa',
-      'Auto-aceptación',
-    ])
+    expect(itemLabels(groups, 'Salón')).toEqual(['Salón en vivo'])
     // Compras (con su feature) también la ve el superadmin: va en la Gestión, antes del Salón.
     expect(clusters(groups)).toEqual([
       'Inicio',
@@ -285,11 +282,21 @@ describe('resolveNavGroups — bloque Salón (feature-flags de superadmin)', () 
       'Salón',
       'Ajustes',
     ])
-    expect(entry(groups, 'Salón en vivo')?.newTab).toBe(true)
-    expect(entry(groups, 'Cocina')?.newTab).toBe(true)
-    expect(entry(groups, 'Sucursales')?.href).toBe('/hub/local/sucursales')
-    expect(entry(groups, 'Plano y QRs de mesa')?.href).toBe('/hub/local/mesas')
-    expect(entry(groups, 'Auto-aceptación')?.href).toBe('/hub/local/auto-aceptacion')
+  })
+
+  it('lo que tenía el servicio de mesa anterior ya no está en el menú de nadie', () => {
+    // Retirado el 18/11/2026. Sucursales, Plano y «Hoy en vivo» siguen existiendo, pero se llega
+    // desde Configuración y desde el Resumen: no son entradas del menú.
+    const all = entries(resolveNavGroups('owner', SLUG, withFeature('pos'), true))
+    for (const gone of [
+      'Cocina',
+      'Hoy en vivo',
+      'Sucursales',
+      'Plano y QRs de mesa',
+      'Auto-aceptación',
+    ]) {
+      expect(all).not.toContain(gone)
+    }
   })
 
   it('ningún rol acotado ve el bloque Salón ni las secciones del dueño', () => {

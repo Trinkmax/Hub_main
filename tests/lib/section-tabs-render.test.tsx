@@ -212,11 +212,27 @@ describe('Configuración: la Documentación vive adentro', () => {
     const { SettingsNav } = await import(
       '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
     )
-    const html = renderToString(createElement(SettingsNav, { tenantSlug: 'hub' }))
+    const html = renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))
     expect(html).toContain('aria-label="Secciones de Configuración"')
     expect(html).toContain('Ayuda')
     const docs = anchors(html).find((a) => a.includes('href="/hub/docs"'))
     expect(docs).toBeDefined()
     expect(html).toMatch(/href="\/hub\/docs"[^>]*>Documentación<\/a>/)
+  })
+
+  it('Sucursales y el Plano del salón aparecen solo con el punto de venta', async () => {
+    nav.pathname = '/hub/configuracion'
+    const { SettingsNav } = await import(
+      '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
+    )
+    const without = renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))
+    expect(without).not.toContain('/hub/local/sucursales')
+    expect(without).not.toContain('/hub/local/mesas')
+
+    const withPos = renderToString(
+      createElement(SettingsNav, { tenantSlug: 'hub', features: ['pos'] }),
+    )
+    expect(withPos).toMatch(/href="\/hub\/local\/sucursales"[^>]*>Sucursales<\/a>/)
+    expect(withPos).toMatch(/href="\/hub\/local\/mesas"[^>]*>Plano del salón<\/a>/)
   })
 })

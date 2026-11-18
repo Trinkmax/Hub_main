@@ -139,14 +139,6 @@ export const negocioScreens: readonly TexScreenDef[] = [
     roles: OWNER,
   },
   {
-    id: 'configuracion.bienvenida',
-    label: 'Club › Bienvenida',
-    what: 'El regalo de bienvenida y sus textos, y la invitación a registrarse. Abre esa pestaña del Club.',
-    path: '/configuracion/bienvenida',
-    root: true,
-    roles: OWNER,
-  },
-  {
     id: 'configuracion.equipo',
     label: 'Configuración › Equipo',
     what: 'Quiénes usan el sistema y con qué rol: sumar, cambiar o sacar gente.',
@@ -171,17 +163,8 @@ export const negocioScreens: readonly TexScreenDef[] = [
     roles: OWNER,
   },
   {
-    id: 'local.auto_aceptacion',
-    label: 'Auto-aceptación',
-    what: 'Si las comandas del comensal van directo a cocina o esperan al mozo.',
-    path: '/local/auto-aceptacion',
-    root: true,
-    roles: OWNER,
-    feature: 'auto_accept',
-  },
-  {
     id: 'local.hoy',
-    label: 'Hoy en vivo',
+    label: 'Resumen › Hoy en vivo',
     what: 'Cómo va el día en el salón: lo vendido por sucursal y por medio de pago, el consumo por persona, las mesas abiertas, los turnos de caja y lo que conviene mirar (descuentos, bajas, cobros corregidos). Se puede mirar un día anterior.',
     path: '/local/hoy',
     root: true,
@@ -190,7 +173,7 @@ export const negocioScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'local.sucursales',
-    label: 'Sucursales',
+    label: 'Configuración › Sucursales',
     what: 'Los locales del bar: qué le falta a cada uno para abrir (plano, carta, cocina, caja, equipo y cobro) y los ajustes del punto de venta: recargo de crédito, propinas, alias de transferencia y quién aprueba descuentos y bajas.',
     path: '/local/sucursales',
     root: true,
@@ -199,12 +182,12 @@ export const negocioScreens: readonly TexScreenDef[] = [
   },
   {
     id: 'local.mesas',
-    label: 'Plano y QRs de mesa',
-    what: 'El plano del local, las mesas y el QR de cada una, y el estado en vivo.',
+    label: 'Configuración › Plano del salón',
+    what: 'El plano de cada sucursal: sectores, mesas y decoración, y cómo está el salón en vivo.',
     path: '/local/mesas',
     root: true,
     roles: OWNER,
-    feature: 'floor_plan',
+    feature: 'pos',
   },
   {
     id: 'ayuda.docs',

@@ -11,8 +11,8 @@ import type { MonthSegments } from '@/lib/salon/segments'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
 import { TEMPLATE_EDIT_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
-import { TemplatesEditor } from '../../templates/_components/templates-editor'
 import { ScheduledEventsMonth } from './scheduled-events-month'
+import { TemplatesEditor } from './templates-editor'
 
 type Tab = 'calendario' | 'eventos'
 

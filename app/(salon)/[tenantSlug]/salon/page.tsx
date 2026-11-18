@@ -23,19 +23,14 @@ export default async function SalonRootPage({
     if (access.role === 'kitchen') redirect(`/${tenantSlug}/salon/tele`)
     if (POS_FLOOR_ROLES.includes(access.role)) redirect(`/${tenantSlug}/salon/mapa`)
   }
-  // Con servicio de mesa ON → grilla de mesas (bares que operan comandas).
-  if (isFeatureEnabled(access.tenant, 'table_service')) {
-    redirect(`/${tenantSlug}/salon/mesas`)
-  }
-  // Producto loyalty-first: lo que más hace el staff en el turno es escanear el
+  // Sin punto de venta: lo que más hace el staff en el turno es escanear el
   // QR del socio para acreditarle el consumo. Ese es el home.
   if (REDEMPTION_STAFF_ROLES.includes(access.role)) {
     redirect(`/${tenantSlug}/salon/escanear`)
   }
-  // La cocina no ve las reservas: entra a sus comandas o, con Compras, al stock.
-  if (access.role === 'kitchen') {
-    if (isFeatureEnabled(access.tenant, 'kitchen')) redirect(`/${tenantSlug}/salon/cocina`)
-    if (isFeatureEnabled(access.tenant, 'purchasing')) redirect(`/${tenantSlug}/salon/stock`)
+  // La cocina no ve las reservas: sin punto de venta, lo suyo es el stock (Compras).
+  if (access.role === 'kitchen' && isFeatureEnabled(access.tenant, 'purchasing')) {
+    redirect(`/${tenantSlug}/salon/stock`)
   }
   if (!SALON_READ_ROLES.includes(access.role)) notFound()
   redirect(`/${tenantSlug}/salon/reservas-operativo`)

@@ -33,7 +33,7 @@ export type NavItem = {
   /**
    * Otras rutas de la MISMA sección que también resaltan la entrada. Las
    * partes de una sección viven en pestañas arriba de la página, no en el
-   * menú (p. ej. Clientes → /acreditar y /local/captura). Matchean igual que
+   * menú (p. ej. Clientes → /club). Matchean igual que
    * el href: por prefijo con borde de segmento.
    */
   activePaths?: (slug: string) => string[]
@@ -94,8 +94,8 @@ export type ResolvedNavGroup = {
  * títulos de cada grupo de íconos), por el trabajo del dueño: el inicio; la
  * agenda y los clientes (reservas, clientes, mensajería); el negocio (carta,
  * marketing, números); la gestión (compras, administración) y, anclada abajo,
- * la configuración. Lo de servicio de mesa (Salón) queda OCULTO detrás de
- * feature-flags de superadmin.
+ * la configuración. El punto de venta suma una sola entrada, «Salón en vivo»
+ * (18/11/2026: eran seis; el servicio de mesa anterior se retiró).
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
  *   editor     → Carta («Ver carta» es un botón de la página) y Tareas
@@ -107,12 +107,15 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Inicio',
     items: [
       {
+        // El inicio del dueño. «Hoy en vivo» (las ventas del día del punto de venta, cobro por cobro)
+        // es su detalle: se llega desde acá y desde el Operativo, sin entrada propia.
         key: 'resumen',
         label: 'Resumen',
         href: (s) => `/${s}`,
         icon: 'LayoutDashboard',
         exact: true,
         roles: ['owner'],
+        activePaths: (s) => [`/${s}/local/hoy`],
       },
     ],
   },
@@ -128,18 +131,18 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'CalendarCheck',
         roles: ['owner', 'host'],
         section: 'reservas',
-        activePaths: (s) => [`/${s}/operativo`, `/${s}/eventos`, `/${s}/ventas-online`],
+        activePaths: (s) => [`/${s}/operativo`, `/${s}/eventos/programados`, `/${s}/ventas-online`],
       },
       {
-        // Personas (con sus segmentos Reservas / Walk-in), el Club, Acreditar y el QR del club:
-        // pestañas arriba de la página.
+        // Personas (con sus segmentos Reservas / Walk-in) y el Club: pestañas arriba de la página.
+        // «Sumar puntos» y «QR del club» son botones de esas dos pantallas.
         key: 'clientes',
         label: 'Clientes',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
         roles: ['owner'],
         section: 'clientes',
-        activePaths: (s) => [`/${s}/club`, `/${s}/acreditar`, `/${s}/local/captura`],
+        activePaths: (s) => [`/${s}/club`],
       },
       {
         // Hub de comunicación con el cliente. Su navegación interna
@@ -243,63 +246,20 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // El punto de venta (docs/features/pos.md). Una sola entrada: abre el espacio del salón (mapa en
+    // vivo, comanda, caja y cocina) en otra pestaña. Lo que se prepara una vez (sucursales, plano)
+    // vive en Configuración; las ventas del día, en el Resumen y en el Operativo.
     label: 'Salón',
     items: [
       {
         key: 'salon-en-vivo',
         label: 'Salón en vivo',
         short: 'Salón',
-        href: (s) => `/${s}/salon/mesas`,
-        icon: 'ClipboardList',
-        roles: ['owner'],
-        newTab: true,
-        feature: 'table_service',
-      },
-      {
-        key: 'cocina',
-        label: 'Cocina',
-        href: (s) => `/${s}/salon/cocina`,
-        icon: 'ChefHat',
-        roles: ['owner'],
-        newTab: true,
-        feature: 'kitchen',
-      },
-      {
-        // Punto de venta: cómo va el día en el salón (ventas, medios de pago, per cápita, cajas).
-        key: 'hoy-en-vivo',
-        label: 'Hoy en vivo',
-        short: 'En vivo',
-        href: (s) => `/${s}/local/hoy`,
-        icon: 'Activity',
-        roles: ['owner'],
-        feature: 'pos',
-      },
-      {
-        // Punto de venta: los locales del bar, su lista de apertura y los ajustes de cobro.
-        key: 'sucursales',
-        label: 'Sucursales',
-        href: (s) => `/${s}/local/sucursales`,
-        icon: 'Store',
-        roles: ['owner'],
-        feature: 'pos',
-      },
-      {
-        key: 'plano',
-        label: 'Plano y QRs de mesa',
-        short: 'Plano',
-        href: (s) => `/${s}/local/mesas`,
+        href: (s) => `/${s}/salon`,
         icon: 'LayoutGrid',
         roles: ['owner'],
-        feature: 'floor_plan',
-      },
-      {
-        key: 'auto-aceptacion',
-        label: 'Auto-aceptación',
-        short: 'Auto',
-        href: (s) => `/${s}/local/auto-aceptacion`,
-        icon: 'Zap',
-        roles: ['owner'],
-        feature: 'auto_accept',
+        newTab: true,
+        feature: 'pos',
       },
     ],
   },
@@ -316,7 +276,8 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',
         roles: ['owner'],
-        activePaths: (s) => [`/${s}/docs`],
+        // Docs, Sucursales y el Plano del salón se abren desde Configuración.
+        activePaths: (s) => [`/${s}/docs`, `/${s}/local/sucursales`, `/${s}/local/mesas`],
       },
     ],
   },

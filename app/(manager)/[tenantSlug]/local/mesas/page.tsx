@@ -1,11 +1,10 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { PageShell } from '@/components/ui/page-shell'
-import { canUseFloorPlan, canUseTableQr } from '@/lib/floor-plan/access'
+import { canUseFloorPlan } from '@/lib/floor-plan/access'
 import type { PlanBranch } from '@/lib/floor-plan/branches'
 import { listTables } from '@/lib/floor-plan/model'
 import { getFloorPlan } from '@/lib/floor-plan/queries'
-import { isFeatureEnabled } from '@/lib/platform/features'
 import { getActiveBranch } from '@/lib/pos/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 import { FloorPlanEditor } from './_components/floor-plan-editor'
@@ -42,10 +41,10 @@ export default async function MesasPage({
 
   if (access.role !== 'owner') notFound()
 
-  // Se abre con el interruptor del plano O con el del punto de venta (el mapa en
-  // vivo del salón se dibuja acá). Los superadmins pasan siempre, igual que en
-  // `requireFeature`: la regla está en `canUseFloorPlan` porque también la
-  // aplican las acciones del editor.
+  // Se abre con el interruptor del punto de venta (el mapa en vivo del salón se
+  // dibuja acá). Los superadmins pasan siempre, igual que en `requireFeature`:
+  // la regla está en `canUseFloorPlan` porque también la aplican las acciones
+  // del editor.
   const tenant = access.tenant
   if (!canUseFloorPlan(tenant, access.isPlatformAdmin)) notFound()
 
@@ -60,7 +59,6 @@ export default async function MesasPage({
     color: b.color,
     is_default: b.is_default,
   })
-  const qrEnabled = canUseTableQr(tenant, access.isPlatformAdmin)
 
   return (
     // Sin márgenes: el editor es la página entera, pegado a la barra de arriba y a los costados.
@@ -68,20 +66,15 @@ export default async function MesasPage({
       {/* `pos` trae los tokens de papel y la letra; el editor es el mismo objeto en tema claro y oscuro. */}
       <div className={PAPEL}>
         <FloorPlanErrorBoundary
-          fallback={
-            <TablesListFallback slug={tenantSlug} tables={listTables(data)} qrEnabled={qrEnabled} />
-          }
+          fallback={<TablesListFallback slug={tenantSlug} tables={listTables(data)} />}
         >
           <FloorPlanEditor
             // Otra sucursal es otro plano: el editor arranca de cero (selección, deshacer, sector).
             key={active?.id ?? 'sin-sucursal'}
             slug={tenantSlug}
-            tenantId={tenant.id}
             branch={active ? toBranch(active) : null}
             branches={branches.map(toBranch)}
             initial={data}
-            posEnabled={isFeatureEnabled(tenant, 'pos')}
-            qrEnabled={qrEnabled}
             timeZone={tenant.timezone || 'America/Argentina/Cordoba'}
           />
         </FloorPlanErrorBoundary>

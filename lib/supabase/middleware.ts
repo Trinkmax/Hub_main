@@ -32,7 +32,7 @@ const PUBLIC_PATHS = new Set([
 const PUBLIC_PREFIXES = [
   '/capture/',
   '/subir/', // la foto del comprobante por QR: el celular sube sin sesión (capability por token)
-  '/m/',
+  '/m/', // QR de mesa del servicio anterior (retirado): un QR viejo impreso lleva a la carta del bar
   '/c/',
   '/carta/', // carta read-only pública (QR de la carta)
   '/r/', // página pública de reseña

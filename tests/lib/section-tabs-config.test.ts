@@ -67,17 +67,14 @@ const labels = (section: ResolvedSection) => section.tabs.map((t) => t.label)
 const hrefs = (section: ResolvedSection) => section.tabs.map((t) => t.href)
 
 describe('pestañas de sección: qué ve cada uno', () => {
-  it('Clientes: Personas, Club, Acreditar y QR del club, sin preguntar quién mira', () => {
+  it('Clientes: Personas y Club, sin preguntar quién mira', () => {
+    // «Acreditar» y «QR del club» dejaron de ser pestañas (18/11/2026): son botones de Personas
+    // («Sumar puntos») y del Club («QR del club»).
     expect(sectionNeedsViewer('clientes')).toBe(false)
     const section = resolveSection('clientes', SLUG)
     expect(section.label).toBe('Secciones de Clientes')
-    expect(labels(section)).toEqual(['Personas', 'Club', 'Acreditar', 'QR del club'])
-    expect(hrefs(section)).toEqual([
-      '/hub/clientes',
-      '/hub/club',
-      '/hub/acreditar',
-      '/hub/local/captura',
-    ])
+    expect(labels(section)).toEqual(['Personas', 'Club'])
+    expect(hrefs(section)).toEqual(['/hub/clientes', '/hub/club'])
     expect(section.showWhenNoneActive).toBe(false)
   })
 
@@ -325,9 +322,9 @@ describe('pestaña activa según la URL', () => {
     expect(active('clientes', '/hub/clientes/c1')).toBe('personas')
     expect(active('clientes', '/hub/clientes/nuevo')).toBe('personas')
     expect(active('clientes', '/hub/clientes/c1/canjear')).toBe('personas')
-    expect(active('clientes', '/hub/acreditar')).toBe('acreditar')
-    expect(active('clientes', '/hub/local/captura')).toBe('qr')
-    // El plano comparte /local pero no es de Clientes.
+    expect(active('clientes', '/hub/club')).toBe('club')
+    expect(active('clientes', '/hub/club/simular')).toBe('club')
+    // Lo del punto de venta vive bajo /local y no es de Clientes.
     expect(active('clientes', '/hub/local/mesas')).toBeNull()
   })
 
@@ -382,12 +379,11 @@ describe('Clientes › Personas: el origen es un filtro de la lista', () => {
 describe('nada de lo que salió del menú se quedó sin camino', () => {
   /** Lo que el sidebar tenía como sub-ítems o entradas sueltas hasta el 07/10/2026. */
   const OLD_SIDEBAR_DESTINATIONS = [
-    // Clientes › Personas (Todos / Reservas / Walk-in), Acreditar, QR del club
+    // Clientes › Personas (Todos / Reservas / Walk-in). «Acreditar» y «QR del club» ya no son
+    // pantallas: son botones de Personas y del Club.
     '/hub/clientes',
     '/hub/clientes?segment=reserva',
     '/hub/clientes?segment=walkin',
-    '/hub/acreditar',
-    '/hub/local/captura',
     // Marketing
     '/hub/tareas',
     '/hub/enlaces',
