@@ -3,7 +3,7 @@
 import { Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useHaptic } from '@/app/(manager)/[tenantSlug]/operativo/_components/use-haptic'
-import { admitLanded, type DoorTicket, doorVerdict } from '@/lib/ticketing/door'
+import { admitLanded, type DoorElsewhere, type DoorTicket, doorVerdict } from '@/lib/ticketing/door'
 import { admitDoorTicket, lookupDoorTicket, undoDoorTicket } from '@/lib/ticketing/door-actions'
 import {
   DOOR_RETURN_MS,
@@ -44,18 +44,25 @@ type Problem = { word: string; note: string; retry: string; canReload?: boolean 
  *
  * Escanear no marca nada: es para que quien recibe vea el nombre, cuántos son y
  * cuánto falta cobrar antes de tocar (decisión del 03/11/2026).
+ *
+ * `branchId` es la sucursal con la que se dibujó la puerta. Sin ella (el escáner del salón), la
+ * acción usa la de este equipo. Una entrada de otra sucursal no pasa: dice dónde es.
  */
 export function TicketDoorPanel({
   tenantSlug,
   token,
   onDone,
+  branchId,
 }: {
   tenantSlug: string
   token: string
   onDone: () => void
+  branchId?: string | null
 }) {
   const haptic = useHaptic()
   const [ticket, setTicket] = useState<DoorTicket | null>(null)
+  // La entrada es de otra sucursal (dónde es). Lo dice la acción al mirarla y al dejar pasar.
+  const [elsewhere, setElsewhere] = useState<DoorElsewhere | null>(null)
   const [problem, setProblem] = useState<Problem | null>(null)
   const [stage, setStage] = useState<DoorStage>('verdict')
   const [guests, setGuests] = useState(1)
@@ -67,9 +74,10 @@ export function TicketDoorPanel({
   onDoneRef.current = onDone
 
   const show = useCallback(
-    (next: DoorTicket) => {
+    (next: DoorTicket, nextElsewhere: DoorElsewhere | null) => {
       setTicket(next)
-      const verdict = doorVerdict(next)
+      setElsewhere(nextElsewhere)
+      const verdict = doorVerdict(next, nextElsewhere)
       if (verdict.kind === 'admit') {
         setGuests(verdict.left)
         haptic(18)
@@ -83,16 +91,17 @@ export function TicketDoorPanel({
   useEffect(() => {
     let cancelled = false
     setTicket(null)
+    setElsewhere(null)
     setProblem(null)
     setStage('verdict')
     setAdmitError(null)
     setUndoNote(null)
     setUndone(false)
-    withDeadline(lookupDoorTicket(tenantSlug, token)).then(
+    withDeadline(lookupDoorTicket(tenantSlug, token, branchId)).then(
       (result) => {
         if (cancelled) return
         if (result.ok) {
-          show(result.ticket)
+          show(result.ticket, result.elsewhere)
         } else if (result.reason === 'not_found') {
           haptic([70, 50, 70])
           setProblem({
@@ -121,17 +130,17 @@ export function TicketDoorPanel({
     return () => {
       cancelled = true
     }
-  }, [tenantSlug, token, show, haptic])
+  }, [tenantSlug, token, branchId, show, haptic])
 
   const admit = useCallback(async () => {
     if (!ticket) return
-    const verdict = doorVerdict(ticket)
+    const verdict = doorVerdict(ticket, elsewhere)
     const insideBefore = verdict.kind === 'admit' ? verdict.inside : 0
     setStage('admitting')
     setAdmitError(null)
     try {
       const result = await withDeadline(
-        admitDoorTicket(tenantSlug, ticket.order_id, guests, insideBefore),
+        admitDoorTicket(tenantSlug, ticket.order_id, guests, insideBefore, branchId),
       )
       if (!result.ok) {
         setStage('verdict')
@@ -142,22 +151,25 @@ export function TicketDoorPanel({
         )
         return
       }
-      setTicket(result.ticket)
       if (result.admitted) {
+        setTicket(result.ticket)
+        setElsewhere(null)
         haptic(30)
         setStage('falling')
         return
       }
-      // La base no dejó (otro celular la validó recién): se muestra cómo está ahora.
+      // La base no dejó (otro celular la validó recién) o es de otra sucursal: se muestra cómo
+      // está ahora.
       setStage('verdict')
-      show(result.ticket)
+      show(result.ticket, result.elsewhere)
     } catch {
       // Se perdió la respuesta: pudo haber entrado igual. Se mira antes de ofrecer
       // reintentar (y reintentar no cuenta dos veces: la base compara cuántos había).
       try {
-        const fresh = await withDeadline(lookupDoorTicket(tenantSlug, ticket.short_code))
+        const fresh = await withDeadline(lookupDoorTicket(tenantSlug, ticket.short_code, branchId))
         if (fresh.ok && admitLanded(insideBefore, guests, fresh.ticket)) {
           setTicket(fresh.ticket)
+          setElsewhere(null)
           haptic(30)
           setStage('falling')
           return
@@ -168,7 +180,7 @@ export function TicketDoorPanel({
       setStage('verdict')
       setAdmitError('No pudimos confirmar si entraron. Revisá la señal y probá de nuevo.')
     }
-  }, [ticket, tenantSlug, guests, haptic, show])
+  }, [ticket, elsewhere, tenantSlug, guests, branchId, haptic, show])
 
   const undo = useCallback(async () => {
     if (!ticket) return
@@ -179,7 +191,7 @@ export function TicketDoorPanel({
       if (result.ok) {
         setUndone(true)
         setStage('verdict')
-        show(result.ticket)
+        show(result.ticket, result.elsewhere)
         return
       }
       setUndone(true)
@@ -236,7 +248,7 @@ export function TicketDoorPanel({
   return (
     <DoorVerdictView
       ticket={ticket}
-      verdict={doorVerdict(ticket)}
+      verdict={doorVerdict(ticket, elsewhere)}
       stage={stage}
       guests={guests}
       onGuests={setGuests}

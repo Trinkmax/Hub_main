@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { formatLongDate } from './dates'
 import type { OrderEntry } from './types'
 
 /**
@@ -54,10 +55,24 @@ export const doorFunctionSchema = z.object({
   time: z.string(),
   inside: z.number().int(),
   expected: z.number().int(),
+  /** La sucursal de la función (la base la manda desde las sucursales, 18/11/2026). */
+  branch_id: z.string().nullish(),
 })
 
 /** Una función de hoy: el cartel arriba de la cámara. */
 export type DoorFunction = z.infer<typeof doorFunctionSchema>
+
+/**
+ * La entrada es de otra sucursal que la de este equipo: dónde es, para decírselo a quien recibe
+ * en vez de dejar pasar. La base no lo controla (las funciones de la puerta son de antes de las
+ * sucursales): lo mira la acción antes de dejar pasar.
+ */
+export type DoorElsewhere = {
+  /** El nombre de la sucursal de la entrada. `null` = no se pudo leer. */
+  branch: string | null
+  /** La sucursal de este equipo, para que quien recibe vea si el equipo quedó en otra. */
+  here: string | null
+}
 
 export type DoorVerdict =
   /** Pasan: `left` de `total` todavía no entraron. */
@@ -66,6 +81,16 @@ export type DoorVerdict =
   | { kind: 'used'; total: number; at: string | null; by: string | null }
   /** Es para otro día. */
   | { kind: 'other_day'; when: 'future' | 'past'; date: string; time: string }
+  /** Es para otra sucursal: acá no pasa (la reserva es de allá). */
+  | {
+      kind: 'other_branch'
+      branch: string | null
+      here: string | null
+      date: string
+      time: string
+      /** La función es hoy (allá). */
+      today: boolean
+    }
   | { kind: 'not_paid' }
   | { kind: 'refunded' }
   | { kind: 'cancelled' }
@@ -80,8 +105,14 @@ export function guestsInside(reservation: NonNullable<DoorTicket['reservation']>
   return reservation.actual_guests ?? reservation.estimated_guests
 }
 
-/** El orden importa: primero lo que invalida la entrada, después el día y el cupo. */
-export function doorVerdict(ticket: DoorTicket): DoorVerdict {
+/**
+ * El orden importa: primero lo que invalida la entrada, después dónde, el día y el cupo. Una
+ * entrada que ya se usó dice «Ya entraron» aunque sea de otra sucursal: es lo más útil de saber.
+ */
+export function doorVerdict(
+  ticket: DoorTicket,
+  elsewhere: DoorElsewhere | null = null,
+): DoorVerdict {
   if (ticket.status === 'refunded') return { kind: 'refunded' }
   if (ticket.status !== 'approved') return { kind: 'not_paid' }
   const reservation = ticket.reservation
@@ -99,6 +130,16 @@ export function doorVerdict(ticket: DoorTicket): DoorVerdict {
       by: reservation.arrived_by_name,
     }
   }
+  if (elsewhere) {
+    return {
+      kind: 'other_branch',
+      branch: elsewhere.branch,
+      here: elsewhere.here,
+      date: reservation.date,
+      time: reservation.time,
+      today: reservation.date === ticket.service_day,
+    }
+  }
   if (reservation.date !== ticket.service_day) {
     return {
       kind: 'other_day',
@@ -108,6 +149,30 @@ export function doorVerdict(ticket: DoorTicket): DoorVerdict {
     }
   }
   return { kind: 'admit', left: total - inside, inside, total }
+}
+
+/** ¿La entrada es de otra sucursal? Solo si se saben las dos: sin datos, la puerta no frena a nadie. */
+export function isOtherBranch(
+  ticketBranchId: string | null | undefined,
+  doorBranchId: string | null | undefined,
+): boolean {
+  return Boolean(ticketBranchId && doorBranchId && ticketBranchId !== doorBranchId)
+}
+
+/**
+ * Lo que se le dice a quien recibe: «Esta entrada es para Shrek 2 de hoy a las 21:00 hs en Cerro.
+ * Este equipo está en Alta Córdoba.»
+ */
+export function otherBranchNote(
+  title: string,
+  verdict: Extract<DoorVerdict, { kind: 'other_branch' }>,
+): string {
+  const where = verdict.branch ?? 'otra sucursal'
+  const when = verdict.today
+    ? `de hoy a las ${verdict.time} hs`
+    : `del ${formatLongDate(verdict.date)}, ${verdict.time} hs,`
+  const here = verdict.here ? ` Este equipo está en ${verdict.here}.` : ''
+  return `Esta entrada es para ${title} ${when} en ${where}.${here}`
 }
 
 /**

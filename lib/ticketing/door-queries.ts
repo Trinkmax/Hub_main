@@ -9,10 +9,19 @@ type SBAny = any
 /**
  * Las funciones de hoy, con cuántos entraron. Si falla, la puerta sigue andando
  * sin el cartel: lo importante es poder escanear.
+ *
+ * `branchId`: la sucursal de este equipo (la puerta es un lugar). `null` = las que la persona ve
+ * (la base recorta).
  */
-export async function getDoorToday(tenantId: string): Promise<DoorFunction[]> {
+export async function getDoorToday(
+  tenantId: string,
+  branchId: string | null = null,
+): Promise<DoorFunction[]> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase.rpc('ticket_door_today', { p_tenant_id: tenantId })
+  const { data, error } = await supabase.rpc('ticket_door_today', {
+    p_tenant_id: tenantId,
+    p_branch_id: branchId,
+  })
   if (error) {
     console.error('[ticketing.getDoorToday]', { tenantId, code: error.code })
     return []
