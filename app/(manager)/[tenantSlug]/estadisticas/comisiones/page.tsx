@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listCommissionSummary } from '@/lib/salon/queries'
@@ -46,10 +48,14 @@ export default async function ComisionesStatsPage({
     },
     todayInCordoba(),
   )
+  // Por la sucursal de cada reserva (docs/features/sucursales.md): mirando el
+  // Cerro, lo que se ganó con las reservas del Cerro.
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
   const summary = await listCommissionSummary({
     tenantId: access.tenant.id,
     from: period.from,
     to: period.to,
+    branch,
   })
 
   return (

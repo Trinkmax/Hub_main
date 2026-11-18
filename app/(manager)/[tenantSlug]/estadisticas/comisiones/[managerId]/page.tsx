@@ -2,6 +2,8 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listCommissionBreakdown, listManagers } from '@/lib/salon/queries'
@@ -50,12 +52,16 @@ export default async function ManagerCommissionsPage({
     throw e
   }
 
+  // Por la sucursal de cada reserva: lo que se ve es lo que se liquida (el botón
+  // de pagar manda este mismo filtro).
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
   const [breakdown, managers] = await Promise.all([
     listCommissionBreakdown({
       tenantId: access.tenant.id,
       managerId,
       from: period.from,
       to: period.to,
+      branch,
     }),
     listManagers({ tenantId: access.tenant.id, onlyActive: false }),
   ])

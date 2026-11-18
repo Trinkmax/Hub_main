@@ -4,6 +4,8 @@ import { Check, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
+import { BranchTag } from '@/components/branches/branch-tag'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,8 @@ export function ManagerCommissionsBreakdown({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmPayAll, setConfirmPayAll] = useState(false)
   const [pending, startTransition] = useTransition()
+  // El filtro con el que se dibujó la liquidación: el pago de todo lo pendiente lo manda.
+  const branchFilter = useBranchScope()?.filter
 
   // Impagas del período: es lo que la gestora tiene por cobrar, futuro incluido.
   const unpaid = useMemo(() => entries.filter((e) => !e.paid_at), [entries])
@@ -111,11 +115,16 @@ export function ManagerCommissionsBreakdown({
    */
   function payAllPending() {
     startTransition(async () => {
-      const r = await markCommissionRangePaid(tenantSlug, {
-        manager_id: managerId,
-        from: period.from,
-        to: period.to,
-      } as Record<string, unknown>)
+      const r = await markCommissionRangePaid(
+        tenantSlug,
+        {
+          manager_id: managerId,
+          from: period.from,
+          to: period.to,
+        } as Record<string, unknown>,
+        // Lo que se ve es lo que se paga: mirando una sucursal, solo sus reservas.
+        branchFilter,
+      )
       if (r.ok) {
         // El mensaje puede avisar que quedaron pendientes: duración larga para
         // que no se lo lleve el toast antes de leerlo.
@@ -290,12 +299,15 @@ export function ManagerCommissionsBreakdown({
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
-                    <Link
-                      href={`/${tenantSlug}/reservas/${e.reservation.id}`}
-                      className="hover:underline"
-                    >
-                      {e.reservation.guest_name}
-                    </Link>
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <Link
+                        href={`/${tenantSlug}/reservas/${e.reservation.id}`}
+                        className="hover:underline"
+                      >
+                        {e.reservation.guest_name}
+                      </Link>
+                      <BranchTag branchId={e.reservation.branch_id} />
+                    </span>
                   </td>
                   {/* Las dos cifras, no una: es la revisión que los dueños
                       hacen antes de aprobar el pago. Un solo número no deja ver
