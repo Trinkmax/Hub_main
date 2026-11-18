@@ -28,6 +28,9 @@ const PER_BRANCH: ReadonlyArray<string> = [
 
 export type BranchSectionScope = 'branch' | 'bar'
 
+/** Adentro de una sección por sucursal, lo que igual es de todo el bar. */
+const BAR_INSIDE: ReadonlyArray<string> = ['eventos/templates']
+
 function startsWithSegments(rest: ReadonlyArray<string>, prefix: string): boolean {
   const parts = prefix.split('/')
   return parts.every((part, index) => rest[index] === part)
@@ -38,6 +41,9 @@ export function branchScopeForPath(pathname: string, slug: string): BranchSectio
   const segments = pathname.split('?')[0]?.split('/').filter(Boolean) ?? []
   if (segments[0] !== slug) return 'bar'
   const rest = segments.slice(1)
+  // El Resumen: lo de la noche es de la sucursal (los clientes y el club dicen «de todo el bar»).
+  if (rest.length === 0) return 'branch'
+  if (BAR_INSIDE.some((prefix) => startsWithSegments(rest, prefix))) return 'bar'
   return PER_BRANCH.some((prefix) => startsWithSegments(rest, prefix)) ? 'branch' : 'bar'
 }
 

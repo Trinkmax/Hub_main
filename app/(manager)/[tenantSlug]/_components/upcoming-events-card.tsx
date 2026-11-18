@@ -1,5 +1,6 @@
 import { ArrowRight, CalendarDays } from 'lucide-react'
 import Link from 'next/link'
+import { BranchTag } from '@/components/branches/branch-tag'
 import type { UpcomingEvent } from '@/lib/stats/pulse-queries'
 import { cn } from '@/lib/utils'
 
@@ -80,6 +81,7 @@ export function UpcomingEventsCard({
                         style={event.color ? { backgroundColor: event.color } : undefined}
                       />
                       <span className="truncate text-sm font-medium">{event.name}</span>
+                      <BranchTag branchId={event.branchId} />
                     </span>
                     <span className="shrink-0 text-sm tabular-nums">
                       <span className={cn('font-semibold', full && 'text-success')}>

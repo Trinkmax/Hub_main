@@ -372,3 +372,22 @@ describe('el ?sucursal= que pasa el proxy', () => {
     expect(sanitizeBranchParam(null)).toBe('')
   })
 })
+
+describe('qué pantallas se miran por sucursal', () => {
+  it('lo de la noche es por sucursal; lo del bar, no', async () => {
+    const { branchScopeForPath, barSectionName } = await import('@/lib/branches/sections')
+    expect(branchScopeForPath('/hub', 'hub')).toBe('branch')
+    expect(branchScopeForPath('/hub/reservas/nuevo', 'hub')).toBe('branch')
+    expect(branchScopeForPath('/hub/operativo?fecha=2026-11-18', 'hub')).toBe('branch')
+    expect(branchScopeForPath('/hub/eventos/programados', 'hub')).toBe('branch')
+    expect(branchScopeForPath('/hub/eventos/templates', 'hub')).toBe('bar')
+    expect(branchScopeForPath('/hub/estadisticas/como-nos-fue', 'hub')).toBe('branch')
+    expect(branchScopeForPath('/hub/estadisticas', 'hub')).toBe('bar')
+    expect(branchScopeForPath('/hub/mensajeria/inbox', 'hub')).toBe('bar')
+    expect(branchScopeForPath('/hub/club', 'hub')).toBe('bar')
+    expect(branchScopeForPath('/hub/reservasx', 'hub')).toBe('bar')
+    expect(branchScopeForPath('/otro/reservas', 'hub')).toBe('bar')
+    expect(barSectionName('/hub/mensajeria/inbox', 'hub')).toBe('Mensajería')
+    expect(barSectionName('/hub/configuracion/equipo', 'hub')).toBe('La configuración')
+  })
+})
