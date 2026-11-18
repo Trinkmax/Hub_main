@@ -39,13 +39,14 @@
 
 /* ─── El fleco del toldo, colgando de la barra de arriba ─────────────────────────────────────────────── */
 
-/* No ocupa lugar: cuelga 5 px por debajo del borde de la barra, encima del contenido y sin atrapar clics.
+/* No ocupa lugar: va en el borde de abajo de la barra, adentro (no cuelga sobre el contenido ni sobre los
+   encabezados fijos de las tablas) y sin atrapar clics.
    Una sucursal = ondas de su color; «Todas» = ondas que alternan los colores; todo el bar = ondas grises. */
 .branch-fringe {
   pointer-events: none;
   position: absolute;
   inset-inline: 0;
-  bottom: -5px;
+  bottom: 0;
   height: 6px;
   transition:
     --branch-a 420ms cubic-bezier(0.22, 1, 0.36, 1),

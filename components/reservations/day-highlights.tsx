@@ -1,5 +1,6 @@
 import { Cake, CalendarPlus, PartyPopper, Sparkles, Users } from 'lucide-react'
 import Link from 'next/link'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { CelebrationChip, ChampagneChip } from '@/components/reservations/celebration-chip'
 import { StatusPill } from '@/components/reservations/status-pill'
@@ -107,6 +108,7 @@ function EventCard({
       >
         {event.title}
       </Link>
+      <BranchTag branchId={event.branchId} />
       <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
         {event.time}
       </span>
