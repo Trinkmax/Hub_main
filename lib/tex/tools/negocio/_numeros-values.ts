@@ -1,4 +1,5 @@
 import { isoDayInCordoba } from '@/lib/dates'
+import { pendingSetupTitles, type SetupStatus } from '@/lib/onboarding/steps'
 import type { ReviewInsights, ReviewListItem } from '@/lib/reviews/queries'
 import type { BirthdayTile, MonthBirthdayReport } from '@/lib/salon/birthdays-report'
 import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
@@ -76,25 +77,6 @@ function sumOf(rows: readonly DailyMetric[], read: (row: DailyMetric) => unknown
   return rows.reduce((total, row) => total + Number(read(row) ?? 0), 0)
 }
 
-/** Lo que falta de los cinco pasos de «Tu bar en marcha» (`onboarding-checklist.tsx`). */
-export type SetupFacts = {
-  capacitiesReady: boolean
-  templatesReady: boolean
-  eventScheduledReady: boolean
-  firstReservationReady: boolean
-  firstArrivalReady: boolean
-}
-
-export function setupPending(facts: SetupFacts): string[] {
-  return [
-    ...(facts.capacitiesReady ? [] : ['Definí cuánta gente entra']),
-    ...(facts.templatesReady ? [] : ['Creá los formatos de tus eventos']),
-    ...(facts.eventScheduledReady ? [] : ['Poné el primer evento en el calendario']),
-    ...(facts.firstReservationReady ? [] : ['Cargá la primera reserva']),
-    ...(facts.firstArrivalReady ? [] : ['Marcá la primera llegada']),
-  ]
-}
-
 const MEAL_ORDER: readonly MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 
 export function todayData(overview: TodaySalonOverview) {
@@ -158,7 +140,7 @@ export function homeData(input: {
   customers: { total: number; added: number }
   club: Pick<Kpis, 'visits_30d' | 'revenue_30d_cents'>
   upcoming: readonly UpcomingEvent[]
-  setup: SetupFacts
+  setup: SetupStatus
 }) {
   const { current, previous } = input.pulse
   return compact({
@@ -176,7 +158,7 @@ export function homeData(input: {
       cargado_en_el_club: pesos(input.club.revenue_30d_cents),
     }),
     lo_que_viene: input.upcoming.map(upcomingRow),
-    falta_configurar: setupPending(input.setup),
+    falta_configurar: pendingSetupTitles(input.setup),
   })
 }
 

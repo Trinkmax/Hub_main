@@ -1,4 +1,4 @@
-import { Armchair, BookOpen, type LucideIcon, Palette, Star, Store, UsersRound } from 'lucide-react'
+import { Armchair, type LucideIcon, Palette, Star, Store, UsersRound } from 'lucide-react'
 import type { FeatureKey } from '@/lib/platform/features'
 
 /**
@@ -97,17 +97,6 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         label: 'Logo y marca',
         description: 'El logo del bar y el color de la marca.',
         href: (s) => `/${s}/configuracion/apariencia`,
-      },
-    ],
-  },
-  {
-    label: 'Ayuda',
-    icon: BookOpen,
-    items: [
-      {
-        label: 'Documentación',
-        description: 'La guía de todo el sistema, para cuando tengas una duda.',
-        href: (s) => `/${s}/docs`,
       },
     ],
   },

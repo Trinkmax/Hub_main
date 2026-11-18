@@ -1,131 +1,88 @@
 import { ArrowUpRight, CheckCircle2, Circle } from 'lucide-react'
 import Link from 'next/link'
+import { SETUP_STEPS, type SetupStatus, setupDone } from '@/lib/onboarding/steps'
+import { DismissChecklistButton } from './dismiss-checklist-button'
 
-type Step = {
-  done: boolean
-  title: string
-  description: string
-  href: string
-  cta: string
-}
-
-export type OnboardingSteps = {
-  capacitiesReady: boolean
-  templatesReady: boolean
-  eventScheduledReady: boolean
-  firstReservationReady: boolean
-  firstArrivalReady: boolean
-}
-
+/**
+ * «Tu bar en marcha»: los primeros pasos de un bar nuevo, en el Resumen. Es la ÚNICA guía de
+ * arranque (antes había además un asistente en una pantalla aparte). Cada paso se tilda solo cuando
+ * el bar ya lo hizo, y la lista desaparece cuando están todos o cuando el dueño la oculta.
+ */
 export function OnboardingChecklist({
   tenantSlug,
   steps,
 }: {
   tenantSlug: string
-  steps: OnboardingSteps
+  steps: SetupStatus
 }) {
-  const items: Step[] = [
-    {
-      done: steps.capacitiesReady,
-      title: 'Definí cuánta gente entra',
-      description:
-        'El cupo de cada servicio. Con eso el sistema te avisa cuando una noche se está llenando.',
-      href: `/${tenantSlug}/configuracion/salon`,
-      cta: 'Cargar la capacidad',
-    },
-    {
-      done: steps.templatesReady,
-      title: 'Creá los formatos de tus eventos',
-      description:
-        'Sushi libre, Pizza libre, Noche de cine: lo que después ponés en una fecha del calendario.',
-      href: `/${tenantSlug}/eventos/programados?tab=eventos`,
-      cta: 'Crear formatos',
-    },
-    {
-      done: steps.eventScheduledReady,
-      title: 'Poné el primer evento en el calendario',
-      description:
-        'Elegí un formato y una fecha. Las reservas de esa noche se anotan en ese evento.',
-      href: `/${tenantSlug}/eventos/programados`,
-      cta: 'Abrir el calendario',
-    },
-    {
-      done: steps.firstReservationReady,
-      title: 'Cargá la primera reserva',
-      description: 'Nombre, teléfono, cuántos son y a qué hora. Menos de medio minuto.',
-      href: `/${tenantSlug}/reservas/nuevo`,
-      cta: 'Nueva reserva',
-    },
-    {
-      done: steps.firstArrivalReady,
-      title: 'Marcá la primera llegada',
-      description:
-        'La noche de la reserva, tocá «Llegó» en el Operativo. Con eso se calcula la comisión y se llenan los números de este Resumen.',
-      href: `/${tenantSlug}/operativo`,
-      cta: 'Abrir el Operativo',
-    },
-  ]
-
-  const completed = items.filter((s) => s.done).length
-
-  // Si está todo listo, no renderear el bloque
-  if (completed === items.length) return null
+  if (setupDone(steps)) return null
+  const completed = SETUP_STEPS.filter((step) => steps[step.key]).length
 
   return (
-    <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5">
+    <section
+      aria-label="Tu bar en marcha"
+      className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5"
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
       />
       <div className="relative">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-primary">
               Empezá por acá
             </p>
-            <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">
-              Tu bar en marcha en {items.length} pasos
+            <h2 className="mt-1 font-serif text-lg font-semibold tracking-tight">
+              Tu bar en marcha
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {completed} de {items.length} pasos completados
+              {completed === 0
+                ? `Son ${SETUP_STEPS.length} pasos. Se tildan solos a medida que los hacés.`
+                : `${completed} de ${SETUP_STEPS.length} pasos hechos.`}
             </p>
           </div>
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border bg-card">
-            <span className="font-display text-lg font-semibold tabular-nums">
-              {Math.round((completed / items.length) * 100)}%
-            </span>
-          </div>
+          <DismissChecklistButton tenantSlug={tenantSlug} />
         </div>
 
-        <ul className="mt-5 space-y-2">
-          {items.map((item) => (
-            <li key={item.title}>
-              <Link
-                href={item.href}
-                className="group flex items-start gap-3 rounded-lg border border-border/40 bg-background/40 p-3 transition-colors hover:border-border hover:bg-background/80"
-              >
-                {item.done ? (
-                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" />
-                ) : (
-                  <Circle className="mt-0.5 size-5 shrink-0 text-muted-foreground/60" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={`text-sm font-medium ${item.done ? 'text-muted-foreground line-through' : 'text-foreground'}`}
-                  >
-                    {item.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{item.description}</p>
-                </div>
-                <span className="hidden shrink-0 items-center gap-1 self-center text-xs font-medium text-primary group-hover:underline sm:inline-flex">
-                  {item.done ? 'Listo' : item.cta}
-                  <ArrowUpRight className="size-3" />
-                </span>
-              </Link>
-            </li>
-          ))}
+        <ul className="mt-4 grid gap-2 lg:grid-cols-2">
+          {SETUP_STEPS.map((step) => {
+            const done = steps[step.key]
+            return (
+              <li key={step.key}>
+                <Link
+                  href={step.href(tenantSlug)}
+                  className="group flex h-full items-start gap-3 rounded-lg border border-border/40 bg-background/40 p-3 transition-colors hover:border-border hover:bg-background/80"
+                >
+                  {done ? (
+                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
+                  ) : (
+                    <Circle
+                      className="mt-0.5 size-5 shrink-0 text-muted-foreground/60"
+                      aria-hidden
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-sm font-medium ${done ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                    >
+                      {step.title}
+                      {done ? <span className="sr-only"> (hecho)</span> : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground text-pretty">{step.description}</p>
+                  </div>
+                  {done ? null : (
+                    <span className="hidden shrink-0 items-center gap-1 self-center text-xs font-medium text-primary group-hover:underline sm:inline-flex">
+                      {step.cta}
+                      <ArrowUpRight className="size-3" aria-hidden />
+                    </span>
+                  )}
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       </div>
-    </div>
+    </section>
   )
 }

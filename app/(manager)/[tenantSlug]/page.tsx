@@ -1,9 +1,11 @@
 import { ArrowDownRight, ArrowUpRight, PartyPopper, Sparkles, UserCheck, Users } from 'lucide-react'
 import { redirect } from 'next/navigation'
+import { PeopleChart } from '@/components/charts/people-chart'
 import { Sparkline } from '@/components/charts/sparkline'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { formatCentsShort } from '@/lib/money/format'
+import { getSetupStatus } from '@/lib/onboarding/setup'
 import { isFeatureEnabled } from '@/lib/platform/features'
 import { serviceDayAt } from '@/lib/pos/cash/screen'
 import { getSalesDays } from '@/lib/pos/today/queries'
@@ -13,11 +15,9 @@ import { getTodaySalonOverview } from '@/lib/salon/queries'
 import { pulseDelta } from '@/lib/stats/pulse'
 import { getBarPulse, getCustomerGrowth, listUpcomingEvents } from '@/lib/stats/pulse-queries'
 import { getKpis } from '@/lib/stats/queries'
-import { createClient } from '@/lib/supabase/server'
 import { homePathForRole, requireTenantAccess } from '@/lib/tenant'
 import type { Tenant } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
-import { PeopleChart } from '@/components/charts/people-chart'
 import { PosTodayCard } from './_components/pos-today-card'
 import { QuickActions } from './_components/quick-actions'
 import { TodaySalonOverview } from './_components/today-salon-overview'
@@ -52,57 +52,6 @@ function deltaLabel(pct: number | null): {
   if (pct === 0) return { label: 'igual', tone: 'muted' }
   if (pct > 0) return { label: `+${pct}%`, tone: 'positive' }
   return { label: `${pct}%`, tone: 'negative' }
-}
-
-async function getOnboardingStatus(
-  tenantId: string,
-  tenantSettings: Record<string, unknown> | null,
-) {
-  const supabase = await createClient()
-  const today = todayInCordoba()
-
-  const [templates, scheduled, reservations, attended] = await Promise.all([
-    supabase
-      .from('scheduled_event_templates')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .limit(1),
-    supabase
-      .from('scheduled_events')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .gte('event_date', today)
-      .limit(1),
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .limit(1),
-    // «Ya se recibió a alguien»: alcanza con que una reserva esté marcada «Llegó».
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .in('status', ['arrived', 'seated', 'closed'])
-      .limit(1),
-  ])
-
-  const caps = (tenantSettings?.salon_capacities ?? null) as {
-    planta_alta?: number
-    planta_baja?: number
-  } | null
-  const capacitiesReady = Boolean(
-    caps && Number(caps.planta_alta ?? 0) > 0 && Number(caps.planta_baja ?? 0) > 0,
-  )
-
-  return {
-    capacitiesReady,
-    templatesReady: (templates.count ?? 0) > 0,
-    eventScheduledReady: (scheduled.count ?? 0) > 0,
-    firstReservationReady: (reservations.count ?? 0) > 0,
-    firstArrivalReady: (attended.count ?? 0) > 0,
-  }
 }
 
 /**
@@ -141,20 +90,23 @@ export default async function TenantHomePage({
   // El home es del dueño: cualquier otro rol va al suyo (backstop del proxy).
   if (role !== 'owner') redirect(homePathForRole(role, tenantSlug))
 
-  // Si el dueño no completó la configuración inicial, va ahí primero.
+  // Los primeros pasos se muestran hasta que estén todos hechos o el dueño oculte la lista. (Antes
+  // un bar nuevo era mandado a un asistente aparte, del servicio de mesa anterior.)
   const tenantSettings = (tenant.settings ?? {}) as Record<string, unknown>
   const onboardingFlag = (tenantSettings.onboarding ?? {}) as { completed?: boolean }
-  if (!onboardingFlag.completed) redirect(`/${tenantSlug}/onboarding`)
+  const showSetup = !onboardingFlag.completed
 
   const today = todayInCordoba()
   const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString()
 
-  const [pulse, customers, club, upcoming, onboarding, todayOverview, pos] = await Promise.all([
+  const [pulse, customers, club, upcoming, setup, todayOverview, pos] = await Promise.all([
     getBarPulse({ tenantId: tenant.id, today, windowDays: WINDOW_DAYS }),
     getCustomerGrowth({ tenantId: tenant.id, since }),
     getKpis(tenant.id),
     listUpcomingEvents({ tenantId: tenant.id, today, days: 7 }),
-    getOnboardingStatus(tenant.id, tenantSettings),
+    showSetup
+      ? getSetupStatus({ tenantId: tenant.id, today, settings: tenantSettings })
+      : Promise.resolve(null),
     getTodaySalonOverview({ tenantId: tenant.id, date: today }),
     posSalesToday(tenant, isFeatureEnabled(tenant, 'pos')),
   ])
@@ -172,6 +124,9 @@ export default async function TenantHomePage({
         description="Cómo viene hoy y cómo viene el mes."
         actions={<QuickActions tenantSlug={tenantSlug} />}
       />
+
+      {/* Para un bar que recién arranca es lo primero: todavía no tiene números que mirar. */}
+      {setup ? <OnboardingChecklist tenantSlug={tenantSlug} steps={setup} /> : null}
 
       {pos.shown ? <PosTodayCard tenantSlug={tenantSlug} sales={pos.sales} /> : null}
 
@@ -265,8 +220,6 @@ export default async function TenantHomePage({
 
         <UpcomingEventsCard tenantSlug={tenantSlug} events={upcoming} today={today} />
       </div>
-
-      <OnboardingChecklist tenantSlug={tenantSlug} steps={onboarding} />
     </div>
   )
 }

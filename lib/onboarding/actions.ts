@@ -10,16 +10,6 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 
-export type OnboardingState = {
-  completed: boolean
-  steps: {
-    table_created: boolean
-    menu_seeded: boolean
-    points_configured: boolean
-    team_invited: boolean
-  }
-}
-
 const SETTINGS_KEY = 'onboarding'
 
 async function authorizeOwner(slug: string) {
@@ -39,50 +29,11 @@ async function authorizeOwner(slug: string) {
   }
 }
 
-export async function getOnboardingState(slug: string): Promise<OnboardingState | null> {
-  const tenant = await authorizeOwner(slug)
-  if (!tenant) return null
-
-  const supabase = await createClient()
-  const [
-    { count: tableCount },
-    { count: itemCount },
-    { count: ruleCount },
-    { count: memberCount },
-  ] = await Promise.all([
-    supabase
-      .from('physical_tables')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', tenant.id),
-    supabase
-      .from('menu_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', tenant.id),
-    supabase
-      .from('points_rules')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', tenant.id)
-      .eq('active', true),
-    supabase
-      .from('memberships')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', tenant.id),
-  ])
-
-  const settings = (tenant.settings ?? {}) as Record<string, unknown>
-  const onboarding = (settings[SETTINGS_KEY] ?? {}) as { completed?: boolean }
-
-  return {
-    completed: Boolean(onboarding.completed),
-    steps: {
-      table_created: (tableCount ?? 0) > 0,
-      menu_seeded: (itemCount ?? 0) > 0,
-      points_configured: (ruleCount ?? 0) > 0,
-      team_invited: (memberCount ?? 0) > 1, // > 1 porque el owner siempre cuenta
-    },
-  }
-}
-
+/**
+ * «No mostrar más» de la lista de primeros pasos del Resumen. Guarda la marca en los ajustes del bar
+ * (la misma que dejaba el asistente de primer arranque, así los bares que ya lo habían pasado no
+ * vuelven a ver la lista).
+ */
 export async function markOnboardingCompleted(slug: string): Promise<{ ok: boolean }> {
   const tenant = await authorizeOwner(slug)
   if (!tenant) return { ok: false }
@@ -101,6 +52,5 @@ export async function markOnboardingCompleted(slug: string): Promise<{ ok: boole
   }
 
   revalidatePath(`/${slug}`)
-  revalidatePath(`/${slug}/onboarding`)
   return { ok: true }
 }

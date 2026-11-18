@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   getEventsRanking: vi.fn(),
   getCommunicationStats: vi.fn(),
   getBarPulse: vi.fn(),
+  getSetupStatus: vi.fn(),
   getCustomerGrowth: vi.fn(),
   listUpcomingEvents: vi.fn(),
   getReviewInsights: vi.fn(),
@@ -67,6 +68,7 @@ vi.mock('@/lib/stats/queries', () => ({
   getEventsRanking: mocks.getEventsRanking,
   getCommunicationStats: mocks.getCommunicationStats,
 }))
+vi.mock('@/lib/onboarding/setup', () => ({ getSetupStatus: mocks.getSetupStatus }))
 vi.mock('@/lib/stats/pulse-queries', () => ({
   getBarPulse: mocks.getBarPulse,
   getCustomerGrowth: mocks.getCustomerGrowth,
@@ -1444,7 +1446,16 @@ describe('ver_inicio', () => {
     mocks.getCustomerGrowth.mockResolvedValue({ total: 200, added: 14 })
     mocks.listUpcomingEvents.mockResolvedValue(UPCOMING)
     mocks.getTodaySalonOverview.mockResolvedValue(TODAY_OVERVIEW)
-    mocks.getZoneCapacityDefaults.mockResolvedValue({ planta_alta: 60, planta_baja: 0 })
+    mocks.getSetupStatus.mockResolvedValue({
+      menuReady: true,
+      clubReady: true,
+      teamReady: false,
+      capacitiesReady: false,
+      templatesReady: true,
+      eventScheduledReady: true,
+      firstReservationReady: true,
+      firstArrivalReady: true,
+    })
   })
 
   it('hoy: por llegar y llegaron, sin los pasos que ya nadie marca', async () => {
@@ -1479,7 +1490,8 @@ describe('ver_inicio', () => {
       consumos_con_puntos: 60,
       cargado_en_el_club: '$ 60.000',
     })
-    expect(out.falta_configurar).toEqual(['Definí cuánta gente entra'])
+    // Los pasos que faltan, con el mismo título que la lista del Resumen y en su orden.
+    expect(out.falta_configurar).toEqual(['Sumá a tu equipo', 'Definí cuánta gente entra'])
     expectClean(out)
   })
 

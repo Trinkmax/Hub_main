@@ -2,6 +2,8 @@ import 'server-only'
 
 import { z } from 'zod'
 import { isRealIsoDay } from '@/lib/dates'
+import { getSetupStatus } from '@/lib/onboarding/setup'
+import type { SetupStatus } from '@/lib/onboarding/steps'
 import { getReviewInsights, listReviews } from '@/lib/reviews/queries'
 import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
 import {
@@ -9,7 +11,6 @@ import {
   getMonthMarketingReport,
   getTemplateReport,
   getTodaySalonOverview,
-  getZoneCapacityDefaults,
   listEventTemplateOptions,
   listRecentReservationDays,
 } from '@/lib/salon/queries'
@@ -23,7 +24,7 @@ import {
   getKpis,
   getTopCustomersBySpent,
 } from '@/lib/stats/queries'
-import { createClient } from '@/lib/supabase/server'
+import { requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { texMonth } from '../read/common'
 import {
@@ -46,7 +47,6 @@ import {
   monthPautaData,
   overviewStats,
   reviewsData,
-  type SetupFacts,
   templateOptionsData,
   templateReportData,
 } from './_numeros-values'
@@ -68,45 +68,14 @@ const REVIEWS_MAX = 40
 
 const fail = (message: string): TexToolResult => ({ kind: 'error', message })
 
-/**
- * Los cinco pasos de «Tu bar en marcha». `getOnboardingStatus` vive adentro de la página de la portada,
- * que no se puede importar: acá va la misma lectura, con la sesión de la persona.
- */
-async function setupFacts(ctx: TexToolContext): Promise<SetupFacts> {
-  const supabase = await createClient()
-  const [templates, scheduled, reservations, arrived, caps] = await Promise.all([
-    supabase
-      .from('scheduled_event_templates')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .eq('active', true)
-      .limit(1),
-    supabase
-      .from('scheduled_events')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .gte('event_date', ctx.today)
-      .limit(1),
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .limit(1),
-    supabase
-      .from('salon_reservations')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', ctx.tenantId)
-      .in('status', ['arrived', 'seated', 'closed'])
-      .limit(1),
-    getZoneCapacityDefaults({ tenantId: ctx.tenantId }),
-  ])
-  return {
-    capacitiesReady: caps.planta_alta > 0 && caps.planta_baja > 0,
-    templatesReady: (templates.count ?? 0) > 0,
-    eventScheduledReady: (scheduled.count ?? 0) > 0,
-    firstReservationReady: (reservations.count ?? 0) > 0,
-    firstArrivalReady: (arrived.count ?? 0) > 0,
-  }
+/** Los primeros pasos del bar (`lib/onboarding`): la misma lectura que hace el Resumen. */
+async function setupFacts(ctx: TexToolContext): Promise<SetupStatus> {
+  const { tenant } = await requireTenantAccess(ctx.slug)
+  return getSetupStatus({
+    tenantId: ctx.tenantId,
+    today: ctx.today,
+    settings: (tenant.settings ?? null) as Record<string, unknown> | null,
+  })
 }
 
 export const numerosTools = [

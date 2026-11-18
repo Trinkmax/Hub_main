@@ -175,7 +175,6 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
     ['/hub/local/hoy', 'Resumen'],
     ['/hub/configuracion', 'Configuración'],
     ['/hub/configuracion/equipo', 'Configuración'],
-    ['/hub/docs', 'Configuración'],
   ]
 
   for (const [url, label] of CASES) {
@@ -190,7 +189,13 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
   })
 
   it('lo que salió del panel no resalta nada', () => {
-    for (const gone of ['/hub/acreditar', '/hub/local/captura', '/hub/local/auto-aceptacion']) {
+    for (const gone of [
+      '/hub/acreditar',
+      '/hub/local/captura',
+      '/hub/local/auto-aceptacion',
+      '/hub/docs',
+      '/hub/onboarding',
+    ]) {
       expect(activeLabels(gone, owner), gone).toEqual([])
     }
   })
@@ -229,7 +234,6 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
       '/hub/clientes/nuevo',
       '/hub/configuracion/resenas',
       '/hub/configuracion/tortas',
-      '/hub/docs',
       '/hub/enlaces',
       '/hub/estadisticas/comisiones',
       '/hub/entradas',
@@ -242,7 +246,6 @@ describe('computeActiveHrefs — una entrada por sección (IA real)', () => {
       '/hub/mensajeria/difusiones/abc',
       '/hub/menu',
       '/hub/mis-numeros',
-      '/hub/onboarding',
       '/hub/operativo',
       '/hub/paginas/abc',
       '/hub/reservas/nuevo',

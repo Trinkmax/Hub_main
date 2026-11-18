@@ -264,8 +264,7 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Anclado al fondo: siempre a un toque, nunca en el medio. La
-    // Documentación es una sección más adentro de Configuración.
+    // Anclado al fondo: siempre a un toque, nunca en el medio.
     label: 'Ajustes',
     pinned: true,
     items: [
@@ -276,8 +275,8 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',
         roles: ['owner'],
-        // Docs, Sucursales y el Plano del salón se abren desde Configuración.
-        activePaths: (s) => [`/${s}/docs`, `/${s}/local/sucursales`, `/${s}/local/mesas`],
+        // Sucursales y el Plano del salón (punto de venta) se abren desde Configuración.
+        activePaths: (s) => [`/${s}/local/sucursales`, `/${s}/local/mesas`],
       },
     ],
   },

@@ -231,10 +231,9 @@ describe('resolveNavGroups — hrefs, íconos y rutas de cada sección', () => {
       '/hub/entradas',
     ])
     expect(entry(groups, 'Estadísticas')?.activePaths).toEqual(['/hub/reviews'])
-    // «Hoy en vivo» es el detalle del Resumen; Docs, Sucursales y el Plano se abren desde Configuración.
+    // «Hoy en vivo» es el detalle del Resumen; Sucursales y el Plano se abren desde Configuración.
     expect(entry(groups, 'Resumen')?.activePaths).toEqual(['/hub/local/hoy'])
     expect(entry(groups, 'Configuración')?.activePaths).toEqual([
-      '/hub/docs',
       '/hub/local/sucursales',
       '/hub/local/mesas',
     ])

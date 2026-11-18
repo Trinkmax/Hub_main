@@ -1217,15 +1217,6 @@ export const commandEntries: CommandEntry[] = [
     keywords: ['liquidacion', 'gestores', 'plata'],
   },
   {
-    id: 'docs',
-    label: 'Documentación',
-    icon: BookOpen,
-    group: 'Ir a',
-    type: 'navigate',
-    href: (s) => `/${s}/docs`,
-    keywords: ['ayuda', 'guía', 'manual', 'help'],
-  },
-  {
     id: 'settings',
     label: 'Configuración',
     icon: Settings2,

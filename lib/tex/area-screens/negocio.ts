@@ -128,7 +128,7 @@ export const negocioScreens: readonly TexScreenDef[] = [
   {
     id: 'configuracion.inicio',
     label: 'Configuración',
-    what: 'La portada de los ajustes del bar: equipo y comisiones, capacidad y tortas, reseñas, apariencia, documentación y, con el punto de venta, sucursales y plano del salón.',
+    what: 'La portada de los ajustes del bar: equipo y comisiones, capacidad y tortas, reseñas, apariencia y, con el punto de venta, sucursales y plano del salón.',
     path: '/configuracion',
     root: true,
     roles: OWNER,
@@ -191,21 +191,5 @@ export const negocioScreens: readonly TexScreenDef[] = [
     root: true,
     roles: OWNER,
     feature: 'pos',
-  },
-  {
-    id: 'ayuda.docs',
-    label: 'Documentación',
-    what: 'La guía de todo el sistema, con preguntas frecuentes.',
-    path: '/docs',
-    root: true,
-    roles: OWNER,
-  },
-  {
-    id: 'ayuda.puesta_en_marcha',
-    label: 'Configuración inicial',
-    what: 'El asistente del primer arranque del bar; si ya se completó, abre el Resumen.',
-    path: '/onboarding',
-    root: true,
-    roles: OWNER,
   },
 ]
