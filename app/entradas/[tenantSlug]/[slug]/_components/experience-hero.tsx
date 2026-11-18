@@ -1,4 +1,4 @@
-import { Clock, MapPin, Play, Ticket, UtensilsCrossed } from 'lucide-react'
+import { Clock, Play, Ticket, UtensilsCrossed } from 'lucide-react'
 import Image from 'next/image'
 import { stepsSummary } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
@@ -6,7 +6,7 @@ import type { PublicExperience } from '@/lib/ticketing/types'
 import { youtubeVideoId } from '@/lib/ticketing/video'
 import { Dust } from '../../../_components/chrome'
 import { Poster } from '../../../_components/poster'
-import { SelectedChip } from './selected-chip'
+import { SelectedAddress, SelectedChip } from './selected-chip'
 import { TiltPoster } from './tilt-poster'
 
 /**
@@ -14,6 +14,9 @@ import { TiltPoster } from './tilt-poster'
  * con el color de la película), «HUB presenta», el título enorme y el afiche
  * flotando. El botón baja a la entrada; con video, otro baja a «Mirá cómo
  * es»; la fecha elegida queda al lado.
+ *
+ * La dirección es la de la sucursal de la función elegida (`address` es la de
+ * arranque: la de la sucursal de la película si va en una sola, o la del bar).
  */
 export function ExperienceHero({
   experience,
@@ -38,7 +41,8 @@ export function ExperienceHero({
     credits.push({ icon: Clock, text: `${experience.functions[0].time} hs` })
   }
   if (steps) credits.push({ icon: UtensilsCrossed, text: steps })
-  if (address) credits.push({ icon: MapPin, text: address })
+  // Alguna función (o el bar) dice dónde: el renglón de la dirección lo arma la función elegida.
+  const anyAddress = Boolean(address) || experience.functions.some((fn) => fn.branch)
 
   return (
     <header className="ent-hero -mt-[4.5rem] pt-24 pb-14 sm:pt-32 sm:pb-20">
@@ -91,7 +95,7 @@ export function ExperienceHero({
             </p>
           ) : null}
 
-          {credits.length > 0 ? (
+          {credits.length > 0 || anyAddress ? (
             <ul
               className="ent-rise mt-7 flex flex-col gap-2.5 text-sm text-(--ent-cream-2) sm:flex-row sm:flex-wrap sm:gap-x-6"
               style={{ '--d': 400 } as React.CSSProperties}
@@ -102,6 +106,7 @@ export function ExperienceHero({
                   {text}
                 </li>
               ))}
+              <SelectedAddress fallback={address} />
             </ul>
           ) : null}
 

@@ -1,3 +1,4 @@
+import { footerPlaces } from '@/lib/ticketing/branches'
 import { type CatalogFilters, summarizeCatalog } from '@/lib/ticketing/catalog'
 import type { PublicCatalog } from '@/lib/ticketing/queries'
 import { Footer, HowItWorks, Ribbon, TopBar, VenueReel } from '../../_components/chrome'
@@ -16,7 +17,7 @@ export function CarteleraView({
   catalog: PublicCatalog
   filters?: CatalogFilters
 }) {
-  const { venue, experiences, today } = catalog
+  const { venue, experiences, today, branches } = catalog
   const summary = summarizeCatalog(experiences)
   const headline = venue.headline ?? summary.series ?? 'Cartelera'
 
@@ -75,6 +76,7 @@ export function CarteleraView({
           {experiences.length > 0 ? (
             <CarteleraBoard
               experiences={experiences}
+              branches={branches}
               initialFilters={filters}
               tenantSlug={venue.tenantSlug}
               today={today}
@@ -101,7 +103,7 @@ export function CarteleraView({
           />
         ) : null}
       </main>
-      <Footer venue={venue} />
+      <Footer venue={venue} places={footerPlaces(branches, venue.address)} />
     </>
   )
 }

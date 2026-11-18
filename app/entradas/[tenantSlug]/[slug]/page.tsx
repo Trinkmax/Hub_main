@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { getAppUrl } from '@/lib/app-url'
+import { parseBranchParam } from '@/lib/ticketing/branches'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { getPublicExperience } from '@/lib/ticketing/queries'
 import { viewerOwnsTenant } from '@/lib/ticketing/viewer'
@@ -70,7 +71,11 @@ export default async function ExperiencePage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string; slug: string }>
-  searchParams: Promise<{ fecha?: string | string[]; ver?: string | string[] }>
+  searchParams: Promise<{
+    fecha?: string | string[]
+    ver?: string | string[]
+    sucursal?: string | string[]
+  }>
 }) {
   const [{ tenantSlug, slug }, sp] = await Promise.all([params, searchParams])
   const page = await resolvePage(tenantSlug, slug)
@@ -78,5 +83,9 @@ export default async function ExperiencePage({
   const fecha = typeof sp.fecha === 'string' && DATE_RE.test(sp.fecha) ? sp.fecha : null
   // Viene de la cartelera filtrada por «Disponibles».
   const onlyAvailable = sp.ver === 'disponibles'
-  return <ExperienceView page={page} fecha={fecha} onlyAvailable={onlyAvailable} />
+  // La sucursal de la función que se tocó (o la elegida arriba de la cartelera): con cuál arranca.
+  const sucursal = parseBranchParam(sp.sucursal)
+  return (
+    <ExperienceView page={page} fecha={fecha} sucursal={sucursal} onlyAvailable={onlyAvailable} />
+  )
 }

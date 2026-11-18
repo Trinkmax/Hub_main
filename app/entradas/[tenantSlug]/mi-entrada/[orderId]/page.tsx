@@ -60,7 +60,8 @@ export default async function MiEntradaPage({
           order={page.order}
           tenantSlug={tenantSlug}
           tenantName={page.venue.tenantName}
-          address={page.venue.address}
+          // La de la sucursal de la función (o la del bar, si la sucursal no cargó una).
+          address={page.address}
           whatsapp={page.venue.whatsapp}
           transfer={page.venue.transfer}
           paymentId={paymentId}

@@ -17,7 +17,8 @@ import { useExperience } from './experience-context'
  * al costado (.ent-sticky-cta en entradas.css), y va abajo a la derecha.
  */
 export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: boolean }) {
-  const { selected } = useExperience()
+  const { selected, branchLabelOf } = useExperience()
+  const where = selected ? branchLabelOf(selected) : null
   const [heroGone, setHeroGone] = useState(false)
   const [ticketVisible, setTicketVisible] = useState(false)
 
@@ -59,7 +60,7 @@ export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: 
             {soldOut
               ? 'Fechas agotadas'
               : selected
-                ? `${formatShortDate(selected.date)} · ${selected.time} hs`
+                ? `${formatShortDate(selected.date)} · ${selected.time} hs${where ? ` · ${where}` : ''}`
                 : 'Elegí una fecha'}
           </p>
           {!soldOut ? (
