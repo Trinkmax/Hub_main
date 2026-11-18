@@ -22,6 +22,7 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
+import type { BranchRef } from '@/lib/branches/types'
 import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
@@ -84,6 +85,7 @@ export function ReservationsTable({
   highlightId,
   canRecordAttendance = false,
   today,
+  splitBranches,
 }: {
   tenantSlug: string
   rows: ReservationWithJoins[]
@@ -99,6 +101,8 @@ export function ReservationsTable({
   canRecordAttendance?: boolean
   /** Hoy en el reloj del local, yyyy-MM-dd: nada a futuro se marca como asistido. */
   today: string
+  /** Mirando «Todas»: las sucursales, para repartir cada servicio por sucursal y no por planta. */
+  splitBranches?: ReadonlyArray<BranchRef>
 }) {
   const baseQs = new URLSearchParams()
   for (const [k, v] of Object.entries(searchParams)) {
@@ -153,7 +157,7 @@ export function ReservationsTable({
                   // respuesta a "¿cuántos tengo en la cena y cuántos van arriba?"
                   <tr className="bg-secondary/40">
                     <th scope="colgroup" colSpan={columnCount} className="px-4 py-2.5 text-left">
-                      <ServiceSummary bucket={group.bucket} compact />
+                      <ServiceSummary bucket={group.bucket} compact branches={splitBranches} />
                     </th>
                   </tr>
                 ) : groupByDay ? (

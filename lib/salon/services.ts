@@ -61,7 +61,10 @@ export type ServiceRow = Pick<
   | 'estimated_guests'
   | 'actual_guests'
   | 'reservation_time_local'
->
+> & {
+  /** La sucursal de la reserva: en «Todas», el servicio se reparte por sucursal (`byBranch`). */
+  branch_id?: string | null
+}
 
 const EMPTY_ZONES = (): ZoneCovers => ({
   planta_alta: 0,
@@ -84,6 +87,13 @@ export type ServiceBucket<T extends ServiceRow = ReservationWithJoins> = {
    * personas pueden ser 9 mesas o 19. Para armar el salón hacen falta las dos.
    */
   tablesByZone: ZoneCovers
+  /**
+   * Cubiertos y mesas SIN planta: una sucursal sin plantas (el Cerro) guarda la reserva sin planta.
+   * `byZone` + `noZone` suman `covers`.
+   */
+  noZone: { covers: number; tables: number }
+  /** Los mismos cubiertos por sucursal (`branch_id` → cubiertos y mesas), para mirar «Todas». */
+  byBranch: Record<string, { covers: number; tables: number }>
   /** Reservas que ocupan mesa. */
   activeCount: number
   /** Canceladas + no-show: se listan, pero aparte del total. */
@@ -117,6 +127,8 @@ export function groupByService<T extends ServiceRow>(rows: T[]): Array<ServiceBu
         covers: 0,
         byZone: EMPTY_ZONES(),
         tablesByZone: EMPTY_ZONES(),
+        noZone: { covers: 0, tables: 0 },
+        byBranch: {},
         activeCount: 0,
         inactiveCount: 0,
         cancelledCount: 0,
@@ -143,6 +155,15 @@ export function groupByService<T extends ServiceRow>(rows: T[]): Array<ServiceBu
     if (r.zone) {
       b.byZone[r.zone] += guests
       b.tablesByZone[r.zone] += 1
+    } else {
+      b.noZone.covers += guests
+      b.noZone.tables += 1
+    }
+    if (r.branch_id) {
+      const part = b.byBranch[r.branch_id] ?? { covers: 0, tables: 0 }
+      part.covers += guests
+      part.tables += 1
+      b.byBranch[r.branch_id] = part
     }
     if (r.kind === 'birthday') b.birthdays += 1
     b.cakes += r.cake_count

@@ -105,7 +105,8 @@ async function loadDaySegments(opts: {
   segmentScope: SegmentBranchScope
   branches: ReadonlyArray<BranchRef>
 }): Promise<{
-  events: SegmentEventInput[]
+  /** En «Todas», cada evento lleva su sucursal: es la etiqueta de los hitos del día. */
+  events: Array<SegmentEventInput & { branch_id?: string }>
   days: Array<{ branchId: string | null; day: DaySegments }>
 }> {
   const compute = (snapshot: Awaited<ReturnType<typeof getDaySegmentsSnapshot>>) =>
@@ -133,7 +134,9 @@ async function loadDaySegments(opts: {
     ),
   )
   return {
-    events: snapshots.flatMap((s) => s.snapshot.events),
+    events: snapshots.flatMap((s) =>
+      s.snapshot.events.map((event) => ({ ...event, branch_id: s.branchId })),
+    ),
     days: snapshots.map((s) => ({ branchId: s.branchId, day: compute(s.snapshot) })),
   }
 }
@@ -706,6 +709,9 @@ export default async function ReservasPage({
             searchParams={sp}
             groupByDay={rangeMode}
             highlightId={nueva?.id}
+            splitBranches={
+              branchScope.multi && branchScope.isAll ? branchScope.branches : undefined
+            }
           />
         </div>
       )}

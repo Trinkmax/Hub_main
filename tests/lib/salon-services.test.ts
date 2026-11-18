@@ -9,6 +9,12 @@ import {
   totalsFromServices,
 } from '@/lib/salon/services'
 
+/**
+ * Una reserva sin planta (una sucursal sin plantas). La base ya la guarda vacía; el tipo todavía dice
+ * `SalonZone` (ver `SalonReservationRow.zone`).
+ */
+const NO_ZONE = null as unknown as ServiceRow['zone']
+
 function row(over: Partial<ServiceRow> = {}): ServiceRow {
   return {
     meal_type: 'dinner',
@@ -42,6 +48,35 @@ describe('groupByService', () => {
       row({ meal_type: 'tea_time' }),
     ])
     expect(buckets.map((b) => b.mealType)).toEqual([...MEAL_TYPE_ORDER])
+  })
+
+  it('sin planta (una sucursal sin plantas) cuenta en «Salón» y todo suma el total', () => {
+    const [cena] = groupByService([
+      row({ zone: 'planta_alta', estimated_guests: 4 }),
+      row({ zone: NO_ZONE, estimated_guests: 3 }),
+      row({ zone: NO_ZONE, estimated_guests: 5 }),
+      row({ zone: NO_ZONE, estimated_guests: 9, status: 'cancelled' }),
+    ])
+    expect(cena?.covers).toBe(12)
+    expect(cena?.noZone).toEqual({ covers: 8, tables: 2 })
+    const zones = Object.values(cena?.byZone ?? {}).reduce((acc, n) => acc + n, 0)
+    expect(zones + (cena?.noZone.covers ?? 0)).toBe(cena?.covers)
+  })
+
+  it('reparte por sucursal para «Todas», sin contar las canceladas', () => {
+    const [cena] = groupByService([
+      row({ branch_id: 'ac', zone: 'planta_alta', estimated_guests: 4 }),
+      row({ branch_id: 'ac', zone: 'event_floating', estimated_guests: 6 }),
+      row({ branch_id: 'ce', zone: NO_ZONE, estimated_guests: 3 }),
+      row({ branch_id: 'ce', zone: NO_ZONE, estimated_guests: 7, status: 'cancelled' }),
+      // Sin el dato (una lectura vieja): suma al servicio, a ninguna sucursal.
+      row({ zone: 'planta_baja', estimated_guests: 2 }),
+    ])
+    expect(cena?.covers).toBe(15)
+    expect(cena?.byBranch).toEqual({
+      ac: { covers: 10, tables: 2 },
+      ce: { covers: 3, tables: 1 },
+    })
   })
 
   it('abre los cubiertos por zona y las tres zonas suman el total', () => {

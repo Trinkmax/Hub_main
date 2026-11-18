@@ -1,5 +1,6 @@
 import { Cake, PartyPopper } from 'lucide-react'
-import { UNPLACED_LABEL } from '@/lib/salon/event-floor'
+import { type BranchRef, branchShortLabel } from '@/lib/branches/types'
+import { NO_FLOOR_LABEL, UNPLACED_LABEL } from '@/lib/salon/event-floor'
 import type { ServiceBucket, ServiceRow, ZoneCovers } from '@/lib/salon/services'
 import { serviceTimeRange } from '@/lib/salon/services'
 import { ZONE_LABELS } from '@/lib/salon/types'
@@ -17,16 +18,14 @@ import { cn } from '@/lib/utils'
  */
 
 /** Cada zona con su color de gráfico, estable en claro y en oscuro. */
-const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: string }> = {
+const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string }> = {
   planta_alta: {
     label: ZONE_LABELS.planta_alta,
     bar: 'bg-chart-1',
-    dot: 'bg-chart-1',
   },
   planta_baja: {
     label: ZONE_LABELS.planta_baja,
     bar: 'bg-chart-4',
-    dot: 'bg-chart-4',
   },
   event_floating: {
     // Reservas de evento SIN planta elegida. Desde el 22/09 una reserva de
@@ -37,28 +36,77 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
     // chart-2 (terracota) y NO chart-3: en dark `--chart-1` y `--chart-3` son el
     // mismo ámbar (misma L, hue 88 vs 70) y la barra se leía como un bloque.
     bar: 'bg-chart-2',
-    dot: 'bg-chart-2',
   },
 }
 
-const ZONE_SEQUENCE: Array<keyof ZoneCovers> = ['planta_alta', 'planta_baja', 'event_floating']
+/** Un tramo de la barra: una planta, «Salón» (sin planta) o, mirando «Todas», una sucursal. */
+type Slice = {
+  key: string
+  label: string
+  covers: number
+  tables: number
+  /** Clase de color (plantas) o color de la sucursal. */
+  className?: string
+  color?: string
+}
+
+function slicesOf(
+  bucket: ServiceBucket<ServiceRow>,
+  branches: ReadonlyArray<BranchRef> | undefined,
+): Slice[] {
+  // «Todas»: dos lugares no comparten mesas, así que se reparte por sucursal y no por planta
+  // (las plantas de Alta Córdoba mezcladas con el salón del Cerro no dicen dónde armar nada).
+  if (branches && branches.length > 1) {
+    return branches.flatMap((branch) => {
+      const part = bucket.byBranch[branch.id]
+      return part && part.covers > 0
+        ? [
+            {
+              key: branch.id,
+              label: branchShortLabel(branch),
+              covers: part.covers,
+              tables: part.tables,
+              color: branch.color,
+            },
+          ]
+        : []
+    })
+  }
+  const zone = (key: keyof ZoneCovers): Slice => ({
+    key,
+    label: ZONE_STYLE[key].label,
+    covers: bucket.byZone[key],
+    tables: bucket.tablesByZone[key],
+    className: ZONE_STYLE[key].bar,
+  })
+  // Una sucursal sin plantas: la gente va al salón y cuenta igual. Va antes de «Sin ubicar».
+  const salon: Slice = {
+    key: 'salon',
+    label: NO_FLOOR_LABEL,
+    covers: bucket.noZone.covers,
+    tables: bucket.noZone.tables,
+    className: 'bg-foreground/35',
+  }
+  return [zone('planta_alta'), zone('planta_baja'), salon, zone('event_floating')].filter(
+    (slice) => slice.covers > 0,
+  )
+}
 
 export function ServiceSummary({
   bucket,
   className,
   compact = false,
+  branches,
 }: {
   bucket: ServiceBucket<ServiceRow>
   className?: string
   /** Versión de una línea, para el subheader de una tabla apretada. */
   compact?: boolean
+  /** Mirando «Todas»: las sucursales. Con más de una, la barra reparte por sucursal. */
+  branches?: ReadonlyArray<BranchRef>
 }) {
   const range = serviceTimeRange(bucket)
-  const zones = ZONE_SEQUENCE.map((z) => ({
-    zone: z,
-    covers: bucket.byZone[z],
-    tables: bucket.tablesByZone[z],
-  })).filter((z) => z.covers > 0)
+  const slices = slicesOf(bucket, branches)
 
   return (
     <div className={cn('min-w-0', className)}>
@@ -93,23 +141,27 @@ export function ServiceSummary({
             )}
             aria-hidden
           >
-            {zones.map(({ zone, covers }) => (
+            {slices.map((slice) => (
               <div
-                key={zone}
-                className={ZONE_STYLE[zone].bar}
-                style={{ width: `${(covers / bucket.covers) * 100}%` }}
+                key={slice.key}
+                className={slice.className}
+                style={{
+                  width: `${(slice.covers / bucket.covers) * 100}%`,
+                  backgroundColor: slice.color,
+                }}
               />
             ))}
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-            {zones.map(({ zone, covers, tables }) => (
-              <span key={zone} className="inline-flex items-center gap-1.5">
+            {slices.map(({ key, label, covers, tables, className: tone, color }) => (
+              <span key={key} className="inline-flex items-center gap-1.5">
                 <span
                   aria-hidden
-                  className={cn('size-1.5 shrink-0 rounded-full', ZONE_STYLE[zone].dot)}
+                  className={cn('size-1.5 shrink-0 rounded-full', tone)}
+                  style={color ? { backgroundColor: color } : undefined}
                 />
-                {ZONE_STYLE[zone].label}
+                {label}
                 <span className="font-mono font-semibold tabular-nums text-foreground">
                   {covers}
                 </span>
