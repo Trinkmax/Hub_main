@@ -97,7 +97,7 @@ describeIfRls('RLS — cupos por servicio (salon_segment_*)', () => {
         .from(WEEKLY)
         .upsert(
           { tenant_id: tenantA.id, segment: 'lunch', iso_dow: 1, capacity: 60, warn_at: null },
-          { onConflict: 'tenant_id,segment,iso_dow' },
+          { onConflict: 'tenant_id,branch_id,segment,iso_dow' },
         )
         .select('created_at, updated_at')
         .single()
@@ -108,7 +108,7 @@ describeIfRls('RLS — cupos por servicio (salon_segment_*)', () => {
         .from(WEEKLY)
         .upsert(
           { tenant_id: tenantA.id, segment: 'lunch', iso_dow: 1, capacity: 70, warn_at: 50 },
-          { onConflict: 'tenant_id,segment,iso_dow' },
+          { onConflict: 'tenant_id,branch_id,segment,iso_dow' },
         )
         .select('updated_at')
         .single()

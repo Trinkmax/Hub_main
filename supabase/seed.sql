@@ -1035,6 +1035,9 @@ $seed$;
 -- pisa lo que el dueño haya cambiado desde Configuración → Capacidad.
 -- Almuerzo lun-vie 70 (aviso en 50: "Conviene abrir la terraza"), sáb-dom
 -- 120; merienda 120; cena 120. Horas sugeridas 13:00 / 15:30 / 21:00.
+-- Desde las sucursales (20261118170540) el cupo es de cada sucursal: la
+-- principal la completa el disparador al insertar, y la regla de «una fila»
+-- incluye la sucursal (las de una fila por bar se sacaron en 20261119123835).
 -- ─────────────────────────────────────────────────────────────────
 insert into public.salon_segment_settings (tenant_id, segment, default_time, warn_note)
 select t.id, s.segment::public.meal_type, s.default_time::time, s.warn_note
@@ -1045,7 +1048,7 @@ cross join (values
   ('dinner', '21:00', null)
 ) as s(segment, default_time, warn_note)
 where t.slug = 'hub'
-on conflict (tenant_id, segment) do nothing;
+on conflict (tenant_id, branch_id, segment) do nothing;
 
 insert into public.salon_segment_capacities (tenant_id, segment, iso_dow, capacity, warn_at)
 select t.id, c.segment::public.meal_type, d.iso_dow::smallint,
@@ -1055,4 +1058,4 @@ from public.tenants t
 cross join (values ('lunch'), ('tea_time'), ('dinner')) as c(segment)
 cross join generate_series(1, 7) as d(iso_dow)
 where t.slug = 'hub'
-on conflict (tenant_id, segment, iso_dow) do nothing;
+on conflict (tenant_id, branch_id, segment, iso_dow) do nothing;
