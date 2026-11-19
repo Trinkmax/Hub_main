@@ -3,6 +3,7 @@
 import { Loader2 } from 'lucide-react'
 import { useEffect, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -64,6 +65,10 @@ export function TemplateDropDialog({
   const [time, setTime] = useState(initialTime)
   const [capacity, setCapacity] = useState(initialCap)
   const [privateGroup, setPrivateGroup] = useState(template?.default_private_group ?? false)
+  // La fecha es de una sucursal (el formato es de todo el bar): la que se mira; en «Todas» hay que elegir.
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(viewedBranchId)
+  const [branchError, setBranchError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   // Reset cuando abre con otro template/día
@@ -72,14 +77,17 @@ export function TemplateDropDialog({
       setTime(DEFAULT_TIMES[template.default_meal_type] ?? '21:00')
       setCapacity(template.default_capacity ?? 40)
       setPrivateGroup(template.default_private_group)
+      setBranchId(viewedBranchId)
+      setBranchError(null)
     }
-  }, [open, template])
+  }, [open, template, viewedBranchId])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!template || !date) return
     startTransition(async () => {
       const result = await upsertScheduledEvent(tenantSlug, {
+        branch_id: branchId ?? undefined,
         template_id: template.id,
         event_date: date,
         starts_at_local: time,
@@ -93,6 +101,7 @@ export function TemplateDropDialog({
         onOpenChange(false)
         onCreated?.()
       } else {
+        if (result.field === 'branch_id') setBranchError(result.message)
         toast.error(result.message)
       }
     })
@@ -124,6 +133,15 @@ export function TemplateDropDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="grid gap-4">
+          <BranchField
+            value={branchId}
+            onChange={(id) => {
+              setBranchId(id)
+              setBranchError(null)
+            }}
+            error={branchError}
+            disabled={pending}
+          />
           <div className="grid gap-1.5">
             <Label htmlFor={timeId}>Hora de inicio</Label>
             <Input

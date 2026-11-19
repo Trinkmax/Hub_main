@@ -170,6 +170,24 @@ export const reservationOriginEnum = z.enum([
   'web',
 ])
 export const salonZoneEnum = z.enum(['planta_alta', 'planta_baja', 'event_floating'])
+
+/**
+ * En qué sucursal es (docs/features/sucursales.md). Opcional en el borde y con el mismo tri-estado que la mesa:
+ * - `'<uuid>'` → esa sucursal (la action valida que la persona la vea);
+ * - `''` o ausente → no la manda: en el alta vale la del evento o la que se mira, en la edición no se toca.
+ *
+ * Opcional y no obligatoria porque Tex y los formularios viejos arman sus pedidos con estos mismos schemas.
+ */
+export const branchIdField = z
+  .union([z.uuid('Sucursal inválida'), z.literal(''), z.null()])
+  .transform((v) => (v ? v : undefined))
+  .optional()
+
+/**
+ * La planta. `null` = sin planta: una sucursal sin plantas (el Cerro). La action decide con la sucursal: en una
+ * sucursal sin plantas la vacía siempre; en una con plantas, sin planta y sin evento pide elegir una.
+ */
+const zoneField = salonZoneEnum.nullable()
 export const salonStatusEnum = z.enum([
   'pending',
   'arrived',
@@ -181,6 +199,7 @@ export const salonStatusEnum = z.enum([
 
 export const createSalonReservationSchema = z
   .object({
+    branch_id: branchIdField,
     customer_id: z.string().uuid().optional(),
     guest_name: nameField,
     guest_phone: optionalPhoneField.optional(),
@@ -192,7 +211,7 @@ export const createSalonReservationSchema = z
     reservation_date: dateField,
     reservation_time_local: timeField,
     reservation_end_time_local: optionalTimeField,
-    zone: salonZoneEnum,
+    zone: zoneField,
     scheduled_event_id: z.string().uuid().optional().nullable(),
     // Para reservas especiales (cumple/recibida) que piden un formato calendarizado
     // que puede NO estar programado ese día. Si está seteado y no hay instance,
@@ -244,6 +263,7 @@ export const createSalonReservationSchema = z
 export const updateSalonReservationSchema = z
   .object({
     id: z.string().uuid(),
+    branch_id: branchIdField,
     customer_id: z.string().uuid().optional().nullable(),
     guest_name: nameField,
     guest_phone: optionalPhoneField.optional(),
@@ -255,7 +275,7 @@ export const updateSalonReservationSchema = z
     reservation_date: dateField,
     reservation_time_local: timeField,
     reservation_end_time_local: optionalTimeField,
-    zone: salonZoneEnum,
+    zone: zoneField,
     scheduled_event_id: z.string().uuid().optional().nullable(),
 
     estimated_guests: z.coerce.number().int().min(1).max(99),
@@ -393,6 +413,8 @@ export const quickTemplateSchema = z.object({
 
 export const scheduledEventSchema = z.object({
   id: z.string().uuid().optional(),
+  /** En el alta, la sucursal de la fecha; en la edición, pasarla a otra (solo sin reservas). */
+  branch_id: branchIdField,
   template_id: z.string().uuid(),
   name_override: optionalText(120).optional(),
   event_date: dateField,

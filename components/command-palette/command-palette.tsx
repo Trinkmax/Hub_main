@@ -4,6 +4,7 @@ import { MessageCircleQuestion, Search } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { openTex, texAvailable } from '@/components/administracion/tex/open-tex'
+import { BranchCommandItems } from '@/components/branches/branch-command'
 import { NO_ACCOUNTING } from '@/components/shell/nav-config'
 import {
   CommandDialog,
@@ -88,6 +89,7 @@ export function CommandPalette({
               showSeparator={index > 0}
             />
           ))}
+          <BranchCommandItems onDone={() => setOpen(false)} />
           {/* Lo que no se encuentra se le pregunta: Tex solo existe en Administración. */}
           {open && asked.length >= 2 && texAvailable() ? (
             <CommandGroup heading="Tex" forceMount>

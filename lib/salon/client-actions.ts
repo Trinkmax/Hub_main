@@ -7,9 +7,16 @@
  *
  * La fecha se valida con zod ANTES de autorizar: una server action es un
  * endpoint público y un `date` roto llegaba hasta Postgres como error crudo.
+ *
+ * La sucursal (docs/features/sucursales.md › La regla para cada pantalla, punto 2):
+ * el navegador manda el filtro con el que se dibujó la pantalla y acá se recorta a
+ * lo que la persona ve hoy (`clampBranchFilter`). Nunca se relee la cookie: si otra
+ * pestaña cambió de sucursal, esta pantalla no cambia de datos sin cambiar de título.
  */
 
 import { z } from 'zod'
+import { type BranchFilter, clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { listRecentQrAwards, type RecentQrAward } from '@/lib/points/queries'
 import {
   RoleRequiredError,
@@ -19,9 +26,9 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { segmentScopeFromFilter } from './branch-scope'
 import { serviceDayEndIso, serviceDayStartIso } from './operativo'
 import {
-  getDayCapacitySnapshot,
   listScheduledEventsForDate,
   listTimelineForDate,
   type ScheduledEventWithTemplate,
@@ -29,12 +36,18 @@ import {
 import { getDaySegmentCaps } from './segment-queries'
 import { dayRequestSchema, isoDaySchema } from './segment-schemas'
 import type { DaySegmentCaps } from './segments'
-import type { DayCapacityBucket, ReservationWithJoins } from './types'
+import type { ReservationWithJoins } from './types'
 
 const operativoExtrasInputSchema = z.object({
   date: isoDaySchema,
   customerIds: z.array(z.string().uuid()).max(200),
 })
+
+/** El filtro que manda el navegador: `null` = todo el bar; si no, ids de sucursal. */
+const branchFilterSchema = z
+  .object({ ids: z.array(z.uuid()).max(50).nullable() })
+  .nullable()
+  .optional()
 
 const INVALID_DATE = 'La fecha no es válida.'
 
@@ -54,37 +67,34 @@ async function authorizeRead(slug: string) {
   }
 }
 
-export async function fetchDayCapacity(
-  slug: string,
-  date: string,
-): Promise<{ ok: true; buckets: DayCapacityBucket[] } | { ok: false; message: string }> {
-  const parsed = dayRequestSchema.safeParse({ date })
-  if (!parsed.success) return { ok: false, message: INVALID_DATE }
-  const access = await authorizeRead(slug)
-  if (!access) return { ok: false, message: 'No tenés permiso.' }
-  try {
-    const buckets = await getDayCapacitySnapshot({
-      tenantId: access.tenant.id,
-      date: parsed.data.date,
-    })
-    return { ok: true, buckets }
-  } catch {
-    return { ok: false, message: 'No pudimos leer la capacidad del día.' }
-  }
+/**
+ * El filtro pedido, recortado a las sucursales de la persona (vale igual para el panel y el salón: lo que se recorta
+ * son SUS sucursales, no lo que mira). `undefined` (un llamador que no sabe de sucursales) se trata como «lo que puede
+ * ver»: nunca se cuela una sucursal ajena.
+ */
+async function readBranch(slug: string, requested: unknown) {
+  const parsed = branchFilterSchema.safeParse(requested)
+  if (!parsed.success) return null
+  const scope = await getBranchScope(slug)
+  return { filter: clampBranchFilter(parsed.data ?? null, scope), branches: scope.branches }
 }
 
 export async function fetchScheduledEventsForDate(
   slug: string,
   date: string,
+  branch?: BranchFilter | null,
 ): Promise<{ ok: true; events: ScheduledEventWithTemplate[] } | { ok: false; message: string }> {
   const parsed = dayRequestSchema.safeParse({ date })
   if (!parsed.success) return { ok: false, message: INVALID_DATE }
   const access = await authorizeRead(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
   try {
+    const scoped = await readBranch(slug, branch)
+    if (!scoped) return { ok: false, message: 'Pedido inválido.' }
     const events = await listScheduledEventsForDate({
       tenantId: access.tenant.id,
       date: parsed.data.date,
+      branch: scoped.filter,
     })
     return { ok: true, events }
   } catch {
@@ -95,15 +105,19 @@ export async function fetchScheduledEventsForDate(
 export async function fetchReservationsForDate(
   slug: string,
   date: string,
+  branch?: BranchFilter | null,
 ): Promise<{ ok: true; reservations: ReservationWithJoins[] } | { ok: false; message: string }> {
   const parsed = dayRequestSchema.safeParse({ date })
   if (!parsed.success) return { ok: false, message: INVALID_DATE }
   const access = await authorizeRead(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
   try {
+    const scoped = await readBranch(slug, branch)
+    if (!scoped) return { ok: false, message: 'Pedido inválido.' }
     const reservations = await listTimelineForDate({
       tenantId: access.tenant.id,
       date: parsed.data.date,
+      branch: scoped.filter,
     })
     return { ok: true, reservations }
   } catch {
@@ -112,22 +126,23 @@ export async function fetchReservationsForDate(
 }
 
 /**
- * Capacidad + eventos + cupos por servicio del día en UNA server action. La
- * timeline del salón los pedía con dos actions separadas cada 30 s: dos
- * invocaciones de función por tick por dispositivo.
+ * Eventos + cupos por servicio del día en UNA server action: la timeline del
+ * salón los refresca cada 30 s y dos invocaciones por tick por dispositivo eran
+ * de más.
  *
- * `caps` son los cupos RESUELTOS (almuerzo/merienda/cena): la cuenta por
- * servicio corre en el cliente sobre las reservas que ya llegan por Realtime,
- * así queda en vivo con la misma función que el calendario. `buckets` sigue
- * para las barras por evento (event:*).
+ * `caps` son los cupos RESUELTOS (almuerzo/merienda/cena) de la sucursal del
+ * dispositivo: la cuenta por servicio corre en el cliente sobre las reservas que
+ * ya llegan por Realtime, así queda en vivo con la misma función que el
+ * calendario. La gente de cada evento sale de esa misma cuenta (`eventUsedById`):
+ * ya no se pide `evaluate_day_capacity`, que no sabe de sucursales.
  */
 export async function fetchDayExtras(
   slug: string,
   date: string,
+  branch?: BranchFilter | null,
 ): Promise<
   | {
       ok: true
-      buckets: DayCapacityBucket[]
       events: ScheduledEventWithTemplate[]
       caps: DaySegmentCaps
     }
@@ -139,30 +154,32 @@ export async function fetchDayExtras(
   if (!access) return { ok: false, message: 'No tenés permiso.' }
   const tenantId = access.tenant.id
   try {
-    const [buckets, events, caps] = await Promise.all([
-      getDayCapacitySnapshot({ tenantId, date: parsed.data.date }),
-      listScheduledEventsForDate({ tenantId, date: parsed.data.date }),
-      getDaySegmentCaps({ tenantId, date: parsed.data.date }),
+    const scoped = await readBranch(slug, branch)
+    if (!scoped) return { ok: false, message: 'Pedido inválido.' }
+    const segmentScope = segmentScopeFromFilter(scoped.filter, scoped.branches)
+    const [events, caps] = await Promise.all([
+      listScheduledEventsForDate({ tenantId, date: parsed.data.date, branch: scoped.filter }),
+      getDaySegmentCaps({ tenantId, date: parsed.data.date, scope: segmentScope }),
     ])
-    return { ok: true, buckets, events, caps }
+    return { ok: true, events, caps }
   } catch {
     return { ok: false, message: 'No pudimos leer el día.' }
   }
 }
 
 /**
- * Todo lo que el tablero operativo refresca junto a las reservas: capacidad,
- * eventos, cupos por servicio y las acreditaciones de puntos del día de los
- * socios con reserva. Una sola invocación por tick, como `fetchDayExtras`.
+ * Todo lo que el tablero operativo refresca junto a las reservas: eventos, cupos
+ * por servicio y las acreditaciones de puntos del día de los socios con reserva.
+ * Una sola invocación por tick, como `fetchDayExtras`.
  */
 export async function fetchOperativoExtras(
   slug: string,
   date: string,
   customerIds: ReadonlyArray<string>,
+  branch?: BranchFilter | null,
 ): Promise<
   | {
       ok: true
-      buckets: DayCapacityBucket[]
       events: ScheduledEventWithTemplate[]
       awards: RecentQrAward[]
       caps: DaySegmentCaps
@@ -174,18 +191,28 @@ export async function fetchOperativoExtras(
   const parsed = operativoExtrasInputSchema.safeParse({ date, customerIds })
   if (!parsed.success) return { ok: false, message: 'Pedido inválido.' }
   try {
-    const [buckets, events, awards, caps] = await Promise.all([
-      getDayCapacitySnapshot({ tenantId: access.tenant.id, date: parsed.data.date }),
-      listScheduledEventsForDate({ tenantId: access.tenant.id, date: parsed.data.date }),
+    const scoped = await readBranch(slug, branch)
+    if (!scoped) return { ok: false, message: 'Pedido inválido.' }
+    const segmentScope = segmentScopeFromFilter(scoped.filter, scoped.branches)
+    const [events, awards, caps] = await Promise.all([
+      listScheduledEventsForDate({
+        tenantId: access.tenant.id,
+        date: parsed.data.date,
+        branch: scoped.filter,
+      }),
       listRecentQrAwards({
         tenantId: access.tenant.id,
         customerIds: parsed.data.customerIds,
         sinceIso: serviceDayStartIso(parsed.data.date),
         untilIso: serviceDayEndIso(parsed.data.date),
       }),
-      getDaySegmentCaps({ tenantId: access.tenant.id, date: parsed.data.date }),
+      getDaySegmentCaps({
+        tenantId: access.tenant.id,
+        date: parsed.data.date,
+        scope: segmentScope,
+      }),
     ])
-    return { ok: true, buckets, events, awards, caps }
+    return { ok: true, events, awards, caps }
   } catch {
     return { ok: false, message: 'No pudimos leer el día.' }
   }

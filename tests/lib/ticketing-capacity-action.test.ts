@@ -4,20 +4,40 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * Guardar el cupo de una función (Ventas online › Funciones). Lo que se fija:
  * - lo guardan el dueño y la anfitriona, con su sesión (la RLS del calendario), y nadie más;
  * - nunca por debajo de lo reservado, y solo funciones de la cartelera que no empezaron;
+ * - solo funciones de una sucursal que quien guarda ve (un dueño, todas);
  * - queda en audit_log de cuánto a cuánto, sin tocar nada si el número es el mismo.
  */
 
 const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const USER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const EVENT_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+const ALTA = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+const CERRO = 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2'
+
+const branch = (id: string, name: string) => ({
+  id,
+  name,
+  shortName: null,
+  slug: name.toLowerCase(),
+  color: '#2f5d50',
+  address: null,
+  position: 0,
+  isDefault: id === ALTA,
+  openedOn: null,
+  seatCapacity: null,
+})
 
 const state = vi.hoisted(() => ({
   role: 'host' as string,
-  fn: { capacity: 54, reserved: 48, paying: 2 } as {
+  // Se arma en beforeEach: vi.hoisted corre antes que las constantes de arriba.
+  fn: null as {
     capacity: number
     reserved: number
     paying: number
+    branchId: string | null
   } | null,
+  /** Las sucursales que ve quien guarda (`getBranchScope`). */
+  scope: { branches: [] as ReturnType<typeof branch>[], unrestricted: false },
   readFails: false,
   updateResult: { data: { id: 'x' }, error: null } as { data: unknown; error: unknown },
   updates: [] as Array<{ table: string; values: unknown; filters: Array<[string, unknown]> }>,
@@ -29,6 +49,9 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: vi.fn(() => {
     throw new Error('service_role al guardar el cupo')
   }),
+}))
+vi.mock('@/lib/branches/scope', () => ({
+  getBranchScope: vi.fn(async () => state.scope),
 }))
 vi.mock('@/lib/ticketing/queries', () => ({
   getCapacityFunction: vi.fn(async () => {
@@ -71,7 +94,8 @@ import { getCapacityFunction } from '@/lib/ticketing/queries'
 
 beforeEach(() => {
   state.role = 'host'
-  state.fn = { capacity: 54, reserved: 48, paying: 2 }
+  state.fn = { capacity: 54, reserved: 48, paying: 2, branchId: ALTA }
+  state.scope = { branches: [branch(ALTA, 'Alta')], unrestricted: false }
   state.readFails = false
   state.updateResult = { data: { id: 'x' }, error: null }
   state.updates = []
@@ -106,7 +130,7 @@ describe('setFunctionCapacity', () => {
 
   it('el dueño también; justo en lo reservado corta la venta', async () => {
     state.role = 'owner'
-    state.fn = { capacity: 54, reserved: 48, paying: 0 }
+    state.fn = { capacity: 54, reserved: 48, paying: 0, branchId: ALTA }
     const result = await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 48 })
     expect(result).toEqual({ ok: true, message: 'Ahora entran 48. Quedan 0 lugares a la venta.' })
     expect(state.updates).toHaveLength(1)
@@ -135,6 +159,24 @@ describe('setFunctionCapacity', () => {
     })
     expect(state.updates).toEqual([])
     expect(logAudit).not.toHaveBeenCalled()
+  })
+
+  it('la anfitriona de Alta no toca el cupo del Cerro; un dueño sí', async () => {
+    state.fn = { capacity: 54, reserved: 10, paying: 0, branchId: CERRO }
+    const result = await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 60 })
+    expect(result).toEqual({
+      ok: false,
+      message: 'Esa función es de una sucursal que no tenés asignada.',
+    })
+    expect(state.updates).toEqual([])
+    expect(logAudit).not.toHaveBeenCalled()
+
+    // Un dueño ve todas las sucursales (también las que no aparecen en su lista).
+    state.role = 'owner'
+    state.scope = { branches: [branch(ALTA, 'Alta')], unrestricted: true }
+    const owner = await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 60 })
+    expect(owner.ok).toBe(true)
+    expect(state.updates).toHaveLength(1)
   })
 
   it('una función que ya empezó o que no es de la cartelera, no', async () => {

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { DoorScreen } from '@/components/door/door-screen'
+import { getBranchScope } from '@/lib/branches/scope'
 import { requireRole, requireTenantAccess } from '@/lib/tenant'
 import { TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
 import { getDoorToday } from '@/lib/ticketing/door-queries'
@@ -11,6 +12,9 @@ export const dynamic = 'force-dynamic'
  * Validar las entradas compradas online. Acepta `?code=` porque el QR apunta a
  * /e/<código> y esa página rebota acá si quien lo abre es del equipo (escaneó con
  * la cámara del teléfono en vez de esta pantalla).
+ *
+ * La puerta es un lugar: la sucursal de este equipo (`getBranchScope(…, 'device')`). El cartel
+ * cuenta las funciones de hoy de esa sucursal, y una entrada de otra no pasa: dice dónde es.
  */
 export default async function PuertaPage({
   params,
@@ -31,6 +35,17 @@ export default async function PuertaPage({
     notFound()
   }
 
-  const today = await getDoorToday(tenantId)
-  return <DoorScreen tenantSlug={tenantSlug} initialCode={code ?? null} today={today} />
+  const scope = await getBranchScope(tenantSlug, 'device')
+  const branch = scope.current
+  const today = await getDoorToday(tenantId, branch?.id ?? null)
+  return (
+    <DoorScreen
+      tenantSlug={tenantSlug}
+      initialCode={code ?? null}
+      today={today}
+      branchId={branch?.id ?? null}
+      // Con una sola sucursal no hace falta decir cuál es.
+      branchName={scope.multi && branch ? branch.name : null}
+    />
+  )
 }

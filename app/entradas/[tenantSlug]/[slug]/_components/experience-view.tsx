@@ -1,4 +1,5 @@
 import { allSoldOut } from '@/lib/ticketing/availability'
+import { footerPlaces, functionAddress, showBranchNames } from '@/lib/ticketing/branches'
 import type { PublicExperiencePage } from '@/lib/ticketing/queries'
 import { youtubeVideoId } from '@/lib/ticketing/video'
 import { Footer, TopBar } from '../../../_components/chrome'
@@ -13,14 +14,17 @@ import { ActHeading, OtherFilms, VenuePolaroids } from './story-sections'
 import { TicketCheckout } from './ticket-checkout'
 import { VideoShort } from './video-short'
 
-/** La película ya con sus datos (la página solo los busca y valida ?fecha). */
+/** La película ya con sus datos (la página solo los busca y valida ?fecha y ?sucursal). */
 export function ExperienceView({
   page,
   fecha,
+  sucursal = null,
   onlyAvailable = false,
 }: {
   page: PublicExperiencePage
   fecha: string | null
+  /** La sucursal con la que arranca la función elegida (el `slug`). */
+  sucursal?: string | null
   /**
    * Llegó desde la cartelera filtrada por «Disponibles» (?ver=disponibles):
    * las fechas agotadas no se muestran, ni arriba ni en la entrada. Si no
@@ -38,6 +42,17 @@ export function ExperienceView({
   const soldOut = experience.functions.length > 0 && allSoldOut(experience.functions)
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
   const videoId = youtubeVideoId(experience.videoUrl)
+  // Dónde es: la película es del bar; cada función, de una sucursal. Con más de una vendiendo en
+  // la cartelera, cada función lo dice, y la dirección es la de la función elegida.
+  const showBranches = showBranchNames(page.branches)
+  const filmBranches = page.branches.filter((b) =>
+    experience.functions.some((fn) => fn.branch === b.slug),
+  )
+  const [onlyBranch] = filmBranches
+  const defaultAddress = functionAddress(
+    filmBranches.length === 1 ? onlyBranch : null,
+    venue.address,
+  )
 
   let act = 0
   const nextAct = () => ['I', 'II', 'III', 'IV', 'V'][act++] ?? String(act)
@@ -46,6 +61,10 @@ export function ExperienceView({
     <ExperienceProvider
       functions={functions}
       initialDate={fecha}
+      initialBranch={sucursal}
+      branches={page.branches}
+      showBranches={showBranches}
+      venueAddress={venue.address}
       minPartySize={experience.minPartySize}
     >
       <div style={{ '--accent': experience.accent } as React.CSSProperties}>
@@ -66,7 +85,7 @@ export function ExperienceView({
           <ExperienceHero
             experience={experience}
             venueName={venue.tenantName}
-            address={venue.address}
+            address={defaultAddress}
           />
 
           <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:grid lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-14">
@@ -197,7 +216,13 @@ export function ExperienceView({
 
           <OtherFilms others={others} tenantSlug={venue.tenantSlug} />
         </main>
-        <Footer venue={venue} />
+        <Footer
+          venue={venue}
+          places={footerPlaces(
+            filmBranches.length > 0 ? filmBranches : page.branches,
+            venue.address,
+          )}
+        />
         <StickyCta fromCents={fromCents} soldOut={soldOut} />
       </div>
     </ExperienceProvider>

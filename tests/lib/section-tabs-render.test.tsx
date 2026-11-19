@@ -242,13 +242,14 @@ describe('Configuración: su menú lateral', () => {
     expect(renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))).toBe('')
   })
 
-  it('Sucursales y el Plano del salón aparecen solo con el punto de venta', async () => {
+  it('Sucursales está en todo bar; el Plano del salón, solo con el punto de venta', async () => {
     nav.pathname = '/hub/configuracion/apariencia'
     const { SettingsNav } = await import(
       '@/app/(manager)/[tenantSlug]/configuracion/_components/settings-nav'
     )
+    // Las sucursales se crean y se nombran sin punto de venta (docs/features/sucursales.md).
     const without = renderToString(createElement(SettingsNav, { tenantSlug: 'hub', features: [] }))
-    expect(without).not.toContain('/hub/local/sucursales')
+    expect(without).toMatch(/href="\/hub\/local\/sucursales"[^>]*>Sucursales<\/a>/)
     expect(without).not.toContain('/hub/local/mesas')
 
     const withPos = renderToString(

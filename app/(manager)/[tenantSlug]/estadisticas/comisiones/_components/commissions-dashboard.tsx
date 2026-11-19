@@ -4,6 +4,7 @@ import { ChevronRight as ArrowRight, Coins } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { CommissionPeriodFilter } from '@/components/commissions/period-filter'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -158,7 +159,15 @@ export function CommissionsDashboard({
                 <tbody className="divide-y divide-border/60">
                   {summary.map((s) => (
                     <tr key={s.manager.id} className="hover:bg-secondary/30">
-                      <td className="px-3 py-2 font-medium">{s.manager.display_name}</td>
+                      <td className="px-3 py-2 font-medium">
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          {s.manager.display_name}
+                          {/* Mirando «Todas»: de qué sucursales son sus reservas. */}
+                          {s.branch_ids.map((id) => (
+                            <BranchTag key={id} branchId={id} />
+                          ))}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {s.reservations_count}
                       </td>

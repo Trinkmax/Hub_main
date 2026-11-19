@@ -4,6 +4,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import {
+  BRANCH_COOKIE_MAX_AGE,
+  nextBranchCookie,
+  parseBranchCookie,
+  serializeBranchCookie,
+} from '@/lib/branches/cookie'
 import { isFeatureEnabled } from '@/lib/platform/features'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -113,9 +119,13 @@ export async function setActiveBranch(slug: string, branchId: string): Promise<A
     .eq('active', true)
     .maybeSingle()
   if (!data) return { ok: false, message: 'No encontré esa sucursal.', code: 'branch_not_found' }
-  ;(await cookies()).set(branchCookieName(access.tenantId), branchId, {
+  // El dispositivo pasa a trabajar en esta sucursal; si el panel estaba mirando «Todas», sigue en «Todas».
+  const store = await cookies()
+  const name = branchCookieName(access.tenantId)
+  const next = nextBranchCookie(parseBranchCookie(store.get(name)?.value), branchId, 'device')
+  store.set(name, serializeBranchCookie(next), {
     path: '/',
-    maxAge: 60 * 60 * 24 * 365,
+    maxAge: BRANCH_COOKIE_MAX_AGE,
     sameSite: 'lax',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

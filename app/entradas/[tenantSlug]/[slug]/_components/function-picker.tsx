@@ -9,7 +9,8 @@ import { useExperience } from './experience-context'
 /**
  * Los talones de todas las funciones. `compact` es la versión de la entrada
  * (sin hora, más chicos); la grande del primer acto muestra la hora y dice
- * en una línea qué noche quedó elegida.
+ * en una línea qué noche quedó elegida. Con funciones en más de una sucursal,
+ * cada talón dice dónde es, y la línea también.
  */
 export function FunctionPicker({
   compact = false,
@@ -24,7 +25,13 @@ export function FunctionPicker({
   /** La misma película con todas sus fechas. */
   allDatesHref?: string
 }) {
-  const { functions, selected, select } = useExperience()
+  const { functions, selected, select, branchLabelOf } = useExperience()
+  const where = selected ? branchLabelOf(selected) : null
+  const allHref = allDatesHref
+    ? selected
+      ? `${allDatesHref}?fecha=${selected.date}${where && selected.branch ? `&sucursal=${encodeURIComponent(selected.branch)}` : ''}`
+      : allDatesHref
+    : null
 
   return (
     <div className={className}>
@@ -44,6 +51,7 @@ export function FunctionPicker({
               selected={selected?.eventId === fn.eventId}
               onSelect={() => select(fn.eventId)}
               compact={compact}
+              branchLabel={branchLabelOf(fn)}
             />
           </li>
         ))}
@@ -54,7 +62,14 @@ export function FunctionPicker({
             <>
               Elegiste el{' '}
               <strong className="text-(--ent-cream)">{formatLongDate(selected.date)}</strong> a las{' '}
-              {selected.time} hs.
+              {selected.time} hs
+              {where ? (
+                <>
+                  {' '}
+                  en <strong className="text-(--ent-cream)">{where}</strong>
+                </>
+              ) : null}
+              .
             </>
           ) : (
             'Elegí una fecha.'
@@ -64,9 +79,9 @@ export function FunctionPicker({
       {!compact && hiddenSoldOut > 0 ? (
         <p className="mt-1 text-xs text-(--ent-muted)">
           Te mostramos solo las fechas con lugar.{' '}
-          {allDatesHref ? (
+          {allHref ? (
             <Link
-              href={selected ? `${allDatesHref}?fecha=${selected.date}` : allDatesHref}
+              href={allHref}
               className="font-semibold text-(--ent-cream-2) underline underline-offset-4 hover:text-(--ent-cream)"
             >
               Ver todas

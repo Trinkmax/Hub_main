@@ -1,4 +1,6 @@
 import { cookies } from 'next/headers'
+import { BranchScopeProvider } from '@/components/branches/branch-scope-provider'
+import type { BranchScopeClient } from '@/lib/branches/types'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
@@ -33,6 +35,7 @@ export async function AppShell({
   accounting,
   viewAs = null,
   tex = false,
+  branchScope,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url' | 'feature_flags'>
@@ -47,6 +50,8 @@ export async function AppShell({
   viewAs?: ViewAsState | null
   /** ¿Está Tex en este panel? En el celular vive en el círculo de la barra de abajo. */
   tex?: boolean
+  /** La sucursal que se mira (`getBranchScope`): la píldora de arriba, el fleco y lo que filtra cada pantalla. */
+  branchScope: BranchScopeClient
   children: React.ReactNode
 }) {
   const features = getEffectiveFeatures(tenant)
@@ -69,55 +74,57 @@ export async function AppShell({
   )
 
   return (
-    <ViewAsProvider value={viewAs}>
-      <SidebarProvider initialCollapsed={sidebarCollapsed}>
-        {/* min-h-dvh (no screen/vh): en iOS 100vh es el viewport "grande" y deja
+    <BranchScopeProvider slug={tenant.slug} scope={branchScope}>
+      <ViewAsProvider value={viewAs}>
+        <SidebarProvider initialCollapsed={sidebarCollapsed}>
+          {/* min-h-dvh (no screen/vh): en iOS 100vh es el viewport "grande" y deja
           la página scrolleable la altura de la barra del navegador */}
-        <div className="bg-app-gradient relative min-h-dvh pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
-          <ShellFrame
-            sidebar={
-              <SidebarContent
+          <div className="bg-app-gradient relative min-h-dvh pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
+            <ShellFrame
+              sidebar={
+                <SidebarContent
+                  tenant={tenant}
+                  role={role}
+                  features={features}
+                  isPlatformAdmin={isPlatformAdmin}
+                  accounting={accounting}
+                />
+              }
+            >
+              <Topbar
                 tenant={tenant}
                 role={role}
                 features={features}
                 isPlatformAdmin={isPlatformAdmin}
+                email={email}
                 accounting={accounting}
               />
-            }
-          >
-            <Topbar
-              tenant={tenant}
-              role={role}
-              features={features}
-              isPlatformAdmin={isPlatformAdmin}
-              email={email}
-              accounting={accounting}
-            />
-            {/* En el celular deja lugar abajo para la barra flotante (en la compu --dock-space vale 0). */}
-            <main className="flex-1 pb-(--dock-space)">
-              <DockFlatProvider sections={flattenedSections(dock)}>{children}</DockFlatProvider>
-            </main>
-          </ShellFrame>
-          {dock ? (
-            <ManagerDock
-              slug={tenant.slug}
-              tenantName={tenant.name}
-              groups={groups}
-              sections={sections}
-              plan={dock}
-              tex={tex}
-              viewer={{
-                role,
-                roleLabel: ROLE_LABELS[role],
-                features,
-                isPlatformAdmin,
-                accounting: accounting ?? NO_ACCOUNTING,
-                email,
-              }}
-            />
-          ) : null}
-        </div>
-      </SidebarProvider>
-    </ViewAsProvider>
+              {/* En el celular deja lugar abajo para la barra flotante (en la compu --dock-space vale 0). */}
+              <main className="flex-1 pb-(--dock-space)">
+                <DockFlatProvider sections={flattenedSections(dock)}>{children}</DockFlatProvider>
+              </main>
+            </ShellFrame>
+            {dock ? (
+              <ManagerDock
+                slug={tenant.slug}
+                tenantName={tenant.name}
+                groups={groups}
+                sections={sections}
+                plan={dock}
+                tex={tex}
+                viewer={{
+                  role,
+                  roleLabel: ROLE_LABELS[role],
+                  features,
+                  isPlatformAdmin,
+                  accounting: accounting ?? NO_ACCOUNTING,
+                  email,
+                }}
+              />
+            ) : null}
+          </div>
+        </SidebarProvider>
+      </ViewAsProvider>
+    </BranchScopeProvider>
   )
 }

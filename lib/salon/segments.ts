@@ -202,12 +202,15 @@ export type SegmentReservationInput = {
   meal_type: MealType
   reservation_time_local: string
   scheduled_event_id: string | null
-  zone: SalonZone
+  /** `null` en una sucursal sin plantas (el Cerro): cuenta en el servicio y en su evento, en ninguna planta. */
+  zone: SalonZone | null
   status: SalonReservationStatus
   estimated_guests: number
   actual_guests: number | null
   kind: ReservationKind
   cake_count: number
+  /** La sucursal: mirando «Todas», el operativo reparte cada servicio por sucursal (`byBranch`). */
+  branch_id?: string | null
 }
 
 /** ScheduledEventWithTemplate y HighlightEventInput la satisfacen estructuralmente. */
@@ -539,6 +542,8 @@ export type SegmentLoad = {
   birthdays: { total: number; inEvents: number }
   cakes: { total: number; inEvents: number }
   byZone: Record<SalonZone, number> // = zones[z].people (lo leen el form y el operativo)
+  /** Personas por sucursal (`branch_id` → personas), para mirar «Todas». Las que no traen sucursal no suman. */
+  byBranch?: Record<string, number>
   /**
    * Cada zona por separado, con la zona REAL de la reserva: una de Pizza
    * libre sentada en Planta Alta cuenta en Planta Alta (y en el evento). La
@@ -588,6 +593,7 @@ type SegmentTally = {
   birthdays: { total: number; inEvents: number }
   cakes: { total: number; inEvents: number }
   byZone: Record<SalonZone, number>
+  byBranch: Record<string, number>
   zones: Record<SalonZone, ZoneTally>
   activeReservations: number
 }
@@ -604,6 +610,7 @@ function emptyTally(): SegmentTally {
     birthdays: { total: 0, inEvents: 0 },
     cakes: { total: 0, inEvents: 0 },
     byZone: { planta_alta: 0, planta_baja: 0, event_floating: 0 },
+    byBranch: {},
     zones: {
       planta_alta: emptyZoneTally(),
       planta_baja: emptyZoneTally(),
@@ -679,6 +686,7 @@ function finishSegment(key: SegmentKey, cap: ResolvedSegmentCap, t: SegmentTally
     birthdays: t.birthdays,
     cakes: t.cakes,
     byZone: t.byZone,
+    byBranch: t.byBranch,
     zones: t.zones,
     activeReservations: t.activeReservations,
     hasActivity: people > 0 || t.events.length > 0,
@@ -796,13 +804,15 @@ export function computeDaySegments(input: DaySegmentsInput): DaySegments {
     const load = r.scheduled_event_id ? loads.get(r.scheduled_event_id) : undefined
 
     t.activeReservations += 1
-    t.byZone[r.zone] = (t.byZone[r.zone] ?? 0) + guests
+    // Sin planta (una sucursal sin plantas) no suma a ninguna: cuenta igual en el servicio y en su evento.
+    if (r.zone) t.byZone[r.zone] = (t.byZone[r.zone] ?? 0) + guests
+    if (r.branch_id) t.byBranch[r.branch_id] = (t.byBranch[r.branch_id] ?? 0) + guests
     if (isBirthday) t.birthdays.total += 1
     t.cakes.total += cakes
 
     // La zona llega de la DB como texto: una que no está en el enum no suma a
     // ninguna planta (ni rompe la cuenta del servicio, que no depende de ella).
-    const zone = t.zones[r.zone] as ZoneTally | undefined
+    const zone = r.zone ? (t.zones[r.zone] as ZoneTally | undefined) : undefined
     if (zone) {
       zone.people += guests
       zone.reservations += 1
@@ -814,7 +824,7 @@ export function computeDaySegments(input: DaySegmentsInput): DaySegments {
       t.eventUsed += guests
       load.used += guests
       load.reservations += 1
-      load.byZone[r.zone] = (load.byZone[r.zone] ?? 0) + guests
+      if (r.zone) load.byZone[r.zone] = (load.byZone[r.zone] ?? 0) + guests
       if (isBirthday) {
         load.birthdays += 1
         t.birthdays.inEvents += 1
@@ -1045,6 +1055,13 @@ export type ReservationCandidate = {
   cake_count: number
   virtualEvent?: { name: string; capacity: number; starts_at_local: string } | null
 }
+/**
+ * La candidata con o sin planta: en una sucursal sin plantas (el Cerro) la reserva no lleva planta. Es lo que acepta
+ * `projectReservation`; `ReservationCandidate` (con planta) la sigue cumpliendo.
+ */
+export type ReservationCandidateAnyZone = Omit<ReservationCandidate, 'zone'> & {
+  zone: SalonZone | null
+}
 export type SegmentProjection = {
   segment: SegmentKey
   before: SegmentLoad
@@ -1066,7 +1083,7 @@ export type SegmentProjection = {
  */
 export function projectReservation(
   snapshot: DaySegmentsSnapshot,
-  candidate: ReservationCandidate,
+  candidate: ReservationCandidateAnyZone,
 ): SegmentProjection | null {
   if (snapshot.date !== candidate.reservation_date) return null
   const date = snapshot.date

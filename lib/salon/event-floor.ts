@@ -17,6 +17,7 @@
  * operativo y la planilla, y se testea sin DB.
  */
 
+import { type BranchRef, branchShortLabel } from '@/lib/branches/types'
 import type { FloorZone } from './segments'
 import { type SalonZone, ZONE_LABELS } from './types'
 
@@ -33,14 +34,20 @@ export type { FloorZone }
  */
 export const UNPLACED_LABEL = 'Sin ubicar'
 
+/** Una reserva de una sucursal sin plantas (el Cerro): se sienta en el salón, sin planta. */
+export const NO_FLOOR_LABEL = 'Salón'
+
 /**
  * La planta sola, para las pantallas que ya muestran el evento en otro lado
  * (la columna Zona de la planilla tiene al lado la columna Evento) o que
  * cuentan gente por planta (el pulso del operativo). Para decir dónde se
  * sienta una reserva en una sola etiqueta está `placeLabel`.
+ *
+ * `null` = una sucursal sin plantas: «Salón».
  */
-export function floorLabel(zone: SalonZone): string {
-  return zone === 'event_floating' ? UNPLACED_LABEL : ZONE_LABELS[zone]
+export function floorLabel(zone: SalonZone | null): string {
+  if (zone === null) return NO_FLOOR_LABEL
+  return zone === 'event_floating' ? UNPLACED_LABEL : (ZONE_LABELS[zone] ?? NO_FLOOR_LABEL)
 }
 
 /** La pregunta del alta, debajo de las tarjetas, cuando hay un evento elegido. */
@@ -66,7 +73,8 @@ const FLOOR_OPTIONS: ReadonlyArray<ZoneChoice> = [
 ]
 
 export type PlaceValues = {
-  zone: SalonZone
+  /** `null` en una sucursal sin plantas. */
+  zone: SalonZone | null
   scheduled_event_id?: string | null
 }
 
@@ -88,7 +96,7 @@ export function zoneChoicesFor(
 }
 
 export type PlaceSelection = {
-  /** Tarjeta de planta suelta activa (reserva normal), o null si hay evento. */
+  /** Tarjeta de planta suelta activa (reserva normal), o null si hay evento (o no hay plantas). */
   floorTile: FloorZone | null
   /** Evento elegido, tenga o no planta. */
   eventId: string | null
@@ -118,6 +126,16 @@ export function placeSelection(v: PlaceValues): PlaceSelection {
 }
 
 /**
+ * La planta con la que queda la reserva al cambiar de sucursal en el alta: sin plantas, ninguna; con plantas, la que
+ * tenía si era una planta, o la de una reserva de evento («Sin definir») o Planta Alta (el default de siempre).
+ */
+export function zoneForBranch(v: PlaceValues, hasFloors: boolean): SalonZone | null {
+  if (!hasFloors) return null
+  if (v.zone) return v.zone
+  return v.scheduled_event_id ? 'event_floating' : 'planta_alta'
+}
+
+/**
  * Tocar la tarjeta de una planta suelta: reserva normal, sin evento. Limpia el
  * evento acá, en el toque del usuario, y no en un efecto: el efecto era el que
  * borraba el evento de una reserva de evento con planta.
@@ -141,9 +159,15 @@ export function pickFloorTile(zone: FloorZone): {
 export function pickEventTile(
   current: PlaceValues,
   eventId: string,
-): { zone: SalonZone; scheduled_event_id: string } {
+  /** Sin plantas (una sucursal como el Cerro) la reserva de evento tampoco lleva planta. */
+  hasFloors = true,
+): { zone: SalonZone | null; scheduled_event_id: string } {
+  if (!hasFloors) return { zone: null, scheduled_event_id: eventId }
   const sameEvent = current.scheduled_event_id === eventId
-  return { zone: sameEvent ? current.zone : 'event_floating', scheduled_event_id: eventId }
+  return {
+    zone: sameEvent ? (current.zone ?? 'event_floating') : 'event_floating',
+    scheduled_event_id: eventId,
+  }
 }
 
 /**
@@ -157,4 +181,37 @@ export function zoneBreakdown(byZone: Record<SalonZone, number>): string {
   const zones: SalonZone[] = ['planta_alta', 'planta_baja']
   if ((byZone.event_floating ?? 0) > 0) zones.push('event_floating')
   return zones.map((z) => `${floorLabel(z)} ${byZone[z] ?? 0}`).join(' · ')
+}
+
+/**
+ * «En la cena: …» del operativo, según dónde se mira:
+ * - una sucursal con plantas: las plantas (aunque estén en 0) y «Sin ubicar» (`zoneBreakdown`);
+ * - una sin plantas (el Cerro): «Salón» y «Sin ubicar»: nombrar plantas que no tiene confunde;
+ * - «Todas»: cada sucursal, porque las plantas de una mezcladas con el salón de otra no dicen nada.
+ */
+export function placeBreakdown(
+  load: { people: number; byZone: Record<SalonZone, number>; byBranch?: Record<string, number> },
+  where: {
+    hasFloors: boolean
+    branches?: ReadonlyArray<Pick<BranchRef, 'id' | 'name' | 'shortName'>>
+  },
+): string {
+  if (where.branches && where.branches.length > 1 && load.byBranch) {
+    const byBranch = load.byBranch
+    const parts = where.branches.flatMap((branch) => {
+      const people = byBranch[branch.id] ?? 0
+      return people > 0 ? [`${branchShortLabel(branch)} ${people}`] : []
+    })
+    if (parts.length > 0) return parts.join(' · ')
+  }
+  if (where.hasFloors) return zoneBreakdown(load.byZone)
+  const unplaced = load.byZone.event_floating ?? 0
+  const inFloors = (load.byZone.planta_alta ?? 0) + (load.byZone.planta_baja ?? 0)
+  const salon = Math.max(0, load.people - inFloors - unplaced)
+  return [
+    salon > 0 ? `${NO_FLOOR_LABEL} ${salon}` : null,
+    unplaced > 0 ? `${UNPLACED_LABEL} ${unplaced}` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
 }

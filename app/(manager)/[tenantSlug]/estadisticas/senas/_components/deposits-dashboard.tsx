@@ -12,11 +12,13 @@ import {
 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import { StatCard } from '@/components/ui/stat-card'
 import { formatARS } from '@/lib/commissions/calculate'
+import { BRANCH_FILTER_PARAM, branchFilterToParam } from '@/lib/salon/branch-scope'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import type { DepositsReport } from '@/lib/salon/deposits'
 import { cn } from '@/lib/utils'
@@ -68,9 +70,12 @@ export function DepositsDashboard({
   // El link del CSV se arma con el MISMO rango y criterio que está en pantalla:
   // si saliera de los searchParams crudos, un default implícito haría que la
   // planilla trajera otros números que los de arriba.
+  // La planilla baja lo que se ve: las mismas sucursales que la pantalla.
+  const branchFilter = useBranchScope()?.filter
   const exportHref =
     `/api/senas/export?slug=${encodeURIComponent(tenantSlug)}` +
-    `&from=${report.from}&to=${report.to}&fecha=${porCarga ? 'carga' : 'reserva'}`
+    `&from=${report.from}&to=${report.to}&fecha=${porCarga ? 'carga' : 'reserva'}` +
+    (branchFilter ? `&${BRANCH_FILTER_PARAM}=${branchFilterToParam(branchFilter)}` : '')
 
   function push(next: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString())

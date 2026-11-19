@@ -51,6 +51,7 @@ export default async function PosCashPage({
   const { branches, active, chosen } = await getActiveBranch(
     access.tenant.id,
     Array.isArray(sucursal) ? sucursal[0] : sucursal,
+    access.branches.map((branch) => branch.id),
   )
   if (!active) notFound()
 

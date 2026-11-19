@@ -1,6 +1,8 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { BranchMobileButton } from '@/components/branches/branch-mobile'
+import { BranchFringe } from '@/components/branches/branch-switcher'
 import { BrandWordmark } from '@/components/shell/brand-mark'
 import type { Tenant } from '@/lib/tenant/types'
 import { BARE, OWN_TOPBAR } from './salon-main'
@@ -37,8 +39,10 @@ export function SalonTopbar({
         <h1 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
           {title ?? tenant.name}
         </h1>
+        <BranchMobileButton canManage={false} always />
         {account}
       </div>
+      <BranchFringe />
     </header>
   )
 }

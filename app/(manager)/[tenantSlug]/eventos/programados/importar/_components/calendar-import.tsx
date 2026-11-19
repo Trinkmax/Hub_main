@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { FileDropZone } from '@/components/administracion/importar/file-drop-zone'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -85,21 +86,36 @@ export function CalendarImport({
   const [applied, setApplied] = useState<Applied | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [removeMissing, setRemoveMissing] = useState(true)
+  // Un Excel carga UNA sucursal (la película es del bar; la fecha, de una
+  // sucursal): la que se mira, o la que se elija acá mirando «Todas».
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(viewedBranchId)
   const [reading, startReading] = useTransition()
   const [applying, startApplying] = useTransition()
 
-  function pick(next: File) {
-    setFile(next)
+  function readPreview(next: File, branch: string | null) {
     setPreview(null)
     setApplied(null)
     setError(null)
     startReading(async () => {
       const form = new FormData()
       form.set('file', next)
+      if (branch) form.set('branch_id', branch)
       const result = await previewCalendarImport(tenantSlug, form)
       if (result.ok) setPreview(result.preview)
       else setError(result.message)
     })
+  }
+
+  function pick(next: File) {
+    setFile(next)
+    readPreview(next, branchId)
+  }
+
+  // Otra sucursal es otro calendario: la vista previa se vuelve a armar contra ella.
+  function changeBranch(next: string) {
+    setBranchId(next)
+    if (file) readPreview(file, next)
   }
 
   function reset() {
@@ -117,6 +133,7 @@ export function CalendarImport({
       const form = new FormData()
       form.set('file', file)
       form.set('removeMissing', removeMissing ? '1' : '0')
+      if (branchId) form.set('branch_id', branchId)
       const result = await applyCalendarImport(tenantSlug, form)
       if (!result.ok) {
         setError(result.message)
@@ -159,6 +176,12 @@ export function CalendarImport({
 
   return (
     <div className="space-y-6">
+      <BranchField
+        value={branchId}
+        onChange={changeBranch}
+        label="Sucursal de las fechas"
+        disabled={reading || applying}
+      />
       {!preview ? (
         <>
           <section

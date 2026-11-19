@@ -2,7 +2,7 @@ import { type CSSProperties, useId } from 'react'
 import { inkOn } from '@/lib/floor-plan/branches'
 import { LIGHT_INK } from '@/lib/pos/branches/palette'
 import { cn } from '@/lib/utils'
-import './sucursales.css'
+import './storefront.css'
 
 /**
  * La vidriera de una sucursal: su cartel y su toldo llevan su color (el mismo que después se

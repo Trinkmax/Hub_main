@@ -4,6 +4,9 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import { segmentScopeFromFilter } from '@/lib/salon/branch-scope'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listScheduledEventsForDateRange, listScheduledTemplates } from '@/lib/salon/queries'
 import { type DayOverview, getDayOverview, getMonthSegments } from '@/lib/salon/segment-queries'
@@ -84,11 +87,18 @@ export default async function CalendarioPage({
   const { from, to } = monthRange(ym)
   const tenantId = access.tenant.id
 
+  // La sucursal que se mira (docs/features/sucursales.md): sus fechas, sus
+  // reservas y su cupo. Mirando «Todas» se cuenta la gente sin cupo (el cupo no
+  // se suma entre sucursales) y cada fecha dice de qué sucursal es.
+  const branchScope = await getBranchScope(tenantSlug)
+  const branch = branchFilterOf(branchScope)
+  const segmentScope = segmentScopeFromFilter(branch, branchScope.branches)
+
   // El día abierto no depende de nada del mes: arranca ya, en paralelo con
   // todo lo demás. Si falla, la página igual sale y la vista del día lo pide
   // por su cuenta (con su "Reintentar"): un día roto no tumba el mes.
   const dayOverviewPromise: Promise<DayOverview | null> = day
-    ? getDayOverview({ tenantId, date: day }).catch((error: unknown) => {
+    ? getDayOverview({ tenantId, date: day, scope: segmentScope }).catch((error: unknown) => {
         console.error('[calendario.page.dayOverview]', { tenantId, code: errorCode(error) })
         return null
       })
@@ -97,11 +107,11 @@ export default async function CalendarioPage({
   // Dos viajes como máximo: eventos + formatos, y después el mes por servicio
   // reutilizando esos mismos eventos (no se vuelven a pedir).
   const [events, templates] = await Promise.all([
-    listScheduledEventsForDateRange({ tenantId, from, to }),
+    listScheduledEventsForDateRange({ tenantId, from, to, branch }),
     listScheduledTemplates({ tenantId, onlyActive: false }),
   ])
   const [monthSegments, initialOverview] = await Promise.all([
-    getMonthSegments({ tenantId, ym, events }),
+    getMonthSegments({ tenantId, ym, events, scope: segmentScope }),
     dayOverviewPromise,
   ])
   const activeTemplates = templates.filter((t) => t.active)
@@ -146,6 +156,8 @@ export default async function CalendarioPage({
         defaultTab={defaultTab}
         role={access.role}
         initialOverview={initialOverview}
+        capacityHidden={branchScope.multi && segmentScope.capacity === null}
+        hasFloors={segmentScope.floors !== null}
       />
     </PageShell>
   )

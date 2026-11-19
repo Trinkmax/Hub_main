@@ -1,9 +1,14 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { PageHeader } from '@/components/ui/page-header'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef } from '@/lib/branches/types'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
+import { singleBranchSegmentScope } from '@/lib/salon/branch-scope'
 import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { formatDayLabel, todayInCordoba } from '@/lib/salon/date-presets'
 import { timeRangeLabel } from '@/lib/salon/format'
@@ -38,13 +43,18 @@ export const metadata = { title: 'Reserva' }
 export const dynamic = 'force-dynamic'
 
 /**
- * El cupo del día de la reserva para el medidor del form. No puede tirar la
- * página: sin él el form lo vuelve a pedir y guardar sigue andando (la
- * confirmación de sobrecupo nunca bloquea).
+ * El cupo del día de la reserva para el medidor del form, el de SU sucursal. No
+ * puede tirar la página: sin él el form lo vuelve a pedir y guardar sigue
+ * andando (la confirmación de sobrecupo nunca bloquea).
  */
-async function snapshotOrNull(tenantId: string, date: string): Promise<DaySegmentsSnapshot | null> {
+async function snapshotOrNull(
+  tenantId: string,
+  date: string,
+  branch: BranchRef | null,
+): Promise<DaySegmentsSnapshot | null> {
+  if (!branch) return null
   try {
-    return await getDaySegmentsSnapshot({ tenantId, date })
+    return await getDaySegmentsSnapshot({ tenantId, date, scope: singleBranchSegmentScope(branch) })
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code
     console.error('[reservas.detalle.snapshot]', {
@@ -81,11 +91,20 @@ export default async function ReservaDetailPage({
 
   const user = await getCurrentUser()
 
+  // La reserva se abre si es de una sucursal que la persona ve (no hace falta
+  // estar mirándola: un link del Cerro se abre igual mirando Alta Córdoba).
+  const branchScope = await getBranchScope(tenantSlug)
+  const branchOf = (branchId: string) => branchScope.branches.find((b) => b.id === branchId) ?? null
+
   // La reserva se pide en paralelo con los catálogos (no dependen de ella);
-  // solo los eventos y el cupo del día se encadenan a su fecha. Antes eran 2
-  // hops secuenciales (reserva → todo lo demás); ahora el camino crítico es
-  // reserva → eventos/cupo y el resto viaja junto.
-  const reservationPromise = getSalonReservation({ tenantId: access.tenant.id, id })
+  // solo los eventos y el cupo del día se encadenan a su fecha (y su sucursal).
+  // Antes eran 2 hops secuenciales (reserva → todo lo demás); ahora el camino
+  // crítico es reserva → eventos/cupo y el resto viaja junto.
+  const reservationPromise = getSalonReservation({
+    tenantId: access.tenant.id,
+    id,
+    branch: clampBranchFilter(null, branchScope),
+  })
   const [
     reservation,
     managers,
@@ -101,10 +120,16 @@ export default async function ReservaDetailPage({
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     reservationPromise.then((r) =>
-      r ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: r.reservation_date }) : [],
+      r
+        ? listScheduledEventsForDate({
+            tenantId: access.tenant.id,
+            date: r.reservation_date,
+            branch: { ids: [r.branch_id] },
+          })
+        : [],
     ),
     reservationPromise.then((r) =>
-      r ? snapshotOrNull(access.tenant.id, r.reservation_date) : null,
+      r ? snapshotOrNull(access.tenant.id, r.reservation_date, branchOf(r.branch_id)) : null,
     ),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
@@ -141,7 +166,13 @@ export default async function ReservaDetailPage({
             {back.label}
           </Link>
         }
-        title={reservation.guest_name}
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            {reservation.guest_name}
+            {/* Con más de una sucursal, siempre: es la ficha de UNA reserva. */}
+            <BranchTag branchId={reservation.branch_id} when="always" />
+          </span>
+        }
         description={`${formatDayLabel(reservation.reservation_date)} · ${timeRangeLabel(reservation.reservation_time_local, reservation.reservation_end_time_local)} · ${reservation.estimated_guests} personas`}
       />
 
@@ -183,6 +214,7 @@ export default async function ReservaDetailPage({
             initialDate={reservation.reservation_date}
             today={todayInCordoba()}
             initialSnapshot={snapshot}
+            initialBranchId={reservation.branch_id}
             reservationStatus={reservation.status}
             managers={managers}
             templates={templates}

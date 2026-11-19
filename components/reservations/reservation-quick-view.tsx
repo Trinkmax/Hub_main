@@ -469,7 +469,8 @@ function QuickEditPanel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: las deps "de más" (personas/zona/estado/hora/servicio) fuerzan el refetch del snapshot cuando el server refresca la reserva tras guardar — sin eso la proyección queda desfasada.
   useEffect(() => {
     let alive = true
-    fetchDaySegments(tenantSlug, r.reservation_date)
+    // El cupo de la sucursal de la reserva (nunca se suma entre sucursales).
+    fetchDaySegments(tenantSlug, r.reservation_date, r.branch_id)
       .then((res) => {
         if (alive && res.ok) setDaySnapshot(res.data)
       })
@@ -840,48 +841,57 @@ function QuickEditPanel({
         </Popover>
 
         {/* Antes, una reserva de evento mostraba "Evento" fijo y no se podía
-            tocar: ahora se le elige la planta sin sacarla del evento. */}
-        <Popover open={zoneOpen} onOpenChange={setZoneOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 max-w-full gap-2 rounded-full px-4"
-              aria-label={`${hasEvent ? 'Cambiar dónde se sientan' : 'Cambiar zona'} (actual ${zoneText})`}
-              disabled={guestsHeld}
-            >
-              {hasEvent ? (
-                <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              )}
-              <span className="truncate text-sm">{zoneText}</span>
-              <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 space-y-1.5">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {hasEvent ? EVENT_FLOOR_QUESTION : 'Zona'}
-            </p>
-            {hasEvent ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Sigue en {eventName ?? 'el evento'}: esto solo dice en qué planta.
-              </p>
-            ) : null}
-            {zoneChoices.map((c) => (
+            tocar: ahora se le elige la planta sin sacarla del evento. En una
+            sucursal sin plantas (la base guarda la reserva sin planta) no hay
+            nada que elegir: se dice dónde se sienta y listo. */}
+        {(r.zone as SalonZone | null) === null ? (
+          <span className="inline-flex h-11 max-w-full items-center gap-2 rounded-full border px-4">
+            <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm">{zoneText}</span>
+          </span>
+        ) : (
+          <Popover open={zoneOpen} onOpenChange={setZoneOpen}>
+            <PopoverTrigger asChild>
               <Button
-                key={c.zone}
                 type="button"
-                variant={zone === c.zone ? 'default' : 'outline'}
-                aria-pressed={zone === c.zone}
-                className="h-11 w-full justify-start"
-                onClick={() => saveZone(c.zone)}
+                variant="outline"
+                className="h-11 max-w-full gap-2 rounded-full px-4"
+                aria-label={`${hasEvent ? 'Cambiar dónde se sientan' : 'Cambiar zona'} (actual ${zoneText})`}
+                disabled={guestsHeld}
               >
-                {c.label}
+                {hasEvent ? (
+                  <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="truncate text-sm">{zoneText}</span>
+                <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               </Button>
-            ))}
-          </PopoverContent>
-        </Popover>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 space-y-1.5">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {hasEvent ? EVENT_FLOOR_QUESTION : 'Zona'}
+              </p>
+              {hasEvent ? (
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Sigue en {eventName ?? 'el evento'}: esto solo dice en qué planta.
+                </p>
+              ) : null}
+              {zoneChoices.map((c) => (
+                <Button
+                  key={c.zone}
+                  type="button"
+                  variant={zone === c.zone ? 'default' : 'outline'}
+                  aria-pressed={zone === c.zone}
+                  className="h-11 w-full justify-start"
+                  onClick={() => saveZone(c.zone)}
+                >
+                  {c.label}
+                </Button>
+              ))}
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
     </section>
   )

@@ -64,7 +64,7 @@ function revalidate(slug: string) {
 
 /** Crear una sucursal: alcanza con el nombre. El resto sale solo y se cambia después. */
 export async function createBranch(slug: string, input: unknown): Promise<BranchWriteResult> {
-  const auth = await authorizeSetup(slug)
+  const auth = await authorizeSetup(slug, { requirePos: false })
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message }
   const parsed = createBranchSchema.safeParse(input)
   if (!parsed.success) {
@@ -153,7 +153,7 @@ function auditFields(fields: ReadonlyArray<BranchField>, before: Branch, after: 
  * desactivarla. Cada dato se escribe solo si sigue como la persona lo veía.
  */
 export async function updateBranch(slug: string, input: unknown): Promise<BranchWriteResult> {
-  const auth = await authorizeSetup(slug)
+  const auth = await authorizeSetup(slug, { requirePos: false })
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message }
   const parsed = updateBranchSchema.safeParse(input)
   if (!parsed.success) {
@@ -238,7 +238,7 @@ export async function updateBranch(slug: string, input: unknown): Promise<Branch
  * sola principal por bar» se revisa fila por fila.
  */
 export async function setDefaultBranch(slug: string, input: unknown): Promise<BranchListResult> {
-  const auth = await authorizeSetup(slug)
+  const auth = await authorizeSetup(slug, { requirePos: false })
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message }
   const parsed = setDefaultBranchSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: 'invalid', message: INVALID }
@@ -304,7 +304,7 @@ export async function setDefaultBranch(slug: string, input: unknown): Promise<Br
 
 /** Acomodar las sucursales: `order` son los ids como tienen que quedar. */
 export async function reorderBranches(slug: string, input: unknown): Promise<BranchListResult> {
-  const auth = await authorizeSetup(slug)
+  const auth = await authorizeSetup(slug, { requirePos: false })
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message }
   const parsed = reorderBranchesSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: 'invalid', message: INVALID }
@@ -364,7 +364,7 @@ export async function reorderBranches(slug: string, input: unknown): Promise<Bra
  * no se borra: se desactiva y queda guardada. La principal no se borra nunca.
  */
 export async function deleteBranch(slug: string, input: unknown): Promise<BranchDeleteResult> {
-  const auth = await authorizeSetup(slug)
+  const auth = await authorizeSetup(slug, { requirePos: false })
   if (!auth.ok) return { ok: false, code: auth.code, message: auth.message }
   const parsed = deleteBranchSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: 'invalid', message: INVALID }

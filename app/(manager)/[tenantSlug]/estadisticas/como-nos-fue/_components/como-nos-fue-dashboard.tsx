@@ -3,6 +3,7 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Download, Lock, PartyPopper } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import type { MonthBirthdayReport } from '@/lib/salon/birthdays-report'
+import { BRANCH_FILTER_PARAM, branchFilterToParam } from '@/lib/salon/branch-scope'
 import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
 import { cuadroExport } from '@/lib/salon/event-cuadros'
 import { type MonthMarketingReport, phaseOf } from '@/lib/salon/event-marketing'
@@ -146,7 +148,11 @@ export function ComoNosFueDashboard({
   // La planilla sale con el MISMO corte que está en pantalla: el día elegido, el
   // evento elegido o el mes elegido. Nunca de los searchParams crudos, que
   // pueden no traer el default que la page resolvió.
-  const exportBase = `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}`
+  // Las planillas bajan lo que se ve: las mismas sucursales que la pantalla.
+  const branchFilter = useBranchScope()?.filter
+  const exportBase = `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}${
+    branchFilter ? `&${BRANCH_FILTER_PARAM}=${branchFilterToParam(branchFilter)}` : ''
+  }`
   const exportHref: string | null =
     view === 'dia'
       ? `${exportBase}&vista=dia&dia=${day}`

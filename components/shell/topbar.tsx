@@ -1,3 +1,5 @@
+import { BranchMobileButton } from '@/components/branches/branch-mobile'
+import { BranchFringe, BranchSwitcher } from '@/components/branches/branch-switcher'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
 import type { TenantFeatures } from '@/lib/platform/features'
@@ -43,6 +45,11 @@ export function Topbar({
 
       <SidebarToggle />
 
+      {/* La sucursal que se mira: siempre a la vista en la compu, también con el menú lateral plegado. */}
+      <div className="hidden lg:block">
+        <BranchSwitcher canManage={role === 'owner'} />
+      </div>
+
       <div className="hidden flex-1 items-center md:flex">
         <CommandPalette
           tenantSlug={tenant.slug}
@@ -58,8 +65,12 @@ export function Topbar({
           <ThemeToggle />
           <UserMenu email={email} role={ROLE_LABELS[role]} />
         </div>
+        <BranchMobileButton canManage={role === 'owner'} />
         <MobileAccountButton email={email} roleLabel={ROLE_LABELS[role]} tenantName={tenant.name} />
       </div>
+
+      {/* El fleco del toldo: el color de la sucursal que se mira, colgando del borde de la barra. */}
+      <BranchFringe />
     </header>
   )
 }

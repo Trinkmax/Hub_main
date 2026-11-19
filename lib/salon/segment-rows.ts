@@ -144,7 +144,8 @@ export function toSegmentReservationInput(row: Record<string, unknown>): Segment
     meal_type: asString(row.meal_type, 'dinner') as MealType,
     reservation_time_local: asString(row.reservation_time_local),
     scheduled_event_id: asNullableString(row.scheduled_event_id),
-    zone: asString(row.zone, 'planta_alta') as SalonZone,
+    // Vacía en una sucursal sin plantas: no se inventa una planta (antes caía en Planta Alta).
+    zone: row.zone == null ? null : (asString(row.zone, 'planta_alta') as SalonZone),
     status: asString(row.status, 'pending') as SalonReservationStatus,
     estimated_guests: asNumber(row.estimated_guests),
     actual_guests: asNullableNumber(row.actual_guests),

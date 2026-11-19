@@ -40,10 +40,13 @@ export function ReservationsFilters({
   tenantSlug,
   managers,
   defaults,
+  showZone = true,
 }: {
   tenantSlug: string
   managers: Array<{ id: string; display_name: string }>
   defaults: Defaults
+  /** Mirando una sucursal sin plantas (el Cerro) no hay zona que filtrar (salvo que venga puesta en el link). */
+  showZone?: boolean
 }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -105,22 +108,24 @@ export function ReservationsFilters({
         </SelectContent>
       </Select>
 
-      <Select
-        value={defaults.zone ?? 'all'}
-        onValueChange={(v) => pushQuery({ zone: v === 'all' ? null : v })}
-      >
-        <SelectTrigger className="h-9 w-[160px]">
-          <SelectValue placeholder="Zona" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todas las zonas</SelectItem>
-          <SelectItem value="planta_alta">{ZONE_LABELS.planta_alta}</SelectItem>
-          <SelectItem value="planta_baja">{ZONE_LABELS.planta_baja}</SelectItem>
-          {/* Reservas de evento sin planta elegida: el mismo "Sin ubicar" del
-              filtro de planta del calendario. */}
-          <SelectItem value="event_floating">{UNPLACED_LABEL}</SelectItem>
-        </SelectContent>
-      </Select>
+      {showZone || defaults.zone ? (
+        <Select
+          value={defaults.zone ?? 'all'}
+          onValueChange={(v) => pushQuery({ zone: v === 'all' ? null : v })}
+        >
+          <SelectTrigger className="h-9 w-[160px]">
+            <SelectValue placeholder="Zona" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las zonas</SelectItem>
+            <SelectItem value="planta_alta">{ZONE_LABELS.planta_alta}</SelectItem>
+            <SelectItem value="planta_baja">{ZONE_LABELS.planta_baja}</SelectItem>
+            {/* Reservas de evento sin planta elegida: el mismo "Sin ubicar" del
+                filtro de planta del calendario. */}
+            <SelectItem value="event_floating">{UNPLACED_LABEL}</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : null}
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetTrigger asChild>

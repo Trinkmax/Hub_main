@@ -1,4 +1,5 @@
 import 'server-only'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import { createClient } from '@/lib/supabase/server'
 import { cordobaDayStartUtc, isoDayInCordoba, nextIsoDay } from './date-presets'
 import { type RangeTotals, type RangeTotalsRow, tallyRangeTotals } from './day-counter'
@@ -135,6 +136,11 @@ function flattenReservation(row: Record<string, unknown>): ReservationWithJoins 
 
 export type ReservationFilters = {
   tenantId: string
+  /**
+   * Las sucursales que entran (docs/features/sucursales.md). Sin decir, todo el bar: solo para Tex y las tareas
+   * programadas; las pantallas pasan siempre el filtro con el que se dibujan.
+   */
+  branch?: BranchFilter
   dateFrom?: string // YYYY-MM-DD inclusive
   dateTo?: string
   zone?: ReservationWithJoins['zone']
@@ -196,7 +202,7 @@ export class PageOutOfRangeError extends Error {
  * los dos lo respetan.
  */
 function applyReservationFilters(query: SBAny, opts: ReservationFilters): SBAny {
-  let q = query
+  let q = applyBranchFilter(query, opts.branch ?? WHOLE_BAR)
   if (opts.dateFrom) q = q.gte('reservation_date', opts.dateFrom)
   if (opts.dateTo) q = q.lte('reservation_date', opts.dateTo)
   if (opts.zone) q = q.eq('zone', opts.zone)
@@ -315,17 +321,22 @@ export async function getRangeReservationTotals(opts: {
   tenantId: string
   from: string
   to: string
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<RangeTotals> {
   const supabase = (await createClient()) as SBAny
   // `scheduled_event_id` y no `zone`: una reserva de evento con planta sigue
   // siendo de evento (ver `tallyRangeTotals`).
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select('estimated_guests, actual_guests, scheduled_event_id, kind, cake_count')
-    .eq('tenant_id', opts.tenantId)
-    .gte('reservation_date', opts.from)
-    .lte('reservation_date', opts.to)
-    .not('status', 'in', '(cancelled,no_show)')
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select('estimated_guests, actual_guests, scheduled_event_id, kind, cake_count')
+      .eq('tenant_id', opts.tenantId)
+      .gte('reservation_date', opts.from)
+      .lte('reservation_date', opts.to)
+      .not('status', 'in', '(cancelled,no_show)'),
+    opts.branch ?? WHOLE_BAR,
+  )
   if (error) throw error
 
   return tallyRangeTotals((data ?? []) as RangeTotalsRow[])
@@ -354,15 +365,20 @@ export async function listDayServiceRows(opts: {
   status?: SalonReservationStatus
   managerId?: string
   q?: string
+  /** Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<ServiceRow[]> {
   const supabase = (await createClient()) as SBAny
-  let query = supabase
-    .from('salon_reservations')
-    .select(
-      'meal_type, zone, status, kind, cake_count, estimated_guests, actual_guests, reservation_time_local',
-    )
-    .eq('tenant_id', opts.tenantId)
-    .eq('reservation_date', opts.date)
+  let query = applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select(
+        'meal_type, zone, status, kind, cake_count, estimated_guests, actual_guests, reservation_time_local',
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('reservation_date', opts.date),
+    opts.branch ?? WHOLE_BAR,
+  )
 
   if (opts.zone) query = query.eq('zone', opts.zone)
   if (opts.status) query = query.eq('status', opts.status)
@@ -404,6 +420,8 @@ export async function listPartySizeRows(opts: {
   mealType?: MealType
   managerId?: string
   q?: string
+  /** Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<PartySizeCountable[]> {
   const supabase = (await createClient()) as SBAny
   const query = applyReservationFilters(
@@ -440,13 +458,18 @@ export async function listPartySizeRows(opts: {
 export async function listDayCelebrations(opts: {
   tenantId: string
   date: string
+  /** Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<ReservationWithJoins[]> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select(RESERVATION_JOIN_SELECT)
-    .eq('tenant_id', opts.tenantId)
-    .eq('reservation_date', opts.date)
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select(RESERVATION_JOIN_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .eq('reservation_date', opts.date),
+    opts.branch ?? WHOLE_BAR,
+  )
     // …o cualquier mesa con torta, sea del tipo que sea: la torta la hace el bar
     // y perderla en una reserva "normal" es el mismo moco (hay una así del 28/05).
     .or('kind.in.(birthday,special),cake_count.gt.0')
@@ -459,14 +482,21 @@ export async function listDayCelebrations(opts: {
 export async function getSalonReservation(opts: {
   tenantId: string
   id: string
+  /**
+   * Las sucursales que la persona puede ver (`clampBranchFilter(null, scope)`), no la que está mirando: un link a
+   * una reserva del Cerro se abre igual mirando Alta Córdoba. Sin decir, todo el bar (Tex).
+   */
+  branch?: BranchFilter
 }): Promise<ReservationWithJoins | null> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select(RESERVATION_JOIN_SELECT)
-    .eq('tenant_id', opts.tenantId)
-    .eq('id', opts.id)
-    .maybeSingle()
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select(RESERVATION_JOIN_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .eq('id', opts.id),
+    opts.branch ?? WHOLE_BAR,
+  ).maybeSingle()
   if (error || !data) return null
   return flattenReservation(data as Record<string, unknown>)
 }
@@ -491,14 +521,19 @@ export type TodaySalonOverview = {
 export async function getTodaySalonOverview(opts: {
   tenantId: string
   date: string
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<TodaySalonOverview> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select('meal_type, reservation_time_local, estimated_guests, actual_guests, status')
-    .eq('tenant_id', opts.tenantId)
-    .eq('reservation_date', opts.date)
-    .not('status', 'in', '(cancelled,no_show)')
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select('meal_type, reservation_time_local, estimated_guests, actual_guests, status')
+      .eq('tenant_id', opts.tenantId)
+      .eq('reservation_date', opts.date)
+      .not('status', 'in', '(cancelled,no_show)'),
+    opts.branch ?? WHOLE_BAR,
+  )
 
   if (error) throw error
 
@@ -548,14 +583,18 @@ export async function getTodaySalonOverview(opts: {
 export async function listTimelineForDate(opts: {
   tenantId: string
   date: string // YYYY-MM-DD
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<ReservationWithJoins[]> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select(RESERVATION_JOIN_SELECT)
-    .eq('tenant_id', opts.tenantId)
-    .eq('reservation_date', opts.date)
-    .order('reservation_time_local', { ascending: true })
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select(RESERVATION_JOIN_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .eq('reservation_date', opts.date),
+    opts.branch ?? WHOLE_BAR,
+  ).order('reservation_time_local', { ascending: true })
   if (error) throw error
   return (data ?? []).map((r: Record<string, unknown>) => flattenReservation(r))
 }
@@ -567,8 +606,11 @@ export async function listTimelineForDate(opts: {
 /**
  * Buckets de `evaluate_day_capacity`. El cupo del día ya NO sale de acá: el
  * corte por servicio (almuerzo/merienda/cena) lo calcula lib/salon/segments.ts.
- * Queda vivo solo por los `event:*` que leen el operativo y el salón; se
- * retira desde el BACKLOG cuando esos lectores pasen a los segmentos.
+ *
+ * Desde las sucursales (18/11/2026) ninguna pantalla la llama: la función de la
+ * base no sabe de sucursales y sumaba las dos. El operativo y el salón sacan la
+ * gente de cada evento de `computeDaySegments` sobre sus reservas ya filtradas
+ * (`eventUsedById`). Queda exportada por compatibilidad; la RPC no se borra.
  */
 export async function getDayCapacitySnapshot(opts: {
   tenantId: string
@@ -598,16 +640,21 @@ export async function listScheduledEventsForDateRange(opts: {
   tenantId: string
   from: string
   to: string
+  /** Sin decir, todo el bar (Tex, difusiones). */
+  branch?: BranchFilter
 }): Promise<ScheduledEventWithTemplate[]> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('scheduled_events')
-    .select(
-      'id, tenant_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, attendance_points, notes, private_group, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
-    )
-    .eq('tenant_id', opts.tenantId)
-    .gte('event_date', opts.from)
-    .lte('event_date', opts.to)
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('scheduled_events')
+      .select(
+        'id, tenant_id, branch_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, attendance_points, notes, private_group, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
+      )
+      .eq('tenant_id', opts.tenantId)
+      .gte('event_date', opts.from)
+      .lte('event_date', opts.to),
+    opts.branch ?? WHOLE_BAR,
+  )
     .order('event_date', { ascending: true })
     .order('starts_at_local', { ascending: true })
   if (error) throw error
@@ -621,27 +668,34 @@ export async function listScheduledEventsForDateRange(opts: {
 export async function listScheduledEventsForDate(opts: {
   tenantId: string
   date: string
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<ScheduledEventWithTemplate[]> {
   return listScheduledEventsForDateRange({
     tenantId: opts.tenantId,
     from: opts.date,
     to: opts.date,
+    branch: opts.branch,
   })
 }
 
 export async function getScheduledEvent(opts: {
   tenantId: string
   id: string
+  /** Las sucursales que la persona puede ver (no la que mira). Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<ScheduledEventWithTemplate | null> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('scheduled_events')
-    .select(
-      '*, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
-    )
-    .eq('tenant_id', opts.tenantId)
-    .eq('id', opts.id)
-    .maybeSingle()
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('scheduled_events')
+      .select(
+        '*, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('id', opts.id),
+    opts.branch ?? WHOLE_BAR,
+  ).maybeSingle()
   if (error || !data) return null
   const d = data as Record<string, unknown>
   const tpl = d.template
@@ -824,6 +878,8 @@ export type CommissionSummaryRow = {
   payable_cents: number
   paid_cents: number
   pending_cents: number
+  /** De qué sucursales son sus reservas (para la etiqueta en «Todas»). */
+  branch_ids: string[]
 }
 
 /**
@@ -862,20 +918,25 @@ export async function listCommissionSummary(opts: {
   tenantId: string
   from: string
   to: string
+  /** Por la sucursal de la reserva. Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<{ rows: CommissionSummaryRow[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error, count } = await supabase
-    .from('commission_ledger')
-    .select(
-      `manager_id, guests_billed, base_total_cents, bonus_total_cents, payable_cents, paid_at,
-       manager:reservation_managers(id, display_name),
-       reservation:salon_reservations!inner(reservation_date, estimated_guests, actual_guests)`,
-      { count: 'exact' },
-    )
-    .eq('tenant_id', opts.tenantId)
-    .gte('reservation.reservation_date', opts.from)
-    .lte('reservation.reservation_date', opts.to)
-    .limit(COMMISSION_MAX_ROWS)
+  const { data, error, count } = await applyBranchFilter(
+    supabase
+      .from('commission_ledger')
+      .select(
+        `manager_id, guests_billed, base_total_cents, bonus_total_cents, payable_cents, paid_at,
+         manager:reservation_managers(id, display_name),
+         reservation:salon_reservations!inner(reservation_date, estimated_guests, actual_guests, branch_id)`,
+        { count: 'exact' },
+      )
+      .eq('tenant_id', opts.tenantId)
+      .gte('reservation.reservation_date', opts.from)
+      .lte('reservation.reservation_date', opts.to),
+    opts.branch ?? WHOLE_BAR,
+    'reservation.branch_id',
+  ).limit(COMMISSION_MAX_ROWS)
 
   if (error) throw error
 
@@ -903,12 +964,16 @@ export async function listCommissionSummary(opts: {
         payable_cents: 0,
         paid_cents: 0,
         pending_cents: 0,
+        branch_ids: [],
       } as CommissionSummaryRow)
     const resRaw = row.reservation
     const res = (Array.isArray(resRaw) ? resRaw[0] : resRaw) as {
       estimated_guests: number
       actual_guests: number | null
+      branch_id: string | null
     } | null
+    if (res?.branch_id && !cur.branch_ids.includes(res.branch_id))
+      cur.branch_ids.push(res.branch_id)
 
     cur.reservations_count += 1
     cur.guests_total += Number(row.guests_billed ?? 0)
@@ -937,6 +1002,7 @@ export type CommissionBreakdownEntry = CommissionLedgerRow & {
     | 'reservation_time_local'
     | 'estimated_guests'
     | 'actual_guests'
+    | 'branch_id'
   >
 }
 
@@ -945,22 +1011,28 @@ export async function listCommissionBreakdown(opts: {
   managerId: string
   from: string
   to: string
+  /** Por la sucursal de la reserva. Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<{ entries: CommissionBreakdownEntry[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error, count } = await supabase
-    .from('commission_ledger')
-    .select(
-      `*,
-       reservation:salon_reservations!inner(
-         id, guest_name, reservation_date, reservation_time_local,
-         estimated_guests, actual_guests
-       )`,
-      { count: 'exact' },
-    )
-    .eq('tenant_id', opts.tenantId)
-    .eq('manager_id', opts.managerId)
-    .gte('reservation.reservation_date', opts.from)
-    .lte('reservation.reservation_date', opts.to)
+  const { data, error, count } = await applyBranchFilter(
+    supabase
+      .from('commission_ledger')
+      .select(
+        `*,
+         reservation:salon_reservations!inner(
+           id, guest_name, reservation_date, reservation_time_local,
+           estimated_guests, actual_guests, branch_id
+         )`,
+        { count: 'exact' },
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('manager_id', opts.managerId)
+      .gte('reservation.reservation_date', opts.from)
+      .lte('reservation.reservation_date', opts.to),
+    opts.branch ?? WHOLE_BAR,
+    'reservation.branch_id',
+  )
     .order('calculated_at', { ascending: false })
     .limit(COMMISSION_MAX_ROWS)
   if (error) throw error
@@ -996,20 +1068,32 @@ export async function listUnpaidCommissionLedgerIds(opts: {
   from: string
   /** `yyyy-MM-dd` inclusive, por fecha de reserva. */
   to: string
+  /**
+   * Por la sucursal de la reserva: el botón de la liquidación paga lo que la pantalla muestra, nunca más. Sin decir,
+   * todo el bar.
+   */
+  branch?: BranchFilter
 }): Promise<{ ids: string[]; totalCents: number; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error, count } = await supabase
-    .from('commission_ledger')
-    .select('id, payable_cents, reservation:salon_reservations!inner(reservation_date)', {
-      count: 'exact',
-    })
-    .eq('tenant_id', opts.tenantId)
-    .eq('manager_id', opts.managerId)
-    .is('paid_at', null)
-    // `reservation_date` es `date` puro: se compara con los mismos strings
-    // `yyyy-MM-dd` de la URL, sin conversión de zona.
-    .gte('reservation.reservation_date', opts.from)
-    .lte('reservation.reservation_date', opts.to)
+  const { data, error, count } = await applyBranchFilter(
+    supabase
+      .from('commission_ledger')
+      .select(
+        'id, payable_cents, reservation:salon_reservations!inner(reservation_date, branch_id)',
+        {
+          count: 'exact',
+        },
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('manager_id', opts.managerId)
+      .is('paid_at', null)
+      // `reservation_date` es `date` puro: se compara con los mismos strings
+      // `yyyy-MM-dd` de la URL, sin conversión de zona.
+      .gte('reservation.reservation_date', opts.from)
+      .lte('reservation.reservation_date', opts.to),
+    opts.branch ?? WHOLE_BAR,
+    'reservation.branch_id',
+  )
     // MISMO orden que `listCommissionBreakdown`, a propósito: si las dos
     // lecturas se truncan, tienen que cortar por el mismo lado. Con órdenes
     // opuestos la pantalla prometía las 1000 más nuevas y la acción marcaba las
@@ -1064,12 +1148,15 @@ export async function listMyCommissionEntries(opts: {
   from: string
   /** `yyyy-MM-dd` inclusive. */
   to: string
+  /** Por la sucursal de la reserva. Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<{ entries: CommissionBreakdownEntry[]; truncated: boolean }> {
   const { entries, truncated } = await listCommissionBreakdown({
     tenantId: opts.tenantId,
     managerId: opts.managerId,
     from: opts.from,
     to: opts.to,
+    branch: opts.branch,
   })
   // El breakdown ordena por calculated_at; acá queremos fecha de reserva desc.
   return {
@@ -1212,13 +1299,17 @@ export async function getDepositsByDay(opts: {
   from: string
   /** `yyyy-MM-dd` inclusive, calendario del bar. */
   to: string
+  /** Por la sucursal de la reserva. Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<DepositsReport> {
   const supabase = (await createClient()) as SBAny
-  let query = supabase
-    .from('salon_reservations')
-    .select('reservation_date, created_at, deposit_cents, status')
-    .eq('tenant_id', opts.tenantId)
-    .limit(DEPOSITS_MAX_ROWS)
+  let query = applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select('reservation_date, created_at, deposit_cents, status')
+      .eq('tenant_id', opts.tenantId),
+    opts.branch ?? WHOLE_BAR,
+  ).limit(DEPOSITS_MAX_ROWS)
 
   if (opts.basis === 'reservation') {
     // `reservation_date` es `date` puro: se compara con los mismos strings
@@ -1257,15 +1348,17 @@ export async function getDepositsByDay(opts: {
 export async function getDepositsBounds(opts: {
   tenantId: string
   basis: DepositBasis
+  /** Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<{ from: string; to: string } | null> {
   const supabase = (await createClient()) as SBAny
   const column = opts.basis === 'created' ? 'created_at' : 'reservation_date'
 
   const edge = async (ascending: boolean): Promise<string | null> => {
-    const { data, error } = await supabase
-      .from('salon_reservations')
-      .select(column)
-      .eq('tenant_id', opts.tenantId)
+    const { data, error } = await applyBranchFilter(
+      supabase.from('salon_reservations').select(column).eq('tenant_id', opts.tenantId),
+      opts.branch ?? WHOLE_BAR,
+    )
       .order(column, { ascending })
       .limit(1)
     if (error) throw error
@@ -1403,12 +1496,15 @@ export async function getLastUsdArsRate(opts: {
 export async function getDayReport(opts: {
   tenantId: string
   day: string
+  /** Sin decir, todo el bar (Tex, la exportación vieja). */
+  branch?: BranchFilter
 }): Promise<DayReportWithMarketing> {
   const supabase = (await createClient()) as SBAny
+  const branch = opts.branch ?? WHOLE_BAR
   // La pauta cuelga de los ids de los eventos, así que espera a ESA lectura y
   // nada más: corre en paralelo con las reservas en el mismo `Promise.all`, sin
   // sumar un hop en serie a la vista más usada.
-  const eventsP = listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day })
+  const eventsP = listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day, branch })
   const marketingP = eventsP.then((events) =>
     listEventMarketing({
       tenantId: opts.tenantId,
@@ -1419,12 +1515,14 @@ export async function getDayReport(opts: {
   )
   const [events, res, marketing] = await Promise.all([
     eventsP,
-    supabase
-      .from('salon_reservations')
-      .select(REPORT_ROW_SELECT)
-      .eq('tenant_id', opts.tenantId)
-      .eq('reservation_date', opts.day)
-      .limit(EVENTS_REPORT_MAX_ROWS),
+    applyBranchFilter(
+      supabase
+        .from('salon_reservations')
+        .select(REPORT_ROW_SELECT)
+        .eq('tenant_id', opts.tenantId)
+        .eq('reservation_date', opts.day),
+      branch,
+    ).limit(EVENTS_REPORT_MAX_ROWS),
     marketingP,
   ])
   if (res.error) throw res.error
@@ -1449,8 +1547,11 @@ export async function getTemplateReport(opts: {
   templateId: string
   /** Hoy en el calendario del bar: define qué edición ya pasó. */
   today: string
+  /** Las ediciones de estas sucursales (el formato es de todo el bar). Sin decir, todas. */
+  branch?: BranchFilter
 }): Promise<TemplateReportWithMarketing | null> {
   const supabase = (await createClient()) as SBAny
+  const branch = opts.branch ?? WHOLE_BAR
 
   const tplRes = await supabase
     .from('scheduled_event_templates')
@@ -1462,13 +1563,16 @@ export async function getTemplateReport(opts: {
   const tpl = tplRes.data as { id: string; name: string; color_hex: string | null } | null
   if (!tpl) return null
 
-  const evRes = await supabase
-    .from('scheduled_events')
-    .select(
-      'id, template_id, name_override, event_date, starts_at_local, capacity, private_group, template:scheduled_event_templates(id, name, color_hex)',
-    )
-    .eq('tenant_id', opts.tenantId)
-    .eq('template_id', opts.templateId)
+  const evRes = await applyBranchFilter(
+    supabase
+      .from('scheduled_events')
+      .select(
+        'id, branch_id, template_id, name_override, event_date, starts_at_local, capacity, private_group, template:scheduled_event_templates(id, name, color_hex)',
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('template_id', opts.templateId),
+    branch,
+  )
     .order('event_date', { ascending: false })
     .limit(EVENTS_REPORT_MAX_ROWS)
   if (evRes.error) throw evRes.error
@@ -1482,6 +1586,7 @@ export async function getTemplateReport(opts: {
   // pauta hacen falta.
   const eventIds = events.filter((e) => e.private_group !== true).map((e) => e.id)
   // Reservas y pauta cuelgan de los mismos ids y no una de la otra: van juntas.
+  // Las reservas de un evento son de la sucursal del evento: con las ediciones ya filtradas alcanza.
   const [rows, marketing] = await Promise.all([
     listReportRowsForEvents({ tenantId: opts.tenantId, eventIds }),
     listEventMarketing({ tenantId: opts.tenantId, eventIds }),
@@ -1547,6 +1652,8 @@ export async function getMonthMarketingReport(opts: {
   ym: string
   /** Hoy en el calendario del bar: define qué edición ya pasó. */
   today: string
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<WithPrivateGroups<MonthMarketingReport>> {
   if (!YM_RE.test(opts.ym)) throw new Error('invalid_ym')
   const year = Number(opts.ym.slice(0, 4))
@@ -1556,7 +1663,12 @@ export async function getMonthMarketingReport(opts: {
   const from = `${opts.ym}-01`
   const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
 
-  const all = await listScheduledEventsForDateRange({ tenantId: opts.tenantId, from, to })
+  const all = await listScheduledEventsForDateRange({
+    tenantId: opts.tenantId,
+    from,
+    to,
+    branch: opts.branch,
+  })
   // Un grupo privado no es una fecha de evento: ni sus reservas ni su pauta
   // hacen falta. Se nombra al pie con `privateGroups`.
   const events = all.filter((e) => !e.private_group)
@@ -1606,17 +1718,22 @@ export async function listRecentReservationDays(opts: {
   /** No mira más allá de este día (normalmente hoy en Córdoba). */
   until: string
   limit?: number
+  /** Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<Array<{ day: string; reservations: number }>> {
   const supabase = (await createClient()) as SBAny
   const take = opts.limit ?? 14
   // Un `.limit()` por DÍAS no existe en PostgREST y uno por filas se lo comería
   // un solo día cargado, así que se leen las últimas N filas y se agrupan acá.
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .select('reservation_date')
-    .eq('tenant_id', opts.tenantId)
-    .lte('reservation_date', opts.until)
-    .not('status', 'in', '(cancelled,no_show)')
+  const { data, error } = await applyBranchFilter(
+    supabase
+      .from('salon_reservations')
+      .select('reservation_date')
+      .eq('tenant_id', opts.tenantId)
+      .lte('reservation_date', opts.until)
+      .not('status', 'in', '(cancelled,no_show)'),
+    opts.branch ?? WHOLE_BAR,
+  )
     .order('reservation_date', { ascending: false })
     .limit(RECENT_DAYS_WINDOW)
   if (error) throw error
@@ -1659,8 +1776,11 @@ export async function listEventTemplateOptions(opts: {
   tenantId: string
   /** Hoy en el calendario del bar: define qué edición ya terminó. */
   today: string
+  /** Las fechas y la gente de estas sucursales (los formatos son de todo el bar). Sin decir, todo el bar (Tex). */
+  branch?: BranchFilter
 }): Promise<{ options: EventTemplateOption[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
+  const branch = opts.branch ?? WHOLE_BAR
   // `onlyActive: false` a propósito: un formato dado de baja se lleva su
   // historia, y el dueño va a querer mirar cómo le fue igual.
   const [tplRes, evRes, resRes] = await Promise.all([
@@ -1669,17 +1789,21 @@ export async function listEventTemplateOptions(opts: {
       .select('id, name, color_hex, default_private_group')
       .eq('tenant_id', opts.tenantId)
       .order('name', { ascending: true }),
-    supabase
-      .from('scheduled_events')
-      .select('id, template_id, event_date, private_group')
-      .eq('tenant_id', opts.tenantId)
-      .limit(EVENTS_REPORT_MAX_ROWS),
-    supabase
-      .from('salon_reservations')
-      .select('scheduled_event_id, estimated_guests, status')
-      .eq('tenant_id', opts.tenantId)
-      .not('scheduled_event_id', 'is', null)
-      .limit(EVENTS_REPORT_MAX_ROWS),
+    applyBranchFilter(
+      supabase
+        .from('scheduled_events')
+        .select('id, template_id, event_date, private_group')
+        .eq('tenant_id', opts.tenantId),
+      branch,
+    ).limit(EVENTS_REPORT_MAX_ROWS),
+    applyBranchFilter(
+      supabase
+        .from('salon_reservations')
+        .select('scheduled_event_id, estimated_guests, status')
+        .eq('tenant_id', opts.tenantId)
+        .not('scheduled_event_id', 'is', null),
+      branch,
+    ).limit(EVENTS_REPORT_MAX_ROWS),
   ])
   if (tplRes.error) throw tplRes.error
   if (evRes.error) throw evRes.error

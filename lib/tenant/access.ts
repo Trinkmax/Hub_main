@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers'
 import { cache } from 'react'
+import { parseBranchRefs } from '@/lib/branches/parse'
+import type { BranchRef } from '@/lib/branches/types'
 import { createClient } from '@/lib/supabase/server'
 import { type CurrentUser, getCurrentUser } from './current'
 import { RoleRequiredError, TenantNotFoundError, UnauthenticatedError } from './errors'
@@ -39,6 +41,11 @@ export type TenantAccess = {
   memberships: MembershipWithTenant[]
   /** Administración para este usuario en este bar. Todo en `false` si la base no lo manda. */
   accounting: AccountingAccess
+  /**
+   * Las sucursales activas que esta persona ve en este bar (`my_branches`): un dueño o la contadora, todas; el resto,
+   * las que tiene asignadas (sin asignar, la principal). La que se está mirando la resuelve `getBranchScope`.
+   */
+  branches: BranchRef[]
   user: CurrentUser
 }
 
@@ -48,6 +55,7 @@ type RpcPayload = {
   is_platform_admin: boolean
   memberships: MembershipWithTenant[]
   accounting: AccountingAccess
+  branches: BranchRef[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,6 +129,7 @@ function parseAccess(raw: unknown): RpcPayload | null {
     is_platform_admin: raw.is_platform_admin === true,
     memberships: parseMemberships(raw.memberships),
     accounting: parseAccountingAccess(raw.accounting),
+    branches: parseBranchRefs(raw.branches),
   }
 }
 
@@ -162,6 +171,7 @@ export const requireTenantAccess = cache(async (slug: string): Promise<TenantAcc
     isPlatformAdmin: view.isPlatformAdmin,
     memberships: parsed.memberships,
     accounting: view.accounting,
+    branches: parsed.branches,
     user,
   }
 })

@@ -3,6 +3,7 @@
 import { Check, ClipboardCheck, Loader2 } from 'lucide-react'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
 import { Button } from '@/components/ui/button'
 import {
@@ -53,9 +54,11 @@ export function RollCallDialog({
   // cargado (o con un filtro de zona puesto) dejaría reservas afuera del cierre
   // sin decirlo. Y pedirlo al abrir en vez de en cada carga de la agenda evita
   // una query que casi nadie usa.
+  // El cierre es de lo que se está mirando: mirando el Cerro, las mesas del Cerro.
+  const branchFilter = useBranchScope()?.filter
   function load() {
     setLoading(true)
-    void fetchReservationsForDate(tenantSlug, day).then((res) => {
+    void fetchReservationsForDate(tenantSlug, day, branchFilter).then((res) => {
       setLoading(false)
       if (res.ok) setRows(res.reservations)
       else toast.error(res.message)

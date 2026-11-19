@@ -1,5 +1,6 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import { addDays } from '@/lib/dates/civil'
 import { listScheduledEventsForDateRange } from '@/lib/salon/queries'
 import { collectPages } from '@/lib/salon/segment-rows'
@@ -25,23 +26,32 @@ export async function getBarPulse(opts: {
   /** Hoy en la zona del bar, `AAAA-MM-DD`. */
   today: string
   windowDays?: number
+  /** La sucursal que se mira. Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<BarPulse> {
   const windowDays = opts.windowDays ?? 30
   const supabase = await untyped()
   const since = pulseSince(opts.today, windowDays)
 
-  const rows = await collectPages<PulseRow>((from, to) =>
-    supabase
+  const branchIds = (opts.branch ?? WHOLE_BAR).ids
+  const rows = await collectPages<PulseRow>((from, to) => {
+    let query = supabase
       .from('salon_reservations')
       .select('reservation_date, status, estimated_guests, actual_guests')
       .eq('tenant_id', opts.tenantId)
       .gte('reservation_date', since)
       .lte('reservation_date', opts.today)
-      // Orden estable (fecha + id): sin él, dos páginas pueden repetir o saltearse filas.
-      .order('reservation_date', { ascending: true })
-      .order('id', { ascending: true })
-      .range(from, to),
-  )
+    // La sucursal que se mira (`null` = todo el bar). Directo y no con applyBranchFilter: con este cliente sin
+    // tipar, el genérico hace que TypeScript se pierda (TS2589).
+    if (branchIds) query = query.in('branch_id', branchIds)
+    return (
+      query
+        // Orden estable (fecha + id): sin él, dos páginas pueden repetir o saltearse filas.
+        .order('reservation_date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to)
+    )
+  })
   return tallyPulse(rows, opts.today, windowDays)
 }
 
@@ -58,6 +68,8 @@ export type UpcomingEvent = {
   /** Personas con reserva en pie (sin canceladas ni ausentes). */
   reserved: number
   privateGroup: boolean
+  /** La sucursal de la fecha (para su etiqueta mirando «Todas»). */
+  branchId: string
 }
 
 /**
@@ -68,12 +80,15 @@ export async function listUpcomingEvents(opts: {
   tenantId: string
   today: string
   days?: number
+  /** La sucursal que se mira. Sin decir, todo el bar. */
+  branch?: BranchFilter
 }): Promise<UpcomingEvent[]> {
   const until = addDays(opts.today, (opts.days ?? 7) - 1)
   const events = await listScheduledEventsForDateRange({
     tenantId: opts.tenantId,
     from: opts.today,
     to: until,
+    branch: opts.branch ?? WHOLE_BAR,
   })
   if (events.length === 0) return []
 
@@ -112,6 +127,7 @@ export async function listUpcomingEvents(opts: {
     capacity: event.capacity,
     reserved: reserved.get(event.id) ?? 0,
     privateGroup: event.private_group,
+    branchId: event.branch_id,
   }))
 }
 

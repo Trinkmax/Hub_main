@@ -10,6 +10,7 @@ import {
 } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { CreateMemberForm } from './_create-member-form'
+import { MemberBranches } from './_member-branches'
 import { type Member, MemberRow } from './_member-row'
 
 export const metadata = { title: 'Equipo' }
@@ -46,6 +47,22 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
     console.error('[equipo] get_tenant_members', error)
   }
 
+  // Dónde trabaja cada uno (docs/features/sucursales.md). Un dueño lee las asignaciones de todo su bar.
+  const branches = access.branches
+  const assigned = new Map<string, string[]>()
+  if (branches.length > 1) {
+    const { data: rowsBranches, error: branchesError } = await supabase
+      .from('membership_branches')
+      .select('user_id, branch_id')
+      .eq('tenant_id', access.tenant.id)
+    if (branchesError) {
+      console.error('[equipo] membership_branches', branchesError.code, branchesError.message)
+    }
+    for (const row of rowsBranches ?? []) {
+      assigned.set(row.user_id, [...(assigned.get(row.user_id) ?? []), row.branch_id])
+    }
+  }
+
   const members: Member[] = (rows ?? []).map((r: RpcMember) => ({
     id: r.id,
     user_id: r.user_id,
@@ -60,7 +77,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
       <PageHeader
         eyebrow="Configuración"
         title="Equipo"
-        description="Sumá a tu staff con email y contraseña. Cada rol ve solo lo que necesita."
+        description="Sumá a tu staff con email y contraseña. Cada rol ve solo lo que necesita y cada persona, solo sus sucursales."
       />
 
       <div className="card-hairline relative overflow-hidden rounded-xl border bg-card">
@@ -96,6 +113,17 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
               member={m}
               tenantSlug={tenantSlug}
               isCurrentUser={user?.id === m.user_id}
+              branches={
+                branches.length > 1 ? (
+                  <MemberBranches
+                    tenantSlug={tenantSlug}
+                    userId={m.user_id}
+                    role={m.role}
+                    branches={branches}
+                    assigned={assigned.get(m.user_id) ?? []}
+                  />
+                ) : null
+              }
             />
           ))}
         </div>

@@ -3,6 +3,7 @@
 import { ChevronDown, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { editReservationHref } from '@/lib/salon/calendar-links'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { hhmm } from '@/lib/salon/format'
@@ -86,6 +87,7 @@ export function CancelledSection({
                 {r.cancelled_reason ? (
                   <span className="text-xs italic">· {r.cancelled_reason}</span>
                 ) : null}
+                <BranchTag branchId={r.branch_id} />
               </Link>
             </li>
           ))}

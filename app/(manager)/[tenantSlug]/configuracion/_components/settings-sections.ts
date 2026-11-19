@@ -65,10 +65,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     items: [
       {
         label: 'Sucursales',
-        description:
-          'Los locales del bar, lo que le falta a cada uno para abrir y los ajustes de cobro.',
+        description: 'Los locales del bar: el nombre, el color y la dirección de cada uno.',
         href: (s) => `/${s}/local/sucursales`,
-        feature: 'pos',
       },
       {
         label: 'Plano del salón',

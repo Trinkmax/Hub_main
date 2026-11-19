@@ -32,6 +32,8 @@ export type HighlightEventInput = {
   capacity: number
   name_override: string | null
   template: { name: string; color_hex: string } | null
+  /** La sucursal de la fecha (su etiqueta mirando «Todas»). */
+  branch_id?: string
 }
 
 export type EventHighlight = {
@@ -45,6 +47,7 @@ export type EventHighlight = {
   colorHex: string
   used: number
   capacity: number
+  branchId: string | null
 }
 
 export type CelebrationHighlight = {
@@ -72,6 +75,7 @@ export type CelebrationHighlight = {
   cakeOptionId: string | null
   champagneCount: number
   status: SalonReservationStatus
+  branchId: string | null
 }
 
 export type DayHighlight = EventHighlight | CelebrationHighlight
@@ -119,6 +123,7 @@ export function buildDayHighlights(opts: {
     colorHex: e.template?.color_hex ?? 'var(--primary)',
     used: opts.usedByEvent?.get(e.id) ?? 0,
     capacity: e.capacity,
+    branchId: e.branch_id ?? null,
   }))
 
   const celebrations: DayHighlight[] = opts.reservations
@@ -129,13 +134,15 @@ export function buildDayHighlights(opts: {
       id: r.id,
       time: r.reservation_time_local.slice(0, 5),
       title: r.guest_name,
+      branchId: r.branch_id ?? null,
       guests: r.actual_guests ?? r.estimated_guests,
       // La zona REAL, no "Evento": si el cumple se sienta en Planta Alta hay que
       // ir a armar Planta Alta, venga al evento que venga.
       zoneLabel:
         r.zone === 'event_floating'
           ? (r.scheduled_event?.template?.name ?? 'Evento')
-          : zoneLabels[r.zone],
+          : // Sin planta (una sucursal sin plantas): el evento si tiene, si no el salón.
+            ((r.zone ? zoneLabels[r.zone] : null) ?? r.scheduled_event?.template?.name ?? 'Salón'),
       eventName: r.scheduled_event?.template?.name ?? null,
       eventColorHex: r.scheduled_event?.template?.color_hex ?? null,
       cakeCount: r.cake_count,

@@ -407,6 +407,24 @@
     text-decoration-color: rgb(229 83 61 / 0.7);
   }
 
+  /* Dónde es la función, arriba del talón, cuando el bar vende en más de una
+   sucursal. En el óxido del bar sobre papel; sobre la elegida, crema. */
+  .ent-stub-branch {
+    display: block;
+    padding-bottom: 0.1rem;
+    color: var(--ent-rust-deep);
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+  }
+
+  .ent-stub[data-selected="true"] .ent-stub-branch {
+    color: #fffaf0;
+  }
+
+  .ent-stub[data-state="sold_out"] .ent-stub-branch {
+    color: inherit;
+  }
+
   /* Talones adentro del ticket (sobre papel): con borde, y la agotada en
    tinta tenue en vez de crema translúcida (que sobre papel no se ve). */
   .ent-form .ent-stub {

@@ -107,7 +107,10 @@ export function TicketCheckout({
   venue: VenueInfo
   preview: boolean
 }) {
-  const { functions, selected, reportSeats } = useExperience()
+  const { functions, selected, reportSeats, branchLabelOf, branchOf, showBranches } =
+    useExperience()
+  // Con funciones en más de una sucursal, la entrada dice dónde es la elegida.
+  const where = selected ? branchLabelOf(selected) : null
   const available = paymentOptions(experience)
   const depositAvailable = available.deposit
   // Solo seña (HUB desde el 30/10): no hay nada que elegir, la entrada dice
@@ -326,6 +329,7 @@ export function TicketCheckout({
             time: selected.time,
             partySize: people,
             guestName: name,
+            branchName: showBranches ? (branchOf(selected)?.name ?? null) : null,
           }),
         )
       : null
@@ -530,7 +534,7 @@ export function TicketCheckout({
           <WhatsappReserve
             href={waLink(
               selected
-                ? `¡Hola ${venue.tenantName}! Quiero reservar para ${experience.title} el ${formatLongDate(selected.date)} a las ${selected.time}, somos ${people}.`
+                ? `¡Hola ${venue.tenantName}! Quiero reservar para ${experience.title} el ${formatLongDate(selected.date)} a las ${selected.time}${showBranches && branchOf(selected) ? ` en ${branchOf(selected)?.name}` : ''}, somos ${people}.`
                 : `¡Hola ${venue.tenantName}! Quiero reservar para ${experience.title}.`,
             )}
           />
@@ -607,7 +611,11 @@ export function TicketCheckout({
     <TicketShell
       title={experience.title}
       badge={`Admite ${people}`}
-      subtitle={selected ? `${formatShortDate(selected.date)} · ${selected.time} hs` : null}
+      subtitle={
+        selected
+          ? `${formatShortDate(selected.date)} · ${selected.time} hs${where ? ` · ${where}` : ''}`
+          : null
+      }
       footer={footer}
     >
       <div

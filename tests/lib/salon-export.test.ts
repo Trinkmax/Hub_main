@@ -13,6 +13,7 @@ function reservation(over: Partial<ReservationWithJoins> = {}): ReservationWithJ
   return {
     id: 'r1',
     tenant_id: 't',
+    branch_id: 'b',
     customer_id: null,
     guest_name: 'Adriana Carranza',
     guest_phone: '+5493515551234',

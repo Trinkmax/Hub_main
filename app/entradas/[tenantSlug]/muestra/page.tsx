@@ -49,7 +49,7 @@ export default async function MuestraPage({
       <SampleView
         order={page.order}
         tenantName={page.venue.tenantName}
-        address={page.venue.address}
+        address={page.address}
         door={ver === 'puerta'}
         rejected={ver === 'rechazado' || ver === 'rechazado-vencido'}
         holdOver={ver === 'rechazado-vencido'}

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
 import { monthBirthdaysToCsv } from '@/lib/salon/birthdays-report'
+import { BRANCH_FILTER_PARAM, parseBranchFilterParam } from '@/lib/salon/branch-scope'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
 import { eventProfitabilityToCsv } from '@/lib/salon/event-consolidated'
 import { eventConversionToCsv } from '@/lib/salon/event-conversion'
@@ -50,6 +53,11 @@ export async function GET(request: Request) {
     requireRole(access.role, ['owner'])
 
     const tenantId = access.tenant.id
+    // Las sucursales que se estaban viendo (las manda el link), recortadas a las de la persona.
+    const branch = clampBranchFilter(
+      parseBranchFilterParam(url.searchParams.get(BRANCH_FILTER_PARAM)),
+      await getBranchScope(slug),
+    )
     const vistaParam = url.searchParams.get('vista')
     const vista =
       vistaParam === 'evento'
@@ -65,7 +73,7 @@ export async function GET(request: Request) {
       if (!dia || !isRealIsoDay(dia)) {
         return NextResponse.json({ error: 'invalid_date' }, { status: 400 })
       }
-      const report = await getDayReport({ tenantId, day: dia })
+      const report = await getDayReport({ tenantId, day: dia, branch })
       await logAudit({
         tenantId,
         userId: access.user.id,
@@ -91,7 +99,12 @@ export async function GET(request: Request) {
       if (!mes || !YM_RE.test(mes)) {
         return NextResponse.json({ error: 'invalid_month' }, { status: 400 })
       }
-      const report = await getMonthMarketingReport({ tenantId, ym: mes, today: todayInCordoba() })
+      const report = await getMonthMarketingReport({
+        tenantId,
+        ym: mes,
+        today: todayInCordoba(),
+        branch,
+      })
       await logAudit({
         tenantId,
         userId: access.user.id,
@@ -116,7 +129,12 @@ export async function GET(request: Request) {
       if (!mes || !YM_RE.test(mes)) {
         return NextResponse.json({ error: 'invalid_month' }, { status: 400 })
       }
-      const report = await getMonthBirthdayReport({ tenantId, ym: mes, today: todayInCordoba() })
+      const report = await getMonthBirthdayReport({
+        tenantId,
+        ym: mes,
+        today: todayInCordoba(),
+        branch,
+      })
       await logAudit({
         tenantId,
         userId: access.user.id,
@@ -149,6 +167,7 @@ export async function GET(request: Request) {
       tenantId,
       templateId: evento,
       today: todayInCordoba(),
+      branch,
     })
     if (!report) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 

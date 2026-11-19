@@ -21,10 +21,14 @@ export type SetupAccess =
   | { ok: false; code: 'forbidden' | 'error'; message: string }
 
 /**
- * Lo que toda acción de «Sucursales» comprueba primero: hay sesión, la persona es dueña de
- * ESTE bar y el bar tiene el punto de venta prendido.
+ * Lo que toda acción de «Sucursales» comprueba primero: hay sesión y la persona es dueña de ESTE
+ * bar. Los ajustes del punto de venta piden además que esté prendido; las sucursales mismas no
+ * (`requirePos: false`): cualquier bar las crea y las nombra (docs/features/sucursales.md).
  */
-export async function authorizeSetup(slug: unknown): Promise<SetupAccess> {
+export async function authorizeSetup(
+  slug: unknown,
+  { requirePos = true }: { requirePos?: boolean } = {},
+): Promise<SetupAccess> {
   if (typeof slug !== 'string' || slug === '') {
     return {
       ok: false,
@@ -35,7 +39,7 @@ export async function authorizeSetup(slug: unknown): Promise<SetupAccess> {
   try {
     const access = await requireTenantAccess(slug)
     requireRole(access.role, POS_SETUP_ROLES)
-    if (!isFeatureEnabled(access.tenant, 'pos') && !access.isPlatformAdmin) {
+    if (requirePos && !isFeatureEnabled(access.tenant, 'pos') && !access.isPlatformAdmin) {
       return {
         ok: false,
         code: 'forbidden',

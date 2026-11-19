@@ -11,11 +11,14 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { CommissionPeriodFilter } from '@/components/commissions/period-filter'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { formatARS } from '@/lib/commissions/calculate'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { todayInCordoba } from '@/lib/salon/date-presets'
@@ -154,11 +157,15 @@ export default async function MisNumerosPage({
     )
   }
 
+  // Por la sucursal de cada reserva (docs/features/sucursales.md): mirando el
+  // Cerro, lo que se ganó con las reservas del Cerro; en «Todas», todo.
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
   const { entries, truncated } = await listMyCommissionEntries({
     tenantId: access.tenant.id,
     managerId: manager.id,
     from: period.from,
     to: period.to,
+    branch,
   })
 
   let pendingCents = 0
@@ -302,6 +309,8 @@ function EntryRow({ entry }: { entry: CommissionBreakdownEntry }) {
             {formatDayMonth(entry.reservation.reservation_date)}
           </span>
           {entry.reservation.guest_name}
+          {/* Mirando «Todas»: de qué sucursal es. */}
+          <BranchTag branchId={entry.reservation.branch_id} className="ml-1.5" />
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {entry.guests_billed} {entry.guests_billed === 1 ? 'persona' : 'personas'} · base{' '}

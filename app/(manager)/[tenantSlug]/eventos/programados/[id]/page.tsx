@@ -2,8 +2,11 @@ import { ArrowLeft, CalendarPlus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { calendarHref, newReservationHref } from '@/lib/salon/calendar-links'
 import {
   getScheduledEvent,
@@ -45,14 +48,19 @@ export default async function ScheduledEventPage({
   // corren en paralelo (antes el 404 del evento cortaba antes).
   if (!z.string().uuid().safeParse(id).success) notFound()
 
+  // Una fecha de una sucursal que la persona no ve no se abre (no hace falta
+  // estar mirándola: un link del Cerro se abre igual mirando Alta Córdoba).
+  const allowed = clampBranchFilter(null, await getBranchScope(tenantSlug))
+
   // Las reservas se filtran por `scheduled_event_id` directo en la query (antes
   // traía todo el día y filtraba en memoria), así no dependen de la fecha del
   // evento y los tres fetches salen en un solo round-trip en vez de dos.
   const [event, templates, { rows: reservations }] = await Promise.all([
-    getScheduledEvent({ tenantId: access.tenant.id, id }),
+    getScheduledEvent({ tenantId: access.tenant.id, id, branch: allowed }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listSalonReservations({
       tenantId: access.tenant.id,
+      branch: allowed,
       scheduledEventId: id,
       pageSize: 200,
     }),
@@ -78,7 +86,13 @@ export default async function ScheduledEventPage({
             Volver al calendario
           </Link>
         }
-        title={event.name_override ?? event.template?.name ?? 'Evento'}
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            {event.name_override ?? event.template?.name ?? 'Evento'}
+            {/* Con más de una sucursal, siempre: es la ficha de UNA fecha. */}
+            <BranchTag branchId={event.branch_id} when="always" />
+          </span>
+        }
         description={`${event.event_date} · ${event.starts_at_local.slice(0, 5)} · ${totalGuests}/${event.capacity} personas reservadas`}
         actions={
           // Reservar desde el evento: llega al form con el evento, la fecha y
@@ -105,6 +119,7 @@ export default async function ScheduledEventPage({
         templates={templates}
         initialValues={{
           id: event.id,
+          branch_id: event.branch_id,
           template_id: event.template_id,
           name_override: event.name_override ?? undefined,
           event_date: event.event_date,

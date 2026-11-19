@@ -1,4 +1,5 @@
 import 'server-only'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import { createClient } from '@/lib/supabase/server'
 import {
   BIRTHDAY_MARKETING_DB_SELECT,
@@ -16,6 +17,11 @@ import { cordobaDayStartUtc } from './date-presets'
 import { EVENTS_REPORT_MAX_ROWS, getManagerForUser } from './queries'
 
 const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
+
+// Como el resto de lib/salon: con el cliente tipado, el filtro de sucursal sobre
+// estas lecturas hace que TypeScript se pierda (TS2589). Las filas se tipan abajo.
+// biome-ignore lint/suspicious/noExplicitAny: cliente sin tipar a propósito (ver arriba)
+type SBAny = any
 
 // `scheduled_event(private_group)`: un cumple dentro de un grupo privado no es
 // «dentro de un evento» (02/10). La relación va nombrada: hay dos llaves de la reserva al evento
@@ -97,6 +103,11 @@ export async function getMonthBirthdayReport(opts: {
   ym: string
   /** Hoy en el calendario del bar. */
   today: string
+  /**
+   * Los cumples de estas sucursales. La pauta de cumpleaños es del bar (una por mes), así que mirando una sola
+   * sucursal se mide contra los cumples de esa sucursal. Sin decir, todo el bar (Tex).
+   */
+  branch?: BranchFilter
 }): Promise<MonthBirthdayReport> {
   if (!YM_RE.test(opts.ym)) throw new Error('invalid_ym')
   const year = Number(opts.ym.slice(0, 4))
@@ -105,26 +116,31 @@ export async function getMonthBirthdayReport(opts: {
   const from = `${opts.ym}-01`
   const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
 
-  const supabase = await createClient()
+  const supabase = (await createClient()) as SBAny
+  const branch = opts.branch ?? WHOLE_BAR
   const [celebratedRes, bookedRes, marketing] = await Promise.all([
-    supabase
-      .from('salon_reservations')
-      .select(BIRTHDAY_ROW_SELECT)
-      .eq('tenant_id', opts.tenantId)
-      .eq('kind', 'birthday')
-      .gte('reservation_date', from)
-      .lte('reservation_date', to)
-      .limit(EVENTS_REPORT_MAX_ROWS),
-    supabase
-      .from('salon_reservations')
-      .select(BIRTHDAY_ROW_SELECT)
-      .eq('tenant_id', opts.tenantId)
-      .eq('kind', 'birthday')
-      // El mes del calendario del bar, no el de UTC: una reserva tomada el 30
-      // a las 22 en Córdoba ya es del 1 en UTC.
-      .gte('created_at', cordobaDayStartUtc(from))
-      .lt('created_at', cordobaDayStartUtc(`${nextYM(opts.ym)}-01`))
-      .limit(EVENTS_REPORT_MAX_ROWS),
+    applyBranchFilter(
+      supabase
+        .from('salon_reservations')
+        .select(BIRTHDAY_ROW_SELECT)
+        .eq('tenant_id', opts.tenantId)
+        .eq('kind', 'birthday')
+        .gte('reservation_date', from)
+        .lte('reservation_date', to),
+      branch,
+    ).limit(EVENTS_REPORT_MAX_ROWS),
+    applyBranchFilter(
+      supabase
+        .from('salon_reservations')
+        .select(BIRTHDAY_ROW_SELECT)
+        .eq('tenant_id', opts.tenantId)
+        .eq('kind', 'birthday')
+        // El mes del calendario del bar, no el de UTC: una reserva tomada el 30
+        // a las 22 en Córdoba ya es del 1 en UTC.
+        .gte('created_at', cordobaDayStartUtc(from))
+        .lt('created_at', cordobaDayStartUtc(`${nextYM(opts.ym)}-01`)),
+      branch,
+    ).limit(EVENTS_REPORT_MAX_ROWS),
     getBirthdayMarketing({ tenantId: opts.tenantId, ym: opts.ym }),
   ])
   if (celebratedRes.error) throw celebratedRes.error

@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
+import { branchCookieName, cookieDeviceId, parseBranchCookie } from '@/lib/branches/cookie'
 import { createClient } from '@/lib/supabase/server'
 import { type PosError, toPosError } from './errors'
 import type { FloorSnapshot, KitchenQueue, PosBranch, PosMenu, SessionDetail } from './types'
@@ -51,26 +52,35 @@ export const listBranches = cache(async (tenantId: string): Promise<BranchRow[]>
   return (data ?? []) as BranchRow[]
 })
 
-/** Dónde se guarda en qué sucursal trabaja este dispositivo. */
-export function branchCookieName(tenantId: string): string {
-  return `hub_branch_${tenantId}`
-}
+/**
+ * Dónde se guarda en qué sucursal trabaja este dispositivo. Es la cookie de todo el sistema (lib/branches/cookie.ts):
+ * también recuerda si el panel mira «Todas», sin perder la sucursal del dispositivo.
+ */
+export { branchCookieName } from '@/lib/branches/cookie'
 
 /**
  * La sucursal en la que está trabajando este dispositivo: la que eligió (queda
  * guardada en el dispositivo, así la caja y la tele nunca preguntan), o la
  * principal. `chosen` dice si alguna vez eligió: con más de una sucursal y sin
  * elegir, la pantalla pregunta «¿dónde trabajás hoy?».
+ *
+ * `allowedIds`: las sucursales que esta persona tiene (`access.branches`). Un mozo del Cerro no ve ni puede pasar a
+ * Alta Córdoba aunque la cookie o el link digan otra cosa.
  */
 export async function getActiveBranch(
   tenantId: string,
   preferSlug?: string | null,
+  allowedIds?: ReadonlyArray<string>,
 ): Promise<{ branches: BranchRow[]; active: BranchRow | null; chosen: boolean }> {
-  const branches = await listBranches(tenantId)
+  const all = await listBranches(tenantId)
+  const allowed = allowedIds ? new Set(allowedIds) : null
+  const branches = allowed ? all.filter((branch) => allowed.has(branch.id)) : all
   if (branches.length === 0) return { branches, active: null, chosen: false }
   const bySlug = preferSlug ? branches.find((b) => b.slug === preferSlug) : undefined
   if (bySlug) return { branches, active: bySlug, chosen: true }
-  const stored = (await cookies()).get(branchCookieName(tenantId))?.value
+  const stored = cookieDeviceId(
+    parseBranchCookie((await cookies()).get(branchCookieName(tenantId))?.value),
+  )
   const byCookie = stored ? branches.find((b) => b.id === stored) : undefined
   if (byCookie) return { branches, active: byCookie, chosen: true }
   const fallback = branches.find((b) => b.is_default) ?? branches[0] ?? null

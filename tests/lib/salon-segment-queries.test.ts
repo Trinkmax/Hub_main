@@ -1,6 +1,8 @@
 import { revalidatePath } from 'next/cache'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logAudit } from '@/lib/audit'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef, BranchScope } from '@/lib/branches/types'
 import { createSalonReservation } from '@/lib/salon/actions'
 import {
   fetchDayOverview,
@@ -37,6 +39,9 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/headers', () => ({ cookies: vi.fn(async () => ({ set: vi.fn() })) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+// La sucursal que se mira: la lee cada acción (docs/features/sucursales.md). Por defecto, un bar de una sola
+// sucursal (la principal, con plantas); los casos de sucursales la cambian.
+vi.mock('@/lib/branches/scope', () => ({ getBranchScope: vi.fn() }))
 vi.mock('@/lib/tenant', async () => {
   // Roles y errores reales: el test tiene que fallar si alguien cambia el set
   // de roles de una action. Solo se reemplaza la lectura de la membership.
@@ -55,8 +60,49 @@ vi.mock('@/lib/tenant', async () => {
 const TENANT = 'tenant-a'
 const USER = 'user-a'
 const MANAGER = '11111111-2222-4333-8444-555555555555'
+const MAIN = 'aaaaaaaa-0000-4000-8000-000000000001'
+const CERRO = 'cccccccc-0000-4000-8000-000000000002'
+
+function branchRef(id: string, patch: Partial<BranchRef> = {}): BranchRef {
+  return {
+    id,
+    name: id === MAIN ? 'Alta Córdoba' : 'Cerro',
+    shortName: null,
+    slug: id === MAIN ? 'alta-cordoba' : 'cerro',
+    color: '#2f5d50',
+    address: null,
+    position: id === MAIN ? 0 : 1,
+    isDefault: id === MAIN,
+    openedOn: null,
+    seatCapacity: id === MAIN ? 130 : 40,
+    ...patch,
+  }
+}
+
+/** Una sucursal mirada (o «Todas» con `current: null`). */
+function scopeOf(branches: BranchRef[], current: BranchRef | null): BranchScope {
+  return {
+    branches,
+    current,
+    isAll: current === null,
+    ids: current ? [current.id] : branches.map((b) => b.id),
+    unrestricted: true,
+    multi: branches.length > 1,
+    canAll: branches.length > 1,
+    needsChoice: false,
+    device: current,
+    source: 'cookie',
+  }
+}
+
+function asScope(scope: BranchScope) {
+  vi.mocked(getBranchScope).mockResolvedValue(scope)
+}
+
+const SINGLE_MAIN = scopeOf([branchRef(MAIN)], branchRef(MAIN))
 
 function asRole(role: TenantRole) {
+  asScope(SINGLE_MAIN)
   vi.mocked(requireTenantAccess).mockResolvedValue({
     tenant: { id: TENANT },
     role,
@@ -862,16 +908,32 @@ describe('config: guardar la grilla y los cupos especiales', () => {
     const upsertCaps = calls.find(
       (c) => c.table === 'salon_segment_capacities' && c.op === 'upsert',
     )
+    // Cada fila lleva su sucursal y choca contra la regla nueva (por sucursal), no la vieja (por bar).
     expect(upsertCaps?.payload).toEqual([
-      { tenant_id: TENANT, segment: 'lunch', iso_dow: 1, capacity: 70, warn_at: 50 },
-      { tenant_id: TENANT, segment: 'dinner', iso_dow: 1, capacity: 120, warn_at: null },
+      {
+        tenant_id: TENANT,
+        branch_id: MAIN,
+        segment: 'lunch',
+        iso_dow: 1,
+        capacity: 70,
+        warn_at: 50,
+      },
+      {
+        tenant_id: TENANT,
+        branch_id: MAIN,
+        segment: 'dinner',
+        iso_dow: 1,
+        capacity: 120,
+        warn_at: null,
+      },
     ])
-    expect(upsertCaps?.options).toEqual({ onConflict: 'tenant_id,segment,iso_dow' })
+    expect(upsertCaps?.options).toEqual({ onConflict: 'tenant_id,branch_id,segment,iso_dow' })
 
     const deletes = calls.filter((c) => c.table === 'salon_segment_capacities' && c.op === 'delete')
     expect(deletes).toHaveLength(1)
     expect(deletes[0]?.filters).toEqual([
       ['eq', 'tenant_id', TENANT],
+      ['eq', 'branch_id', MAIN],
       ['eq', 'segment', 'lunch'],
       ['in', 'iso_dow', [6, 7]],
     ])
@@ -881,13 +943,20 @@ describe('config: guardar la grilla y los cupos especiales', () => {
     expect(upsertSettings?.payload).toEqual([
       {
         tenant_id: TENANT,
+        branch_id: MAIN,
         segment: 'lunch',
         default_time: '13:00',
         warn_note: 'Conviene abrir la terraza',
       },
-      { tenant_id: TENANT, segment: 'tea_time', default_time: '15:30', warn_note: null },
+      {
+        tenant_id: TENANT,
+        branch_id: MAIN,
+        segment: 'tea_time',
+        default_time: '15:30',
+        warn_note: null,
+      },
     ])
-    expect(upsertSettings?.options).toEqual({ onConflict: 'tenant_id,segment' })
+    expect(upsertSettings?.options).toEqual({ onConflict: 'tenant_id,branch_id,segment' })
 
     expect(logAudit).toHaveBeenCalledTimes(1)
     const audit = vi.mocked(logAudit).mock.calls[0]?.[0]
@@ -1019,6 +1088,7 @@ describe('config: guardar la grilla y los cupos especiales', () => {
     const upsert = calls.find((c) => c.op === 'upsert')
     expect(upsert?.payload).toEqual({
       tenant_id: TENANT,
+      branch_id: MAIN,
       segment: 'lunch',
       override_date: '2026-10-12',
       capacity: 120,
@@ -1026,7 +1096,7 @@ describe('config: guardar la grilla y los cupos especiales', () => {
       reason: null,
       updated_by: USER,
     })
-    expect(upsert?.options).toEqual({ onConflict: 'tenant_id,override_date,segment' })
+    expect(upsert?.options).toEqual({ onConflict: 'tenant_id,branch_id,override_date,segment' })
     const audit = vi.mocked(logAudit).mock.calls[0]?.[0]
     expect(audit?.action).toBe('salon_segment_override.saved')
     expect(audit?.payload).toMatchObject({ previous_capacity: 90, has_reason: false })
@@ -1072,10 +1142,129 @@ describe('config: guardar la grilla y los cupos especiales', () => {
     const del = calls.find((c) => c.op === 'delete')
     expect(del?.filters).toEqual([
       ['eq', 'tenant_id', TENANT],
+      ['eq', 'branch_id', MAIN],
       ['eq', 'override_date', '2026-10-12'],
       ['eq', 'segment', 'dinner'],
     ])
     expect(vi.mocked(logAudit).mock.calls[0]?.[0].action).toBe('salon_segment_override.removed')
+  })
+
+  it('mirando «Todas» hay que elegir la sucursal del cupo: no se guarda nada', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase(() => ({ data: null, error: null }))
+    const res = await upsertSegmentOverride('hub', {
+      override_date: '2026-10-12',
+      segment: 'lunch',
+      capacity: 120,
+    })
+    expect(res).toEqual({ ok: false, message: 'Elegí en qué sucursal.', field: 'branch_id' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('la sucursal pedida manda, y una que no es de la persona no se cuela', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase(() => ({ data: null, error: null }))
+    const ok = await saveSegmentConfig('hub', {
+      branch_id: CERRO,
+      weekly: [{ segment: 'dinner', iso_dow: 5, capacity: 40, warn_at: null }],
+      settings: [],
+    })
+    expect(ok.ok).toBe(true)
+    expect(calls.find((c) => c.op === 'upsert')?.payload).toEqual([
+      expect.objectContaining({ branch_id: CERRO, segment: 'dinner', capacity: 40 }),
+    ])
+
+    const forbidden = await saveSegmentConfig('hub', {
+      branch_id: 'dddddddd-0000-4000-8000-000000000009',
+      weekly: [],
+      settings: [],
+    })
+    expect(forbidden).toEqual({
+      ok: false,
+      message: 'Esa sucursal no es tuya. Elegí otra.',
+      field: 'branch_id',
+    })
+  })
+
+  it('la regla vieja «una fila por bar» se explica en vez de un error genérico', async () => {
+    fakeSupabase((call) =>
+      call.op === 'upsert'
+        ? {
+            data: null,
+            error: {
+              code: '23505',
+              message: 'duplicate key value violates unique constraint "ssco_one_per_day"',
+            },
+          }
+        : { data: null, error: null },
+    )
+    const res = await upsertSegmentOverride('hub', {
+      override_date: '2026-10-12',
+      segment: 'lunch',
+      capacity: 120,
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.message).toMatch(/Todavía no se puede guardar un cupo propio/)
+  })
+})
+
+describe('el cupo de cada sucursal (nunca se suma)', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    vi.mocked(createClient).mockReset()
+    asRole('host')
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => errorSpy.mockRestore())
+
+  it('una sucursal sin plantas usa sus sillas y ni lee las plantas del bar', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], branchRef(CERRO)))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDaySegments('hub', '2026-09-10', CERRO)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.caps.dinner).toMatchObject({ capacity: 40, source: 'fallback' })
+    expect(calls.some((c) => c.table === 'tenants')).toBe(false)
+    const reservations = calls.find((c) => c.table === 'salon_reservations')
+    expect(reservations?.filters).toContainEqual(['eq', 'branch_id', CERRO])
+    const weekly = calls.find((c) => c.table === 'salon_segment_capacities')
+    expect(weekly?.filters).toContainEqual(['eq', 'branch_id', CERRO])
+  })
+
+  it('una sucursal que no es de la persona no se pide', async () => {
+    asScope(scopeOf([branchRef(MAIN)], branchRef(MAIN)))
+    const calls = fakeSupabase(() => OK_EMPTY)
+    const res = await fetchDaySegments('hub', '2026-09-10', CERRO)
+    expect(res).toEqual({
+      ok: false,
+      message: 'Esa sucursal no es tuya. Elegí otra.',
+      field: 'branch_id',
+    })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('mirando «Todas» el día se cuenta sin cupo, con las plantas de la principal', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDayOverview('hub', '2026-09-10', { ids: null })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.caps.dinner).toMatchObject({ capacity: null, source: 'none' })
+    expect(res.data.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
+    // Ni la grilla ni los especiales: no hay cupo que resolver.
+    expect(calls.some((c) => c.table === 'salon_segment_capacities')).toBe(false)
+    expect(calls.some((c) => c.table === 'salon_segment_capacity_overrides')).toBe(false)
+  })
+
+  it('lo que pide el navegador se recorta a las sucursales de la persona', async () => {
+    const OTHER = 'dddddddd-0000-4000-8000-000000000009'
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) => (call.table === 'tenants' ? TENANT_SETTINGS : OK_EMPTY))
+    const res = await fetchDayOverview('hub', '2026-09-10', { ids: [OTHER] })
+    expect(res.ok).toBe(true)
+    const reservations = calls.find((c) => c.table === 'salon_reservations')
+    expect(reservations?.filters).toContainEqual(['in', 'branch_id', []])
   })
 })
 
@@ -1122,5 +1311,88 @@ describe('createSalonReservation: hub_event legacy', () => {
     await createSalonReservation('hub', input('tea_time'))
     const insert = calls.find((c) => c.table === 'salon_reservations' && c.op === 'insert')
     expect(insert?.payload).toMatchObject({ meal_type: 'tea_time' })
+  })
+
+  it('sin sucursal en el pedido, va a la que se mira (siempre con sucursal)', async () => {
+    const calls = fakeSupabase((call) =>
+      call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY,
+    )
+    await createSalonReservation('hub', input('dinner'))
+    const insert = calls.find((c) => c.table === 'salon_reservations' && c.op === 'insert')
+    expect(insert?.payload).toMatchObject({ branch_id: MAIN, zone: 'planta_alta' })
+  })
+
+  it('en una sucursal sin plantas la reserva se guarda sin planta', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) =>
+      call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY,
+    )
+    const res = await createSalonReservation('hub', { ...input('dinner'), branch_id: CERRO })
+    expect(res.ok).toBe(true)
+    const insert = calls.find((c) => c.table === 'salon_reservations' && c.op === 'insert')
+    expect(insert?.payload).toMatchObject({ branch_id: CERRO, zone: null })
+  })
+
+  it('mirando «Todas» sin sucursal ni evento pide elegirla y no guarda', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const calls = fakeSupabase((call) =>
+      call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY,
+    )
+    const res = await createSalonReservation('hub', input('dinner'))
+    expect(res).toEqual({ ok: false, message: 'Elegí en qué sucursal.', field: 'branch_id' })
+    expect(calls.some((c) => c.op === 'insert')).toBe(false)
+  })
+
+  it('con plantas, sin planta y sin evento pide elegir la planta', async () => {
+    const calls = fakeSupabase((call) =>
+      call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY,
+    )
+    const res = await createSalonReservation('hub', { ...input('dinner'), zone: null })
+    expect(res).toEqual({ ok: false, message: 'Elegí en qué planta se sientan.', field: 'zone' })
+    expect(calls.some((c) => c.op === 'insert')).toBe(false)
+  })
+
+  it('un evento de otra sucursal se rechaza con un error del campo evento', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const EVENT = 'eeeeeeee-0000-4000-8000-000000000003'
+    const calls = fakeSupabase((call) => {
+      if (call.table === 'scheduled_events') {
+        return {
+          data: { event_date: '2026-09-25', tenant_id: TENANT, branch_id: MAIN },
+          error: null,
+        }
+      }
+      return call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY
+    })
+    const res = await createSalonReservation('hub', {
+      ...input('dinner'),
+      branch_id: CERRO,
+      zone: null,
+      scheduled_event_id: EVENT,
+    })
+    expect(res).toMatchObject({ ok: false, field: 'scheduled_event_id' })
+    expect(calls.some((c) => c.op === 'insert')).toBe(false)
+  })
+
+  it('sin sucursal pero con evento, la reserva es de la sucursal del evento', async () => {
+    asScope(scopeOf([branchRef(MAIN), branchRef(CERRO)], null))
+    const EVENT = 'eeeeeeee-0000-4000-8000-000000000003'
+    const calls = fakeSupabase((call) => {
+      if (call.table === 'scheduled_events') {
+        return {
+          data: { event_date: '2026-09-25', tenant_id: TENANT, branch_id: CERRO },
+          error: null,
+        }
+      }
+      return call.op === 'insert' ? { data: { id: 'new-id' }, error: null } : OK_EMPTY
+    })
+    const res = await createSalonReservation('hub', {
+      ...input('dinner'),
+      zone: 'event_floating',
+      scheduled_event_id: EVENT,
+    })
+    expect(res.ok).toBe(true)
+    const insert = calls.find((c) => c.table === 'salon_reservations' && c.op === 'insert')
+    expect(insert?.payload).toMatchObject({ branch_id: CERRO, zone: null })
   })
 })

@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   RoleRequiredError,
   requireRole,
@@ -42,7 +44,9 @@ export default async function FuncionesPage({
     throw error
   }
 
-  const result: CapacityResult = await listCapacityFunctions(access.tenant.id).then(
+  // Las funciones de la sucursal que se mira: el cupo es de cada sala y nunca se suma entre dos.
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
+  const result: CapacityResult = await listCapacityFunctions(access.tenant.id, branch).then(
     (functions): CapacityResult => ({ ok: true, functions }),
     (): CapacityResult => ({ ok: false }),
   )

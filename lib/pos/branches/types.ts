@@ -41,6 +41,8 @@ export type BranchFacts = {
   openTables: number
   /** ¿Alguna vez tuvo una mesa abierta? Con historia no se borra: se desactiva. */
   hasHistory: boolean
+  /** ¿Tiene reservas o fechas en el calendario? Con agenda tampoco se borra: se desactiva. */
+  hasAgenda?: boolean
   /** Productos de la carta que no se venden acá. */
   unavailable: number
   /** Productos con precio propio en esta sucursal. */

@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
  * Tres formas: link (la cartelera lleva a la película con la fecha elegida),
  * botón (la película cambia la fecha de la entrada) o quieto (agotada: ni se
  * puede tocar, lleva el sello).
+ *
+ * `branchLabel`: con funciones en más de una sucursal, arriba dice dónde es.
  */
 export function FunctionStub({
   fn,
@@ -18,6 +20,7 @@ export function FunctionStub({
   selected = false,
   showTime = false,
   compact = false,
+  branchLabel = null,
   className,
 }: {
   fn: PublicFunction
@@ -27,14 +30,21 @@ export function FunctionStub({
   showTime?: boolean
   /** La versión chica de la entrada (que entren 5 en una fila). */
   compact?: boolean
+  /** La sucursal de la función, si hay que decirla. */
+  branchLabel?: string | null
   className?: string
 }) {
   const soldOut = fn.state === 'sold_out'
   const label = availabilityLabel(fn)
-  const a11y = `${formatLongDate(fn.date)}, ${fn.time}${label ? `, ${label}` : ''}`
+  const a11y = `${formatLongDate(fn.date)}, ${fn.time}${branchLabel ? `, en ${branchLabel}` : ''}${label ? `, ${label}` : ''}`
 
   const body = (
     <>
+      {branchLabel ? (
+        <span className="ent-stub-branch ent-mono max-w-full truncate text-[0.52rem] font-bold">
+          {branchLabel}
+        </span>
+      ) : null}
       <span className="ent-mono text-[0.6rem] font-semibold opacity-75">
         {weekdayShort(fn.date)}
       </span>

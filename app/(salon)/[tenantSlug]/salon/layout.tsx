@@ -1,8 +1,13 @@
 import type { Metadata, Viewport } from 'next'
 import { notFound, redirect } from 'next/navigation'
+import { BranchGate } from '@/components/branches/branch-gate'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import { AppShellSalon } from '@/components/shell/salon/app-shell-salon'
+import { signOutAction } from '@/components/shell/sign-out-action'
+import { getBranchPulses } from '@/lib/branches/pulse'
+import { getBranchScope } from '@/lib/branches/scope'
+import { toClientScope } from '@/lib/branches/types'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import { getActiveBranch } from '@/lib/pos/queries'
 import { requireTenantAccess, TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
@@ -70,11 +75,43 @@ export default async function SalonLayout({
   // salón: el marco necesita las sucursales del bar (cada dispositivo guarda en cuál imprime). Una
   // lectura, y solo en los bares que lo usan (el marco no se vuelve a armar al cambiar de pantalla).
   const printBranches = getEffectiveFeatures(access.tenant).pos
-    ? (await getActiveBranch(access.tenant.id)).branches.map((branch) => branch.id)
+    ? (
+        await getActiveBranch(
+          access.tenant.id,
+          null,
+          access.branches.map((branch) => branch.id),
+        )
+      ).branches.map((branch) => branch.id)
     : []
+
+  // El salón es un lugar: con más de una sucursal y sin haber elegido en este equipo, primero «¿Dónde trabajás
+  // hoy?» (una vez; después se cambia desde arriba). Un link con ?sucursal= (la tele) no pregunta.
+  const branchScope = await getBranchScope(tenantSlug, 'device')
+  if (branchScope.needsChoice) {
+    const pulses = await getBranchPulses(
+      access.tenant.id,
+      branchScope.branches.map((branch) => branch.id),
+    )
+    return (
+      <>
+        {claimsStale ? <ClaimsRefresher /> : null}
+        <BranchGate
+          slug={tenantSlug}
+          tenantName={access.tenant.name}
+          branches={branchScope.branches}
+          canAll={false}
+          pulses={pulses}
+          email={access.user.email ?? ''}
+          signOut={signOutAction}
+          surface="device"
+        />
+      </>
+    )
+  }
 
   return (
     <AppShellSalon
+      branchScope={toClientScope(branchScope)}
       tenant={access.tenant}
       role={access.role}
       isPlatformAdmin={access.isPlatformAdmin}

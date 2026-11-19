@@ -8,19 +8,23 @@ import { cn } from '@/lib/utils'
 
 /**
  * «Por fecha»: para el que sabe CUÁNDO puede ir antes que QUÉ quiere ver.
- * Cada fila es una función; las agotadas quedan apagadas y no se tocan.
+ * Cada fila es una función; las agotadas quedan apagadas y no se tocan. Con
+ * funciones en más de una sucursal, cada fila dice dónde.
  */
 export function AgendaList({
   months,
   tenantSlug,
   today,
   onlyAvailable = false,
+  branchLabel,
 }: {
   months: AgendaMonth[]
   tenantSlug: string
   today: string
   /** Filtrada por «Disponibles»: la película tampoco muestra las agotadas. */
   onlyAvailable?: boolean
+  /** El nombre de la sucursal de cada función, si hay que decirlo. */
+  branchLabel?: (slug: string | null) => string | null
 }) {
   if (months.length === 0) {
     return (
@@ -42,6 +46,7 @@ export function AgendaList({
               const soldOut = fn.state === 'sold_out'
               const label = availabilityLabel(fn)
               const rel = relativeDay(fn.date, today)
+              const where = branchLabel?.(fn.branch) ?? null
               const content = (
                 <>
                   <div className="ent-paper ent-notched flex w-[4.25rem] shrink-0 flex-col items-center rounded-xl py-2 [--notch:5px]">
@@ -76,6 +81,9 @@ export function AgendaList({
                         <span className="font-semibold text-(--ent-gold)">{rel} · </span>
                       ) : null}
                       {fn.time} hs
+                      {where ? (
+                        <span className="font-semibold text-(--ent-cream-2)"> · {where}</span>
+                      ) : null}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2 text-xs font-semibold">
@@ -110,7 +118,11 @@ export function AgendaList({
                     <div className={rowClass}>{content}</div>
                   ) : (
                     <Link
-                      href={filmHref(tenantSlug, experience.slug, { date: fn.date, onlyAvailable })}
+                      href={filmHref(tenantSlug, experience.slug, {
+                        date: fn.date,
+                        onlyAvailable,
+                        branch: where ? fn.branch : null,
+                      })}
                       className={rowClass}
                     >
                       {content}

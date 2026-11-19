@@ -1,7 +1,18 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import {
+  type BranchFilter,
+  BranchForbiddenError,
+  branchErrorMessage,
+  branchFilterOf,
+  branchForWrite,
+  clampBranchFilter,
+} from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
+import type { BranchRef } from '@/lib/branches/types'
 import { createClient } from '@/lib/supabase/server'
 import {
   RESERVATION_STAFF_ROLES,
@@ -14,6 +25,12 @@ import {
 } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import {
+  branchHasFloors,
+  type SegmentBranchScope,
+  segmentScopeFromFilter,
+  singleBranchSegmentScope,
+} from './branch-scope'
+import {
   type DayOverview,
   getDayOverview,
   getDaySegmentsSnapshot,
@@ -21,6 +38,7 @@ import {
 } from './segment-queries'
 import { isMissingTableError, type ReservationSearchResult, toOverrideRows } from './segment-rows'
 import {
+  branchSeatCapacitySchema,
   dayRequestSchema,
   reservationSearchSchema,
   type SegmentActionResult,
@@ -75,6 +93,64 @@ const OVERRIDE_REMOVE_FAILED = 'No se pudo quitar el cupo especial. Probá de nu
 const NOT_MIGRATED =
   'Los cupos por servicio todavía no están activados en este bar. Avisale al equipo técnico.'
 const CHECK_FAILED = 'Revisá los números: el aviso tiene que ser menor o igual al cupo.'
+const SEATS_FAILED = 'No se pudo guardar el cupo de la sucursal. Probá de nuevo.'
+/**
+ * Hasta la tanda 6 de las sucursales las tablas de cupo conservan su regla vieja «una fila por bar»: una segunda
+ * sucursal todavía no puede guardar un cupo propio para el mismo servicio y día (o fecha) que ya tiene la principal.
+ */
+const ONE_PER_BAR_YET =
+  'Todavía no se puede guardar un cupo propio para esta sucursal en ese día: por ahora vale el cupo general de la sucursal.'
+
+/** El filtro que manda el navegador: `null` = todo el bar; si no, ids de sucursal. */
+const branchFilterSchema = z
+  .object({ ids: z.array(z.uuid()).max(50).nullable() })
+  .nullable()
+  .optional()
+
+/**
+ * Lo que mira la pantalla que pide, recortado a las sucursales de la persona (La regla para cada pantalla, punto 2).
+ * `null` = el pedido no tiene forma de filtro.
+ */
+async function readSegmentScope(
+  slug: string,
+  requested: unknown,
+): Promise<{ scope: SegmentBranchScope; filter: BranchFilter } | null> {
+  const parsed = branchFilterSchema.safeParse(requested)
+  if (!parsed.success) return null
+  const branchScope = await getBranchScope(slug)
+  const filter = clampBranchFilter(parsed.data ?? null, branchScope)
+  return { scope: segmentScopeFromFilter(filter, branchScope.branches), filter }
+}
+
+/**
+ * La sucursal en la que se guarda un cupo: la pedida (si la persona la ve) o la que se mira. Nunca «Todas»: el cupo
+ * es de un lugar.
+ */
+async function capacityBranchForWrite(
+  slug: string,
+  requested: string | undefined,
+): Promise<{ ok: true; branch: BranchRef } | { ok: false; state: Failure }> {
+  const scope = await getBranchScope(slug)
+  try {
+    const id = branchForWrite(scope, requested)
+    const branch = scope.branches.find((b) => b.id === id)
+    if (!branch) throw new BranchForbiddenError()
+    return { ok: true, branch }
+  } catch (error) {
+    const message = branchErrorMessage(error)
+    if (message) return { ok: false, state: fail(message, 'branch_id') }
+    throw error
+  }
+}
+
+/** 23505 contra la regla vieja (por bar) y no contra la nueva (por sucursal): ver `ONE_PER_BAR_YET`. */
+function isOldOnePerBarConflict(error: PgError): boolean {
+  if (error.code !== '23505') return false
+  const text = error.message ?? ''
+  return (
+    /ssc_one_per_day|sss_one_per_segment|ssco_one_per_day/.test(text) && !/_branch\b/.test(text)
+  )
+}
 
 function fail(message: string, field?: string): Failure {
   return field ? { ok: false, message, field } : { ok: false, message }
@@ -124,6 +200,7 @@ async function authorize(
 function writeFailure(op: string, tenantId: string, error: PgError, fallback: string): Failure {
   console.error(`[salon.segments.${op}]`, { tenantId, code: error.code })
   if (error.code === '42501') return fail(FORBIDDEN)
+  if (isOldOnePerBarConflict(error)) return fail(ONE_PER_BAR_YET)
   if (isMissingTableError(error)) return fail(NOT_MIGRATED)
   if (error.code === '23514') return fail(CHECK_FAILED)
   return fail(fallback)
@@ -152,6 +229,8 @@ function revalidateSegmentViews(slug: string): void {
 export async function fetchDayOverview(
   slug: string,
   date: string,
+  /** El filtro con el que se dibujó el calendario (`useBranchScope().filter`). */
+  branch?: BranchFilter | null,
 ): Promise<SegmentActionResult<DayOverview>> {
   const parsed = dayRequestSchema.safeParse({ date })
   if (!parsed.success) return fail(INVALID_DATE, 'date')
@@ -160,7 +239,13 @@ export async function fetchDayOverview(
   if (!auth.ok) return auth.state
 
   try {
-    const data = await getDayOverview({ tenantId: auth.access.tenantId, date: parsed.data.date })
+    const scoped = await readSegmentScope(slug, branch)
+    if (!scoped) return fail(DAY_FAILED)
+    const data = await getDayOverview({
+      tenantId: auth.access.tenantId,
+      date: parsed.data.date,
+      scope: scoped.scope,
+    })
     return { ok: true, data }
   } catch (error) {
     console.error('[salon.segments.dayOverview]', {
@@ -179,17 +264,34 @@ export async function fetchDayOverview(
 export async function fetchDaySegments(
   slug: string,
   date: string,
+  /**
+   * La sucursal de la reserva que se está cargando: su cupo, sus reservas y sus eventos. Sin ella, lo que se mira
+   * (en «Todas», sin cupo).
+   */
+  branchId?: string | null,
 ): Promise<SegmentActionResult<DaySegmentsSnapshot>> {
   const parsed = dayRequestSchema.safeParse({ date })
   if (!parsed.success) return fail(INVALID_DATE, 'date')
+  const branchParsed = z.uuid().nullish().safeParse(branchId)
+  if (!branchParsed.success) return fail(DAY_FAILED)
 
   const auth = await authorize(slug, SALON_READ_ROLES, 'daySegments', DAY_FAILED)
   if (!auth.ok) return auth.state
 
   try {
+    const branchScope = await getBranchScope(slug)
+    let scope: SegmentBranchScope
+    if (branchParsed.data) {
+      const branch = branchScope.branches.find((b) => b.id === branchParsed.data)
+      if (!branch) return fail('Esa sucursal no es tuya. Elegí otra.', 'branch_id')
+      scope = singleBranchSegmentScope(branch)
+    } else {
+      scope = segmentScopeFromFilter(branchFilterOf(branchScope), branchScope.branches)
+    }
     const data = await getDaySegmentsSnapshot({
       tenantId: auth.access.tenantId,
       date: parsed.data.date,
+      scope,
     })
     return { ok: true, data }
   } catch (error) {
@@ -205,6 +307,8 @@ export async function fetchDaySegments(
 export async function searchReservations(
   slug: string,
   q: string,
+  /** El filtro con el que se dibujó el calendario. */
+  branch?: BranchFilter | null,
 ): Promise<SegmentActionResult<ReservationSearchResult[]>> {
   const parsed = reservationSearchSchema.safeParse({ q })
   if (!parsed.success) {
@@ -215,10 +319,13 @@ export async function searchReservations(
   if (!auth.ok) return auth.state
 
   try {
+    const scoped = await readSegmentScope(slug, branch)
+    if (!scoped) return fail(SEARCH_FAILED)
     const data = await searchReservationsByGuest({
       tenantId: auth.access.tenantId,
       q: parsed.data.q,
       limit: 20,
+      branch: scoped.filter,
     })
     return { ok: true, data }
   } catch (error) {
@@ -263,6 +370,9 @@ export async function saveSegmentConfig(
     return fail(issue?.message ?? 'Revisá los cupos.', issue?.path.join('.'))
   }
   const { weekly, settings } = parsed.data
+  const target = await capacityBranchForWrite(slug, parsed.data.branch_id)
+  if (!target.ok) return target.state
+  const branchId = target.branch.id
 
   const upserts = weekly.flatMap((cell) =>
     cell.capacity === null
@@ -270,6 +380,7 @@ export async function saveSegmentConfig(
       : [
           {
             tenant_id: tenantId,
+            branch_id: branchId,
             segment: cell.segment,
             iso_dow: cell.iso_dow,
             capacity: cell.capacity,
@@ -294,7 +405,7 @@ export async function saveSegmentConfig(
       write: { table: 'salon_segment_capacities', op: 'upsert' },
       run: supabase
         .from('salon_segment_capacities')
-        .upsert(upserts, { onConflict: 'tenant_id,segment,iso_dow' }),
+        .upsert(upserts, { onConflict: 'tenant_id,branch_id,segment,iso_dow' }),
     })
   }
   for (const [segment, dows] of clearedBySegment) {
@@ -304,6 +415,7 @@ export async function saveSegmentConfig(
         .from('salon_segment_capacities')
         .delete()
         .eq('tenant_id', tenantId)
+        .eq('branch_id', branchId)
         .eq('segment', segment)
         .in('iso_dow', dows),
     })
@@ -314,11 +426,12 @@ export async function saveSegmentConfig(
       run: supabase.from('salon_segment_settings').upsert(
         settings.map((s) => ({
           tenant_id: tenantId,
+          branch_id: branchId,
           segment: s.segment,
           default_time: s.default_time,
           warn_note: s.warn_note,
         })),
-        { onConflict: 'tenant_id,segment' },
+        { onConflict: 'tenant_id,branch_id,segment' },
       ),
     })
   }
@@ -329,6 +442,7 @@ export async function saveSegmentConfig(
   // Solo números y horas. La nota del aviso es texto libre: se registra si
   // hay, no qué dice.
   const auditPayload = {
+    branch_id: branchId,
     weekly: weekly.map((c) => ({
       segment: c.segment,
       iso_dow: c.iso_dow,
@@ -394,6 +508,7 @@ export async function saveSegmentConfig(
 async function readOverride(
   supabase: SBAny,
   tenantId: string,
+  branchId: string,
   date: string,
   segment: SegmentKey,
 ): Promise<{ row: SegmentOverrideRow | null; error: PgError | null }> {
@@ -401,6 +516,7 @@ async function readOverride(
     .from('salon_segment_capacity_overrides')
     .select('segment, override_date, capacity, warn_at, reason')
     .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
     .eq('override_date', date)
     .eq('segment', segment)
     .maybeSingle()
@@ -427,14 +543,18 @@ export async function upsertSegmentOverride(
     return fail(issue?.message ?? 'Revisá el cupo especial.', issue?.path.join('.'))
   }
   const o = parsed.data
+  const target = await capacityBranchForWrite(slug, o.branch_id)
+  if (!target.ok) return target.state
+  const branchId = target.branch.id
 
   const supabase = (await createClient()) as SBAny
-  const previous = await readOverride(supabase, tenantId, o.override_date, o.segment)
+  const previous = await readOverride(supabase, tenantId, branchId, o.override_date, o.segment)
   if (previous.error) return writeFailure('saveOverride', tenantId, previous.error, OVERRIDE_FAILED)
 
   const { error } = await supabase.from('salon_segment_capacity_overrides').upsert(
     {
       tenant_id: tenantId,
+      branch_id: branchId,
       segment: o.segment,
       override_date: o.override_date,
       capacity: o.capacity,
@@ -442,7 +562,7 @@ export async function upsertSegmentOverride(
       reason: o.reason,
       updated_by: userId,
     },
-    { onConflict: 'tenant_id,override_date,segment' },
+    { onConflict: 'tenant_id,branch_id,override_date,segment' },
   )
   if (error) return writeFailure('saveOverride', tenantId, error, OVERRIDE_FAILED)
 
@@ -453,6 +573,7 @@ export async function upsertSegmentOverride(
     entity: 'salon_segment_override',
     // El motivo es texto libre ("cumple de …"): se registra si hay, no qué dice.
     payload: {
+      branch_id: branchId,
       override_date: o.override_date,
       segment: o.segment,
       capacity: o.capacity,
@@ -481,9 +602,12 @@ export async function removeSegmentOverride(
     return fail(issue?.message ?? 'Revisá la fecha y el servicio.', issue?.path.join('.'))
   }
   const { override_date, segment } = parsed.data
+  const target = await capacityBranchForWrite(slug, parsed.data.branch_id)
+  if (!target.ok) return target.state
+  const branchId = target.branch.id
 
   const supabase = (await createClient()) as SBAny
-  const previous = await readOverride(supabase, tenantId, override_date, segment)
+  const previous = await readOverride(supabase, tenantId, branchId, override_date, segment)
   if (previous.error) {
     return writeFailure('removeOverride', tenantId, previous.error, OVERRIDE_REMOVE_FAILED)
   }
@@ -495,6 +619,7 @@ export async function removeSegmentOverride(
     .from('salon_segment_capacity_overrides')
     .delete()
     .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
     .eq('override_date', override_date)
     .eq('segment', segment)
   if (error) return writeFailure('removeOverride', tenantId, error, OVERRIDE_REMOVE_FAILED)
@@ -505,6 +630,7 @@ export async function removeSegmentOverride(
     action: 'salon_segment_override.removed',
     entity: 'salon_segment_override',
     payload: {
+      branch_id: branchId,
       override_date,
       segment,
       previous_capacity: previous.row.capacity,
@@ -514,4 +640,66 @@ export async function removeSegmentOverride(
 
   revalidateSegmentViews(slug)
   return { ok: true, data: { previous: previous.row }, message: 'Cupo especial quitado.' }
+}
+
+// ──────────────────────────────────────────────────────────
+// Cupo general de una sucursal sin plantas
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Las sillas de una sucursal sin plantas (el Cerro): su cupo general, el de cada servicio que no tiene un cupo propio
+ * en la grilla. La principal no se edita acá: su cupo general sale de sus plantas («Cupo general por planta»).
+ *
+ * Solo un dueño, con su sesión: la RLS de `branches` deja actualizar a los dueños del bar.
+ */
+export async function setBranchSeatCapacity(
+  slug: string,
+  input: unknown,
+): Promise<SegmentActionResult<{ seatCapacity: number | null }>> {
+  const auth = await authorize(slug, OWNER_ONLY, 'saveSeats', SEATS_FAILED)
+  if (!auth.ok) return auth.state
+  const { tenantId, userId } = auth.access
+
+  const parsed = branchSeatCapacitySchema.safeParse(input)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return fail(issue?.message ?? 'Revisá el cupo.', issue?.path.join('.'))
+  }
+  const target = await capacityBranchForWrite(slug, parsed.data.branch_id)
+  if (!target.ok) return target.state
+  if (branchHasFloors(target.branch)) {
+    return fail(
+      'El cupo general de esta sucursal sale de sus plantas: cambialo en «Cupo general por planta».',
+    )
+  }
+
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('branches')
+    .update({ seat_capacity: parsed.data.seat_capacity })
+    .eq('tenant_id', tenantId)
+    .eq('id', target.branch.id)
+    .select('id')
+  if (error) return writeFailure('saveSeats', tenantId, error, SEATS_FAILED)
+  // Sin fila devuelta: la RLS no dejó (no es dueño de verdad, p. ej. con «Ver como»).
+  if (!Array.isArray(data) || data.length === 0) return fail(FORBIDDEN)
+
+  await logAudit({
+    tenantId,
+    userId,
+    action: 'branch.seat_capacity.updated',
+    entity: 'branch',
+    entityId: target.branch.id,
+    payload: {
+      seat_capacity: parsed.data.seat_capacity,
+      previous_seat_capacity: target.branch.seatCapacity,
+    },
+  })
+
+  revalidateSegmentViews(slug)
+  return {
+    ok: true,
+    data: { seatCapacity: parsed.data.seat_capacity },
+    message: 'Cupo de la sucursal guardado.',
+  }
 }

@@ -19,6 +19,19 @@ export const WORKSPACE_HEADER = 'x-hub-workspace'
  */
 export const PATH_HEADER = 'x-hub-path'
 
+/**
+ * El `?sucursal=` del link, tal como lo vio el proxy. Lo lee `getBranchScope` para que el layout (que no recibe
+ * los parámetros de la URL), la página y las acciones resuelvan la misma sucursal. El proxy lo pisa siempre.
+ */
+export const BRANCH_PARAM_HEADER = 'x-hub-sucursal'
+
+/** Un slug de sucursal o `todas`; cualquier otra cosa no viaja. */
+export function sanitizeBranchParam(value: string | null | undefined): string {
+  if (typeof value !== 'string') return ''
+  const slug = value.trim().toLowerCase()
+  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) && slug.length <= 40 ? slug : ''
+}
+
 export type Workspace = 'salon' | 'manager'
 
 export function parseWorkspace(headerValue: string | null | undefined): Workspace {

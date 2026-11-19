@@ -3,7 +3,6 @@
 import { SegmentChip } from '@/components/reservations/segment-meter'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
-import type { DayCapacityBucket } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -19,18 +18,21 @@ import { cn } from '@/lib/utils'
  * Planta Baja: sumaban el almuerzo y la cena contra el tope físico del día y
  * decían "171/130" una noche sin sobrecupo. El servicio del reloj va primero y
  * destacado; después, los chips por evento (su propio cupo).
+ *
+ * La gente de cada evento sale de la misma cuenta por servicio (`eventUsedById`),
+ * sobre las reservas de la sucursal de este dispositivo.
  */
 export function CapacityHeader({
   segments,
   focus,
-  capacity,
+  usedByEvent,
   events,
 }: {
   segments: DaySegments
   /** El servicio del reloj (la cena si no es hoy). */
   focus: SegmentKey
-  /** Solo para los chips por evento (bucket event:*). */
-  capacity: DayCapacityBucket[]
+  /** La gente de cada evento (id → personas). */
+  usedByEvent: ReadonlyMap<string, number>
   events: ScheduledEventWithTemplate[]
 }) {
   // Solo los servicios con algo: el del reloj adelante, el resto en orden A/M/C.
@@ -38,14 +40,13 @@ export function CapacityHeader({
     .map((k) => segments.segments[k])
     .filter((s) => s.hasActivity)
 
-  const eventItems = events
-    .map((e) => ({
-      key: e.id,
-      label: e.name_override ?? e.template?.name ?? 'Evento',
-      bucket: capacity.find((b) => b.bucket === `event:${e.id}`),
-      color: e.template?.color_hex ?? undefined,
-    }))
-    .filter((i): i is typeof i & { bucket: DayCapacityBucket } => i.bucket !== undefined)
+  const eventItems = events.map((e) => ({
+    key: e.id,
+    label: e.name_override ?? e.template?.name ?? 'Evento',
+    used: usedByEvent.get(e.id) ?? 0,
+    capacity: e.capacity,
+    color: e.template?.color_hex ?? undefined,
+  }))
 
   if (services.length === 0 && eventItems.length === 0) return null
 
@@ -66,7 +67,7 @@ export function CapacityHeader({
         </li>
       ))}
       {eventItems.map((item) => {
-        const b = item.bucket
+        const b = item
         const over = b.used > b.capacity
         const full = !over && b.capacity > 0 && b.used >= b.capacity * 0.9
         return (

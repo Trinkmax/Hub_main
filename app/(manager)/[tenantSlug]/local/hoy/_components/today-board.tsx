@@ -9,6 +9,7 @@ import { MoneyHero } from '@/components/administracion/kit/hero'
 import { Panel } from '@/components/administracion/kit/panel'
 import { PillLink } from '@/components/administracion/kit/pill'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
+import { Storefront } from '@/components/branches/storefront'
 import { METHOD_ICON } from '@/components/pos/cash/method'
 import { formatCentsShort } from '@/lib/money'
 import { METHOD_LABEL } from '@/lib/pos/cash/types'
@@ -30,7 +31,6 @@ import type {
 import { unsoldOfBranch } from '@/lib/pos/unsold/report'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
-import { Storefront } from '../../sucursales/_components/storefront'
 import { UnsoldPanel } from './unsold-panel'
 
 /** Cada cuánto se vuelve a leer mientras la pantalla está a la vista. */

@@ -13,7 +13,8 @@
 import { type SalonZone, ZONE_LABELS } from './types'
 
 export type PlaceInput = {
-  zone: SalonZone
+  /** `null` en una sucursal sin plantas (el Cerro): se dice el evento, o «Salón». */
+  zone: SalonZone | null
   scheduled_event_id: string | null
 }
 
@@ -30,7 +31,9 @@ export function placeLabel(r: PlaceInput, eventName: string | null): string {
   const hasEvent = r.scheduled_event_id !== null
   const name = eventName?.trim() || 'Evento'
   if (r.zone === 'event_floating') return name
-  const zone = ZONE_LABELS[r.zone]
+  // Sin planta: con evento alcanza el evento; sin evento, el salón de la sucursal.
+  if (r.zone === null) return hasEvent ? name : 'Salón'
+  const zone = ZONE_LABELS[r.zone] ?? 'Salón'
   return hasEvent ? `${name} · ${zone}` : zone
 }
 

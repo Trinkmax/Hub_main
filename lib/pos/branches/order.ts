@@ -135,7 +135,7 @@ export function canBeDefault(branch: Pick<Branch, 'isDefault' | 'active'>): Verd
  */
 export function canDelete(
   branch: Pick<Branch, 'isDefault'>,
-  facts: Pick<BranchFacts, 'sectors' | 'tables' | 'looseTables' | 'hasHistory'>,
+  facts: Pick<BranchFacts, 'sectors' | 'tables' | 'looseTables' | 'hasHistory' | 'hasAgenda'>,
 ): Verdict {
   if (branch.isDefault) return { ok: false, why: 'La principal no se borra.' }
   const has: string[] = []
@@ -152,6 +152,12 @@ export function canDelete(
     return {
       ok: false,
       why: 'Ya tuvo mesas abiertas: no se borra, se desactiva y su historia queda guardada.',
+    }
+  }
+  if (facts.hasAgenda) {
+    return {
+      ok: false,
+      why: 'Tiene reservas o fechas cargadas: no se borra, se desactiva y su agenda queda guardada.',
     }
   }
   return YES

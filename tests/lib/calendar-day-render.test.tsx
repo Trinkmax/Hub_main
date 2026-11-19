@@ -77,6 +77,7 @@ function reservation(over: Partial<ReservationWithJoins>): ReservationWithJoins 
   return {
     id: 'r',
     tenant_id: 't',
+    branch_id: 'b',
     customer_id: null,
     guest_name: 'Nombre',
     guest_phone: null,
@@ -269,6 +270,8 @@ describe('CalendarTabs · un día pedido deja el Calendario a la vista', () => {
         defaultTab,
         role: 'owner',
         initialOverview: null,
+        capacityHidden: false,
+        hasFloors: true,
       }),
     )
   }

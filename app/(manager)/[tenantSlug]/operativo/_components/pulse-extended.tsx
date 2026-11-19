@@ -1,10 +1,12 @@
 'use client'
 
 import { Cake, Keyboard, MousePointerClick, PartyPopper } from 'lucide-react'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
 import { Kbd } from '@/components/ui/kbd'
+import { branchHasFloors } from '@/lib/salon/branch-scope'
 import type { DayHighlight } from '@/lib/salon/day-highlights'
-import { zoneBreakdown } from '@/lib/salon/event-floor'
+import { placeBreakdown } from '@/lib/salon/event-floor'
 import type { NightPulse } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
@@ -15,7 +17,7 @@ import {
   segmentStatusLine,
   segmentTone,
 } from '@/lib/salon/segments-copy'
-import { type DayCapacityBucket, describeCake, type ReservationWithJoins } from '@/lib/salon/types'
+import { describeCake, type ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -30,7 +32,7 @@ import { cn } from '@/lib/utils'
 export function PulseExtended({
   pulse,
   reservations,
-  capacity,
+  usedByEvent,
   segments,
   focus,
   events,
@@ -39,8 +41,11 @@ export function PulseExtended({
 }: {
   pulse: NightPulse
   reservations: ReservationWithJoins[]
-  /** Solo para las barras por evento (bucket event:*). */
-  capacity: DayCapacityBucket[]
+  /**
+   * La gente de cada evento (id → personas), de la misma cuenta por servicio que el resto del tablero
+   * (`eventUsedById`): sale de las reservas de la sucursal que se mira.
+   */
+  usedByEvent: ReadonlyMap<string, number>
   segments: DaySegments
   /** El servicio en juego (el del reloj hoy; la cena si se mira otro día). */
   focus: SegmentKey
@@ -58,7 +63,16 @@ export function PulseExtended({
   // de un evento con planta elegida cuenta en su planta; el tercer grupo es
   // solo la de evento sin planta (antes decía "En eventos" y se leía como el
   // total de los eventos, que ya no es).
-  const zoneLine = focusLoad.people > 0 ? zoneBreakdown(focusLoad.byZone) : null
+  // Sucursales: sin plantas dice «Salón», y en «Todas» se reparte por sucursal (`placeBreakdown`).
+  const branchContext = useBranchScope()
+  const lookingAtAll = Boolean(branchContext?.scope.multi && branchContext.scope.isAll)
+  const zoneLine =
+    focusLoad.people > 0
+      ? placeBreakdown(focusLoad, {
+          hasFloors: branchContext?.current ? branchHasFloors(branchContext.current) : true,
+          branches: lookingAtAll ? branchContext?.scope.branches : undefined,
+        })
+      : null
   const cakes = highlights.filter((h) => h.kind !== 'event' && h.cakeCount > 0)
   const birthdays = highlights.filter((h) => h.kind === 'birthday')
   const withTable = reservations.filter(
@@ -110,7 +124,10 @@ export function PulseExtended({
                   tone === 'over' && 'font-semibold',
                 )}
               >
-                {segmentStatusLine(s)}
+                {/* En «Todas» no hay un tope: cada sucursal tiene el suyo (dos lugares no comparten sillas). */}
+                {lookingAtAll && s.capacity === null
+                  ? 'El cupo es de cada sucursal'
+                  : segmentStatusLine(s)}
               </p>
             </div>
           )
@@ -121,8 +138,7 @@ export function PulseExtended({
           </p>
         ) : null}
         {events.map((e) => {
-          const bucket = capacity.find((b) => b.bucket === `event:${e.id}`)
-          const used = bucket?.used ?? 0
+          const used = usedByEvent.get(e.id) ?? 0
           const pct = e.capacity > 0 ? Math.min(100, (used / e.capacity) * 100) : 0
           const full = e.capacity > 0 && used >= e.capacity
           return (

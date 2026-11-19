@@ -1,8 +1,11 @@
 import { ArrowDownRight, ArrowUpRight, PartyPopper, Sparkles, UserCheck, Users } from 'lucide-react'
 import { redirect } from 'next/navigation'
+import { BranchShared } from '@/components/branches/branch-shared'
 import { PeopleChart } from '@/components/charts/people-chart'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
+import { branchFilterOf, rpcBranchId } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { formatCentsShort } from '@/lib/money/format'
 import { getSetupStatus } from '@/lib/onboarding/setup'
 import { isFeatureEnabled } from '@/lib/platform/features'
@@ -59,12 +62,14 @@ function deltaLabel(pct: number | null): {
 async function posSalesToday(
   tenant: Pick<Tenant, 'id' | 'timezone'>,
   usesPos: boolean,
+  /** La sucursal que se mira; `null` = todas. */
+  branchId: string | null,
 ): Promise<{ shown: boolean; sales: SalesDay | null }> {
   if (!usesPos) return { shown: false, sales: null }
   const timeZone = tenant.timezone || 'America/Argentina/Cordoba'
   // El día de servicio: hasta las 5 de la mañana sigue siendo la noche anterior.
   const day = serviceDayAt(new Date().toISOString(), timeZone) ?? todayInCordoba()
-  const rows = await getSalesDays(tenant.id, day, day, null)
+  const rows = await getSalesDays(tenant.id, day, day, branchId)
   if (rows === null) return { shown: false, sales: null }
   return { shown: true, sales: rows.find((row) => row.day === day) ?? null }
 }
@@ -96,17 +101,21 @@ export default async function TenantHomePage({
 
   const today = todayInCordoba()
   const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString()
+  // Lo de la noche (reservas, gente, eventos, ventas) es de la sucursal que se mira; los clientes y el club son
+  // de todo el bar (docs/features/sucursales.md).
+  const branchScope = await getBranchScope(tenantSlug)
+  const branch = branchFilterOf(branchScope)
 
   const [pulse, customers, club, upcoming, setup, todayOverview, pos] = await Promise.all([
-    getBarPulse({ tenantId: tenant.id, today, windowDays: WINDOW_DAYS }),
+    getBarPulse({ tenantId: tenant.id, today, windowDays: WINDOW_DAYS, branch }),
     getCustomerGrowth({ tenantId: tenant.id, since }),
     getKpis(tenant.id),
-    listUpcomingEvents({ tenantId: tenant.id, today, days: 7 }),
+    listUpcomingEvents({ tenantId: tenant.id, today, days: 7, branch }),
     showSetup
       ? getSetupStatus({ tenantId: tenant.id, today, settings: tenantSettings })
       : Promise.resolve(null),
-    getTodaySalonOverview({ tenantId: tenant.id, date: today }),
-    posSalesToday(tenant, isFeatureEnabled(tenant, 'pos')),
+    getTodaySalonOverview({ tenantId: tenant.id, date: today, branch }),
+    posSalesToday(tenant, isFeatureEnabled(tenant, 'pos'), rpcBranchId(branchScope)),
   ])
 
   const { current, previous } = pulse
@@ -188,9 +197,12 @@ export default async function TenantHomePage({
             numberValue={customers.total}
             numberFormatKind="integer"
             hint={
-              customers.added > 0
-                ? `+${numberFmt.format(customers.added)} nuevos`
-                : 'Sin altas en estos días'
+              <>
+                {customers.added > 0
+                  ? `+${numberFmt.format(customers.added)} nuevos`
+                  : 'Sin altas en estos días'}
+                <BranchShared />
+              </>
             }
           />
           <StatCard
@@ -200,14 +212,19 @@ export default async function TenantHomePage({
             numberValue={club.visits_30d}
             numberFormatKind="integer"
             hint={
-              club.visits_30d > 0 ? (
-                <>
-                  {club.visits_30d === 1 ? 'consumo' : 'consumos'} con puntos
-                  <span className="block">{formatCentsShort(club.revenue_30d_cents)} cargados</span>
-                </>
-              ) : (
-                'Nadie sumó puntos todavía'
-              )
+              <>
+                {club.visits_30d > 0 ? (
+                  <>
+                    {club.visits_30d === 1 ? 'consumo' : 'consumos'} con puntos
+                    <span className="block">
+                      {formatCentsShort(club.revenue_30d_cents)} cargados
+                    </span>
+                  </>
+                ) : (
+                  'Nadie sumó puntos todavía'
+                )}
+                <BranchShared />
+              </>
             }
           />
         </div>

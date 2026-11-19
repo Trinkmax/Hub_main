@@ -4,6 +4,7 @@ import { Download, Loader2, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +17,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import type { BranchFilter } from '@/lib/branches/filter'
+import { BRANCH_FILTER_PARAM, branchFilterToParam } from '@/lib/salon/branch-scope'
 import { calendarHref, editReservationHref } from '@/lib/salon/calendar-links'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { searchReservations } from '@/lib/salon/segment-actions'
@@ -47,8 +50,11 @@ function monthName(ym: string): string {
   )
 }
 
-/** Descarga del mes visible: la misma ruta GET que usaba la lista (deja registro en audit). */
-function exportHref(slug: string, ym: string): string {
+/**
+ * Descarga del mes visible: la misma ruta GET que usaba la lista (deja registro en audit). Con las sucursales que se
+ * están mirando: la planilla baja lo que se ve.
+ */
+function exportHref(slug: string, ym: string, branch: BranchFilter | undefined): string {
   const [y, m] = ym.split('-').map(Number)
   const last = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 31
   const params = new URLSearchParams({
@@ -56,6 +62,7 @@ function exportHref(slug: string, ym: string): string {
     from: `${ym}-01`,
     to: `${ym}-${String(last).padStart(2, '0')}`,
   })
+  if (branch) params.set(BRANCH_FILTER_PARAM, branchFilterToParam(branch))
   return `/api/reservas/export?${params.toString()}`
 }
 
@@ -98,6 +105,8 @@ export function CalendarSearch({
   const navigatingRef = useRef(false)
 
   const term = query.trim()
+  // Se busca en las sucursales que se miran (el filtro con el que se dibujó el calendario).
+  const branchFilter = useBranchScope()?.filter
 
   // Solo el último pedido escribe; además cada resultado lleva el texto que
   // lo pidió, así una respuesta atrasada de "lo" no se muestra con "lop".
@@ -106,7 +115,7 @@ export function CalendarSearch({
       const id = ++requestRef.current
       let next: SearchState
       try {
-        const res = await searchReservations(tenantSlug, q)
+        const res = await searchReservations(tenantSlug, q, branchFilter)
         next = res.ok
           ? { q, status: 'ready', items: res.data }
           : { q, status: 'error', message: res.message || SEARCH_ERROR }
@@ -117,7 +126,7 @@ export function CalendarSearch({
       }
       if (id === requestRef.current) setResult(next)
     },
-    [tenantSlug],
+    [tenantSlug, branchFilter],
   )
 
   // Debounce de 300 ms: no se pega una búsqueda por cada tecla.
@@ -279,7 +288,7 @@ export function CalendarSearch({
 
         <SheetFooter className="border-t">
           <Button asChild variant="outline" className="gap-2">
-            <a href={exportHref(tenantSlug, ym)} download>
+            <a href={exportHref(tenantSlug, ym, branchFilter)} download>
               <Download className="size-4" aria-hidden />
               Exportar {monthName(ym)}
             </a>

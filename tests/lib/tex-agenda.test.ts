@@ -236,6 +236,7 @@ function reservation(patch: Partial<ReservationWithJoins> = {}): ReservationWith
   return {
     id: RES,
     tenant_id: TENANT,
+    branch_id: 'b',
     customer_id: null,
     guest_name: 'Ana García',
     guest_phone: PHONE,
@@ -286,6 +287,7 @@ function event(patch: Partial<ScheduledEventWithTemplate> = {}): ScheduledEventW
   return {
     id: EVENT,
     tenant_id: TENANT,
+    branch_id: 'b',
     template_id: TEMPLATE,
     name_override: null,
     event_date: DAY,

@@ -3,8 +3,10 @@
 import { ChevronDown, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
 import { allSoldOut } from '@/lib/ticketing/availability'
+import { publicBranchLabel } from '@/lib/ticketing/branches'
 import {
   type AvailabilityFilter,
+  type BranchOption,
   buildAgenda,
   type CatalogFilters,
   catalogFilterOptions,
@@ -15,7 +17,7 @@ import {
   NO_FILTERS,
   sanitizeCatalogFilters,
 } from '@/lib/ticketing/catalog'
-import type { PublicExperience } from '@/lib/ticketing/types'
+import type { PublicBranch, PublicExperience } from '@/lib/ticketing/types'
 import { cn } from '@/lib/utils'
 import { Reveal } from '../../_components/reveal'
 import { AgendaList } from './agenda-list'
@@ -33,7 +35,7 @@ const AVAILABILITY_OPTIONS: FilterOption[] = [
   { value: 'sold_out', label: 'Agotadas' },
 ]
 
-const FILTER_PARAMS = ['mes', 'pelicula', 'ver']
+const FILTER_PARAMS = ['mes', 'pelicula', 'ver', 'sucursal']
 
 /**
  * La cartelera con dos lentes: por película (el afiche manda) o por fecha
@@ -43,9 +45,14 @@ const FILTER_PARAMS = ['mes', 'pelicula', 'ver']
  * disponibilidad. Con «Disponibles» desaparece todo lo agotado, y la página
  * de la película tampoco lo muestra. Los filtros viven en la URL (sin ensuciar
  * el Atrás): un link puede llegar ya filtrado, p. ej. ?ver=disponibles.
+ *
+ * Con funciones en más de una sucursal (18/11/2026), arriba se elige dónde
+ * (?sucursal=cerro) y cada fecha dice en cuál es. Filtra lo que ya está
+ * cargado: no vuelve a pedir nada.
  */
 export function CarteleraBoard({
   experiences,
+  branches = [],
   tenantSlug,
   today,
   whatsapp,
@@ -53,6 +60,8 @@ export function CarteleraBoard({
   initialFilters = NO_FILTERS,
 }: {
   experiences: PublicExperience[]
+  /** Las sucursales con funciones (ver `PublicCatalog.branches`). */
+  branches?: PublicBranch[]
   tenantSlug: string
   today: string
   whatsapp: string | null
@@ -60,7 +69,16 @@ export function CarteleraBoard({
   initialFilters?: CatalogFilters
 }) {
   const [view, setView] = useState<View>('films')
-  const options = useMemo(() => catalogFilterOptions(experiences), [experiences])
+  const options = useMemo(
+    () => catalogFilterOptions(experiences, branches),
+    [experiences, branches],
+  )
+  // Con una sola sucursal con funciones no se dice dónde es cada una (no hay con qué confundirla).
+  const branchLabel = useMemo(() => {
+    if (options.branches.length === 0) return () => null
+    const labels = new Map(branches.map((b) => [b.slug, publicBranchLabel(b)]))
+    return (slug: string | null) => (slug ? (labels.get(slug) ?? null) : null)
+  }, [branches, options.branches.length])
   const [filters, setFilters] = useState<CatalogFilters>(() =>
     sanitizeCatalogFilters(initialFilters, options),
   )
@@ -93,6 +111,13 @@ export function CarteleraBoard({
 
   return (
     <div>
+      {options.branches.length > 0 ? (
+        <BranchChips
+          options={options.branches}
+          value={filters.branch}
+          onChange={(branch) => set({ branch })}
+        />
+      ) : null}
       <div className="flex flex-col items-start gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:gap-4">
         <div
           role="tablist"
@@ -215,6 +240,8 @@ export function CarteleraBoard({
                           : undefined
                       }
                       onlyAvailable={onlyAvailable}
+                      branch={filters.branch}
+                      branchLabel={branchLabel}
                       tenantSlug={tenantSlug}
                       whatsapp={whatsapp}
                       venueName={venueName}
@@ -238,10 +265,62 @@ export function CarteleraBoard({
               tenantSlug={tenantSlug}
               today={today}
               onlyAvailable={onlyAvailable}
+              branchLabel={branchLabel}
             />
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Dónde: «Todas las sucursales» y una píldora por sucursal, con su color. Con el
+ * mismo dibujo que los filtros (la elegida, rellena); en el celular, una fila que
+ * se desliza.
+ */
+function BranchChips({
+  options,
+  value,
+  onChange,
+}: {
+  options: BranchOption[]
+  value: string | null
+  onChange: (branch: string | null) => void
+}) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: una fila de botones de alternar; un fieldset con radios no se desliza en el celular
+    <div
+      role="group"
+      aria-label="Elegí la sucursal"
+      className="-mx-5 mb-4 flex max-w-[calc(100%+2.5rem)] min-w-0 items-center gap-2 overflow-x-auto px-5 py-1 [scrollbar-width:none] sm:mx-0 sm:max-w-full sm:flex-wrap sm:overflow-visible sm:px-0"
+    >
+      <button
+        type="button"
+        className="ent-filter ent-press shrink-0"
+        data-active={value === null ? 'true' : 'false'}
+        aria-pressed={value === null}
+        onClick={() => onChange(null)}
+      >
+        Todas las sucursales
+      </button>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className="ent-filter ent-press shrink-0"
+          data-active={value === option.value ? 'true' : 'false'}
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          <span
+            aria-hidden
+            className="size-2.5 shrink-0 rounded-full ring-1 ring-white/25"
+            style={{ backgroundColor: option.color }}
+          />
+          <span className="truncate">{option.label}</span>
+        </button>
+      ))}
     </div>
   )
 }

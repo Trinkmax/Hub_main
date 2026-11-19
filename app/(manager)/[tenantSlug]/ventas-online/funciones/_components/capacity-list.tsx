@@ -4,6 +4,7 @@ import { CalendarPlus, Loader2, Minus, Pencil, Plus, TriangleAlert, Users } from
 import Link from 'next/link'
 import { type CSSProperties, type FormEvent, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { BranchTag } from '@/components/branches/branch-tag'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
@@ -182,7 +183,8 @@ function whenLabel(fn: Pick<CapacityFunction, 'date' | 'time'>): string {
 
 /**
  * Una función: cuándo, qué película, la barrita de lo reservado con la tinta de la película, y
- * el cupo a la derecha, que se toca para cambiarlo.
+ * el cupo a la derecha, que se toca para cambiarlo. Mirando «Todas», la sucursal al final de la
+ * primera línea: el cupo es de esa sala.
  */
 function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunction }) {
   const view = capacityView(fn)
@@ -194,7 +196,10 @@ function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunct
     >
       <div className="min-w-0 flex-1 space-y-1.5">
         <div>
-          <p className="text-sm font-semibold tabular-nums">{whenLabel(fn)}</p>
+          <p className="flex min-w-0 items-center gap-2 text-sm font-semibold tabular-nums">
+            <span className="truncate">{whenLabel(fn)}</span>
+            <BranchTag branchId={fn.branchId} />
+          </p>
           <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
             <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--ev)" />
             <span className="truncate">{fn.title}</span>

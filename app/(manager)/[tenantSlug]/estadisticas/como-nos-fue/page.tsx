@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { branchFilterOf } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
 import {
@@ -63,6 +65,9 @@ export default async function ComoNosFuePage({
   const requestedTemplate =
     typeof sp.evento === 'string' && UUID_RE.test(sp.evento) ? sp.evento : undefined
   const ym = typeof sp.mes === 'string' && YM_RE.test(sp.mes) ? sp.mes : today.slice(0, 7)
+  // La sucursal que se mira (docs/features/sucursales.md): sus noches, sus fechas
+  // y su gente. Los formatos y el dólar son del bar.
+  const branch = branchFilterOf(await getBranchScope(tenantSlug))
 
   // Arranca ya y se espera al final: no depende de nada de lo que sigue. El
   // último dólar va en TODAS las vistas porque el formulario de pauta vive en la
@@ -83,12 +88,16 @@ export default async function ComoNosFuePage({
   // primera pantalla, aunque el vacío también sea un dato cuando se lo busca.
   // El mes de pauta no depende del día ni del evento: va en esta misma tanda.
   const [recentDays, templateOptions, monthReport, birthdayReport] = await Promise.all([
-    listRecentReservationDays({ tenantId, until: today }),
+    listRecentReservationDays({ tenantId, until: today, branch }),
     view === 'evento'
-      ? listEventTemplateOptions({ tenantId, today })
+      ? listEventTemplateOptions({ tenantId, today, branch })
       : Promise.resolve({ options: [], truncated: false }),
-    view === 'pauta' ? getMonthMarketingReport({ tenantId, ym, today }) : Promise.resolve(null),
-    view === 'cumples' ? getMonthBirthdayReport({ tenantId, ym, today }) : Promise.resolve(null),
+    view === 'pauta'
+      ? getMonthMarketingReport({ tenantId, ym, today, branch })
+      : Promise.resolve(null),
+    view === 'cumples'
+      ? getMonthBirthdayReport({ tenantId, ym, today, branch })
+      : Promise.resolve(null),
   ])
   const day = requestedDay ?? recentDays[0]?.day ?? today
   const templates = templateOptions.options
@@ -99,9 +108,9 @@ export default async function ComoNosFuePage({
   const templateId = requestedTemplate ?? (view === 'evento' ? (defaultTemplate?.id ?? null) : null)
 
   const [dayReport, templateReport, lastUsdArsRate] = await Promise.all([
-    view === 'dia' ? getDayReport({ tenantId, day }) : Promise.resolve(null),
+    view === 'dia' ? getDayReport({ tenantId, day, branch }) : Promise.resolve(null),
     view === 'evento' && templateId
-      ? getTemplateReport({ tenantId, templateId, today })
+      ? getTemplateReport({ tenantId, templateId, today, branch })
       : Promise.resolve(null),
     lastUsdArsRateP,
   ])
