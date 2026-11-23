@@ -50,6 +50,8 @@ type Props = {
   subtitle?: string
   /** Un renglón señalado desde el arqueo. */
   mark?: TapeMark
+  /** Quien mira no ve los números del salón: la cinta lista, pero no suma ni dice cómo dio el arqueo. */
+  blind?: boolean
   onPayment: (payment: DayPayment) => void
   onMovement: (movement: CashMovement) => void
 }
@@ -66,6 +68,7 @@ export function Tape({
   title,
   subtitle,
   mark = null,
+  blind = false,
   onPayment,
   onMovement,
 }: Props) {
@@ -104,7 +107,7 @@ export function Tape({
       ) : entry.kind === 'opening' ? (
         <OpeningRow shift={entry.shift} timeZone={timeZone} />
       ) : (
-        <ClosingRow shift={entry.shift} timeZone={timeZone} />
+        <ClosingRow shift={entry.shift} timeZone={timeZone} blind={blind} />
       )}
     </li>
   )
@@ -126,7 +129,15 @@ export function Tape({
             <div className="caja-only-row">
               <p>
                 {filter === 'cash' ? (
-                  'Solo el efectivo: la cuenta del cajón.'
+                  blind ? (
+                    'Solo el efectivo y lo que entró o salió del cajón.'
+                  ) : (
+                    'Solo el efectivo: la cuenta del cajón.'
+                  )
+                ) : sum.count === 0 ? (
+                  `Sin cobros con ${METHOD_LABEL[filter].toLowerCase()}.`
+                ) : blind ? (
+                  `Solo ${METHOD_LABEL[filter].toLowerCase()}: ${sum.count} ${sum.count === 1 ? 'cobro' : 'cobros'}.`
                 ) : sum.count === 0 ? (
                   `Sin cobros con ${METHOD_LABEL[filter].toLowerCase()}.`
                 ) : (
@@ -141,7 +152,7 @@ export function Tape({
                 Ver todo
               </button>
             </div>
-            {filter === 'cash' && live ? (
+            {filter === 'cash' && live && !blind ? (
               <DrawerSum live={live} closed={variant === 'loose'} />
             ) : null}
           </div>
@@ -335,10 +346,20 @@ function OpeningRow({ shift, timeZone }: { shift: Shift; timeZone: string }) {
   )
 }
 
-function ClosingRow({ shift, timeZone }: { shift: Shift; timeZone: string }) {
+function ClosingRow({
+  shift,
+  timeZone,
+  blind,
+}: {
+  shift: Shift
+  timeZone: string
+  blind: boolean
+}) {
   const counted = shift.counted_cash_cents
   const difference =
-    shift.difference_cents === null ? null : differenceWords(shift.difference_cents, 'past')
+    blind || shift.difference_cents === null
+      ? null
+      : differenceWords(shift.difference_cents, 'past')
   return (
     <div className="caja-line is-hand">
       <time dateTime={shift.closed_at ?? undefined}>{clockAt(shift.closed_at, timeZone)}</time>

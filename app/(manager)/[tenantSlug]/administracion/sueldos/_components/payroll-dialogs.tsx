@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useId, useMemo, useRef, useState } from 'react'
 import { useAccounting } from '@/components/administracion/accounting-provider'
+import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { loadCajasVentasCatalog } from '@/components/administracion/cajas-ventas/data'
 import {
   FormBanner,
@@ -44,25 +45,46 @@ import { postPayrollAccrual, postPayrollMovement } from '@/lib/accounting/action
 import { pickTreasury } from '@/lib/accounting/defaults'
 import {
   employeeBalanceCents,
+  employeeParts,
   monthWord,
   owedSentence,
+  PAYROLL_KIND_LABELS,
+  PAYROLL_KIND_OF_PURPOSE,
+  PAYROLL_KIND_TITLES,
+  PAYROLL_KINDS,
   type PayrollAccrualInput,
   type PayrollEmployee,
   type PayrollKind,
   type PayrollMovementInput,
+  PERIOD_SHORTCUT_LABELS,
+  PERIOD_SHORTCUTS,
+  type PeriodShortcut,
   payrollAccrualValues,
+  payrollBranchId,
   payrollMovementValues,
+  pendingCashSums,
+  periodOfShortcut,
+  periodWords,
   personalPartyId,
+  shortcutOfPeriod,
+  suggestOffBooks,
 } from '@/lib/accounting/payroll'
+import {
+  isPayrollPurpose,
+  type PosCashPending,
+  posCashDate,
+  posCashTreasuryId,
+} from '@/lib/accounting/pos-cash'
 import { bankTaxOf, bpLabel } from '@/lib/accounting/taxes'
-import { endOfMonth, formatIsoDay } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { endOfMonth, formatDayMonth, formatIsoDay } from '@/lib/dates'
+import { formatCents, formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 
 /** La caja de la última vez: se propone en el próximo adelanto o pago. */
 const LAST_TREASURY_KEY = 'hub_acc_sueldo_caja:'
 
 /** Los campos que el diálogo dibuja: el resto del error va arriba de los botones. */
-const KNOWN_FIELDS = new Set(['treasuryAccountId', 'amountCents', 'date'])
+const KNOWN_FIELDS = new Set(['treasuryAccountId', 'amountCents', 'date', 'periodFrom', 'periodTo'])
 
 function rememberedTreasury(slug: string): string | null {
   try {
@@ -80,26 +102,68 @@ function rememberTreasury(slug: string, id: string): void {
   }
 }
 
+/** Lo que dice el aviso después de guardar. */
+const SAVED_WORDS: Readonly<Record<PayrollKind, string>> = {
+  advance: 'Adelanto cargado',
+  payment: 'Pago cargado',
+  overtime: 'Horas extra cargadas',
+}
+
+/** De dónde viene lo que se está cargando: un retiro de la caja del salón que espera su comprobante. */
+export type MovementSource = {
+  posCash: PosCashPending
+  /** «2 de 3»: cuando se pasan varios seguidos. */
+  step?: { index: number; total: number } | null
+}
+
+/** Lo que se le debía antes de este retiro: la planilla ya lo descontó cuando salió de la caja. */
+function balanceBefore(employee: PayrollEmployee, source: MovementSource | null): number {
+  const balance = employeeBalanceCents(employee)
+  if (!source) return balance
+  const counted = employee.pendingCash?.find((item) => item.id === source.posCash.id)
+  return counted && counted.purpose !== 'overtime' ? balance + counted.amountCents : balance
+}
+
+/** «Salió de la caja del salón el 22/11 · Cerro · lo anotó Luz.» */
+function sourceSentence(posCash: PosCashPending): string {
+  const parts = [
+    `Salió de la caja del salón el ${formatDayMonth(posCash.date)}`,
+    posCash.branchName,
+    posCash.byName ? `lo anotó ${posCash.byName}` : null,
+  ].filter((part): part is string => Boolean(part))
+  return `${parts.join(' · ')}.`
+}
+
 /**
- * «Adelanto · Martina Ríos» o «Pagar sueldo · Martina Ríos»: Importe (Pagar viene con el saldo),
- * Salió de y la fecha, con el impuesto al cheque si corresponde. La vista previa es la del motor y el
- * envío es el de todos los comprobantes (`usePosting`): avisos que hay que confirmar, una base que
- * cambió mientras tanto y un reintento que no duplica.
+ * «Adelanto · Martina Ríos», «Pago de sueldo · …» u «Horas extra · …»: qué es, el importe (un pago
+ * viene con el saldo), de dónde salió y la fecha; si fue en blanco o en negro y, si se quiere, qué
+ * fechas cubre. La vista previa es la del motor y el envío es el de todos los comprobantes
+ * (`usePosting`): avisos que hay que confirmar, una base que cambió mientras tanto y un reintento que
+ * no duplica.
+ *
+ * Con `source` registra un retiro de la caja del salón: llega completo y, al guardar, ese retiro queda
+ * atado al comprobante (deja de esperar).
  */
 export function MovementDialog({
-  kind,
+  kind: initialKind,
   employee,
   month,
   onClose,
+  source = null,
+  onSaved,
 }: {
   kind: PayrollKind
   employee: PayrollEmployee
   month: string
   onClose: () => void
+  source?: MovementSource | null
+  /** Después de guardar (la bandeja pasa al que sigue). Sin esto, el diálogo se cierra. */
+  onSaved?: () => void
 }) {
   const { tenantSlug } = useAccounting()
   const load = useSheetLoad(() => loadCajasVentasCatalog(tenantSlug), tenantSlug)
-  const balance = employeeBalanceCents(employee)
+  const [kind, setKind] = useState<PayrollKind>(initialKind)
+  const balance = balanceBefore(employee, source)
   return (
     <Dialog
       open
@@ -107,20 +171,38 @@ export function MovementDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {kind === 'advance' ? 'Adelanto' : 'Pagar sueldo'} · {employee.name}
+            {PAYROLL_KIND_TITLES[kind]} · {employee.name}
           </DialogTitle>
-          <DialogDescription>{owedSentence(balance, month)}</DialogDescription>
+          <DialogDescription>
+            {kind === 'overtime'
+              ? `Se paga aparte del sueldo: no cambia lo que le debés de ${monthWord(month)}.`
+              : owedSentence(balance, month)}
+            {source ? (
+              <span className="mt-1 block">
+                {source.step && source.step.total > 1 ? (
+                  <span className="font-medium text-foreground">
+                    {source.step.index} de {source.step.total} ·{' '}
+                  </span>
+                ) : null}
+                {sourceSentence(source.posCash)}
+              </span>
+            ) : null}
+          </DialogDescription>
         </DialogHeader>
         {load.data ? (
           <MovementForm
             kind={kind}
+            onKindChange={setKind}
             employee={employee}
             month={month}
+            balance={balance}
+            source={source}
             catalog={load.data}
             onClose={onClose}
+            onSaved={onSaved}
           />
         ) : load.status === 'error' ? (
           <SheetLoadError message={load.message} onRetry={() => load.reload()} />
@@ -132,18 +214,55 @@ export function MovementDialog({
   )
 }
 
+/** Una píldora que se prende y se apaga (las fechas que cubre son opcionales: se puede no elegir nada). */
+function ToggleChip({
+  pressed,
+  onClick,
+  children,
+}: {
+  pressed: boolean
+  onClick: () => void
+  children: string
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-9 items-center rounded-full border px-3.5 text-xs font-medium transition-colors md:h-7 md:px-3',
+        'outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
+        pressed
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border hover:bg-secondary',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function MovementForm({
   kind,
+  onKindChange,
   employee,
   month,
+  balance,
+  source,
   catalog,
   onClose,
+  onSaved,
 }: {
   kind: PayrollKind
+  onKindChange: (kind: PayrollKind) => void
   employee: PayrollEmployee
   month: string
+  /** Lo que se le debe antes de este movimiento. */
+  balance: number
+  source: MovementSource | null
   catalog: CajasVentasCatalog
   onClose: () => void
+  onSaved?: () => void
 }) {
   const { tenantSlug } = useAccounting()
   const router = useRouter()
@@ -151,25 +270,62 @@ function MovementForm({
   const formRef = useRef<HTMLFormElement>(null)
   const undoToast = useUndoToast(tenantSlug)
   const { ctx, today } = catalog
-  const balance = employeeBalanceCents(employee)
+  const posCash = source?.posCash ?? null
+  const firstDay = firstLoadableDay(catalog)
   // Una tarjeta de la empresa no es una caja con plata: un sueldo no sale de ahí.
   const treasuries = useMemo(
     () => catalog.treasuries.filter((t) => t.kind !== 'credit_card'),
     [catalog.treasuries],
   )
 
+  const defaultAmount = (next: PayrollKind) => (next === 'payment' && balance > 0 ? balance : null)
   const [amount, setAmount] = useState<number | null>(
-    kind === 'payment' && balance > 0 ? balance : null,
+    () => posCash?.amountCents ?? defaultAmount(kind),
   )
-  const [treasuryId, setTreasuryId] = useState<string | null>(() =>
-    pickTreasury({
-      treasuries,
-      myLastQuickExpense: rememberedTreasury(tenantSlug),
-      order: treasuries.map((t) => t.id),
-    }),
+  // Lo que la persona escribió o eligió a mano no lo pisa el cambio de «qué es».
+  const touched = useRef({ amount: posCash !== null, offBooks: false })
+  const [treasuryId, setTreasuryId] = useState<string | null>(
+    () =>
+      // Un retiro de la caja del salón salió de la caja de efectivo de esa sucursal.
+      (posCash ? posCashTreasuryId(treasuries, posCash.branchId) : null) ??
+      pickTreasury({
+        treasuries,
+        myLastQuickExpense: rememberedTreasury(tenantSlug),
+        order: treasuries.map((t) => t.id),
+      }),
   )
-  const [date, setDate] = useState<string | null>(today)
+  const [date, setDate] = useState<string | null>(() =>
+    posCash ? posCashDate(posCash.date, { min: firstDay, max: today }) : today,
+  )
+  const [offBooks, setOffBooks] = useState(() => suggestOffBooks(employee, kind))
+  const [period, setPeriod] = useState<{ from: string | null; to: string | null }>(() => ({
+    from: posCash?.periodFrom ?? null,
+    to: posCash?.periodTo ?? null,
+  }))
+  const shortcut = shortcutOfPeriod(month, period)
+  const [customPeriod, setCustomPeriod] = useState(
+    () => (period.from !== null || period.to !== null) && shortcut === null,
+  )
   const [attempted, setAttempted] = useState(false)
+
+  const treasury = treasuryId ? treasuries.find((t) => t.id === treasuryId) : undefined
+  const branchId = payrollBranchId(treasury, employee)
+  const parts = employeeParts(employee)
+  // Cargando a mano algo que quizás ya salió de la caja del salón: se avisa, para no anotarlo dos veces.
+  const alreadyOut = posCash
+    ? 0
+    : pendingCashSums(
+        (employee.pendingCash ?? []).filter(
+          (item) => PAYROLL_KIND_OF_PURPOSE[item.purpose] === kind,
+        ),
+      ).total
+
+  const changeKind = (next: PayrollKind) => {
+    onKindChange(next)
+    if (!touched.current.amount) setAmount(defaultAmount(next))
+    if (!touched.current.offBooks) setOffBooks(suggestOffBooks(employee, next))
+    posting.clearFieldError('amountCents')
+  }
 
   const values = useMemo(
     () =>
@@ -182,30 +338,36 @@ function MovementForm({
           amountCents: amount,
           date,
           personalPartyId: personalPartyId(ctx),
+          branchId,
         },
         ctx,
       ),
-    [kind, employee.name, month, treasuryId, amount, date, ctx],
+    [kind, employee.name, month, treasuryId, amount, date, ctx, branchId],
   )
   const preview = useDocumentPreview('cash_movement', values, ctx, catalog.firstOpenDate)
 
-  const label = kind === 'advance' ? 'Adelanto' : 'Pago'
   const posting = usePosting<PayrollMovementInput>({
     tenantSlug,
     action: postPayrollMovement,
     formRef,
     isKnownField: (key) => KNOWN_FIELDS.has(key),
     onSaved: (saved) => {
-      if (treasuryId) rememberTreasury(tenantSlug, treasuryId)
-      onClose()
+      // La caja de un retiro del salón no la eligió la persona: no se recuerda como «la de siempre».
+      if (treasuryId && !posCash) rememberTreasury(tenantSlug, treasuryId)
       undoToast(
-        `${label} cargado${amount !== null ? ` · ${moneyLabel(amount)}` : ''} · ${employee.name}`,
+        `${SAVED_WORDS[kind]}${amount !== null ? ` · ${moneyLabel(amount)}` : ''} · ${employee.name}`,
         saved,
       )
       router.refresh()
+      if (onSaved) onSaved()
+      else onClose()
     },
   })
 
+  const periodError =
+    period.from !== null && period.to !== null && period.to < period.from
+      ? 'El «hasta» va después del «desde».'
+      : null
   const localErrors = attempted && !preview.state.ok ? (preview.state.fieldErrors ?? {}) : {}
   const errorOf = (key: string): string | null =>
     posting.fieldErrors[key] ?? localErrors[key] ?? null
@@ -216,33 +378,68 @@ function MovementForm({
       : null
 
   const settings = ctx.settings.taxSettings
-  const treasury = treasuryId ? ctx.treasuries.get(treasuryId) : undefined
-  const bankTax = amount !== null ? bankTaxOf(amount, treasury, settings) : 0
+  const bankTax =
+    amount !== null && treasuryId ? bankTaxOf(amount, ctx.treasuries.get(treasuryId), settings) : 0
+
+  const pickShortcut = (next: PeriodShortcut) => {
+    setCustomPeriod(false)
+    // Tocar el que está elegido lo saca: las fechas son opcionales.
+    setPeriod(shortcut === next ? { from: null, to: null } : periodOfShortcut(month, next))
+    posting.clearFieldError('periodTo')
+  }
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
     setAttempted(true)
     if (posting.pending) return
-    if (!preview.state.ok) {
+    if (!preview.state.ok || periodError) {
       requestAnimationFrame(() => {
         formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
       })
       return
     }
-    posting.submit({ ...values, employeeId: employee.id, month, kind }, preview.state, preview.key)
+    posting.submit(
+      {
+        ...values,
+        employeeId: employee.id,
+        month,
+        kind,
+        offBooks,
+        periodFrom: period.from,
+        periodTo: period.to,
+        posCashId: posCash?.id ?? null,
+      },
+      preview.state,
+      preview.key,
+    )
   }
 
   return (
     <form ref={formRef} noValidate onSubmit={onSubmit} className="grid gap-4">
+      <ChoiceChips<PayrollKind>
+        size="sm"
+        label="Qué es"
+        value={kind}
+        onChange={changeKind}
+        options={PAYROLL_KINDS.map((value) => ({ value, label: PAYROLL_KIND_LABELS[value] }))}
+      />
+      {alreadyOut > 0 ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/[0.07] px-3 py-2 text-xs text-pretty">
+          Ya salieron {formatCentsShort(alreadyOut)} de la caja del salón para {employee.name} y la
+          planilla los cuenta. Si es eso, pasalo desde «De la caja del salón» (arriba de la
+          planilla) para no cargarlo dos veces.
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <MoneyField
           label="Importe"
           required
-          autoFocus
+          autoFocus={posCash === null}
           align="end"
           decimals="auto"
           value={amount}
           onValueChange={(cents) => {
+            touched.current.amount = true
             setAmount(cents)
             posting.clearFieldError('amountCents')
           }}
@@ -272,19 +469,105 @@ function MovementForm({
           ) : null}
         </div>
       </div>
-      <DateField
-        label="Fecha"
-        required
-        value={date}
-        onValueChange={(next) => {
-          setDate(next)
-          posting.clearFieldError('date')
-        }}
-        min={firstLoadableDay(catalog)}
-        max={today}
-        today={today}
-        error={errorOf('date')}
-      />
+      {/* La fecha y la parte, una al lado de la otra: el diálogo entra en la pantalla de una notebook. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <DateField
+          label="Fecha"
+          required
+          value={date}
+          onValueChange={(next) => {
+            setDate(next)
+            posting.clearFieldError('date')
+          }}
+          min={firstDay}
+          max={today}
+          today={today}
+          error={errorOf('date')}
+        />
+
+        <div className="grid content-start gap-1.5">
+          <span id={`${uid}-parte`} className="text-sm font-medium">
+            ¿En blanco o en negro?
+          </span>
+          <ChoiceChips<'declared' | 'off_books'>
+            size="sm"
+            labelledBy={`${uid}-parte`}
+            value={offBooks ? 'off_books' : 'declared'}
+            onChange={(next) => {
+              touched.current.offBooks = true
+              setOffBooks(next === 'off_books')
+            }}
+            options={[
+              { value: 'declared', label: 'En blanco' },
+              { value: 'off_books', label: 'En negro' },
+            ]}
+          />
+          {parts && kind !== 'overtime' ? (
+            <p className="text-xs text-muted-foreground text-pretty">
+              Le falta {formatCentsShort(parts.declared.owedCents)} en blanco y{' '}
+              {formatCentsShort(parts.offBooks.owedCents)} en negro.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid gap-1.5">
+        <span id={`${uid}-fechas`} className="text-sm font-medium">
+          ¿Qué fechas cubre?{' '}
+          <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+        </span>
+        {/* biome-ignore lint/a11y/useSemanticElements: un grupo de píldoras que se prenden y se apagan; un fieldset le suma un borde y un margen que acá no van */}
+        <div role="group" aria-labelledby={`${uid}-fechas`} className="flex flex-wrap gap-2">
+          {PERIOD_SHORTCUTS.map((value) => (
+            <ToggleChip
+              key={value}
+              pressed={!customPeriod && shortcut === value}
+              onClick={() => pickShortcut(value)}
+            >
+              {PERIOD_SHORTCUT_LABELS[value]}
+            </ToggleChip>
+          ))}
+          <ToggleChip
+            pressed={customPeriod}
+            onClick={() => {
+              if (customPeriod) setPeriod({ from: null, to: null })
+              setCustomPeriod((open) => !open)
+              posting.clearFieldError('periodTo')
+            }}
+          >
+            Otras fechas
+          </ToggleChip>
+        </div>
+        {customPeriod ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DateField
+              label="Desde"
+              value={period.from}
+              onValueChange={(next) => {
+                setPeriod((prev) => ({ ...prev, from: next }))
+                posting.clearFieldError('periodFrom')
+              }}
+              today={today}
+              error={errorOf('periodFrom')}
+            />
+            <DateField
+              label="Hasta"
+              value={period.to}
+              onValueChange={(next) => {
+                setPeriod((prev) => ({ ...prev, to: next }))
+                posting.clearFieldError('periodTo')
+              }}
+              today={today}
+              error={errorOf('periodTo') ?? periodError}
+            />
+          </div>
+        ) : periodWords(period.from, period.to) ? (
+          <p className="text-xs text-muted-foreground">
+            Cubre {periodWords(period.from, period.to)}.
+          </p>
+        ) : null}
+      </div>
+
       {settings && bankTax > 0 ? (
         <p className="text-sm text-muted-foreground">
           Impuesto al cheque {bpLabel(settings.bankTaxBp)}:{' '}
@@ -302,7 +585,7 @@ function MovementForm({
           disabled={posting.pending}
           onClick={onClose}
         >
-          Cancelar
+          {source?.step && source.step.total > 1 ? 'Dejar para después' : 'Cancelar'}
         </Button>
         <Button type="submit" className="h-11 sm:h-9" disabled={posting.pending}>
           {posting.pending
@@ -320,6 +603,11 @@ function MovementForm({
       />
     </form>
   )
+}
+
+/** El movimiento de Sueldos que le toca a un retiro de la caja (un proveedor no es de acá). */
+export function kindOfPosCash(posCash: PosCashPending): PayrollKind {
+  return isPayrollPurpose(posCash.purpose) ? PAYROLL_KIND_OF_PURPOSE[posCash.purpose] : 'advance'
 }
 
 /**

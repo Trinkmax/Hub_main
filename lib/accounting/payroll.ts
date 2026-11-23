@@ -9,6 +9,17 @@
  *   camino de siempre (vista previa, avisos, impuesto al cheque en el mismo envío).
  * - «Devengar» es un asiento manual: D Sueldos y jornales / H Sueldos a pagar [Personal], con fecha
  *   de fin de mes.
+ *
+ * Pedido de los socios del 22/11/2026:
+ * - **En blanco y en negro.** El sueldo se puede partir en dos (`salaryCents` sigue siendo el total y
+ *   `salaryOffBooksCents`, la parte en negro) y cada adelanto o pago dice de qué parte fue. No cambia
+ *   el asiento: es una marca.
+ * - **Horas extra.** Plata que se paga aparte del sueldo: `cash_movement` D Sueldos y jornales / H la
+ *   caja, sin partícipe. No baja el saldo ni entra en «Devengar».
+ * - **Las fechas que cubre un pago** (la quincena, la semana): opcionales.
+ * - **Lo que salió de la caja del salón** para alguien (`pendingCash`) ya cuenta en sus adelantos, en lo
+ *   pagado y en el saldo desde que sale, aunque todavía no tenga comprobante: «cuánto le debo» está
+ *   al día sin depender de nadie. La base no lo suma: lo suma `parsePayrollReport`, una sola vez.
  */
 
 import { z } from 'zod'
@@ -19,11 +30,15 @@ import {
   capitalizeFirst,
   endOfMonth,
   formatMonthYear,
+  isRealIsoDay,
   isRealYearMonth,
+  MONTH_NAMES_SHORT,
   monthName,
   monthOf,
+  startOfMonth,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { POS_CASH_PAYROLL_PURPOSES, type PosCashPayrollPurpose } from './pos-cash'
 
 // ─── Lo que se lee ───────────────────────────────────────────────────────────
 
@@ -35,12 +50,13 @@ export const PAY_FREQUENCY_LABELS: Readonly<Record<PayFrequency, string>> = {
   biweekly: 'Quincenal',
 }
 
-export const PAYROLL_KINDS = ['advance', 'payment'] as const
+export const PAYROLL_KINDS = ['advance', 'payment', 'overtime'] as const
 export type PayrollKind = (typeof PAYROLL_KINDS)[number]
 
 export const PAYROLL_KIND_LABELS: Readonly<Record<PayrollKind, string>> = {
   advance: 'Adelanto',
   payment: 'Pago',
+  overtime: 'Horas extra',
 }
 
 export type PayrollMovement = {
@@ -50,6 +66,25 @@ export type PayrollMovement = {
   amountCents: number
   /** La caja o cuenta de la que salió. */
   treasury: string | null
+  /** Fue en negro. Falta = en blanco (la base de antes no lo dice). */
+  offBooks?: boolean
+  /** Las fechas que cubre (la quincena, la semana). Vacío = no se dijo. */
+  periodFrom?: string | null
+  periodTo?: string | null
+}
+
+/** Un retiro de la caja del salón para esta persona que todavía no tiene comprobante. */
+export type PayrollPendingCash = {
+  id: string
+  purpose: PosCashPayrollPurpose
+  amountCents: number
+  /** El día de servicio en que salió. */
+  date: string
+  branchId: string | null
+  /** Quién lo anotó en la caja. */
+  byName: string | null
+  periodFrom: string | null
+  periodTo: string | null
 }
 
 export type PayrollEmployee = {
@@ -60,10 +95,21 @@ export type PayrollEmployee = {
   payFrequency: PayFrequency
   active: boolean
   notes: string | null
+  /** El total del mes: la parte en blanco más la parte en negro. */
   salaryCents: number
+  /** Adelantos: los que tienen comprobante y los que salieron de la caja del salón y falta pasar. */
   advancesCents: number
+  /** Pagos de sueldo: igual, con y sin comprobante todavía. */
   paidCents: number
   movements: PayrollMovement[]
+  /** La parte del sueldo que va en negro (adentro de `salaryCents`). Falta = nada. */
+  salaryOffBooksCents?: number
+  /** Horas extra pagadas en el mes (con comprobante o recién salidas de la caja). No bajan el saldo. */
+  overtimeCents?: number
+  /** Adelantos y pagos en negro, con comprobante. */
+  settledOffBooksCents?: number
+  /** Lo que salió de la caja del salón para esta persona en el mes y falta pasar a los libros. */
+  pendingCash?: PayrollPendingCash[]
 }
 
 export type PayrollAccrual = { documentId: string; date: string; amountCents: number }
@@ -78,12 +124,32 @@ export type PayrollReport = {
 
 const centsField = z.coerce.number().int()
 
+const dayOrNull = z
+  .string()
+  .nullish()
+  .transform((value) => (value && isRealIsoDay(value) ? value : null))
+
+// Las claves nuevas son opcionales: la app puede salir un rato antes que la base que las manda.
 const rawMovementSchema = z.object({
   document_id: z.string(),
   kind: z.enum(PAYROLL_KINDS),
   date: z.string(),
   amount_cents: centsField,
   treasury: z.string().nullish(),
+  off_books: z.boolean().nullish(),
+  period_from: dayOrNull,
+  period_to: dayOrNull,
+})
+
+const rawPendingCashSchema = z.object({
+  id: z.string(),
+  purpose: z.enum(POS_CASH_PAYROLL_PURPOSES),
+  amount_cents: centsField,
+  date: z.string(),
+  branch_id: z.string().nullish(),
+  by_name: z.string().nullish(),
+  period_from: dayOrNull,
+  period_to: dayOrNull,
 })
 
 const rawEmployeeSchema = z.object({
@@ -97,6 +163,10 @@ const rawEmployeeSchema = z.object({
   advances_cents: centsField,
   paid_cents: centsField,
   movements: z.array(rawMovementSchema),
+  salary_off_books_cents: centsField.nullish(),
+  overtime_cents: centsField.nullish(),
+  settled_off_books_cents: centsField.nullish(),
+  pending_cash: z.array(rawPendingCashSchema).nullish(),
 })
 
 const rawReportSchema = z.object({
@@ -113,24 +183,52 @@ export function parsePayrollReport(raw: unknown, month: string): PayrollReport |
   const { employees, accrual } = parsed.data
   return {
     month,
-    employees: employees.map((e) => ({
-      id: e.id,
-      name: e.name,
-      branchId: e.branch_id ?? null,
-      payFrequency: e.pay_frequency,
-      active: e.active,
-      notes: e.notes ?? null,
-      salaryCents: e.salary_cents,
-      advancesCents: e.advances_cents,
-      paidCents: e.paid_cents,
-      movements: e.movements.map((m) => ({
-        documentId: m.document_id,
-        kind: m.kind,
-        date: m.date,
-        amountCents: m.amount_cents,
-        treasury: m.treasury ?? null,
-      })),
-    })),
+    employees: employees.map((e) => {
+      const pendingCash: PayrollPendingCash[] = (e.pending_cash ?? []).map((p) => ({
+        id: p.id,
+        purpose: p.purpose,
+        amountCents: p.amount_cents,
+        date: p.date,
+        branchId: p.branch_id ?? null,
+        byName: (p.by_name ?? '').trim() || null,
+        periodFrom: p.period_from,
+        periodTo: p.period_to,
+      }))
+      const pending = pendingCashSums(pendingCash)
+      const employee: PayrollEmployee = {
+        id: e.id,
+        name: e.name,
+        branchId: e.branch_id ?? null,
+        payFrequency: e.pay_frequency,
+        active: e.active,
+        notes: e.notes ?? null,
+        salaryCents: e.salary_cents,
+        // Lo que salió de la caja del salón cuenta desde que sale (ver arriba).
+        advancesCents: e.advances_cents + pending.advance,
+        paidCents: e.paid_cents + pending.salary,
+        movements: e.movements.map((m) => ({
+          documentId: m.document_id,
+          kind: m.kind,
+          date: m.date,
+          amountCents: m.amount_cents,
+          treasury: m.treasury ?? null,
+          ...(m.off_books ? { offBooks: true } : {}),
+          ...(m.period_from || m.period_to
+            ? { periodFrom: m.period_from, periodTo: m.period_to }
+            : {}),
+        })),
+      }
+      // Solo cuando hay algo que decir: una planilla sin partes ni horas extra queda como siempre.
+      const offBooks = Math.min(e.salary_off_books_cents ?? 0, e.salary_cents)
+      if (offBooks > 0) employee.salaryOffBooksCents = offBooks
+      const overtime = (e.overtime_cents ?? 0) + pending.overtime
+      if (overtime > 0) employee.overtimeCents = overtime
+      if ((e.settled_off_books_cents ?? 0) > 0) {
+        employee.settledOffBooksCents = e.settled_off_books_cents ?? 0
+      }
+      if (pendingCash.length > 0) employee.pendingCash = pendingCash
+      return employee
+    }),
     accrual: accrual
       ? {
           documentId: accrual.document_id,
@@ -182,6 +280,220 @@ export function payrollTotals(employees: readonly PayrollEmployee[]): PayrollTot
     totals.owedCents += Math.max(0, balance)
   }
   return totals
+}
+
+// ─── Lo que salió de la caja del salón ───────────────────────────────────────
+
+/** Cuánto salió de la caja para cada cosa. */
+export function pendingCashSums(
+  pending: readonly Pick<PayrollPendingCash, 'purpose' | 'amountCents'>[] | undefined,
+): Record<PosCashPayrollPurpose, number> & { total: number; count: number } {
+  const sums = { advance: 0, overtime: 0, salary: 0, total: 0, count: 0 }
+  for (const item of pending ?? []) {
+    sums[item.purpose] += item.amountCents
+    sums.total += item.amountCents
+    sums.count += 1
+  }
+  return sums
+}
+
+/**
+ * El mes de sueldos al que más probablemente corresponde un retiro de la caja: el de las fechas que
+ * cubre, si la caja las anotó; un pago de sueldo de los primeros diez días, el mes anterior (los
+ * sueldos se pagan la primera semana del mes que sigue, `settleHint`); si no, el mes en que salió.
+ * Es una propuesta: se pasa a los libros del mes que la persona esté mirando.
+ */
+export function pendingCashMonth(item: {
+  purpose: PosCashPayrollPurpose | 'supplier'
+  date: string
+  periodFrom: string | null
+}): string {
+  if (item.periodFrom && isRealIsoDay(item.periodFrom)) return monthOf(item.periodFrom)
+  const month = monthOf(item.date)
+  return item.purpose === 'salary' && Number(item.date.slice(8, 10)) <= 10
+    ? addMonthsToYearMonth(month, -1)
+    : month
+}
+
+/** El movimiento de Sueldos que le corresponde a un retiro de la caja. */
+export const PAYROLL_KIND_OF_PURPOSE: Readonly<Record<PosCashPayrollPurpose, PayrollKind>> = {
+  advance: 'advance',
+  salary: 'payment',
+  overtime: 'overtime',
+}
+
+// ─── En blanco y en negro ────────────────────────────────────────────────────
+
+/** Una parte del sueldo: cuánto es, cuánto ya se le pagó (con comprobante) y cuánto falta. */
+export type PayrollPart = { salaryCents: number; settledCents: number; owedCents: number }
+
+export type PayrollParts = {
+  declared: PayrollPart
+  offBooks: PayrollPart
+  /**
+   * Adelantos y pagos que salieron de la caja del salón y todavía no dicen de qué parte son (lo dicen
+   * cuando se pasan a los libros). Ya bajaron el saldo.
+   */
+  unassignedCents: number
+}
+
+/**
+ * Cuánto falta de cada parte. `null` si el sueldo no tiene parte en negro: ahí no hay nada que separar y
+ * la planilla se ve como siempre (un adelanto o un pago marcado «en negro» igual se lee con su marca).
+ */
+export function employeeParts(
+  employee: Pick<
+    PayrollEmployee,
+    | 'salaryCents'
+    | 'advancesCents'
+    | 'paidCents'
+    | 'salaryOffBooksCents'
+    | 'settledOffBooksCents'
+    | 'pendingCash'
+  >,
+): PayrollParts | null {
+  const offSalary = Math.min(employee.salaryOffBooksCents ?? 0, employee.salaryCents)
+  const offSettled = employee.settledOffBooksCents ?? 0
+  if (offSalary <= 0) return null
+  const pending = pendingCashSums(employee.pendingCash)
+  const unassigned = pending.advance + pending.salary
+  const declaredSalary = employee.salaryCents - offSalary
+  // Con comprobante: todo lo anotado menos lo de la caja, y de eso, lo que no fue en negro.
+  const settled = Math.max(0, employee.advancesCents + employee.paidCents - unassigned)
+  const declaredSettled = Math.max(0, settled - offSettled)
+  return {
+    declared: {
+      salaryCents: declaredSalary,
+      settledCents: declaredSettled,
+      owedCents: Math.max(0, declaredSalary - declaredSettled),
+    },
+    offBooks: {
+      salaryCents: offSalary,
+      settledCents: offSettled,
+      owedCents: Math.max(0, offSalary - offSettled),
+    },
+    unassignedCents: unassigned,
+  }
+}
+
+/**
+ * ¿Se propone «En negro» para lo que se está por cargar? Un adelanto o un pago, la parte a la que más
+ * le falta; las horas extra, en negro solo si todo el sueldo lo es. Sin parte en negro, nunca.
+ */
+export function suggestOffBooks(
+  employee: Parameters<typeof employeeParts>[0],
+  kind: PayrollKind,
+): boolean {
+  const parts = employeeParts(employee)
+  if (!parts || parts.offBooks.salaryCents <= 0) return false
+  if (kind === 'overtime') return parts.declared.salaryCents === 0
+  return parts.offBooks.owedCents > parts.declared.owedCents
+}
+
+/** Lo que se suma en la planilla además de las cuatro columnas de siempre. */
+export type PayrollExtras = {
+  /** Horas extra del mes (con comprobante o recién salidas de la caja). */
+  overtimeCents: number
+  /** La parte en negro de los sueldos del mes. */
+  salaryOffBooksCents: number
+  /** Lo que salió de la caja del salón y falta pasar a los libros: todo, y cuánto de cada cosa. */
+  pendingCashCents: number
+  pendingCashCount: number
+  pendingAdvancesCents: number
+  pendingPaidCents: number
+}
+
+export function payrollExtras(employees: readonly PayrollEmployee[]): PayrollExtras {
+  const extras: PayrollExtras = {
+    overtimeCents: 0,
+    salaryOffBooksCents: 0,
+    pendingCashCents: 0,
+    pendingCashCount: 0,
+    pendingAdvancesCents: 0,
+    pendingPaidCents: 0,
+  }
+  for (const employee of employees) {
+    const pending = pendingCashSums(employee.pendingCash)
+    extras.overtimeCents += employee.overtimeCents ?? 0
+    extras.salaryOffBooksCents += Math.min(employee.salaryOffBooksCents ?? 0, employee.salaryCents)
+    extras.pendingCashCents += pending.total
+    extras.pendingCashCount += pending.count
+    extras.pendingAdvancesCents += pending.advance
+    extras.pendingPaidCents += pending.salary
+  }
+  return extras
+}
+
+// ─── Las fechas que cubre un pago ────────────────────────────────────────────
+
+export type PayrollPeriod = { from: string; to: string }
+
+export const PERIOD_SHORTCUTS = ['first_half', 'second_half', 'month'] as const
+export type PeriodShortcut = (typeof PERIOD_SHORTCUTS)[number]
+
+export const PERIOD_SHORTCUT_LABELS: Readonly<Record<PeriodShortcut, string>> = {
+  first_half: '1.ª quincena',
+  second_half: '2.ª quincena',
+  month: 'Todo el mes',
+}
+
+/** Las fechas de cada atajo en ese mes (`yyyy-MM`). */
+export function periodOfShortcut(month: string, shortcut: PeriodShortcut): PayrollPeriod {
+  const first = startOfMonth(month)
+  const last = endOfMonth(month)
+  if (shortcut === 'first_half') return { from: first, to: `${month}-15` }
+  if (shortcut === 'second_half') return { from: `${month}-16`, to: last }
+  return { from: first, to: last }
+}
+
+/** A qué atajo corresponden esas fechas; `null` si no son las de ninguno. */
+export function shortcutOfPeriod(
+  month: string,
+  period: { from: string | null; to: string | null },
+): PeriodShortcut | null {
+  for (const shortcut of PERIOD_SHORTCUTS) {
+    const range = periodOfShortcut(month, shortcut)
+    if (range.from === period.from && range.to === period.to) return shortcut
+  }
+  return null
+}
+
+const shortDay = (iso: string) =>
+  `${Number(iso.slice(8, 10))} ${MONTH_NAMES_SHORT[Number(iso.slice(5, 7)) - 1] ?? ''}`.trim()
+
+/**
+ * Las fechas que cubre, como se dicen: «1 al 15 nov», «28 oct al 3 nov», «todo noviembre», «desde el
+ * 5 nov». `null` si no se dijo nada.
+ */
+export function periodWords(from: string | null | undefined, to: string | null | undefined) {
+  const start = from && isRealIsoDay(from) ? from : null
+  const end = to && isRealIsoDay(to) ? to : null
+  if (!start && !end) return null
+  if (start && end) {
+    if (start === end) return shortDay(start)
+    const month = monthOf(start)
+    if (month === monthOf(end)) {
+      if (start === startOfMonth(month) && end === endOfMonth(month)) {
+        return `todo ${monthWord(month)}`
+      }
+      return `${Number(start.slice(8, 10))} al ${shortDay(end)}`
+    }
+    return `${shortDay(start)} al ${shortDay(end)}`
+  }
+  return start ? `desde el ${shortDay(start)}` : `hasta el ${shortDay(end ?? '')}`
+}
+
+/** «Pago · 1 al 15 nov · en negro»: un movimiento como se lee en el detalle de una persona. */
+export function movementWords(
+  movement: Pick<PayrollMovement, 'kind' | 'offBooks' | 'periodFrom' | 'periodTo'>,
+): string {
+  return [
+    PAYROLL_KIND_LABELS[movement.kind],
+    periodWords(movement.periodFrom, movement.periodTo),
+    movement.offBooks ? 'en negro' : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
 }
 
 /** «Le debés $ 680.000 de noviembre.», en el diálogo de un adelanto o un pago. */
@@ -260,7 +572,18 @@ export type PayrollMovementFormValues = Omit<
   CashMovementValues,
   'clientRef' | 'previewHash' | 'warningsAck'
 >
-export type PayrollMovementTarget = { employeeId: string; month: string; kind: PayrollKind }
+export type PayrollMovementTarget = {
+  employeeId: string
+  month: string
+  kind: PayrollKind
+  /** Fue en negro. Falta = en blanco. */
+  offBooks?: boolean
+  /** Las fechas que cubre (opcionales). */
+  periodFrom?: string | null
+  periodTo?: string | null
+  /** El retiro de la caja del salón que este comprobante registra (queda atado antes de guardar). */
+  posCashId?: string | null
+}
 /** Lo que recibe `postPayrollMovement`: el movimiento de caja y a quién corresponde. */
 export type PayrollMovementInput = CashMovementValues & PayrollMovementTarget
 
@@ -280,13 +603,26 @@ export function personalPartyId(ctx: Pick<PostingContext, 'parties' | 'sys'>): s
   return found?.id ?? null
 }
 
-/** «Adelanto · Martina Ríos · noviembre»: lo que se lee después en la caja y en el comprobante. */
-export function payrollDetail(kind: PayrollKind, employeeName: string, month: string): string {
-  const what = kind === 'advance' ? 'Adelanto' : 'Pago de sueldo'
-  return `${what} · ${employeeName.trim()} · ${monthWord(month)}`
+/** Cómo se nombra cada movimiento en su comprobante y en el título del diálogo. */
+export const PAYROLL_KIND_TITLES: Readonly<Record<PayrollKind, string>> = {
+  advance: 'Adelanto',
+  payment: 'Pago de sueldo',
+  overtime: 'Horas extra',
 }
 
-/** El `cash_movement` de un adelanto o un pago: salida de la caja contra Sueldos a pagar [Personal]. */
+/** «Adelanto · Martina Ríos · noviembre»: lo que se lee después en la caja y en el comprobante. */
+export function payrollDetail(kind: PayrollKind, employeeName: string, month: string): string {
+  return `${PAYROLL_KIND_TITLES[kind]} · ${employeeName.trim()} · ${monthWord(month)}`
+}
+
+/**
+ * El `cash_movement` de un movimiento de sueldos, siempre una salida de la caja:
+ * - un adelanto o un pago, contra Sueldos a pagar [Personal] (baja lo que se le debe);
+ * - las horas extra, contra Sueldos y jornales, sin partícipe (es un gasto más: no estaba devengado).
+ *
+ * `branchId`: la sucursal del comprobante. Va cuando la caja es de una sucursal (una caja de otra
+ * sucursal no se mueve desde la principal) o cuando se sabe dónde trabaja la persona.
+ */
 export function payrollMovementValues(
   input: {
     kind: PayrollKind
@@ -296,19 +632,33 @@ export function payrollMovementValues(
     amountCents: number | null
     date: string | null
     personalPartyId: string | null
+    branchId?: string | null
   },
   ctx: Pick<PostingContext, 'sys'>,
 ): PayrollMovementFormValues {
+  const overtime = input.kind === 'overtime'
   return {
     treasuryAccountId: input.treasuryAccountId ?? '',
     direction: 'out',
-    counterpartAccountId: ctx.sys.payroll_payable.id,
-    partyId: input.personalPartyId,
+    counterpartAccountId: overtime ? ctx.sys.salaries.id : ctx.sys.payroll_payable.id,
+    partyId: overtime ? null : input.personalPartyId,
     amountCents: input.amountCents ?? 0,
     date: input.date ?? '',
     shortcut: 'other',
     detail: payrollDetail(input.kind, input.employeeName, input.month),
+    ...(input.branchId ? { branchId: input.branchId } : {}),
   }
+}
+
+/**
+ * La sucursal de un movimiento de sueldos: la de la caja si tiene (de ahí sale la plata); si la caja es
+ * de todo el bar, la de la persona. `null`: la decide la base (la principal).
+ */
+export function payrollBranchId(
+  treasury: { branchId?: string | null } | null | undefined,
+  employee: { branchId?: string | null },
+): string | null {
+  return treasury?.branchId || employee.branchId || null
 }
 
 /** El asiento de «Devengar»: D Sueldos y jornales / H Sueldos a pagar [Personal], a fin de mes. */
@@ -375,28 +725,63 @@ export const employeeSchema = z.object(
 )
 export type EmployeeValues = z.input<typeof employeeSchema>
 
+const salaryAmount = (empty: string) =>
+  z
+    .number({ message: empty })
+    .int('El sueldo tiene que estar en centavos enteros.')
+    .min(0, 'El sueldo va sin signo menos.')
+    .max(MAX_SALARY_CENTS, 'Ese importe es demasiado grande. Revisalo.')
+
 export const employeeSalarySchema = z.object(
   {
     employeeId: employeeIdField,
     month: yearMonthField,
-    salaryCents: z
-      .number({ message: 'Escribí el sueldo.' })
-      .int('El sueldo tiene que estar en centavos enteros.')
-      .min(0, 'El sueldo va sin signo menos.')
-      .max(MAX_SALARY_CENTS, 'Ese importe es demasiado grande. Revisalo.'),
+    salaryCents: salaryAmount('Escribí el sueldo.'),
   },
   { message: BAD_DATA },
 )
 export type EmployeeSalaryValues = z.input<typeof employeeSalarySchema>
 
+/** El sueldo en sus dos partes: lo que va en blanco y lo que va en negro. El total es la suma. */
+export const employeeSalaryPartsSchema = z
+  .object(
+    {
+      employeeId: employeeIdField,
+      month: yearMonthField,
+      declaredCents: salaryAmount('Escribí la parte en blanco (puede ser cero).'),
+      offBooksCents: salaryAmount('Escribí la parte en negro (puede ser cero).'),
+    },
+    { message: BAD_DATA },
+  )
+  .refine((v) => v.declaredCents + v.offBooksCents <= MAX_SALARY_CENTS, {
+    path: ['offBooksCents'],
+    message: 'Ese importe es demasiado grande. Revisalo.',
+  })
+export type EmployeeSalaryPartsValues = z.input<typeof employeeSalaryPartsSchema>
+
+const periodDay = z
+  .string({ message: 'Elegí la fecha.' })
+  .refine((value) => isRealIsoDay(value), { message: 'Elegí una fecha real.' })
+  .nullable()
+  .default(null)
+
 /** A quién corresponde el movimiento. El resto lo valida `cashMovementSchema`, en el camino de siempre. */
-export const payrollMovementTargetSchema = z.looseObject({
-  employeeId: employeeIdField,
-  month: yearMonthField,
-  kind: z.enum(PAYROLL_KINDS, { message: BAD_DATA }),
-  clientRef: z.uuid({ message: 'Falta la referencia del formulario. Recargá la página.' }),
-  direction: z.literal('out', { message: BAD_DATA }),
-})
+export const payrollMovementTargetSchema = z
+  .looseObject({
+    employeeId: employeeIdField,
+    month: yearMonthField,
+    kind: z.enum(PAYROLL_KINDS, { message: BAD_DATA }),
+    offBooks: z.boolean({ message: BAD_DATA }).default(false),
+    periodFrom: periodDay,
+    periodTo: periodDay,
+    posCashId: z.uuid({ message: 'Ese retiro no existe.' }).nullable().default(null),
+    clientRef: z.uuid({ message: 'Falta la referencia del formulario. Recargá la página.' }),
+    direction: z.literal('out', { message: BAD_DATA }),
+  })
+  .refine((v) => !v.periodFrom || !v.periodTo || v.periodTo >= v.periodFrom, {
+    path: ['periodTo'],
+    message: 'El «hasta» va después del «desde».',
+  })
 
 /** De qué mes es el asiento. El resto lo valida `manualEntrySchema`, en el camino de siempre. */
 export const payrollAccrualTargetSchema = z.looseObject({

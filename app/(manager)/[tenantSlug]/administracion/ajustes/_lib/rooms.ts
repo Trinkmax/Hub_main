@@ -77,7 +77,8 @@ export const ROOMS: Readonly<Record<RoomKey, RoomInfo>> = {
   },
   accesos: {
     title: 'Accesos',
-    description: 'Administración es privada: la ven solo los socios que habilites y la contadora.',
+    description:
+      'Administración es privada: entra solo quien habilites, y cada persona ve lo que le toca. Los socios, todo; un empleado, solo compras y pagos.',
     tab: 'accesos',
   },
   arca: {

@@ -40,6 +40,8 @@ export function fullUpdatePayload(
     cake_option_id: r.cake_option_id,
     champagne_count: r.champagne_count,
     deposit_cents: r.deposit_cents,
+    // Copia fiel, como la torta: editar otra cosa no tiene por qué borrar con qué se cobró la seña.
+    deposit_method: r.deposit_method,
     origin: r.origin,
     primary_manager_id: r.primary_manager_id,
     assistant_manager_id: r.assistant_manager_id,

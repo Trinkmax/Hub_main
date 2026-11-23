@@ -227,6 +227,13 @@ export type MenuCategory = {
   parent_id: string | null
   position: number
   station_id: string | null
+  /**
+   * Cuándo se muestra el rubro en la carta (`menu_categories.availability`, tal cual viene de
+   * `pos_menu`; se lee con `lib/menu/availability.ts`). Vacío = siempre. Lo heredan sus subcategorías.
+   */
+  availability?: unknown
+  /** Lo de este rubro sale primero en cocina (`menu_categories.kitchen_first`). */
+  kitchen_first?: boolean
 }
 
 export type MenuItem = {
@@ -273,6 +280,16 @@ export type KitchenItem = {
   prep_status: PrepStatus
   started_at: string | null
   ready_at: string | null
+  /**
+   * El rubro de la carta al que pertenece (su categoría directa: «Pizza», «Tablas y milanesas») y su
+   * lugar en la carta: la comanda junta «pizzas con pizzas». Llegan desde la migración
+   * `pos_revisiones_socios`; con la función anterior no vienen y la comanda se arma sin rubros.
+   */
+  category_id?: string | null
+  category?: string | null
+  category_order?: number | null
+  /** «Sale primero» (una entrada): lo marcó el bar en Carta › Cocina y aclaraciones. */
+  priority?: boolean | null
 }
 
 export type KitchenTicket = {

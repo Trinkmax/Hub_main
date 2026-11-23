@@ -1,0 +1,193 @@
+/* La leyenda del salón («Qué dice cada color») y el aviso amarillo en la chapa de la mesa.
+   Va en su propio archivo (y no al final de globals.css) porque solo lo usa el mapa. */
+
+/* ── El aviso: la mesa todavía no está roja, pero ya hay que mirarla ── */
+.pos {
+  --pos-warn: oklch(0.85 0.17 92);
+}
+/* «En despacho» ya salta sola y lo demorado ya es rojo: el borde es para lo que viene en camino. */
+.pos-flag.pos-urg-warn:not(.pos-st-ready) .pos-flag-plate {
+  box-shadow:
+    0 0 0 2px var(--pos-ink),
+    0 0 0 4.5px var(--pos-warn),
+    0 0.35em 0.7em -0.25em oklch(0.15 0.04 165 / 0.55);
+}
+.pos-flag.pos-urg-warn:not(.pos-st-ready) .pos-flag-time {
+  font-weight: 800;
+  opacity: 1;
+}
+.pos-row.pos-urg-warn:not(.pos-st-ready) .pos-chip {
+  box-shadow:
+    0 0 0 2px var(--pos-paper),
+    0 0 0 4px var(--pos-warn);
+}
+
+/* ── La hoja ── */
+.pos-legend {
+  display: grid;
+  gap: 0.9rem;
+}
+.pos-legend-sub {
+  max-width: 46ch;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.pos-legend-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1.5px solid var(--pos-rule);
+}
+.pos-legend-row {
+  display: grid;
+  grid-template-columns: 9.4rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 3.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1.5px solid var(--pos-rule);
+}
+.pos-legend-plate {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.4rem;
+  height: 2.1rem;
+  padding: 0 0.7rem 0 0.55rem;
+  border-radius: 0.6rem;
+  background: var(--st, var(--pos-card-2));
+  color: var(--pos-on-dark);
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-stretch: 84%;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pos-legend-plate svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+/* Libre no tiene color: es el cartón de la mesa. */
+.pos-legend-plate.pos-st-free {
+  background: var(--pos-card);
+  color: var(--pos-ink);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+}
+.pos-legend-plate.pos-st-kitchen,
+.pos-legend-plate.pos-st-ready {
+  color: var(--pos-on-light);
+}
+.pos-legend-text {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pos-ink);
+  text-wrap: pretty;
+}
+.pos-legend-text b {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.pos-legend-text b svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+.pos-legend-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.95rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-legend-link:active {
+  transform: scale(0.985);
+}
+.pos-legend-link:focus-visible {
+  outline: 3px solid var(--pos-st-bill);
+  outline-offset: 2px;
+}
+.pos-legend-link span {
+  display: grid;
+  gap: 0.15rem;
+}
+.pos-legend-link b {
+  font-size: 1.02rem;
+  font-weight: 800;
+  font-stretch: 86%;
+}
+.pos-legend-link small {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--pos-ink-soft);
+}
+.pos-legend-link svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  color: var(--pos-ink-soft);
+}
+.pos-legend-foot {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+@media (max-width: 420px) {
+  .pos-legend-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.4rem;
+  }
+}
+/* Con ancho, en dos columnas: la hoja entra entera sin tener que correrla. */
+@media (min-width: 900px) {
+  .pos-legend {
+    max-width: 68rem;
+    margin-inline: auto;
+  }
+  .pos-legend-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 2.5rem;
+  }
+  .pos-legend-row {
+    grid-template-columns: 9.4rem minmax(0, 1fr);
+    min-height: 4rem;
+  }
+  .pos-legend-sub {
+    max-width: 70ch;
+  }
+}
+
+/* ── El botón de la leyenda, en la fila de fichas del mapa ── */
+.pos-hud-chip.is-legend {
+  width: 3rem;
+  padding: 0;
+  justify-content: center;
+}
+.pos-hud-chip.is-legend svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+@media (min-width: 900px) {
+  .pos-hud-chip.is-legend {
+    width: auto;
+    padding: 0 0.8rem 0 0.65rem;
+  }
+}

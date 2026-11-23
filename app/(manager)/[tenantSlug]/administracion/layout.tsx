@@ -41,6 +41,11 @@ export const maxDuration = 60
  * | Sin configurar                         | contadora      | «Todavía no está lista»    |
  * | Configurada, sin acceso                | dueño          | «Administración es privada»|
  * | Configurada, con acceso                | dueño/contadora| la sección (+ hojas rápidas)|
+ * | Configurada, «solo compras y pagos»    | dueño          | solo Compras y pagos       |
+ *
+ * Con «solo compras y pagos» (`state.purchasesOnly`) la barra trae una sola palabra, sin el engranaje;
+ * «Cargar» ofrece solo lo de compras, y cualquier otra pantalla de la sección le da el 404 (cada
+ * página pide el nivel completo). El Resumen lo manda a Compras.
  *
  * La navegación de la sección (`AdmNav`: seis palabras, el engranaje y «Cargar», con las solapas de
  * cada sección) va arriba de todo SOLO en la última fila: nunca en las pantallas de la puerta ni en
@@ -96,7 +101,7 @@ export default async function AdministracionLayout({
     )
   }
 
-  if (!state.read) return <AdministracionSinAcceso adminNames={state.adminNames} />
+  if (!state.buyRead) return <AdministracionSinAcceso adminNames={state.adminNames} />
 
   // La misma resolución cacheada que ya usó `getAccountingState`: sin otro viaje a la base.
   const section = resolveSection('administracion', tenantSlug, await loadSectionViewer(tenantSlug))
@@ -105,12 +110,18 @@ export default async function AdministracionLayout({
     <AccountingProvider
       tenantSlug={tenantSlug}
       today={todayInCordoba()}
-      access={{ read: state.read, write: state.write, admin: state.admin }}
+      access={{
+        read: state.read,
+        write: state.write,
+        admin: state.admin,
+        buyWrite: state.buyWrite,
+        purchasesOnly: state.purchasesOnly,
+      }}
     >
       <AdmNav
         label={section.label}
         tabs={section.tabs}
-        audience={state.isAccountant ? 'accountant' : 'owner'}
+        audience={state.isAccountant ? 'accountant' : state.purchasesOnly ? 'buyer' : 'owner'}
       />
       {children}
       <AdmFab />

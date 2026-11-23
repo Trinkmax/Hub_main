@@ -9,6 +9,7 @@ import { getBranchScope } from '@/lib/branches/scope'
 import { formatCentsShort } from '@/lib/money/format'
 import { getSetupStatus } from '@/lib/onboarding/setup'
 import { isFeatureEnabled } from '@/lib/platform/features'
+import { seesSalonNumbers } from '@/lib/pos/cash/blind'
 import { serviceDayAt } from '@/lib/pos/cash/screen'
 import { getSalesDays } from '@/lib/pos/today/queries'
 import type { SalesDay } from '@/lib/pos/today/types'
@@ -89,7 +90,8 @@ export default async function TenantHomePage({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  const { tenant, role } = await requireTenantAccess(tenantSlug)
+  const access = await requireTenantAccess(tenantSlug)
+  const { tenant, role } = access
   // El home es del dueño: cualquier otro rol va al suyo (backstop del proxy).
   if (role !== 'owner') redirect(homePathForRole(role, tenantSlug))
 
@@ -115,7 +117,13 @@ export default async function TenantHomePage({
       ? getSetupStatus({ tenantId: tenant.id, today, settings: tenantSettings })
       : Promise.resolve(null),
     getTodaySalonOverview({ tenantId: tenant.id, date: today, branch }),
-    posSalesToday(tenant, isFeatureEnabled(tenant, 'pos'), rpcBranchId(branchScope)),
+    // Lo vendido en el salón es de los socios: un encargado con usuario de dueño no lo ve acá
+    // (ni en la caja, ni en «Hoy en vivo»).
+    posSalesToday(
+      tenant,
+      isFeatureEnabled(tenant, 'pos') && seesSalonNumbers(access),
+      rpcBranchId(branchScope),
+    ),
   ])
 
   const { current, previous } = pulse

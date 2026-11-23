@@ -6,6 +6,7 @@ import { CakeChip } from '@/components/reservations/cake-chip'
 import { ChampagneChip } from '@/components/reservations/celebration-chip'
 import { InstagramButton } from '@/components/reservations/instagram-link'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
+import { depositMethodLabel } from '@/lib/salon/deposit-method'
 import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -112,8 +113,15 @@ export function ReservationDetailSidebar({
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-sm text-muted-foreground">Seña</span>
           {reservation.deposit_cents > 0 ? (
-            <span className="font-mono text-base font-semibold tabular-nums">
-              {ARSFormat(reservation.deposit_cents)}
+            <span className="flex flex-col items-end leading-tight">
+              <span className="font-mono text-base font-semibold tabular-nums">
+                {ARSFormat(reservation.deposit_cents)}
+              </span>
+              {depositMethodLabel(reservation.deposit_method) ? (
+                <span className="text-xs text-muted-foreground">
+                  {depositMethodLabel(reservation.deposit_method)}
+                </span>
+              ) : null}
             </span>
           ) : (
             <span className="text-sm text-muted-foreground">Sin seña</span>

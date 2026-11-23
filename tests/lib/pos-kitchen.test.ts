@@ -10,15 +10,20 @@ import {
   advanceTarget,
   applyAdvance,
   buildCards,
+  buildTableCards,
   hasExpired,
   kitchenAlerts,
+  knownTickets,
+  NO_CATEGORY_LABEL,
   newArrivals,
+  PRIORITY_LABEL,
   READY_LINGER_MS,
   showsStation,
   splitEvents,
+  ticketsToMove,
   totalsOf,
   undoTarget,
-  unseenCards,
+  unseenTickets,
 } from '@/lib/pos/kitchen/cards'
 import type { KitchenItem, KitchenQueue, KitchenTicket, PrepStatus } from '@/lib/pos/types'
 
@@ -309,7 +314,7 @@ describe('la comanda', () => {
         ],
       }),
     )
-    expect(card?.groups.map((g) => [g.station, g.lines.map((l) => l.name)])).toEqual([
+    expect(card?.groups.map((g) => [g.label, g.lines.map((l) => l.name)])).toEqual([
       ['Cocina', ['Muzzarella', 'Lomo']],
       ['Barra', ['Negroni']],
       ['Sin estación', ['Pan']],
@@ -319,7 +324,7 @@ describe('la comanda', () => {
   it('de una sola estación no lleva rótulo', () => {
     const card = one(ticket({ items: [item(), item()] }))
     expect(card?.groups).toHaveLength(1)
-    expect(card?.groups[0]?.station).toBeNull()
+    expect(card?.groups[0]?.label).toBeNull()
   })
 
   it('personas y tanda con valores sanos', () => {
@@ -812,8 +817,259 @@ describe('lo que acaba de entrar', () => {
       ticket({ id: 'b', kitchen_seen_at: ago(1) }),
       ticket({ id: 'c', kitchen_seen_at: null }),
     )
-    expect(unseenCards(cards, new Set())).toEqual(['a', 'c'])
-    expect(unseenCards(cards, new Set(['a']))).toEqual(['c'])
-    expect(unseenCards(cards, new Set(['a', 'c']))).toEqual([])
+    expect(unseenTickets(cards, new Set())).toEqual(['a', 'c'])
+    expect(unseenTickets(cards, new Set(['a']))).toEqual(['c'])
+    expect(unseenTickets(cards, new Set(['a', 'c']))).toEqual([])
+  })
+})
+
+// ─── Una comanda por mesa, por rubro y con lo que sale primero (22/11/2026) ──
+
+const PIZZA = { category_id: 'c-pizza', category: 'Pizza', category_order: 1003 }
+const MILAS = { category_id: 'c-milas', category: 'Tablas y milanesas', category_order: 1001 }
+const TRAGOS = { category_id: 'c-tragos', category: 'Tragos', category_order: 2001 }
+
+describe('una comanda por mesa (la tele)', () => {
+  const table = (...tickets: KitchenTicket[]) => buildTableCards(queue(tickets), [])
+
+  it('dos tandas de la misma mesa van en una sola comanda; en el papel siguen siendo dos', () => {
+    const tickets = [
+      ticket({ id: 't1', session_id: 's1', fired_at: ago(9), items: [item({ name: 'Lomito' })] }),
+      ticket({
+        id: 't2',
+        session_id: 's1',
+        course: 2,
+        fired_at: ago(2),
+        items: [item({ name: 'Flan' })],
+      }),
+    ]
+    const cards = table(...tickets)
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ id: 's1', ticketIds: ['t1', 't2'], spoken: 'la mesa 12' })
+    expect(cards[0]?.lines.map((l) => l.name)).toEqual(['Lomito', 'Flan'])
+    expect(buildCards(queue(tickets), [])).toHaveLength(2)
+  })
+
+  it('cada mesa tiene la suya, por orden de llegada', () => {
+    const cards = table(
+      ticket({ id: 'b1', session_id: 'sB', table_label: '7', fired_at: ago(3) }),
+      ticket({ id: 'a1', session_id: 'sA', table_label: '4', fired_at: ago(8) }),
+      ticket({ id: 'b2', session_id: 'sB', table_label: '7', fired_at: ago(1) }),
+    )
+    expect(cards.map((c) => [c.title, c.ticketIds])).toEqual([
+      ['4', ['a1']],
+      ['7', ['b1', 'b2']],
+    ])
+  })
+
+  it('el mismo producto pedido en dos tandas sin empezar se suma: x3', () => {
+    const [card] = table(
+      ticket({ id: 't1', items: [item({ name: 'Muzza', quantity: 2 })] }),
+      ticket({ id: 't2', fired_at: ago(1), items: [item({ name: 'Muzza', quantity: 1 })] }),
+    )
+    expect(card?.lines).toHaveLength(1)
+    expect(card?.lines[0]).toMatchObject({ name: 'Muzza', quantity: 3, fresh: false })
+    expect(card?.grew).toBe(false)
+  })
+
+  it('lo que se suma a una mesa ya empezada queda aparte y marcado como nuevo', () => {
+    const [card] = table(
+      ticket({
+        id: 't1',
+        status: 'preparing',
+        fired_at: ago(10),
+        items: [item({ name: 'Muzza', quantity: 2, prep_status: 'preparing' })],
+      }),
+      ticket({
+        id: 't2',
+        fired_at: ago(1),
+        items: [item({ name: 'Muzza' }), item({ name: 'Fugazza' })],
+      }),
+    )
+    // Falta empezar algo: la comanda vuelve a pedir «Empezar», y dice que creció.
+    expect(card?.status).toBe('queued')
+    expect(card?.grew).toBe(true)
+    expect(card?.lines.map((l) => [l.name, l.quantity, l.status, l.fresh])).toEqual([
+      ['Muzza', 2, 'preparing', false],
+      ['Muzza', 1, 'queued', true],
+      ['Fugazza', 1, 'queued', true],
+    ])
+  })
+
+  it('el reloj corre desde la tanda más vieja que falta terminar', () => {
+    const [card] = table(
+      ticket({
+        id: 't1',
+        status: 'ready',
+        fired_at: ago(20),
+        ready_at: ago(3),
+        items: [item({ name: 'Lomito', prep_status: 'ready', ready_at: ago(3) })],
+      }),
+      ticket({ id: 't2', fired_at: ago(4), items: [item({ name: 'Flan' })] }),
+    )
+    expect(card?.firedAt).toBe(ago(4))
+    expect(card?.status).toBe('queued')
+  })
+
+  it('una tanda de la que ya se llevaron todo no vuelve a la comanda', () => {
+    const [card] = table(
+      ticket({
+        id: 't1',
+        fired_at: ago(30),
+        items: [item({ name: 'Papas', prep_status: 'served' })],
+      }),
+      ticket({ id: 't2', fired_at: ago(2), items: [item({ name: 'Flan' })] }),
+    )
+    expect(card?.ticketIds).toEqual(['t2'])
+    expect(card?.lines.map((l) => l.name)).toEqual(['Flan'])
+  })
+
+  it('«cocina lo vio» se avisa por tanda, aunque la comanda sea una', () => {
+    const cards = table(
+      ticket({ id: 't1', kitchen_seen_at: ago(5) }),
+      ticket({ id: 't2', fired_at: ago(1), kitchen_seen_at: null }),
+    )
+    expect(cards[0]?.seen).toBe(false)
+    expect(unseenTickets(cards, new Set())).toEqual(['t2'])
+  })
+
+  it('una mesa que ya tenía comanda y pide algo más también avisa', () => {
+    const before = knownTickets(table(ticket({ id: 't1' })))
+    const after = table(ticket({ id: 't1' }), ticket({ id: 't2', fired_at: ago(0) }))
+    expect(newArrivals(before, after)).toEqual(['s1'])
+    expect(newArrivals(knownTickets(after), after)).toEqual([])
+  })
+})
+
+describe('avanzar la comanda de una mesa', () => {
+  const two = () =>
+    queue([
+      ticket({
+        id: 't1',
+        status: 'ready',
+        fired_at: ago(12),
+        items: [item({ name: 'Lomito', prep_status: 'ready', ready_at: ago(2) })],
+      }),
+      ticket({ id: 't2', fired_at: ago(1), items: [item({ name: 'Flan' })] }),
+    ])
+
+  it('«Empezar» mueve solo la tanda atrasada: lo que ya estaba listo no vuelve atrás', () => {
+    const q = two()
+    const [card] = buildTableCards(q, [])
+    expect(card && ticketsToMove(q, card, 'preparing', [])).toEqual(['t2'])
+  })
+
+  it('«Listo» mueve todo lo que falta', () => {
+    const q = queue([
+      ticket({ id: 't1', items: [item({ prep_status: 'preparing' })] }),
+      ticket({ id: 't2', fired_at: ago(1), items: [item({ prep_status: 'preparing' })] }),
+    ])
+    const [card] = buildTableCards(q, [])
+    expect(card?.status).toBe('preparing')
+    expect(card && ticketsToMove(q, card, 'ready', [])).toEqual(['t1', 't2'])
+  })
+
+  it('deshacer vuelve un paso las tandas que están en el paso de la comanda', () => {
+    const q = queue([
+      ticket({ id: 't1', status: 'ready', items: [item({ prep_status: 'ready' })] }),
+      ticket({ id: 't2', fired_at: ago(1), items: [item({ prep_status: 'preparing' })] }),
+    ])
+    const [card] = buildTableCards(q, [])
+    expect(card?.status).toBe('preparing')
+    // De «en preparación» a «nuevo»: la que ya está lista no se toca.
+    expect(card && ticketsToMove(q, card, 'queued', [])).toEqual(['t2'])
+  })
+
+  it('no toca tandas que esta pantalla no muestra', () => {
+    const q = queue([
+      ticket({ id: 't1', items: [item({ name: 'Negroni', station_id: BARRA })] }),
+      ticket({ id: 't2', fired_at: ago(1), items: [item({ name: 'Lomito' })] }),
+    ])
+    const [card] = buildTableCards(q, [COCINA])
+    expect(card?.ticketIds).toEqual(['t2'])
+    expect(card && ticketsToMove(q, card, 'preparing', [COCINA])).toEqual(['t2'])
+  })
+})
+
+describe('por rubro, y lo que sale primero arriba', () => {
+  it('junta pizzas con pizzas y milanesas con milanesas, en el orden de la carta', () => {
+    const card = one(
+      ticket({
+        items: [
+          item({ name: 'Muzza', ...PIZZA }),
+          item({ name: 'Mila napo', ...MILAS }),
+          item({ name: 'Fugazza', ...PIZZA }),
+          item({ name: 'Mila a caballo', ...MILAS }),
+        ],
+      }),
+    )
+    expect(card?.groups.map((g) => [g.label, g.lines.map((l) => l.name)])).toEqual([
+      ['Tablas y milanesas', ['Mila napo', 'Mila a caballo']],
+      ['Pizza', ['Muzza', 'Fugazza']],
+    ])
+  })
+
+  it('un solo rubro no lleva rótulo', () => {
+    const card = one(
+      ticket({ items: [item({ name: 'Muzza', ...PIZZA }), item({ name: 'Fugazza', ...PIZZA })] }),
+    )
+    expect(card?.groups.map((g) => g.label)).toEqual([null])
+  })
+
+  it('lo que sale primero va arriba de todo, con su rótulo, aunque sea lo único', () => {
+    const card = one(
+      ticket({
+        items: [
+          item({ name: 'Muzza', ...PIZZA }),
+          item({ name: 'Rabas', ...MILAS, priority: true }),
+          item({ name: 'Negroni', ...TRAGOS }),
+        ],
+      }),
+    )
+    expect(card?.groups.map((g) => [g.label, g.priority, g.lines.map((l) => l.name)])).toEqual([
+      [PRIORITY_LABEL, true, ['Rabas']],
+      ['Pizza', false, ['Muzza']],
+      ['Tragos', false, ['Negroni']],
+    ])
+    const alone = one(ticket({ items: [item({ name: 'Rabas', ...MILAS, priority: true })] }))
+    expect(alone?.groups.map((g) => [g.label, g.priority])).toEqual([[PRIORITY_LABEL, true]])
+  })
+
+  it('lo que quedó sin rubro va al final, como «Otros»', () => {
+    const card = one(
+      ticket({ items: [item({ name: 'Cubiertos' }), item({ name: 'Muzza', ...PIZZA })] }),
+    )
+    expect(card?.groups.map((g) => [g.label, g.lines.map((l) => l.name)])).toEqual([
+      ['Pizza', ['Muzza']],
+      [NO_CATEGORY_LABEL, ['Cubiertos']],
+    ])
+  })
+
+  it('en la comanda de la mesa, los rubros juntan lo de todas las tandas', () => {
+    const [card] = buildTableCards(
+      queue([
+        ticket({ id: 't1', items: [item({ name: 'Muzza', ...PIZZA })] }),
+        ticket({
+          id: 't2',
+          fired_at: ago(1),
+          items: [item({ name: 'Mila napo', ...MILAS }), item({ name: 'Fugazza', ...PIZZA })],
+        }),
+      ]),
+      [],
+    )
+    expect(card?.groups.map((g) => [g.label, g.lines.map((l) => l.name)])).toEqual([
+      ['Tablas y milanesas', ['Mila napo']],
+      ['Pizza', ['Muzza', 'Fugazza']],
+    ])
+  })
+
+  it('si la cola no trae rubros (la función anterior), la comanda se arma como siempre', () => {
+    const card = one(ticket({ items: [item({ name: 'Muzza' }), item({ name: 'Lomo' })] }))
+    expect(card?.groups).toHaveLength(1)
+    expect(card?.groups[0]?.label).toBeNull()
+    expect(card?.lines.map((l) => [l.category, l.priority])).toEqual([
+      [null, false],
+      [null, false],
+    ])
   })
 })

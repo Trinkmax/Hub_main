@@ -52,7 +52,9 @@ export function SupplierActions({
   canBuy: boolean
   className?: string
 }) {
-  const { readOnly, openAction } = useAccounting()
+  const { readOnly, purchasesOnly, openAction } = useAccounting()
+  // Exportar es del nivel completo: con «solo compras y pagos» el «⋯» trae solo lo de cargar.
+  const canExport = purchasesOnly !== true
   const [exporting, setExporting] = useState(false)
 
   const runExport = async () => {
@@ -96,42 +98,51 @@ export function SupplierActions({
           Pagar
         </Button>
       ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-10 shrink-0 text-muted-foreground md:pointer-fine:size-8"
-            aria-label={`Más acciones con ${partyName}`}
-          >
-            <Ellipsis className="size-4" aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
-          {canBuy ? (
-            <>
-              <DropdownMenuItem asChild className={ITEM}>
-                <Link href={paidPurchaseHref}>
-                  <ShoppingBasket className="size-4" aria-hidden />
-                  Compra y pago
-                </Link>
+      {/* Un proveedor desactivado visto con «solo compras y pagos» no tiene nada en el «⋯». */}
+      {canBuy || canExport ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0 text-muted-foreground md:pointer-fine:size-8"
+              aria-label={`Más acciones con ${partyName}`}
+            >
+              <Ellipsis className="size-4" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            {canBuy ? (
+              <>
+                <DropdownMenuItem asChild className={ITEM}>
+                  <Link href={paidPurchaseHref}>
+                    <ShoppingBasket className="size-4" aria-hidden />
+                    Compra y pago
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className={ITEM}>
+                  <Link href={newCreditNoteHref}>
+                    <FileMinus2 className="size-4" aria-hidden />
+                    Me hizo una nota de crédito
+                  </Link>
+                </DropdownMenuItem>
+                {canExport ? <DropdownMenuSeparator /> : null}
+              </>
+            ) : null}
+            {canExport ? (
+              <DropdownMenuItem
+                className={ITEM}
+                disabled={exporting}
+                onSelect={() => void runExport()}
+              >
+                <Download className="size-4" aria-hidden />
+                Exportar su cuenta de este año
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className={ITEM}>
-                <Link href={newCreditNoteHref}>
-                  <FileMinus2 className="size-4" aria-hidden />
-                  Me hizo una nota de crédito
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          ) : null}
-          <DropdownMenuItem className={ITEM} disabled={exporting} onSelect={() => void runExport()}>
-            <Download className="size-4" aria-hidden />
-            Exportar su cuenta de este año
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
     </div>
   )
 }

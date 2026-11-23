@@ -1606,6 +1606,27 @@ button.cmd-line:active {
   letter-spacing: 0.02em;
   color: var(--cmd-late-ink);
 }
+/* Fuera de horario (un rubro que la carta no muestra a esta hora): atenuado, sin tachar. Se puede
+   cargar igual: el mozo decide. Lo que ya está en el pedido se ve entero. */
+.cmd-tile.is-off:not(.has-qty) .cmd-tile-name,
+.cmd-prod.is-off:not(.has-qty) .cmd-prod-name {
+  color: var(--cmd-faint);
+}
+.cmd-prod.is-off:not(.has-qty) .cmd-prod-sub b {
+  color: var(--pos-ink-soft);
+}
+.cmd-off {
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 86%;
+  letter-spacing: 0.01em;
+  color: var(--pos-ink-soft);
+}
+.cmd-chip.is-off:not([aria-pressed="true"]) > span {
+  color: var(--cmd-faint);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--pos-rule) 55%, transparent);
+  background: transparent;
+}
 /* Con teclado: Enter agrega este. */
 .cmd-enter {
   display: none;

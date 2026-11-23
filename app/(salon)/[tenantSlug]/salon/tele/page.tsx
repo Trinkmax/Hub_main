@@ -80,6 +80,7 @@ export default async function KitchenTvPage({
         timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
         stationParam={parseStationParam(estaciones)}
         isKitchen={access.role === 'kitchen'}
+        brand={{ name: access.tenant.name, logoUrl: access.tenant.logo_url }}
       />
     </div>
   )

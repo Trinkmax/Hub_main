@@ -16,6 +16,8 @@ export const OPTION_LABEL_MAX = 40
 export const OPTION_DELTA_MAX_CENTS = 100_000_000
 /** Hasta cuántas marcas en un pedido: una carta grande entra holgada. */
 export const MAX_ROUTE_CHANGES = 3_000
+/** Hasta cuántas marcas de «sale primero» en un pedido. */
+export const MAX_FIRST_CHANGES = 500
 /** Una estación, un grupo o un grupo de opciones no pasan de esto. */
 export const MAX_STATIONS = 24
 export const MAX_GROUPS = 80
@@ -77,6 +79,40 @@ export const applyRouteSchema = z
   })
 
 export type ApplyRouteInput = z.infer<typeof applyRouteSchema>
+
+// ─── Lo que sale primero ─────────────────────────────────────────────────────
+
+const firstChange = z.object({
+  node: z.enum(['category', 'item']),
+  id,
+  /** En un producto, `null` = vuelve a seguir a su categoría. */
+  to: z.boolean().nullable(),
+  /** Lo que la persona veía ahí. */
+  expected: z.boolean().nullable(),
+})
+
+export const setKitchenFirstSchema = z
+  .object({ changes: z.array(firstChange).min(1).max(MAX_FIRST_CHANGES) })
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>()
+    for (const [index, each] of value.changes.entries()) {
+      const key = nodeKey(each.node, each.id)
+      if (seen.has(key)) {
+        ctx.addIssue({ code: 'custom', path: ['changes', index], message: 'Marca repetida.' })
+      }
+      seen.add(key)
+      // `menu_categories.kitchen_first` no admite vacío.
+      if (each.node === 'category' && (each.to === null || each.expected === null)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['changes', index],
+          message: 'Una categoría sale primero o no.',
+        })
+      }
+    }
+  })
+
+export type SetKitchenFirstInput = z.infer<typeof setKitchenFirstSchema>
 
 // ─── Estaciones ──────────────────────────────────────────────────────────────
 

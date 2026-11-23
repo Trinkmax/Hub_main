@@ -11,6 +11,7 @@
 
 import { rowsToCsv } from '@/lib/stats/csv'
 import { resolveReservationAlerts, SERVICE_ALERT_META } from './alerts'
+import { depositMethodLabel } from './deposit-method'
 import { floorLabel } from './event-floor'
 import { formatInstagramHandle } from './instagram'
 import { serviceMinutes } from './operativo'
@@ -40,6 +41,7 @@ export const EXPORT_HEADERS = [
   'Torta',
   'Champagne',
   'Seña ($)',
+  'Seña: medio',
   'Origen',
   'Gestor',
   'Asistente',
@@ -122,6 +124,8 @@ export function reservationToExportRow(r: ReservationWithJoins): string[] {
     r.champagne_count > 0 ? String(r.champagne_count) : '',
     // Pesos, no centavos: es lo que el dueño suma en la planilla.
     r.deposit_cents > 0 ? String(Math.round(r.deposit_cents / 100)) : '',
+    // Con qué se cobró. Vacío si no hay seña o no se anotó.
+    r.deposit_cents > 0 ? (depositMethodLabel(r.deposit_method) ?? '') : '',
     ORIGIN_LABELS[r.origin],
     r.primary_manager?.display_name ?? '',
     r.assistant_manager?.display_name ?? '',

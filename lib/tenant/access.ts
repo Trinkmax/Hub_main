@@ -82,18 +82,28 @@ export function parseAccountingAccess(raw: unknown): AccountingAccess {
       write: false,
       admin: false,
       canSetUp: false,
+      buyRead: false,
+      buyWrite: false,
+      scope: null,
     }
   }
   const enabled = raw.enabled === true
   const setUp = raw.set_up === true
   const read = enabled && setUp && raw.read === true
+  const write = read && raw.write === true
+  // Quien ve todo también entra a Compras y pagos; el nivel «solo compras y pagos» entra ahí y a
+  // nada más. Antes de la migración que lo agrega la clave no viene: queda igual que `read`.
+  const buyRead = read || (enabled && setUp && raw.buy_read === true)
   return {
     enabled,
     setUp,
     read,
-    write: read && raw.write === true,
+    write,
     admin: raw.admin === true,
     canSetUp: enabled && !setUp && raw.can_set_up === true,
+    buyRead,
+    buyWrite: write || (buyRead && raw.buy_write === true),
+    scope: raw.scope === 'full' || raw.scope === 'purchases' ? raw.scope : null,
   }
 }
 

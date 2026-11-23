@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { updateActualGuests, updateSalonReservation } from '@/lib/salon/actions'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { editReservationHref } from '@/lib/salon/calendar-links'
+import { depositMethodLabel } from '@/lib/salon/deposit-method'
 import { EVENT_FLOOR_QUESTION, isEventReservation, zoneChoicesFor } from '@/lib/salon/event-floor'
 import { ARSFormat } from '@/lib/salon/format'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
@@ -240,7 +241,15 @@ export function ReservationQuickView({
               que pregunta el dueño cuando mira una reserva. */}
           <Field label="Seña">
             {r.deposit_cents > 0 ? (
-              <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
+              <>
+                <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
+                {depositMethodLabel(r.deposit_method) ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    {' '}
+                    · {depositMethodLabel(r.deposit_method)}
+                  </span>
+                ) : null}
+              </>
             ) : (
               <span className="text-muted-foreground">Sin seña</span>
             )}
@@ -537,6 +546,8 @@ function QuickEditPanel({
       cake_option_id: r.cake_option_id,
       champagne_count: r.champagne_count,
       deposit_cents: r.deposit_cents,
+      // Snapshot fiel: mover la hora o las personas no borra con qué se cobró la seña.
+      deposit_method: r.deposit_method,
       origin: r.origin,
       primary_manager_id: r.primary_manager_id,
       assistant_manager_id: r.assistant_manager_id,

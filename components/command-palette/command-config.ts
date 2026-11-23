@@ -75,10 +75,12 @@ export type CommandEntry = {
   roles?: TenantRole[]
   /**
    * Administración (H.0): el acceso por persona que hace falta. `write` =
-   * cargar (solo dueños habilitados); `read` = ver (también la contadora);
+   * cargar (solo dueños con acceso completo); `read` = ver (también la contadora);
    * `read_or_setup` = además el dueño que puede hacer la puesta en marcha.
+   * `buy_write` y `buy_read` son las de Compras y pagos: alcanzan con el nivel
+   * «solo compras y pagos» (y, claro, con el completo).
    */
-  accounting?: 'read' | 'write' | 'read_or_setup'
+  accounting?: 'read' | 'write' | 'read_or_setup' | 'buy_read' | 'buy_write'
   /**
    * Abre una hoja de acción rápida (`?accion=`) sobre la pantalla actual si ya
    * se está en Administración; si no, sobre el Resumen. Gana sobre `href`.
@@ -110,7 +112,7 @@ const accountingEntries: CommandEntry[] = [
       'nota de crédito',
       ...ACC_KEYWORDS,
     ],
-    accounting: 'write',
+    accounting: 'buy_write',
   },
   {
     id: 'acc-new-expense',
@@ -120,7 +122,7 @@ const accountingEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/administracion/compras/nueva?modo=pago`,
     keywords: ['gasto', 'compra', 'ticket', 'pague', 'pagué', 'compre', 'compré', ...ACC_KEYWORDS],
-    accounting: 'write',
+    accounting: 'buy_write',
   },
   {
     id: 'acc-sales-close',
@@ -151,7 +153,7 @@ const accountingEntries: CommandEntry[] = [
       'alquiler',
       ...ACC_KEYWORDS,
     ],
-    accounting: 'write',
+    accounting: 'buy_write',
   },
   {
     id: 'acc-collect',
@@ -280,7 +282,7 @@ const accountingEntries: CommandEntry[] = [
     href: (s) => `/${s}/administracion/compras`,
     keywords: ['compras', 'pagos', 'deudas', 'cuenta corriente', 'saldo', ...ACC_KEYWORDS],
     roles: ['owner', 'accountant'],
-    accounting: 'read',
+    accounting: 'buy_read',
   },
   {
     id: 'acc-week-plan',
@@ -302,7 +304,7 @@ const accountingEntries: CommandEntry[] = [
     href: (s) => `/${s}/administracion/compras?tab=comprobantes`,
     keywords: ['facturas', 'con factura', 'sin factura', 'remitos', 'fotos', ...ACC_KEYWORDS],
     roles: ['owner', 'accountant'],
-    accounting: 'read',
+    accounting: 'buy_read',
   },
   // Pestaña propia de Administración desde el 12/10/2026 (antes, adentro de Compras).
   {

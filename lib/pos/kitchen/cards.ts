@@ -1,12 +1,19 @@
 /**
  * La cola de cocina convertida en comandas para UNA pantalla — PURO y testeado.
  *
- * Una comanda es una tanda («la mesa sale junta»). Cada pantalla elige qué
- * estaciones muestra: lo de esas estaciones son los renglones de la comanda, y
+ * En la tele, una comanda es UNA MESA (pedido de los socios, 22/11/2026: «en la solapa de cocina debe
+ * mostrar un ticket por mesa»): todas sus tandas vivas van en la misma tarjeta, y lo que se suma
+ * después a una mesa que la cocina ya empezó se marca como nuevo (`buildTableCards`). En el papel sigue
+ * siendo una tanda por tique, porque a un papel impreso no se le puede agregar nada (`buildCards`).
+ *
+ * Cada pantalla elige qué estaciones muestra: lo de esas estaciones son los renglones de la comanda, y
  * lo demás queda en una línea al pie para saber qué más espera la mesa.
  *
- * El estado de la comanda es el del renglón más atrasado de los que ESTA
- * pantalla muestra: si falta uno, la mesa no sale.
+ * Los renglones van juntos por rubro de la carta («pizzas con pizzas, milanesas con milanesas») y lo
+ * que el bar marcó como «sale primero» (una entrada) va arriba de todo.
+ *
+ * El estado de la comanda es el del renglón más atrasado de los que ESTA pantalla muestra: si falta
+ * uno, la mesa no sale.
  */
 import { isServiceAlert, SERVICE_ALERT_META, SERVICE_ALERTS } from '@/lib/salon/alerts'
 import type { KitchenItem, KitchenQueue, KitchenTicket, MenuStation, PrepStatus } from '../types'
@@ -70,15 +77,35 @@ export type CardLine = {
   variants: LineVariant[]
   stationId: string | null
   status: PrepStatus
+  /** El rubro de la carta («Pizza»). `null` si la cola no lo trae o el producto quedó sin rubro. */
+  categoryId: string | null
+  category: string | null
+  /** Sale primero (una entrada). */
+  priority: boolean
+  /** Se sumó a una mesa que la cocina ya había empezado: todavía nadie lo arrancó. */
+  fresh: boolean
 }
 
 /** Cómo se nombra, entre varias formas, la que no lleva ninguna aclaración. */
 export const PLAIN_VARIANT = 'Común'
 
-/** Los renglones de una estación. `station` viene vacío cuando la comanda es de una sola: no hace falta rótulo. */
+/** Cómo se rotula lo que el bar marcó para que salga antes que el resto. */
+export const PRIORITY_LABEL = 'Sale primero'
+/** Y lo que no tiene rubro, cuando el resto de la comanda sí. */
+export const NO_CATEGORY_LABEL = 'Otros'
+
+/**
+ * Un bloque de renglones de la comanda: lo que sale primero, un rubro de la carta, o (si la cola no
+ * trae rubros y la comanda mezcla estaciones) una estación. `label` viene vacío cuando la comanda
+ * es de un solo bloque: no hace falta rótulo.
+ */
 export type LineGroup = {
+  /** Una identidad que no cambia al dibujar. */
+  key: string
   stationId: string | null
-  station: string | null
+  label: string | null
+  /** Es el bloque de «sale primero». */
+  priority: boolean
   lines: CardLine[]
 }
 
@@ -94,9 +121,15 @@ export type OtherStation = {
 }
 
 export type KitchenCard = {
-  /** El id de la tanda. */
+  /** En la tele, el id de la mesa abierta (todas sus tandas van juntas); en el papel, el de la tanda. */
   id: string
   sessionId: string
+  /** Las tandas que forman la comanda, de la más vieja a la más nueva. */
+  ticketIds: string[]
+  /** De esas, las que la cocina todavía no vio. */
+  unseenIds: string[]
+  /** Se le sumó algo a una comanda que ya estaba en marcha: hay renglones sin empezar entre los empezados. */
+  grew: boolean
   /** Lo que va enorme: el número de mesa, o un nombre si no hay mesa. */
   title: string
   /** Cuánto lugar pide el título: un número de mesa entra enorme; un nombre, no. */
@@ -226,6 +259,10 @@ export type LineSource = {
   notes?: string | null
   station_id: string | null
   prep_status: PrepStatus
+  category_id?: string | null
+  category?: string | null
+  category_order?: number | null
+  priority?: boolean | null
 }
 
 /**
@@ -260,6 +297,10 @@ export function groupSameProducts(items: readonly LineSource[]): CardLine[] {
           variants: [],
           stationId: item.station_id,
           status: item.prep_status,
+          categoryId: item.category_id ?? null,
+          category: clean(item.category),
+          priority: item.priority === true,
+          fresh: false,
         },
         specs: new Map(),
       }
@@ -299,61 +340,150 @@ function time(iso: string | null | undefined): number | null {
 
 type StationIndex = Map<string, MenuStation & { index: number }>
 
-function buildCard(
-  ticket: KitchenTicket,
-  filter: readonly string[],
-  stations: StationIndex,
-): KitchenCard | null {
-  const mine: KitchenItem[] = []
-  const theirs: KitchenItem[] = []
-  for (const item of ticket.items) {
-    if (showsStation(filter, item.station_id)) mine.push(item)
-    else theirs.push(item)
-  }
-  // Nada de esta tanda es de esta pantalla, o ya se llevaron todo: no hay comanda que mostrar.
-  const pending = mine.filter((item) => item.prep_status !== 'served')
-  if (pending.length === 0) return null
+/** El lugar del rubro en la carta; lo que no tiene rubro va al final. */
+function categoryRank(item: Pick<LineSource, 'category_id' | 'category_order'>): number {
+  if (!item.category_id) return Number.MAX_SAFE_INTEGER
+  return typeof item.category_order === 'number' && Number.isFinite(item.category_order)
+    ? item.category_order
+    : Number.MAX_SAFE_INTEGER - 1
+}
 
-  const rank = RANK[slowest(pending.map((item) => item.prep_status))]
-  const status = BY_RANK[Math.min(rank, 2)] ?? 'queued'
-
-  let doneMs: number | null = null
-  if (status === 'ready') {
-    for (const item of pending) {
-      const at = time(item.ready_at)
-      if (at !== null && (doneMs === null || at > doneMs)) doneMs = at
-    }
-    doneMs ??= time(ticket.ready_at)
-  }
-
-  // Los renglones van como se cargaron; si la comanda mezcla estaciones, juntos por estación.
-  const order = (id: string | null) =>
-    id === null ? Number.MAX_SAFE_INTEGER : (stations.get(id)?.index ?? 9999)
-  const distinct = new Set(mine.map((item) => item.station_id))
-  const sorted =
-    distinct.size > 1
-      ? mine
-          .map((item, index) => ({ item, index }))
-          .sort((a, b) => order(a.item.station_id) - order(b.item.station_id) || a.index - b.index)
-          .map(({ item }) => item)
-      : mine
-  const lines = groupSameProducts(sorted)
-
+/**
+ * Los bloques de una comanda.
+ *
+ * Con rubros (la cola los trae): primero lo que sale primero, después un bloque por rubro, en el
+ * orden de la carta. Sin rubros: como siempre, juntos por estación si la comanda mezcla más de una.
+ */
+function blocksOf(lines: readonly CardLine[], stations: StationIndex, mixed: boolean): LineGroup[] {
+  const structured = lines.some((line) => line.categoryId !== null || line.priority)
   const groups: LineGroup[] = []
-  for (const line of lines) {
-    const last = groups[groups.length - 1]
-    if (last && last.stationId === line.stationId) {
-      last.lines.push(line)
-      continue
-    }
-    const station =
-      distinct.size > 1
+  if (!structured) {
+    for (const line of lines) {
+      const last = groups[groups.length - 1]
+      if (last && last.stationId === line.stationId) {
+        last.lines.push(line)
+        continue
+      }
+      const label = mixed
         ? line.stationId === null
           ? 'Sin estación'
           : (stations.get(line.stationId)?.name ?? 'Otra estación')
         : null
-    groups.push({ stationId: line.stationId, station, lines: [line] })
+      groups.push({
+        key: `estacion:${line.stationId ?? 'ninguna'}:${groups.length}`,
+        stationId: line.stationId,
+        label,
+        priority: false,
+        lines: [line],
+      })
+    }
+    return groups
   }
+
+  const first = lines.filter((line) => line.priority)
+  if (first.length > 0) {
+    groups.push({
+      key: 'primero',
+      stationId: null,
+      label: PRIORITY_LABEL,
+      priority: true,
+      lines: first,
+    })
+  }
+  const byCategory = new Map<string, LineGroup>()
+  for (const line of lines) {
+    if (line.priority) continue
+    const key = `rubro:${line.categoryId ?? 'ninguno'}`
+    const group = byCategory.get(key)
+    if (group) {
+      group.lines.push(line)
+      continue
+    }
+    const created: LineGroup = {
+      key,
+      stationId: null,
+      label: line.category ?? NO_CATEGORY_LABEL,
+      priority: false,
+      lines: [line],
+    }
+    byCategory.set(key, created)
+    groups.push(created)
+  }
+  // Un solo bloque común no necesita rótulo: sería un título para una lista de un rubro.
+  const only = groups.length === 1 ? groups[0] : undefined
+  if (only && !only.priority) return [{ ...only, label: null }]
+  return groups
+}
+
+type Sourced = { item: KitchenItem; ticket: KitchenTicket; index: number }
+
+/**
+ * Una comanda con las tandas que se le pasen: una sola (el papel) o todas las de la mesa (la tele).
+ * `tickets` viene de la más vieja a la más nueva.
+ */
+function assembleCard(
+  id: string,
+  tickets: readonly KitchenTicket[],
+  filter: readonly string[],
+  stations: StationIndex,
+  byTable: boolean,
+): KitchenCard | null {
+  const head = tickets[0]
+  if (!head) return null
+
+  const mine: Sourced[] = []
+  const theirs: KitchenItem[] = []
+  let index = 0
+  for (const ticket of tickets) {
+    for (const item of ticket.items) {
+      if (showsStation(filter, item.station_id)) mine.push({ item, ticket, index: index++ })
+      else theirs.push(item)
+    }
+  }
+  // Una tanda de la que ya se llevaron todo no vuelve a la comanda de la mesa: solo cuentan las vivas.
+  const liveIds = new Set(
+    mine.filter(({ item }) => item.prep_status !== 'served').map(({ ticket }) => ticket.id),
+  )
+  // Nada de esto es de esta pantalla, o ya se llevaron todo: no hay comanda que mostrar.
+  if (liveIds.size === 0) return null
+  const shown = mine.filter(({ ticket }) => liveIds.has(ticket.id))
+  const pending = shown.filter(({ item }) => item.prep_status !== 'served')
+  const live = tickets.filter((ticket) => liveIds.has(ticket.id))
+
+  const rank = RANK[slowest(pending.map(({ item }) => item.prep_status))]
+  const status = BY_RANK[Math.min(rank, 2)] ?? 'queued'
+  // Se sumó algo a una comanda en marcha: hay renglones sin empezar entre los que ya arrancaron.
+  const grew = status === 'queued' && pending.some(({ item }) => item.prep_status !== 'queued')
+
+  let doneMs: number | null = null
+  if (status === 'ready') {
+    for (const { item } of pending) {
+      const at = time(item.ready_at)
+      if (at !== null && (doneMs === null || at > doneMs)) doneMs = at
+    }
+    for (const ticket of live) {
+      if (doneMs !== null) break
+      doneMs = time(ticket.ready_at)
+    }
+  }
+
+  // El orden de los renglones: lo que sale primero, después el rubro (como está en la carta), la
+  // estación si la comanda mezcla varias, y al final como se cargaron.
+  const order = (stationId: string | null) =>
+    stationId === null ? Number.MAX_SAFE_INTEGER : (stations.get(stationId)?.index ?? 9999)
+  const distinct = new Set(shown.map(({ item }) => item.station_id))
+  const mixed = distinct.size > 1
+  const sorted = [...shown].sort(
+    (a, b) =>
+      Number(b.item.priority === true) - Number(a.item.priority === true) ||
+      categoryRank(a.item) - categoryRank(b.item) ||
+      (mixed ? order(a.item.station_id) - order(b.item.station_id) : 0) ||
+      a.index - b.index,
+  )
+  const lines = groupSameProducts(sorted.map(({ item }) => item)).map((line) =>
+    grew && line.status === 'queued' ? { ...line, fresh: true } : line,
+  )
+  const groups = blocksOf(lines, stations, mixed)
 
   const byStation = new Map<string, KitchenItem[]>()
   for (const item of theirs) {
@@ -372,38 +502,54 @@ function buildCard(
     }))
     .sort((a, b) => order(a.stationId) - order(b.stationId) || a.name.localeCompare(b.name, 'es'))
 
-  const named = nameIt(ticket)
-  const course = ticket.course > 0 ? ticket.course : 1
-  // Dos tandas de la misma mesa pueden estar a la vez en la cola: al nombrarlas hay que distinguirlas.
+  // El reloj corre desde la tanda más vieja que todavía tiene algo sin terminar (si ya está todo
+  // listo, desde la más vieja que sigue en la comanda).
+  const unfinished = new Set(
+    pending
+      .filter(({ item }) => item.prep_status === 'queued' || item.prep_status === 'preparing')
+      .map(({ ticket }) => ticket.id),
+  )
+  const clock = live.find((ticket) => unfinished.has(ticket.id)) ?? live[0] ?? head
+
+  const named = nameIt(head)
+  // En el papel, dos tandas de la misma mesa pueden estar a la vez en la cola: al nombrarlas hay que
+  // distinguirlas. En la tele la mesa es una sola comanda.
+  const course = byTable ? 1 : head.course > 0 ? head.course : 1
   const spoken =
     course > 1
       ? `la tanda ${course} ${named.spoken.startsWith('el ') ? `del ${named.spoken.slice(3)}` : `de ${named.spoken}`}`
       : named.spoken
-  const firedMs = time(ticket.fired_at) ?? 0
+  const firedMs = time(clock.fired_at) ?? 0
+  const unseenIds = live
+    .filter((ticket) => ticket.kitchen_seen_at === null || ticket.kitchen_seen_at === undefined)
+    .map((ticket) => ticket.id)
   const card = {
-    id: ticket.id,
-    sessionId: ticket.session_id,
+    id,
+    sessionId: head.session_id,
+    ticketIds: live.map((ticket) => ticket.id),
+    unseenIds,
+    grew,
     title: named.title,
     titleFit: named.titleFit,
     spoken,
     where: named.where,
     alias: named.alias,
-    partySize: ticket.party_size && ticket.party_size > 0 ? ticket.party_size : null,
+    partySize: head.party_size && head.party_size > 0 ? head.party_size : null,
     course,
-    event: clean(ticket.event),
-    isPractice: ticket.is_practice === true,
-    alerts: kitchenAlerts(ticket.alerts),
-    firedAt: ticket.fired_at,
+    event: clean(head.event),
+    isPractice: live.some((ticket) => ticket.is_practice === true),
+    alerts: kitchenAlerts(head.alerts),
+    firedAt: clock.fired_at,
     firedMs,
     status,
     doneMs,
-    seen: ticket.kitchen_seen_at !== null && ticket.kitchen_seen_at !== undefined,
+    seen: unseenIds.length === 0,
     lines,
     groups,
     others,
   }
-  // `seen` no se dibuja: queda afuera para que «cocina lo vio» no vuelva a pintar la comanda.
-  const { seen: _seen, sessionId: _session, ...drawn } = card
+  // Lo que no se dibuja queda afuera, para que «cocina lo vio» no vuelva a pintar la comanda.
+  const { seen: _seen, sessionId: _session, unseenIds: _unseen, ...drawn } = card
   return { ...card, signature: JSON.stringify(drawn) }
 }
 
@@ -420,7 +566,7 @@ export function ticketShape(card: KitchenCard): {
   return {
     strips: Number(critical) + Number(diet) + Number(card.isPractice),
     meta: Boolean(card.where || card.partySize || card.course > 1 || card.alias),
-    labels: card.groups.filter((group) => group.station !== null).length,
+    labels: card.groups.filter((group) => group.label !== null).length,
     footer: card.others.length > 0,
     lines: card.lines,
   }
@@ -431,17 +577,46 @@ export function byArrival(a: KitchenCard, b: KitchenCard): number {
   return a.firedMs - b.firedMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
+function stationIndex(queue: KitchenQueue): StationIndex {
+  return new Map(queue.stations.map((station, index) => [station.id, { ...station, index }]))
+}
+
+function byFired(a: KitchenTicket, b: KitchenTicket): number {
+  return (
+    (time(a.fired_at) ?? 0) - (time(b.fired_at) ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  )
+}
+
 /**
- * Las comandas de una pantalla, en orden de llegada. El orden no depende del
- * estado: avanzar una comanda nunca la cambia de lugar.
+ * Una comanda por TANDA, en orden de llegada: lo que se imprime. A un papel no se le puede sumar
+ * nada después, así que cada tanda que sale a cocina tiene su tique.
  */
 export function buildCards(queue: KitchenQueue, filter: readonly string[]): KitchenCard[] {
-  const stations: StationIndex = new Map(
-    queue.stations.map((station, index) => [station.id, { ...station, index }]),
-  )
+  const stations = stationIndex(queue)
   const cards: KitchenCard[] = []
   for (const ticket of queue.tickets) {
-    const card = buildCard(ticket, filter, stations)
+    const card = assembleCard(ticket.id, [ticket], filter, stations, false)
+    if (card) cards.push(card)
+  }
+  return cards.sort(byArrival)
+}
+
+/**
+ * Una comanda por MESA, en orden de llegada: lo que muestra la tele. Todas las tandas vivas de la
+ * mesa van en la misma tarjeta. El orden no depende del estado: avanzar una comanda nunca la cambia
+ * de lugar (cuenta desde la tanda más vieja que le falta terminar).
+ */
+export function buildTableCards(queue: KitchenQueue, filter: readonly string[]): KitchenCard[] {
+  const stations = stationIndex(queue)
+  const bySession = new Map<string, KitchenTicket[]>()
+  for (const ticket of queue.tickets) {
+    const list = bySession.get(ticket.session_id)
+    if (list) list.push(ticket)
+    else bySession.set(ticket.session_id, [ticket])
+  }
+  const cards: KitchenCard[] = []
+  for (const [sessionId, tickets] of bySession) {
+    const card = assembleCard(sessionId, [...tickets].sort(byFired), filter, stations, true)
     if (card) cards.push(card)
   }
   return cards.sort(byArrival)
@@ -523,6 +698,36 @@ export function applyAdvance(
     return touched ? syncTicket({ ...ticket, items }, atIso) : ticket
   })
   return touched ? { ...queue, tickets } : queue
+}
+
+/**
+ * Qué tandas hay que mover para avanzar (o deshacer) la comanda de una mesa en esta pantalla.
+ *
+ * La base avanza de a una tanda. Al avanzar se mueven las que tienen algo atrasado respecto del paso
+ * pedido; las que ya estaban más adelante no se tocan (lo que ya está listo no vuelve a «en
+ * preparación» porque la mesa sumó una gaseosa). Al deshacer, vuelven un paso las que están en el
+ * paso de la comanda.
+ */
+export function ticketsToMove(
+  queue: KitchenQueue,
+  card: Pick<KitchenCard, 'ticketIds' | 'status'>,
+  to: AdvanceTo,
+  filter: readonly string[],
+): string[] {
+  const forward = RANK[to] > RANK[card.status]
+  const wanted = new Set(card.ticketIds)
+  const out: string[] = []
+  for (const ticket of queue.tickets) {
+    if (!wanted.has(ticket.id)) continue
+    const mine = ticket.items.filter(
+      (item) => item.prep_status !== 'served' && showsStation(filter, item.station_id),
+    )
+    const moves = forward
+      ? mine.some((item) => RANK[item.prep_status] < RANK[to])
+      : mine.some((item) => item.prep_status === card.status)
+    if (moves) out.push(ticket.id)
+  }
+  return out
 }
 
 // ─── Lo que hay que cocinar ─────────────────────────────────────────────────
@@ -630,22 +835,30 @@ export function splitEvents(cards: readonly KitchenCard[]): {
 // ─── Lo que acaba de entrar ─────────────────────────────────────────────────
 
 /**
- * Las comandas que entraron desde la última vez que se miró: suenan y se
- * destacan. La primera lectura (`before` vacío) no cuenta: al prender la tele
- * no entró nada, ya estaba. Lo que aparece ya listo tampoco.
+ * Las comandas que recibieron algo desde la última vez que se miró: suenan y se destacan. Se mira por
+ * TANDA (`before` son las tandas que ya se conocían): una mesa que ya tenía su comanda y pide algo más
+ * también avisa. La primera lectura (`before` vacío) no cuenta: al prender la tele no entró nada, ya
+ * estaba. Lo que aparece ya listo tampoco.
  */
 export function newArrivals(
   before: ReadonlySet<string> | null,
   cards: readonly KitchenCard[],
 ): string[] {
   if (before === null) return []
-  return cards.filter((card) => card.status !== 'ready' && !before.has(card.id)).map((c) => c.id)
+  return cards
+    .filter((card) => card.status !== 'ready' && card.ticketIds.some((id) => !before.has(id)))
+    .map((card) => card.id)
 }
 
-/** «Cocina lo vio»: lo que esta pantalla muestra por primera vez y nadie avisó todavía. */
-export function unseenCards(
+/** Las tandas que hay en pantalla: lo que `newArrivals` compara la próxima vez. */
+export function knownTickets(cards: readonly KitchenCard[]): Set<string> {
+  return new Set(cards.flatMap((card) => card.ticketIds))
+}
+
+/** «Cocina lo vio»: las tandas que esta pantalla muestra por primera vez y nadie avisó todavía. */
+export function unseenTickets(
   cards: readonly KitchenCard[],
   reported: ReadonlySet<string>,
 ): string[] {
-  return cards.filter((card) => !card.seen && !reported.has(card.id)).map((card) => card.id)
+  return cards.flatMap((card) => card.unseenIds).filter((id) => !reported.has(id))
 }

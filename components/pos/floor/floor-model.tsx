@@ -185,6 +185,8 @@ function stateClasses(state: TableState | undefined): string {
   return cn(
     `pos-st-${state.key}`,
     state.urgency === 'late' && 'pos-urg-late',
+    // Todavía no es tarde, pero ya hay que mirarla: la chapa lleva un borde amarillo.
+    state.urgency === 'warn' && 'pos-urg-warn',
     state.key !== 'free' && 'pos-is-open',
   )
 }
@@ -203,6 +205,7 @@ function describe(label: string, table: FloorTable | undefined): string {
   if (state.minutes !== null && state.key !== 'reserved')
     parts.push(`hace ${formatMinutes(state.minutes)}`)
   if (state.urgency === 'late') parts.push('demorada')
+  else if (state.urgency === 'warn' && state.key !== 'ready') parts.push('con aviso')
   if (state.nextCourseDue) parts.push('hay una tanda para marchar')
   if (table.practice && state.key !== 'free' && state.key !== 'reserved') parts.push('de práctica')
   return parts.join(', ')

@@ -24,7 +24,8 @@ export async function setCardInstallments(
 ): Promise<AccSimpleState<{ documents: number }>> {
   const op = 'installments.set'
   try {
-    const auth = await authorizeAccounting(slug, 'write')
+    // Las cuotas de una compra pagada con tarjeta: también con «solo compras y pagos».
+    const auth = await authorizeAccounting(slug, 'buy_write')
     if (!auth.ok) return auth.state
     const parsed = schema.safeParse(raw)
     if (!parsed.success) return invalidState(parsed.error)

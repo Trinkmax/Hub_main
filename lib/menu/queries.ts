@@ -2,6 +2,7 @@ import 'server-only'
 import { getTagsByTenant, type ItemTag } from '@/lib/item-tags/queries'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { type Availability, parseAvailability } from './availability'
 
 export type MenuCategory = {
   id: string
@@ -10,6 +11,11 @@ export type MenuCategory = {
   active: boolean
   image_url: string | null
   parent_id: string | null
+  /**
+   * Cuándo se muestra en la carta (`lib/menu/availability.ts`): las franjas de días y horas del
+   * rubro. `null` o ausente = siempre. Lo heredan sus subcategorías.
+   */
+  availability?: Availability
 }
 
 export type MenuItem = {
@@ -33,6 +39,45 @@ export type MenuItem = {
 const MENU_ITEM_COLUMNS =
   'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url, featured'
 
+const CATEGORY_COLUMNS = 'id, name, position, active, image_url, parent_id'
+/** Con el horario del rubro (`menu_categories.availability`, migración `pos_revisiones_socios`). */
+const CATEGORY_COLUMNS_WITH_HOURS = `${CATEGORY_COLUMNS}, availability` as const
+
+type CategoryRow = Omit<MenuCategory, 'availability'> & { availability?: unknown }
+type CategoryClient =
+  | Awaited<ReturnType<typeof createClient>>
+  | ReturnType<typeof createServiceClient>
+
+/** La base no conoce la columna pedida (`42703`) o PostgREST todavía no la tiene en su caché. */
+function isMissingColumn(error: { code?: string } | null): boolean {
+  return error?.code === '42703' || error?.code === 'PGRST204'
+}
+
+/**
+ * Las categorías del bar, en orden, con su horario. Si la columna del horario todavía no existe (el
+ * código salió antes que su migración) se leen sin él: la carta pública no puede quedar vacía por
+ * eso, y sin horario todo se muestra siempre, como antes.
+ */
+async function readCategories(
+  client: CategoryClient,
+  tenantId: string,
+  onlyActive: boolean,
+): Promise<{ data: MenuCategory[]; error: { code?: string; message: string } | null }> {
+  const query = (columns: typeof CATEGORY_COLUMNS | typeof CATEGORY_COLUMNS_WITH_HOURS) => {
+    const base = client.from('menu_categories').select(columns).eq('tenant_id', tenantId)
+    return (onlyActive ? base.eq('active', true) : base).order('position', { ascending: true })
+  }
+  let result: { data: unknown; error: { code?: string; message: string } | null } = await query(
+    CATEGORY_COLUMNS_WITH_HOURS,
+  )
+  if (isMissingColumn(result.error)) result = await query(CATEGORY_COLUMNS)
+  const rows = (Array.isArray(result.data) ? result.data : []) as CategoryRow[]
+  return {
+    data: rows.map((row) => ({ ...row, availability: parseAvailability(row.availability) })),
+    error: result.error,
+  }
+}
+
 export async function listMenu(opts: { tenantId: string }): Promise<{
   categories: MenuCategory[]
   items: MenuItem[]
@@ -41,11 +86,7 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
   // Las tags se piden por tenant (no por ids de ítem) para que salgan en el
   // mismo Promise.all: 2 hops secuenciales → 1.
   const [{ data: cats, error: e1 }, { data: items, error: e2 }, tagsByItem] = await Promise.all([
-    supabase
-      .from('menu_categories')
-      .select('id, name, position, active, image_url, parent_id')
-      .eq('tenant_id', opts.tenantId)
-      .order('position', { ascending: true }),
+    readCategories(supabase, opts.tenantId, false),
     supabase
       .from('menu_items')
       .select(MENU_ITEM_COLUMNS)
@@ -75,7 +116,7 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
   }))
 
   return {
-    categories: (cats ?? []) as MenuCategory[],
+    categories: cats,
     items: mergedItems,
   }
 }
@@ -94,12 +135,7 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
   // Tags vía service (bypass RLS) filtradas por tenant del tag, así van en el
   // mismo Promise.all que categorías e ítems: 2 hops secuenciales → 1.
   const [{ data: cats }, { data: items }, { data: assigns }] = await Promise.all([
-    service
-      .from('menu_categories')
-      .select('id, name, position, active, image_url, parent_id')
-      .eq('tenant_id', opts.tenantId)
-      .eq('active', true)
-      .order('position', { ascending: true }),
+    readCategories(service, opts.tenantId, true),
     service
       .from('menu_items')
       .select(MENU_ITEM_COLUMNS)
@@ -142,7 +178,7 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
   }))
 
   return {
-    categories: (cats ?? []) as MenuCategory[],
+    categories: cats,
     items: mergedItems,
   }
 }
@@ -154,12 +190,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
   const supabase = await createClient()
   // Mismo criterio que listMenu: tags por tenant en paralelo, 2 hops → 1.
   const [{ data: cats }, { data: items }, tagsByItem] = await Promise.all([
-    supabase
-      .from('menu_categories')
-      .select('id, name, position, active, image_url, parent_id')
-      .eq('tenant_id', opts.tenantId)
-      .eq('active', true)
-      .order('position', { ascending: true }),
+    readCategories(supabase, opts.tenantId, true),
     supabase
       .from('menu_items')
       .select(MENU_ITEM_COLUMNS)
@@ -188,7 +219,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
   }))
 
   return {
-    categories: (cats ?? []) as MenuCategory[],
+    categories: cats,
     items: mergedItems,
   }
 }

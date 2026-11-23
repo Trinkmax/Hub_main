@@ -202,6 +202,8 @@ type TexContextValue = TexState & {
   role: TenantRole
   /** Puede pasarle papeles: es de quien carga en Administración. */
   canAttach: boolean
+  /** Tex ve Administración para esta persona (con acceso a leerla). */
+  accounting: boolean
   pathname: string
   setOpen: (open: boolean) => void
   send: (text: string) => void
@@ -290,11 +292,13 @@ export function TexProvider({
   slug,
   role,
   canAttach,
+  accounting = true,
   children,
 }: {
   slug: string
   role: TenantRole
   canAttach: boolean
+  accounting?: boolean
   children: ReactNode
 }) {
   const router = useRouter()
@@ -716,6 +720,7 @@ export function TexProvider({
       slug,
       role,
       canAttach,
+      accounting,
       pathname,
       setOpen,
       send,
@@ -736,6 +741,7 @@ export function TexProvider({
       slug,
       role,
       canAttach,
+      accounting,
       pathname,
       setOpen,
       send,

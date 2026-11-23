@@ -1703,3 +1703,267 @@ body:has(.kds) {
     display: inline;
   }
 }
+
+/* ── Revisiones de los socios (22/11/2026) ───────────────────────────────────
+   Una comanda por mesa, renglones por rubro, lo que sale primero arriba, y una alerta que no se
+   puede no ver. */
+
+/* El rótulo de un rubro («Pizza»): una raya fina lo separa del bloque de arriba. */
+.kds-body > section + section > .kds-station {
+  margin-top: calc(var(--s) * 12);
+  padding-top: calc(var(--s) * 10);
+  border-top: calc(var(--s) * 2) solid var(--pos-ink);
+}
+.kds-body > section + section:not(:has(> .kds-station)) {
+  border-top: calc(var(--s) * 2) solid var(--pos-ink);
+}
+.kds-station {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.kds-station svg {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+}
+/* Lo que sale primero: en negativo, como un sello arriba de la comanda. */
+.kds-station.is-first {
+  margin: calc(var(--s) * 8) calc(var(--u) * -20) 0;
+  padding: calc(var(--s) * 8) calc(var(--u) * 20) calc(var(--s) * 6);
+  border-top: 0;
+  background: var(--pos-ink);
+  color: var(--paper);
+  font-size: max(calc(var(--s) * 28), 12px);
+}
+.kds-body > section[data-first] {
+  background: color-mix(in oklab, var(--kds-marker) 26%, var(--paper));
+  margin: 0 calc(var(--u) * -20);
+  padding: 0 calc(var(--u) * 20) calc(var(--s) * 4);
+}
+.kds-body > section[data-first] > .kds-station.is-first {
+  margin-left: calc(var(--u) * -20);
+  margin-right: calc(var(--u) * -20);
+}
+.kds-body > section[data-first] + section > .kds-station,
+.kds-body > section[data-first] + section:not(:has(> .kds-station)) {
+  border-top: 0;
+  margin-top: 0;
+}
+
+/* «Nuevo» ya no es la franja apagada: lo que nadie empezó va con el resaltador. */
+.kds-ticket.is-queued .kds-band {
+  border-bottom-color: transparent;
+  background: var(--kds-marker);
+  color: var(--pos-on-light);
+}
+/* Se le sumó algo a una comanda en marcha: la franja lo dice en negativo, distinta de una nueva. */
+.kds-ticket[data-grew] .kds-band {
+  border-bottom-color: transparent;
+  background: var(--pos-ink);
+  color: var(--kds-marker);
+}
+/* Y cada renglón nuevo lleva su marca hasta que alguien lo empieza. */
+.kds-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.4em;
+  padding: 0.12em 0.42em 0.06em;
+  border-radius: calc(var(--s) * 4);
+  background: var(--pos-ink);
+  color: var(--paper);
+  font-size: 0.55em;
+  font-weight: 800;
+  font-stretch: 80%;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 0.22em;
+  white-space: nowrap;
+}
+.kds-fresh svg {
+  width: 1em;
+  height: 1em;
+}
+.kds-line[data-fresh] {
+  position: relative;
+}
+.kds-line[data-fresh]::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--s) * 4);
+  bottom: calc(var(--s) * 4);
+  left: calc(var(--u) * -20);
+  width: calc(var(--u) * 8);
+  background: var(--kds-marker);
+}
+
+/* La comanda que acaba de recibir algo queda marcada un buen rato (el trazo late, no se desvanece). */
+.kds-ticket[data-arriving]::after {
+  animation: kds-arrive-loud 0.9s var(--pos-ease) 10 alternate;
+}
+.kds-stub[data-arriving],
+.kds-chip[data-arriving] {
+  animation: kds-arrive-ring-loud 0.9s var(--pos-ease) 10 alternate;
+}
+@keyframes kds-arrive-loud {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.25;
+  }
+}
+@keyframes kds-arrive-ring-loud {
+  from {
+    outline-color: var(--kds-marker);
+  }
+  to {
+    outline-color: transparent;
+  }
+}
+
+/* Con la alerta fuerte, la franja de lo que acaba de entrar late mientras dura el aviso. Después queda
+   quieta: una pantalla que parpadea toda la noche se termina tapando con un repasador. */
+.kds[data-alert="loud"] .kds-ticket[data-arriving] .kds-band {
+  animation: kds-new-band 0.9s steps(1, end) 10;
+}
+@keyframes kds-new-band {
+  0%,
+  100% {
+    background: var(--kds-marker);
+    color: var(--pos-on-light);
+  }
+  50% {
+    background: var(--pos-ink);
+    color: var(--kds-marker);
+  }
+}
+
+/* El cartel: la pantalla entera avisa que entró algo. No recibe toques (los botones siguen andando
+   debajo) y se va solo a los cuatro segundos, o con cualquier botón. */
+.kds-alarm {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--u) * 40);
+  pointer-events: none;
+  box-shadow: inset 0 0 0 calc(var(--u) * 22) var(--kds-marker);
+  animation: kds-alarm-edge 0.55s steps(1, end) 7 forwards;
+}
+.kds-alarm[data-level="soft"] {
+  box-shadow: inset 0 0 0 calc(var(--u) * 10) var(--kds-marker);
+  animation: none;
+}
+@keyframes kds-alarm-edge {
+  0% {
+    box-shadow: inset 0 0 0 calc(var(--u) * 22) var(--kds-marker);
+    background: color-mix(in oklab, var(--kds-marker) 20%, transparent);
+  }
+  50% {
+    box-shadow: inset 0 0 0 calc(var(--u) * 22) transparent;
+    background: transparent;
+  }
+  100% {
+    box-shadow: inset 0 0 0 calc(var(--u) * 22) var(--kds-marker);
+    background: transparent;
+  }
+}
+.kds-alarm-card {
+  display: grid;
+  justify-items: center;
+  gap: calc(var(--u) * 6);
+  max-width: 92%;
+  padding: calc(var(--u) * 30) calc(var(--u) * 64) calc(var(--u) * 24);
+  border-radius: calc(var(--u) * 14);
+  background: var(--kds-marker);
+  color: var(--pos-on-light);
+  box-shadow:
+    0 calc(var(--u) * 30) calc(var(--u) * 80) oklch(0 0 0 / 0.65),
+    0 0 0 calc(var(--u) * 6) var(--pos-ink);
+  animation: kds-alarm-in 320ms var(--pos-ease) both;
+}
+.kds-alarm[data-level="soft"] .kds-alarm-card {
+  align-self: start;
+  padding: calc(var(--u) * 16) calc(var(--u) * 36) calc(var(--u) * 12);
+}
+@keyframes kds-alarm-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.kds-alarm-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: max(calc(var(--u) * 54), 22px);
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.kds-alarm-word svg {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+  animation: kds-alarm-bell 0.5s var(--pos-ease) 6 alternate;
+  transform-origin: 50% 10%;
+}
+@keyframes kds-alarm-bell {
+  from {
+    transform: rotate(-16deg);
+  }
+  to {
+    transform: rotate(16deg);
+  }
+}
+.kds-alarm-tables {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0 calc(var(--u) * 46);
+  font-variant-numeric: tabular-nums;
+}
+.kds-alarm-tables b {
+  font-size: max(calc(var(--u) * 300), 96px);
+  font-weight: 800;
+  font-stretch: 76%;
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+}
+.kds-alarm-tables b[data-long] {
+  font-size: max(calc(var(--u) * 130), 48px);
+  line-height: 1.1;
+}
+.kds-alarm[data-level="soft"] .kds-alarm-tables b {
+  font-size: max(calc(var(--u) * 120), 44px);
+}
+.kds-alarm-tables em {
+  font-size: max(calc(var(--u) * 110), 40px);
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 78%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kds-alarm,
+  .kds-alarm-card,
+  .kds-alarm-word svg,
+  .kds[data-alert="loud"] .kds-ticket[data-arriving] .kds-band,
+  .kds-ticket[data-arriving]::after,
+  .kds-stub[data-arriving],
+  .kds-chip[data-arriving] {
+    animation: none;
+  }
+}

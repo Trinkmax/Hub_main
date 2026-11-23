@@ -12,7 +12,7 @@
  * pocas idas a la base, no en una por producto.
  */
 
-import type { RouteChange, RouteFailure } from './types'
+import type { FirstChange, RouteChange, RouteFailure } from './types'
 
 export type RequestedRoute = RouteChange & {
   /** La estación propia que la persona veía ahí. `null` = no tenía. */
@@ -69,6 +69,75 @@ export function planRouteWrites(
   }
 
   return { writes: [...groups.values()], failed }
+}
+
+// ─── Lo que sale primero ─────────────────────────────────────────────────────
+
+export type RequestedFirst = FirstChange & {
+  /** Lo que la persona veía ahí (en un producto, `null` = no decía nada). */
+  expected: boolean | null
+}
+
+export type CurrentFirst = {
+  /** Categoría → si está marcada. Lo que no está acá no existe (o es de otro bar). */
+  categories: ReadonlyMap<string, boolean>
+  /** Producto → su marca propia (`null` = no dice nada). */
+  items: ReadonlyMap<string, boolean | null>
+}
+
+export type FirstWrite = {
+  node: FirstChange['node']
+  expected: boolean | null
+  to: boolean | null
+  ids: string[]
+}
+
+export type FirstPlan =
+  /** Ya estaba todo así. */
+  | { kind: 'noop' }
+  /** Algo ya no está en la carta: no se escribe nada. */
+  | { kind: 'missing'; ids: string[] }
+  /** Algo no vale lo que la persona veía: no se escribe nada. */
+  | { kind: 'changed'; ids: string[] }
+  | { kind: 'write'; writes: FirstWrite[] }
+
+/**
+ * Decide las marcas de «sale primero». Es todo o nada (casi siempre es una sola): si algo ya no
+ * está o lo cambió otra persona, no se escribe ninguna. Las que sí van se agrupan por «de qué a
+ * qué», así marcar varias cosas son pocas idas a la base.
+ */
+export function planFirstWrites(
+  requested: ReadonlyArray<RequestedFirst>,
+  current: CurrentFirst,
+): FirstPlan {
+  const groups = new Map<string, FirstWrite>()
+  const missing: string[] = []
+  const changed: string[] = []
+
+  for (const change of requested) {
+    const { node, id, expected } = change
+    // Una categoría sale primero o no: nunca queda sin decir.
+    const to = node === 'category' ? change.to === true : change.to
+    const now = (node === 'category' ? current.categories : current.items).get(id)
+    if (now === undefined) {
+      missing.push(id)
+      continue
+    }
+    if (now === to) continue
+    if (now !== expected) {
+      changed.push(id)
+      continue
+    }
+    const key = `${node}|${String(expected)}|${String(to)}`
+    const group = groups.get(key)
+    if (group) group.ids.push(id)
+    else groups.set(key, { node, expected, to, ids: [id] })
+  }
+
+  if (missing.length > 0) return { kind: 'missing', ids: missing }
+  if (changed.length > 0) return { kind: 'changed', ids: changed }
+  if (groups.size === 0) return { kind: 'noop' }
+  return { kind: 'write', writes: [...groups.values()] }
 }
 
 /** Un campo que cambia: lo que la persona veía y lo que tiene que quedar. */

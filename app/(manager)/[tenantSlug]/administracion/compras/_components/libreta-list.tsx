@@ -45,6 +45,7 @@ export function LibretaToolbar({
   existingNames,
   exportHref,
   exportFileName,
+  purchasesOnly = false,
 }: {
   tenantSlug: string
   counts: LibretaView['counts']
@@ -55,9 +56,13 @@ export function LibretaToolbar({
   existingNames: readonly string[]
   exportHref: string
   exportFileName: string
+  /** «Solo compras y pagos»: los impuestos y el personal no le llegan, su filtro estaría siempre vacío. */
+  purchasesOnly?: boolean
 }) {
   const items: SegmentItem[] = SUPPLIER_FILTERS.filter(
-    (f) => !f.unclassifiedOnly || f.value === filter,
+    (f) =>
+      (!f.unclassifiedOnly || f.value === filter) &&
+      (!purchasesOnly || f.value !== 'impuestos' || f.value === filter),
   ).map((f) => ({
     key: f.value,
     label: f.label,

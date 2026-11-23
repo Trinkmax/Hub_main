@@ -37,6 +37,7 @@ import {
 } from './alerts'
 import { branchHasFloors } from './branch-scope'
 import { isRealIsoDay, todayInCordoba } from './date-presets'
+import { depositMethodForSave } from './deposit-method'
 import { eventDateMismatchCode, humanizeSalonError } from './humanize'
 import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
 import { listUnpaidCommissionLedgerIds } from './queries'
@@ -543,6 +544,7 @@ export async function createSalonReservation(
   const zone = zoneForBranchWrite(scope, branchId, parsed.data.zone, Boolean(scheduledEventIdFinal))
   if (!zone.ok) return zone.state
 
+  const depositMethod = depositMethodForSave(parsed.data.deposit_cents, parsed.data.deposit_method)
   const { data, error } = await supabase
     .from('salon_reservations')
     .insert({
@@ -568,6 +570,8 @@ export async function createSalonReservation(
       cake_option_id: parsed.data.cake_count > 0 ? (parsed.data.cake_option_id ?? null) : null,
       champagne_count: parsed.data.champagne_count,
       deposit_cents: parsed.data.deposit_cents,
+      // Con qué se cobró la seña. Solo viaja si hay algo que guardar (sin seña no hay medio).
+      ...(depositMethod ? { deposit_method: depositMethod } : {}),
       origin: parsed.data.origin,
       primary_manager_id: parsed.data.primary_manager_id,
       assistant_manager_id: parsed.data.assistant_manager_id ?? null,
@@ -752,6 +756,11 @@ export async function updateSalonReservation(
           : {}),
       champagne_count: patch.champagne_count,
       deposit_cents: patch.deposit_cents,
+      // Ausente ≠ vacío, igual que la torta: una pantalla que edita otra cosa y no manda el medio no
+      // lo borra. Si viene, manda el monto: sin seña no hay medio que guardar.
+      ...(patch.deposit_method !== undefined
+        ? { deposit_method: depositMethodForSave(patch.deposit_cents, patch.deposit_method) }
+        : {}),
       origin: patch.origin,
       primary_manager_id: patch.primary_manager_id,
       assistant_manager_id: patch.assistant_manager_id ?? null,

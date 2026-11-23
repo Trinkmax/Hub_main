@@ -14,6 +14,7 @@ import {
 import { resolveReservationAlerts, SERVICE_ALERT_META, type ServiceAlert } from '@/lib/salon/alerts'
 import type { RangeTotals } from '@/lib/salon/day-counter'
 import { activeDaySegments } from '@/lib/salon/day-counter'
+import { DEPOSIT_METHOD_LABELS, depositMethodLabel } from '@/lib/salon/deposit-method'
 import type { DepositBasis, DepositsReport } from '@/lib/salon/deposits'
 import { DEPOSIT_BASIS_LABELS } from '@/lib/salon/deposits'
 import { zoneBreakdown } from '@/lib/salon/event-floor'
@@ -212,6 +213,7 @@ export function reservationRow(
     mesa: r.table_label,
     tipo: r.kind === 'normal' ? null : RESERVATION_KIND_LABELS[r.kind],
     sena: moneyIf(Number(r.deposit_cents)),
+    sena_medio: Number(r.deposit_cents) > 0 ? depositMethodLabel(r.deposit_method) : null,
     torta: cakeText(r),
     champagne: r.champagne_count > 0 ? r.champagne_count : null,
     avisos: alertsOf(r),
@@ -487,6 +489,7 @@ export function boardRow(
     atrasada: waiting && urgencyOf(r, clock) === 'late' ? true : null,
     tipo: r.kind === 'normal' ? null : RESERVATION_KIND_LABELS[r.kind],
     sena: moneyIf(Number(r.deposit_cents)),
+    sena_medio: Number(r.deposit_cents) > 0 ? depositMethodLabel(r.deposit_method) : null,
     torta: cakeText(r),
     avisos: alertsOf(r),
     nota: r.highlight_comment ? noteOf(r.comments, 120) : null,
@@ -782,6 +785,14 @@ export function depositsData(report: DepositsReport, label: string, basis: Depos
       : null,
     mediana_por_dia: moneyIf(totals.median_day_cents),
     promedio_por_dia: moneyIf(totals.avg_day_cents),
+    // Solo si alguna seña del período dice con qué se cobró (las de antes no lo dicen).
+    por_medio: totals.by_method.some((entry) => entry.method !== null)
+      ? totals.by_method.map((entry) => ({
+          medio: entry.method ? DEPOSIT_METHOD_LABELS[entry.method] : 'Sin anotar',
+          total: money(entry.cents),
+          reservas: entry.count,
+        }))
+      : null,
     filas,
     hay_mas,
     aviso: report.truncated

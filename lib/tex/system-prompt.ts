@@ -127,6 +127,7 @@ export function whoIsTalking(
   role: string,
   canWriteAccounting: boolean,
   canReadAccounting = canWriteAccounting,
+  purchasesOnly = false,
 ): string {
   switch (role) {
     case 'accountant':
@@ -138,6 +139,10 @@ export function whoIsTalking(
     default:
       if (canWriteAccounting) return 'un dueño, con acceso de carga en Administración'
       if (canReadAccounting) return 'un dueño, que en Administración solo puede mirar'
+      // «Solo compras y pagos»: lo suyo lo carga en la pantalla, no con Tex (Tex no ve Administración).
+      if (purchasesOnly) {
+        return 'un dueño con el acceso «solo compras y pagos» de Administración: carga compras, gastos y pagos a proveedores en la pantalla Compras y pagos, pero vos no ves ni cargás nada de Administración. Si te pide algo de compras, pagos o proveedores, decile que lo haga ahí, con «Cargar» (no le digas que le falta acceso: lo tiene). Caja, ventas, sueldos y libros no son de su acceso'
+      }
       return 'un dueño sin acceso a Administración: si pide compras, pagos, caja, ventas o libros, decile que le falta ese acceso y que se lo pida a quien administra los accesos'
   }
 }

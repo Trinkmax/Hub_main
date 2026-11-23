@@ -687,7 +687,8 @@ const PARTY_FIELDS: FieldMap = [
 export async function saveParty(slug: string, raw: unknown): Promise<AccSimpleState<SavedParty>> {
   const op = 'master.saveParty'
   try {
-    const auth = await authorizeAccounting(slug, 'write')
+    // También con «solo compras y pagos»: la base le deja guardar solo proveedores (no los del sistema).
+    const auth = await authorizeAccounting(slug, 'buy_write')
     if (!auth.ok) return auth.state
     const input = formInput(raw)
     const parsed = partySchema.safeParse(input)
@@ -697,6 +698,11 @@ export async function saveParty(slug: string, raw: unknown): Promise<AccSimpleSt
     const editing = v.id !== null
     if (editing && v.expectedUpdatedAt === null) return accFailure('stale')
     const keep = editing ? keepPresent(input) : () => true
+    if (auth.purchasesOnly === true) {
+      // Proveedores, y sin darlos de baja: el resto es del nivel completo (la base lo vuelve a decidir).
+      const deactivating = editing && keep('active') && !v.active
+      if ((keep('kind') && v.kind !== 'supplier') || deactivating) return accFailure('forbidden')
+    }
     const payload = rpcPayload(v, PARTY_FIELDS, keep)
     if (v.payableAccountId === null) delete payload.payable_account_id
     if (v.receivableAccountId === null) delete payload.receivable_account_id

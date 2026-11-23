@@ -3,9 +3,11 @@ import { internalVoucherModel } from '@/app/(manager)/[tenantSlug]/administracio
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
+  isPurchasesOnly,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
 import { getDocument } from '@/lib/accounting/queries/documents'
+import { PURCHASES_LEVEL_DOCUMENT_KINDS } from '@/lib/accounting/queries/labels'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import {
   RoleRequiredError,
@@ -26,8 +28,9 @@ const PRINT_CSS =
 
 async function access(tenantSlug: string, returnTo: string): Promise<TenantAccess> {
   try {
-    // Lectura: los dueños con acceso y la contadora (RLS de lectores; sin service_role).
-    return await requireAccountingAccess(tenantSlug, 'read')
+    // Lectura: los dueños con acceso y la contadora (RLS de lectores; sin service_role). También quien
+    // tiene «solo compras y pagos»: el comprobante interno de un gasto sin factura es parte de cargarlo.
+    return await requireAccountingAccess(tenantSlug, 'buy_read')
   } catch (error) {
     if (error instanceof UnauthenticatedError) {
       redirect(`/login?reason=session&redirectTo=${encodeURIComponent(returnTo)}`)
@@ -62,8 +65,21 @@ export default async function PrintComprobanteInternoPage({
   )
   const ficha = `/${tenantSlug}/administracion/comprobantes/${documentId}`
 
-  const result = await settleQuery(getDocument(tenantAccess.tenant.id, documentId))
+  // El papel no lleva el número del asiento: no se busca (sale del libro diario, que con «solo compras
+  // y pagos» la base no deja leer).
+  const result = await settleQuery(
+    getDocument(tenantAccess.tenant.id, documentId, { provisionalNumber: false }),
+  )
   if (result.ok && !result.data) notFound()
+  // Con «solo compras y pagos» solo se imprimen sus comprobantes (compras, gastos y pagos).
+  if (
+    result.ok &&
+    result.data &&
+    isPurchasesOnly(tenantAccess.accounting) &&
+    !PURCHASES_LEVEL_DOCUMENT_KINDS.has(result.data.kind)
+  ) {
+    notFound()
+  }
   if (!result.ok || !result.data) {
     return (
       <main className="min-h-screen bg-white px-4 py-10 text-black">

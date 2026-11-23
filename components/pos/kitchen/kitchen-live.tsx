@@ -2,13 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { kitchenAdvance, kitchenSeen, refreshKitchen } from '@/lib/pos/actions'
-import { type AdvanceTo, applyAdvance } from '@/lib/pos/kitchen/cards'
+import {
+  type AdvanceTo,
+  applyAdvance,
+  type KitchenCard,
+  ticketsToMove,
+} from '@/lib/pos/kitchen/cards'
 import { advanceStations, normalizeStations, stationParam } from '@/lib/pos/kitchen/stations'
 import type { KitchenQueue } from '@/lib/pos/types'
 import { usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { PrinterButton } from '../print/printer-button'
+import type { PosBrandInfo } from '../ui/pos-brand'
 import { type KitchenFailure, KitchenScreen } from './kitchen-screen'
 
 /**
@@ -16,7 +22,8 @@ import { type KitchenFailure, KitchenScreen } from './kitchen-screen'
  *
  *   · Lee la cola cuando llega un aviso en vivo y, por las dudas, cada cinco segundos.
  *   · Al avanzar una comanda la cambia al instante y después le avisa a la base; si la base dice que
- *     no, la vuelve atrás y lo dice en grande.
+ *     no, la vuelve atrás y lo dice en grande. La comanda es de una mesa y la base avanza de a una
+ *     tanda: se mueven, en orden, las tandas que hacen falta (`ticketsToMove`).
  *   · Si se queda sin forma de saber qué pasa (se cayó la red, o el servidor no contesta), lo grita.
  *   · Recuerda en el dispositivo qué estaciones muestra, y lo deja en la dirección.
  */
@@ -29,6 +36,8 @@ type Props = {
   stationParam: string[] | null
   /** Quien mira entró con el usuario de la cocina. */
   isKitchen: boolean
+  /** El bar, para la marca de abajo. */
+  brand?: PosBrandInfo
 }
 
 /** Algo que se tocó y la base todavía no confirmó (o confirmó, pero aún no se volvió a leer). */
@@ -63,7 +72,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, isKitchen }: Props) {
+export function KitchenLive({
+  slug,
+  initial,
+  timeZone,
+  stationParam: fromUrl,
+  isKitchen,
+  brand,
+}: Props) {
   const branchId = initial.branch.id
   const [server, setServer] = useState(initial)
   const [pending, setPending] = useState<Pending[]>([])
@@ -201,8 +217,13 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, is
     skew.current = Date.parse(server.now) - Date.now()
   }, [server.now])
 
-  const advance = useCallback(
-    (ticketId: string, to: AdvanceTo, context: { spoken: string; undo: boolean }) => {
+  /** Una tanda: se ve al instante y viaja a la base, en orden con lo que se tocó antes. */
+  const advanceTicket = useCallback(
+    (
+      ticketId: string,
+      to: AdvanceTo,
+      context: { spoken: string; undo: boolean; cardId: string },
+    ) => {
       const op = ++opCount.current
       const stations = filter
       const at = new Date(Date.now() + skew.current).toISOString()
@@ -236,12 +257,12 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, is
           const settledAt = readCount.current
           setPending((prev) => prev.map((p) => (p.op === op ? { ...p, settledAt } : p)))
         } else {
-          // Vuelve atrás esto y lo que se haya tocado después sobre la misma comanda.
+          // Vuelve atrás esto y lo que se haya tocado después sobre la misma tanda.
           for (const later of queued.current.get(ticketId) ?? []) cancelled.current.add(later)
           setPending((prev) => prev.filter((p) => p.ticketId !== ticketId))
           setFailure({
             key: op,
-            ticketId,
+            cardId: context.cardId,
             title: `No se pudo ${context.undo ? 'deshacer' : 'avanzar'} ${context.spoken}`,
             detail: result.message,
           })
@@ -271,6 +292,21 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, is
     [server, pending],
   )
 
+  // La comanda de una mesa puede traer varias tandas: se mueven las que hacen falta, sobre lo que se
+  // está viendo (con lo recién tocado ya aplicado), para que dos toques seguidos no pisen nada.
+  const shownQueue = useRef(queue)
+  useEffect(() => {
+    shownQueue.current = queue
+  }, [queue])
+  const advance = useCallback(
+    (card: KitchenCard, to: AdvanceTo, context: { spoken: string; undo: boolean }) => {
+      for (const ticketId of ticketsToMove(shownQueue.current, card, to, filter)) {
+        advanceTicket(ticketId, to, { ...context, cardId: card.id })
+      }
+    },
+    [advanceTicket, filter],
+  )
+
   // El canal caído solo es «sin conexión» hasta que una lectura posterior demuestre que se puede leer.
   const unverified = live === 'offline' && (droppedAt === null || lastOk.startedAt < droppedAt)
   const down = problem !== false || unverified
@@ -293,6 +329,7 @@ export function KitchenLive({ slug, initial, timeZone, stationParam: fromUrl, is
       failure={failure}
       onDismissFailure={dismissFailure}
       timeZone={timeZone}
+      brand={brand}
       tools={
         <PrinterButton
           variant="kitchen"

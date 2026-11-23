@@ -1303,29 +1303,33 @@ export async function getDepositsByDay(opts: {
   branch?: BranchFilter
 }): Promise<DepositsReport> {
   const supabase = (await createClient()) as SBAny
-  let query = applyBranchFilter(
-    supabase
-      .from('salon_reservations')
-      .select('reservation_date, created_at, deposit_cents, status')
-      .eq('tenant_id', opts.tenantId),
-    opts.branch ?? WHOLE_BAR,
-  ).limit(DEPOSITS_MAX_ROWS)
+  const read = (columns: string) => {
+    let query = applyBranchFilter(
+      supabase.from('salon_reservations').select(columns).eq('tenant_id', opts.tenantId),
+      opts.branch ?? WHOLE_BAR,
+    ).limit(DEPOSITS_MAX_ROWS)
 
-  if (opts.basis === 'reservation') {
-    // `reservation_date` es `date` puro: se compara con los mismos strings
-    // `yyyy-MM-dd` que viajan en la URL, sin conversión de zona.
-    query = query.gte('reservation_date', opts.from).lte('reservation_date', opts.to)
-  } else {
-    // `created_at` es timestamptz y el Postgres corre en UTC. El día del bar
-    // arranca a las 00:00 de Córdoba: convertimos los bordes a instantes y
-    // usamos un rango medio abierto [from, to+1) — un `.lte('…T23:59:59.999')`
-    // se comería una carga hecha en el último milisegundo del día.
-    query = query
-      .gte('created_at', cordobaDayStartUtc(opts.from))
-      .lt('created_at', cordobaDayStartUtc(nextIsoDay(opts.to)))
+    if (opts.basis === 'reservation') {
+      // `reservation_date` es `date` puro: se compara con los mismos strings
+      // `yyyy-MM-dd` que viajan en la URL, sin conversión de zona.
+      query = query.gte('reservation_date', opts.from).lte('reservation_date', opts.to)
+    } else {
+      // `created_at` es timestamptz y el Postgres corre en UTC. El día del bar
+      // arranca a las 00:00 de Córdoba: convertimos los bordes a instantes y
+      // usamos un rango medio abierto [from, to+1) — un `.lte('…T23:59:59.999')`
+      // se comería una carga hecha en el último milisegundo del día.
+      query = query
+        .gte('created_at', cordobaDayStartUtc(opts.from))
+        .lt('created_at', cordobaDayStartUtc(nextIsoDay(opts.to)))
+    }
+    return query
   }
 
-  const { data, error } = await query
+  const BASE_COLUMNS = 'reservation_date, created_at, deposit_cents, status'
+  let { data, error } = await read(`${BASE_COLUMNS}, deposit_method`)
+  // El código puede salir antes que la migración que agrega el medio de la seña: sin la columna
+  // (42703) el reporte se lee como siempre, con todo «sin anotar», en vez de romperse.
+  if (error?.code === '42703') ({ data, error } = await read(BASE_COLUMNS))
   if (error) throw error
 
   const rows = (data ?? []) as DepositSourceRow[]

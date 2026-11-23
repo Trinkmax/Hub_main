@@ -45,7 +45,8 @@ export async function readInvoicePhoto(
   slug: string,
   raw: unknown,
 ): Promise<AccSimpleState<InvoiceReadResult>> {
-  const auth = await authorizeAccounting(slug, 'write')
+  // Leer la foto es parte de cargar una compra: también con «solo compras y pagos».
+  const auth = await authorizeAccounting(slug, 'buy_write')
   if (!auth.ok) return auth.state
   if (!invoiceReaderEnabled()) {
     return { ok: false, code: 'disabled', message: 'La lectura con IA no está prendida.' }

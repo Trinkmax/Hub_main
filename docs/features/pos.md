@@ -86,6 +86,25 @@ mueve un salón) o mandarle avisos falsos. Ahora:
 - `usePosPoke` le pasa al socket la sesión de ese momento (`authorizeSocket`) y recién después se une con
   `{ config: { private: true } }`: los permisos se fijan al entrar.
 
+**El token del canal se renueva solo (23/11/2026).** Los socios avisaron que «hay que actualizar todo el
+tiempo para ver los cambios de colores». La causa: la app le escribía el token A MANO al socket
+(`realtime.setAuth(token)`), y un token puesto a mano queda fijo: la librería deja de renovarlo en cada
+latido y dura una hora. Pasada la hora, Realtime cierra los canales privados y cada reintento vuelve a
+entrar con el token vencido (`InvalidJWTExpiration`): el salón quedaba «sin conexión» hasta recargar. Peor
+todavía porque acá la sesión muchas veces la renueva el servidor (el proxy, en cada pedido) y el navegador
+nunca se entera por un evento. Ahora (`lib/supabase/browser.ts`):
+
+- `syncRealtimeAuth()` llama a `realtime.setAuth()` SIN token: el socket le pide la sesión vigente al
+  cliente (la lee de las cookies) y se la manda a los canales si cambió;
+- se repite en cada latido (`onHeartbeat`), porque cuando el navegador sí renueva la sesión supabase-js
+  vuelve a escribirle el token a mano y la renovación automática se apagaría otra vez;
+- si el canal se cae, antes de que la librería reintente se le pasa la sesión de ahora (`use-poke.ts`);
+- y la red de seguridad dejó de ser fija: 20 s con el canal en vivo, 6 s sin canal (`safetyNetMs`). Un
+  salón sin avisos se pone al día cada 6 segundos, no cada 40.
+
+Vale para toda la app (la bandeja de mensajes y las suscripciones de `lib/realtime/subscribe.ts` usan el
+mismo socket).
+
 Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
 del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
 contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de
@@ -124,6 +143,17 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
   en un bar quiere decir que el cliente se lo lleva, no que va a una mesa. El sello de «cobrado» y lo
   que salió bien usan su propio color (`--pos-good`), que no es un estado de mesa.
 - Lo urgente se mueve: la mesa con comida lista late; la demorada se pone roja.
+- **Antes de ponerse roja, avisa** (23/11/2026): cuando una mesa pasa su primer tiempo («miralo») la chapa
+  lleva un borde amarillo (`pos-urg-warn`). Antes ese paso solo sumaba al contador del sector.
+- **«Colores»** (la ficha de la paleta, abajo a la izquierda) abre la leyenda: qué quiere decir cada color
+  y a los cuántos minutos avisa y se pone roja cada estado, con los minutos del bar. Los socios lo
+  preguntaron («¿cuáles son los tiempos de las demoras?») y no había dónde leerlo. Sale de
+  `lib/pos/floor/legend.ts`, y una prueba la compara con la cuenta del mapa (`pos-floor-legend.test.ts`):
+  no puede decir otra cosa. El dueño tiene ahí «Cambiar los tiempos» (lleva a Sucursales › Ajustes).
+- **La marca del bar** va sobre el paño, abajo a la derecha, arriba del selector de vista
+  (`components/pos/ui/pos-brand.tsx`): el logo de Configuración › Apariencia pintado con máscara (sale
+  crema sin importar de qué color sea el archivo) o, si no hay logo, el nombre. En la cocina va al final
+  del estante de abajo.
 - Arriba, el salón en una línea. Cada pestaña de sector avisa cuántas mesas tienen algo pendiente.
 - Una reserva toma su mesa desde 45 minutos antes; antes de eso la mesa está libre pero avisa la hora.
 - **Cambiar de mesa:** mantener apretada una mesa ocupada la levanta; las libres quedan marcadas y se
@@ -218,12 +248,118 @@ pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
   anterior y pregunta «¿Están en el cajón?» (si no están, se escribe lo que hay).
 - **El turno abierto**: cuánto entró, las teclas de los medios (cuentan y filtran), la cinta que se escribe
   sola con cada cobro y, abajo, cuánto efectivo tiene que haber en el cajón. «Sacar plata» y «Entró plata»
-  piden monto y motivo. Tocar un cobro lo corrige (medio, factura) o lo anula; queda quién y cuándo.
+  piden monto y motivo; con Administración en marcha, «Sacar plata» pregunta además para qué sale y a
+  quién (ver «Retiros con destino»). Tocar un cobro lo corrige (medio, factura) o lo anula; queda quién y
+  cuándo.
 - **Cerrar**: se cuentan los billetes sin ver cuánto tenía que haber, después se compara (si no coincide,
   la pantalla sugiere qué cobro mirar), se dice cuánto queda de cambio y se confirma. Queda el resumen del
   turno, para copiar o mandar por WhatsApp.
 - **Práctica**: un turno aparte para aprender; no entra en ningún número.
 - Desde la cuenta de una mesa con la caja cerrada, «Abrir la caja» lleva a la caja de la sucursal de esa mesa.
+
+### La caja a ciegas y el cierre que les llega a los socios (23/11/2026)
+
+Pedido de los socios (audio del 22/11): «hicimos un cierre de caja, hay un montón de info que no queremos
+que vea el encargado, y además es un chorizo largo escrito […] ¿hay posibilidad que cuando cierre la caja
+esto nos lo mande a nosotros y que no manipule la información el encargado?».
+
+- **De quién son los números del salón:** de los socios. Socio = dueño con acceso completo a Administración
+  (la lista que el bar ya mantiene en Administración › Ajustes › Accesos: un solo lugar para decidir quién
+  ve la plata). En un bar sin Administración, todos los dueños. El rol Cajero nunca. Lo decide
+  `seesSalonNumbers` (`lib/pos/cash/blind.ts`). En HUB hoy son 6 personas; los otros usuarios con rol de
+  dueño (entre ellos el de los encargados) operan a ciegas.
+- **Qué ve quien no es socio:** la caja entera para operar (abrir, la cinta con cada cobro del turno para
+  poder corregir uno, sacar y entrar plata, contar y cerrar), pero sin totales: el visor dice cuántos cobros
+  lleva el turno, las teclas de los medios cuentan cobros y el cajón dice «se cuenta al cerrar». No hay
+  «Turnos» anteriores ni «Así viene el turno».
+- **Cerrar a ciegas:** se cuentan los billetes y se dice cuánto queda de cambio. No hay paso de comparar. Para
+  que un fajo mal contado no sea una falsa alarma, antes de seguir se le pregunta UNA cosa a la base
+  (`checkShiftCount`: ¿coincide?, sí o no) y, si no coincide, se pide contar de nuevo una sola vez, sin decir
+  cuánto ni para qué lado. Queda «Turno cerrado», lo que contó, y el comprobante para imprimir y firmar
+  (`closeSlipDoc`).
+- **Los números no viajan:** la capa de servidor le saca a la lectura todo lo que no hace falta para operar
+  (`blindSnapshot`, `blindCloseResult`) antes de mandarla al navegador. No es un candado de la base: quien
+  cobra ve cada cobro que hace, y un usuario con rol de dueño puede leer las tablas. Es no ponerle el
+  resumen adelante a quien no le corresponde. El candado de verdad es darle al encargado el rol Cajero.
+- **El resumen les llega a los socios por mail**, apenas se cierra el turno (lo cierre quien lo cierre). Lo
+  arma el sistema con lo que quedó en la base: el número del turno, cómo dio el arqueo («cuadró» / «faltaron
+  $ 1.000»), lo que entró por cada medio, las mesas, el cajón y lo que hay que mirar. Trae un botón para
+  abrir ese turno en la caja (`?turno=<id>`) y otro para reenviarlo al grupo de WhatsApp. Va por la cola de
+  trabajos (`pos_shift_closed` → `lib/pos/cash/notice.ts`, que corre en el despachador con la clave de
+  servicio); un turno de práctica no avisa. WhatsApp no deja que un sistema escriba en un grupo: por eso es
+  mail a cada socio, más el botón para reenviarlo.
+- **También a ciegas:** «Hoy en vivo» y «Vendido en el salón» del Resumen son de los socios.
+
+Probado en el bar de ejemplo con un usuario Cajero de prueba (`qa.cajero+demoadm`): caja abierta a ciegas,
+conteo de $ 10.000 contra $ 15.000 → «Contá una vez más» → recuento → cierre → «Turno cerrado»; y con el
+dueño de prueba, el mismo turno abierto desde el link (`?turno=`), con el resumen entero.
+
+### Retiros con destino: para qué sale la plata (23/11/2026)
+
+Pedido de los socios (22/11): «cuando se pone sacar plata de la caja y se selecciona el proveedor, se debe
+abrir el desplegable para cargar la compra, pago o comprapago», «si pongo adelanto de sueldo, debe dar la
+apertura del personal para cargar el adelanto y que se cargue» y «tiene que haber una opción de "hora extra"
+igual que "adelanto personal" o "proveedores" […] cargar el monto sin dar más información que eso».
+
+**Cómo se usa.** Con Administración en marcha, «Sacar plata» es un recorrido de un paso por pantalla:
+
+1. **¿Para qué sale la plata?** Cinco fichas: Proveedor, Adelanto de sueldo, Hora extra, Pago de sueldo y
+   Otro motivo (el retiro de siempre, con el motivo escrito y el atajo de las propinas con tarjeta).
+2. **¿A quién?** La lista, con el buscador pegado arriba (sin tildes ni mayúsculas; primero los que
+   empiezan con lo escrito). Con buscador la hoja es alta y no cambia de alto mientras se escribe: en el
+   celular, lo de arriba es lo que queda a la vista con el teclado abierto. Del equipo van primero los de
+   esta sucursal y después «De otra sucursal»; con menos de siete personas no hay buscador. Un proveedor
+   que no está en la lista se anota igual: se escribe el nombre y aparece «Usar "…" · No está en la lista»
+   (si lo escrito se parece a uno de la lista, queda como salida chica: «¿No es ninguno? Usar "…"»).
+3. **¿Cuánto?** El monto, con la misma pregunta de los ceros de toda la caja. Un proveedor de la lista
+   suma, si lo hay, el N.º de factura o remito; uno escrito a mano es el nombre y el monto (la base guarda
+   ese texto como nombre del proveedor). El pago de un sueldo suma, opcional, «¿Qué fechas cubre?»:
+   «1.ª quincena», «2.ª quincena» y «Todo noviembre» (del mes que se está pagando: hasta el día 10, el
+   anterior), «Esta semana» u «Otras fechas»; al elegir se lee el rango entero («Del 1 al 15 de
+   noviembre»), que va en sus columnas y también en el motivo, para que se lea en la cinta y en el
+   cierre. Un adelanto o unas horas extra no piden nada más.
+4. **Anotado.** El sello, el monto y qué pasa ahora: los del equipo, «los socios lo ven en Sueldos»; el
+   de un proveedor, «quedó anotado para Administración» y, si quien está puede cargar compras
+   (`access.accounting.buyWrite`), el botón **«Cargar la compra ahora»**, que lleva a
+   `/[bar]/administracion/compras?caja=<retiro>`: ahí está «De la caja del salón», con ese retiro
+   resaltado y «Cargar la compra / Era un pago / Descartar».
+
+**Lo que ve quien atiende la caja: nombres y nada más.** Ni sueldos, ni saldos, ni lo que se le debe a un
+proveedor, ni si algo va en blanco o en negro: eso es de los socios, en Administración. A ciegas tampoco
+se dice cuánto tiene que quedar en el cajón. En un turno de práctica el retiro se anota igual, avisa que
+no va a Administración y no ofrece cargar la compra.
+
+**Piezas.**
+
+- Base (`pos_revisiones_socios`): `pos_cash_targets(p_branch_id)` → `{ suppliers: [{id,name}], employees:
+  [{id,name,here}] }` (dueño o caja; listas vacías si el bar no usa Administración) y `pos_cash_move(…)`,
+  que es `pos_cash_movement` con el destino (`p_purpose`: `supplier` | `advance` | `overtime` | `salary`),
+  a quién (`p_party_id` o `p_employee_id`) y, para un sueldo, `p_period_from/to`. El motivo que queda en la
+  cinta lo arma la base («Adelanto de sueldo · Ana», «Proveedor · Hielo Sur · Remito 12»), así se lee igual
+  en la cinta, en el cierre impreso y en el mail a los socios. `pos_cash_movement` sigue existiendo para la
+  app vieja; la nueva usa siempre `pos_cash_move`.
+- `lib/pos/cash/targets.ts` (puro, con pruebas): los destinos y sus palabras, el buscador, los atajos de
+  fechas, lo que se manda (`targetFields`) y las mismas reglas de la base para avisar antes del viaje
+  (`moveProblem`).
+- `lib/pos/cash/actions.ts`: `cashMovement` (ahora con destino) y `cashTargets`. En la auditoría de un
+  retiro con destino van el destino y los ids, nunca el nombre ni la nota.
+- `components/pos/cash/move-out-flow.tsx` (el recorrido y `useCashTargets`: las listas se piden al abrir
+  la hoja, no al cargar la caja), `move-form.tsx` (el formulario de siempre) y `movement-sheets.tsx` (la
+  hoja, que elige: con `payees` el recorrido; sin Administración, o para «Entró plata», el de siempre).
+- La página de la caja le pasa `payees` (Administración prendida y configurada) y `canLoadPurchases`.
+
+**Lo que falta de este lado.** La foto del comprobante: `photo_path` viaja hasta la base pero la caja
+todavía no tiene dónde sacarla. Un retiro anulado después de pasado a los libros no avisa en
+Administración.
+
+**Recorrido el 23/11/2026** en el bar de ejemplo (Cerro, base real), en compu (1190 × 660) y celular:
+con el dueño de prueba, proveedor de la lista ($ 25.000, «Remito 12») → «Anotado» con «Cargar la compra
+ahora», que abre Compras con el retiro resaltado; hora extra y pago de sueldo con «1.ª quincena»; con el
+cajero de prueba (a ciegas), proveedor escrito a mano y adelanto → «Anotado» sin el botón y sin decir
+cuánto queda en el cajón. En un turno de práctica: «Otro motivo», «Entró plata», buscar a alguien que no
+existe («No hay nadie con ese nombre»), buscar sin tildes («nan» encuentra a Ñáñez), monto vacío (el
+botón dice qué falta) y sin conexión («No hay señal: no se guardó», y al volver se anota una sola vez).
+En la cinta, en «El turno en detalle» y en el cierre se lee «Retiro · Adelanto de sueldo · …».
 
 ### Prueba de punta a punta (13/11, bar de ejemplo, sucursal Cerro, base real)
 
@@ -322,6 +458,11 @@ lleva la cola y la lista de «Deshacer»; `lib/menu/kitchen/ops.ts` aplica cada 
   cocido). Se elige cómo se contesta (una si hace falta, una sí o sí, las que hagan falta, al menos una),
   cada opción puede sumar al precio (en pesos) y se ofrece en categorías enteras o en productos sueltos. El
   estado dice si el mozo la ve y en cuántos productos. Hay cuatro de arranque para no empezar de cero.
+
+- **Sale primero (23/11):** tercera pestaña (`?ver=primero`). Lo que se marca ahí encabeza la comanda en cocina
+  («Sale primero»): ideal para entradas. Se marca una categoría entera o un producto suelto; no depende de que
+  haya estaciones. El detalle, junto con los **horarios por categoría** (el menú del mediodía, el del fin de
+  semana), está en [`carta-horarios-y-sale-primero.md`](./carta-horarios-y-sale-primero.md).
 
 Probado contra la base real en el bar de ejemplo (13/11): Vinos a Fríos con el marcador y deshacer; marcador
 con el teclado; estación «Parrilla QA» creada y borrada; opción «Vuelta y vuelta» sumada y sacada.
@@ -598,7 +739,27 @@ Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta), `tests/lib/pos-t
   el dispositivo y en la dirección, `?estaciones=`), y a qué estación va cada producto se decide en
   Carta › Cocina y aclaraciones (por categoría, o producto por producto).
 
-- Una tarjeta por tanda, colgada del riel por orden de llegada; nunca se reacomoda sola.
+- **Una comanda por mesa** (pedido del 22/11/2026: «en la solapa de cocina debe mostrar un ticket por
+  mesa»). Todas las tandas vivas de una mesa van en la misma tarjeta (`buildTableCards`); los iguales se
+  suman aunque vengan de tandas distintas, mientras nadie los haya empezado. Si la mesa pide algo más con
+  la comanda ya en marcha no nace otra tarjeta: la franja pasa a **«Se sumó»** (en negativo) y cada
+  renglón nuevo lleva su marca hasta que la cocina lo empieza. «Avanzar» mueve solo las tandas que hacen
+  falta (`ticketsToMove`): lo que ya estaba listo no vuelve a «en preparación» porque la mesa sumó una
+  gaseosa. En el papel sigue saliendo un tique por tanda (`buildCards`): a un papel no se le agrega nada.
+- **Por rubro, y lo que sale primero arriba** («juntar pizzas con pizzas, milanesas con milanesas»): los
+  renglones van en bloques por rubro de la carta, en el orden de la carta, y lo que el bar marcó como «sale
+  primero» (una entrada) va arriba, en negativo. Los rubros y la marca llegan en cada renglón de la cola
+  (`category`, `category_order`, `priority`, desde la migración `pos_revisiones_socios`); con la función
+  anterior no vienen y la comanda se arma como antes (por estación).
+- **La alerta de comanda nueva** («debe ser más agresiva»): suena una campana fuerte en tres llamados, la
+  pantalla entera se enmarca en amarillo con un cartel que dice la mesa («COMANDA NUEVA · 11», o «SE SUMÓ ·
+  3»), la franja de esa comanda late nueve segundos y, si nadie la empieza, vuelve a sonar cada 25 segundos
+  durante un minuto y medio. Cualquier botón saca el cartel. El botón de sonido pasa por **Fuerte → Suave →
+  Silencio** y queda guardado en el dispositivo (`use-kitchen-sound.ts`); «Suave» es el timbre de antes, sin
+  repetición. El celular además vibra, y si la pestaña quedó atrás el título dice cuántas esperan.
+- «Nuevo» va con el resaltador (antes era la franja apagada): lo que nadie empezó se ve de lejos.
+- Cada tarjeta cuelga del riel por orden de llegada (cuenta desde la tanda más vieja que le falta
+  terminar); nunca se reacomoda sola.
 - Arriba, el total que se está preparando («8 Bacon · 5 Lomito»).
 - Dos botones: Siguiente mueve el marco, Avanzar pasa de Nuevo a En preparación y a Listo; mantenerlo deshace.
   Llegan como teclas (flecha derecha / Enter), así sirve cualquier botonera que se presente como teclado.

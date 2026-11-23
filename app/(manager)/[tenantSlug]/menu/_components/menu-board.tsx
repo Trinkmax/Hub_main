@@ -20,6 +20,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   Camera,
   ChevronRight,
+  Clock,
   FolderInput,
   FolderTree,
   GripVertical,
@@ -73,8 +74,10 @@ import {
   reorderCategories,
   updateCategory,
 } from '@/lib/menu/actions'
+import { availabilityWords, hiddenCategoryIds } from '@/lib/menu/availability'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { buildCategoryTree, categoryPath, type MenuTreeNode } from '@/lib/menu/tree'
+import { useMinuteNow } from './availability-field'
 import { CategoryEditDialog } from './category-edit-dialog'
 import { CategoryRow } from './category-row'
 import { CategoryTreePicker } from './category-tree-picker'
@@ -95,12 +98,15 @@ function norm(s: string): string {
 export function MenuBoard({
   tenantSlug,
   tenantId,
+  timeZone,
   categories,
   items,
   tags,
 }: {
   tenantSlug: string
   tenantId: string
+  /** La zona horaria del bar: los horarios de las categorías van en su hora. */
+  timeZone: string
   categories: MenuCategory[]
   items: MenuItem[]
   tags: ItemTagRow[]
@@ -127,6 +133,17 @@ export function MenuBoard({
   const levelNodes = current ? current.children : tree
   const levelItems = current ? current.items : []
   const breadcrumb = current ? categoryPath(categories, current.id) : []
+  // La categoría en la que se está parado: su horario y si ahora la carta la muestra (por el suyo o
+  // por el de una de arriba). Quien carga ítems acá sabe por qué no los ve en la carta.
+  const now = useMinuteNow()
+  const currentHidden = useMemo(
+    () =>
+      current !== null &&
+      now !== null &&
+      hiddenCategoryIds(categories, now, timeZone).has(current.id),
+    [categories, current, now, timeZone],
+  )
+  const currentSchedule = current ? availabilityWords(current.availability ?? null) : null
 
   // Búsqueda global y plana: categorías que matchean por nombre, con su ruta.
   const searchHits = useMemo(() => {
@@ -208,6 +225,19 @@ export function MenuBoard({
         ))}
       </nav>
 
+      {current && (currentSchedule || currentHidden) ? (
+        <p
+          className="-mt-3 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+          data-testid="categoria-actual-horario"
+        >
+          <Clock className="size-3 shrink-0" aria-hidden />
+          {currentSchedule ?? 'Sigue el horario de la categoría de arriba'}
+          {currentHidden ? (
+            <span className="font-medium text-warning-text">· Ahora no se muestra en la carta</span>
+          ) : null}
+        </p>
+      ) : null}
+
       {/* Acciones del nivel */}
       <div className="flex flex-wrap items-center gap-2">
         {current ? (
@@ -260,6 +290,7 @@ export function MenuBoard({
         <SubcategoryList
           tenantSlug={tenantSlug}
           tenantId={tenantId}
+          timeZone={timeZone}
           parentId={current?.id ?? null}
           heading={current ? `Dentro de ${current.name}` : 'Categorías'}
           nodes={levelNodes}
@@ -300,9 +331,13 @@ export function MenuBoard({
   )
 }
 
+/** Nada fuera de horario (y todavía no se sabe la hora): la misma referencia siempre. */
+const NONE_HIDDEN: ReadonlySet<string> = new Set()
+
 function SubcategoryList({
   tenantSlug,
   tenantId,
+  timeZone,
   parentId,
   heading,
   nodes,
@@ -311,6 +346,7 @@ function SubcategoryList({
 }: {
   tenantSlug: string
   tenantId: string
+  timeZone: string
   parentId: string | null
   heading: string
   nodes: MenuTreeNode[]
@@ -319,15 +355,24 @@ function SubcategoryList({
 }) {
   const [order, setOrder] = useState(nodes)
   const [, startTransition] = useTransition()
+  // Las categorías que la carta no está mostrando en este momento (por su horario o el de la de arriba).
+  const now = useMinuteNow()
+  const hiddenNow = useMemo(
+    () => (now === null ? NONE_HIDDEN : hiddenCategoryIds(allCategories, now, timeZone)),
+    [allCategories, now, timeZone],
+  )
 
   // Re-sincroniza si cambia el CONTENIDO de los nodos (membresía, nombre,
-  // activo o conteo de ítems), pero NO su orden. Comparamos una firma ordenada
+  // activo, horario o conteo de ítems), pero NO su orden. Comparamos una firma ordenada
   // que ignora `position`/orden del array — así un reorder optimista no se pisa,
   // mientras que un move de ítems (que cambia los conteos) sí refresca los
   // números sin esperar a un remount.
   const sigOf = (ns: MenuTreeNode[]) =>
     [...ns]
-      .map((n) => `${n.id}:${n.name}:${n.active ? 1 : 0}:${n.items.length}:${totalItemsOf(n)}`)
+      .map(
+        (n) =>
+          `${n.id}:${n.name}:${n.active ? 1 : 0}:${n.items.length}:${totalItemsOf(n)}:${availabilityWords(n.availability ?? null) ?? ''}:${n.image_url ?? ''}`,
+      )
       .sort()
       .join('|')
   if (sigOf(nodes) !== sigOf(order)) {
@@ -381,6 +426,8 @@ function SubcategoryList({
               node={node}
               tenantSlug={tenantSlug}
               tenantId={tenantId}
+              timeZone={timeZone}
+              hiddenNow={hiddenNow.has(node.id)}
               allCategories={allCategories}
               onEnter={onEnter}
             />
@@ -395,12 +442,17 @@ function SubcategoryRow({
   node,
   tenantSlug,
   tenantId,
+  timeZone,
+  hiddenNow,
   allCategories,
   onEnter,
 }: {
   node: MenuTreeNode
   tenantSlug: string
   tenantId: string
+  timeZone: string
+  /** La carta no la está mostrando ahora (su horario, o el de la categoría que la contiene). */
+  hiddenNow: boolean
   allCategories: MenuCategory[]
   onEnter: (id: string) => void
 }) {
@@ -419,6 +471,7 @@ function SubcategoryRow({
   const directItems = node.items.length
   const subcats = node.children.length
   const totalItems = totalItemsOf(node)
+  const schedule = availabilityWords(node.availability ?? null)
 
   const onToggle = () => {
     startTransition(async () => {
@@ -519,10 +572,26 @@ function SubcategoryRow({
               </Badge>
             ) : null}
           </span>
-          <span className="block text-xs tabular-nums text-muted-foreground">
-            {subcats > 0
-              ? `${subcats} subcategoría${subcats === 1 ? '' : 's'} · ${totalItems} ítem${totalItems === 1 ? '' : 's'} en total`
-              : `${directItems} ítem${directItems === 1 ? '' : 's'}`}
+          {/* Cuánto tiene adentro y, si tiene horario, cuál (y si ahora la carta no la muestra): todo
+              en el mismo renglón, así las filas con horario miden lo mismo que las demás. */}
+          <span className="flex flex-wrap items-center gap-x-1.5 text-xs tabular-nums text-muted-foreground">
+            <span>
+              {subcats > 0
+                ? `${subcats} subcategoría${subcats === 1 ? '' : 's'} · ${totalItems} ítem${totalItems === 1 ? '' : 's'} en total`
+                : `${directItems} ítem${directItems === 1 ? '' : 's'}`}
+            </span>
+            {schedule || hiddenNow ? (
+              <span className="flex items-center gap-x-1.5" data-testid="categoria-horario">
+                <span aria-hidden>·</span>
+                <Clock className="size-3 shrink-0" aria-hidden />
+                {schedule ? <span className="[overflow-wrap:anywhere]">{schedule}</span> : null}
+                {hiddenNow ? (
+                  <span className="font-medium text-warning-text">
+                    {schedule ? '· ' : ''}Ahora no se muestra
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </span>
         </span>
       </button>
@@ -546,9 +615,12 @@ function SubcategoryRow({
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuContent align="end" className="w-60">
           <DropdownMenuItem onSelect={() => setEditing(true)}>
             <Pencil className="size-3.5" /> Editar (nombre y foto)
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setEditing(true)} data-testid="categoria-horario-abrir">
+            <Clock className="size-3.5" /> Horario en la carta
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setMoving(true)}>
             <Move className="size-3.5" /> Mover a…
@@ -585,6 +657,7 @@ function SubcategoryRow({
           category={node}
           tenantId={tenantId}
           tenantSlug={tenantSlug}
+          timeZone={timeZone}
           onClose={() => setEditing(false)}
         />
       ) : null}

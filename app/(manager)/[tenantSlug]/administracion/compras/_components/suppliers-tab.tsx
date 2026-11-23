@@ -109,12 +109,15 @@ export async function SuppliersBody({
   sp,
   today,
   canWrite,
+  purchasesOnly = false,
 }: {
   data: Promise<LibretaData>
   tenantSlug: string
   sp: Readonly<Record<string, string | string[] | undefined>>
   today: string
   canWrite: boolean
+  /** El nivel «solo compras y pagos»: sin «Pegar la lista» (el alta masiva es del nivel completo). */
+  purchasesOnly?: boolean
 }) {
   const { list, classes, plan, settings } = await data
   if (!list.ok) return <PanelError title="Proveedores" message={list.message} />
@@ -147,7 +150,7 @@ export async function SuppliersBody({
         ) : undefined
       }
       secondary={
-        canWrite ? (
+        canWrite && !purchasesOnly ? (
           <BulkSuppliersDialog
             tenantSlug={tenantSlug}
             existingNames={existingNames}
@@ -229,6 +232,7 @@ export async function SuppliersBody({
         existingNames={existingNames}
         exportHref={exportHref(tenantSlug, 'saldos-proveedores', { hasta: today })}
         exportFileName={`saldos-proveedores-${today}.csv`}
+        purchasesOnly={purchasesOnly}
       />
       {table}
       {canWrite && filter === 'sin-clasificar' && view.shown.length > 0 ? (

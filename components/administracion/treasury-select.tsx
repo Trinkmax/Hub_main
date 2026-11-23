@@ -23,6 +23,8 @@ export type TreasuryOption = {
   active?: boolean
   /** La sucursal de la caja; vacía = de todo el bar (el formulario filtra con `treasuriesForBranch`). */
   branchId?: string | null
+  /** `false`: quien mira no ve los saldos (nivel «solo compras y pagos»): va solo el nombre. */
+  balanceKnown?: boolean
 }
 
 export type TreasurySelectProps = {
@@ -111,14 +113,16 @@ export function TreasurySelect({
             <SelectItem key={t.id} value={t.id} className="min-h-11 md:min-h-8">
               <span className="flex w-full min-w-0 items-center justify-between gap-4">
                 <span className="truncate">{t.name}</span>
-                <span
-                  className={cn(
-                    'shrink-0 text-xs tabular-nums text-muted-foreground @max-[15.5rem]:hidden',
-                    t.kind !== 'credit_card' && t.balanceCents < 0 && 'text-destructive',
-                  )}
-                >
-                  {treasuryBalanceText(t)}
-                </span>
+                {t.balanceKnown === false ? null : (
+                  <span
+                    className={cn(
+                      'shrink-0 text-xs tabular-nums text-muted-foreground @max-[15.5rem]:hidden',
+                      t.kind !== 'credit_card' && t.balanceCents < 0 && 'text-destructive',
+                    )}
+                  >
+                    {treasuryBalanceText(t)}
+                  </span>
+                )}
               </span>
             </SelectItem>
           ))

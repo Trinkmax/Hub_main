@@ -28,8 +28,11 @@ import {
 import type { AccFailureState } from './action-state'
 import { ACC_ERRORS, ACC_GENERIC_ERROR, type AccErrorKey, accErrorMessage } from './errors'
 
-/** Qué necesita la pantalla o la acción: ver, cargar, o dar accesos. */
-export type AccountingNeed = 'read' | 'write' | 'admin'
+/**
+ * Qué necesita la pantalla o la acción: ver, cargar, o dar accesos. `buy_read` y `buy_write` son las
+ * de Compras y pagos: alcanzan con el nivel «solo compras y pagos» (y, claro, con el completo).
+ */
+export type AccountingNeed = 'read' | 'write' | 'admin' | 'buy_read' | 'buy_write'
 
 /** El bar no tiene Administración prendida (flag `accounting`). */
 export class AccountingDisabledError extends Error {
@@ -58,7 +61,17 @@ export function accountingAllows(acc: AccountingAccess, need: AccountingNeed): b
   if (!acc.enabled) return false
   if (need === 'read') return acc.read
   if (need === 'write') return acc.write
+  if (need === 'buy_read') return acc.read || acc.buyRead === true
+  if (need === 'buy_write') return acc.write || acc.buyWrite === true
   return acc.admin && acc.write
+}
+
+/**
+ * ¿Es alguien con «solo compras y pagos»? Entra a Compras y pagos y a nada más de Administración: no
+ * se le muestran saldos de las cajas, ventas, sueldos ni libros. Puro.
+ */
+export function isPurchasesOnly(acc: AccountingAccess): boolean {
+  return acc.enabled && !acc.read && acc.buyRead === true
 }
 
 /**
@@ -73,7 +86,10 @@ export async function requireAccountingAccess(
   need: AccountingNeed,
 ): Promise<TenantAccess> {
   const access = await requireTenantAccess(slug)
-  requireRole(access.role, need === 'read' ? ACCOUNTING_READ_ROLES : ACCOUNTING_WRITE_ROLES)
+  requireRole(
+    access.role,
+    need === 'read' || need === 'buy_read' ? ACCOUNTING_READ_ROLES : ACCOUNTING_WRITE_ROLES,
+  )
   if (!access.accounting.enabled) throw new AccountingDisabledError()
   if (!accountingAllows(access.accounting, need)) throw new AccountingForbiddenError()
   return access
@@ -99,6 +115,13 @@ export type AccountingAuthorized = {
   tenantId: string
   userId: string
   slug: string
+  /**
+   * Quien llama tiene el nivel «solo compras y pagos» (`isPurchasesOnly`). Solo puede darse en las
+   * acciones que piden `buy_read` o `buy_write`: ahí sirve para no pedir lo que la base le va a
+   * rechazar (gastos fijos, la semana) y para recortar el contexto del motor. `authorizeAccounting`
+   * lo manda siempre; falta = no (este dato solo achica lo que se pide o se muestra: nunca abre nada).
+   */
+  purchasesOnly?: boolean
 }
 
 export type AccountingAuth = AccountingAuthorized | { ok: false; state: AccFailureState }
@@ -130,7 +153,14 @@ export async function authorizeAccounting(
 ): Promise<AccountingAuth> {
   try {
     const access = await requireAccountingAccess(slug, need)
-    return { ok: true, access, tenantId: access.tenant.id, userId: access.user.id, slug }
+    return {
+      ok: true,
+      access,
+      tenantId: access.tenant.id,
+      userId: access.user.id,
+      slug,
+      purchasesOnly: isPurchasesOnly(access.accounting),
+    }
   } catch (error) {
     if (error instanceof UnauthenticatedError) return denied('unauthenticated')
     if (error instanceof AccountingDisabledError) return denied('accounting_not_enabled')
@@ -162,6 +192,12 @@ export type AccountingState = {
   canSetUp: boolean
   read: boolean
   write: boolean
+  /** Entra a Compras y pagos: quien lee todo y quien tiene «solo compras y pagos». */
+  buyRead: boolean
+  /** Carga compras y pagos: dueño con acceso vigente, del nivel que sea. */
+  buyWrite: boolean
+  /** El nivel de esta persona es «solo compras y pagos»: la sección le muestra Compras y nada más. */
+  purchasesOnly: boolean
   /** Da y quita accesos (y suma a la contadora). */
   admin: boolean
   /**
@@ -209,7 +245,9 @@ export const getAccountingState = cache(async (slug: string): Promise<Accounting
   const eligible = ACCOUNTING_READ_ROLES.includes(access.role)
   const read = eligible && accountingAllows(acc, 'read')
   const write = isOwner && accountingAllows(acc, 'write')
-  const needsNames = isOwner && acc.enabled && !read && !acc.canSetUp
+  const buyRead = eligible && accountingAllows(acc, 'buy_read')
+  const buyWrite = isOwner && accountingAllows(acc, 'buy_write')
+  const needsNames = isOwner && acc.enabled && !buyRead && !acc.canSetUp
   return {
     role: access.role,
     eligible,
@@ -220,6 +258,9 @@ export const getAccountingState = cache(async (slug: string): Promise<Accounting
     canSetUp: isOwner && acc.canSetUp,
     read,
     write,
+    buyRead,
+    buyWrite,
+    purchasesOnly: isOwner && isPurchasesOnly(acc),
     admin: isOwner && acc.admin,
     adminNames: needsNames ? await loadAdminNames(access.tenant.id) : [],
   }

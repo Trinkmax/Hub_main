@@ -162,11 +162,17 @@ export function OtherThanSupplier({
   onPickFixed,
   onOther,
   sheetHref,
+  showFixed = true,
 }: {
   fixedLabel: string
   fixedHint: string
   otherLabel: string
   otherHint: string
+  /**
+   * «Un gasto fijo» se ofrece. `false` con el nivel «solo compras y pagos»: los gastos fijos son del
+   * nivel completo, y queda solo «Otro gasto».
+   */
+  showFixed?: boolean
   /** «Un gasto fijo» está desplegado. */
   open: boolean
   onToggle: () => void
@@ -180,94 +186,96 @@ export function OtherThanSupplier({
 }) {
   return (
     <div className="grid gap-2">
-      <div className="rounded-xl bg-secondary/50">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={onToggle}
-          className={cn(WAY_OUT, 'bg-transparent')}
-        >
-          <span
-            aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-card text-accent-foreground shadow-2xs"
+      {showFixed ? (
+        <div className="rounded-xl bg-secondary/50">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={onToggle}
+            className={cn(WAY_OUT, 'bg-transparent')}
           >
-            <Repeat className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">{fixedLabel}</span>
-            <span className="block text-xs text-muted-foreground text-pretty">{fixedHint}</span>
-          </span>
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              'size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) motion-reduce:transition-none',
-              open && 'rotate-180',
-            )}
-          />
-        </button>
-        {open ? (
-          <div className="px-3.5 pb-3">
-            {fixed === null ? (
-              <div className="space-y-2" aria-busy="true">
-                <span className="sr-only">Cargando los gastos fijos…</span>
-                <Skeleton className="h-11 w-full rounded-lg" />
-                <Skeleton className="h-11 w-full rounded-lg" />
-              </div>
-            ) : fixed.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-pretty">
-                No hay gastos fijos sin pagar este mes.
-              </p>
-            ) : (
-              <ul className="grid gap-1.5">
-                {fixed.map((item) => {
-                  const due = fixedDueWords(item.nextDueDate, today)
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => onPickFixed(item.id)}
-                        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-left text-sm shadow-2xs outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{item.name}</span>
-                          <span
-                            className={cn(
-                              'flex items-center gap-1.5 text-xs tabular-nums',
-                              due.late ? LATE_INK : 'text-muted-foreground',
-                            )}
-                          >
-                            {due.late ? (
-                              <span
-                                aria-hidden
-                                className="size-1.5 shrink-0 rounded-full bg-destructive"
-                              />
-                            ) : null}
-                            {due.text}
-                          </span>
-                        </span>
-                        <span className="shrink-0 tabular-nums whitespace-nowrap">
-                          {item.amountCents !== null ? (
-                            formatCentsShort(item.amountCents)
-                          ) : (
-                            <span className="text-xs text-muted-foreground">sin monto</span>
-                          )}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-            <Link
-              href={sheetHref}
-              className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+            <span
+              aria-hidden
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-card text-accent-foreground shadow-2xs"
             >
-              Ver la planilla
-              <ArrowRight aria-hidden className="size-3" />
-            </Link>
-          </div>
-        ) : null}
-      </div>
+              <Repeat className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{fixedLabel}</span>
+              <span className="block text-xs text-muted-foreground text-pretty">{fixedHint}</span>
+            </span>
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) motion-reduce:transition-none',
+                open && 'rotate-180',
+              )}
+            />
+          </button>
+          {open ? (
+            <div className="px-3.5 pb-3">
+              {fixed === null ? (
+                <div className="space-y-2" aria-busy="true">
+                  <span className="sr-only">Cargando los gastos fijos…</span>
+                  <Skeleton className="h-11 w-full rounded-lg" />
+                  <Skeleton className="h-11 w-full rounded-lg" />
+                </div>
+              ) : fixed.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-pretty">
+                  No hay gastos fijos sin pagar este mes.
+                </p>
+              ) : (
+                <ul className="grid gap-1.5">
+                  {fixed.map((item) => {
+                    const due = fixedDueWords(item.nextDueDate, today)
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => onPickFixed(item.id)}
+                          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-left text-sm shadow-2xs outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{item.name}</span>
+                            <span
+                              className={cn(
+                                'flex items-center gap-1.5 text-xs tabular-nums',
+                                due.late ? LATE_INK : 'text-muted-foreground',
+                              )}
+                            >
+                              {due.late ? (
+                                <span
+                                  aria-hidden
+                                  className="size-1.5 shrink-0 rounded-full bg-destructive"
+                                />
+                              ) : null}
+                              {due.text}
+                            </span>
+                          </span>
+                          <span className="shrink-0 tabular-nums whitespace-nowrap">
+                            {item.amountCents !== null ? (
+                              formatCentsShort(item.amountCents)
+                            ) : (
+                              <span className="text-xs text-muted-foreground">sin monto</span>
+                            )}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <Link
+                href={sheetHref}
+                className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+              >
+                Ver la planilla
+                <ArrowRight aria-hidden className="size-3" />
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <button type="button" onClick={onOther} className={WAY_OUT}>
         <span
           aria-hidden

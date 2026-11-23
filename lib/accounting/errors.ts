@@ -79,6 +79,15 @@ export const ACC_ERRORS = {
   },
   admins_exist: { code: 'conflict', message: 'Ya hay alguien que administra los accesos.' },
   access_not_found: { code: 'conflict', message: 'Esa persona ya no tiene acceso.' },
+  // Los niveles de acceso (`acc_set_access`): completo o solo compras y pagos.
+  scope_invalid: {
+    code: 'invalid',
+    message: 'Elegí qué va a ver: todo Administración o solo compras y pagos.',
+  },
+  admin_needs_full: {
+    code: 'invalid',
+    message: 'Para dar accesos hace falta el nivel completo.',
+  },
   display_name_invalid: {
     code: 'invalid',
     message: 'El nombre que se ve en Administración tiene que tener entre 1 y 80 caracteres.',
@@ -334,6 +343,11 @@ export const ACC_ERRORS = {
   treasury_other_branch: {
     code: 'invalid',
     message: 'Esa caja es de otra sucursal. Elegí una de esta sucursal o de todo el bar.',
+  },
+  // Un retiro de la caja del salón que ya tiene comprobante (lo pasó otra persona recién).
+  pos_cash_already_passed: {
+    code: 'conflict',
+    message: 'Ese retiro ya tiene su comprobante. Actualizá la página.',
   },
   document_branch_general: {
     code: 'conflict',

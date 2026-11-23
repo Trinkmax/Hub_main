@@ -110,7 +110,7 @@ beforeEach(() => {
 })
 
 describe('prepareAttachmentUploads', () => {
-  it('pide permiso de escritura y devuelve una ruta por archivo, en la carpeta del comprobante', async () => {
+  it('pide permiso de cargar compras y devuelve una ruta por archivo, en la carpeta del comprobante', async () => {
     fakeSupabase({ count: 1 })
     const result = await prepareAttachmentUploads(SLUG, {
       documentId: DOC.toUpperCase(),
@@ -119,7 +119,8 @@ describe('prepareAttachmentUploads', () => {
         { mimeType: 'application/pdf', sizeBytes: 900_000 },
       ],
     })
-    expect(authorizeAccounting).toHaveBeenCalledWith(SLUG, 'write')
+    // La foto es parte de cargar una compra: alcanza con el nivel «solo compras y pagos».
+    expect(authorizeAccounting).toHaveBeenCalledWith(SLUG, 'buy_write')
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.paths).toHaveLength(2)
@@ -389,7 +390,8 @@ describe('fetchDocumentAttachmentUrl', () => {
   it('con acceso de lectura (la contadora) devuelve un link nuevo', async () => {
     vi.mocked(getDocumentAttachmentUrl).mockResolvedValue({ url: 'https://x/y', expiresAt: 1 })
     const result = await fetchDocumentAttachmentUrl(SLUG, { attachmentId: ATTACHMENT })
-    expect(authorizeAccounting).toHaveBeenCalledWith(SLUG, 'read')
+    // Abrir la foto: quien lee todo y quien tiene «solo compras y pagos» (la base le muestra las suyas).
+    expect(authorizeAccounting).toHaveBeenCalledWith(SLUG, 'buy_read')
     expect(getDocumentAttachmentUrl).toHaveBeenCalledWith(TENANT, ATTACHMENT)
     expect(result).toEqual({ ok: true, data: { url: 'https://x/y', expiresAt: 1 } })
   })

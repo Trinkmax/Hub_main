@@ -34,16 +34,19 @@ export function Tex({
   slug,
   role,
   canAttach,
+  accounting = true,
 }: {
   slug: string
   role: TenantRole
   canAttach: boolean
+  /** Tex ve Administración para esta persona: si no, no le ofrece lo de Administración. */
+  accounting?: boolean
 }) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   if (!mounted) return null
   return createPortal(
-    <TexProvider slug={slug} role={role} canAttach={canAttach}>
+    <TexProvider slug={slug} role={role} canAttach={canAttach} accounting={accounting}>
       <TexStage />
     </TexProvider>,
     document.body,

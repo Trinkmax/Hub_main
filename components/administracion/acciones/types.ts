@@ -21,8 +21,19 @@ export type AccountingAction = (typeof ACCOUNTING_ACTIONS)[number]
  * fijos. En «Pago», ese gasto queda pagado (Rentas y Municipalidad se devengan en
  * cada cierre: no se cargan de nuevo). Va al final para que los links que ya
  * existen no cambien de orden.
+ *
+ * `retiro` es un retiro de la caja del salón que espera su comprobante (la bandeja «De la caja del
+ * salón»): «Nuevo gasto» y «Pagar» abren con su monto, su fecha y la caja de efectivo de esa sucursal,
+ * y al guardar ese retiro queda atado al comprobante.
  */
-export const ACTION_PARAM_KEYS = ['proveedor', 'cliente', 'caja', 'partida', 'gasto-fijo'] as const
+export const ACTION_PARAM_KEYS = [
+  'proveedor',
+  'cliente',
+  'caja',
+  'partida',
+  'gasto-fijo',
+  'retiro',
+] as const
 export type ActionParamKey = (typeof ACTION_PARAM_KEYS)[number]
 export type ActionParams = Partial<Record<ActionParamKey, string>>
 
@@ -42,6 +53,25 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function isAccountingAction(value: unknown): value is AccountingAction {
   return typeof value === 'string' && (ACCOUNTING_ACTIONS as readonly string[]).includes(value)
+}
+
+/**
+ * Las hojas de Compras y pagos: las únicas que abre quien tiene el nivel «solo compras y pagos»
+ * (cargar un gasto o una compra, y pagarle a un proveedor). Las demás mueven cajas, ventas o socios.
+ */
+export const PURCHASE_ACTIONS: readonly AccountingAction[] = ['gasto', 'pagar']
+
+/**
+ * ¿Esta persona puede abrir esa hoja? Quien carga todo (`write`), cualquiera; quien solo carga
+ * compras y pagos (`buyWrite`), las dos de compras; la contadora, ninguna. Puro: lo usan el
+ * provider, los botones y los tests. La acción del servidor y la base vuelven a decidir.
+ */
+export function canOpenAction(
+  action: AccountingAction,
+  access: { write: boolean; buyWrite?: boolean },
+): boolean {
+  if (access.write) return true
+  return access.buyWrite === true && PURCHASE_ACTIONS.includes(action)
 }
 
 type SearchLike = Pick<URLSearchParams, 'get'>

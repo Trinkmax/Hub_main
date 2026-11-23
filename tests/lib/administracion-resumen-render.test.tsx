@@ -352,12 +352,17 @@ describe('el título', () => {
 })
 
 describe('quién ve el Resumen', () => {
-  const page = () => ResumenPage({ params: Promise.resolve({ tenantSlug: 'hub' }) })
+  const page = (query: Record<string, string> = {}) =>
+    ResumenPage({
+      params: Promise.resolve({ tenantSlug: 'hub' }),
+      searchParams: Promise.resolve(query),
+    })
+  const FULL = { enabled: true, setUp: true, read: true, admin: false, canSetUp: false }
   const access = (role: string) =>
     vi.mocked(requireAccountingAccess).mockResolvedValue({
       role,
       tenant: { id: 'tenant' },
-      accounting: { write: role === 'owner' },
+      accounting: { ...FULL, write: role === 'owner' },
     } as never)
 
   it('la contadora entra directo a Sumas y saldos, sin pedir ninguna lectura', async () => {
@@ -378,11 +383,61 @@ describe('quién ve el Resumen', () => {
     vi.mocked(requireAccountingAccess).mockResolvedValue({
       role: 'owner',
       tenant: { id: 'tenant' },
-      accounting: { write: false },
+      accounting: { ...FULL, write: false },
     } as never)
     await page()
     expect(ui.redirect).not.toHaveBeenCalled()
     expect(ui.loaded).toMatchObject({ canWrite: false })
+  })
+
+  describe('con el nivel «solo compras y pagos»', () => {
+    const buyer = () =>
+      vi.mocked(requireAccountingAccess).mockResolvedValue({
+        role: 'owner',
+        tenant: { id: 'tenant' },
+        accounting: {
+          ...FULL,
+          read: false,
+          write: false,
+          buyRead: true,
+          buyWrite: true,
+          scope: 'purchases',
+        },
+      } as never)
+
+    it('el Resumen no es suyo: va a Compras, sin pedir ninguna lectura', async () => {
+      buyer()
+      await expect(page()).rejects.toThrow('NEXT_REDIRECT')
+      expect(ui.redirect).toHaveBeenCalledWith(`${BASE}/compras`)
+      expect(ui.loaded).toBeNull()
+    })
+
+    it('la hoja que traía el link (⌘K desde otra sección) viaja con él, y nada más', async () => {
+      buyer()
+      const proveedor = '11111111-1111-4111-8111-111111111111'
+      await expect(page({ accion: 'pagar', proveedor, mes: '2026-10' })).rejects.toThrow(
+        'NEXT_REDIRECT',
+      )
+      expect(ui.redirect).toHaveBeenCalledWith(
+        `${BASE}/compras?accion=pagar&proveedor=${proveedor}`,
+      )
+    })
+
+    it('pide la puerta de compras (la más abierta) para poder mandar a cada uno a lo suyo', async () => {
+      access('owner')
+      await page()
+      expect(requireAccountingAccess).toHaveBeenLastCalledWith('hub', 'buy_read')
+    })
+  })
+
+  it('sin acceso completo ni de compras, el 404 de la sección', async () => {
+    vi.mocked(requireAccountingAccess).mockResolvedValue({
+      role: 'owner',
+      tenant: { id: 'tenant' },
+      accounting: { ...FULL, read: false, write: false },
+    } as never)
+    await expect(page()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(ui.loaded).toBeNull()
   })
 })
 

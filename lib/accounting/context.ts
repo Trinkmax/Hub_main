@@ -552,6 +552,34 @@ export function buildPostingContext(
   }
 }
 
+/**
+ * El contexto de quien tiene el nivel «solo compras y pagos». La base ya le manda las cajas con saldo
+ * 0 (no ve sus movimientos); acá además:
+ *
+ * - las cajas quedan «sin tope», para que el motor no invente el aviso «la caja quedaría en negativo»
+ *   con un saldo que no conoce (ese aviso se lo da la base al guardar, y sin importe);
+ * - se apaga el impuesto al cheque automático (`withBankTax`): la base no le deja guardar un gasto
+ *   bancario, y quien tiene acceso completo lo carga con el resumen del banco.
+ *
+ * Tiene que aplicarse igual donde se arma la vista previa (`loadSheetData`) y donde se guarda
+ * (`runPostDocument`): el mismo bundle, el mismo hash. Puro.
+ */
+export function purchasesOnlyContext(ctx: PostingContext): PostingContext {
+  const treasuries = new Map<string, TreasuryRef>()
+  for (const [id, treasury] of ctx.treasuries) {
+    treasuries.set(id, { ...treasury, balanceCents: 0, allowNegative: true })
+  }
+  const taxSettings = ctx.settings.taxSettings
+  return {
+    ...ctx,
+    settings: {
+      ...ctx.settings,
+      taxSettings: taxSettings ? { ...taxSettings, bankTaxBp: 0 } : taxSettings,
+    },
+    treasuries,
+  }
+}
+
 // ─── Partidas abiertas (puro) ────────────────────────────────────────────────
 
 export type RawJournalLine = {

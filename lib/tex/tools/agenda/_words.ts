@@ -3,6 +3,7 @@ import type { AccSimpleState } from '@/lib/accounting/action-state'
 import { isRealIsoDay } from '@/lib/dates'
 import { formatPhoneForDisplay, tryNormalizePhone } from '@/lib/phone'
 import type { ServiceAlert } from '@/lib/salon/alerts'
+import type { DepositMethod } from '@/lib/salon/deposit-method'
 import { salonStatusEnum } from '@/lib/salon/schemas'
 import type { ConfigurableSegmentKey, FloorZone, SegmentKey } from '@/lib/salon/segments'
 import type {
@@ -87,6 +88,26 @@ export const ORIGIN_OF_WORD: Readonly<Record<OriginWord, ReservationOrigin>> = {
   messenger: 'messenger',
   presencial: 'in_person',
   conocido_de_socio: 'partner_referral',
+}
+
+/** Con qué se cobró una seña, como se dice en castellano (los medios del punto de venta). */
+export const DEPOSIT_METHOD_WORDS = [
+  'transferencia',
+  'efectivo',
+  'qr',
+  'debito',
+  'credito',
+  'otro',
+] as const
+export type DepositMethodWord = (typeof DEPOSIT_METHOD_WORDS)[number]
+
+export const DEPOSIT_METHOD_OF_WORD: Readonly<Record<DepositMethodWord, DepositMethod>> = {
+  transferencia: 'transfer',
+  efectivo: 'cash',
+  qr: 'qr',
+  debito: 'debit',
+  credito: 'credit',
+  otro: 'other',
 }
 
 /** Como lo dice el tique. `ORIGIN_LABELS` trae el nombre de un bar: acá no sirve. */

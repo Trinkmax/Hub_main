@@ -6,6 +6,7 @@ import { SimplePage } from '@/components/administracion/planilla'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
 import { getDocument, listRecurringExpenses, settleQuery } from '@/lib/accounting/queries'
+import { listPosCashPending } from '@/lib/accounting/queries/pos-cash'
 import { todayInCordoba } from '@/lib/dates'
 import { comprasHref, firstParam, isUuidLike, newPurchaseHref, safeReturnHref } from '../_lib/links'
 import { requireComprasAccess } from '../_lib/page-access'
@@ -63,8 +64,15 @@ function Plain({
  * pagada en el momento (`?modo=pago`). Es a donde llega un comprobante que se soltó en otra pantalla
  * (`?desde=archivo`). La contadora ve un aviso con el link a Comprobantes.
  *
+ * Con `?retiro=<id>` registra un retiro de la caja del salón que espera su comprobante (la bandeja «De
+ * la caja del salón» de Compras): arranca pagada desde la caja de efectivo de esa sucursal, con su
+ * proveedor, su monto y su fecha, y al guardar el retiro queda atado. Si ya no espera, es una compra más.
+ *
  * Los proveedores que más se usan y lo que se le debe a cada uno son lecturas opcionales: si fallan,
  * vuelven vacías y la carga sigue.
+ *
+ * También la abre el nivel «solo compras y pagos»: sin gastos fijos para elegir, sin saldos de las
+ * cajas y sin el impuesto al cheque automático (lo recorta `loadSheetData`).
  */
 export default async function NuevaCompraPage({
   params,
@@ -79,11 +87,14 @@ export default async function NuevaCompraPage({
   const proveedor = firstParam(sp.proveedor)
   const relacionada = firstParam(sp.relacionada)
   const gastoFijo = firstParam(sp['gasto-fijo'])
+  const retiro = firstParam(sp.retiro)
   const volver = firstParam(sp.volver)
   const returnHref = safeReturnHref(tenantSlug, volver)
-  const { access, canWrite, branch } = await requireComprasAccess(
+  // Una de las tres pantallas que también abre el nivel «solo compras y pagos».
+  const { access, canWrite, branch, purchasesOnly } = await requireComprasAccess(
     tenantSlug,
     newPurchaseHref(tenantSlug, { tipo: family }),
+    { level: 'purchases' },
   )
   const title = TITLES[family]
 
@@ -100,11 +111,18 @@ export default async function NuevaCompraPage({
   }
 
   const today = todayInCordoba()
-  const [sheet, recurringOutcome, relatedOutcome] = await Promise.all([
+  const [sheet, recurringOutcome, relatedOutcome, cashOutcome] = await Promise.all([
     loadSheetData(tenantSlug, { suggestions: true, balances: true, branch: branch.filter }),
-    settleQuery(listRecurringExpenses(access.tenant.id, { today })),
+    // Los gastos fijos son del nivel completo: con «solo compras y pagos» la compra no se ata a ninguno.
+    purchasesOnly
+      ? Promise.resolve(null)
+      : settleQuery(listRecurringExpenses(access.tenant.id, { today })),
     family === 'nc' && isUuidLike(relacionada)
-      ? settleQuery(getDocument(access.tenant.id, relacionada))
+      ? // De la factura original solo hacen falta sus datos: el número del asiento no se busca.
+        settleQuery(getDocument(access.tenant.id, relacionada, { provisionalNumber: false }))
+      : Promise.resolve(null),
+    family !== 'nc' && isUuidLike(retiro)
+      ? settleQuery(listPosCashPending(access.tenant.id))
       : Promise.resolve(null),
   ])
 
@@ -116,7 +134,7 @@ export default async function NuevaCompraPage({
     )
   }
 
-  const recurring: RecurringOption[] = recurringOutcome.ok
+  const recurring: RecurringOption[] = recurringOutcome?.ok
     ? recurringOutcome.data
         .filter((r) => r.active)
         .map((r) => ({
@@ -140,6 +158,10 @@ export default async function NuevaCompraPage({
       ? { documentId: relatedDoc.id, label: relatedDoc.title }
       : null
   const partyFromRelated = relatedDoc?.partyId ?? null
+  // El retiro de la caja del salón, si sigue esperando (y es de un proveedor: lo del personal va a Sueldos).
+  const posCash = cashOutcome?.ok
+    ? (cashOutcome.data.find((item) => item.id === retiro && item.purpose === 'supplier') ?? null)
+    : null
   const otherTaxesAccountId = sheet.data.ctx.sys.other_taxes_expense?.id ?? null
 
   return (
@@ -148,10 +170,11 @@ export default async function NuevaCompraPage({
       data={sheet.data}
       otherTaxesAccountId={otherTaxesAccountId}
       family={family}
-      initialPartyId={isUuidLike(proveedor) ? proveedor : partyFromRelated}
+      initialPartyId={isUuidLike(proveedor) ? proveedor : (posCash?.partyId ?? partyFromRelated)}
+      posCash={posCash}
       related={related}
       recurring={recurring}
-      initialRecurringId={isUuidLike(gastoFijo) ? gastoFijo : null}
+      initialRecurringId={!purchasesOnly && isUuidLike(gastoFijo) ? gastoFijo : null}
       returnHref={returnHref}
       startPaying={firstParam(sp.modo) === 'pago'}
       // Si se vino de una pantalla a la que hay que volver (un proveedor, un gasto fijo), se vuelve.

@@ -44,6 +44,12 @@ const MESSAGES: Record<string, string> = {
   register_required: 'Hay más de una caja: elegí cuál abrís.',
   movement_not_found: 'No encontré ese movimiento.',
   movement_kind_invalid: 'Decime si la plata entra o sale.',
+  // Para qué sale la plata
+  purpose_invalid: 'No pude anotar para qué sale. Elegilo de nuevo.',
+  employee_required: 'Elegí a quién del equipo se le paga.',
+  employee_not_found: 'Esa persona ya no está en la lista. Elegila de nuevo.',
+  party_not_found: 'Ese proveedor ya no está en la lista. Elegilo de nuevo.',
+  period_invalid: 'Revisá las fechas: la primera tiene que ser anterior a la segunda.',
   photo_path_invalid: 'No pude guardar la foto. Probá de nuevo.',
   count_invalid: 'Revisá el conteo.',
   count_mismatch: 'El conteo no suma el total: revisá los billetes.',

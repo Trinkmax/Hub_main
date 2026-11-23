@@ -9,6 +9,8 @@ import {
   CARTA_CHECK_TIMEOUT_MS,
   CARTA_REFRESH_GRACE_MS,
   type CartaRevAnswer,
+  cartaScheduleDue,
+  cartaScheduleDueAt,
   decideCartaRefresh,
   readCartaRevAnswer,
   shouldCheckCarta,
@@ -29,6 +31,11 @@ import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
  * página: `router.refresh()`, que trae la carta nueva sin perder la sección abierta ni el scroll, y
  * un aviso. Nada de la sesión del socio se toca.
  *
+ * Los rubros con horario (el menú del mediodía, el del fin de semana) cambian la carta sin que nadie
+ * la edite. El render dice en cuánto es el próximo cambio (`changeInMs`) y, pasado ese momento, la
+ * carta se vuelve a pedir igual que si hubiera cambiado: con un reloj propio si está a la vista, o al
+ * volver a mirarla. Sin aviso: no cambió nada, solo es otra hora.
+ *
  * Anti-bucle (como `app/c/[token]/_components/wallet-live.tsx`): el número que se pidió queda de base
  * aunque el render nuevo traiga uno menor, la gracia de 6 s no deja preguntar de nuevo mientras llega
  * el render, y una respuesta igual o vacía nunca refresca. Sin señal no se refresca nunca: si el pedido
@@ -38,12 +45,18 @@ export function CartaFreshness({
   tenantId,
   rev,
   renderedAt,
+  changeInMs = null,
 }: {
   tenantId: string
   /** Versión de la carta con la que se armó esta página. */
   rev: number
   /** Cuándo se armó en el servidor (ms). */
   renderedAt: number
+  /**
+   * En cuánto aparece o se va un rubro con horario, contado desde que se armó la página (ms). `null`
+   * si ninguno tiene horario.
+   */
+  changeInMs?: number | null
 }): null {
   const router = useRouter()
   // Todo en refs: los chequeos salen de eventos del navegador y un render nuevo no tiene que
@@ -55,6 +68,9 @@ export function CartaFreshness({
   const seenAtRef = useRef<number | null>(null)
   const refreshingRef = useRef(false)
   const graceRef = useRef(0)
+  /** Cuándo vence el horario de este render (reloj del celular), o `null`. Se usa una sola vez. */
+  const scheduleDueAtRef = useRef<number | null>(null)
+  const scheduleTimerRef = useRef(0)
   const inFlightSinceRef = useRef<number | null>(null)
   const lastAnswerAtRef = useRef<number | null>(null)
   /** El último render que se mostró: para avisar una sola vez por versión nueva. */
@@ -68,9 +84,21 @@ export function CartaFreshness({
     // Nunca para atrás: si el render no pudo leer su número (0), la base sigue siendo la que se pidió.
     baselineRef.current = sameBar ? Math.max(baselineRef.current, rev) : rev
     renderedAtRef.current = renderedAt
-    seenAtRef.current = Date.now()
+    const seenAt = Date.now()
+    seenAtRef.current = seenAt
     refreshingRef.current = false
     window.clearTimeout(graceRef.current)
+    // El próximo cambio de horario de ESTE render: un reloj para cuando la carta está a la vista (si
+    // el celular lo congela, lo ven los chequeos de volver a mirarla).
+    const dueAt = cartaScheduleDueAt(changeInMs, seenAt)
+    scheduleDueAtRef.current = dueAt
+    window.clearTimeout(scheduleTimerRef.current)
+    if (dueAt !== null) {
+      scheduleTimerRef.current = window.setTimeout(
+        () => checkRef.current(),
+        Math.max(0, dueAt - seenAt),
+      )
+    }
     if (sameBar && rev > shown.rev) {
       // Una píldora chica y clara (no la barra oscura de los avisos del panel): el aviso
       // vive afuera del `force-light` de la carta, así que lo lleva puesto él.
@@ -85,7 +113,7 @@ export function CartaFreshness({
       )
     }
     shownRef.current = { tenantId, rev }
-  }, [tenantId, rev, renderedAt])
+  }, [tenantId, rev, renderedAt, changeInMs])
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +136,8 @@ export function CartaFreshness({
         refreshing: refreshingRef.current,
         inFlightSince: inFlightSinceRef.current,
         lastAnswerAt: lastAnswerAtRef.current,
+        // Pasó la hora de un rubro: no se espera el mínimo entre preguntas.
+        minGapMs: cartaScheduleDue(scheduleDueAtRef.current, startedAt) ? 0 : undefined,
       })
       if (!canCheck) return
       inFlightSinceRef.current = startedAt
@@ -143,10 +173,13 @@ export function CartaFreshness({
         seenAt: seenAtRef.current,
         now: Date.now(),
         unreachable: answer.kind === 'unreachable',
+        scheduleDue: cartaScheduleDue(scheduleDueAtRef.current, Date.now()),
       })
       if (decision !== 'refresh') return
       // Una sola vez por versión: ese número queda de base, llegue el render que llegue.
       if (latestRev !== null) baselineRef.current = latestRev
+      // Y una sola vez por horario: el render nuevo trae el suyo.
+      scheduleDueAtRef.current = null
       // Y la red de seguridad por edad no se repite hasta dentro de 12 h.
       seenAtRef.current = Date.now()
       refreshNow()
@@ -171,6 +204,7 @@ export function CartaFreshness({
       cancelled = true
       checkRef.current = () => {}
       window.clearTimeout(graceRef.current)
+      window.clearTimeout(scheduleTimerRef.current)
       window.removeEventListener('pageshow', onPageShow)
       window.removeEventListener('focus', onWake)
       window.removeEventListener('online', onWake)

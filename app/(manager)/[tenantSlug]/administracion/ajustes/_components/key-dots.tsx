@@ -2,9 +2,9 @@ import { cn } from '@/lib/utils'
 
 /**
  * Las llaves: un punto por socio. Relleno verde = entra a Administración; con
- * aro dorado = además da accesos; hueco punteado = todavía no entra. Es un
- * gráfico de unidades, como las sillas del muro de mesas: «¿cuántos entran?»
- * se cuenta con el ojo.
+ * aro dorado = además da accesos; medio punto = entra solo a compras y pagos;
+ * hueco punteado = todavía no entra. Es un gráfico de unidades, como las
+ * sillas del muro de mesas: «¿cuántos entran?» se cuenta con el ojo.
  *
  * El dibujo nunca va solo: el número está en la oración de al lado y, en
  * tamaño `md`, en la leyenda con palabras de abajo. Por eso es decorativo
@@ -14,19 +14,24 @@ import { cn } from '@/lib/utils'
  * más de unas decenas de personas (después de `max` se resume en «+N»).
  */
 
-type Dot = 'admin' | 'in' | 'out'
+type Dot = 'admin' | 'in' | 'limited' | 'out'
 
 const DOT_SIZE = { sm: 'size-2', md: 'size-3' } as const
+
+/** Medio punto: entra, pero a una parte. El mismo verde de «entra», hasta la mitad. */
+const HALF = 'bg-[linear-gradient(to_right,var(--adm-in)_50%,transparent_50%)]'
 
 const DOT_LOOK: Readonly<Record<'sm' | 'md', Record<Dot, string>>> = {
   sm: {
     admin: 'bg-adm-in ring-[1.5px] ring-adm-s2',
     in: 'bg-adm-in',
+    limited: `border border-adm-in ${HALF}`,
     out: 'border border-dashed border-muted-foreground/70',
   },
   md: {
     admin: 'bg-adm-in ring-2 ring-adm-s2 ring-offset-1 ring-offset-card',
     in: 'bg-adm-in',
+    limited: `border-[1.5px] border-adm-in ${HALF}`,
     out: 'border-[1.5px] border-dashed border-muted-foreground/70',
   },
 }
@@ -34,6 +39,7 @@ const DOT_LOOK: Readonly<Record<'sm' | 'md', Record<Dot, string>>> = {
 export function KeyDots({
   inCount,
   adminCount,
+  limitedCount = 0,
   outCount,
   size = 'sm',
   max = 24,
@@ -45,6 +51,8 @@ export function KeyDots({
   inCount: number
   /** De los que entran, cuántos dan accesos. */
   adminCount: number
+  /** De los que entran, cuántos ven solo compras y pagos (los demás ven todo). */
+  limitedCount?: number
   /** Cuántos todavía no entran. */
   outCount: number
   size?: 'sm' | 'md'
@@ -57,11 +65,13 @@ export function KeyDots({
   className?: string
 }) {
   const admins = Math.max(0, Math.min(Math.trunc(adminCount), Math.trunc(inCount)))
-  const members = Math.max(0, Math.trunc(inCount) - admins)
+  const limited = Math.max(0, Math.min(Math.trunc(limitedCount), Math.trunc(inCount) - admins))
+  const members = Math.max(0, Math.trunc(inCount) - admins - limited)
   const outside = Math.max(0, Math.trunc(outCount))
   const all: Dot[] = [
     ...Array<Dot>(admins).fill('admin'),
     ...Array<Dot>(members).fill('in'),
+    ...Array<Dot>(limited).fill('limited'),
     ...Array<Dot>(outside).fill('out'),
   ]
   const shown = all.slice(0, Math.max(0, max))
@@ -109,6 +119,13 @@ export function KeyDots({
             <span aria-hidden className={cn('size-2.5 rounded-full', DOT_LOOK.sm.admin)} />
             Dan accesos <b className="font-semibold text-foreground tabular-nums">{admins}</b>
           </li>
+          {limited > 0 ? (
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden className={cn('size-2.5 rounded-full', DOT_LOOK.sm.limited)} />
+              Solo compras y pagos{' '}
+              <b className="font-semibold text-foreground tabular-nums">{limited}</b>
+            </li>
+          ) : null}
           {outside > 0 ? (
             <li className="inline-flex items-center gap-1.5">
               <span aria-hidden className={cn('size-2.5 rounded-full', DOT_LOOK.sm.out)} />

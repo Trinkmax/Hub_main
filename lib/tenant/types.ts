@@ -70,15 +70,28 @@ export type AccountingAccess = {
   enabled: boolean
   /** Alguien ya hizo la puesta en marcha (existe `acc_settings`). */
   setUp: boolean
-  /** Ve Administración: contadora, o dueño con acceso vigente. */
+  /** Ve TODO Administración: contadora, o dueño con acceso completo. */
   read: boolean
-  /** Carga, anula y cierra meses: solo dueño con acceso vigente. */
+  /** Carga, anula y cierra meses: solo dueño con acceso completo. */
   write: boolean
   /** Da y quita accesos y suma a la contadora. No depende del flag (gobierno). */
   admin: boolean
   /** Puede hacer la puesta en marcha (flag prendido y todavía sin configurar). */
   canSetUp: boolean
+  /**
+   * Entra a Compras y pagos: quien ve todo (`read`) y además el dueño con acceso «solo compras y
+   * pagos», que no ve nada más de Administración. Falta = no (la base todavía no lo dice).
+   */
+  buyRead?: boolean
+  /** Carga compras y pagos: dueño con acceso vigente, del nivel que sea. Falta = no. */
+  buyWrite?: boolean
+  /** El nivel del acceso de esta persona. `null` o falta: no tiene (o es la contadora). */
+  scope?: AccountingScope | null
 }
+
+/** Los niveles de acceso a Administración (`acc_access.scope`). */
+export const ACCOUNTING_SCOPES = ['full', 'purchases'] as const
+export type AccountingScope = (typeof ACCOUNTING_SCOPES)[number]
 
 /**
  * Fuente ÚNICA de slugs reservados (paths globales que nunca son un tenant).

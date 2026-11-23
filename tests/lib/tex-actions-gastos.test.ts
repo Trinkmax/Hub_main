@@ -939,6 +939,61 @@ describe('preparar_movimiento_sueldo', () => {
     ).toContain('con qué lo pagó')
   })
 
+  it('horas extra: D Sueldos y jornales / H la caja, aparte del saldo; «en negro» viaja como marca', async () => {
+    const { ctx, r } = setup()
+    vi.mocked(getPayrollReport).mockResolvedValue(report())
+    const prepared = asPrepared(
+      await runTool(gastosActionTools, 'preparar_movimiento_sueldo', {
+        empleado: 'Ana',
+        tipo: 'horas_extra',
+        monto: 45_000,
+        caja: 'Caja',
+        en_negro: true,
+      }),
+    )
+    const payload = prepared.payload as ReturnType<typeof documentPayload> & Record<string, unknown>
+    expect(payload).toMatchObject({ employeeId: ANA, kind: 'overtime', offBooks: true })
+    expect(payload.values).toMatchObject({
+      treasuryAccountId: r.treasury('caja'),
+      direction: 'out',
+      counterpartAccountId: ctx.sys.salaries.id,
+      partyId: null,
+      amountCents: 4_500_000,
+      detail: 'Horas extra · Ana Ríos · octubre',
+    })
+    expectBalanced(prepared, ctx)
+    expect(entryOf(prepared.ticket)).toEqual([
+      [ctx.sys.salaries.name, '$ 45.000', null],
+      ['Caja', null, '$ 45.000'],
+    ])
+    expect(prepared.ticket.title).toBe('Horas extra')
+    expect(prepared.ticket.confirmLabel).toBe('Registrar las horas extra')
+    expect(rowValue(prepared.ticket, 'Saldo')).toBeUndefined()
+    expect(rowValue(prepared.ticket, 'Aparte del sueldo')).toBe('No cambia lo que se le debe.')
+    expect(rowValue(prepared.ticket, 'Va')).toBe('En negro')
+
+    vi.mocked(postPayrollMovement).mockResolvedValue({
+      ok: false,
+      code: 'error',
+      message: 'No.',
+    })
+    await executor('gastos.movimiento_sueldo').run(payload, TEX_CTX)
+    expect(postPayrollMovement).toHaveBeenLastCalledWith(
+      'hub',
+      expect.objectContaining({ kind: 'overtime', offBooks: true, employeeId: ANA }),
+    )
+    // Sin monto, pregunta.
+    expect(
+      asError(
+        await runTool(gastosActionTools, 'preparar_movimiento_sueldo', {
+          empleado: 'Ana',
+          tipo: 'horas_extra',
+          caja: 'Caja',
+        }),
+      ),
+    ).toContain('horas extra')
+  })
+
   it('un sueldo no sale de la tarjeta de la empresa', async () => {
     const { ctx: base, f } = setup()
     const card = {

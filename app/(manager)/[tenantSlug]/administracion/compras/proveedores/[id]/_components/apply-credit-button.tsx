@@ -23,7 +23,7 @@ export function ApplyCreditButton({
 }: {
   pairs: ReadonlyArray<{ debitLineId: string; creditLineId: string; amountCents: number }>
 }) {
-  const { tenantSlug, today, readOnly } = useAccounting()
+  const { tenantSlug, today, readOnly, purchasesOnly } = useAccounting()
   const router = useRouter()
   const [pending, start] = useTransition()
 
@@ -38,6 +38,12 @@ export function ApplyCreditButton({
           return
         }
         router.refresh()
+        // «Deshacer» quita la imputación, que es del nivel completo: con «solo compras y pagos» se
+        // avisa que quedó, sin ese botón.
+        if (purchasesOnly === true) {
+          toast.success('Usaste lo que tenías a favor', { description: result.message })
+          return
+        }
         const ids = result.data.allocationIds
         toastUndo('Usaste lo que tenías a favor', {
           description: result.message,

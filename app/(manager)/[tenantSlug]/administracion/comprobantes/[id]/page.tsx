@@ -2,6 +2,7 @@ import { Printer } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Fragment } from 'react'
+import { DocumentAttachments } from '@/components/administracion/adjuntos/document-attachments'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { SimplePage } from '@/components/administracion/planilla'
@@ -23,6 +24,7 @@ import {
 import { listDocumentAttachments } from '@/lib/accounting/queries/attachments'
 import { getDocumentOrigin, getLinkedDocuments } from '@/lib/accounting/queries/document-origin'
 import { getCardInstallments } from '@/lib/accounting/queries/installments'
+import { PURCHASES_LEVEL_DOCUMENT_KINDS } from '@/lib/accounting/queries/labels'
 import { reimputeAccountOptions, reimputeTargets } from '@/lib/accounting/reimpute'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
@@ -78,6 +80,14 @@ import { FixBlock } from './_components/fix-block'
  * los datos y se arma la pantalla. Solo la lectura del comprobante puede tirar
  * la pantalla: las demás (fotos, ARCA, gasto fijo, cajas, archivo de origen)
  * fallan de a una y su bloque lo dice.
+ *
+ * **Con el nivel «solo compras y pagos»** la ficha es más corta: qué pasó con la
+ * plata, el papel y su foto (que puede sumar). No van el mapa de uniones (lleva
+ * a cajas, gastos fijos, libros y guías), reimputar, «¿hay algo mal?» (anular es
+ * del nivel completo) ni cómo queda en los libros, y no se piden las lecturas
+ * que la base le rechaza. Solo abre compras, notas, gastos y pagos: lo demás,
+ * aunque la base se lo deje leer por la cuenta de un proveedor (un saldo
+ * inicial), da el 404 de la sección.
  */
 
 export const metadata = { title: 'Comprobante' }
@@ -214,11 +224,21 @@ export default async function ComprobantePage({
 }) {
   const { tenantSlug, id } = await params
   const base = `/${tenantSlug}/administracion`
-  const { access, canWrite } = await requireBooksAccess(tenantSlug, `${base}/comprobantes/${id}`)
+  // La ficha también la abre el nivel «solo compras y pagos», en su versión corta (`restricted`).
+  const {
+    access,
+    canWrite: canWriteAll,
+    purchasesOnly: restricted,
+    canAttach,
+  } = await requireBooksAccess(tenantSlug, `${base}/comprobantes/${id}`, { level: 'purchases' })
+  // Anular, reimputar, cambiar de sucursal: del nivel completo. Para ese nivel la ficha es de lectura.
+  const canWrite = canWriteAll && !restricted
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
-  const result = await settleQuery(getDocument(tenantId, id))
+  // El número provisorio del asiento sale del libro diario (nivel completo): la ficha corta no lo
+  // muestra, así que no se pide.
+  const result = await settleQuery(getDocument(tenantId, id, { provisionalNumber: !restricted }))
   if (result.ok && !result.data) notFound()
   if (!result.ok || !result.data) {
     return (
@@ -236,6 +256,7 @@ export default async function ComprobantePage({
   }
 
   const doc = result.data
+  if (restricted && !PURCHASES_LEVEL_DOCUMENT_KINDS.has(doc.kind)) notFound()
   // «¿Era un gasto fijo?»: solo vale preguntarlo a quien puede corregirlo, de una compra o un
   // gasto vigente de este mes que no está unido a ninguno.
   const askRecurring =
@@ -278,19 +299,26 @@ export default async function ComprobantePage({
     // ¿Se emitió con ARCA desde la plataforma? Una factura que ya está en ARCA (producción)
     // no se anula desde los libros: se corrige con una nota de crédito emitida con ARCA.
     ARCA_KINDS.has(doc.kind) ? settleQuery(getArcaVoucherCard(tenantId, doc.id)) : null,
-    doc.recurringExpenseId
+    // Los gastos fijos son del nivel completo: con «solo compras y pagos» no se nombran.
+    doc.recurringExpenseId && !restricted
       ? settleQuery(getRecurringExpense(tenantId, doc.recurringExpenseId))
       : null,
     askRecurring ? settleQuery(listRecurringExpenses(tenantId, { today })) : null,
     // Para saber si una caja es la tarjeta de la empresa.
     hasTreasury ? settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })) : null,
     // ¿Vino de un archivo importado?
-    settleQuery(getDocumentOrigin(tenantId, doc.id)),
+    // (Las propuestas de importación son del nivel completo: con «solo compras y pagos» no se piden.)
+    restricted ? null : settleQuery(getDocumentOrigin(tenantId, doc.id)),
     linkedIds.length > 0 ? settleQuery(getLinkedDocuments(tenantId, linkedIds)) : null,
-    // Reimputar: el plan para el buscador, qué renglón está marcado y lo que ya se cambió.
-    settleQuery(loadPostingCatalog(tenantId)),
-    settleQuery(getImputationFlags(tenantId, { from: doc.accountingDate, to: doc.accountingDate })),
-    settleQuery(listLineReimputations(tenantId, doc.id)),
+    // Reimputar: el plan para el buscador, qué renglón está marcado y lo que ya se cambió. Con
+    // «solo compras y pagos» no se reimputa: no se pide nada de esto (dos se lo rechazaría la base).
+    restricted ? null : settleQuery(loadPostingCatalog(tenantId)),
+    restricted
+      ? null
+      : settleQuery(
+          getImputationFlags(tenantId, { from: doc.accountingDate, to: doc.accountingDate }),
+        ),
+    restricted ? null : settleQuery(listLineReimputations(tenantId, doc.id)),
     // Si este comprobante, o el pago unido a él, salió de la tarjeta: en cuántas cuotas.
     installmentIds.length > 0 ? getCardInstallments(tenantId, installmentIds) : null,
   ])
@@ -334,15 +362,16 @@ export default async function ComprobantePage({
     treasuryKinds: treasuries?.ok ? new Map(treasuries.data.map((t) => [t.id, t.kind])) : null,
     installments: installments?.get(doc.id) ?? null,
     linkedInstallments: installments,
-    recurring: !doc.recurringExpenseId
-      ? undefined
-      : recurringOutcome?.ok
-        ? recurringOutcome.data
-        : 'error',
+    recurring:
+      !doc.recurringExpenseId || restricted
+        ? undefined
+        : recurringOutcome?.ok
+          ? recurringOutcome.data
+          : 'error',
     candidates: candidatesOutcome?.ok
       ? recurringCandidates(doc, candidatesOutcome.data, today)
       : [],
-    origin: origin.ok ? origin.data : null,
+    origin: origin?.ok ? origin.data : null,
     attachments: attachments.ok ? attachments.data.length : null,
     arca:
       arcaOutcome === null
@@ -368,11 +397,11 @@ export default async function ComprobantePage({
 
   const back = backLinkFor(doc.kind, base, doc.accountingDate)
   const internalNumber = internalVoucherNumber(doc)
-  const targets = catalog.ok
+  const targets = catalog?.ok
     ? reimputeTargets(
         doc,
         new Map(catalog.data.accounts.map((a) => [a.id, a])),
-        flags.ok ? flags.data.filter((f) => f.documentId === doc.id) : [],
+        flags?.ok ? flags.data.filter((f) => f.documentId === doc.id) : [],
       )
     : []
 
@@ -453,16 +482,28 @@ export default async function ComprobantePage({
               mapFirst && 'order-2',
             )}
           >
-            <DocumentLinks
-              tenantSlug={tenantSlug}
-              base={base}
-              documentId={doc.id}
-              title={linksTitle(nodes, doc, today)}
-              nodes={nodes}
-              canWrite={canWrite}
-              attachments={attachments}
-              arcaOutcome={arcaOutcome}
-            />
+            {restricted ? (
+              // Sin el mapa de uniones: solo la foto, que es lo que este nivel puede sumar.
+              <DocumentAttachments
+                tenantSlug={tenantSlug}
+                documentId={doc.id}
+                attachments={attachments.ok ? attachments.data : []}
+                canEdit={canAttach && doc.status === 'posted'}
+                canRemove={false}
+                loadError={attachments.ok ? null : attachments.message}
+              />
+            ) : (
+              <DocumentLinks
+                tenantSlug={tenantSlug}
+                base={base}
+                documentId={doc.id}
+                title={linksTitle(nodes, doc, today)}
+                nodes={nodes}
+                canWrite={canWrite}
+                attachments={attachments}
+                arcaOutcome={arcaOutcome}
+              />
+            )}
           </div>
 
           <div
@@ -471,7 +512,7 @@ export default async function ComprobantePage({
               mapFirst && 'order-4',
             )}
           >
-            {catalog.ok ? (
+            {catalog?.ok ? (
               <ReimputeBlock
                 tenantSlug={tenantSlug}
                 base={base}
@@ -484,31 +525,37 @@ export default async function ComprobantePage({
               />
             ) : null}
 
-            {reimputations.ok ? (
+            {reimputations?.ok ? (
               <ReimputationList
                 items={reimputations.data}
                 className="rounded-xl border border-border/70 bg-card p-3 shadow-xs sm:p-4"
               />
             ) : null}
 
-            <FixBlock
-              tenantSlug={tenantSlug}
-              base={base}
-              doc={doc}
-              canWrite={canWrite}
-              actions={actions}
-              arcaEmitted={arcaEmitted}
-              arcaCreditNoteHref={arcaCreditNoteHref}
-              arcaSibling={canWrite ? arcaSibling : null}
-              siblings={siblings}
-              appliedCents={appliedCents}
-              today={today}
-              minDate={maxIsoDay(firstOpenDate ?? today, doc.accountingDate)}
-              ivaMode={settings?.ok && settings.data ? settings.data.closedPeriodVoidIvaMode : null}
-              extraNotes={voidNotes(doc, ctx)}
-            />
+            {restricted ? null : (
+              <FixBlock
+                tenantSlug={tenantSlug}
+                base={base}
+                doc={doc}
+                canWrite={canWrite}
+                actions={actions}
+                arcaEmitted={arcaEmitted}
+                arcaCreditNoteHref={arcaCreditNoteHref}
+                arcaSibling={canWrite ? arcaSibling : null}
+                siblings={siblings}
+                appliedCents={appliedCents}
+                today={today}
+                minDate={maxIsoDay(firstOpenDate ?? today, doc.accountingDate)}
+                ivaMode={
+                  settings?.ok && settings.data ? settings.data.closedPeriodVoidIvaMode : null
+                }
+                extraNotes={voidNotes(doc, ctx)}
+              />
+            )}
 
-            {doc.entry ? (
+            {/* El asiento es de los libros (y a este nivel la base le muestra solo el renglón del
+                proveedor: sería un asiento a medias). */}
+            {doc.entry && !restricted ? (
               <div id="libros" className="scroll-mt-28">
                 {/* La contadora viene a esto: le llega abierto, con su título y sin botón de
                     plegar (abierto, ese botón decía solo «Ocultar» y la tabla quedaba sin nombre).

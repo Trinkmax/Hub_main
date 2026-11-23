@@ -33,6 +33,7 @@ import {
   ArcaLookupTrigger,
   useArcaLookup,
 } from '@/components/administracion/arca-lookup'
+import { linkingPosCash, PosCashNote } from '@/components/administracion/caja-salon/pos-cash-form'
 import { DateInput } from '@/components/administracion/date-input'
 import { EntryPreview } from '@/components/administracion/entry-preview'
 import { FotoPanel } from '@/components/administracion/foto-qr/foto-panel'
@@ -71,6 +72,7 @@ import { amountLooksOff, pickTreasury, suggestDueDate } from '@/lib/accounting/d
 import { isCreditCard } from '@/lib/accounting/installments'
 import type { InvoiceRead } from '@/lib/accounting/invoice-read'
 import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
+import { type PosCashPending, posCashDate, posCashTreasuryId } from '@/lib/accounting/pos-cash'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import { bankTaxOf, bpLabel } from '@/lib/accounting/taxes'
@@ -357,6 +359,7 @@ export function PurchaseForm({
   startPaying = false,
   startAnother = true,
   takeDropped = false,
+  posCash = null,
 }: {
   tenantSlug: string
   data: SheetData
@@ -369,6 +372,11 @@ export function PurchaseForm({
   recurring: readonly RecurringOption[]
   initialRecurringId: string | null
   returnHref: string
+  /**
+   * `?retiro=`: el retiro de la caja del salón que esta compra registra. Arranca pagada desde la caja
+   * de efectivo de esa sucursal, con su monto y su fecha, y al guardar el retiro queda atado.
+   */
+  posCash?: PosCashPending | null
   /** `?modo=pago`: arranca con «Ya la pagué». */
   startPaying?: boolean
   /** «Cargar otra» arranca tildado, salvo que se haya venido de una pantalla a la que hay que volver. */
@@ -436,8 +444,14 @@ export function PurchaseForm({
   const branchScope = useBranchScope()
   const viewedBranchId = useDefaultBranchId()
   const [branchId, setBranchId] = useState<string | null>(
-    () => firstRecurring?.branchId ?? viewedBranchId,
+    // Un retiro de la caja del salón es de la sucursal de esa caja.
+    () => posCash?.branchId ?? firstRecurring?.branchId ?? viewedBranchId,
   )
+  // El retiro se ata a la primera compra que se guarda; con «Cargar otra», las que siguen son aparte.
+  const [posCashId, setPosCashId] = useState<string | null>(posCash?.id ?? null)
+  const cashDate = posCash
+    ? posCashDate(posCash.date, { min: data.booksStartDate, max: today })
+    : null
   const [branchError, setBranchError] = useState<string | null>(null)
   const branchTreasuries = useMemo(
     () => treasuriesForBranch(data.treasuries, branchId),
@@ -459,10 +473,12 @@ export function PurchaseForm({
   const [voucherNumber, setVoucherNumber] = useState<VoucherNumberValue>({ pos: '', number: '' })
   /** El punto de venta que propuso el sistema (el de la última factura del proveedor). */
   const [suggestedPos, setSuggestedPos] = useState<string | null>(null)
-  const [issueDate, setIssueDate] = useState<string | null>(today)
-  const [dueDate, setDueDate] = useState<string | null>(today)
+  const [issueDate, setIssueDate] = useState<string | null>(cashDate ?? today)
+  const [dueDate, setDueDate] = useState<string | null>(cashDate ?? today)
   const [amountMode, setAmountMode] = useState<'total' | 'detail'>('total')
-  const [totalCents, setTotalCents] = useState<number | null>(firstRecurring?.amountCents ?? null)
+  const [totalCents, setTotalCents] = useState<number | null>(
+    posCash?.amountCents ?? firstRecurring?.amountCents ?? null,
+  )
   const [vatRateBp, setVatRateBp] = useState<VatRateBp>(() =>
     firstRecurring?.vatRateBp !== null &&
     firstRecurring?.vatRateBp !== undefined &&
@@ -495,11 +511,19 @@ export function PurchaseForm({
     related?.documentId ?? null,
   )
   const [recurringId, setRecurringId] = useState<string | null>(firstRecurring?.id ?? null)
-  const [payNow, setPayNow] = useState<PurchaseFormState['payNow']>(() =>
-    startPaying && initialFamily !== 'nc'
-      ? initialPayNow({ treasuries: branchTreasuries, lastUsedWithParty: null, today })
-      : null,
-  )
+  const [payNow, setPayNow] = useState<PurchaseFormState['payNow']>(() => {
+    if (initialFamily === 'nc' || !(startPaying || posCash)) return null
+    const start = initialPayNow({ treasuries: branchTreasuries, lastUsedWithParty: null, today })
+    // Ya se pagó, y salió de la caja de efectivo de esa sucursal el día del retiro.
+    return posCash
+      ? {
+          ...start,
+          treasuryAccountId:
+            posCashTreasuryId(branchTreasuries, posCash.branchId) ?? start.treasuryAccountId,
+          date: cashDate ?? today,
+        }
+      : start
+  })
   const [notes, setNotes] = useState('')
   // «N.º de remito» (opcional, sin factura): va adelante de las notas.
   const [remito, setRemito] = useState('')
@@ -523,7 +547,13 @@ export function PurchaseForm({
   const [relatedOptions, setRelatedOptions] = useState<RelatedOption[]>(() =>
     related ? [related] : [],
   )
-  const touched = useRef({ voucher: false, account: false, due: false, treasury: false })
+  // La caja de la que salió un retiro del salón no la pisa lo que se recuerda del proveedor.
+  const touched = useRef({
+    voucher: false,
+    account: false,
+    due: false,
+    treasury: posCash !== null,
+  })
   const defaultsSeq = useRef(0)
   // El gasto fijo marcado, a mano de `applyDefaults` (que no se rearma con cada cambio).
   const recurringIdRef = useRef(recurringId)
@@ -1104,8 +1134,11 @@ export function PurchaseForm({
 
   const posting = useDocumentPosting<AnyValues>({
     tenantSlug,
-    action: postAny,
-    onSaved: (saved) => onSaved(saved),
+    action: linkingPosCash(posCashId, postAny),
+    onSaved: (saved) => {
+      setPosCashId(null)
+      onSaved(saved)
+    },
     formRef,
     isKnownField: (k) => UI_FIELDS.has(built.fieldOf[k] ?? k),
   })
@@ -1738,6 +1771,8 @@ export function PurchaseForm({
             </div>
           )}
         </header>
+
+        {posCashId ? <PosCashNote posCash={posCash} notice={null} /> : null}
 
         {lastSaved ? (
           // Con `key`, el tilde se vuelve a dibujar con cada una que se carga.

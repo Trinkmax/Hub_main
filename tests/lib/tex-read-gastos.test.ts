@@ -248,6 +248,32 @@ describe('ver_sueldos', () => {
     )
   })
 
+  it('las horas extra van aparte, y dice cuánto salió de la caja del salón y falta pasar', () => {
+    expect(
+      employeeRow(
+        employee({
+          overtimeCents: 40_000_00,
+          pendingCash: [
+            {
+              id: 'retiro-1',
+              purpose: 'advance',
+              amountCents: 50_000_00,
+              date: '2026-11-03',
+              branchId: null,
+              byName: 'Luz',
+              periodFrom: null,
+              periodTo: null,
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      saldo: '$ 500.000',
+      horas_extra: '$ 40.000',
+      de_la_caja_sin_pasar: '$ 50.000',
+    })
+  })
+
   it('no lleva sus notas (CLAUDE.md §9)', () => {
     expect(JSON.stringify(employeeRow(employee()))).not.toContain('DNI')
   })

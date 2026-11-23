@@ -30,6 +30,11 @@ export type SheetTreasury = {
   allowNegative: boolean
   /** La sucursal de la caja; vacía = de todo el bar (se ofrece en todas). */
   branchId?: string | null
+  /**
+   * `false`: quien mira no ve los saldos de las cajas (nivel «solo compras y pagos»). `balanceCents`
+   * llega en 0 y no se muestra ni se usa para decir «queda…» o «no alcanza». Falta = se conoce.
+   */
+  balanceKnown?: boolean
 }
 
 export type SheetParty = {

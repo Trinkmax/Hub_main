@@ -3,7 +3,9 @@ import 'server-only'
 /**
  * El camino de toda acción que guarda un comprobante (G.3, E.7):
  *
- * 1. `authorizeAccounting(slug, 'write')`: dueño con acceso vigente.
+ * 1. `authorizeAccounting(slug, accessNeedOfForm(form))`: dueño con acceso vigente. Las compras, los
+ *    gastos y los pagos a proveedores también los guarda quien tiene «solo compras y pagos»
+ *    (`buy_write`); todo lo demás pide el acceso completo (`write`).
  * 2. zod del formulario (centavos enteros, fechas reales, avisos conocidos).
  * 3. Contexto DESDE LA BASE (nunca el del navegador) con las partidas que el
  *    formulario referencia, con su abierto de hoy.
@@ -27,12 +29,13 @@ import 'server-only'
  */
 
 import { revalidatePath } from 'next/cache'
-import { authorizeAccounting } from '@/lib/accounting/access'
+import { type AccountingNeed, authorizeAccounting } from '@/lib/accounting/access'
 import {
   type AccActionState,
   type AccFailureState,
   invalidState,
 } from '@/lib/accounting/action-state'
+import { purchasesOnlyContext } from '@/lib/accounting/context'
 import {
   ACC_ERRORS,
   ACC_GENERIC_ERROR,
@@ -290,6 +293,30 @@ function staleState(
   }
 }
 
+// ─── Quién guarda qué ────────────────────────────────────────────────────────
+
+/**
+ * Los formularios de Compras y pagos: un gasto, una compra (con o sin pago), su nota de crédito y un
+ * pago a un proveedor. Son los únicos que guarda quien tiene el nivel «solo compras y pagos».
+ */
+export const PURCHASE_FORMS: readonly DocumentForm[] = [
+  'quick_expense',
+  'purchase',
+  'purchase_credit_note',
+  'payment',
+]
+
+/**
+ * El acceso que pide guardar (o ver el asiento de) cada formulario. La contadora graba asientos
+ * manuales (reunión del 29/10/2026); las compras y los pagos, también quien tiene «solo compras y
+ * pagos»; todo lo demás es de los dueños con acceso completo. La base lo vuelve a decidir en
+ * `acc_post_bundle` (`private.acc_assert_poster`), comprobante por comprobante. Puro.
+ */
+export function accessNeedOfForm(form: DocumentForm): AccountingNeed {
+  if (form === 'manual_entry') return 'read'
+  return PURCHASE_FORMS.includes(form) ? 'buy_write' : 'write'
+}
+
 // ─── Guardar ─────────────────────────────────────────────────────────────────
 
 /** El camino completo de G.3 para un formulario de comprobante. */
@@ -301,9 +328,7 @@ export async function runPostDocument(
   const op = `post.${form}`
   try {
     if (typeof slug !== 'string' || slug === '') return forbiddenState()
-    // La contadora graba asientos manuales (reunión del 29/10/2026); todo lo demás es de los dueños con acceso.
-    // La base lo vuelve a decidir en `acc_post_bundle` (`private.acc_assert_poster`).
-    const auth = await authorizeAccounting(slug, form === 'manual_entry' ? 'read' : 'write')
+    const auth = await authorizeAccounting(slug, accessNeedOfForm(form))
     if (!auth.ok) return auth.state
 
     const parsed = parseDocumentForm(form, raw)
@@ -317,7 +342,9 @@ export async function runPostDocument(
       logFailure(op, loaded.state)
       return loaded.state
     }
-    const { ctx, firstOpenDate } = loaded
+    const { firstOpenDate } = loaded
+    // El mismo contexto con que el formulario armó la vista previa (`loadSheetData`).
+    const ctx = auth.purchasesOnly === true ? purchasesOnlyContext(loaded.ctx) : loaded.ctx
 
     const built = buildPrimary(input, ctx, firstOpenDate)
     if (!built.ok) {
@@ -405,7 +432,11 @@ export async function runPreviewDocument(
   const op = `preview.${isDocumentForm(form) ? form : 'desconocido'}`
   try {
     if (typeof slug !== 'string' || slug === '') return forbiddenState()
-    const auth = await authorizeAccounting(slug, 'write')
+    // La vista previa de una compra o un pago, también con «solo compras y pagos»; el resto, como siempre.
+    const auth = await authorizeAccounting(
+      slug,
+      isDocumentForm(form) && PURCHASE_FORMS.includes(form) ? 'buy_write' : 'write',
+    )
     if (!auth.ok) return auth.state
     if (!isRecord(request) || !isDocumentForm(form)) {
       return { ok: false, code: 'invalid', message: 'Revisá los datos.' }
@@ -422,7 +453,8 @@ export async function runPreviewDocument(
       logFailure(op, loaded.state)
       return loaded.state
     }
-    const built = buildPrimary(input, loaded.ctx, loaded.firstOpenDate)
+    const ctx = auth.purchasesOnly === true ? purchasesOnlyContext(loaded.ctx) : loaded.ctx
+    const built = buildPrimary(input, ctx, loaded.firstOpenDate)
     if (!built.ok) return engineErrorsState(built.errors)
     return {
       ok: true,

@@ -6,6 +6,7 @@ import {
   GraduationCap,
   LayoutList,
   Map as MapIcon,
+  Palette,
   SquareDashed,
   WifiOff,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/sheet'
 import { planHref } from '@/lib/floor-plan/branches'
 import { mergeTables, moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import { settingsHref } from '@/lib/pos/branches/links'
 import { posFont } from '@/lib/pos/font'
 import { clockAt } from '@/lib/pos/order/clock'
 import {
@@ -38,13 +40,15 @@ import {
 } from '@/lib/pos/table-state'
 import type { FloorSession, FloorSnapshot, PosBranch } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
-import { usePosPoke } from '@/lib/pos/use-poke'
+import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { ApprovalsBell } from '../approvals/approvals-bell'
 import { PosOutboxRunner } from '../order/outbox-runner'
 import { PrinterButton } from '../print/printer-button'
+import { PosBrand, type PosBrandInfo } from '../ui/pos-brand'
 import { PosTopbar } from '../ui/pos-topbar'
+import { FloorLegend } from './floor-legend'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
 import '../ui/pos-toast.css'
@@ -82,6 +86,8 @@ type Props = {
   initialMove?: string | null
   /** El botón de la cuenta, armado en la página. */
   account?: React.ReactNode
+  /** El bar: su logo va sobre el paño, abajo a la derecha. */
+  brand?: PosBrandInfo
 }
 
 /** Una mesa levantada, esperando a dónde va. */
@@ -120,6 +126,7 @@ export function FloorLive({
   canOperate,
   initialMove = null,
   account,
+  brand,
 }: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
@@ -132,6 +139,7 @@ export function FloorLive({
   const [moving, setMoving] = useState<Moving | null>(null)
   const [merging, setMerging] = useState<Merging | null>(null)
   const [mergeBusy, setMergeBusy] = useState(false)
+  const [legend, setLegend] = useState(false)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(initial), [initial])
@@ -166,8 +174,9 @@ export function FloorLive({
     }
     poke()
   })
-  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
-  useVisibleInterval(reload, 40_000)
+  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día. Con el canal caído no hay
+  // avisos, así que se lee seguido: el salón no puede quedar viejo esperando que alguien recargue.
+  useVisibleInterval(reload, safetyNetMs(live))
 
   const nowService = useMemo(() => serviceMinutesAt(new Date(now), timeZone), [now, timeZone])
 
@@ -620,6 +629,7 @@ export function FloorLive({
                         'pos-row',
                         `pos-st-${entry.state.key}`,
                         entry.state.urgency === 'late' && 'pos-urg-late',
+                        entry.state.urgency === 'warn' && 'pos-urg-warn',
                       )}
                       onClick={() => onTable(entry.tableId)}
                     >
@@ -700,31 +710,39 @@ export function FloorLive({
             </p>
           )}
           <div className="pos-hud">
-            {chips.length > 0 ? (
-              <div className="pos-hud-chips">
-                {chips.map((chip) => {
-                  const Icon = chip.icon
-                  return (
-                    <button
-                      key={chip.key}
-                      type="button"
-                      className={cn(
-                        'pos-hud-chip',
-                        `is-${chip.key}`,
-                        focus === chip.key && 'is-on',
-                      )}
-                      aria-pressed={focus === chip.key}
-                      onClick={() => toggleFocus(chip.key)}
-                    >
-                      <Icon aria-hidden strokeWidth={2.4} />
-                      <b>{chip.count}</b>
-                      <span>{chip.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            ) : null}
+            <div className="pos-hud-chips">
+              {/* Qué dice cada color y a los cuántos minutos cambia: siempre a mano, sin ocupar una franja. */}
+              <button
+                type="button"
+                className="pos-hud-chip is-legend"
+                onClick={() => setLegend(true)}
+                aria-haspopup="dialog"
+                aria-label="Colores: qué dice cada color y cuándo avisa una mesa"
+                data-testid="leyenda-abrir"
+              >
+                <Palette aria-hidden strokeWidth={2.2} />
+                <span>Colores</span>
+              </button>
+              {chips.map((chip) => {
+                const Icon = chip.icon
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    className={cn('pos-hud-chip', `is-${chip.key}`, focus === chip.key && 'is-on')}
+                    aria-pressed={focus === chip.key}
+                    onClick={() => toggleFocus(chip.key)}
+                  >
+                    <Icon aria-hidden strokeWidth={2.4} />
+                    <b>{chip.count}</b>
+                    <span>{chip.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
+
+          {brand ? <PosBrand brand={brand} /> : null}
 
           <fieldset className="pos-view">
             <legend className="sr-only">Cómo ver el salón</legend>
@@ -809,6 +827,13 @@ export function FloorLive({
           </div>
         </SheetContent>
       </Sheet>
+
+      <FloorLegend
+        open={legend}
+        onClose={() => setLegend(false)}
+        thresholds={snapshot.settings}
+        settingsHref={canEditPlan ? settingsHref(slug, 'avisos') : null}
+      />
 
       <OpenTableSheet
         slug={slug}

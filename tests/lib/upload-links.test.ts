@@ -50,11 +50,12 @@ beforeEach(() => {
 })
 
 describe('createUploadLink', () => {
-  it('sin permiso de escritura no firma ni guarda nada', async () => {
+  it('sin permiso de cargar compras no firma ni guarda nada', async () => {
     const denied = { ok: false, code: 'forbidden', message: 'No tenés acceso.' }
     mocks.auth.mockResolvedValue({ ok: false, state: denied })
     expect(await createUploadLink('hub')).toEqual(denied)
-    expect(mocks.auth).toHaveBeenCalledWith('hub', 'write')
+    // La foto es parte de cargar una compra: alcanza con el nivel «solo compras y pagos».
+    expect(mocks.auth).toHaveBeenCalledWith('hub', 'buy_write')
     expect(mocks.sign).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalled()
   })

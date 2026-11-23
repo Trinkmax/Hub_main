@@ -193,6 +193,11 @@ export type Bill = {
     status: string
     /** La seña entera de la reserva (lo que se usa está en `bill.deposit_cents`). */
     deposit_cents: number
+    /**
+     * Con qué se cobró esa seña (`salon_reservations.deposit_method`), si se anotó. Opcional: la
+     * cuenta lo muestra recién cuando `pos_bill` lo devuelve.
+     */
+    deposit_method?: string | null
     guests: number
   } | null
   customer: {
@@ -478,6 +483,12 @@ export type DayPayment = Payment & {
 
 /** Lo que devuelve `pos_shift_snapshot`: la pantalla de caja entera. */
 export type ShiftSnapshot = {
+  /**
+   * Quien mira no ve los números del salón (no es socio): la caja se opera a ciegas. No viene de la
+   * base: lo pone la capa de servidor, que además saca del medio todo lo que no hace falta para
+   * operar (`lib/pos/cash/blind.ts`).
+   */
+  blind?: boolean
   now: string
   service_day: string
   practice: boolean

@@ -16,7 +16,6 @@ import {
   formBool,
   formInt,
   generateIvaSettlementSchema,
-  grantAccessSchema,
   isoDay,
   isoMonth,
   isValidCbu,
@@ -41,6 +40,7 @@ import {
   salesInvoiceSchema,
   salesMethodSchema,
   salesPointSchema,
+  setAccessSchema,
   settingsSchema,
   skipRecurringDueSchema,
   systemRemapSchema,
@@ -861,13 +861,43 @@ describe('correcciones, períodos y accesos', () => {
     ok(reopenFiscalYearSchema, { fiscalYearId: U1, reason: 'Ajuste de la contadora' })
   })
 
-  it('dar y quitar accesos', () => {
-    expect(ok(grantAccessSchema, { userId: U1, isAdmin: 'on' })).toEqual({
+  it('dar un acceso eligiendo el nivel, y quitarlo', () => {
+    expect(ok(setAccessSchema, { userId: U1, scope: 'purchases' })).toEqual({
       userId: U1,
+      scope: 'purchases',
+      isAdmin: false,
+      displayName: null,
+    })
+    expect(ok(setAccessSchema, { userId: U1, scope: 'full', isAdmin: 'on' })).toEqual({
+      userId: U1,
+      scope: 'full',
       isAdmin: true,
       displayName: null,
     })
+    expect(ok(setAccessSchema, { userId: U1, scope: 'full', displayName: ' Franco ' })).toEqual({
+      userId: U1,
+      scope: 'full',
+      isAdmin: false,
+      displayName: 'Franco',
+    })
     expect(ok(revokeAccessSchema, { userId: U1 }).reason).toBeNull()
+  })
+
+  it('el nivel es obligatorio y solo hay dos', () => {
+    const pick = 'Elegí qué va a ver: todo o solo compras y pagos.'
+    expect(messages(setAccessSchema, { userId: U1 })).toEqual([pick])
+    expect(messages(setAccessSchema, { userId: U1, scope: 'ventas' })).toEqual([pick])
+    expect(messages(setAccessSchema, { userId: U1, scope: null })).toEqual([pick])
+    expect(messages(setAccessSchema, { scope: 'full' })).toEqual(['Elegí a quién le das acceso.'])
+  })
+
+  it('dar accesos pide el nivel completo', () => {
+    expect(
+      messageAt(setAccessSchema, { userId: U1, scope: 'purchases', isAdmin: true }, 'isAdmin'),
+    ).toBe('Para dar accesos hace falta el nivel completo.')
+    expect(
+      messageAt(setAccessSchema, { userId: U1, scope: 'full', isAdmin: true }, 'isAdmin'),
+    ).toBeUndefined()
   })
 })
 
@@ -1189,7 +1219,7 @@ describe('ningún esquema contesta en inglés', () => {
     generateIvaSettlementSchema,
     closeFiscalYearSchema,
     reopenFiscalYearSchema,
-    grantAccessSchema,
+    setAccessSchema,
     revokeAccessSchema,
     bootstrapSchema,
   }

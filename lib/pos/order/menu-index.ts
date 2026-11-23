@@ -5,6 +5,7 @@
  * lo que la pantalla pregunta cien veces por noche: buscar escribiendo mal y sin acentos, qué
  * aclaraciones lleva un producto, qué es de la barra, qué mostrar cuando todavía no se escribió nada.
  */
+import { hiddenCategoryIds } from '@/lib/menu/availability'
 import type { MenuCategory, MenuItem, MenuStation, ModifierGroup, PosMenu } from '@/lib/pos/types'
 import { nearPrefix, normalize, wordsOf } from './text'
 
@@ -207,10 +208,47 @@ export function categoryLabel(index: MenuIndex, categoryId: string): string {
   return categoryPath(index, categoryId).join(' › ')
 }
 
+// ─── Fuera de horario ────────────────────────────────────────────────────────
+
+/** Nada fuera de horario. Siempre la misma referencia: la pantalla no se vuelve a dibujar por esto. */
+export const NO_OFF_HOURS: ReadonlySet<string> = new Set()
+
+/**
+ * Los productos que la carta no está mostrando ahora: los de un rubro con horario («el menú del
+ * mediodía, de lunes a viernes de 12 a 16») que está fuera de su franja, y los de todo lo que cuelga
+ * de él. La hora es la del bar.
+ *
+ * El mozo los sigue viendo, atenuados, y los puede vender igual (alguien que pidió el menú a las
+ * 16:05): lo decide él. Lo que cambia es que no se le ofrecen de entrada ni le ganan el lugar a lo
+ * que sí corresponde a esta hora.
+ */
+export function offHoursItems(
+  index: MenuIndex,
+  at: Date | number,
+  timeZone: string,
+): ReadonlySet<string> {
+  // Casi ningún rubro tiene horario: sin horarios no hay nada que recorrer.
+  if (!index.menu.categories.some((category) => category.availability)) return NO_OFF_HOURS
+  const hidden = hiddenCategoryIds(index.menu.categories, at, timeZone)
+  if (hidden.size === 0) return NO_OFF_HOURS
+  const out = new Set<string>()
+  for (const item of index.menu.items) if (hidden.has(item.category_id)) out.add(item.id)
+  return out.size === 0 ? NO_OFF_HOURS : out
+}
+
+/** ¿Todo lo que hay en esta ficha de categoría (y en lo que cuelga) está fuera de horario? */
+export function isBranchOffHours(node: BrowseNode, offHours: ReadonlySet<string>): boolean {
+  if (offHours.size === 0 || node.count === 0) return false
+  return (
+    node.items.every((item) => offHours.has(item.id)) &&
+    node.children.every((child) => isBranchOffHours(child, offHours))
+  )
+}
+
 // ─── Buscar ──────────────────────────────────────────────────────────────────
 
-/** Cuánto se parece una palabra escrita a un producto, tal cual se escribió. 0 = no aparece. */
-function scoreExact(entry: SearchEntry, token: string): number {
+/** Cuánto se parece una palabra escrita al NOMBRE de un producto, tal cual se escribió. 0 = no está. */
+function scoreName(entry: SearchEntry, token: string): number {
   let best = 0
   for (let i = 0; i < entry.words.length; i++) {
     const word = entry.words[i] ?? ''
@@ -220,6 +258,12 @@ function scoreExact(entry: SearchEntry, token: string): number {
     else if (token.length >= 3 && word.includes(token)) score = 40
     if (score > best) best = score
   }
+  return best
+}
+
+/** Cuánto se parece una palabra escrita a un producto, tal cual se escribió. 0 = no aparece. */
+function scoreExact(entry: SearchEntry, token: string): number {
+  let best = scoreName(entry, token)
   if (best > 0) return best
 
   // No está en el nombre: ¿está en la categoría? («pizza» trae todas las pizzas).
@@ -241,12 +285,22 @@ function scoreTypo(entry: SearchEntry, token: string): number {
  * Busca en la carta sin acentos ni mayúsculas, por nombre y por categoría. Ordena por parecido; a
  * igual parecido, primero lo que hay, lo que más sale, lo más corto y el orden de la carta.
  *
+ * Con algo fuera de horario (`offHours`), la lista va en cuatro escalones: lo de esta hora que se
+ * llama así, lo fuera de horario que se llama así, y después lo que solo coincide por su categoría
+ * (primero lo de esta hora). Así «milanesa» trae las milanesas de ahora, enseguida la del menú del
+ * mediodía (atenuada) y recién después el resto de «Tablas y milanesas».
+ *
  * Todo lo que se escribió tiene que aparecer en algún lado (nombre o categoría). El dedazo se
  * perdona en palabras de cinco letras o más («muzza» también trae la «Muzarella» mal escrita); en
  * las de cuatro, solo si así escrita no existe en ningún producto: «flam» encuentra el flan, pero
  * «lomo» no trae el «limón».
  */
-export function searchMenu(index: MenuIndex, query: string, limit = 40): MenuItem[] {
+export function searchMenu(
+  index: MenuIndex,
+  query: string,
+  limit = 40,
+  offHours: ReadonlySet<string> = NO_OFF_HOURS,
+): MenuItem[] {
   const clean = normalize(query)
   if (!clean) return []
   const tokens = clean.split(' ')
@@ -254,9 +308,12 @@ export function searchMenu(index: MenuIndex, query: string, limit = 40): MenuIte
     (token) => token.length >= 5 || !index.entries.some((entry) => scoreExact(entry, token) > 0),
   )
 
-  const scored: { entry: SearchEntry; score: number }[] = []
+  // Sin nada fuera de horario no hay escalones: el orden es el de siempre.
+  const stepped = offHours.size > 0
+  const scored: { entry: SearchEntry; score: number; step: number }[] = []
   for (const entry of index.entries) {
     let total = 0
+    let byName = true
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i] ?? ''
       const score = scoreExact(entry, token) || (forgiving[i] ? scoreTypo(entry, token) : 0)
@@ -264,16 +321,25 @@ export function searchMenu(index: MenuIndex, query: string, limit = 40): MenuIte
         total = 0
         break
       }
+      // ¿Lo escrito está en el nombre (aunque sea con un dedazo), o solo en la categoría?
+      if (
+        scoreName(entry, token) === 0 &&
+        !(forgiving[i] && entry.words.some((word) => nearPrefix(word, token)))
+      ) {
+        byName = false
+      }
       total += score
     }
     if (total === 0) continue
     if (entry.name === clean) total += 60
     else if (entry.name.startsWith(clean)) total += 30
     else if (tokens.length > 1 && entry.name.includes(clean)) total += 12
-    scored.push({ entry, score: total })
+    const step = stepped ? (offHours.has(entry.item.id) ? 1 : 0) + (byName ? 0 : 2) : 0
+    scored.push({ entry, score: total, step })
   }
   scored.sort(
     (a, b) =>
+      a.step - b.step ||
       b.score - a.score ||
       Number(a.entry.item.sold_out) - Number(b.entry.item.sold_out) ||
       compareRank(a.entry.popularity, b.entry.popularity) ||
@@ -288,7 +354,10 @@ function compareRank(a: number, b: number): number {
   return a < b ? -1 : 1
 }
 
-/** El primero que se puede pedir: lo que agrega Enter. */
+/**
+ * El primero que se puede pedir: lo que agrega Enter. El orden de la lista ya puso antes lo de esta
+ * hora; si lo primero está fuera de horario es porque se escribió su nombre, y Enter lo agrega igual.
+ */
 export function firstAddable(results: readonly MenuItem[]): MenuItem | null {
   return results.find((item) => !item.sold_out) ?? null
 }
@@ -303,19 +372,24 @@ export type QuickPicks = {
 
 /**
  * Lo que se ofrece antes de escribir. Si el bar todavía no tiene ventas a esta hora, lo primero de
- * las categorías más grandes, una de cada una por vuelta.
+ * las categorías más grandes, una de cada una por vuelta. Lo que está fuera de horario no se ofrece.
  */
-export function quickPicks(index: MenuIndex, limit = 6): QuickPicks {
+export function quickPicks(
+  index: MenuIndex,
+  limit = 6,
+  offHours: ReadonlySet<string> = NO_OFF_HOURS,
+): QuickPicks {
   const popular: MenuItem[] = []
   for (const id of index.menu.popular_now) {
     const item = index.items.get(id)
-    if (item && !popular.includes(item)) popular.push(item)
+    if (item && !offHours.has(item.id) && !popular.includes(item)) popular.push(item)
     if (popular.length >= limit) break
   }
   if (popular.length > 0) return { source: 'popular', items: popular }
 
   const byCategory = new Map<string, MenuItem[]>()
   for (const item of index.menu.items) {
+    if (offHours.has(item.id)) continue
     const list = byCategory.get(item.category_id)
     if (list) list.push(item)
     else byCategory.set(item.category_id, [item])

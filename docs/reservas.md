@@ -2604,3 +2604,52 @@ políticas ni GRANTs nuevos (columna en una tabla que ya los tiene).
 5. Cambiar las personas desde el popup → el Instagram sigue ahí.
 6. Editar y vaciar el campo → se borra.
 7. Exportar → columna «Instagram» con `@juan.perez`.
+
+## Addendum 2026-11-23 — Con qué se pagó la seña
+
+Pedido de los socios (22/11/2026): «dar la posibilidad de seleccionar el medio de pago a las señas».
+
+**Qué cambió**
+
+- **Alta y edición** (bloque Extras): al escribir una seña aparece «¿Con qué la pagó?», un desplegable con
+  los medios del punto de venta (Transferencia, Efectivo, QR, Débito, Crédito, Otro) y «Sin anotar». Sin
+  seña no se pregunta.
+- **Dónde se ve**: lista de reservas (debajo del monto), ficha («Seña y nota»), popup de la reserva,
+  tablero operativo y la planilla exportada (columna «Seña: medio», al lado de «Seña ($)»).
+- **Señas** (Estadísticas): debajo de las tarjetas, «Con qué se cobraron» suma la plata por medio. Aparece
+  recién cuando alguna seña del período lo dice; las de antes caen en «Sin anotar».
+- **Tex**: `sena_medio` al crear o cambiar una reserva («seña de 10 mil por transferencia»), y el resumen de
+  señas trae `por_medio`.
+- **La cuenta del punto de venta**: el renglón de la seña dice «pagada con transferencia» (lo trae
+  `pos_bill` en `reservation.deposit_method`). Con «Otro» o sin anotar no dice nada.
+
+**Decisiones**
+
+- Opcional: vacío quiere decir «no se anotó». Las señas de una compra online quedan vacías (el medio se
+  sabe por la compra).
+- Sin seña no hay medio: si la seña vuelve a cero, el medio se limpia (`depositMethodForSave`).
+- En las ediciones, ausente ≠ vacío: una pantalla que cambia otra cosa (hora, personas, mesa) no borra el
+  medio; `fullUpdatePayload` y la vista rápida lo copian tal cual.
+- Los medios y sus nombres son los del punto de venta (`lib/pos/cash/types.ts`); solo cambia el orden
+  (transferencia primero, que es como llega casi siempre una seña).
+
+**Base de datos**: `pos_revisiones_socios` — `salon_reservations.deposit_method text` con check (`cash`,
+`transfer`, `qr`, `debit`, `credit`, `other`). Sin políticas ni GRANTs nuevos. El código tolera la base sin
+la columna (no la escribe si no hay nada que decir, y el reporte de señas vuelve a leer sin ella).
+
+**Piezas**: `lib/salon/deposit-method.ts` (puro), `depositMethodField` en `lib/salon/schemas.ts` (los dos
+esquemas), `lib/salon/actions.ts`, `lib/salon/update-payload.ts`, `by_method` en `lib/salon/deposits.ts`.
+
+**Smoke manual**
+
+1. Reservas › Nueva con seña $ 10.000 → aparece «¿Con qué la pagó?»; elegir Transferencia → guarda; en la
+   lista, debajo de `$ 10.000`, dice «Transferencia».
+2. Editar y cambiar solo las personas desde el popup → el medio sigue ahí.
+3. Editar, elegir «Sin anotar» → se borra el medio; la seña queda.
+4. Editar y poner la seña en 0 → desaparece la pregunta y el medio se limpia.
+5. Estadísticas › Señas, mes actual → «Con qué se cobraron: Transferencia $ 10.000 · 1 reserva».
+6. Exportar reservas → columna «Seña: medio».
+7. Marcar «Llegó», abrir su mesa en el punto de venta, mandar algo y pedir la cuenta → «Seña · Nombre ·
+   pagada con transferencia».
+
+Recorrido el 23/11/2026 en el bar de ejemplo (pasos 1 a 5 y 7), en compu y celular.

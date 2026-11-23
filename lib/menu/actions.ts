@@ -14,6 +14,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { availabilityWords } from './availability'
 import {
   createCategorySchema,
   createMenuItemSchema,
@@ -21,6 +22,7 @@ import {
   moveItemsSchema,
   reorderCategoriesSchema,
   reorderItemsSchema,
+  setCategoryAvailabilitySchema,
   updateCategorySchema,
   updateMenuItemSchema,
 } from './schemas'
@@ -177,6 +179,67 @@ export async function updateCategory(
 
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
+}
+
+/**
+ * Cuándo se muestra un rubro en la carta («el menú del mediodía, de lunes a viernes de 12 a 16»;
+ * «el del fin de semana»). `availability: null` = siempre. Lo heredan sus subcategorías y sus
+ * productos. Guardarlo sube la versión de la carta: los celulares que la tienen abierta se ponen al
+ * día solos (docs/features/carta-al-dia.md).
+ */
+export async function setCategoryAvailability(
+  slug: string,
+  payload: { id: string; availability: unknown },
+): Promise<MenuActionState> {
+  let tenantId: string
+  let userId: string
+  try {
+    const access = await requireTenantAccess(slug)
+    requireRole(access.role, MENU_EDIT_ROLES)
+    tenantId = access.tenant.id
+    userId = access.user.id
+  } catch (error) {
+    if (
+      error instanceof RoleRequiredError ||
+      error instanceof TenantNotFoundError ||
+      error instanceof UnauthenticatedError
+    ) {
+      return { ok: false, message: 'No tenés permiso.' }
+    }
+    throw error
+  }
+
+  const parsed = setCategoryAvailabilitySchema.safeParse(payload)
+  if (!parsed.success) {
+    return { ok: false, message: 'Revisá el horario: hay un día o una hora que no se entiende.' }
+  }
+  const { id, availability } = parsed.data
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('menu_categories')
+    .update({ availability })
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    console.error('[menu.setCategoryAvailability]', error.code, error.message)
+    return { ok: false, message: 'No pudimos guardar el horario. Probá de nuevo.' }
+  }
+  if (!data) return { ok: false, message: 'Esa categoría ya no existe. Recargá la página.' }
+
+  await logAudit({
+    tenantId,
+    userId,
+    action: 'menu_category.availability_set',
+    entity: 'menu_category',
+    entityId: id,
+    payload: { availability, words: availabilityWords(availability) },
+  })
+
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true, message: 'Horario guardado.' }
 }
 
 export async function moveCategory(

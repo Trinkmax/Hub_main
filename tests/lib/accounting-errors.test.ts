@@ -37,6 +37,8 @@ const G4: Record<string, string> = {
   last_admin: 'conflict',
   admins_exist: 'conflict',
   access_not_found: 'conflict',
+  scope_invalid: 'invalid',
+  admin_needs_full: 'invalid',
   accountant_requires_acc_admin: 'forbidden',
   protected_accounting_member: 'forbidden',
   invalid_cuit: 'invalid',
@@ -165,6 +167,21 @@ const G4: Record<string, string> = {
   export_too_large: 'invalid',
   reset_after_close: 'conflict',
 }
+
+describe('los errores de dar y cambiar accesos llegan con su mensaje', () => {
+  it('el nivel, «da accesos» y el último que los da', () => {
+    const said = (key: string) => mapAccError({ message: key, code: 'P0001' }).message
+    expect(said('last_admin')).toBe('Tiene que quedar al menos una persona que dé accesos.')
+    expect(said('admin_needs_full')).toBe('Para dar accesos hace falta el nivel completo.')
+    expect(said('scope_invalid')).toBe(
+      'Elegí qué va a ver: todo Administración o solo compras y pagos.',
+    )
+    expect(said('target_not_owner')).toBe('Solo se puede dar acceso a dueños del bar.')
+    expect(said('access_not_found')).toBe('Esa persona ya no tiene acceso.')
+    expect(mapAccError({ message: 'last_admin', code: 'P0001' }).code).toBe('conflict')
+    expect(mapAccError({ message: 'admin_needs_full', code: 'P0001' }).code).toBe('invalid')
+  })
+})
 
 describe('ACC_ERRORS: el catálogo de G.4', () => {
   it('tiene todas las claves de G.4 con su code', () => {

@@ -137,6 +137,8 @@ export type NewPurchaseParams = {
   proveedor?: string | null
   relacionada?: string | null
   gastoFijo?: string | null
+  /** El retiro de la caja del salón que la compra registra (llega paga desde esa caja). */
+  retiro?: string | null
   /** A dónde vuelve al guardar o cancelar (una ruta de Administración del mismo bar). */
   volver?: string | null
 }
@@ -148,6 +150,7 @@ export function newPurchaseHref(slug: string, params: NewPurchaseParams = {}): s
   if (params.proveedor) search.set('proveedor', params.proveedor)
   if (params.relacionada) search.set('relacionada', params.relacionada)
   if (params.gastoFijo) search.set('gasto-fijo', params.gastoFijo)
+  if (params.retiro) search.set('retiro', params.retiro)
   if (params.volver) search.set('volver', params.volver)
   const query = search.toString()
   return `/${slug}/administracion/compras/nueva${query ? `?${query}` : ''}`

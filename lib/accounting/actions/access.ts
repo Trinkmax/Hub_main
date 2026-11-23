@@ -3,16 +3,19 @@
 /**
  * Accesos a Administración por persona (B.4, B.5, H.17 › Accesos).
  *
- * Dar y quitar: solo quien «da accesos» (administrador). La base vuelve a
- * decidir todo bajo el lock del bar: el destino tiene que ser dueño, nunca
- * queda el bar sin administrador (`last_admin`) y todo se audita adentro.
- * «Recuperar» (`claimAccountingAdmin`): un dueño con acceso, solo si no quedó
- * ningún administrador.
+ * Dar, cambiar y quitar: solo quien «da accesos» (administrador). Cada acceso
+ * tiene un nivel: completo (todo Administración) o solo compras y pagos. La
+ * base vuelve a decidir todo bajo el lock del bar: el destino tiene que ser
+ * dueño, dar accesos pide el nivel completo (`admin_needs_full`), nunca queda
+ * el bar sin administrador (`last_admin`) y todo se audita adentro.
+ * «Recuperar» (`claimAccountingAdmin`): un dueño con acceso completo, solo si
+ * no quedó ningún administrador.
  */
 
 import { authorizeAccounting } from '@/lib/accounting/access'
+import { type AccountingScope, scopeOf } from '@/lib/accounting/access-levels'
 import { type AccSimpleState, invalidState } from '@/lib/accounting/action-state'
-import { grantAccessSchema, revokeAccessSchema } from '@/lib/accounting/schemas'
+import { revokeAccessSchema, setAccessSchema } from '@/lib/accounting/schemas'
 import { createClient } from '@/lib/supabase/server'
 import {
   asRecord,
@@ -30,9 +33,11 @@ export type GrantedAccess = {
   userId: string
   displayName: string
   isAdmin: boolean
+  /** El nivel con el que quedó. */
+  scope: AccountingScope
   source: 'setup' | 'grant' | 'platform' | 'claim'
   grantedAt: string | null
-  /** `false`: ya tenía acceso y se actualizó «Da accesos» o el nombre. */
+  /** `false`: ya tenía acceso y se le cambió el nivel, «Da accesos» o el nombre. */
   created: boolean
 }
 
@@ -46,6 +51,7 @@ function grantedRow(data: unknown): GrantedAccess {
     userId: textOf(r.user_id) ?? '',
     displayName: textOf(r.display_name) ?? '',
     isAdmin: boolOf(r.is_admin),
+    scope: scopeOf(r.scope),
     source,
     grantedAt: textOf(r.granted_at),
     created: boolOf(r.created),
@@ -53,41 +59,42 @@ function grantedRow(data: unknown): GrantedAccess {
 }
 
 /**
- * Le da acceso a un dueño (o le cambia «Da accesos» y el nombre que se ve en
- * Administración). El nombre vacío toma el de su cuenta.
+ * Le da acceso a un dueño eligiendo el nivel, o le cambia el nivel, «Da accesos» y el nombre que se
+ * ve en Administración a quien ya lo tiene. El nombre vacío deja el que tenía (o toma el de su cuenta).
  */
-export async function grantAccountingAccess(
+export async function setAccountingAccess(
   slug: string,
   raw: unknown,
 ): Promise<AccSimpleState<GrantedAccess>> {
-  const op = 'access.grant'
+  const op = 'access.set'
   try {
     const auth = await authorizeAccounting(slug, 'admin')
     if (!auth.ok) return auth.state
-    const parsed = grantAccessSchema.safeParse(formInput(raw))
+    const parsed = setAccessSchema.safeParse(formInput(raw))
     if (!parsed.success) return invalidState(parsed.error)
 
     const supabase = await createClient()
-    const { data, error } = await supabase.rpc('acc_grant_access', {
+    const { data, error } = await supabase.rpc('acc_set_access', {
       p_tenant_id: auth.tenantId,
       p_user_id: parsed.data.userId,
+      p_scope: parsed.data.scope,
       p_is_admin: parsed.data.isAdmin,
-      p_display_name: parsed.data.displayName,
+      ...(parsed.data.displayName === null ? {} : { p_display_name: parsed.data.displayName }),
     })
     if (error) return rpcFailure(op, error)
     const row = grantedRow(data)
 
-    // Cambia lo que ve esa persona (y el menú): se refresca el bar entero.
+    // Cambia lo que ve esa persona (y su menú): se refresca el bar entero.
     revalidateAccounting(slug, 'tenant')
     const name = row.displayName || 'Esa persona'
     return {
       ok: true,
       data: row,
-      message: row.created
-        ? `Listo: ${name} ya ve Administración.`
-        : row.isAdmin
-          ? `Listo: ${name} ahora también da accesos.`
-          : `Listo: actualizamos el acceso de ${name}.`,
+      message: !row.created
+        ? `Listo: actualizamos el acceso de ${name}.`
+        : row.scope === 'full'
+          ? `Listo: ${name} ya ve todo Administración.`
+          : `Listo: ${name} ya puede cargar compras y pagos.`,
     }
   } catch (error) {
     return unexpectedFailure(op, error)

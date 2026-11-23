@@ -4,10 +4,13 @@ import {
   buildMenuIndex,
   categoryLabel,
   firstAddable,
+  isBranchOffHours,
   isDrink,
   missingRequired,
   modifierGroupsFor,
+  NO_OFF_HOURS,
   needsChoice,
+  offHoursItems,
   quickPicks,
   searchMenu,
   sectionsOf,
@@ -553,5 +556,131 @@ describe('repetir la ronda', () => {
   it('sin bebidas, no hay ronda', () => {
     expect(pickRepeatRound([tanda('t1', 5, [line('clasica', 2)])], index)).toBeNull()
     expect(pickRepeatRound([], index)).toBeNull()
+  })
+})
+
+describe('fuera de horario', () => {
+  const TZ = 'America/Argentina/Cordoba'
+  /** 23/11/2026 es lunes; el 28, sábado. Hora de Córdoba (UTC−3). */
+  const at = (day: string, clock: string) => Date.parse(`${day}T${clock}:00-03:00`)
+  const LUNCH = { windows: [{ days: [1, 2, 3, 4, 5], from: '12:00', to: '16:00' }] }
+  const WEEKEND = { windows: [{ days: [0, 6], from: null, to: null }] }
+
+  // «Menú del mediodía» con una subcategoría adentro, y «Brunch» solo el fin de semana.
+  const timed = buildMenuIndex(
+    menuWith({
+      categories: [
+        ...categories,
+        { ...cat('mediodia', 'Menú del mediodía', null, 6), availability: LUNCH },
+        cat('mediodia-platos', 'Platos del día', 'mediodia', 1),
+        { ...cat('brunch', 'Brunch', null, 7), availability: WEEKEND },
+      ],
+      items: [
+        ...items,
+        item('mila-dia', 'Milanesa del día', 'mediodia-platos'),
+        item('menu-ejecutivo', 'Menú ejecutivo', 'mediodia'),
+        item('mila-napo', 'Milanesa napolitana', 'burgers'),
+        item('tostado-brunch', 'Tostado de brunch', 'brunch'),
+      ],
+      popular_now: ['mila-dia', 'mojito', 'clasica'],
+    }),
+  )
+
+  it('sin rubros con horario no hay nada fuera de horario (y no se arma un conjunto nuevo)', () => {
+    expect(offHoursItems(index, at('2026-11-23', '21:00'), TZ)).toBe(NO_OFF_HOURS)
+  })
+
+  it('un lunes a la noche: el menú del mediodía (con lo que cuelga) y el brunch', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    expect([...off].sort()).toEqual(['menu-ejecutivo', 'mila-dia', 'tostado-brunch'])
+  })
+
+  it('un lunes al mediodía solo queda afuera el brunch; el sábado, el menú del mediodía', () => {
+    expect([...offHoursItems(timed, at('2026-11-23', '13:00'), TZ)]).toEqual(['tostado-brunch'])
+    expect([...offHoursItems(timed, at('2026-11-28', '13:00'), TZ)].sort()).toEqual([
+      'menu-ejecutivo',
+      'mila-dia',
+    ])
+  })
+
+  it('en la búsqueda, lo de esta hora que se llama así va primero y lo fuera de horario enseguida', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    // Sin mirar la hora, «Milanesa del día» gana por lo que más sale.
+    expect(names(searchMenu(timed, 'milanesa'))).toEqual([
+      'Milanesa del día',
+      'Milanesa napolitana',
+    ])
+    expect(names(searchMenu(timed, 'milanesa', 40, off))).toEqual([
+      'Milanesa napolitana',
+      'Milanesa del día',
+    ])
+    // Lo único que coincide está fuera de horario: aparece igual.
+    expect(names(searchMenu(timed, 'ejecutivo', 40, off))).toEqual(['Menú ejecutivo'])
+  })
+
+  it('lo fuera de horario que se llama así va antes de lo que solo coincide por su categoría', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    // «Menú ejecutivo» se llama «menú»; «Milanesa del día» solo está adentro de «Menú del mediodía».
+    expect(names(searchMenu(timed, 'menu', 40, off))).toEqual([
+      'Menú ejecutivo',
+      'Milanesa del día',
+    ])
+    // «hamburguesas»: nadie se llama así; todo coincide por la categoría, lo de esta hora primero.
+    const burgers = names(searchMenu(timed, 'hamburguesas', 40, off))
+    expect(burgers).toContain('Milanesa napolitana')
+    expect(burgers.every((name) => name !== 'Milanesa del día')).toBe(true)
+    // «dia» está en el nombre de la del mediodía y en la categoría «Platos del día»: ella va
+    // primero por llamarse así, aunque esté fuera de horario.
+    expect(names(searchMenu(timed, 'dia', 40, off))[0]).toBe('Milanesa del día')
+  })
+
+  it('sin nada fuera de horario el orden es el de siempre', () => {
+    const noon = offHoursItems(timed, at('2026-11-28', '13:00'), TZ)
+    // Sábado al mediodía: el brunch está en horario; lo que queda afuera es el menú del mediodía.
+    expect(noon.has('tostado-brunch')).toBe(false)
+    expect(names(searchMenu(timed, 'milanesa', 40, NO_OFF_HOURS))).toEqual(
+      names(searchMenu(timed, 'milanesa')),
+    )
+  })
+
+  it('Enter agrega el primero de la lista que se puede pedir, aunque esté fuera de horario', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    expect(firstAddable(searchMenu(timed, 'milanesa', 40, off))?.id).toBe('mila-napo')
+    expect(firstAddable(searchMenu(timed, 'ejecutivo', 40, off))?.id).toBe('menu-ejecutivo')
+    // Y lo agotado se sigue salteando.
+    const results = searchMenu(timed, 'milanesa', 40, off).map((each) =>
+      each.id === 'mila-napo' ? { ...each, sold_out: true } : each,
+    )
+    expect(firstAddable(results)?.id).toBe('mila-dia')
+    expect(firstAddable([])).toBeNull()
+  })
+
+  it('«lo que más sale» no ofrece lo que está fuera de horario', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    expect(names(quickPicks(timed, 6).items)).toEqual([
+      'Milanesa del día',
+      'Mojito',
+      'Clásica simple',
+    ])
+    expect(names(quickPicks(timed, 6, off).items)).toEqual(['Mojito', 'Clásica simple'])
+    // Sin historia: tampoco entran en «para empezar».
+    const fresh = buildMenuIndex({ ...timed.menu, popular_now: [] })
+    const start = quickPicks(fresh, 12, offHoursItems(fresh, at('2026-11-23', '21:00'), TZ))
+    expect(start.source).toBe('menu')
+    expect(start.items.some((each) => off.has(each.id))).toBe(false)
+  })
+
+  it('la ficha de una categoría se atenúa cuando todo lo de adentro está fuera de horario', () => {
+    const off = offHoursItems(timed, at('2026-11-23', '21:00'), TZ)
+    const tree = buildBrowseTree(timed)
+    const node = (name: string) => {
+      const found = tree.find((each) => each.name === name)
+      if (!found) throw new Error(`falta ${name}`)
+      return found
+    }
+    expect(isBranchOffHours(node('Menú del mediodía'), off)).toBe(true)
+    expect(isBranchOffHours(node('Brunch'), off)).toBe(true)
+    expect(isBranchOffHours(node('Comida'), off)).toBe(false)
+    expect(isBranchOffHours(node('Menú del mediodía'), NO_OFF_HOURS)).toBe(false)
   })
 })

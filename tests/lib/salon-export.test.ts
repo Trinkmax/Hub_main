@@ -95,6 +95,7 @@ describe('reservationToExportRow', () => {
         cake_option: { id: 'k', name: 'Opción 2', base: 'Chocolate', fillings: ['Dulce de leche'] },
         champagne_count: 1,
         deposit_cents: 1250000,
+        deposit_method: 'transfer',
         assistant_manager: { id: 'm2', display_name: 'Tomás' },
         status: 'arrived',
         service_alerts: ['celiac'],
@@ -133,6 +134,7 @@ describe('reservationToExportRow', () => {
       '2 × Opción 2 · Chocolate con Dulce de leche',
       '1',
       '12500', // pesos, no centavos
+      'Transferencia',
       'WhatsApp Hub',
       'Luz',
       'Tomás',
@@ -177,9 +179,22 @@ describe('reservationToExportRow', () => {
     expect([normal[ZONA], normal[EVENTO]]).toEqual(['Planta Baja', ''])
   })
 
+  it('el medio de la seña: vacío si no se anotó, y nunca sin seña', () => {
+    const MEDIO = EXPORT_HEADERS.indexOf('Seña: medio')
+    expect(MEDIO).toBe(EXPORT_HEADERS.indexOf('Seña ($)') + 1)
+    const of = (patch: Partial<ReservationWithJoins>) =>
+      reservationToExportRow(reservation(patch))[MEDIO]
+    expect(of({ deposit_cents: 500000, deposit_method: 'cash' })).toBe('Efectivo')
+    expect(of({ deposit_cents: 500000, deposit_method: null })).toBe('')
+    // Una fila leída antes de que la base tuviera la columna no lo trae.
+    expect(of({ deposit_cents: 500000 })).toBe('')
+    // Quedó un medio de antes pero ya no hay seña: no se informa.
+    expect(of({ deposit_cents: 0, deposit_method: 'transfer' })).toBe('')
+  })
+
   it('lo que no está queda vacío, no "null"', () => {
     const row = reservationToExportRow(reservation({ guest_phone: null }))
-    expect(row.filter((c) => c === '')).toHaveLength(14)
+    expect(row.filter((c) => c === '')).toHaveLength(15)
     expect(row.join('')).not.toContain('null')
     expect(row.join('')).not.toContain('undefined')
   })

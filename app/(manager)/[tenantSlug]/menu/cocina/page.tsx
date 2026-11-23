@@ -12,14 +12,21 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { KitchenBoard } from './_components/kitchen-board'
+import { KitchenBoard, type KitchenTab } from './_components/kitchen-board'
 
 export const metadata: Metadata = { title: 'Cocina y aclaraciones' }
 
+/** `?ver=` → la vista. Cualquier otra cosa abre las estaciones. */
+const TABS: Readonly<Record<string, KitchenTab>> = {
+  aclaraciones: 'aclaraciones',
+  primero: 'primero',
+}
+
 /**
  * «Cocina y aclaraciones» (docs/features/pos.md): a qué estación de la cocina va cada cosa de la
- * carta y qué aclaraciones se le pueden tocar a cada producto. Es de quien edita la carta, y viene
- * con el punto de venta. `?ver=aclaraciones` abre las aclaraciones.
+ * carta, qué aclaraciones se le pueden tocar a cada producto y qué sale primero. Es de quien edita
+ * la carta, y viene con el punto de venta. `?ver=aclaraciones` abre las aclaraciones y
+ * `?ver=primero`, lo que sale primero.
  */
 export default async function CocinaPage({
   params,
@@ -63,7 +70,7 @@ export default async function CocinaPage({
     <KitchenBoard
       tenantSlug={tenantSlug}
       snapshot={snapshot}
-      tab={query.ver === 'aclaraciones' ? 'aclaraciones' : 'estaciones'}
+      tab={(typeof query.ver === 'string' ? TABS[query.ver] : undefined) ?? 'estaciones'}
     />
   )
 }

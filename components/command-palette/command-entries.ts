@@ -21,6 +21,10 @@ function accountingOk(entry: CommandEntry, accounting: AccountingAccess): boolea
   if (!accounting.enabled) return false
   if (entry.accounting === 'write') return accounting.write
   if (entry.accounting === 'read') return accounting.read
+  // Compras y pagos: también con el nivel «solo compras y pagos» (si la base todavía no manda esas
+  // claves, faltan y vale el acceso completo).
+  if (entry.accounting === 'buy_write') return accounting.write || accounting.buyWrite === true
+  if (entry.accounting === 'buy_read') return accounting.read || accounting.buyRead === true
   return accounting.read || accounting.canSetUp
 }
 

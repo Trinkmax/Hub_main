@@ -206,7 +206,7 @@ export function exactAmountText(cents: number): string {
 
 // ─── La caja: antes → después ────────────────────────────────────────────────
 
-type TreasuryFacts = Pick<SheetTreasury, 'kind' | 'balanceCents' | 'allowNegative'>
+type TreasuryFacts = Pick<SheetTreasury, 'kind' | 'balanceCents' | 'allowNegative' | 'balanceKnown'>
 
 export type TreasuryAfter = {
   /** El saldo de hoy, en el sentido de la caja (en una tarjeta de la empresa, la deuda). */
@@ -243,6 +243,9 @@ export function treasuryAfter(
   amountCents: number | null,
   direction: TreasuryDirection = 'out',
 ): TreasuryAfter {
+  // Quien no ve los saldos (nivel «solo compras y pagos») no tiene «antes → después» que leer: la
+  // caja le llega en 0 y decir «queda en −$ X» o «no alcanza» sería inventar.
+  if (treasury.balanceKnown === false) return { beforeCents: 0, afterCents: null, state: 'idle' }
   const beforeCents = treasury.balanceCents
   if (amountCents === null || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
     return { beforeCents, afterCents: null, state: 'idle' }

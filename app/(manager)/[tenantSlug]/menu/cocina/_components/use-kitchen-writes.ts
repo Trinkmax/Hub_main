@@ -16,6 +16,7 @@ import {
   reorderGroups,
   reorderOptions,
   reorderStations,
+  setKitchenFirst,
   setLink,
 } from '@/lib/menu/kitchen/actions'
 import { byGroupOrder, byOptionOrder } from '@/lib/menu/kitchen/modifiers'
@@ -33,7 +34,7 @@ import {
   pendSync,
   savingKeys,
 } from '@/lib/menu/kitchen/ops'
-import type { RequestedRoute } from '@/lib/menu/kitchen/plan'
+import type { RequestedFirst, RequestedRoute } from '@/lib/menu/kitchen/plan'
 import type { RouteReason } from '@/lib/menu/kitchen/schemas'
 import {
   type ApplyRouteResult,
@@ -467,6 +468,26 @@ export function useKitchenWrites(tenantSlug: string, snapshot: KitchenSnapshot):
           options,
         }
         flash(changes.map((change) => nodeKey(change.node, change.id)))
+        break
+      }
+      case 'first': {
+        const categories = new Map<string, boolean | null>(
+          before.categories.map((row) => [row.id, row.kitchenFirst]),
+        )
+        const items = new Map(before.items.map((row) => [row.id, row.kitchenFirst]))
+        const changes: RequestedFirst[] = []
+        for (const change of op.changes) {
+          const was = (change.node === 'category' ? categories : items).get(change.id)
+          // Una categoría sale primero o no: nunca queda sin decir.
+          const to = change.node === 'category' ? change.to === true : change.to
+          if (was === undefined || was === to) continue
+          changes.push({ node: change.node, id: change.id, to, expected: was })
+        }
+        if (changes.length === 0) return false
+        job = other(
+          { type: 'first', changes: changes.map(({ node, id, to }) => ({ node, id, to })) },
+          () => setKitchenFirst(slug, { changes }),
+        )
         break
       }
       case 'station.create':

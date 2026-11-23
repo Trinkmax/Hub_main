@@ -36,6 +36,45 @@ function report(over: {
   })
 }
 
+describe('con qué se cobraron las señas', () => {
+  it('suma por medio, en el orden de siempre y «sin anotar» al final', () => {
+    const r = report({
+      rows: [
+        row({ deposit_cents: pesos(10_000), deposit_method: 'cash' }),
+        row({ deposit_cents: pesos(20_000), deposit_method: 'transfer' }),
+        row({ deposit_cents: pesos(5_000), deposit_method: 'transfer' }),
+        row({ deposit_cents: pesos(8_000), deposit_method: null }),
+        // Una fila leída antes de que la base tuviera la columna.
+        row({ deposit_cents: pesos(2_000) }),
+      ],
+    })
+    expect(r.totals.by_method).toEqual([
+      { method: 'transfer', cents: pesos(25_000), count: 2 },
+      { method: 'cash', cents: pesos(10_000), count: 1 },
+      { method: null, cents: pesos(10_000), count: 2 },
+    ])
+    // Los renglones suman el total: no se pierde ni se duplica un peso.
+    expect(r.totals.by_method.reduce((sum, m) => sum + m.cents, 0)).toBe(r.totals.total_cents)
+  })
+
+  it('las canceladas también cuentan: la plata entró por algún medio', () => {
+    const r = report({
+      rows: [row({ deposit_cents: pesos(12_000), deposit_method: 'qr', status: 'cancelled' })],
+    })
+    expect(r.totals.by_method).toEqual([{ method: 'qr', cents: pesos(12_000), count: 1 }])
+  })
+
+  it('una reserva sin seña no aparece, aunque le haya quedado un medio', () => {
+    const r = report({ rows: [row({ deposit_cents: 0, deposit_method: 'cash' })] })
+    expect(r.totals.by_method).toEqual([])
+  })
+
+  it('un medio que no se entiende cae en «sin anotar»', () => {
+    const r = report({ rows: [row({ deposit_cents: pesos(1_000), deposit_method: 'bitcoin' })] })
+    expect(r.totals.by_method).toEqual([{ method: null, cents: pesos(1_000), count: 1 }])
+  })
+})
+
 describe('aggregateDepositsByDay', () => {
   it('suma las señas del día por fecha de reserva', () => {
     const r = report({

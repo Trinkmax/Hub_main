@@ -3,6 +3,7 @@ import { isRealIsoDay } from '@/lib/dates'
 import type { ServiceAlert } from '@/lib/salon/alerts'
 import { parseServiceAlerts, SERVICE_ALERT_META } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
+import { depositMethodLabel, withDepositMethod } from '@/lib/salon/deposit-method'
 import { hhmm } from '@/lib/salon/format'
 import {
   buildReservationCandidate,
@@ -79,6 +80,8 @@ import {
   ALERT_WORDS,
   CONFIGURABLE_SEGMENT_OF_WORD,
   CONFIGURABLE_SERVICE_WORDS,
+  DEPOSIT_METHOD_OF_WORD,
+  DEPOSIT_METHOD_WORDS,
   FLOOR_WORDS,
   ISO_DOW_OF_WORD,
   KIND_OF_WORD,
@@ -228,6 +231,10 @@ export const newReservationInput = z.object({
   torta: z.string().trim().min(1).optional().describe('Cuál del menú: nombre o id.'),
   champagne: z.number().int().min(0).max(2).optional(),
   sena: pesos.optional().describe('En pesos.'),
+  sena_medio: z
+    .enum(DEPOSIT_METHOD_WORDS)
+    .optional()
+    .describe('Con qué pagó la seña. Solo si lo dijo: no lo supongas.'),
   origen: z.enum(ORIGIN_WORDS).optional().describe('Por dónde entró. Sin esto, WhatsApp.'),
   gestor: z
     .string()
@@ -341,6 +348,9 @@ export function newReservationDraft(
     ...new Set([...(input.avisos ?? []).map((a) => ALERT_OF_WORD[a]), ...(customer?.alerts ?? [])]),
   ]
   const origin = input.origen ? ORIGIN_OF_WORD[input.origen] : 'whatsapp'
+  const depositCents = input.sena !== undefined ? pesosToCents(input.sena) : 0
+  const depositMethod =
+    input.sena_medio && depositCents > 0 ? DEPOSIT_METHOD_OF_WORD[input.sena_medio] : null
 
   const values: Record<string, unknown> = {
     ...(customer ? { customer_id: customer.id } : {}),
@@ -361,7 +371,9 @@ export function newReservationDraft(
     cake_count: cakes,
     cake_option_id: cake?.id ?? null,
     champagne_count: input.champagne ?? 0,
-    deposit_cents: input.sena !== undefined ? pesosToCents(input.sena) : 0,
+    deposit_cents: depositCents,
+    // Sin seña no hay medio que anotar.
+    ...(depositMethod ? { deposit_method: depositMethod } : {}),
     origin,
     primary_manager_id: manager.id,
     assistant_manager_id: assistant?.id ?? null,
@@ -464,7 +476,7 @@ export function newReservationDraft(
     ...row('Tipo', kind === 'normal' ? null : RESERVATION_KIND_LABELS[kind]),
     ...row('Torta', cakes > 0 ? (cakes === 1 ? cakeText : `${cakes} · ${cakeText}`) : null),
     ...row('Champagne', input.champagne ? input.champagne : null),
-    ...row('Seña', input.sena ? money(pesosToCents(input.sena)) : null),
+    ...row('Seña', depositCents > 0 ? withDepositMethod(money(depositCents), depositMethod) : null),
     { label: 'Gestor', value: `${manager.name}${manager.eligible ? ' (cobra comisión)' : ''}` },
     ...row('Asistente', assistant?.name),
     { label: 'Entró por', value: ORIGIN_TEXT[origin] },
@@ -514,6 +526,10 @@ export const changeReservationInput = z.object({
   evento: z.string().trim().min(1).optional().describe('Pasarla a un evento de ese día.'),
   sacar_del_evento: z.boolean().optional(),
   sena: pesos.optional().describe('En pesos.'),
+  sena_medio: z
+    .enum(DEPOSIT_METHOD_WORDS)
+    .optional()
+    .describe('Con qué pagó la seña. Solo si lo dijo: no lo supongas.'),
   gestor: z.string().trim().min(1).optional().describe('Nombre o id.'),
   nombre: z.string().trim().min(1).max(120).optional(),
   telefono: z.string().trim().min(6).max(30).optional(),
@@ -749,6 +765,21 @@ export function changeReservationDraft(
           body: 'Cambiarla acá no mueve la plata de Mercado Pago.',
         })
       }
+    }
+  }
+  // Con qué se cobró la seña. Solo tiene sentido si queda una seña (la que ya había o la nueva).
+  if (input.sena_medio !== undefined) {
+    const method = DEPOSIT_METHOD_OF_WORD[input.sena_medio]
+    const depositAfter = Number(patch.deposit_cents ?? r.deposit_cents)
+    if (depositAfter > 0 && method !== (r.deposit_method ?? null)) {
+      patch.deposit_method = method
+      rows.push(
+        change(
+          'Seña pagada con',
+          depositMethodLabel(r.deposit_method) ?? 'Sin anotar',
+          depositMethodLabel(method) ?? '',
+        ),
+      )
     }
   }
   if (facts.manager && facts.manager.id !== r.primary_manager_id) {

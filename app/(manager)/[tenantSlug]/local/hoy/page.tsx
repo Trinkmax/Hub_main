@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
+import { Panel } from '@/components/administracion/kit/panel'
 import { PanelError } from '@/components/administracion/kit/panel-states'
 import { requireFeature } from '@/lib/platform/guards'
 import { POS_SETUP_ROLES } from '@/lib/pos/branches/authorize'
+import { seesSalonNumbers } from '@/lib/pos/cash/blind'
 import { serviceDayAt } from '@/lib/pos/cash/screen'
 import { getSalesDays, getToday } from '@/lib/pos/today/queries'
 import { isDay, salesPeriod, shiftDay } from '@/lib/pos/today/summary'
@@ -45,6 +47,22 @@ export default async function HoyPage({
     throw error
   }
   await requireFeature(access.tenant, 'pos')
+
+  // Las ventas del salón son de los socios (quienes tienen acceso completo a Administración). Un
+  // encargado con usuario de dueño opera el salón y la caja, pero no ve cuánto se vendió.
+  if (!seesSalonNumbers(access)) {
+    return (
+      <AdmPage width="comfortable">
+        <AdmHeader title="Hoy en vivo" />
+        <Panel title="Esta pantalla es de los socios">
+          <p className="max-w-prose text-sm text-muted-foreground text-pretty">
+            Las ventas del salón las ven quienes tienen acceso completo a Administración. Si te
+            corresponde, pedile a un socio que te lo dé desde Administración › Ajustes › Accesos.
+          </p>
+        </Panel>
+      </AdmPage>
+    )
+  }
 
   const timeZone = access.tenant.timezone || 'America/Argentina/Cordoba'
   const today =

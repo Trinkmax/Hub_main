@@ -1,0 +1,80 @@
+/* La marca del bar, como marca de agua: abajo a la derecha en el salón y en la cocina. */
+.pos-brand {
+  display: block;
+  flex: none;
+  pointer-events: none;
+  user-select: none;
+  color: var(--pos-board-ink);
+  opacity: 0.6;
+}
+.pos-brand.is-logo {
+  width: 5.6rem;
+  height: 2.2rem;
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: right center;
+  mask-position: right center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.pos-brand.is-name {
+  max-width: 16rem;
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-align: right;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* En el mapa: sobre el paño, justo arriba del selector de vista. En un celular angosto el paño es
+   de las mesas: la marca aparece cuando hay lugar. */
+.pos-stage > .pos-brand {
+  position: absolute;
+  right: 0.95rem;
+  bottom: 4.6rem;
+  z-index: 1;
+  display: none;
+}
+@media (min-width: 640px) {
+  .pos-stage > .pos-brand {
+    display: block;
+  }
+}
+/* En la lista las filas llegan hasta abajo: la marca molestaría la lectura. */
+.pos-stage[data-view="list"] > .pos-brand {
+  display: none;
+}
+
+/* En la cocina: al final del estante de abajo, a la derecha de todo. */
+.kds-shelf > .kds-brand {
+  margin-left: auto;
+  color: var(--kds-ink);
+  opacity: 0.5;
+}
+.kds-shelf > .kds-shelf-group.is-waiting + .kds-brand,
+.kds-shelf > .kds-shelf-group.is-waiting ~ .kds-brand {
+  margin-left: 0;
+}
+.kds-shelf > .kds-brand.is-logo {
+  width: max(calc(var(--u) * 150), 4.6rem);
+  height: max(calc(var(--u) * 56), 1.8rem);
+}
+.kds-shelf > .kds-brand.is-name {
+  max-width: max(calc(var(--u) * 420), 12rem);
+  font-size: max(calc(var(--u) * 26), 0.85rem);
+}
+/* En el celular el estante es de los talones: ahí no entra. */
+.kds[data-touch] .kds-shelf > .kds-brand {
+  display: none;
+}
+@media (min-width: 900px) {
+  .kds[data-touch] .kds-shelf > .kds-brand {
+    display: block;
+  }
+}

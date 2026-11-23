@@ -22,6 +22,7 @@ import {
   type PayrollReport,
   type PayrollTotals,
   payrollTotals,
+  pendingCashSums,
 } from '@/lib/accounting/payroll'
 import { listRecurringExpenses } from '@/lib/accounting/queries/documents'
 import { getPayrollReport } from '@/lib/accounting/queries/payroll'
@@ -161,6 +162,10 @@ export function employeeRow(employee: PayrollEmployee) {
     adelantos: moneyIf(employee.advancesCents),
     pagado: moneyIf(employee.paidCents),
     saldo: balance < 0 ? `le pagaste ${money(-balance)} de más` : money(balance),
+    // Aparte del saldo: lo que se le pagó de horas extra en el mes.
+    horas_extra: moneyIf(employee.overtimeCents ?? 0),
+    // Ya está contado en adelantos, pagado y saldo, pero todavía no tiene comprobante.
+    de_la_caja_sin_pasar: moneyIf(pendingCashSums(employee.pendingCash).total),
     inactivo: employee.active ? null : true,
   })
 }

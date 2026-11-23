@@ -12,7 +12,7 @@
  *   que no es cierto.
  * - **Un dato que no cargó no es cero.** La oración dice «—» y el estado «No
  *   pudimos cargarlo»; la fila igual lleva a su habitación.
- * - **Ningún número suelto.** Cada cifra va con su palabra («6 de 18 socios»,
+ * - **Ningún número suelto.** Cada cifra va con su palabra («6 personas entran»,
  *   «9 medios prendidos»).
  */
 
@@ -48,9 +48,9 @@ function count(n: number, one: string, many: string): string {
 // ─── 1 · Accesos ─────────────────────────────────────────────────────────────
 
 export type AccessFacts = {
-  /** Personas con acceso vigente. */
-  active: ReadonlyArray<{ isAdmin: boolean }>
-  /** Socios sin acceso (solo lo sabe un dueño; para la contadora viene vacío). */
+  /** Personas con acceso vigente. `scope` vacío = completo (como era todo acceso antes de los niveles). */
+  active: ReadonlyArray<{ isAdmin: boolean; scope?: 'full' | 'purchases' }>
+  /** Dueños del bar sin acceso (solo lo sabe un dueño; para la contadora viene vacío). */
   ownersWithoutAccess: ReadonlyArray<unknown>
   accountants: ReadonlyArray<unknown>
   adminCount: number
@@ -79,13 +79,18 @@ export function tileAccess(
   if (!access) return TILE_UNKNOWN
   const { inCount, outCount } = accessCounts(access)
   const total = inCount + outCount
+  // Personas, no socios: con los niveles también entran empleados (a compras y pagos). Las mismas
+  // palabras que el titular de la habitación.
+  const enter = count(inCount, 'persona entra', 'personas entran')
+  const limited = access.active.filter((person) => person.scope === 'purchases').length
+  const full = inCount - limited
   const sentence = !opts.showMembers
-    ? `${count(inCount, 'persona entra', 'personas entran')}.`
-    : outCount === 0
-      ? inCount === 1
-        ? 'Entra 1 socio a Administración.'
-        : `Los ${inCount} socios entran a Administración.`
-      : `${inCount} de ${count(total, 'socio', 'socios')} ${inCount === 1 ? 'entra' : 'entran'} a Administración.`
+    ? `${enter}.`
+    : `${[
+        `${enter} a Administración`,
+        ...(limited > 0 ? [`${full} ${full === 1 ? 've' : 'ven'} todo`] : []),
+        ...(outCount > 0 ? [`${outCount} todavía no`] : []),
+      ].join(' · ')}.`
 
   if (access.adminCount === 0) return { sentence, pill: { tone: 'late', text: 'Nadie da accesos' } }
   if (opts.manualDone) return { sentence, pill: OK }

@@ -18,6 +18,8 @@ import { TagsManagerDialog } from './tags-manager-dialog'
 export type MenuHubProps = {
   tenantSlug: string
   tenantId: string
+  /** La zona horaria del bar: los horarios de las categorías van en su hora. */
+  timeZone: string
   role: TenantRole
   menu: Awaited<ReturnType<typeof listMenu>>
   tags: Awaited<ReturnType<typeof listItemTags>>
@@ -36,6 +38,7 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
   const {
     tenantSlug,
     tenantId,
+    timeZone,
     role,
     menu,
     tags,
@@ -159,6 +162,7 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
         <MenuBoard
           tenantSlug={tenantSlug}
           tenantId={tenantId}
+          timeZone={timeZone}
           categories={menu.categories}
           items={menu.items}
           tags={tags}

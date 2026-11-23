@@ -30,16 +30,27 @@ import {
   type AccountingAction,
   type ActionParams,
   actionHref,
+  canOpenAction,
   clearActionHref,
   readAction,
 } from './acciones/types'
 
 export type AccountingUiAccess = {
   read: boolean
-  /** Carga, anula y cierra: solo dueños con acceso. La contadora es `false`. */
+  /** Carga, anula y cierra: solo dueños con acceso completo. La contadora es `false`. */
   write: boolean
   /** Da y quita accesos. */
   admin: boolean
+  /**
+   * Carga compras, gastos y pagos a proveedores: quien tiene `write` y, además, quien tiene el nivel
+   * «solo compras y pagos». Falta = lo que diga `write`.
+   */
+  buyWrite?: boolean
+  /**
+   * El nivel «solo compras y pagos»: entra a Compras y a nada más. No ve saldos de las cajas ni lo
+   * que no puede usar (anular, exportar, gastos fijos, la semana). Falta = no.
+   */
+  purchasesOnly?: boolean
 }
 
 export type AccountingContextValue = {
@@ -47,8 +58,15 @@ export type AccountingContextValue = {
   /** Hoy en Córdoba (`yyyy-MM-dd`): el de la base, igual en el server y en el cliente. */
   today: string
   access: AccountingUiAccess
-  /** Contadora (o dueño sin escritura): se esconden todas las acciones de carga. */
+  /**
+   * Contadora (o dueño sin carga): se esconden todas las acciones de carga. Quien tiene «solo compras
+   * y pagos» NO es de solo lectura: carga lo suyo (ver `purchasesOnly` y `canOpen`).
+   */
   readOnly: boolean
+  /** El nivel «solo compras y pagos»: sin saldos de cajas ni lo que no puede usar. */
+  purchasesOnly: boolean
+  /** ¿Puede abrir esa hoja? (`canOpenAction`: todas con carga completa; gasto y pagar con compras). */
+  canOpen: (action: AccountingAction) => boolean
   /** Abre una hoja de acción rápida sobre la pantalla actual (`?accion=`). */
   openAction: (action: AccountingAction, params?: ActionParams) => void
   /** Cierra la hoja abierta (sin preguntar). */
@@ -96,10 +114,18 @@ export function AccountingProvider({
   // link ya armado (⌘K desde otra sección, un link compartido), cerrar
   // reemplaza la URL: «atrás» no tiene que sacarte de la pantalla.
   const pushedRef = useRef(false)
+  const canWrite = access.write
+  const canBuy = access.write || access.buyWrite === true
+  const purchasesOnly = access.purchasesOnly === true
+
+  const canOpen = useCallback(
+    (action: AccountingAction) => canOpenAction(action, { write: canWrite, buyWrite: canBuy }),
+    [canWrite, canBuy],
+  )
 
   const openAction = useCallback(
     (action: AccountingAction, params: ActionParams = {}) => {
-      if (!access.write) return
+      if (!canOpen(action)) return
       const search = typeof window === 'undefined' ? '' : window.location.search
       const href = actionHref(pathname, search, action, params)
       // Con una hoja ya abierta (de una hoja a otra), se reemplaza: cerrar
@@ -111,7 +137,7 @@ export function AccountingProvider({
       pushedRef.current = true
       router.push(href, { scroll: false })
     },
-    [access.write, pathname, router],
+    [canOpen, pathname, router],
   )
 
   const closeAction = useCallback(() => {
@@ -129,23 +155,26 @@ export function AccountingProvider({
       tenantSlug,
       today,
       access,
-      readOnly: !access.write,
+      readOnly: !canBuy,
+      purchasesOnly,
+      canOpen,
       openAction,
       closeAction,
     }),
-    [tenantSlug, today, access, openAction, closeAction],
+    [tenantSlug, today, access, canBuy, purchasesOnly, canOpen, openAction, closeAction],
   )
 
   return (
     <AccountingContext.Provider value={value}>
       {children}
-      {access.write ? (
+      {canBuy ? (
         // useSearchParams adentro de un Suspense propio: la pantalla nunca
         // espera a las hojas para pintarse.
         <Suspense fallback={null}>
           <ActionSheetHost
             tenantSlug={tenantSlug}
             today={today}
+            canOpen={canOpen}
             onClose={closeAction}
             onUrlCleared={() => {
               pushedRef.current = false
@@ -166,16 +195,21 @@ function keepOpenOnToast(event: Event): void {
 function ActionSheetHost({
   tenantSlug,
   today,
+  canOpen,
   onClose,
   onUrlCleared,
 }: {
   tenantSlug: string
   today: string
+  canOpen: (action: AccountingAction) => boolean
   onClose: () => void
   onUrlCleared: () => void
 }) {
   const searchParams = useSearchParams()
-  const current = readAction(searchParams)
+  const requested = readAction(searchParams)
+  // Un link a una hoja que esta persona no abre (`?accion=cobrar` con «solo compras y pagos») no
+  // abre nada: la pantalla queda como si el parámetro no estuviera.
+  const current = requested && canOpen(requested.action) ? requested : null
   const [dirty, setDirty] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const action = current?.action ?? null

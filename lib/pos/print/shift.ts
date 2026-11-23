@@ -74,3 +74,63 @@ export function shiftDoc(report: ShiftReport, context: ShiftPrintContext): Print
   lines.push(p.center(stamp, { size: 'sm' }))
   return { title: report.closed ? 'Cierre de caja' : 'Caja', lines }
 }
+
+/**
+ * El comprobante de un cierre a ciegas: lo que firma quien cerró sin ver los números del turno.
+ * Dice lo único que esa persona sabe (cuánto contó, cuánto dejó de cambio y cuánto retira) y deja
+ * lugar para las firmas. El resumen del turno no va en este papel: les llega a los socios.
+ */
+export function closeSlipDoc(
+  input: {
+    /** «Cerro, noche». */
+    place: string
+    /** «Jueves 12/11». */
+    day: string
+    closedBy: string | null
+    closedAt: string | null
+    countedCents: number
+    leaveFloatCents: number
+    note?: string | null
+  },
+  context: ShiftPrintContext,
+): PrintDoc {
+  const lines: PrintLine[] = []
+  lines.push(p.center(context.barName, { size: 'lg', bold: true, upper: true }))
+  lines.push(p.center('Cierre de caja', { size: 'xl', upper: true }))
+  lines.push(p.center(input.place, { bold: true, upper: true }))
+  lines.push(
+    p.center(
+      [
+        input.day,
+        input.closedAt ? `cerrado ${ticketDateTime(input.closedAt, context.timeZone)}` : null,
+        input.closedBy ? `por ${input.closedBy}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      { size: 'sm' },
+    ),
+  )
+  lines.push(p.rule('double'))
+  lines.push(p.row('Se contó', ticketMoney(input.countedCents), { bold: true, dots: true }))
+  lines.push(p.row('Queda de cambio', ticketMoney(input.leaveFloatCents), { dots: true }))
+  lines.push(
+    p.row('Se retira', ticketMoney(Math.max(0, input.countedCents - input.leaveFloatCents)), {
+      bold: true,
+      dots: true,
+    }),
+  )
+  if (input.note?.trim()) {
+    lines.push(p.rule('solid'))
+    lines.push(p.text('Nota', { bold: true, upper: true, size: 'sm' }))
+    lines.push(p.text(`«${input.note.trim()}»`))
+  }
+  lines.push(p.rule('double'))
+  lines.push(p.blank('Contó'))
+  lines.push(p.blank('Recibió'))
+  lines.push(p.space())
+  lines.push(
+    p.center('El resumen del turno lo reciben los socios.', { size: 'sm' }),
+    p.center(`Impreso ${ticketDateTime(context.printedAt, context.timeZone)}`, { size: 'sm' }),
+  )
+  return { title: 'Cierre de caja', lines }
+}

@@ -3,12 +3,13 @@ import 'server-only'
 /**
  * El camino de las acciones que no arman un bundle (anular, deshacer, anular
  * con fecha de hoy, imputar, desimputar, marcar una caja verificada): permiso
- * de escritura, zod, UNA RPC con la sesión del usuario (que vuelve a chequear
- * todo y audita adentro), error mapeado y revalidación de la sección.
+ * de escritura (`spec.need`, por defecto el nivel completo), zod, UNA RPC con
+ * la sesión del usuario (que vuelve a chequear todo y audita adentro), error
+ * mapeado y revalidación de la sección.
  */
 
 import type { z } from 'zod'
-import { authorizeAccounting } from '@/lib/accounting/access'
+import { type AccountingNeed, authorizeAccounting } from '@/lib/accounting/access'
 import {
   type AccFailureState,
   type AccSimpleState,
@@ -21,6 +22,11 @@ import { afterCommit, errorName, logFailure, revalidateAdministracion } from './
 export type SimpleRpcSpec<D, T> = {
   /** Para el log: `void`, `undo`, `reverse`… */
   op: string
+  /**
+   * El acceso que pide. Por defecto `write` (el nivel completo). `buy_write` solo en lo que también
+   * hace quien tiene «solo compras y pagos» (imputar un pago a una factura de un proveedor).
+   */
+  need?: AccountingNeed
   schema: z.ZodType<D>
   /** Lo que se revisa antes de llamar (con la entrada ya validada): un error corta ahí. */
   check?: (slug: string, input: D) => Promise<AccFailureState | null>
@@ -52,7 +58,7 @@ export async function runSimpleRpc<D, T>(
         detail: { key: 'forbidden' },
       }
     }
-    const auth = await authorizeAccounting(slug, 'write')
+    const auth = await authorizeAccounting(slug, spec.need ?? 'write')
     if (!auth.ok) return auth.state
 
     const parsed = spec.schema.safeParse(raw)

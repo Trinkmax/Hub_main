@@ -83,6 +83,9 @@ export function accountingAs(real: AccountingAccess, role: TenantRole): Accounti
     write: false,
     admin: false,
     canSetUp: false,
+    buyRead: role === 'accountant' && real.read,
+    buyWrite: false,
+    scope: null,
   }
 }
 

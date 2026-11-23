@@ -4,15 +4,18 @@ import {
   AlarmClock,
   BanknoteArrowDown,
   BanknoteArrowUp,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Copy,
+  EyeOff,
   GraduationCap,
   History,
   LoaderCircle,
   LockKeyhole,
+  MailCheck,
   Printer,
   ReceiptText,
   Send,
@@ -32,6 +35,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { formatCentsShort } from '@/lib/money/format'
+import { isBlindClose } from '@/lib/pos/cash/blind'
 import { buildShiftReport, shiftPlace, shiftShareText } from '@/lib/pos/cash/report'
 import {
   cashPhase,
@@ -42,6 +46,7 @@ import {
   openShiftIds,
   paymentAccess,
   pickRegister,
+  serviceDayAt,
   shiftTitle,
   staleWords,
 } from '@/lib/pos/cash/screen'
@@ -58,10 +63,10 @@ import {
 } from '@/lib/pos/cash/types'
 import { posFont } from '@/lib/pos/font'
 import { clockAt } from '@/lib/pos/order/clock'
-import { shiftDoc } from '@/lib/pos/print/shift'
+import { closeSlipDoc, shiftDoc } from '@/lib/pos/print/shift'
 import type { PosBranch } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
-import { usePosPoke } from '@/lib/pos/use-poke'
+import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { attempt, type CashApi, type Failure } from './api'
@@ -86,6 +91,11 @@ import './cash.css'
  *
  * La pantalla no decide permisos ni recalcula plata: muestra lo que devuelve la base
  * (`ShiftSnapshot`) y vuelve a leer cuando otra pantalla mueve la caja.
+ *
+ * **A ciegas** (`snapshot.blind`): quien atiende la caja sin ser socio la opera igual, pero no ve
+ * cuánto entró, por qué medio, ni cuánto tiene que haber en el cajón; cuenta y cierra sin ver el
+ * arqueo, y el resumen del turno les llega a los socios. Los números ni siquiera viajan a este
+ * navegador (`lib/pos/cash/blind.ts`): acá solo se elige qué dibujar.
  */
 
 type Props = {
@@ -103,6 +113,12 @@ type Props = {
   barName?: string
   /** Lo que va al final de la barra de arriba (la comandera de esta compu). */
   tools?: React.ReactNode
+  /** Un turno puntual para abrir de entrada (el link del mail de cierre). Solo para quien ve los números. */
+  initialShiftId?: string | null
+  /** El bar usa Administración: al sacar plata se elige el proveedor o a quién del equipo. */
+  payees?: boolean
+  /** A dónde se carga la compra de un retiro; `null` si quien está no carga compras. */
+  purchaseHref?: ((movementId: string) => string) | null
 }
 
 /** Qué se le pide a la base: el carril (de verdad o práctica) y, si no es el de siempre, qué turno. */
@@ -124,11 +140,19 @@ export function CashScreen({
   account,
   barName,
   tools,
+  initialShiftId = null,
+  payees = false,
+  purchaseHref = null,
 }: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
-  const [lane, setLane] = useState<Lane>({ practice: initial.practice, shiftId: null })
-  const [mode, setMode] = useState<Mode>('main')
+  // Si la página ya trajo un turno puntual (se entró por el link del mail), se arranca mirándolo.
+  const startOnShift =
+    initialShiftId !== null && initial.shift?.id === initialShiftId ? initialShiftId : null
+  const [lane, setLane] = useState<Lane>({ practice: initial.practice, shiftId: startOnShift })
+  const [mode, setMode] = useState<Mode>(
+    startOnShift !== null && initial.shift?.status === 'closed' ? 'summary' : 'main',
+  )
   const [registerId, setRegisterId] = useState<string | null>(null)
   const [filter, setFilter] = useState<TapeFilter>('all')
   const [paymentId, setPaymentId] = useState<string | null>(null)
@@ -142,6 +166,8 @@ export function CashScreen({
   const [closingFrom, setClosingFrom] = useState(initial.now)
   const scrollRef = useRef<HTMLDivElement>(null)
   const laneRef = useRef(lane)
+  /** Quien mira no ve los números del salón: la caja se opera a ciegas. */
+  const blind = snapshot.blind === true
   /** Cambia cada vez que se pide otro turno u otro carril: una lectura vieja que llega tarde no pisa. */
   const readTicket = useRef(0)
   const closedHere = useRef(false)
@@ -185,8 +211,8 @@ export function CashScreen({
   const live = usePosPoke(branch.id, (what) => {
     if (what !== 'kitchen' && what !== 'menu') poke()
   })
-  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
-  useVisibleInterval(reload, 40_000)
+  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día (más seguido sin canal).
+  useVisibleInterval(reload, safetyNetMs(live))
   const online = useOnline()
   const offline = !online || live === 'offline'
 
@@ -332,9 +358,30 @@ export function CashScreen({
     }
     // El turno ya cerró: si no se puede volver a leer no es un error para mostrar.
     const fresh = await loadLane({ practice: lane.practice, shiftId: closing.id }, true)
-    if (!fresh) {
+    const data = result.data
+    if (!fresh && isBlindClose(data)) {
+      // A ciegas, el cierre contesta solo lo que se contó: con eso alcanza para decir «listo».
+      setSnapshot((current) => ({
+        ...current,
+        shift: {
+          ...closing,
+          status: 'closed',
+          closed_at: current.now,
+          counted_cash_cents: data.counted_cash_cents,
+          count_breakdown: input.breakdown,
+          expected_cash_cents: null,
+          difference_cents: null,
+          leave_float_cents: data.leave_float_cents,
+          closing_note: input.note,
+          summary: null,
+        },
+        payments: [],
+        registers: current.registers.map((candidate) =>
+          candidate.id === closing.register_id ? { ...candidate, open_shift_id: null } : candidate,
+        ),
+      }))
+    } else if (!fresh && !isBlindClose(data)) {
       // Se cerró pero no se pudo volver a leer: se arma con lo que contestó el cierre.
-      const data = result.data
       setSnapshot((current) => ({
         ...current,
         shift: {
@@ -429,7 +476,8 @@ export function CashScreen({
 
   // ── El resumen (turno cerrado) y el detalle (turno abierto) ──
   const report = useMemo(() => {
-    if (!shift) return null
+    // A ciegas no hay números con los que armar un resumen (ni se muestra).
+    if (!shift || blind) return null
     const summary = shift.status === 'closed' ? (shift.summary ?? snapshot.live) : snapshot.live
     if (!summary) return null
     return buildShiftReport({
@@ -440,7 +488,7 @@ export function CashScreen({
       registersCount: snapshot.registers.length,
       liveAfter: shift.status === 'closed' ? snapshot.live : null,
     })
-  }, [shift, snapshot.live, snapshot.branch.name, snapshot.registers.length, timeZone])
+  }, [shift, blind, snapshot.live, snapshot.branch.name, snapshot.registers.length, timeZone])
 
   const copySummary = async () => {
     if (!report) return
@@ -464,6 +512,32 @@ export function CashScreen({
             timeZone,
             printedAt: Date.now(),
           }),
+        ],
+      })
+    } catch {
+      notify.error('No se pudo mandar a la impresora. Fijate que esté prendida.')
+    }
+  }
+
+  /** El comprobante de un cierre a ciegas: lo que contó quien cerró, para firmar. */
+  const printSlip = async () => {
+    if (!shift || shift.counted_cash_cents === null) return
+    try {
+      await printJob({
+        paper: readPrinter(branch.id).paper,
+        docs: [
+          closeSlipDoc(
+            {
+              place: shiftPlace(snapshot.branch.name, shift, snapshot.registers.length),
+              day: dayLabel(shift.service_day, 'long'),
+              closedBy: shift.closed_by_name,
+              closedAt: shift.closed_at,
+              countedCents: shift.counted_cash_cents,
+              leaveFloatCents: shift.leave_float_cents ?? 0,
+              note: shift.closing_note,
+            },
+            { barName: barName ?? snapshot.branch.name, timeZone, printedAt: Date.now() },
+          ),
         ],
       })
     } catch {
@@ -513,7 +587,7 @@ export function CashScreen({
       ) : null}
     </div>
   )
-  const shiftsButton = (
+  const shiftsButton = blind ? null : (
     <button
       type="button"
       className="caja-top-btn"
@@ -640,6 +714,11 @@ export function CashScreen({
         timeZone={timeZone}
         account={account}
         notices={notices}
+        blind={blind}
+        onCheck={async (countedCents) => {
+          const result = await attempt(() => api.checkCount(phase.shift.id, countedCents))
+          return result.ok ? result.data.matches : null
+        }}
         onCancel={() => setMode('main')}
         onClose={close}
         onPayment={setPaymentId}
@@ -657,6 +736,7 @@ export function CashScreen({
             invoiceByMethod={snapshot.settings.invoice_by_method}
             timeZone={timeZone}
             practice={practice}
+            blind={blind}
             variant="roll"
             mark={mark}
             onPayment={openPayment}
@@ -664,6 +744,143 @@ export function CashScreen({
           />
         </section>
       </CloseFlow>,
+    )
+  }
+
+  // ── El turno cerrado, a ciegas: lo que contó quien cerró, y nada más ──
+  if (view === 'summary' && shift && blind) {
+    const counted = shift.counted_cash_cents ?? 0
+    const left = shift.leave_float_cents ?? 0
+    return shell(
+      <>
+        <PosTopbar account={account}>
+          <button
+            type="button"
+            className="caja-back"
+            onClick={() => void leaveSummary()}
+            aria-label="Volver a la caja"
+            data-testid="resumen-volver"
+          >
+            <ChevronLeft strokeWidth={2.4} aria-hidden />
+          </button>
+          <div className="caja-title">
+            <b>{shift.label ?? 'Turno'}</b>
+            <span>
+              {manyRegisters ? `${shift.register} · ` : ''}
+              {dayLabel(shift.service_day)}
+            </span>
+          </div>
+          {practice ? <span className="caja-tag">Práctica</span> : null}
+        </PosTopbar>
+        {notices}
+        <div className="caja-scroll" ref={scrollRef}>
+          <section className="caja-desk caja-blind-done" aria-label="El turno cerrado">
+            <div className="caja-display">
+              <p>
+                <span className="caja-stamp is-big">
+                  <Check aria-hidden strokeWidth={3} />
+                  Turno cerrado
+                </span>
+              </p>
+              <h1 className="caja-hero" data-testid="cierre-contado">
+                <span className="sr-only">Contaste </span>
+                <i>$</i>
+                {digitsOf(counted)}
+              </h1>
+              <p className="caja-say">
+                Es lo que contaste. Quedan <b>{formatCentsShort(left)}</b> de cambio y{' '}
+                {counted - left > 0 ? (
+                  <>
+                    retirás <b>{formatCentsShort(counted - left)}</b>
+                  </>
+                ) : (
+                  'no se retira nada'
+                )}
+                .
+              </p>
+              {practice ? null : (
+                <p className="caja-blind-sent" data-testid="cierre-aviso">
+                  <MailCheck aria-hidden strokeWidth={2.2} />
+                  <span>
+                    <b>El resumen del turno ya salió para los socios.</b> Lo arma el sistema con lo
+                    que quedó registrado: no hace falta que mandes nada.
+                  </span>
+                </p>
+              )}
+            </div>
+          </section>
+          {/* El comprobante, como va a salir en papel: lo único que sabe quien cerró. */}
+          <section className="caja-roll" aria-label="El comprobante del cierre">
+            <article className="caja-report caja-slip" data-testid="cierre-comprobante">
+              <header className="caja-report-top">
+                <div>
+                  <h2 className="caja-slip-title">
+                    {capitalize(shiftPlace(snapshot.branch.name, shift, snapshot.registers.length))}
+                  </h2>
+                  <p>
+                    {capitalize(dayLabel(shift.service_day, 'long'))}
+                    {shift.closed_at ? ` · cerrado ${clockAt(shift.closed_at, timeZone)}` : ''}
+                    {shift.closed_by_name ? ` por ${shift.closed_by_name}` : ''}
+                  </p>
+                </div>
+                <span className="caja-stamp is-closed">
+                  <LockKeyhole aria-hidden strokeWidth={2.8} />
+                  Cerrado
+                </span>
+              </header>
+              <section>
+                <h3>El cajón</h3>
+                <dl>
+                  <div className="caja-report-line is-strong">
+                    <dt>Se contó</dt>
+                    <dd>{formatCentsShort(counted)}</dd>
+                  </div>
+                  <div className="caja-report-line">
+                    <dt>Queda de cambio</dt>
+                    <dd>{formatCentsShort(left)}</dd>
+                  </div>
+                  <div className="caja-report-line is-strong">
+                    <dt>Se retira</dt>
+                    <dd>{formatCentsShort(Math.max(0, counted - left))}</dd>
+                  </div>
+                </dl>
+              </section>
+              {shift.closing_note ? (
+                <section>
+                  <h3>Nota de quien cerró</h3>
+                  <p className="caja-report-note">«{shift.closing_note}»</p>
+                </section>
+              ) : null}
+              <section>
+                <p className="caja-report-foot">
+                  Cuánto entró, cómo dio el arqueo y todo lo demás lo reciben los socios.
+                </p>
+              </section>
+            </article>
+          </section>
+        </div>
+        <footer className="caja-bar">
+          <div className="caja-actions">
+            <button
+              type="button"
+              className="caja-go is-quiet"
+              onClick={() => void printSlip()}
+              data-testid="cierre-imprimir"
+            >
+              <Printer aria-hidden strokeWidth={2.3} />
+              Imprimir comprobante
+            </button>
+            <button
+              type="button"
+              className="caja-go"
+              onClick={() => void leaveSummary()}
+              data-testid="cierre-listo"
+            >
+              Listo
+            </button>
+          </div>
+        </footer>
+      </>,
     )
   }
 
@@ -720,6 +937,12 @@ export function CashScreen({
                   )}
                 </p>
               ) : null}
+              {practice ? null : (
+                <p className="caja-blind-note">
+                  <MailCheck aria-hidden strokeWidth={2.2} />
+                  Este resumen les llega por mail a los socios cuando se cierra el turno.
+                </p>
+              )}
             </div>
             {canOpenNext ? (
               <div className="caja-links">
@@ -781,7 +1004,8 @@ export function CashScreen({
               data-testid="resumen-whatsapp"
             >
               <Send aria-hidden strokeWidth={2.3} />
-              Mandar por WhatsApp
+              WhatsApp
+              <span className="sr-only">: mandar el resumen</span>
             </a>
           </div>
         </footer>
@@ -856,7 +1080,7 @@ export function CashScreen({
           busy={busy === 'open'}
           onOpen={(input) => void open(input)}
           onSeeLast={
-            phase.kind === 'closed'
+            phase.kind === 'closed' && !blind
               ? () => {
                   if (lastIsShown) setMode('summary')
                   else void viewShift(phase.last.shift_id, phase.register.id)
@@ -866,7 +1090,7 @@ export function CashScreen({
           onPractice={() => void togglePractice()}
         >
           <section className="caja-roll" aria-label="La cinta del turno anterior">
-            {lastIsShown && shift ? (
+            {lastIsShown && shift && !blind ? (
               <Tape
                 key={shift.id}
                 tape={tape}
@@ -928,12 +1152,22 @@ export function CashScreen({
       {topbar}
       {notices}
       <div className="caja-scroll" ref={scrollRef}>
-        <LiveDesk
-          live={liveNow}
-          filter={filter}
-          onFilter={chooseFilter}
-          onDetail={() => setDetailOpen(true)}
-        />
+        {blind ? (
+          <BlindDesk
+            live={liveNow}
+            payments={snapshot.payments}
+            shiftId={phase.shift.id}
+            filter={filter}
+            onFilter={chooseFilter}
+          />
+        ) : (
+          <LiveDesk
+            live={liveNow}
+            filter={filter}
+            onFilter={chooseFilter}
+            onDetail={() => setDetailOpen(true)}
+          />
+        )}
         <section className="caja-roll" aria-label="La cinta del turno">
           <div className="caja-slot" aria-hidden />
           <Tape
@@ -945,6 +1179,7 @@ export function CashScreen({
             invoiceByMethod={snapshot.settings.invoice_by_method}
             timeZone={timeZone}
             practice={practice}
+            blind={blind}
             variant="roll"
             onPayment={openPayment}
             onMovement={openMovement}
@@ -952,22 +1187,42 @@ export function CashScreen({
         </section>
       </div>
 
-      <footer className="caja-drawer">
-        <button
-          type="button"
-          className="caja-drawer-sum"
-          aria-pressed={filter === 'cash'}
-          onClick={() => chooseFilter(filter === 'cash' ? 'all' : 'cash')}
-          data-testid="cajon"
-        >
-          <span>En el cajón tiene que haber</span>
-          <b data-testid="cajon-esperado">{formatCentsShort(liveNow.expected_cash_cents)}</b>
-          <ChevronUp aria-hidden />
-          <span className="sr-only">
-            {filter === 'cash' ? 'Volver a ver todo' : 'Ver la cuenta del cajón en la cinta'}
-          </span>
-        </button>
-        <p className="caja-drawer-math">{drawerSentence(liveNow)}</p>
+      <footer className="caja-drawer" data-blind={blind ? '' : undefined}>
+        {blind ? (
+          // A ciegas, el cajón no dice cuánto tiene que haber: se cuenta al cerrar.
+          <button
+            type="button"
+            className="caja-drawer-sum is-blind"
+            aria-pressed={filter === 'cash'}
+            onClick={() => chooseFilter(filter === 'cash' ? 'all' : 'cash')}
+            data-testid="cajon"
+          >
+            <span>El cajón</span>
+            <b>Se cuenta al cerrar</b>
+            <ChevronUp aria-hidden />
+            <span className="sr-only">
+              {filter === 'cash' ? 'Volver a ver todo' : 'Ver solo lo del cajón en la cinta'}
+            </span>
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="caja-drawer-sum"
+              aria-pressed={filter === 'cash'}
+              onClick={() => chooseFilter(filter === 'cash' ? 'all' : 'cash')}
+              data-testid="cajon"
+            >
+              <span>En el cajón tiene que haber</span>
+              <b data-testid="cajon-esperado">{formatCentsShort(liveNow.expected_cash_cents)}</b>
+              <ChevronUp aria-hidden />
+              <span className="sr-only">
+                {filter === 'cash' ? 'Volver a ver todo' : 'Ver la cuenta del cajón en la cinta'}
+              </span>
+            </button>
+            <p className="caja-drawer-math">{drawerSentence(liveNow)}</p>
+          </>
+        )}
         <div className="caja-actions">
           <button
             type="button"
@@ -997,10 +1252,17 @@ export function CashScreen({
       <MoveSheet
         kind={moveKind}
         shiftId={phase.shift.id}
+        branchId={branch.id}
         live={liveNow}
+        blind={blind}
+        practice={practice}
+        payees={payees}
+        today={serviceDayAt(snapshot.now, timeZone)}
+        purchaseHref={purchaseHref}
         api={api}
         onClose={() => setMoveKind(null)}
         onDone={changed}
+        onSaved={() => void reload()}
       />
       <DetailSheet
         open={detailOpen}
@@ -1124,6 +1386,83 @@ function LiveDesk({
           Ver el turno en detalle
         </button>
       </div>
+    </section>
+  )
+}
+
+/**
+ * El visor de quien atiende la caja a ciegas: cuántos cobros lleva el turno (no cuánta plata) y las
+ * teclas de los medios, que cuentan cobros y filtran la cinta para encontrar uno y corregirlo.
+ */
+function BlindDesk({
+  live,
+  payments,
+  shiftId,
+  filter,
+  onFilter,
+}: {
+  live: ShiftSummary
+  payments: ReadonlyArray<DayPayment>
+  shiftId: string
+  filter: TapeFilter
+  onFilter: (filter: TapeFilter) => void
+}) {
+  const counts = new Map<string, number>()
+  let total = 0
+  for (const payment of payments) {
+    if (payment.shift_id !== shiftId || payment.status !== 'ok') continue
+    counts.set(payment.method, (counts.get(payment.method) ?? 0) + 1)
+    total += 1
+  }
+  const tables = live.open_tables.count
+  return (
+    <section className="caja-desk" aria-label="El turno">
+      <div className="caja-display">
+        <h1 className="caja-hero is-count" data-testid="caja-cobros">
+          {total}
+          <i>{total === 1 ? 'cobro' : 'cobros'}</i>
+        </h1>
+        <p className="caja-say">
+          {total === 0 ? 'Todavía no entró ningún cobro en este turno. ' : 'En este turno. '}
+          {tables === 0
+            ? 'No queda ninguna mesa abierta.'
+            : tables === 1
+              ? 'Queda 1 mesa abierta.'
+              : `Quedan ${tables} mesas abiertas.`}
+        </p>
+        <p className="caja-blind-note">
+          <EyeOff aria-hidden strokeWidth={2.2} />
+          Los números del turno los ven los socios.
+        </p>
+      </div>
+
+      <fieldset className="caja-keys">
+        <legend className="sr-only">
+          Cuántos cobros hay por cada medio. Tocá uno para ver solo esos en la cinta.
+        </legend>
+        {PAY_METHODS.map((method) => {
+          const count = counts.get(method) ?? 0
+          const Icon = METHOD_ICON[method]
+          return (
+            <button
+              key={method}
+              type="button"
+              className="caja-key"
+              aria-pressed={filter === method}
+              disabled={count === 0 && method !== 'cash'}
+              onClick={() => onFilter(filter === method ? 'all' : method)}
+              data-testid={`tecla-${method}`}
+            >
+              <span className="caja-key-name">
+                <Icon aria-hidden strokeWidth={2.2} />
+                {METHOD_LABEL[method]}
+              </span>
+              <b>{count > 0 ? count : '—'}</b>
+              <span className="sr-only">{count === 1 ? 'cobro' : 'cobros'}</span>
+            </button>
+          )
+        })}
+      </fieldset>
     </section>
   )
 }

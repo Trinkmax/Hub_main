@@ -1,6 +1,6 @@
 /**
  * Formas compartidas de «Cocina y aclaraciones» (`/[slug]/menu/cocina`): a qué estación va
- * cada cosa de la carta y qué aclaraciones se le pueden tocar a cada producto.
+ * cada cosa de la carta, qué aclaraciones se le pueden tocar a cada producto y qué sale primero.
  *
  * Son las mismas tablas que leen la comanda del mozo y la pantalla de cocina
  * (`kitchen_stations`, `menu_modifier_*`, `station_id` en categorías y productos). La plata va
@@ -26,6 +26,8 @@ export type CartaCategory = {
   active: boolean
   /** La estación puesta ACÁ. Vacío = sigue a la categoría de arriba. */
   stationId: string | null
+  /** Marcada ACÁ como «sale primero»: lo heredan sus subcategorías y sus productos. */
+  kitchenFirst: boolean
 }
 
 export type CartaItem = {
@@ -38,6 +40,8 @@ export type CartaItem = {
   priceCents: number
   /** La estación propia del producto. Vacío = la de su categoría. */
   stationId: string | null
+  /** «Sale primero» dicho en el producto. `null` = lo que diga su categoría. */
+  kitchenFirst: boolean | null
 }
 
 /** Un grupo de aclaraciones: una pregunta («Punto de la carne») con sus opciones para tocar. */
@@ -92,6 +96,16 @@ export type RouteChange = {
   to: string | null
 }
 
+/**
+ * Marcar (o desmarcar) que algo sale primero en cocina. En una categoría es sí o no; en un producto,
+ * `null` lo devuelve a seguir a su categoría.
+ */
+export type FirstChange = {
+  node: 'category' | 'item'
+  id: string
+  to: boolean | null
+}
+
 /** Por qué una estación no se pudo cambiar. */
 export type RouteFailureReason =
   /** La categoría o el producto ya no existe (o no es de este bar). */
@@ -142,6 +156,11 @@ export type SaveResult<Extra extends object = Record<never, never>> =
 /** Llave de una categoría o un producto, para marcar qué se está guardando. */
 export function nodeKey(node: 'category' | 'item', id: string): string {
   return `${node}:${id}`
+}
+
+/** Llave de la marca «sale primero» de una categoría o un producto. */
+export function firstKey(node: 'category' | 'item', id: string): string {
+  return `first:${nodeKey(node, id)}`
 }
 
 /** Llave del enganche de un grupo a una categoría o a un producto. */

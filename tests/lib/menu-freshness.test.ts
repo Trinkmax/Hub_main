@@ -6,8 +6,11 @@ import {
   CARTA_MAX_AGE_MS,
   CARTA_MIN_CHECK_GAP_MS,
   CARTA_REFRESH_GRACE_MS,
+  CARTA_SCHEDULE_MARGIN_MS,
   type CartaCheckGate,
   type CartaRefreshInput,
+  cartaScheduleDue,
+  cartaScheduleDueAt,
   decideCartaRefresh,
   parseMenuRev,
   readCartaRevAnswer,
@@ -286,5 +289,57 @@ describe('shouldCheckCarta — una sola pregunta por vuelta a la pestaña', () =
   it('respeta otros mínimos', () => {
     expect(shouldCheckCarta(gate({ lastAnswerAt: T0 - 2_000, minGapMs: 1_000 }))).toBe(true)
     expect(shouldCheckCarta(gate({ inFlightSince: T0 - 2_000, stuckMs: 1_000 }))).toBe(true)
+  })
+})
+
+describe('los rubros con horario', () => {
+  it('vence cuando lo vio el celular + lo que faltaba + el margen', () => {
+    expect(CARTA_SCHEDULE_MARGIN_MS).toBe(5_000)
+    const dueAt = cartaScheduleDueAt(20 * MIN, T0)
+    expect(dueAt).toBe(T0 + 20 * MIN + CARTA_SCHEDULE_MARGIN_MS)
+    expect(cartaScheduleDue(dueAt, T0 + 20 * MIN)).toBe(false)
+    expect(cartaScheduleDue(dueAt, T0 + 20 * MIN + CARTA_SCHEDULE_MARGIN_MS)).toBe(true)
+    // El celular estuvo guardado toda la tarde: al volver, ya pasó.
+    expect(cartaScheduleDue(dueAt, T0 + 6 * HOUR)).toBe(true)
+  })
+
+  it('sin horarios (o con un dato roto) no vence nunca', () => {
+    expect(cartaScheduleDueAt(null, T0)).toBeNull()
+    expect(cartaScheduleDueAt(undefined, T0)).toBeNull()
+    expect(cartaScheduleDueAt(Number.NaN, T0)).toBeNull()
+    expect(cartaScheduleDueAt(-1, T0)).toBeNull()
+    // Un cambio nunca está a más de un día: la medianoche cambia el día.
+    expect(cartaScheduleDueAt(26 * HOUR, T0)).toBeNull()
+    expect(cartaScheduleDue(null, T0 + 99 * HOUR)).toBe(false)
+  })
+
+  it('pasada la hora, la carta se vuelve a pedir aunque nadie la haya editado', () => {
+    expect(decideCartaRefresh(input({ scheduleDue: true }))).toBe('refresh')
+    // También si la versión no se pudo leer pero el servidor contestó.
+    expect(decideCartaRefresh(input({ latestRev: null, scheduleDue: true }))).toBe('refresh')
+    expect(decideCartaRefresh(input({ scheduleDue: false }))).toBe('stay')
+  })
+
+  it('sin señal tampoco: la recarga terminaría en una página de error', () => {
+    expect(
+      decideCartaRefresh(input({ latestRev: null, unreachable: true, scheduleDue: true })),
+    ).toBe('stay')
+  })
+
+  it('con la hora pasada no se espera el mínimo entre preguntas', () => {
+    const gate: CartaCheckGate = {
+      now: T0 + 20_000,
+      hidden: false,
+      offline: false,
+      refreshing: false,
+      inFlightSince: null,
+      lastAnswerAt: T0 + 15_000,
+    }
+    expect(shouldCheckCarta(gate)).toBe(false)
+    expect(shouldCheckCarta({ ...gate, minGapMs: 0 })).toBe(true)
+    // Pero sí se respeta lo demás: escondida, sin red o con un pedido en camino no se pregunta.
+    expect(shouldCheckCarta({ ...gate, minGapMs: 0, hidden: true })).toBe(false)
+    expect(shouldCheckCarta({ ...gate, minGapMs: 0, refreshing: true })).toBe(false)
+    expect(shouldCheckCarta({ ...gate, minGapMs: 0, inFlightSince: T0 + 19_000 })).toBe(false)
   })
 })

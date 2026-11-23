@@ -44,6 +44,7 @@ import {
 import type { EarnRate } from '@/lib/points/earn-rate'
 import type { RecentQrAward } from '@/lib/points/queries'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
+import { depositMethodLabel } from '@/lib/salon/deposit-method'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { minutesUntil, relativeTimeLabel, reverseLabel } from '@/lib/salon/operativo'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
@@ -594,6 +595,12 @@ export function ReservationPanel({
               {r.deposit_cents > 0 ? (
                 <Field label="Seña">
                   <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
+                  {depositMethodLabel(r.deposit_method) ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      {' '}
+                      · {depositMethodLabel(r.deposit_method)}
+                    </span>
+                  ) : null}
                 </Field>
               ) : null}
               {phone ? (

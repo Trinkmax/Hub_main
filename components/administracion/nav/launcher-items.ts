@@ -76,6 +76,20 @@ export const LAUNCHER_ITEMS: readonly LauncherItem[] = [
   { key: 'ajustar', title: 'Contar la caja', target: { kind: 'sheet', action: 'ajustar' } },
 ]
 
+/** Lo que carga quien tiene el nivel «solo compras y pagos»: las tres de compras, nada de cajas ni ventas. */
+const PURCHASE_LAUNCHER_KEYS: ReadonlySet<string> = new Set(['compra', 'compra-y-pago', 'pago'])
+
+/**
+ * Las puertas de «Cargar» para quien mira. Con «solo compras y pagos»: Compra, Compra y pago y Pago
+ * (a un proveedor: los gastos fijos son del nivel completo). Las teclas quedan iguales.
+ */
+export function launcherItemsFor(opts: { purchasesOnly?: boolean } = {}): readonly LauncherItem[] {
+  if (!opts.purchasesOnly) return LAUNCHER_ITEMS
+  return LAUNCHER_ITEMS.filter((item) => PURCHASE_LAUNCHER_KEYS.has(item.key)).map((item) =>
+    item.key === 'pago' ? { ...item, hint: 'A un proveedor' } : item,
+  )
+}
+
 /** Las principales y las demás, cada grupo en el orden de `LAUNCHER_ITEMS`. */
 export function launcherGroups(items: readonly LauncherItem[] = LAUNCHER_ITEMS): {
   daily: LauncherItem[]
