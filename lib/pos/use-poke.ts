@@ -2,11 +2,20 @@
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/browser'
+import { createClient, realtimeAuthReady, syncRealtimeAuth } from '@/lib/supabase/browser'
 
 /** Qué se movió: el salón, la cocina, la carta, la plata (un cobro, la caja) o un pedido de permiso. */
 export type PokeWhat = 'floor' | 'kitchen' | 'menu' | 'cash' | 'approvals'
 export type LiveStatus = 'connecting' | 'live' | 'offline'
+
+/**
+ * Cada cuánto conviene releer «por las dudas». Con el canal en vivo los avisos llegan solos y alcanza
+ * con una pasada cada tanto; sin canal (conectando o caído) la lectura es lo único que hay, y un salón
+ * que tarda 40 segundos en cambiar de color obliga a recargar a mano.
+ */
+export function safetyNetMs(status: LiveStatus): number {
+  return status === 'live' ? 20_000 : 6_000
+}
 
 type Listener = (what: PokeWhat, sessionId: string | null) => void
 type StatusListener = (status: LiveStatus) => void
@@ -41,17 +50,15 @@ const RELEASE_AFTER_MS = 1500
 /**
  * Le pasa al socket la sesión de AHORA. No alcanza con `realtimeAuthReady()` (se resuelve una sola vez
  * por página): si la persona inició sesión después, sin recargar, el socket seguiría como anónimo y el
- * canal privado la dejaría afuera. Sin sesión no hace nada: Realtime contesta que no y la pantalla lo
- * muestra como «sin conexión».
+ * canal privado la dejaría afuera. Sin sesión, Realtime contesta que no y la pantalla lo muestra como
+ * «sin conexión».
+ *
+ * Nunca con un token escrito a mano: ese queda fijo, vence a la hora y deja el canal caído hasta
+ * recargar (ver `syncRealtimeAuth`).
  */
-async function authorizeSocket(supabase: SupabaseClient): Promise<void> {
-  try {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (token) await supabase.realtime.setAuth(token)
-  } catch {
-    // Sin sesión legible: se intenta entrar igual y manda lo que conteste Realtime.
-  }
+async function authorizeSocket(): Promise<void> {
+  await realtimeAuthReady()
+  await syncRealtimeAuth()
 }
 
 function setShared(entry: Shared, status: LiveStatus) {
@@ -77,7 +84,7 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
     // política `pos_live_listen` de `realtime.messages`), y lo decide con la sesión que tenga el socket
     // en el momento de entrar. Por eso primero se le pasa la sesión de quien mira y recién después se
     // une: entrar un instante antes, todavía como anónimo, sería quedarse afuera.
-    void authorizeSocket(supabase).then(() => {
+    void authorizeSocket().then(() => {
       if (created.gone) return
       const channel = supabase.channel(`pos:${branchId}`, { config: { private: true } })
       created.channel = channel
@@ -100,6 +107,9 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
           } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
             created.wasDown = true
             setShared(created, 'offline')
+            // La librería reintenta sola; que el reintento entre con la sesión de ahora (si lo que
+            // lo tiró fue un token vencido, con el de antes rebotaría para siempre).
+            if (state !== 'CLOSED' && !created.gone) void syncRealtimeAuth()
           }
         })
     })

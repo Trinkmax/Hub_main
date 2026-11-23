@@ -39,7 +39,7 @@ import {
 import { comandaDoc } from '@/lib/pos/print/comanda'
 import { reprintCard } from '@/lib/pos/print/station'
 import type { MenuItem, PosMenu, SessionDetail, SessionItem } from '@/lib/pos/types'
-import { usePosPoke } from '@/lib/pos/use-poke'
+import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { ActionBar, BlockedNote, SendRow } from './action-bar'
@@ -203,7 +203,7 @@ export function OrderScreen({
     }
   })
   // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
-  useVisibleInterval(() => void reloadSession(), 45_000)
+  useVisibleInterval(() => void reloadSession(), safetyNetMs(live))
 
   const online = useOnline()
   const offline = !online || live === 'offline'

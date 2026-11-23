@@ -52,7 +52,7 @@ import { initialSplit, portionOf, reconcileSplit, type Split } from '@/lib/pos/p
 import { billDoc } from '@/lib/pos/print/bill'
 import { paymentDoc } from '@/lib/pos/print/payment'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
-import { usePosPoke } from '@/lib/pos/use-poke'
+import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { BillPaper } from './bill-paper'
 import { Falta } from './falta'
@@ -227,7 +227,7 @@ export function PayScreen({
     if (pokedSession === sessionId || pokedSession === null) poke()
   })
   // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
-  useVisibleInterval(reload, 40_000)
+  useVisibleInterval(reload, safetyNetMs(live))
 
   const online = useOnline()
   const offline = !online || live === 'offline'

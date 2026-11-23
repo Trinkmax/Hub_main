@@ -61,7 +61,7 @@ import { clockAt } from '@/lib/pos/order/clock'
 import { shiftDoc } from '@/lib/pos/print/shift'
 import type { PosBranch } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
-import { usePosPoke } from '@/lib/pos/use-poke'
+import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { attempt, type CashApi, type Failure } from './api'
@@ -185,8 +185,8 @@ export function CashScreen({
   const live = usePosPoke(branch.id, (what) => {
     if (what !== 'kitchen' && what !== 'menu') poke()
   })
-  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
-  useVisibleInterval(reload, 40_000)
+  // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día (más seguido sin canal).
+  useVisibleInterval(reload, safetyNetMs(live))
   const online = useOnline()
   const offline = !online || live === 'offline'
 
