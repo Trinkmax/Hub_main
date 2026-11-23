@@ -130,6 +130,32 @@ Partícipes del sistema: `personal` (Sueldos a pagar), `rentas` (IIBB a pagar), 
 pagar). La contadora puede usar `postManualEntry`. Ninguna compra exige punto de venta ni número: van los dos o
 ninguno (`voucherNumberIncomplete`), y al Libro IVA entra solo la que trae número (`entersIvaBook`).
 
+## Por sucursal (23/11/2026)
+
+Pedido: Piojo pagó un gasto fijo con el Cerro elegido y quedó pagado también en Alta Córdoba. Decisión de Nacho:
+**misma empresa** (un CUIT, un libro para Silvia), cada sucursal con lo suyo y «Todas» suma.
+
+- **Por sucursal** (la píldora de arriba filtra): Compras y pagos, Gastos fijos (con su fila de sueldos), Caja y la
+  ficha de cada comprobante. Siguen «Todo el bar» hasta la entrega siguiente: Resumen, Ventas, Sueldos,
+  Contabilidad y Ajustes (salvo la sucursal de cada caja).
+- **Base** (`20261123160922_acc_sucursales`): `branch_id` en `acc_documents` (vacía = de todo el bar: IVA, ejercicio,
+  asientos manuales), `acc_treasury_accounts` (vacía = de todo el bar: Mercado Pago, bancos, tarjetas),
+  `acc_recurring_expenses`, `acc_employees`, `acc_sales_targets`, `acc_payment_budgets`. Lo histórico quedó en la
+  principal. `private.acc_document_branch` decide la sucursal de cada comprobante (la pedida, la del gasto fijo, la
+  del corregido, la principal; vacía en `manual`) y `treasury_other_branch` frena mover una caja de otra sucursal
+  (salvo «Mover plata»). Diez informes reciben `p_branch_id` (vacío = lo de siempre).
+- **El pago de un gasto fijo** va siempre a la sucursal del gasto fijo y ofrece sus cajas y las de todo el bar.
+- **«Cambiar de sucursal»** (`acc_set_document_branch`): dueño con carga, mes abierto, auditado; no toca montos ni el
+  libro. Cambiar la sucursal de un gasto fijo mueve sus pagos.
+- **En «Todas»**: etiqueta de sucursal en cada renglón y barrita bajo los totales; Cargar pide la sucursal.
+- **Tex** mira y prepara en la sucursal elegida; en «Todas» pregunta cuál.
+- Prueba de integración: `tests/rls/acc-branches.test.ts`.
+
+**Smoke (23/11, bar de ejemplo, dueño de prueba):** con el Cerro elegido, tildar «Alquiler del local» propone
+«Caja Cerro»; al cargar el pago queda PAGADO en el Cerro y el «Alquiler del local» de Alta Córdoba sigue vencido
+(comprobante #158, sucursal Cerro). Caja en el Cerro muestra «Caja Cerro» y las cuentas de todo el bar, no la caja
+de Alta Córdoba. «Nuevo gasto» en «Todas» pide la sucursal.
+
 ## Smoke manual
 
 **«Nuevo gasto» lee la foto (16/11/2026, `demo-administracion`)**

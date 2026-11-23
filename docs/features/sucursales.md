@@ -67,7 +67,9 @@ nunca se suma entre sucursales (no comparten sillas); en una sucursal sin planta
 | Salón (mapa, comanda, tele, caja, escanear, stock) | sí (la del dispositivo) | 2 |
 | Estadísticas, Resumen, Clientes («vinieron a»), reseñas, audiencias | sí | 2 |
 | Compras (conteos, pedidos, zonas, stock deseado) | sí (catálogo y proveedores del bar) | 3 |
-| Administración (cierres, cajas, gastos, objetivos, sueldos) | sí, un solo libro | 3 |
+| Administración: compras y pagos, gastos fijos, cajas, comprobantes («Cambiar de sucursal») | sí, un solo libro (migración `20261123160922_acc_sucursales`; ver docs/features/administracion-simple.md › Por sucursal) | 3a, en main |
+| Administración: cierre del día, ventas, Proyección y objetivos, Resumen | sí, un solo libro | 3b |
+| Administración: sueldos, accesos | sí (los lleva la sesión de las revisiones del 22/11) | — |
 | Carta, club, Mensajería, páginas, tareas, configuración | del bar | — |
 
 ## Base de datos
