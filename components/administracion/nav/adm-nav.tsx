@@ -64,47 +64,79 @@ function SectionTab({
   )
 }
 
-/** Las solapas de la sección. Con el subrayado que se desliza; `search` llega por props para el Suspense. */
-function SubTabsRow({ section, reduceMotion }: { section: AdmNavSection; reduceMotion: boolean }) {
+/**
+ * Las solapas de una sección, con el subrayado que se desliza. `inBar`: van adentro de la barra de
+ * arriba (la del nivel «solo compras y pagos»), a toda su altura, con el subrayado sobre su borde.
+ */
+function SubTabLinks({
+  section,
+  active,
+  reduceMotion,
+  inBar = false,
+}: {
+  section: AdmNavSection
+  active: string | null
+  reduceMotion: boolean
+  inBar?: boolean
+}) {
+  return (
+    <LayoutGroup id={`adm-sub-${section.value}`}>
+      <nav
+        aria-label={section.label}
+        className={cn(
+          'flex min-w-0 max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+          inBar ? 'gap-4 self-stretch sm:gap-5' : '-mx-1 gap-4 px-1',
+        )}
+      >
+        {section.sub.map((sub) => {
+          const on = sub.value === active
+          return (
+            <Link
+              key={sub.value}
+              href={sub.href}
+              aria-current={on ? 'page' : undefined}
+              className={cn(
+                'relative shrink-0 whitespace-nowrap rounded-sm text-[13.5px] transition-colors motion-reduce:transition-none',
+                inBar ? 'flex items-center' : 'pt-1 pb-2',
+                on
+                  ? 'font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+                FOCUS,
+              )}
+            >
+              {sub.label}
+              {on ? (
+                <motion.span
+                  layoutId="adm-sub-active"
+                  transition={reduceMotion ? { duration: 0 } : SPRING}
+                  className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary"
+                />
+              ) : null}
+            </Link>
+          )
+        })}
+      </nav>
+    </LayoutGroup>
+  )
+}
+
+/** Las solapas que marcan la ruta de ahora (lee `?tab=`: va adentro de un `Suspense`). */
+function ActiveSubTabLinks(props: {
+  section: AdmNavSection
+  reduceMotion: boolean
+  inBar?: boolean
+}) {
   const pathname = usePathname()
   const search = useSearchParams().toString()
-  const active = activeAdmSub(section, pathname, search)
+  return <SubTabLinks {...props} active={activeAdmSub(props.section, pathname, search)} />
+}
+
+/** Las solapas de la sección. Con el subrayado que se desliza; `search` llega por props para el Suspense. */
+function SubTabsRow({ section, reduceMotion }: { section: AdmNavSection; reduceMotion: boolean }) {
   if (section.sub.length === 0 && !section.action) return null
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3 sm:px-6 lg:px-8">
-      <LayoutGroup id={`adm-sub-${section.value}`}>
-        <nav
-          aria-label={section.label}
-          className="-mx-1 flex min-w-0 max-w-full gap-4 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {section.sub.map((sub) => {
-            const on = sub.value === active
-            return (
-              <Link
-                key={sub.value}
-                href={sub.href}
-                aria-current={on ? 'page' : undefined}
-                className={cn(
-                  'relative shrink-0 whitespace-nowrap rounded-sm pt-1 pb-2 text-[13.5px] transition-colors motion-reduce:transition-none',
-                  on
-                    ? 'font-semibold text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                  FOCUS,
-                )}
-              >
-                {sub.label}
-                {on ? (
-                  <motion.span
-                    layoutId="adm-sub-active"
-                    transition={reduceMotion ? { duration: 0 } : SPRING}
-                    className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary"
-                  />
-                ) : null}
-              </Link>
-            )
-          })}
-        </nav>
-      </LayoutGroup>
+      <ActiveSubTabLinks section={section} reduceMotion={reduceMotion} />
       {section.action ? (
         <Link
           href={section.action.href}
@@ -126,7 +158,8 @@ function SubTabsRow({ section, reduceMotion }: { section: AdmNavSection; reduceM
  * te hace perder el menú.
  *
  * Quién ve qué lo decide `resolveSection('administracion', …)` en el layout: acá llegan solo las
- * pestañas permitidas. «Cargar» depende del permiso de escritura (la contadora no lo ve).
+ * pestañas permitidas. «Cargar» depende del permiso de escritura (la contadora no lo ve). Con
+ * `audience="buyer"` (el nivel «solo compras y pagos») va una sola palabra y no hay engranaje.
  */
 export function AdmNav({
   label,
@@ -163,7 +196,52 @@ export function AdmNav({
   }, [activeValue])
 
   if (tabs.length === 0) return null
-  const settingsOn = activeValue === model.settings.value
+  const settings = model.settings
+  const settingsOn = settings !== null && activeValue === settings.value
+
+  // «Solo compras y pagos»: una sola sección. En vez de una píldora suelta y una segunda fila, una
+  // barra: el nombre de la sección como título, sus solapas al lado y «Cargar».
+  const only = audience === 'buyer' && model.sections.length === 1 ? model.sections[0] : undefined
+  if (only) {
+    return (
+      <div className="sticky top-14 z-20 border-b border-border/60 bg-background/85 backdrop-blur">
+        <nav
+          aria-label={label}
+          className="mx-auto flex h-12 w-full max-w-7xl items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8"
+        >
+          <Link
+            href={only.href}
+            className={cn(
+              'shrink-0 rounded-sm text-[15px] font-semibold tracking-tight text-foreground',
+              FOCUS,
+            )}
+          >
+            {only.shortLabel ? (
+              <>
+                <span className="sm:hidden">{only.shortLabel}</span>
+                <span className="max-sm:hidden">{only.label}</span>
+              </>
+            ) : (
+              only.label
+            )}
+          </Link>
+          {only.sub.length > 0 ? (
+            <>
+              <span aria-hidden="true" className="h-5 w-px shrink-0 bg-border" />
+              <Suspense
+                fallback={
+                  <SubTabLinks section={only} active={null} reduceMotion={reduceMotion} inBar />
+                }
+              >
+                <ActiveSubTabLinks section={only} reduceMotion={reduceMotion} inBar />
+              </Suspense>
+            </>
+          ) : null}
+          <LauncherButton className="ml-auto max-lg:hidden" />
+        </nav>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -187,21 +265,24 @@ export function AdmNav({
               ))}
             </div>
           </LayoutGroup>
-          <Link
-            href={model.settings.href}
-            aria-label={model.settings.label}
-            title={model.settings.label}
-            aria-current={settingsOn ? 'page' : undefined}
-            className={cn(
-              'inline-flex size-8.5 shrink-0 items-center justify-center rounded-lg transition-colors motion-reduce:transition-none',
-              settingsOn
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
-              FOCUS,
-            )}
-          >
-            <Settings className="size-4" aria-hidden="true" />
-          </Link>
+          {/* Sin engranaje para quien tiene «solo compras y pagos»: Ajustes, la Guía e Importar no son suyos. */}
+          {settings ? (
+            <Link
+              href={settings.href}
+              aria-label={settings.label}
+              title={settings.label}
+              aria-current={settingsOn ? 'page' : undefined}
+              className={cn(
+                'inline-flex size-8.5 shrink-0 items-center justify-center rounded-lg transition-colors motion-reduce:transition-none',
+                settingsOn
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
+                FOCUS,
+              )}
+            >
+              <Settings className="size-4" aria-hidden="true" />
+            </Link>
+          ) : null}
           <LauncherButton className="max-lg:hidden" />
         </nav>
       </div>

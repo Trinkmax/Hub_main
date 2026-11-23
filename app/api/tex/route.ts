@@ -227,7 +227,12 @@ export async function POST(request: Request) {
       const context = contextBlock({
         barName: ctx.tenantName,
         today: ctx.today,
-        who: whoIsTalking(ctx.role, ctx.access.write, ctx.access.read),
+        who: whoIsTalking(
+          ctx.role,
+          ctx.access.write,
+          ctx.access.read,
+          ctx.access.purchasesOnly === true,
+        ),
         screen: body.screen,
         sameScreen: hash !== null && hash === thread.lastScreenHash,
       })

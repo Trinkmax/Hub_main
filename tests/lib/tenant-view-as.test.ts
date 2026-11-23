@@ -66,6 +66,10 @@ describe('accountingAs', () => {
       write: false,
       admin: false,
       canSetUp: false,
+      // Lee Compras y pagos como el resto de Administración; cargar, no.
+      buyRead: true,
+      buyWrite: false,
+      scope: null,
     })
   })
 
@@ -77,6 +81,7 @@ describe('accountingAs', () => {
     for (const role of ['cashier', 'waiter', 'kitchen', 'editor', 'host'] as const) {
       const view = accountingAs(FULL, role)
       expect(view.read || view.write || view.admin || view.canSetUp).toBe(false)
+      expect(view.buyRead || view.buyWrite).toBe(false)
     }
   })
 })

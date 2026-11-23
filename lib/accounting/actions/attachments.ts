@@ -136,7 +136,9 @@ export async function prepareAttachmentUploads(
 ): Promise<AccSimpleState<PreparedAttachmentUploads>> {
   const op = 'attachments.prepare'
   try {
-    const auth = await authorizeAccounting(slug, 'write')
+    // La foto de una compra o un pago: también con «solo compras y pagos» (la base y el bucket lo
+    // limitan a los comprobantes que esa persona ve).
+    const auth = await authorizeAccounting(slug, 'buy_write')
     if (!auth.ok) return auth.state
     const parsed = prepareSchema.safeParse(raw)
     if (!parsed.success) return invalidState(parsed.error)
@@ -185,7 +187,7 @@ export async function registerDocumentAttachments(
 ): Promise<AccSimpleState<RegisteredAttachments>> {
   const op = 'attachments.register'
   try {
-    const auth = await authorizeAccounting(slug, 'write')
+    const auth = await authorizeAccounting(slug, 'buy_write')
     if (!auth.ok) return auth.state
     const parsed = registerSchema.safeParse(raw)
     if (!parsed.success) return invalidState(parsed.error)
@@ -304,7 +306,7 @@ export async function fetchDocumentAttachmentUrl(
         message: parsed.error.issues[0]?.message ?? 'Revisá los datos.',
       }
     }
-    const auth = await authorizeAccounting(slug, 'read')
+    const auth = await authorizeAccounting(slug, 'buy_read')
     if (!auth.ok) return { ok: false, code: auth.state.code, message: auth.state.message }
     const outcome = await settleQuery(
       getDocumentAttachmentUrl(auth.tenantId, parsed.data.attachmentId),

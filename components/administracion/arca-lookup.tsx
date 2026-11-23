@@ -173,7 +173,9 @@ export function useArcaLookup(options: ArcaLookupOptions): ArcaLookupController 
     connectHint = true,
   } = options
   const accounting = useAccountingOptional()
-  const active = enabled && accounting?.readOnly !== true
+  // ARCA es del nivel completo (usa el certificado del bar): con «solo compras y pagos» no se ofrece
+  // ni se consulta nada.
+  const active = enabled && accounting?.readOnly !== true && accounting?.purchasesOnly !== true
   const serverStatus = options.status !== undefined
   const [fetched, setFetched] = useState<ArcaLookupStatus | null | undefined>(undefined)
   const [disconnected, setDisconnected] = useState(false)

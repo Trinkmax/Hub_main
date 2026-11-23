@@ -365,7 +365,8 @@ describe('nombres y accesos (12/10/2026)', () => {
     const entry = accounting.find((e) => e.id === 'acc-pay')
     expect(entry?.label).toBe('Pago')
     expect(entry?.accountingAction).toBe('pagar')
-    expect(entry?.accounting).toBe('write')
+    // Pagarle a un proveedor también lo hace quien tiene el nivel «solo compras y pagos».
+    expect(entry?.accounting).toBe('buy_write')
   })
 
   it('⌘K: no hay un comando para la factura de venta suelta (se factura con el cierre del día)', () => {
@@ -378,7 +379,7 @@ describe('nombres y accesos (12/10/2026)', () => {
     )
   })
 
-  it('las pestañas: «Gastos fijos» justo después de «Compras», con las mismas puertas', () => {
+  it('las pestañas: «Gastos fijos» justo después de «Compras»; Compras también abre con «solo compras y pagos»', () => {
     const tabs = SECTION_TABS.administracion.tabs
     const compras = tabs.find((t) => t.value === 'compras')
     const fijos = tabs.find((t) => t.value === 'gastos-fijos')
@@ -387,12 +388,12 @@ describe('nombres y accesos (12/10/2026)', () => {
     )
     expect(compras?.label).toBe('Compras y pagos')
     expect(fijos?.path).toBe('administracion/gastos-fijos')
-    expect({ roles: fijos?.roles, feature: fijos?.feature, accounting: fijos?.accounting }).toEqual(
-      {
-        roles: compras?.roles,
-        feature: compras?.feature,
-        accounting: compras?.accounting,
-      },
-    )
+    // El mismo rol y el mismo flag; el acceso por persona, no: Gastos fijos es del nivel completo.
+    expect({ roles: fijos?.roles, feature: fijos?.feature }).toEqual({
+      roles: compras?.roles,
+      feature: compras?.feature,
+    })
+    expect(fijos?.accounting).toBe('read')
+    expect(compras?.accounting).toBe('buy')
   })
 })

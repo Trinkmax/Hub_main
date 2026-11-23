@@ -40,8 +40,9 @@ export function toastUndo(
 
 /**
  * Un botón que abre una hoja de acción rápida sobre la pantalla actual. No se
- * muestra en modo lectura (la contadora no ve botones de carga deshabilitados:
- * no los ve).
+ * muestra a quien no puede abrir esa hoja (la contadora no ve botones de carga
+ * deshabilitados: no los ve; con «solo compras y pagos» se ven «Nuevo gasto» y
+ * «Pagar», no las de cajas y ventas).
  */
 export function ActionButton({
   action,
@@ -53,8 +54,11 @@ export function ActionButton({
   params?: ActionParams
   children?: ReactNode
 } & Omit<ComponentProps<typeof Button>, 'onClick' | 'asChild' | 'type'>) {
-  const { readOnly, openAction } = useAccounting()
-  if (readOnly) return null
+  const { readOnly, canOpen, openAction } = useAccounting()
+  // `canOpen` decide hoja por hoja. Un contexto armado a mano (una prueba, una pieza fuera de la
+  // sección) puede no traerlo: ahí vale la regla de siempre.
+  const allowed = typeof canOpen === 'function' ? canOpen(action) : !readOnly
+  if (!allowed) return null
   return (
     <Button type="button" {...button} onClick={() => openAction(action, params)}>
       {children ?? ACTION_TITLES[action]}

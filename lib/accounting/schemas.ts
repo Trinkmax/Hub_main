@@ -19,6 +19,7 @@ import { z } from 'zod'
 import { addDays, isRealIsoDay } from '@/lib/dates'
 import { parseCuit } from '@/lib/fiscal'
 import { centsFromForm, formatCents } from '@/lib/money'
+import { ACCOUNTING_SCOPES } from './access-levels'
 import { VAT_RATES_BP } from './iva'
 import { RECURRING_BREAKDOWN_KINDS } from './party-profile'
 import { PREVIEW_HASH_RE } from './preview'
@@ -1989,11 +1990,22 @@ export const reopenFiscalYearSchema = obj({
 
 // ─── Accesos (B.5) ───────────────────────────────────────────────────────────
 
-export const grantAccessSchema = obj({
+/**
+ * Dar un acceso o cambiarlo: el nivel (todo Administración o solo compras y pagos) y si además da
+ * accesos. Dar accesos es cosa de socios y pide el nivel completo: acá se frena antes de viajar y la
+ * base lo vuelve a decidir (`admin_needs_full`).
+ */
+export const setAccessSchema = obj({
   userId: uuidField('Elegí a quién le das acceso.'),
+  scope: z.enum(ACCOUNTING_SCOPES, {
+    message: 'Elegí qué va a ver: todo o solo compras y pagos.',
+  }),
   isAdmin: formBoolDefault(false),
-  /** El nombre que se ve en Administración (vacío = el de su cuenta). */
+  /** El nombre que se ve en Administración (vacío = el de su cuenta, o el que ya tenía). */
   displayName: optionalText(80, 'El nombre puede tener hasta 80 caracteres.').default(null),
+}).refine((value) => !value.isAdmin || value.scope === 'full', {
+  path: ['isAdmin'],
+  message: 'Para dar accesos hace falta el nivel completo.',
 })
 
 export const revokeAccessSchema = obj({

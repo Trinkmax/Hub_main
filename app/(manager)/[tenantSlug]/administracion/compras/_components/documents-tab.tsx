@@ -119,6 +119,7 @@ export function DocumentsTab({
   sp,
   today,
   canWrite,
+  purchasesOnly = false,
 }: {
   mode: DocumentsTabMode
   tenantId: string
@@ -128,6 +129,8 @@ export function DocumentsTab({
   sp: Readonly<Record<string, string | string[] | undefined>>
   today: string
   canWrite: boolean
+  /** El nivel «solo compras y pagos»: sin «Exportar» (los subdiarios son del nivel completo). */
+  purchasesOnly?: boolean
 }) {
   const period = resolveListPeriod(sp, {
     today,
@@ -218,15 +221,17 @@ export function DocumentsTab({
         />
         <div className="ml-auto flex items-center gap-2">
           <ReadOnlyBadge />
-          <ExportButton
-            href={exportLink}
-            fileName={`${mode === 'pagos' ? 'subdiario-pagos' : `subdiario-compras${invoiceFilterSuffix(invoice)}`}-${period.from}-${period.to}.csv`}
-            label="Exportar"
-            pendingLabel="Preparando…"
-            variant="ghost"
-            size="sm"
-            className="h-10 text-muted-foreground hover:text-foreground md:pointer-fine:h-8"
-          />
+          {purchasesOnly ? null : (
+            <ExportButton
+              href={exportLink}
+              fileName={`${mode === 'pagos' ? 'subdiario-pagos' : `subdiario-compras${invoiceFilterSuffix(invoice)}`}-${period.from}-${period.to}.csv`}
+              label="Exportar"
+              pendingLabel="Preparando…"
+              variant="ghost"
+              size="sm"
+              className="h-10 text-muted-foreground hover:text-foreground md:pointer-fine:h-8"
+            />
+          )}
         </div>
       </PlanillaBar>
 

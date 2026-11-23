@@ -68,6 +68,16 @@ export const PURCHASE_DOCUMENT_KINDS = [
   'expense',
 ] as const satisfies readonly DocumentKind[]
 
+/**
+ * Los comprobantes de Compras y pagos: lo que carga y abre quien tiene el nivel «solo compras y pagos»
+ * (las compras con sus notas, los gastos sueltos y los pagos a proveedores). Es la misma lista que
+ * la base usa para ese nivel (`acc_accesos_por_nivel`): si cambia una, cambia la otra.
+ */
+export const PURCHASES_LEVEL_DOCUMENT_KINDS: ReadonlySet<string> = new Set([
+  ...PURCHASE_DOCUMENT_KINDS,
+  'payment',
+])
+
 /** «Ventas y clientes › Facturas» (ventas sueltas). */
 export const SALES_INVOICE_KINDS = [
   'sales_invoice',

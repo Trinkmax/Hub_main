@@ -377,8 +377,8 @@ desde la ficha del comprobante.
   (`arca`; la guía en `/ajustes/arca`) · Ejercicio (`ejercicio`) · Integridad (`integridad`).
 - *Gestos:* Datos de la SAS y Ejercicio → `saveSettings`; una caja → `saveTreasuryAccount`; un medio, su
   comisión o el orden de la columna del cierre → `saveSalesMethod`; un partícipe → `saveParty`; un punto de
-  venta → `saveSalesPoint`; Accesos → `grantAccountingAccess`, `revokeAccountingAccess`,
-  `claimAccountingAdmin`; ARCA → las acciones de `lib/arca/actions.ts` (sin cambios).
+  venta → `saveSalesPoint`; Accesos → `setAccountingAccess` (dar un acceso o cambiarle el nivel y «da
+  accesos»: ver `accesos-administracion.md`), `revokeAccountingAccess`, `claimAccountingAdmin`; ARCA → las acciones de `lib/arca/actions.ts` (sin cambios).
 - *Puesta en marcha* (`/configurar`): bienvenida + pasos con riel (la SAS, las cajas, los cobros, los
   puntos de venta, revisá y arrancá) que preguntan «¿Desde qué día querés cargar?» («Todo lo anterior a
   ese día no se carga acá»), un solo guardado → `bootstrapAccounting`; después, los saldos iniciales («lo

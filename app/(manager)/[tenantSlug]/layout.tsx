@@ -166,7 +166,12 @@ export default async function DashboardLayout({
       {children}
       {/* En todo el panel de gestión; el salón (mozos, caja, cocina) es otro espacio. */}
       {texEnabled() ? (
-        <Tex slug={tenantSlug} role={access.role} canAttach={access.accounting.write} />
+        <Tex
+          slug={tenantSlug}
+          role={access.role}
+          canAttach={access.accounting.write}
+          accounting={access.accounting.enabled && access.accounting.read}
+        />
       ) : null}
     </AppShell>
   )

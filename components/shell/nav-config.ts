@@ -26,10 +26,12 @@ export type NavItem = {
    * Administración (H.0): además del rol y del flag, el acceso por persona.
    * `read` = la ve quien tiene acceso de lectura (contadora o dueño
    * habilitado); `read_or_setup` = también el dueño que puede hacer la puesta
-   * en marcha (la entrada lo lleva al asistente). El superadmin no saltea
-   * esto: el acceso lo decide la base.
+   * en marcha (la entrada lo lleva al asistente); `buy` = también quien tiene
+   * el nivel «solo compras y pagos»; `buy_or_setup` = las dos cosas (la entrada
+   * del menú: a ese nivel lo lleva a Compras). El superadmin no saltea esto: el
+   * acceso lo decide la base.
    */
-  accounting?: 'read' | 'read_or_setup'
+  accounting?: AccountingGate
   /**
    * Otras rutas de la MISMA sección que también resaltan la entrada. Las
    * partes de una sección viven en pestañas arriba de la página, no en el
@@ -43,6 +45,12 @@ export type NavItem = {
    */
   section?: SectionKey
 }
+
+/**
+ * La puerta de Administración de una entrada o una pestaña (ver `NavItem.accounting`). `buy` y
+ * `buy_or_setup` son las de Compras y pagos: alcanzan con el nivel «solo compras y pagos».
+ */
+export type AccountingGate = 'read' | 'read_or_setup' | 'buy' | 'buy_or_setup'
 
 export type NavGroup = {
   /**
@@ -240,7 +248,8 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'Landmark',
         roles: ['owner', 'accountant'],
         feature: 'accounting',
-        accounting: 'read_or_setup',
+        // También quien tiene «solo compras y pagos»: el Resumen lo manda a Compras.
+        accounting: 'buy_or_setup',
         section: 'administracion',
       },
     ],
@@ -300,7 +309,7 @@ export const NO_ACCOUNTING: AccountingAccess = {
 export type NavGate = {
   roles?: readonly TenantRole[]
   feature?: FeatureKey
-  accounting?: 'read' | 'read_or_setup'
+  accounting?: AccountingGate
 }
 
 /** Quién mira, tal como sale de `requireTenantAccess`. */
@@ -331,7 +340,13 @@ function accountingOk(gate: NavGate, accounting: AccountingAccess): boolean {
   // `read` y `canSetUp` ya traen el flag del bar adentro (parseAccountingAccess),
   // pero se pide `enabled` igual: fail-closed si alguien arma el objeto a mano.
   if (!accounting.enabled) return false
-  return gate.accounting === 'read' ? accounting.read : accounting.read || accounting.canSetUp
+  // Compras y pagos: quien lee todo y quien tiene el nivel «solo compras y pagos» (`buyRead`; si la
+  // base todavía no lo manda, falta y vale lo de siempre).
+  const buy = accounting.read || accounting.buyRead === true
+  if (gate.accounting === 'read') return accounting.read
+  if (gate.accounting === 'buy') return buy
+  if (gate.accounting === 'buy_or_setup') return buy || accounting.canSetUp
+  return accounting.read || accounting.canSetUp
 }
 
 /**

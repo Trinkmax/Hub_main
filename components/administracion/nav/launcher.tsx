@@ -9,6 +9,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -24,6 +25,7 @@ import {
   type LauncherItem,
   launcherGroups,
   launcherHref,
+  launcherItemsFor,
 } from './launcher-items'
 import { NavDialog } from './nav-dialog'
 
@@ -143,14 +145,17 @@ export function LauncherDoors({
   base,
   pending,
   onPick,
+  items = LAUNCHER_ITEMS,
 }: {
   /** `/<bar>/administracion`. */
   base: string
   pending: string | null
   onPick: DoorPick
+  /** Las puertas que ve quien mira (`launcherItemsFor`). Por defecto, todas. */
+  items?: readonly LauncherItem[]
 }) {
-  const { daily, sometimes } = launcherGroups()
-  const opening = LAUNCHER_ITEMS.find((item) => item.key === pending)
+  const { daily, sometimes } = launcherGroups(items)
+  const opening = items.find((item) => item.key === pending)
   const door = (item: LauncherItem): DoorProps => ({
     item,
     href: launcherHref(base, item.target),
@@ -166,13 +171,18 @@ export function LauncherDoors({
           </li>
         ))}
       </ul>
-      <ul aria-label="Cada tanto" className="flex flex-wrap gap-1.5 border-t border-border/70 pt-3">
-        {sometimes.map((item) => (
-          <li key={item.key}>
-            <ChipDoor {...door(item)} />
-          </li>
-        ))}
-      </ul>
+      {sometimes.length > 0 ? (
+        <ul
+          aria-label="Cada tanto"
+          className="flex flex-wrap gap-1.5 border-t border-border/70 pt-3"
+        >
+          {sometimes.map((item) => (
+            <li key={item.key}>
+              <ChipDoor {...door(item)} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <p role="status" className="sr-only">
         {opening ? `Abriendo «${opening.title}»…` : ''}
       </p>
@@ -217,9 +227,12 @@ export function Launcher({
   /** La hoja que se abrió desde acá se cerró: para devolverle el foco a quien abrió el lanzador. */
   onSheetClosed?: () => void
 }) {
-  const { tenantSlug, readOnly, openAction } = useAccounting()
+  const { tenantSlug, readOnly, purchasesOnly, openAction } = useAccounting()
   const pathname = usePathname()
   const base = `/${tenantSlug}/administracion`
+  // Con «solo compras y pagos»: Compra, Compra y pago y Pago. Sin Tex (no tiene Administración ahí).
+  const buyer = purchasesOnly === true
+  const items = useMemo(() => launcherItemsFor({ purchasesOnly: buyer }), [buyer])
   const [pending, setPending] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   /** El lanzador se cerró porque la hoja ya tomó la pantalla (y el foco). */
@@ -291,14 +304,14 @@ export function Launcher({
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      const item = LAUNCHER_ITEMS.find((i) => i.shortcut === event.key)
+      const item = items.find((i) => i.shortcut === event.key)
       if (!item) return
       const element = document.querySelector<HTMLElement>(`[data-launcher-item="${item.key}"]`)
       element?.click()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, items])
 
   if (readOnly) return null
 
@@ -321,11 +334,11 @@ export function Launcher({
         footer={
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <p>{LAUNCHER_DROP_HINT}</p>
-            <TexLauncherLink onPick={() => onOpenChange(false)} />
+            {buyer ? null : <TexLauncherLink onPick={() => onOpenChange(false)} />}
           </div>
         }
       >
-        <LauncherDoors base={base} pending={pending} onPick={pick} />
+        <LauncherDoors base={base} pending={pending} onPick={pick} items={items} />
       </NavDialog>
     </>
   )

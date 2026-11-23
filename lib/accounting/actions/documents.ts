@@ -390,6 +390,8 @@ export async function allocateItems(
 ): Promise<AccSimpleState<AllocateItemsResult>> {
   return runSimpleRpc(slug, input, {
     op: 'allocate',
+    // También con «solo compras y pagos»: la base le deja imputar solo entre movimientos de un proveedor.
+    need: 'buy_write',
     schema: allocateSchema,
     call: (tenantId, v) => ({
       fn: 'acc_allocate',

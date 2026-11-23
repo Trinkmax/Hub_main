@@ -13,7 +13,11 @@ import type { ResolvedSectionTab } from '@/components/shell/section-tabs-config'
  * aparece. Las rutas viejas siguen valiendo: acá solo cambia cómo se llega.
  */
 
-export type AdmAudience = 'owner' | 'accountant'
+/**
+ * Quién mira la barra. `buyer` es el dueño con el nivel «solo compras y pagos»: una sola palabra
+ * (Compras y pagos), sin el Plan de la semana y sin el engranaje.
+ */
+export type AdmAudience = 'owner' | 'accountant' | 'buyer'
 
 export type AdmSubItem = {
   value: string
@@ -132,7 +136,8 @@ export type AdmNavSection = {
 
 export type AdmNavModel = {
   sections: AdmNavSection[]
-  settings: AdmNavSection
+  /** El engranaje (Ajustes, Puesta en marcha, Guía, Importar). `null`: quien mira no lo tiene. */
+  settings: AdmNavSection | null
 }
 
 function toSection(def: Omit<AdmSectionDef, 'value' | 'tab'> & { value: string }, base: string) {
@@ -164,9 +169,19 @@ function forAccountant(section: AdmSectionDef): AdmSectionDef {
   return section
 }
 
+/** Las solapas de Compras que no son del nivel «solo compras y pagos» (el plan de pagos es de los socios). */
+const BUYER_HIDDEN_SUBS: ReadonlySet<string> = new Set(['semana'])
+
+/** Con «solo compras y pagos»: Compras sin el Plan de la semana. Lo demás no le llega (no trae la pestaña). */
+function forBuyer(section: AdmSectionDef): AdmSectionDef {
+  if (section.value !== 'compras') return section
+  return { ...section, sub: (section.sub ?? []).filter((sub) => !BUYER_HIDDEN_SUBS.has(sub.value)) }
+}
+
 /**
  * Arma la barra con las pestañas que ve quien mira. La contadora no tiene Resumen (entra directo a
- * Sumas y saldos): su barra arranca por Contabilidad, que es donde trabaja.
+ * Sumas y saldos): su barra arranca por Contabilidad, que es donde trabaja. Quien tiene «solo compras
+ * y pagos» ve una sola sección (la única pestaña que le resolvió el layout) y no tiene engranaje.
  */
 export function buildAdmNav(
   tabs: readonly Pick<ResolvedSectionTab, 'value'>[],
@@ -180,10 +195,12 @@ export function buildAdmNav(
           ...visible.filter((s) => s.value === 'contabilidad'),
           ...visible.filter((s) => s.value !== 'contabilidad' && s.value !== 'resumen'),
         ].map(forAccountant)
-      : visible
+      : audience === 'buyer'
+        ? visible.filter((s) => s.value === 'compras').map(forBuyer)
+        : visible
   return {
     sections: ordered.map((s) => toSection(s, base)),
-    settings: toSection(ADM_SETTINGS, base),
+    settings: audience === 'buyer' ? null : toSection(ADM_SETTINGS, base),
   }
 }
 
@@ -201,7 +218,7 @@ export function activeAdmSection(model: AdmNavModel, pathname: string): AdmNavSe
   const current = pathOf(pathname)
   let best: AdmNavSection | null = null
   let bestLength = -1
-  for (const section of [...model.sections, model.settings]) {
+  for (const section of model.settings ? [...model.sections, model.settings] : model.sections) {
     const own = pathOf(section.href)
     const candidates = section.exact ? [] : [own, ...section.also.map(pathOf)]
     if (section.exact && current === own && own.length > bestLength) {

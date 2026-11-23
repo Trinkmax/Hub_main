@@ -4,6 +4,8 @@ import { notFound, redirect } from 'next/navigation'
 import {
   AccountingDisabledError,
   AccountingForbiddenError,
+  accountingAllows,
+  isPurchasesOnly,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
 import { type AccBranchView, accBranchView } from '@/lib/accounting/branch'
@@ -27,16 +29,41 @@ import {
  *
  * `branch` es la sucursal que se mira (`getBranchScope`, una vez por pedido): las pantallas por sucursal se la
  * pasan a sus lecturas (docs/features/sucursales.md › La regla para cada pantalla).
+ *
+ * **El nivel.** Por defecto la puerta es la estricta (`level: 'full'`): pide ver TODO Administración.
+ * La comparten Gastos fijos, Sueldos y el Plan de la semana, que son del nivel completo. Las tres
+ * pantallas de Compras y pagos (la lista, cargar una compra y la ficha del proveedor) la piden con
+ * `level: 'purchases'`: ahí también entra quien tiene «solo compras y pagos», y `canWrite` es que
+ * pueda cargar compras. `purchasesOnly` les dice que ese es el nivel de quien mira, para no ofrecerle
+ * lo que no puede usar (anular, exportar, gastos fijos, la semana, ARCA) ni pedir lecturas que la base
+ * le va a rechazar.
  */
+export type ComprasAccessLevel = 'full' | 'purchases'
+
 export async function requireComprasAccess(
   tenantSlug: string,
   returnTo: string,
-): Promise<{ access: TenantAccess; canWrite: boolean; branch: AccBranchView }> {
+  opts: { level?: ComprasAccessLevel } = {},
+): Promise<{
+  access: TenantAccess
+  canWrite: boolean
+  branch: AccBranchView
+  /** Quien mira tiene «solo compras y pagos» (siempre `false` con `level: 'full'`). */
+  purchasesOnly: boolean
+}> {
+  const purchases = opts.level === 'purchases'
   try {
-    const access = await requireAccountingAccess(tenantSlug, 'read')
+    const access = await requireAccountingAccess(tenantSlug, purchases ? 'buy_read' : 'read')
     // La sucursal que se mira, una vez por pedido (las pantallas de todo el bar no la usan).
     const branch = accBranchView(await getBranchScope(tenantSlug))
-    return { access, canWrite: access.role === 'owner' && access.accounting.write, branch }
+    return {
+      access,
+      canWrite:
+        access.role === 'owner' &&
+        accountingAllows(access.accounting, purchases ? 'buy_write' : 'write'),
+      branch,
+      purchasesOnly: purchases && isPurchasesOnly(access.accounting),
+    }
   } catch (error) {
     if (error instanceof UnauthenticatedError) {
       redirect(`/login?reason=session&redirectTo=${encodeURIComponent(returnTo)}`)

@@ -57,6 +57,7 @@ export function DocumentAttachments({
   documentId,
   attachments,
   canEdit,
+  canRemove = canEdit,
   loadError = null,
   bare = false,
   emptyText,
@@ -67,6 +68,11 @@ export function DocumentAttachments({
   attachments: readonly DocumentAttachment[]
   /** Dueño con acceso sobre un comprobante vigente. */
   canEdit: boolean
+  /**
+   * Quitar un archivo. Por defecto, lo mismo que `canEdit`. `false` con el nivel «solo compras y
+   * pagos»: suma la foto que le faltó, pero quitar es del nivel completo.
+   */
+  canRemove?: boolean
   /** Si la lista no se pudo leer, el texto para mostrar en su lugar. */
   loadError?: string | null
   /** Sin tarjeta ni encabezado: el cuerpo solo. */
@@ -193,7 +199,7 @@ export function DocumentAttachments({
               <span className="sr-only">Se abre en una pestaña nueva.</span>
             </span>
           </a>
-          {canEdit ? (
+          {canEdit && canRemove ? (
             <Button
               type="button"
               variant="ghost"

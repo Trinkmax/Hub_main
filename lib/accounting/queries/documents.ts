@@ -1222,9 +1222,11 @@ async function buildEntryDetail(
   allocations: readonly AllocationRaw[],
   periodStatus: 'open' | 'closed',
   document: DocumentLink | null,
+  opts: { provisionalNumber?: boolean } = {},
 ): Promise<EntryDetail> {
   const number = intOrNull(entryRow.number)
-  const needsProvisional = number === null && statusOf(entryRow.status) === 'posted'
+  const needsProvisional =
+    opts.provisionalNumber !== false && number === null && statusOf(entryRow.status) === 'posted'
   const [accounts, parties, provisionalNumber] = await Promise.all([
     namesById(
       tenantId,
@@ -1349,10 +1351,15 @@ async function allocationDetails(
  * Un comprobante con todo lo que muestra su detalle (H.14): renglones,
  * comprobante fiscal, asiento, imputaciones e historia (reemplazos,
  * anulaciones, lo guardado junto). `null` si no existe en este bar.
+ *
+ * `provisionalNumber: false` no busca el número provisorio del asiento (sale del libro diario, que es
+ * del nivel completo): lo pasan las pantallas que también abre el nivel «solo compras y pagos», que no
+ * muestran el asiento. Sin eso, cada ficha le pegaba a una lectura que la base le rechaza.
  */
 export async function getDocument(
   tenantId: string,
   documentId: string,
+  opts: { provisionalNumber?: boolean } = {},
 ): Promise<DocumentDetail | null> {
   if (!isUuid(documentId)) return null
   const supabase = await readerClient()
@@ -1467,6 +1474,7 @@ export async function getDocument(
         allocations,
         periodStatus,
         toLink(doc),
+        opts,
       )
     : null
 

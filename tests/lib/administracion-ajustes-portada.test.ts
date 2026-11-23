@@ -103,9 +103,9 @@ const HUB_SAS = {
 }
 
 describe('la portada con un bar recién arrancado (HUB hoy)', () => {
-  it('Accesos: 6 de 18 socios, y un solo socio que da accesos', () => {
+  it('Accesos: 6 personas entran, 12 todavía no, y un solo socio que da accesos', () => {
     expect(tileAccess(people(6, 1, 12), { showMembers: true })).toEqual({
-      sentence: '6 de 18 socios entran a Administración.',
+      sentence: '6 personas entran a Administración · 12 todavía no.',
       pill: { tone: 'info', text: 'Un solo socio da accesos' },
     })
   })
@@ -184,17 +184,42 @@ describe('Accesos', () => {
 
   it('un bar de un solo socio no reclama «un solo socio da accesos»', () => {
     const tile = tileAccess(people(1, 1, 0, 1), { showMembers: true })
-    expect(tile.sentence).toBe('Entra 1 socio a Administración.')
+    expect(tile.sentence).toBe('1 persona entra a Administración.')
     expect(tile.pill.tone).toBe('ok')
   })
 
   it('todos adentro, y el singular', () => {
     expect(tileAccess(people(3, 2, 0, 1), { showMembers: true }).sentence).toBe(
-      'Los 3 socios entran a Administración.',
+      '3 personas entran a Administración.',
     )
     expect(tileAccess(people(1, 1, 4, 1), { showMembers: true }).sentence).toBe(
-      '1 de 5 socios entra a Administración.',
+      '1 persona entra a Administración · 4 todavía no.',
     )
+  })
+
+  it('con empleados en «solo compras y pagos» dice cuántos ven todo, como el titular de la habitación', () => {
+    const mixed: AccessFacts = {
+      ...people(5, 2, 1, 1),
+      active: [
+        { isAdmin: true, scope: 'full' },
+        { isAdmin: true, scope: 'full' },
+        { isAdmin: false },
+        { isAdmin: false, scope: 'purchases' },
+        { isAdmin: false, scope: 'purchases' },
+      ],
+    }
+    expect(tileAccess(mixed, { showMembers: true }).sentence).toBe(
+      '5 personas entran a Administración · 3 ven todo · 1 todavía no.',
+    )
+    const one: AccessFacts = {
+      ...people(2, 1, 0, 1),
+      active: [{ isAdmin: true }, { isAdmin: false, scope: 'purchases' }],
+    }
+    expect(tileAccess(one, { showMembers: true }).sentence).toBe(
+      '2 personas entran a Administración · 1 ve todo.',
+    )
+    // La contadora no ve el reparto: solo cuántos entran.
+    expect(tileAccess(mixed, { showMembers: false }).sentence).toBe('5 personas entran.')
   })
 
   it('la contadora no ve la lista de socios: se cuenta a quienes entran', () => {
@@ -517,7 +542,7 @@ describe('la lista de la portada', () => {
   it('la contadora no ve la lista de socios: se cuenta a quienes entran', () => {
     const access = people(3, 1, 2)
     const owner = rows({ access }).find((r) => r.room === 'accesos')
-    expect(owner?.sentence).toBe('3 de 5 socios entran a Administración.')
+    expect(owner?.sentence).toBe('3 personas entran a Administración · 2 todavía no.')
     const reader = rows({ access, showMembers: false }).find((r) => r.room === 'accesos')
     expect(reader?.sentence).toBe('3 personas entran.')
   })

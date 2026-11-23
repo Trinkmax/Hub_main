@@ -1,6 +1,6 @@
 import { type FeatureKey, getEffectiveFeatures } from '@/lib/platform/features'
 import type { AccountingAccess, Tenant, TenantRole } from '@/lib/tenant/types'
-import { gateAllows, type NavViewer } from './nav-config'
+import { type AccountingGate, gateAllows, type NavViewer } from './nav-config'
 import type { NavIconKey } from './nav-icons'
 import type { SectionTabItem } from './section-tabs'
 
@@ -45,9 +45,10 @@ export type SectionTabDef = {
   feature?: FeatureKey
   /**
    * Administración: el acceso por persona. `read` = quien puede ver los libros (contadora o
-   * dueño habilitado); `read_or_setup` = también el dueño que puede hacer la puesta en marcha.
+   * dueño habilitado); `read_or_setup` = también el dueño que puede hacer la puesta en marcha;
+   * `buy` = también quien tiene el nivel «solo compras y pagos» (solo la pestaña de Compras).
    */
-  accounting?: 'read' | 'read_or_setup'
+  accounting?: AccountingGate
   /**
    * Ícono de la pestaña cuando va suelta en la barra de abajo del celular (la de quien tiene una o dos
    * secciones, como la anfitriona: ahí las pestañas de Reservas son sus pestañas de la barra).
@@ -224,7 +225,8 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
         path: 'administracion/compras',
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
-        accounting: 'read',
+        // La única pestaña que ve quien tiene «solo compras y pagos».
+        accounting: 'buy',
       },
       // Pestaña propia desde el 12/10/2026 (pedido de los socios: aparte de «Compras y pagos»).
       // La lista vive acá; el alta y la edición siguen en /compras/gastos-fijos/[id] y también

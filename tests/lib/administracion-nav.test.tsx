@@ -15,6 +15,7 @@ import {
   LAUNCHER_TITLE,
   launcherGroups,
   launcherHref,
+  launcherItemsFor,
 } from '@/components/administracion/nav/launcher-items'
 import { resolveSection, type SectionViewer } from '@/components/shell/section-tabs-config'
 import { getTenantFeatures } from '@/lib/platform/features'
@@ -77,10 +78,28 @@ const accountant: SectionViewer = {
   accounting: { ...FULL, write: false, admin: false },
 }
 
+/** Un dueño con el nivel «solo compras y pagos»: entra a Compras y a nada más. */
+const buyer: SectionViewer = {
+  role: 'owner',
+  features,
+  isPlatformAdmin: false,
+  accounting: {
+    ...FULL,
+    read: false,
+    write: false,
+    admin: false,
+    buyRead: true,
+    buyWrite: true,
+    scope: 'purchases',
+  },
+}
+
 const ownerTabs = resolveSection('administracion', 'hub', owner).tabs
 const accountantTabs = resolveSection('administracion', 'hub', accountant).tabs
+const buyerTabs = resolveSection('administracion', 'hub', buyer).tabs
 const ownerNav = buildAdmNav(ownerTabs, { base: BASE })
 const accountantNav = buildAdmNav(accountantTabs, { base: BASE, audience: 'accountant' })
+const buyerNav = buildAdmNav(buyerTabs, { base: BASE, audience: 'buyer' })
 
 const labels = (items: readonly { label: string }[]) => items.map((item) => item.label)
 
@@ -115,8 +134,8 @@ describe('buildAdmNav: seis palabras', () => {
   it('Importar y la Guía no están en la fila: viven detrás del engranaje', () => {
     expect(labels(ownerNav.sections)).not.toContain('Importar')
     expect(labels(ownerNav.sections)).not.toContain('Guía')
-    expect(ownerNav.settings.href).toBe(`${BASE}/ajustes`)
-    expect(labels(ownerNav.settings.sub)).toEqual([
+    expect(ownerNav.settings?.href).toBe(`${BASE}/ajustes`)
+    expect(labels(ownerNav.settings?.sub ?? [])).toEqual([
       'Ajustes',
       'Puesta en marcha',
       'Guía',
@@ -178,6 +197,52 @@ describe('buildAdmNav: seis palabras', () => {
   it('cada sección nace de una pestaña que existe', () => {
     const known = new Set(ownerTabs.map((tab) => tab.value))
     for (const section of ADM_SECTIONS) expect(known.has(section.tab), section.value).toBe(true)
+  })
+})
+
+describe('el nivel «solo compras y pagos»', () => {
+  it('le llega una sola pestaña: la de Compras', () => {
+    expect(buyerTabs.map((tab) => tab.value)).toEqual(['compras'])
+  })
+
+  it('la barra trae una sola palabra, sin el Plan de la semana y sin engranaje', () => {
+    expect(labels(buyerNav.sections)).toEqual(['Compras y pagos'])
+    expect(labels(buyerNav.sections[0]?.sub ?? [])).toEqual(['Proveedores', 'Comprobantes'])
+    expect(buyerNav.settings).toBeNull()
+  })
+
+  it('aunque le llegaran más pestañas, la barra de ese nivel dibuja solo Compras', () => {
+    const model = buildAdmNav(ownerTabs, { base: BASE, audience: 'buyer' })
+    expect(labels(model.sections)).toEqual(['Compras y pagos'])
+    expect(model.settings).toBeNull()
+  })
+
+  it('un comprobante es de Compras; Ajustes, la Guía e Importar no marcan nada', () => {
+    expect(activeAdmSection(buyerNav, `${BASE}/comprobantes/c1`)?.value).toBe('compras')
+    expect(activeAdmSection(buyerNav, `${BASE}/compras/proveedores/p1`)?.value).toBe('compras')
+    for (const path of ['/ajustes', '/importar', '/guias', '/ventas', '/cajas', '']) {
+      expect(activeAdmSection(buyerNav, `${BASE}${path}`), path).toBeNull()
+    }
+  })
+
+  it('«Cargar» ofrece solo lo de compras, con sus teclas de siempre', () => {
+    const items = launcherItemsFor({ purchasesOnly: true })
+    expect(items.map((item) => item.title)).toEqual(['Compra', 'Compra y pago', 'Pago'])
+    expect(items.map((item) => item.shortcut)).toEqual(['1', '2', '3'])
+    // El pago es a un proveedor: los gastos fijos son del nivel completo.
+    expect(items.find((item) => item.key === 'pago')?.hint).toBe('A un proveedor')
+    expect(launcherGroups(items).sometimes).toEqual([])
+    // Sin ese nivel, las de siempre.
+    expect(launcherItemsFor()).toBe(LAUNCHER_ITEMS)
+    expect(launcherItemsFor({ purchasesOnly: false })).toBe(LAUNCHER_ITEMS)
+  })
+
+  it('quien no tiene ni ese nivel no ve ninguna pestaña', () => {
+    const none = resolveSection('administracion', 'hub', {
+      ...buyer,
+      accounting: { ...buyer.accounting, buyRead: false, buyWrite: false, scope: null },
+    }).tabs
+    expect(none).toEqual([])
   })
 })
 
@@ -398,12 +463,12 @@ function anchors(html: string): string[] {
 }
 
 describe('AdmNav en el primer paint', () => {
-  async function render(audience: 'owner' | 'accountant' = 'owner') {
+  async function render(audience: 'owner' | 'accountant' | 'buyer' = 'owner') {
     const { AdmNav } = await import('@/components/administracion/nav/adm-nav')
     return renderToString(
       createElement(AdmNav, {
         label: 'Secciones de Administración',
-        tabs: audience === 'owner' ? ownerTabs : accountantTabs,
+        tabs: audience === 'owner' ? ownerTabs : audience === 'buyer' ? buyerTabs : accountantTabs,
         audience,
       }),
     )
@@ -458,6 +523,43 @@ describe('AdmNav en el primer paint', () => {
     expect(html).not.toContain('Resumen')
     expect(html).not.toContain('Cargar')
     expect(html.indexOf('Contabilidad')).toBeLessThan(html.indexOf('Compras y pagos'))
+  })
+
+  it('«solo compras y pagos»: una palabra, sus dos solapas, «Cargar» y ningún engranaje', async () => {
+    nav.pathname = `${BASE}/compras`
+    const html = await render('buyer')
+    expect(html).toContain('Compras y pagos')
+    for (const hidden of [
+      'Resumen',
+      'Ventas',
+      'Gastos y sueldos',
+      'Contabilidad',
+      'Plan de la semana',
+    ]) {
+      expect(html, hidden).not.toContain(hidden)
+    }
+    expect(html).not.toContain('aria-label="Ajustes"')
+    expect(html).not.toContain(`${BASE}/ajustes`)
+    expect(html).toContain('Proveedores')
+    expect(html).toContain(`href="${BASE}/compras?tab=comprobantes"`)
+    expect(html).toContain('Cargar')
+  })
+
+  it('«solo compras y pagos»: una sola barra, sin píldora suelta: el título y sus solapas adentro', async () => {
+    nav.pathname = `${BASE}/compras`
+    nav.search = 'tab=comprobantes'
+    const html = await render('buyer')
+    // Una sola fila pegada arriba (no la segunda fila de solapas de las demás secciones).
+    expect(html.match(/sticky top-14/g)).toHaveLength(1)
+    const bar = html.slice(html.indexOf('<nav aria-label="Secciones de Administración"'))
+    expect(bar.indexOf('Compras y pagos')).toBeLessThan(bar.indexOf('Proveedores'))
+    expect(bar.indexOf('Proveedores')).toBeLessThan(bar.indexOf('Comprobantes'))
+    // La solapa elegida es la única marcada; el título no es una pestaña.
+    expect(current(html).map((a) => a.match(/href="([^"]+)"/)?.[1])).toEqual([
+      `${BASE}/compras?tab=comprobantes`,
+    ])
+    // Sin la píldora de sección (la del fondo verde que se desliza).
+    expect(html).not.toContain('bg-primary shadow-xs')
   })
 
   it('foco visible y sin barra de scroll', async () => {

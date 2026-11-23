@@ -52,7 +52,13 @@ export default async function SupplierPage({
   const sp = await searchParams
   const ficha = firstParam(sp.tab) === 'datos'
   const baseHref = supplierHref(tenantSlug, id)
-  const { access, canWrite, branch } = await requireComprasAccess(tenantSlug, baseHref)
+  // Una de las tres pantallas que también abre el nivel «solo compras y pagos» (ahí la base solo deja
+  // leer proveedores: cualquier otro partícipe da 404).
+  const { access, canWrite, branch, purchasesOnly } = await requireComprasAccess(
+    tenantSlug,
+    baseHref,
+    { level: 'purchases' },
+  )
   if (!isUuidLike(id)) notFound()
 
   const tenantId = access.tenant.id
@@ -76,9 +82,13 @@ export default async function SupplierPage({
       settleQuery(
         getPartyPosition(tenantId, { partyId: id, group: 'payables', branchId: branch.id }),
       ),
-      cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
+      // La consulta guardada de ARCA tampoco es de ese nivel (la base no se la deja leer: vendría vacía).
+      cuit && cuit.length === 11 && !purchasesOnly
+        ? settleQuery(getPadronVerification(tenantId, cuit))
+        : null,
       canWrite ? settleQuery(listAccounts(tenantId)) : null,
-      canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
+      // ARCA es del nivel completo: con «solo compras y pagos» no se consulta ni se ofrece.
+      canWrite && !purchasesOnly ? settleQuery(getArcaLookupStatus(tenantId)) : null,
       settleQuery(getAccountingSettings(tenantId)),
       // En la ficha: el proveedor de Compras con el que comparte los datos para pedirle. Solo lo ve quien
       // ve Compras (la RLS); si falla, la ficha se ve igual.
@@ -139,6 +149,7 @@ export default async function SupplierPage({
           tenantSlug={tenantSlug}
           party={party}
           canWrite={canWrite}
+          canRetire={!purchasesOnly}
           hasBalance={hasBalance}
           verification={verification ? <ArcaVerification verification={verification} /> : null}
           compras={compras}
@@ -158,6 +169,7 @@ export default async function SupplierPage({
               sp={sp}
               today={today}
               canWrite={canWrite}
+              canExport={!purchasesOnly}
               unusedCreditCents={position?.creditCents ?? 0}
               branchId={branch.id}
             />

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { SimplePage } from '@/components/administracion/planilla'
 import { todayInCordoba } from '@/lib/dates'
+import { ComprasCashTray } from './_components/cash-tray'
 import { DocumentsTab } from './_components/documents-tab'
 import {
   LibretaSkeleton,
@@ -17,6 +18,7 @@ import {
   comprasHref,
   firstParam,
   isComprasTab,
+  isUuidLike,
   legacyComprasRedirect,
 } from './_lib/links'
 import { requireComprasAccess } from './_lib/page-access'
@@ -37,8 +39,17 @@ export const metadata = { title: 'Compras y pagos' }
  * ningún botón de carga. «Gastos fijos» tiene su pantalla (`/administracion/gastos-fijos`); el link
  * viejo redirige.
  *
+ * Con el nivel «solo compras y pagos» es la pantalla de entrada a Administración: ve lo mismo (la base
+ * le devuelve solo proveedores y sus comprobantes), carga compras y pagos, y no tiene «Agregar de una
+ * lista» ni los exportes.
+ *
  * Por sucursal (entrega 1): los saldos de cada proveedor y los comprobantes son los de la sucursal que se
  * mira; en «Todas», todo, y cada comprobante dice de qué sucursal es. Los proveedores son del bar.
+ *
+ * Arriba, para quien carga y solo si hay: «De la caja del salón», los retiros que la caja anotó como
+ * pago a un proveedor y todavía no tienen comprobante. `?caja=<retiro>` (el link que arma la caja del
+ * salón) o `?retiro=<retiro>` lo marcan. Con una hoja abierta (`?accion=`), `caja` es la caja de la
+ * hoja, como siempre.
  */
 export default async function ComprasPage({
   params,
@@ -55,9 +66,11 @@ export default async function ComprasPage({
   if (moved) redirect(moved)
   const rawTab = firstParam(sp.tab)
   const tab: ComprasTab = isComprasTab(rawTab) ? rawTab : 'proveedores'
-  const { access, canWrite, branch } = await requireComprasAccess(
+  // Una de las tres pantallas que también abre el nivel «solo compras y pagos».
+  const { access, canWrite, branch, purchasesOnly } = await requireComprasAccess(
     tenantSlug,
     comprasHref(tenantSlug, tab),
+    { level: 'purchases' },
   )
   const tenantId = access.tenant.id
   const today = todayInCordoba()
@@ -92,11 +105,22 @@ export default async function ComprasPage({
   }
 
   const payments = firstParam(sp.ver) === 'pagos'
+  const retiro = firstParam(sp.retiro) || (firstParam(sp.accion) === '' ? firstParam(sp.caja) : '')
   return (
     <SimplePage>
       <h1 className="sr-only">
         {tab === 'proveedores' ? 'Proveedores' : payments ? 'Pagos' : 'Comprobantes'}
       </h1>
+      {canWrite ? (
+        <Suspense fallback={null}>
+          <ComprasCashTray
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            branchId={branch.id}
+            highlightId={isUuidLike(retiro) ? retiro : null}
+          />
+        </Suspense>
+      ) : null}
       {tab === 'proveedores' ? (
         <Suspense fallback={<LibretaSkeleton />}>
           <SuppliersBody
@@ -105,6 +129,7 @@ export default async function ComprasPage({
             sp={sp}
             today={today}
             canWrite={canWrite}
+            purchasesOnly={purchasesOnly}
           />
         </Suspense>
       ) : (
@@ -116,6 +141,7 @@ export default async function ComprasPage({
           sp={sp}
           today={today}
           canWrite={canWrite}
+          purchasesOnly={purchasesOnly}
         />
       )}
     </SimplePage>

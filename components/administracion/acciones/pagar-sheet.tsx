@@ -81,6 +81,12 @@ import { allocateItems, postPayment } from '@/lib/accounting/actions/documents'
 import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import { pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
+import {
+  type PosCashPending,
+  posCashDate,
+  posCashTreasuryId,
+  posCashWho,
+} from '@/lib/accounting/pos-cash'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { PaymentValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
@@ -92,6 +98,7 @@ import { useAccounting } from '../accounting-provider'
 import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
 import { attachPendingFiles } from '../adjuntos/upload'
 import { Amount } from '../amount'
+import { linkingPosCash, PosCashNote, usePosCashPrefill } from '../caja-salon/pos-cash-form'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
 import { balanceText } from '../format'
@@ -200,8 +207,10 @@ export function PagarSheet(props: ActionSheetProps) {
     () => loadSheetData(tenantSlug, { balances: true, recurring: true, branch: branchFilter }),
     tenantSlug,
   )
+  // `?retiro=`: un retiro de la caja del salón que espera su comprobante. El pago arranca con lo suyo.
+  const cash = usePosCashPrefill(tenantSlug, params.retiro)
 
-  if (!load.data) {
+  if (!load.data || cash.loading) {
     // Mientras llega, la pregunta ya se ve y sus dos salidas de abajo ya se pueden tocar.
     if (payAsksTarget(params) && load.status !== 'error') {
       return <WhoScreen tenantSlug={tenantSlug} data={null} onPick={() => {}} />
@@ -219,7 +228,9 @@ export function PagarSheet(props: ActionSheetProps) {
       </>
     )
   }
-  return <PagarForm {...props} data={load.data} />
+  return (
+    <PagarForm {...props} data={load.data} posCash={cash.posCash} posCashNotice={cash.notice} />
+  )
 }
 
 /**
@@ -238,7 +249,7 @@ function WhoScreen({
   /** El aviso de una compra que ya no está pendiente (`?partida=`). */
   notice?: string | null
 }) {
-  const { openAction } = useAccounting()
+  const { openAction, purchasesOnly } = useAccounting()
   const uid = useId()
   const [fixedOpen, setFixedOpen] = useState(false)
   // Los gastos fijos que se ofrecen son los de la sucursal que se mira (en «Todas», todos).
@@ -368,6 +379,8 @@ function WhoScreen({
             onPickFixed={(id) => openAction('gasto', { 'gasto-fijo': id })}
             onOther={() => openAction(payTargetSheet(OTHER_TARGET.value))}
             sheetHref={gastosFijosHref(tenantSlug)}
+            // Los gastos fijos son del nivel completo: con «solo compras y pagos» queda «Otro gasto».
+            showFixed={!purchasesOnly}
           />
         </section>
       </ActionSheetBody>
@@ -381,10 +394,18 @@ function PagarForm({
   close,
   setDirty,
   data,
-}: ActionSheetProps & { data: SheetData }) {
+  posCash = null,
+  posCashNotice = null,
+}: ActionSheetProps & {
+  data: SheetData
+  /** El retiro de la caja del salón que este pago registra (queda atado al guardar). */
+  posCash?: PosCashPending | null
+  posCashNotice?: string | null
+}) {
   const partyById = useMemo(() => new Map(data.parties.map((p) => [p.id, p])), [data.parties])
   const [partyId, setPartyId] = useState<string | null>(() => {
-    const initial = params.proveedor ? partyById.get(params.proveedor) : undefined
+    const wanted = params.proveedor ?? posCash?.partyId
+    const initial = wanted ? partyById.get(wanted) : undefined
     return initial && PAYABLE_KINDS.has(initial.kind) ? initial.id : null
   })
   // `?partida=`: esa factura llega tildada. Sin proveedor, la hoja averigua de quién es (una vez).
@@ -436,7 +457,14 @@ function PagarForm({
         tenantSlug={tenantSlug}
         data={data}
         onPick={(id) => setPartyId(id)}
-        notice={lineFromUrl && items.status === 'error' ? items.message : null}
+        notice={
+          lineFromUrl && items.status === 'error'
+            ? items.message
+            : posCash
+              ? // El proveedor se anotó a mano en la caja (o ya no está): se elige acá.
+                `De la caja del salón salieron ${formatCents(posCash.amountCents)} para «${posCashWho(posCash)}». Elegí a quién le pagaste.`
+              : posCashNotice
+        }
       />
     )
   }
@@ -482,6 +510,8 @@ function PagarForm({
       recurringExpenseId={
         params['gasto-fijo'] && params.proveedor === chosen.id ? params['gasto-fijo'] : null
       }
+      posCash={posCash}
+      posCashNotice={posCashNotice}
       onChangeParty={() => setPartyId(null)}
       close={close}
       setDirty={setDirty}
@@ -497,6 +527,8 @@ export function PaymentForm({
   partyItems,
   focusLine,
   recurringExpenseId = null,
+  posCash = null,
+  posCashNotice = null,
   onChangeParty,
   close,
   setDirty,
@@ -508,6 +540,9 @@ export function PaymentForm({
   focusLine: string | null
   /** El gasto fijo que queda pagado con este pago. */
   recurringExpenseId?: string | null
+  /** El retiro de la caja del salón que este pago registra: trae el monto, la fecha y la caja. */
+  posCash?: PosCashPending | null
+  posCashNotice?: string | null
   onChangeParty: () => void
   close: () => void
   setDirty: (dirty: boolean) => void
@@ -524,9 +559,12 @@ export function PaymentForm({
   const viewedBranchId = useDefaultBranchId()
   const [branchId, setBranchId] = useState<string | null>(
     () =>
+      // Un retiro de la caja del salón es de la sucursal de esa caja.
+      posCash?.branchId ??
       (recurringExpenseId
         ? data.recurring.find((r) => r.id === recurringExpenseId)?.branchId
-        : null) ?? viewedBranchId,
+        : null) ??
+      viewedBranchId,
   )
   const [branchError, setBranchError] = useState<string | null>(null)
   const branchTreasuries = useMemo(
@@ -587,22 +625,27 @@ export function PaymentForm({
   const [creditOn, setCreditOn] = useState<ReadonlySet<string>>(
     () => new Set(credits.map((c) => c.lineId)),
   )
-  const [amount, setAmount] = useState<number | null>(null)
-  const [amountTouched, setAmountTouched] = useState(false)
+  // Con un retiro de la caja, el monto es el que salió (y cuenta como escrito: no se propone otro).
+  const [amount, setAmount] = useState<number | null>(posCash?.amountCents ?? null)
+  const [amountTouched, setAmountTouched] = useState(posCash !== null)
   const [writeOff, setWriteOff] = useState(false)
   /** Con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
   const [installments, setInstallments] = useState(1)
   const [rows, setRows] = useState<MethodRow[]>(() => [
     newRow(
-      pickTreasury({
-        treasuries: branchTreasuries.filter((t) => t.active),
-        myLastQuickExpense: rememberedTreasury(tenantSlug),
-        order: data.treasuries.map((t) => t.id),
-      }),
+      // Salió de la caja de efectivo de esa sucursal.
+      (posCash ? posCashTreasuryId(branchTreasuries, posCash.branchId) : null) ??
+        pickTreasury({
+          treasuries: branchTreasuries.filter((t) => t.active),
+          myLastQuickExpense: rememberedTreasury(tenantSlug),
+          order: data.treasuries.map((t) => t.id),
+        }),
     ),
   ])
   const [rowsTouched, setRowsTouched] = useState(false)
-  const [date, setDate] = useState<string | null>(data.today)
+  const [date, setDate] = useState<string | null>(() =>
+    posCash ? posCashDate(posCash.date, { min: data.booksStartDate, max: data.today }) : data.today,
+  )
   const [notes, setNotes] = useState('')
   const [showNotes, setShowNotes] = useState(false)
   /** «＋ Agregar n.º de transferencia», con un solo medio. */
@@ -626,8 +669,10 @@ export function PaymentForm({
     }
   }, [tenantSlug, party.id, branchId])
 
-  // Lo que el sistema recuerda: con qué se le pagó la última vez.
+  // Lo que el sistema recuerda: con qué se le pagó la última vez. (Un retiro de la caja del salón ya
+  // dice de dónde salió la plata.)
   useEffect(() => {
+    if (posCash) return
     let alive = true
     loadPartyDefaults(tenantSlug, party.id)
       .then((result) => {
@@ -644,7 +689,7 @@ export function PaymentForm({
     return () => {
       alive = false
     }
-  }, [tenantSlug, party.id, branchTreasuries])
+  }, [tenantSlug, party.id, branchTreasuries, posCash])
   rowsTouchedRef.current = rowsTouched
 
   // ── La cuenta del pago (FIFO por vencimiento, saldos a favor primero) ──
@@ -727,13 +772,15 @@ export function PaymentForm({
 
   const posting = useDocumentPosting<PaymentFormValues>({
     tenantSlug,
-    action: postPayment,
+    action: linkingPosCash(posCash?.id, postPayment),
     onSaved: (saved) => onSaved(saved),
     formRef,
     isKnownField: (k) => KNOWN_FIELDS.has(k) || k.startsWith('methods.'),
   })
 
-  const dirty = amountTouched || rowsTouched || notes.trim() !== '' || files.length > 0
+  // El monto que trajo un retiro de la caja no es algo que la persona haya cargado.
+  const amountTyped = amountTouched && !(posCash !== null && amount === posCash.amountCents)
+  const dirty = amountTyped || rowsTouched || notes.trim() !== '' || files.length > 0
   useEffect(() => {
     setDirty(dirty)
   }, [dirty, setDirty])
@@ -967,6 +1014,7 @@ export function PaymentForm({
       >
         <ActionSheetBody>
           <p className="text-sm text-muted-foreground text-pretty sm:hidden">{headline}</p>
+          <PosCashNote posCash={posCash} notice={posCashNotice} />
 
           {/* De qué sucursal sale el pago. Con una sola sucursal no se ve. */}
           <BranchField

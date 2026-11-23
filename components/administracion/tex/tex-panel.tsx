@@ -214,8 +214,8 @@ function Conversation() {
 }
 
 function Hello() {
-  const { pathname, role, send, loaded } = useTex()
-  const suggestions = texSuggestions(pathname, role)
+  const { pathname, role, accounting, send, loaded } = useTex()
+  const suggestions = texSuggestions(pathname, role, { accounting })
   return (
     <div className="tex-scroll flex min-h-0 flex-1 flex-col justify-center-safe gap-4 overflow-y-auto px-5 py-4">
       {/* Hasta saber si había una charla, nada de «¿Qué hacemos?» que después se reemplaza. */}

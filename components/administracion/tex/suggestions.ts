@@ -189,8 +189,24 @@ const BY_ROLE: Readonly<Partial<Record<TenantRole, readonly string[]>>> = {
   host: HOST_DEFAULT,
 }
 
-export function texSuggestions(path: string, role: TenantRole): readonly string[] {
-  const match = BY_SCREEN.find((entry) => entry.path.test(path))
+/** Lo de arranque que es de Administración (Tex lo resuelve solo con acceso a leerla). */
+const ACCOUNTING_ONLY: ReadonlySet<string> = new Set(['¿Cuánta plata hay?'])
+
+/**
+ * `accounting: false`: Tex no ve Administración para esta persona (sin acceso, o con «solo compras y
+ * pagos», que carga en la pantalla). No se le ofrece lo que Tex no puede hacer: en las pantallas de
+ * Administración van las de siempre de su rol, sin lo de la plata.
+ */
+export function texSuggestions(
+  path: string,
+  role: TenantRole,
+  opts: { accounting?: boolean } = {},
+): readonly string[] {
+  const accounting = opts.accounting !== false
+  const inAccounting = /\/administracion(?:\/|$|\?)/.test(path)
+  const match =
+    accounting || !inAccounting ? BY_SCREEN.find((entry) => entry.path.test(path)) : null
   if (match) return match.items
-  return BY_ROLE[role] ?? OWNER_DEFAULT
+  const base = BY_ROLE[role] ?? OWNER_DEFAULT
+  return accounting ? base : base.filter((text) => !ACCOUNTING_ONLY.has(text))
 }

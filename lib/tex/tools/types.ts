@@ -30,7 +30,8 @@ export type TexToolContext = {
   features: TenantFeatures
   isAccountant: boolean
   /** Lo que puede hacer esta persona en Administración. */
-  access: { read: boolean; write: boolean; admin: boolean }
+  /** `purchasesOnly`: el nivel «solo compras y pagos» (no ve Administración desde Tex: carga en la pantalla). */
+  access: { read: boolean; write: boolean; admin: boolean; purchasesOnly?: boolean }
   /** Hoy en Córdoba (`yyyy-MM-dd`). */
   today: string
   /** La sucursal que está mirando (o «Todas»): con ella se lee y se carga lo de cada local. */

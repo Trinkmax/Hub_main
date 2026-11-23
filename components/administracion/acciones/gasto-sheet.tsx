@@ -42,7 +42,11 @@ import {
   voucherParts,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/voucher-number-input'
 import { isPurchaseImputation } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/accounts'
-import { documentHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
+import {
+  comprasHref,
+  documentHref,
+  newPurchaseHref,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
 import { invoicingGap } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/purchase-paper'
 import {
   amountAfterRecurring,
@@ -96,6 +100,7 @@ import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/bra
 import { amountLooksOff, pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
 import { type InvoiceRead, readSummary } from '@/lib/accounting/invoice-read'
+import { type PosCashPending, posCashDate, posCashTreasuryId } from '@/lib/accounting/pos-cash'
 import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
@@ -113,6 +118,7 @@ import {
 } from '../action-sheet'
 import { AttachmentPicker } from '../adjuntos/attachment-picker'
 import { attachPendingFiles } from '../adjuntos/upload'
+import { linkingPosCash, PosCashNote, usePosCashPrefill } from '../caja-salon/pos-cash-form'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
 import { FotoQrButton } from '../foto-qr/foto-panel'
@@ -255,7 +261,9 @@ export function GastoSheet(props: ActionSheetProps) {
     () => loadSheetData(tenantSlug, { suggestions: true, recurring: true }),
     tenantSlug,
   )
-  if (!load.data) {
+  // `?retiro=`: un retiro de la caja del salón que espera su comprobante. La hoja arranca con lo suyo.
+  const cash = usePosCashPrefill(tenantSlug, props.params.retiro)
+  if (!load.data || cash.loading) {
     return (
       <>
         <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
@@ -269,12 +277,35 @@ export function GastoSheet(props: ActionSheetProps) {
       </>
     )
   }
-  return <GastoForm {...props} data={load.data} reload={load.reload} />
+  return (
+    <GastoForm
+      {...props}
+      data={load.data}
+      reload={load.reload}
+      posCash={cash.posCash}
+      posCashNotice={cash.notice}
+    />
+  )
 }
 
-type FormProps = ActionSheetProps & { data: SheetData; reload: () => void }
+type FormProps = ActionSheetProps & {
+  data: SheetData
+  reload: () => void
+  /** El retiro de la caja del salón que este gasto registra (queda atado al guardar). */
+  posCash?: PosCashPending | null
+  posCashNotice?: string | null
+}
 
-function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormProps) {
+function GastoForm({
+  tenantSlug,
+  params,
+  close,
+  setDirty,
+  data,
+  reload,
+  posCash = null,
+  posCashNotice = null,
+}: FormProps) {
   const router = useRouter()
   const uid = useId()
   const formRef = useRef<HTMLFormElement>(null)
@@ -286,7 +317,10 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // ofrecen son las de esa sucursal y las de todo el bar.
   const branchScope = useBranchScope()
   const startBranchId = useDefaultBranchId()
-  const [branchId, setBranchId] = useState<string | null>(startBranchId)
+  // Un retiro de la caja del salón es de la sucursal de esa caja.
+  const [branchId, setBranchId] = useState<string | null>(posCash?.branchId ?? startBranchId)
+  // El retiro se ata al primer gasto que se guarda; con «Cargar otro después», los que siguen son aparte.
+  const [posCashId, setPosCashId] = useState<string | null>(posCash?.id ?? null)
   const [branchError, setBranchError] = useState<string | null>(null)
   const branchTreasuries = useMemo(
     () => treasuriesForBranch(activeTreasuries, branchId),
@@ -331,9 +365,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     [branchTreasuries, data.treasuries, tenantSlug],
   )
 
-  const [amount, setAmount] = useState<number | null>(null)
+  const [amount, setAmount] = useState<number | null>(posCash?.amountCents ?? null)
   const [target, setTarget] = useState<ExpenseTarget | null>(null)
-  const [treasuryId, setTreasuryId] = useState<string | null>(() => defaultTreasury(null))
+  const [treasuryId, setTreasuryId] = useState<string | null>(
+    () =>
+      // Salió de la caja de efectivo de esa sucursal.
+      (posCash ? posCashTreasuryId(activeTreasuries, posCash.branchId) : null) ??
+      defaultTreasury(null),
+  )
   /** Con tarjeta de crédito: en cuántas cuotas (1 = un solo pago). */
   const [installments, setInstallments] = useState(1)
   const [voucher, setVoucher] = useState<QuickVoucher>('none')
@@ -342,7 +381,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const [voucherNumber, setVoucherNumber] = useState<VoucherNumberValue>({ pos: '', number: '' })
   /** El punto de venta que propuso el sistema (el de la última factura del proveedor). */
   const [suggestedPos, setSuggestedPos] = useState<string | null>(null)
-  const [date, setDate] = useState<string | null>(data.today)
+  const [date, setDate] = useState<string | null>(() =>
+    posCash ? posCashDate(posCash.date, { min: data.booksStartDate, max: data.today }) : data.today,
+  )
   const [detail, setDetail] = useState('')
   const [showDetail, setShowDetail] = useState(false)
   // «N.º de remito» (opcional, con «No se factura»): va adelante del detalle.
@@ -374,8 +415,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const [recurringMissing, setRecurringMissing] = useState(false)
   const [defaults, setDefaults] = useState<SheetPartyDefaults | null>(null)
   const [duplicate, setDuplicate] = useState<SheetDuplicate | null>(null)
-  // Lo que la persona tocó a mano no lo pisa lo que el sistema recuerda.
-  const touched = useRef({ voucher: false, treasury: false })
+  // Lo que la persona tocó a mano no lo pisa lo que el sistema recuerda (tampoco la caja de la que
+  // salió un retiro del salón: esa plata ya salió de ahí).
+  const touched = useRef({ voucher: false, treasury: posCash !== null })
   const defaultsSeq = useRef(0)
   // El gasto fijo elegido en «¿En qué?»: va al guardar (queda «Cargado» y avanza su vencimiento).
   const [recurringId, setRecurringId] = useState<string | null>(null)
@@ -614,7 +656,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // lo hubiera tocado en «¿En qué se gastó?». «Nuevo gasto con este proveedor» (?proveedor=):
   // arranca con el proveedor elegido. Si vienen los dos, manda el gasto fijo (trae su proveedor).
   const initialRecurring = params['gasto-fijo']
-  const initialParty = params.proveedor
+  const initialParty = params.proveedor ?? posCash?.partyId ?? undefined
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al abrir la hoja
   useEffect(() => {
     if (initialRecurring) {
@@ -803,8 +845,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   const posting = useDocumentPosting<QuickExpenseFormValues>({
     tenantSlug,
-    action: postQuickExpense,
-    onSaved: (saved) => onSaved(saved),
+    action: linkingPosCash(posCashId, postQuickExpense),
+    onSaved: (saved) => {
+      setPosCashId(null)
+      onSaved(saved)
+    },
     formRef,
     isKnownField: (k) => KNOWN_FIELDS.has(k),
   })
@@ -812,7 +857,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // Con el gasto ya guardado y la hoja esperando la foto para cerrarse, no hay nada que perder.
   const dirty =
     attaching !== 'closing' &&
-    (amount !== null ||
+    // El monto que trajo un retiro de la caja no es algo que la persona haya cargado.
+    ((amount !== null && !(posCashId !== null && amount === posCash?.amountCents)) ||
       target !== null ||
       detail.trim() !== '' ||
       voucherNumber.number !== '' ||
@@ -1098,6 +1144,22 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         className="flex min-h-0 flex-1 flex-col"
       >
         <ActionSheetBody>
+          {posCashId || posCashNotice ? (
+            <PosCashNote
+              posCash={posCashId ? posCash : null}
+              notice={posCashNotice}
+              detailHref={
+                posCashId && posCash?.purpose === 'supplier'
+                  ? newPurchaseHref(tenantSlug, {
+                      modo: 'pago',
+                      proveedor: posCash.partyId,
+                      retiro: posCash.id,
+                      volver: comprasHref(tenantSlug),
+                    })
+                  : null
+              }
+            />
+          ) : null}
           {lastSaved ? (
             // Con `key`, el tilde se vuelve a dibujar con cada gasto que se carga.
             <SavedNote key={lastSaved.count}>
@@ -1227,20 +1289,26 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 }}
                 options={branchTreasuries.map((t) => ({
                   value: t.id,
-                  ariaLabel: `${t.name}, ${treasuryMoneyText(t.kind, t.balanceCents)}`,
+                  // Sin saldo para quien no lo ve (nivel «solo compras y pagos»): solo el nombre.
+                  ariaLabel:
+                    t.balanceKnown === false
+                      ? t.name
+                      : `${t.name}, ${treasuryMoneyText(t.kind, t.balanceCents)}`,
                   label: (
                     <>
                       <span className="truncate">{t.name}</span>
-                      <span
-                        className={cn(
-                          'text-xs font-normal tabular-nums opacity-75',
-                          t.kind !== 'credit_card' &&
-                            t.balanceCents < 0 &&
-                            'text-destructive opacity-100',
-                        )}
-                      >
-                        {treasuryMoneyText(t.kind, t.balanceCents)}
-                      </span>
+                      {t.balanceKnown === false ? null : (
+                        <span
+                          className={cn(
+                            'text-xs font-normal tabular-nums opacity-75',
+                            t.kind !== 'credit_card' &&
+                              t.balanceCents < 0 &&
+                              'text-destructive opacity-100',
+                          )}
+                        >
+                          {treasuryMoneyText(t.kind, t.balanceCents)}
+                        </span>
+                      )}
                     </>
                   ),
                 }))}

@@ -343,7 +343,10 @@ export function PaperChoices({
  * todas las hojas lo traen (la de «Nuevo gasto» y la de Cajas y Ventas, que
  * suma datos propios), así cualquiera pasa la suya sin armar otra.
  */
-type AfterTreasury = Pick<SheetTreasury, 'name' | 'kind' | 'balanceCents' | 'allowNegative'>
+type AfterTreasury = Pick<
+  SheetTreasury,
+  'name' | 'kind' | 'balanceCents' | 'allowNegative' | 'balanceKnown'
+>
 
 /**
  * Debajo de «¿Con qué pagaste?»: cuánto hay hoy en la caja elegida y cuánto

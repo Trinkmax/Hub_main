@@ -18,15 +18,25 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 import { revalidatePath } from 'next/cache'
 import { authorizeAccounting } from '@/lib/accounting/access'
 import {
+  allocateItems,
+  postManualEntry,
   postQuickExpense,
+  postTransfer,
   previewBundle,
   undoDocument,
   voidDocument,
 } from '@/lib/accounting/actions/documents'
+import { purchasesOnlyContext } from '@/lib/accounting/context'
 import { buildTransfer } from '@/lib/accounting/posting'
 import { loadDocumentContext } from '@/lib/accounting/server/document-context'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
-import type { QuickExpenseValues } from '@/lib/accounting/server/document-types'
+import type {
+  DocumentForm,
+  ManualEntryValues,
+  QuickExpenseValues,
+  TransferValues,
+} from '@/lib/accounting/server/document-types'
+import { accessNeedOfForm, PURCHASE_FORMS } from '@/lib/accounting/server/post-document'
 import {
   parsePostBundleResult,
   parseReverseResult,
@@ -356,6 +366,81 @@ describe('anular y deshacer', () => {
   it('el motivo corto no llega a la base', async () => {
     const state = await voidDocument(SLUG, { documentId: DOC, reason: 'no' })
     expect(state).toMatchObject({ ok: false, code: 'invalid' })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('quién guarda qué: el nivel «solo compras y pagos»', () => {
+  it('las compras, los gastos y los pagos piden la puerta de compras; el resto, el acceso completo', () => {
+    expect(PURCHASE_FORMS).toEqual(['quick_expense', 'purchase', 'purchase_credit_note', 'payment'])
+    for (const form of PURCHASE_FORMS) expect(accessNeedOfForm(form), form).toBe('buy_write')
+    const full: DocumentForm[] = [
+      'sales_close',
+      'collection',
+      'wallet_check',
+      'sales_invoice',
+      'transfer',
+      'bank_expense',
+      'cash_movement',
+      'treasury_adjustment',
+    ]
+    for (const form of full) expect(accessNeedOfForm(form), form).toBe('write')
+    // La contadora graba asientos manuales: sigue igual.
+    expect(accessNeedOfForm('manual_entry')).toBe('read')
+  })
+
+  it('cada acción le pide a la puerta lo suyo', async () => {
+    await postQuickExpense(SLUG, {} as QuickExpenseValues)
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'buy_write')
+    await postTransfer(SLUG, {} as TransferValues)
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'write')
+    await postManualEntry(SLUG, {} as ManualEntryValues)
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'read')
+    // Imputar un pago a una factura también es de compras; anular y deshacer, del nivel completo.
+    await allocateItems(SLUG, { pairs: [], date: '2026-10-03' })
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'buy_write')
+    await voidDocument(SLUG, { documentId: 'x', reason: 'x' })
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'write')
+    await undoDocument(SLUG, 'x')
+    expect(authorizeAccounting).toHaveBeenLastCalledWith(SLUG, 'write')
+  })
+
+  it('con ese nivel guarda con el contexto recortado: el mismo hash que armó su formulario', async () => {
+    vi.mocked(authorizeAccounting).mockResolvedValue({
+      ok: true,
+      tenantId: TENANT,
+      userId: '00000000-0000-4000-8000-0000000000cc',
+      slug: SLUG,
+      access: {} as never,
+      purchasesOnly: true,
+    })
+    const { ctx, r } = prepare()
+    // La base le manda las cajas en cero (no ve sus movimientos): sin recortar, cualquier pago
+    // pediría confirmar «la caja quedaría en negativo».
+    const fromDb: PostingContext = {
+      ...ctx,
+      treasuries: new Map(
+        [...ctx.treasuries].map(([id, treasury]) => [
+          id,
+          { ...treasury, balanceCents: 0, allowNegative: false },
+        ]),
+      ),
+    }
+    useContext(fromDb)
+    rpc.mockResolvedValue({ data: SAVED, error: null })
+
+    // Lo que vio en su pantalla (`loadSheetData` le manda el contexto ya recortado).
+    const values = e4Values(purchasesOnlyContext(fromDb), r)
+    const state = await postQuickExpense(SLUG, values)
+    expect(state.ok).toBe(true)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc.mock.calls[0]?.[0]).toBe('acc_post_bundle')
+
+    // Con el acceso completo y esas mismas cajas en cero, el motor sí pide confirmar.
+    allowWrite()
+    rpc.mockClear()
+    const asked = await postQuickExpense(SLUG, e4Values(fromDb, r))
+    expect(asked).toMatchObject({ ok: false, code: 'needs_confirmation' })
     expect(rpc).not.toHaveBeenCalled()
   })
 })

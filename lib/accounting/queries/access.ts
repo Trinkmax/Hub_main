@@ -1,4 +1,5 @@
 import 'server-only'
+import { type AccountingScope, compareAccessRows, scopeOf } from '@/lib/accounting/access-levels'
 import {
   bool,
   callRpcRows,
@@ -25,6 +26,8 @@ export type AccessPersonRow = {
   userId: string
   displayName: string
   isAdmin: boolean
+  /** El nivel: todo Administración, o solo compras y pagos. */
+  scope: AccountingScope
   source: AccessSource
   grantedByName: string | null
   grantedAt: string
@@ -41,7 +44,7 @@ export type MemberName = {
 }
 
 export type AccessOverview = {
-  /** Con acceso vigente: administradores primero, después por nombre. */
+  /** Con acceso vigente: primero quienes ven todo, después «solo compras y pagos»; por nombre. */
   active: AccessPersonRow[]
   /** Accesos quitados (historial), el más reciente primero. */
   revoked: AccessPersonRow[]
@@ -98,11 +101,11 @@ export async function getAccessOverview(
 ): Promise<AccessOverview> {
   const supabase = await readerClient()
   const [accessResult, labels, members] = await Promise.all([
+    // Todas las columnas a propósito: `scope` (el nivel) llega con la migración de los accesos por
+    // nivel, y pedirla por nombre rompería esta lectura si la app sale un rato antes que la base.
     supabase
       .from('acc_access')
-      .select(
-        'id, user_id, display_name, is_admin, source, granted_by_name, granted_at, revoked_at, revoked_by, revoke_reason, updated_at',
-      )
+      .select('*')
       .eq('tenant_id', tenantId)
       .order('granted_at', { ascending: true })
       .limit(500),
@@ -122,6 +125,7 @@ export async function getAccessOverview(
         userId: str(row.user_id),
         displayName: str(row.display_name),
         isAdmin: bool(row.is_admin),
+        scope: scopeOf(row.scope),
         source: sourceOf(row.source),
         grantedByName: strOrNull(row.granted_by_name),
         grantedAt: str(row.granted_at),
@@ -132,12 +136,7 @@ export async function getAccessOverview(
       }
     })
 
-  const active = rows
-    .filter((r) => r.revokedAt === null)
-    .sort(
-      (a, b) =>
-        Number(b.isAdmin) - Number(a.isAdmin) || a.displayName.localeCompare(b.displayName, 'es'),
-    )
+  const active = rows.filter((r) => r.revokedAt === null).sort(compareAccessRows)
   const revoked = rows
     .filter((r) => r.revokedAt !== null)
     .sort((a, b) => (b.revokedAt ?? '').localeCompare(a.revokedAt ?? ''))

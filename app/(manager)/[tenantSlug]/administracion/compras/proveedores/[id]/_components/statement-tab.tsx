@@ -225,6 +225,7 @@ export async function StatementTab({
   sp,
   today,
   canWrite,
+  canExport = true,
   unusedCreditCents,
   branchId = null,
 }: {
@@ -239,6 +240,8 @@ export async function StatementTab({
   sp: Readonly<Record<string, string | string[] | undefined>>
   today: string
   canWrite: boolean
+  /** «Exportar este período». `false` con el nivel «solo compras y pagos» (exportar es del completo). */
+  canExport?: boolean
   /** Lo que hoy tiene a favor sin usar: el saldo de la tabla ya lo restó y se aclara. */
   unusedCreditCents: number
 }) {
@@ -278,18 +281,20 @@ export async function StatementTab({
           label={period.label}
           max={today}
         />
-        <ExportButton
-          href={exportHref(tenantSlug, 'estado-de-cuenta', {
-            participe: partyId,
-            desde: period.from,
-            hasta: period.to,
-          })}
-          fileName={`estado-de-cuenta-${period.from}-${period.to}.csv`}
-          label="Exportar este período"
-          variant="ghost"
-          size="sm"
-          className="ml-auto h-10 text-muted-foreground hover:text-foreground md:pointer-fine:h-8"
-        />
+        {canExport ? (
+          <ExportButton
+            href={exportHref(tenantSlug, 'estado-de-cuenta', {
+              participe: partyId,
+              desde: period.from,
+              hasta: period.to,
+            })}
+            fileName={`estado-de-cuenta-${period.from}-${period.to}.csv`}
+            label="Exportar este período"
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-10 text-muted-foreground hover:text-foreground md:pointer-fine:h-8"
+          />
+        ) : null}
       </PlanillaBar>
       {period.error ? (
         <div

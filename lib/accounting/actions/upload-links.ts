@@ -44,14 +44,18 @@ function stalePaths(data: unknown): string[] {
 }
 
 /**
- * Abre un link de subida. Solo quien puede cargar en Administración de este bar. Los archivos de
- * links vencidos que quedaron sin usar se borran acá de paso: es lo único que los limpia si alguien
- * cerró la pestaña sin terminar.
+ * Abre un link de subida. Solo quien puede cargar compras en Administración de este bar (el nivel
+ * completo o «solo compras y pagos»: la foto es parte de cargar una compra). Los archivos de links
+ * vencidos que quedaron sin usar se borran acá de paso: es lo único que los limpia si alguien cerró
+ * la pestaña sin terminar.
+ *
+ * Con «solo compras y pagos», la política del bucket le deja leer y borrar solo lo que subió esa
+ * persona: las URLs firmadas las pide ella, así que lo que sube el celular queda a su nombre.
  */
 export async function createUploadLink(slug: string): Promise<AccSimpleState<UploadLink>> {
   const op = 'uploadLinks.create'
   try {
-    const auth = await authorizeAccounting(slug, 'write')
+    const auth = await authorizeAccounting(slug, 'buy_write')
     if (!auth.ok) return auth.state
     const { tenantId } = auth
 

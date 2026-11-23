@@ -65,8 +65,8 @@ vi.mock('@/lib/accounting/actions/master', () => ({
 }))
 vi.mock('@/lib/accounting/actions/access', () => ({
   claimAccountingAdmin: vi.fn(),
-  grantAccountingAccess: vi.fn(),
   revokeAccountingAccess: vi.fn(),
+  setAccountingAccess: vi.fn(),
 }))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/hub/administracion/ajustes',
@@ -80,6 +80,8 @@ const html = (node: ReactElement) => renderToString(node).replaceAll('<!-- -->',
 /** Cuántos botones y links hay (lo que se puede tocar). */
 const buttons = (out: string) => (out.match(/<button\b/g) ?? []).length
 const links = (out: string) => (out.match(/<a\b/g) ?? []).length
+/** ¿Esa etiqueta trae el atributo `disabled`? (No alcanza con buscar la palabra: está en las clases.) */
+const isDisabled = (tag: string) => /\sdisabled(=""|[\s>])/.test(tag)
 
 const STAMP = '2026-10-12T15:00:00.000+00:00'
 
@@ -237,6 +239,7 @@ const person = (over: Partial<AccessPersonRow> & Pick<AccessPersonRow, 'userId' 
   ({
     id: `row-${over.userId}`,
     isAdmin: false,
+    scope: 'full',
     source: 'grant',
     grantedByName: 'Franco',
     grantedAt: STAMP,
@@ -276,23 +279,33 @@ describe('Accesos: solo quien da accesos ve controles', () => {
 
   it('quien da accesos: «Dar acceso» en la misma fila, «Da accesos» y «Sacar acceso»', () => {
     const out = panel(true, true)
-    expect(out).toContain('2')
-    expect(out).toContain('de 4 socios entran')
+    // El titular cuenta personas (no «socios»: también entran empleados) y dice cuántos faltan.
+    expect(out).toMatch(/>2<\/span><span[^>]*> personas entran</)
+    expect(out).toContain('2 todavía no entran')
+    expect(out).not.toMatch(/socios? entran?/)
     expect((out.match(/Dar acceso</g) ?? []).length).toBe(2)
     expect((out.match(/Sacar acceso/g) ?? []).length).toBe(2)
     expect((out.match(/role="switch"/g) ?? []).length).toBe(2)
+    // El nivel de cada uno: dos fichas por persona, con la elegida marcada.
+    expect((out.match(/role="radio"/g) ?? []).length).toBe(4)
+    expect((out.match(/aria-checked="true"[^>]*>Completo</g) ?? []).length).toBe(2)
+    expect((out.match(/>También da accesos<\/label>/g) ?? []).length).toBe(2)
     expect(out).toContain('Sumar a la contadora')
     // El único que da accesos soy yo.
     expect(out).toContain('Solo vos podés habilitar a otros.')
     expect(out).toContain('Tiene que quedar al menos una persona que dé accesos')
-    expect(out).not.toContain('@')
+    // Solo nombres, nunca emails. (No alcanza con buscar una arroba: las clases de
+    // `@container` también la llevan.)
+    expect(out).not.toMatch(/[\w.+-]+@[\w-]+\.[a-z]{2,}/i)
   })
 
   it('un dueño que no da accesos lo lee en palabras, sin controles', () => {
     const out = panel(false, true).replace('Los accesos los da Franco.', '')
-    expect(out).toContain('Ve y carga')
+    // El nivel de cada uno, como un estado (no se toca).
+    expect((out.match(/data-tone="ok"[^>]*><span[^>]*><\/span>Completo</g) ?? []).length).toBe(2)
     expect(out).toContain('Da accesos')
     expect(out).not.toContain('role="switch"')
+    expect(out).not.toContain('role="radio"')
     expect(out).not.toMatch(/Dar acceso|Sacar acceso|Pasar a darlos yo|Sumar a la contadora/)
     expect(buttons(out)).toBe(0)
   })
@@ -359,6 +372,123 @@ describe('Accesos: solo quien da accesos ve controles', () => {
     expect(render(true)).toContain('Nadie está dando los accesos.')
     expect(render(true)).toContain('Pasar a darlos yo')
     expect(render(false)).not.toContain('Pasar a darlos yo')
+  })
+})
+
+describe('Accesos por nivel: completo o solo compras y pagos', () => {
+  const LEVELS: AccessOverview = {
+    ...OVERVIEW,
+    active: [
+      person({ userId: 'u1', displayName: 'Franco', isAdmin: true, source: 'setup' }),
+      person({ userId: 'u2', displayName: 'Nacho' }),
+      person({ userId: 'u5', displayName: 'Encargada', scope: 'purchases' }),
+    ],
+  }
+  const panel = (overview: AccessOverview, isAdmin: boolean) =>
+    html(
+      createElement(AccessPanel, {
+        tenantSlug: 'hub',
+        overview,
+        currentUserId: 'u1',
+        isAdmin,
+        canWrite: true,
+        showMembers: true,
+      }),
+    )
+
+  it('explica los dos niveles con una línea de qué ve cada uno, a quien da accesos y a quien no', () => {
+    for (const isAdmin of [true, false]) {
+      const out = panel(LEVELS, isAdmin)
+      expect(out).toContain(
+        'Ve y carga todo: ventas, cierres, sueldos, gastos fijos, cajas y libros.',
+      )
+      expect(out).toContain('No ve ventas, sueldos, cajas ni libros.')
+    }
+  })
+
+  it('el resumen dice cuántos ven todo y cuántos solo compras y pagos', () => {
+    const out = panel(LEVELS, true)
+    expect(out).toMatch(/>3<\/span><span[^>]*> personas entran</)
+    expect(out).toContain('2 ven todo · 1 solo compras y pagos · 2 todavía no entran')
+    // La leyenda de las llaves también lo cuenta.
+    expect(out).toMatch(/Solo compras y pagos <b[^>]*>1<\/b>/)
+    // Sin nadie en el nivel acotado no hay nada que aclarar.
+    expect(panel(OVERVIEW, true)).not.toContain('ven todo ·')
+    expect(panel(OVERVIEW, true)).not.toMatch(/Solo compras y pagos <b/)
+  })
+
+  it('quien da accesos ve el nivel de cada uno en dos fichas, con la suya marcada', () => {
+    const out = panel(LEVELS, true)
+    expect((out.match(/role="radiogroup"/g) ?? []).length).toBe(3)
+    expect(out).toContain('aria-label="Qué ve Encargada"')
+    expect((out.match(/aria-checked="true"[^>]*>Completo</g) ?? []).length).toBe(2)
+    expect((out.match(/aria-checked="true"[^>]*>Solo compras y pagos</g) ?? []).length).toBe(1)
+  })
+
+  it('«También da accesos» pide el nivel completo: con el acotado está apagado y dice por qué', () => {
+    const out = panel(LEVELS, true)
+    const switches = out.match(/<button[^>]*role="switch"[^>]*>/g) ?? []
+    expect(switches.length).toBe(3)
+    const limited = switches.find((tag) => tag.includes('id="acc-u5-admin"')) ?? ''
+    expect(isDisabled(limited)).toBe(true)
+    expect(limited).toContain('aria-describedby="acc-admin-needs-full"')
+    expect(limited).toContain('aria-checked="false"')
+    expect(out).toContain('id="acc-admin-needs-full"')
+    expect(out).toContain('Dar accesos pide el nivel Completo')
+    // El otro socio (nivel completo) sí lo puede prender.
+    const partner = switches.find((tag) => tag.includes('id="acc-u2-admin"')) ?? ''
+    expect(partner).not.toBe('')
+    expect(isDisabled(partner)).toBe(false)
+    // Sin nadie en el nivel acotado, esa aclaración no aparece.
+    expect(panel(OVERVIEW, true)).not.toContain('acc-admin-needs-full')
+  })
+
+  it('al único que da accesos no se le puede bajar el nivel ni apagar «da accesos»', () => {
+    const out = panel(LEVELS, true)
+    const own = out.match(/<button[^>]*id="acc-u1-admin"[^>]*>/)?.[0] ?? ''
+    expect(isDisabled(own)).toBe(true)
+    expect(own).toContain('aria-describedby="acc-last-admin"')
+    // Tampoco puede salir: su «Sacar acceso» está apagado y dice por qué (el de los demás, no).
+    const revokes = out.match(/<button[^>]*>Sacar acceso<\/button>/g) ?? []
+    expect(revokes.length).toBe(3)
+    expect(revokes.filter(isDisabled).length).toBe(1)
+    expect(revokes.find(isDisabled)).toContain('aria-describedby="acc-last-admin"')
+    expect(out).toContain('id="acc-last-admin"')
+    expect(out).toContain(
+      'para dejar de darlos, bajar de nivel o salir, primero marcá «También da accesos» en otra persona.',
+    )
+    // De sus dos fichas, la de bajar está apagada.
+    const group = out.split('aria-label="Qué ve Franco"')[1]?.split('</div>')[0] ?? ''
+    const chips = group.match(/<button[^>]*role="radio"[^>]*>/g) ?? []
+    expect(chips.length).toBe(2)
+    expect(isDisabled(chips[0] ?? '')).toBe(true)
+    expect(isDisabled(chips[1] ?? '')).toBe(false)
+    // Con otro que también dé accesos, se puede.
+    const two = panel(
+      {
+        ...LEVELS,
+        active: LEVELS.active.map((a) => (a.userId === 'u2' ? { ...a, isAdmin: true } : a)),
+        adminCount: 2,
+      },
+      true,
+    )
+    const freed = two.match(/<button[^>]*id="acc-u1-admin"[^>]*>/)?.[0] ?? ''
+    expect(freed).not.toBe('')
+    expect(isDisabled(freed)).toBe(false)
+    expect(
+      (two.match(/<button[^>]*>Sacar acceso<\/button>/g) ?? []).filter(isDisabled).length,
+    ).toBe(0)
+    expect(two).not.toContain('acc-last-admin')
+    expect(two).toContain('Dan accesos: Franco y Nacho.')
+  })
+
+  it('quien no da accesos lee el nivel de cada uno, sin controles', () => {
+    const out = panel(LEVELS, false)
+    expect(out).toMatch(/data-tone="muted"[^>]*><span[^>]*><\/span>Solo compras y pagos</)
+    expect((out.match(/data-tone="ok"[^>]*><span[^>]*><\/span>Completo</g) ?? []).length).toBe(2)
+    expect(out).not.toContain('role="radio"')
+    expect(out).not.toContain('role="switch"')
+    expect(buttons(out)).toBe(0)
   })
 })
 

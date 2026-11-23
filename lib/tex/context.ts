@@ -47,6 +47,7 @@ export async function texContext(slug: string): Promise<TexContextResult> {
           read: accounting.enabled && accounting.read,
           write: accounting.enabled && accounting.write,
           admin: accounting.enabled && accounting.admin,
+          purchasesOnly: accounting.enabled && !accounting.read && accounting.buyRead === true,
         },
         today: todayInCordoba(),
         branch: texBranchView(scope),

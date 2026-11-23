@@ -21,6 +21,7 @@
 import { useRouter } from 'next/navigation'
 import { type RefObject, useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { useAccountingOptional } from '@/components/administracion/accounting-provider'
 import { toastUndo } from '@/components/administracion/quick-actions'
 import {
   ACC_UNREACHABLE,
@@ -61,6 +62,9 @@ export function useDocumentPosting<V>(opts: {
   isKnownField?: (key: string) => boolean
 }) {
   const router = useRouter()
+  // «Deshacer» anula el comprobante: es del nivel completo. Con «solo compras y pagos» el aviso de
+  // guardado va sin ese botón (la base tampoco se lo dejaría).
+  const canUndo = useAccountingOptional()?.purchasesOnly !== true
   const [pending, startTransition] = useTransition()
   const [banner, setBanner] = useState<PostingBanner | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -213,7 +217,7 @@ export function useDocumentPosting<V>(opts: {
   const undoToast = useCallback(
     (message: string, saved: SavedState) => {
       const documentId = saved.result.documents[0]?.id
-      if (!documentId) {
+      if (!documentId || !canUndo) {
         toast.success(message)
         return
       }
@@ -232,7 +236,7 @@ export function useDocumentPosting<V>(opts: {
         },
       })
     },
-    [router],
+    [router, canUndo],
   )
 
   return {

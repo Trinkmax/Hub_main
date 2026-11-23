@@ -90,6 +90,7 @@ export function DataTab({
   tenantSlug,
   party,
   canWrite,
+  canRetire = true,
   hasBalance,
   verification,
   compras = null,
@@ -97,6 +98,8 @@ export function DataTab({
   tenantSlug: string
   party: PartyDetail
   canWrite: boolean
+  /** [Desactivar] y [Eliminar]. `false` con el nivel «solo compras y pagos» (dar de baja es del completo). */
+  canRetire?: boolean
   hasBalance: boolean
   /** «Verificado en ARCA el …», al lado del documento. */
   verification?: ReactNode
@@ -264,7 +267,7 @@ export function DataTab({
         </dl>
       </PanelSection>
 
-      {canWrite ? (
+      {canWrite && canRetire ? (
         <PanelSection>
           <div className="flex flex-wrap items-center gap-2">
             <SupplierActiveToggle

@@ -19,10 +19,11 @@ const hasFiles = (event: DragEvent): boolean =>
  * El aviso cubre toda la ventana mientras se arrastra, para que quede claro que se puede soltar en
  * cualquier lado. Las zonas propias (`FileDropZone`) atajan el archivo antes: paran la propagación
  * del `drop`, así que el aviso se cierra en la fase de captura y la ruta se decide en la de burbuja.
- * La contadora no carga: para ella no hace nada.
+ * La contadora no carga: para ella no hace nada. Con «solo compras y pagos» vale la foto o el PDF de
+ * un comprobante (abre «Cargar una compra»); una planilla no abre nada.
  */
 export function GlobalDrop() {
-  const { tenantSlug, readOnly } = useAccounting()
+  const { tenantSlug, readOnly, purchasesOnly } = useAccounting()
   const router = useRouter()
   const reduceMotion = useReducedMotion() ?? false
   const [over, setOver] = useState(false)
@@ -66,8 +67,16 @@ export function GlobalDrop() {
       }
       if (kind === 'desconocido') {
         toast.error(
-          'No sabemos qué hacer con ese archivo. Probá con una foto, un PDF, un CSV o un ZIP.',
+          purchasesOnly
+            ? 'No sabemos qué hacer con ese archivo. Probá con la foto o el PDF del comprobante.'
+            : 'No sabemos qué hacer con ese archivo. Probá con una foto, un PDF, un CSV o un ZIP.',
         )
+        return
+      }
+      // Importar (ARCA, Mercado Pago, el banco) es del nivel completo: con «solo compras y pagos»
+      // una planilla no abre nada.
+      if (purchasesOnly) {
+        toast.info('Las planillas las importa quien tiene acceso completo a Administración.')
         return
       }
       try {
@@ -100,7 +109,7 @@ export function GlobalDrop() {
       window.removeEventListener('drop', onDropCapture, true)
       window.removeEventListener('drop', onDrop)
     }
-  }, [readOnly, router, base])
+  }, [readOnly, purchasesOnly, router, base])
 
   return (
     <AnimatePresence>
