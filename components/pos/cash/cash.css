@@ -2406,3 +2406,69 @@ textarea.caja-input {
     animation-duration: 1.8s;
   }
 }
+
+/* ── La caja a ciegas (22/11/2026): quien la atiende sin ser socio no ve los números del turno ── */
+
+/* El visor cuenta cobros, no plata: el número va primero y la palabra al lado, más chica. */
+.caja-hero.is-count i {
+  margin: 0 0 0 0.22em;
+  font-size: 0.42em;
+  font-stretch: 84%;
+  letter-spacing: 0;
+  vertical-align: 0.1em;
+}
+.caja-blind-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-board-soft);
+}
+.caja-blind-note svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+/* El cajón no dice cuánto tiene que haber: la tecla sigue ahí para ver solo lo del cajón. */
+.caja-drawer-sum.is-blind > b {
+  font-size: 1.15rem;
+  font-stretch: 84%;
+  letter-spacing: 0;
+}
+
+/* El turno cerrado: el sello, lo que se contó y el aviso de que el resumen ya salió. */
+.caja-blind-done .caja-display {
+  gap: 0.75rem;
+}
+.caja-blind-done .caja-stamp.is-big {
+  color: var(--pos-st-ready);
+}
+.caja-blind-sent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  max-width: 34rem;
+  margin-top: 0.5rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.9rem;
+  background: oklch(1 0 0 / 0.07);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--pos-board-soft);
+  text-wrap: pretty;
+}
+.caja-blind-sent svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--pos-st-ready);
+}
+.caja-blind-sent b {
+  font-weight: 700;
+  color: var(--pos-board-ink);
+}

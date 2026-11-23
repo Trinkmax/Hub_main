@@ -2,6 +2,8 @@ import 'server-only'
 import { handleSendBroadcastMessage } from '@/lib/broadcasts/engine'
 import type { JobHandler } from '@/lib/jobs/runner'
 import { type DownloadAndStoreOpts, downloadAndStoreMedia } from '@/lib/meta/media'
+import { handleShiftClosedNotice } from '@/lib/pos/cash/notice'
+import { SHIFT_CLOSED_JOB } from '@/lib/pos/cash/notice-job'
 import { createServiceClient } from '@/lib/supabase/service'
 
 type StartFlowPayload = { flow_id: string; customer_id: string; context?: unknown }
@@ -34,6 +36,11 @@ export const messagingJobHandler: JobHandler = async (job) => {
   }
   if (job.kind === 'download_media') {
     await downloadAndStoreMedia(job.payload as DownloadAndStoreOpts)
+    return
+  }
+  // El cierre de caja que les llega a los socios (no es mensajería a clientes, pero usa la misma cola).
+  if (job.kind === SHIFT_CLOSED_JOB) {
+    await handleShiftClosedNotice(job.payload)
     return
   }
   // Kinds desconocidos se marcan failed no-recoverable (no se reintentan).

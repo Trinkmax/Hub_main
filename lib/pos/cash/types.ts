@@ -478,6 +478,12 @@ export type DayPayment = Payment & {
 
 /** Lo que devuelve `pos_shift_snapshot`: la pantalla de caja entera. */
 export type ShiftSnapshot = {
+  /**
+   * Quien mira no ve los números del salón (no es socio): la caja se opera a ciegas. No viene de la
+   * base: lo pone la capa de servidor, que además saca del medio todo lo que no hace falta para
+   * operar (`lib/pos/cash/blind.ts`).
+   */
+  blind?: boolean
   now: string
   service_day: string
   practice: boolean

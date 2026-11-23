@@ -48,6 +48,7 @@ export function MoveSheet({
   kind,
   shiftId,
   live,
+  blind = false,
   api,
   onClose,
   onDone,
@@ -56,6 +57,8 @@ export function MoveSheet({
   kind: 'in' | 'out' | null
   shiftId: string
   live: ShiftSummary
+  /** Quien anota no ve cuánto tiene que haber en el cajón. */
+  blind?: boolean
   api: Pick<CashApi, 'move'>
   onClose: () => void
   onDone: (message: string) => void
@@ -82,6 +85,7 @@ export function MoveSheet({
             kind={shown}
             shiftId={shiftId}
             live={live}
+            blind={blind}
             api={api}
             onClose={onClose}
             onDone={onDone}
@@ -96,6 +100,7 @@ function MoveForm({
   kind,
   shiftId,
   live,
+  blind,
   api,
   onClose,
   onDone,
@@ -103,6 +108,7 @@ function MoveForm({
   kind: 'in' | 'out'
   shiftId: string
   live: ShiftSummary
+  blind: boolean
   api: Pick<CashApi, 'move'>
   onClose: () => void
   onDone: (message: string) => void
@@ -117,11 +123,12 @@ function MoveForm({
   const copy = COPY[kind]
   const out = kind === 'out'
   const expected = live.expected_cash_cents
-  const check = amount.check(out ? { capCents: expected } : {})
+  // A ciegas no hay con qué comparar: «es más de lo que hay» sería decir cuánto hay.
+  const check = amount.check(out && !blind ? { capCents: expected } : {})
   const cents = amount.cents
   const why = reason.trim()
   // Las propinas con tarjeta se le pagan al equipo con plata del cajón: el retiro ya se sabe.
-  const cardTips = live.tip_cents - live.cash_tips_cents
+  const cardTips = blind ? 0 : live.tip_cents - live.cash_tips_cents
   const ready = cents !== null && cents > 0 && why !== '' && check.kind === 'ok'
 
   const submit = async () => {
@@ -137,7 +144,9 @@ function MoveForm({
       return
     }
     onDone(
-      `${out ? 'Retiro' : 'Ingreso'} de ${formatCentsShort(cents)} anotado. En el cajón tiene que haber ${formatCentsShort(expected + (out ? -cents : cents))}.`,
+      blind
+        ? `${out ? 'Retiro' : 'Ingreso'} de ${formatCentsShort(cents)} anotado.`
+        : `${out ? 'Retiro' : 'Ingreso'} de ${formatCentsShort(cents)} anotado. En el cajón tiene que haber ${formatCentsShort(expected + (out ? -cents : cents))}.`,
     )
     onClose()
   }

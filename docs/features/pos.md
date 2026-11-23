@@ -255,6 +255,43 @@ pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
 - **Práctica**: un turno aparte para aprender; no entra en ningún número.
 - Desde la cuenta de una mesa con la caja cerrada, «Abrir la caja» lleva a la caja de la sucursal de esa mesa.
 
+### La caja a ciegas y el cierre que les llega a los socios (23/11/2026)
+
+Pedido de los socios (audio del 22/11): «hicimos un cierre de caja, hay un montón de info que no queremos
+que vea el encargado, y además es un chorizo largo escrito […] ¿hay posibilidad que cuando cierre la caja
+esto nos lo mande a nosotros y que no manipule la información el encargado?».
+
+- **De quién son los números del salón:** de los socios. Socio = dueño con acceso completo a Administración
+  (la lista que el bar ya mantiene en Administración › Ajustes › Accesos: un solo lugar para decidir quién
+  ve la plata). En un bar sin Administración, todos los dueños. El rol Cajero nunca. Lo decide
+  `seesSalonNumbers` (`lib/pos/cash/blind.ts`). En HUB hoy son 6 personas; los otros usuarios con rol de
+  dueño (entre ellos el de los encargados) operan a ciegas.
+- **Qué ve quien no es socio:** la caja entera para operar (abrir, la cinta con cada cobro del turno para
+  poder corregir uno, sacar y entrar plata, contar y cerrar), pero sin totales: el visor dice cuántos cobros
+  lleva el turno, las teclas de los medios cuentan cobros y el cajón dice «se cuenta al cerrar». No hay
+  «Turnos» anteriores ni «Así viene el turno».
+- **Cerrar a ciegas:** se cuentan los billetes y se dice cuánto queda de cambio. No hay paso de comparar. Para
+  que un fajo mal contado no sea una falsa alarma, antes de seguir se le pregunta UNA cosa a la base
+  (`checkShiftCount`: ¿coincide?, sí o no) y, si no coincide, se pide contar de nuevo una sola vez, sin decir
+  cuánto ni para qué lado. Queda «Turno cerrado», lo que contó, y el comprobante para imprimir y firmar
+  (`closeSlipDoc`).
+- **Los números no viajan:** la capa de servidor le saca a la lectura todo lo que no hace falta para operar
+  (`blindSnapshot`, `blindCloseResult`) antes de mandarla al navegador. No es un candado de la base: quien
+  cobra ve cada cobro que hace, y un usuario con rol de dueño puede leer las tablas. Es no ponerle el
+  resumen adelante a quien no le corresponde. El candado de verdad es darle al encargado el rol Cajero.
+- **El resumen les llega a los socios por mail**, apenas se cierra el turno (lo cierre quien lo cierre). Lo
+  arma el sistema con lo que quedó en la base: el número del turno, cómo dio el arqueo («cuadró» / «faltaron
+  $ 1.000»), lo que entró por cada medio, las mesas, el cajón y lo que hay que mirar. Trae un botón para
+  abrir ese turno en la caja (`?turno=<id>`) y otro para reenviarlo al grupo de WhatsApp. Va por la cola de
+  trabajos (`pos_shift_closed` → `lib/pos/cash/notice.ts`, que corre en el despachador con la clave de
+  servicio); un turno de práctica no avisa. WhatsApp no deja que un sistema escriba en un grupo: por eso es
+  mail a cada socio, más el botón para reenviarlo.
+- **También a ciegas:** «Hoy en vivo» y «Vendido en el salón» del Resumen son de los socios.
+
+Probado en el bar de ejemplo con un usuario Cajero de prueba (`qa.cajero+demoadm`): caja abierta a ciegas,
+conteo de $ 10.000 contra $ 15.000 → «Contá una vez más» → recuento → cierre → «Turno cerrado»; y con el
+dueño de prueba, el mismo turno abierto desde el link (`?turno=`), con el resumen entero.
+
 ### Prueba de punta a punta (13/11, bar de ejemplo, sucursal Cerro, base real)
 
 1. Caja sin turnos → abrir con $ 15.000 → cajón $ 15.000.

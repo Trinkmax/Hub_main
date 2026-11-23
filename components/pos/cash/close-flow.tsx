@@ -55,6 +55,12 @@ import { PesosInput, TypedGuard, useTypedAmount } from './typed'
  * Cerrar no tiene vuelta: al final se confirma.
  *
  * El conteo se guarda en el dispositivo a cada toque: ir a mirar una mesa y volver no lo pierde.
+ *
+ * **A ciegas** (`blind`): quien cierra sin ver los números del salón cuenta y dice cuánto queda, y
+ * nada más. No hay paso de comparar: cuánto tenía que haber y cómo dio el arqueo lo ven los socios.
+ * Para que un fajo mal contado no termine en una falsa alarma, antes de seguir se pregunta una sola
+ * cosa a la base (¿coincide?, sí o no) y, si no coincide, se pide contar de nuevo UNA vez, sin decir
+ * cuánto ni para qué lado.
  */
 
 export type CloseInput = {
@@ -103,6 +109,8 @@ export function CloseFlow({
   account,
   notices,
   children,
+  blind = false,
+  onCheck,
   onCancel,
   onClose,
   onPayment,
@@ -123,6 +131,10 @@ export function CloseFlow({
   notices?: React.ReactNode
   /** La cinta (con ancho, va a la derecha: ahí se señala el cobro sospechoso). */
   children?: React.ReactNode
+  /** Quien cierra no ve los números del salón: cuenta y cierra, sin comparar. */
+  blind?: boolean
+  /** A ciegas: ¿lo contado coincide? `null` = no se pudo preguntar (sin señal). */
+  onCheck?: (countedCents: number) => Promise<boolean | null>
   onCancel: () => void
   onClose: (input: CloseInput) => Promise<Failure | null>
   onPayment: (paymentId: string) => void
@@ -147,6 +159,9 @@ export function CloseFlow({
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  /** A ciegas se pide recontar una sola vez. */
+  const asked = useRef(false)
 
   useEffect(() => {
     writeStored(storageKey, serializeCountDraft(draft))
@@ -162,7 +177,8 @@ export function CloseFlow({
   }, [step])
 
   const counted = countTotal(draft.count)
-  const expected = live.expected_cash_cents
+  // A ciegas no hay «tenía que haber» (ni viajó a este navegador): todo lo que compara queda quieto.
+  const expected = blind ? counted : live.expected_cash_cents
   const difference = counted - expected
   const level = differenceLevel(difference, expected, denominations)
   const words = differenceWords(difference)
@@ -237,7 +253,25 @@ export function CloseFlow({
   }, [markPayment, markMovement, onMark])
 
   // ── Pasos ──
-  const goCompare = () => setStep('compare')
+  const goCompare = () => {
+    if (!blind) {
+      setStep('compare')
+      return
+    }
+    // A ciegas: una sola pregunta a la base, y solo la primera vez.
+    if (asked.current || !onCheck) {
+      goLeave()
+      return
+    }
+    setChecking(true)
+    void onCheck(counted).then((matches) => {
+      setChecking(false)
+      if (matches === false) {
+        asked.current = true
+        setStep('compare')
+      } else goLeave()
+    })
+  }
   const goCount = () => {
     setRecounts((n) => n + 1)
     setStep('count')
@@ -249,7 +283,7 @@ export function CloseFlow({
   }
   const back = () => {
     if (step === 'count') onCancel()
-    else if (step === 'compare') setStep('count')
+    else if (step === 'compare' || blind) setStep('count')
     else setStep('compare')
   }
 
@@ -259,7 +293,7 @@ export function CloseFlow({
   const leaveCheck = leaveOver
     ? ({ kind: 'ok' } as const)
     : leave.check(live.opening_float_cents > 0 ? { referenceCents: live.opening_float_cents } : {})
-  const noteNeeded = level === 'large' && note.trim() === ''
+  const noteNeeded = !blind && level === 'large' && note.trim() === ''
   const canClose =
     leaveCents !== null && !leaveOver && leaveCheck.kind === 'ok' && !noteNeeded && !busy
 
@@ -305,7 +339,7 @@ export function CloseFlow({
         </div>
         <span className="caja-steps">
           <span className="sr-only">Paso </span>
-          {STEP_NUMBER[step]} de 3
+          {blind ? (step === 'leave' ? 2 : 1) : STEP_NUMBER[step]} de {blind ? 2 : 3}
         </span>
       </PosTopbar>
       {notices}
@@ -320,7 +354,11 @@ export function CloseFlow({
           >
             <header className="caja-flow-head">
               <h1 className="caja-flow-title is-brief">Contá el cajón, billete por billete</h1>
-              <p>Cuánto tenía que haber lo ves recién después de contar.</p>
+              <p>
+                {blind
+                  ? 'Contá tranquilo: el arqueo lo ven los socios cuando cerrás.'
+                  : 'Cuánto tenía que haber lo ves recién después de contar.'}
+              </p>
             </header>
 
             <div className="caja-slip">
@@ -396,7 +434,39 @@ export function CloseFlow({
           </section>
         ) : null}
 
-        {step === 'compare' ? (
+        {step === 'compare' && blind ? (
+          <section
+            ref={flowRef}
+            className="caja-flow"
+            aria-label="Contar de nuevo"
+            data-testid="arqueo-recuento"
+          >
+            <header className="caja-flow-head">
+              <h1 className="caja-flow-title">Contá una vez más</h1>
+            </header>
+            <div className="caja-slip">
+              <dl className="caja-sum">
+                <div>
+                  <dt>Contaste</dt>
+                  <dd>{formatCentsShort(counted)}</dd>
+                </div>
+              </dl>
+              <div className="caja-verdict" role="status">
+                <span className="caja-verdict-word">
+                  <RotateCcw aria-hidden strokeWidth={2.6} />
+                  No coincide
+                </span>
+                <p>
+                  Lo que contaste no es lo que registró la caja. Casi siempre es un fajo pasado de
+                  largo o un billete de más: pasalos de nuevo. Si ya está bien contado, seguí: la
+                  diferencia la revisan los socios.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 'compare' && !blind ? (
           <section
             ref={flowRef}
             className="caja-flow"
@@ -599,7 +669,11 @@ export function CloseFlow({
 
               <div className="caja-field">
                 <label htmlFor="caja-nota">
-                  {level === 'large' ? 'Qué pasó con la diferencia' : 'Nota para los dueños'}{' '}
+                  {level === 'large'
+                    ? 'Qué pasó con la diferencia'
+                    : blind
+                      ? 'Nota para los socios'
+                      : 'Nota para los dueños'}{' '}
                   {level === 'large' ? (
                     <small className="is-need">hace falta para cerrar</small>
                   ) : (
@@ -645,16 +719,43 @@ export function CloseFlow({
                 type="button"
                 className="caja-go"
                 onClick={goCompare}
+                disabled={checking}
                 data-testid="arqueo-listo"
               >
-                <ArrowRight aria-hidden strokeWidth={2.6} />
-                Ya conté: comparar
+                {checking ? (
+                  <LoaderCircle className="caja-spin size-5" aria-hidden />
+                ) : (
+                  <ArrowRight aria-hidden strokeWidth={2.6} />
+                )}
+                {blind ? 'Ya conté' : 'Ya conté: comparar'}
               </button>
             </div>
           </>
         ) : null}
 
-        {step === 'compare' ? (
+        {step === 'compare' && blind ? (
+          <div className="caja-actions">
+            <button
+              type="button"
+              className="caja-go"
+              onClick={goCount}
+              data-testid="arqueo-recontar"
+            >
+              <RotateCcw aria-hidden strokeWidth={2.4} />
+              Contar de nuevo
+            </button>
+            <button
+              type="button"
+              className="caja-go is-quiet"
+              onClick={goLeave}
+              data-testid="arqueo-seguir"
+            >
+              Ya está bien contado
+            </button>
+          </div>
+        ) : null}
+
+        {step === 'compare' && !blind ? (
           <div className="caja-actions">
             {words.kind === 'exact' ? (
               <button
@@ -723,7 +824,7 @@ export function CloseFlow({
             <div className="caja-sheet-body">
               <p>
                 Contaste <b>{formatCentsShort(counted)}</b>
-                {words.kind === 'exact' ? (
+                {blind ? null : words.kind === 'exact' ? (
                   ', justo lo que tenía que haber'
                 ) : (
                   <>
@@ -734,7 +835,9 @@ export function CloseFlow({
                 <b>{formatCentsShort(Math.max(0, counted - (leaveCents ?? 0)))}</b>.
               </p>
               <p>
-                Cerrar no tiene vuelta. Después, un cobro de este turno solo lo corrige un dueño.
+                {blind
+                  ? 'Cerrar no tiene vuelta. El resumen del turno les llega a los socios.'
+                  : 'Cerrar no tiene vuelta. Después, un cobro de este turno solo lo corrige un dueño.'}
               </p>
             </div>
           </AlertDialogDescription>

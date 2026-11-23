@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { setActiveBranch } from '@/lib/pos/actions'
 import {
   cashMovement,
+  checkShiftCount,
   closeShift,
   editPayment,
   openShift,
@@ -31,6 +32,7 @@ export function CashLive({
   timeZone,
   account,
   barName,
+  initialShiftId = null,
 }: {
   slug: string
   initial: ShiftSnapshot
@@ -41,6 +43,8 @@ export function CashLive({
   account?: React.ReactNode
   /** El nombre del bar, para el membrete de lo que se imprime. */
   barName: string
+  /** Un turno puntual para abrir de entrada (el link del mail de cierre). */
+  initialShiftId?: string | null
 }) {
   const api = useMemo<CashApi>(
     () => ({
@@ -49,11 +53,13 @@ export function CashLive({
       move: (input) => cashMovement(slug, input),
       voidMove: (movementId, why) => voidCashMovement(slug, movementId, why),
       close: (input) => closeShift(slug, input),
+      checkCount: (shiftId, countedCents) =>
+        checkShiftCount(slug, { branchId: branch.id, shiftId, countedCents }),
       edit: (input) => editPayment(slug, input),
       voidPay: (paymentId, why) => voidPayment(slug, paymentId, why),
       setBranch: (branchId) => setActiveBranch(slug, branchId),
     }),
-    [slug],
+    [slug, branch.id],
   )
   return (
     // Otra sucursal es otra caja: la pantalla arranca de cero.
@@ -67,6 +73,7 @@ export function CashLive({
       timeZone={timeZone}
       account={account}
       barName={barName}
+      initialShiftId={initialShiftId}
       tools={
         <PrinterButton
           slug={slug}

@@ -5,6 +5,7 @@ import type {
   EditPaymentInput,
   OpenShiftInput,
 } from '@/lib/pos/cash/actions'
+import type { BlindCloseResult } from '@/lib/pos/cash/blind'
 import type {
   CashMovementResult,
   CloseShiftResult,
@@ -27,7 +28,10 @@ export type CashApi = {
   open: (input: OpenShiftInput) => Promise<ActionResult<OpenShiftResult>>
   move: (input: CashMovementInput) => Promise<ActionResult<CashMovementResult>>
   voidMove: (movementId: string, why: string) => Promise<ActionResult<CashMovementResult>>
-  close: (input: CloseShiftInput) => Promise<ActionResult<CloseShiftResult>>
+  /** Quien no ve los números del salón recibe solo lo que contó (`BlindCloseResult`). */
+  close: (input: CloseShiftInput) => Promise<ActionResult<CloseShiftResult | BlindCloseResult>>
+  /** Cierre a ciegas: ¿lo contado coincide? Solo sí o no, sin montos. */
+  checkCount: (shiftId: string, countedCents: number) => Promise<ActionResult<{ matches: boolean }>>
   edit: (input: EditPaymentInput) => Promise<ActionResult<EditPaymentResult>>
   voidPay: (paymentId: string, why: string) => Promise<ActionResult<VoidPaymentResult>>
   /** Pasar a trabajar en otra sucursal (queda guardado en el dispositivo). */

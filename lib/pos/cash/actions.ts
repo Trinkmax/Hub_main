@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { enqueueJob } from '@/lib/jobs/queue'
 import { isFeatureEnabled } from '@/lib/platform/features'
 import type { ActionResult } from '@/lib/pos/actions'
 import { createClient } from '@/lib/supabase/server'
@@ -15,7 +16,9 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { percentToBp } from './bill'
+import { type BlindCloseResult, blindCloseResult, blindSnapshot, seesSalonNumbers } from './blind'
 import { toCashError } from './errors'
+import { SHIFT_CLOSED_JOB } from './notice-job'
 import { getApprovalsInbox, getBill, getShiftSnapshot } from './queries'
 import { POS_CASH_ROLES, POS_CHARGE_ROLES } from './roles'
 import { countTotal } from './shift'
@@ -49,7 +52,14 @@ import type {
  */
 
 type Denied = { ok: false; message: string; code: string }
-type Access = { tenantId: string; role: TenantRole; userId: string; supabase: SupabaseClient }
+type Access = {
+  tenantId: string
+  role: TenantRole
+  userId: string
+  supabase: SupabaseClient
+  /** Ve los números del salón (es socio). Si no, la caja le llega a ciegas. */
+  numbers: boolean
+}
 
 async function authorize(slug: string, roles: ReadonlyArray<TenantRole>): Promise<Access | Denied> {
   try {
@@ -67,6 +77,7 @@ async function authorize(slug: string, roles: ReadonlyArray<TenantRole>): Promis
       role: access.role,
       userId: access.user.id,
       supabase: (await createClient()) as unknown as SupabaseClient,
+      numbers: seesSalonNumbers(access),
     }
   } catch (error) {
     if (error instanceof UnauthenticatedError) {
@@ -141,7 +152,32 @@ export async function refreshShift(
     practice: parsed.data.practice === true,
   })
   if (!result.ok) return { ok: false, message: result.error.message, code: result.error.code }
-  return { ok: true, data: result.data }
+  // Quien no es socio recibe la caja sin los números: lo que no viaja no se puede mostrar ni copiar.
+  return { ok: true, data: access.numbers ? result.data : blindSnapshot(result.data) }
+}
+
+const countCheckSchema = z.object({ branchId: id, shiftId: id, countedCents: cents })
+
+/**
+ * El cierre a ciegas no dice cuánto tenía que haber. Para no dejar pasar un fajo mal contado, antes
+ * de cerrar se puede preguntar UNA cosa: ¿lo contado coincide? La respuesta es sí o no, sin montos
+ * ni para qué lado: alcanza para pedir que cuenten de nuevo y no le dice nada a nadie.
+ */
+export async function checkShiftCount(
+  slug: string,
+  input: z.input<typeof countCheckSchema>,
+): Promise<ActionResult<{ matches: boolean }>> {
+  const access = await authorize(slug, POS_CASH_ROLES)
+  if (isDenied(access)) return access
+  const parsed = countCheckSchema.safeParse(input)
+  if (!parsed.success) return invalid
+  const result = await getShiftSnapshot(parsed.data.branchId, { shiftId: parsed.data.shiftId })
+  if (!result.ok) return { ok: false, message: result.error.message, code: result.error.code }
+  const expected = result.data.live?.expected_cash_cents
+  if (result.data.shift?.status !== 'open' || expected === undefined) {
+    return { ok: false, message: 'Ese turno ya se cerró.', code: 'shift_not_open' }
+  }
+  return { ok: true, data: { matches: expected === parsed.data.countedCents } }
 }
 
 export async function refreshApprovals(
@@ -684,7 +720,7 @@ export type CloseShiftInput = z.input<typeof closeShiftSchema>
 export async function closeShift(
   slug: string,
   input: CloseShiftInput,
-): Promise<ActionResult<CloseShiftResult>> {
+): Promise<ActionResult<CloseShiftResult | BlindCloseResult>> {
   const access = await authorize(slug, POS_CASH_ROLES)
   if (isDenied(access)) return access
   const parsed = closeShiftSchema.safeParse(input)
@@ -728,8 +764,27 @@ export async function closeShift(
         difference_cents: result.data.difference_cents,
         leave_float_cents: result.data.leave_float_cents,
         sales_cents: result.data.summary.sales_cents,
+        blind: !access.numbers,
       },
     })
+    // El resumen les llega a los socios por mail, armado por el sistema: quien cierra no lo redacta
+    // ni lo reenvía. Va por la cola (lo manda el despachador, con reintentos): si la cola falla, el
+    // turno ya quedó cerrado y el resumen sigue en la caja para los socios.
+    try {
+      await enqueueJob({
+        tenantId: access.tenantId,
+        kind: SHIFT_CLOSED_JOB,
+        payload: { shift_id: data.shiftId },
+        maxAttempts: 4,
+      })
+    } catch (error) {
+      console.error(
+        '[pos.shift_closed.notice]',
+        error instanceof Error ? error.message : 'no se pudo encolar',
+      )
+    }
   }
-  return { ok: true, data: result.data }
+  // Quien no es socio recibe solo lo que contó: el resumen les llega a los socios.
+  if (access.numbers) return { ok: true, data: result.data }
+  return { ok: true, data: blindCloseResult(result.data) }
 }
