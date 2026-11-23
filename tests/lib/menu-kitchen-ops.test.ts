@@ -83,6 +83,15 @@ const OPS: Op[] = [
   { type: 'option.order', groupId: PUNTO, ids: [COCIDO, JUGOSO, A_PUNTO] },
   { type: 'link.set', link: link(PUNTO, 'category', PIZZA), linked: true },
   { type: 'link.set', link: link(PUNTO, 'category', HAMBURGUESAS), linked: false },
+  // Al final: los primeros se nombran por su lugar en la lista.
+  {
+    type: 'first',
+    changes: [
+      { node: 'category', id: PIZZA, to: true },
+      { node: 'item', id: CLASICA, to: true },
+      { node: 'item', id: MUZZA, to: false },
+    ],
+  },
 ]
 
 describe('applyOp', () => {
@@ -178,6 +187,78 @@ describe('applyOp', () => {
     expect(next.groups.filter((each) => each.id === sabores.id)).toHaveLength(1)
     expect(next.options.some((each) => each.id === frutilla.id)).toBe(true)
     expect(next.links.some((each) => each.groupId === sabores.id)).toBe(true)
+  })
+})
+
+describe('lo que sale primero', () => {
+  const firstOf = (state: KitchenSnapshot, node: 'category' | 'item', nodeId: string) =>
+    (node === 'category' ? state.categories : state.items).find((each) => each.id === nodeId)
+      ?.kitchenFirst
+
+  it('marca categorías y productos; un producto además puede quedar sin decir nada', () => {
+    const marked = applyOp(base, {
+      type: 'first',
+      changes: [
+        { node: 'category', id: PIZZA, to: true },
+        { node: 'item', id: MUZZA, to: false },
+        { node: 'item', id: CLASICA, to: true },
+      ],
+    })
+    expect(firstOf(marked, 'category', PIZZA)).toBe(true)
+    expect(firstOf(marked, 'item', MUZZA)).toBe(false)
+    expect(firstOf(marked, 'item', CLASICA)).toBe(true)
+    // La lectura original no se toca.
+    expect(firstOf(base, 'category', PIZZA)).toBe(false)
+    expect(firstOf(base, 'item', CLASICA)).toBeNull()
+
+    const back = applyOp(marked, {
+      type: 'first',
+      changes: [{ node: 'item', id: MUZZA, to: null }],
+    })
+    expect(firstOf(back, 'item', MUZZA)).toBeNull()
+  })
+
+  it('una categoría nunca queda sin decir: vacío es «no»', () => {
+    const marked = applyOp(base, {
+      type: 'first',
+      changes: [{ node: 'category', id: PIZZA, to: true }],
+    })
+    const cleared = applyOp(marked, {
+      type: 'first',
+      changes: [{ node: 'category', id: PIZZA, to: null }],
+    })
+    expect(firstOf(cleared, 'category', PIZZA)).toBe(false)
+  })
+
+  it('deshacer devuelve solo lo que de verdad cambió', () => {
+    const inverse = invertOp(base, {
+      type: 'first',
+      changes: [
+        { node: 'category', id: PIZZA, to: true },
+        { node: 'category', id: COMIDA, to: false }, // ya estaba así
+        { node: 'item', id: CLASICA, to: null }, // ya estaba así
+        { node: 'item', id: id('e', 99), to: true }, // no existe
+      ],
+    })
+    expect(inverse).toEqual({
+      type: 'first',
+      changes: [{ node: 'category', id: PIZZA, to: false }],
+    })
+    expect(
+      invertOp(base, { type: 'first', changes: [{ node: 'category', id: COMIDA, to: false }] }),
+    ).toBeNull()
+  })
+
+  it('sus llaves no se pisan con las de las estaciones', () => {
+    expect(
+      opKeys({
+        type: 'first',
+        changes: [
+          { node: 'category', id: PIZZA, to: true },
+          { node: 'item', id: MUZZA, to: null },
+        ],
+      }),
+    ).toEqual([`first:category:${PIZZA}`, `first:item:${MUZZA}`])
   })
 })
 

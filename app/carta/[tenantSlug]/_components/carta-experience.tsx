@@ -69,7 +69,7 @@ export function CartaExperience(props: {
   const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, walletContent } = props
   const { walletSummary } = props
 
-  const [path, setPath] = useState<string[]>([])
+  const [storedPath, setPath] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [activeItem, setActiveItem] = useState<MenuItem | null>(null)
   const [sheet, setSheet] = useState<SheetState>(props.initialSheet === 'club' ? 'club' : 'none')
@@ -96,6 +96,17 @@ export function CartaExperience(props: {
     walk(tree)
     return map
   }, [tree])
+
+  // La carta se puede actualizar con alguien adentro de una sección que ya no está: un rubro con
+  // horario que terminó (el menú del mediodía a las 16) o uno que se pausó. El camino se corta en la
+  // última sección que sigue existiendo, así nadie queda mirando una pantalla vacía sin «volver».
+  const path = useMemo(() => {
+    const cut = storedPath.findIndex((id) => !nodeById.has(id))
+    return cut === -1 ? storedPath : storedPath.slice(0, cut)
+  }, [storedPath, nodeById])
+  useEffect(() => {
+    if (path !== storedPath) setPath(path)
+  }, [path, storedPath])
 
   const allItems = useMemo(() => collectItems(tree), [tree])
   // Si la carta se actualiza con el detalle abierto (carta-freshness), el detalle muestra el ítem de

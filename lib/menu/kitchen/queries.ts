@@ -77,6 +77,7 @@ type CategoryRow = {
   position: number | null
   active: boolean | null
   station_id: string | null
+  kitchen_first: boolean | null
 }
 type ItemRow = {
   id: string
@@ -86,6 +87,7 @@ type ItemRow = {
   position: number | null
   active: boolean | null
   station_id: string | null
+  kitchen_first: boolean | null
 }
 type GroupRow = {
   id: string
@@ -144,7 +146,7 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     readAll<CategoryRow>('categories', (from, to) =>
       supabase
         .from('menu_categories')
-        .select('id, name, parent_id, position, active, station_id')
+        .select('id, name, parent_id, position, active, station_id, kitchen_first')
         .eq('tenant_id', tenantId)
         .order('position', { ascending: true })
         .order('name', { ascending: true })
@@ -154,7 +156,7 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     readAll<ItemRow>('items', (from, to) =>
       supabase
         .from('menu_items')
-        .select('id, name, category_id, price_cents, position, active, station_id')
+        .select('id, name, category_id, price_cents, position, active, station_id, kitchen_first')
         .eq('tenant_id', tenantId)
         .order('position', { ascending: true })
         .order('name', { ascending: true })
@@ -205,6 +207,7 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     position: row.position ?? 0,
     active: row.active ?? true,
     stationId: row.station_id,
+    kitchenFirst: row.kitchen_first === true,
   }))
   const items: CartaItem[] = itemRows.map((row) => ({
     id: row.id,
@@ -214,6 +217,7 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     active: row.active ?? true,
     priceCents: centsOf(row.price_cents),
     stationId: row.station_id,
+    kitchenFirst: typeof row.kitchen_first === 'boolean' ? row.kitchen_first : null,
   }))
   const groups: ModifierGroup[] = groupRows.map((row) => ({
     id: row.id,

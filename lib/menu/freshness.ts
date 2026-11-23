@@ -32,6 +32,18 @@ export const CARTA_CHECK_TIMEOUT_MS = 8_000
 /** Una pregunta sin respuesta después de esto se da por perdida (p. ej. el celular la congeló a la mitad). */
 export const CARTA_CHECK_STUCK_MS = 20_000
 
+/**
+ * Los rubros con horario (`lib/menu/availability.ts`) cambian la carta sin que nadie la edite: a las
+ * 12 aparece el menú del mediodía, a las 16 se va. El render dice en cuánto es el próximo cambio y la
+ * carta abierta se vuelve a pedir un poco después: este margen cubre el viaje del render y los
+ * segundos que el reloj del servidor pueda ir atrás (si llegara antes, el render nuevo trae otra vez
+ * el mismo cambio y se vuelve a pedir: dos pedidos, no un bucle).
+ */
+export const CARTA_SCHEDULE_MARGIN_MS = 5_000
+
+/** Un cambio de horario nunca está a más de un día (la medianoche cambia el día): más es un dato roto. */
+const CARTA_SCHEDULE_MAX_MS = 25 * 60 * 60 * 1000
+
 export type CartaRefreshDecision = 'refresh' | 'stay'
 
 export type CartaRefreshInput = {
@@ -53,6 +65,11 @@ export type CartaRefreshInput = {
    * celular mostraría una página de error en vez de la carta (vieja, pero carta).
    */
   unreachable?: boolean
+  /**
+   * Ya pasó la hora en que un rubro con horario aparece o se va (`cartaScheduleDue`): la carta se
+   * vuelve a pedir aunque nadie la haya editado.
+   */
+  scheduleDue?: boolean
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -77,6 +94,8 @@ export function parseMenuRev(value: unknown): number | null {
  *   menor (una réplica atrasada, un render que no pudo leer la suya) nunca: así no hay bucle.
  * - Si no se sabe (la consulta falló): red de seguridad, se refresca si la carta tiene más de
  *   `maxAgeMs`, salvo que no se haya llegado al servidor.
+ * - Si pasó la hora de un rubro con horario (`scheduleDue`): se refresca, siempre que se haya llegado
+ *   al servidor. Quien llama lo marca una sola vez por render, así tampoco hay bucle.
  *
  * La edad se cuenta desde lo más reciente entre el render (reloj del servidor) y cuando la vio este
  * celular (su reloj): con el reloj del celular adelantado, la hora del servidor sola dispararía la red
@@ -85,9 +104,11 @@ export function parseMenuRev(value: unknown): number | null {
 export function decideCartaRefresh(input: CartaRefreshInput): CartaRefreshDecision {
   const renderedRev = parseMenuRev(input.renderedRev) ?? 0
   const latestRev = parseMenuRev(input.latestRev)
-  if (latestRev !== null) return latestRev > renderedRev ? 'refresh' : 'stay'
-
+  if (latestRev !== null && latestRev > renderedRev) return 'refresh'
   if (input.unreachable) return 'stay'
+  // La hora de un rubro ya pasó y el servidor contesta: se pide la carta de esta hora.
+  if (input.scheduleDue === true) return 'refresh'
+  if (latestRev !== null) return 'stay'
 
   const maxAgeMs =
     isFiniteNumber(input.maxAgeMs) && input.maxAgeMs > 0 ? input.maxAgeMs : CARTA_MAX_AGE_MS
@@ -95,6 +116,25 @@ export function decideCartaRefresh(input: CartaRefreshInput): CartaRefreshDecisi
   if (since.length === 0 || !isFiniteNumber(input.now)) return 'stay'
   const age = input.now - Math.max(...since)
   return age > maxAgeMs ? 'refresh' : 'stay'
+}
+
+/**
+ * Cuándo vence el horario de este render, en el reloj del celular: cuando lo vio + lo que el servidor
+ * dijo que faltaba + el margen. `null` si ningún rubro tiene horario (o el dato no sirve).
+ */
+export function cartaScheduleDueAt(
+  changeInMs: number | null | undefined,
+  seenAt: number,
+  marginMs: number = CARTA_SCHEDULE_MARGIN_MS,
+): number | null {
+  if (!isFiniteNumber(changeInMs) || !isFiniteNumber(seenAt)) return null
+  if (changeInMs < 0 || changeInMs > CARTA_SCHEDULE_MAX_MS) return null
+  return seenAt + changeInMs + marginMs
+}
+
+/** ¿Ya pasó? Con el reloj del celular para atrás (antes de haberlo visto) nunca vence. */
+export function cartaScheduleDue(dueAt: number | null, now: number): boolean {
+  return dueAt !== null && isFiniteNumber(now) && now >= dueAt
 }
 
 /** Lo que contestó `carta_menu_rev`, ya clasificado. */

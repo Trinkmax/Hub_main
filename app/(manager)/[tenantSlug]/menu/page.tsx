@@ -55,6 +55,7 @@ export default async function MenuPage({
     <MenuHub
       tenantSlug={tenantSlug}
       tenantId={tenantId}
+      timeZone={access.tenant.timezone}
       role={access.role}
       menu={menu}
       tags={tags}

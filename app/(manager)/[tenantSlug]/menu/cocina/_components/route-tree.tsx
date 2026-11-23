@@ -23,15 +23,15 @@ export type TreeContext = {
 /** La hoja de la lista: una sola superficie con renglones separados por una raya suave. */
 export const SHEET = 'card-hairline overflow-clip rounded-2xl border bg-card shadow-xs'
 /** La franja de una categoría de arriba de todo. */
-const BAND = 'bg-[color-mix(in_oklch,var(--secondary)_62%,var(--card))]'
+export const BAND = 'bg-[color-mix(in_oklch,var(--secondary)_62%,var(--card))]'
 /** La sangría: un escalón por nivel, del ancho de la flecha y su aire. */
-const INDENT =
+export const INDENT =
   'pl-[calc(0.5rem+var(--depth)*1.25rem)] sm:pl-[calc(0.875rem+var(--depth)*1.5rem)] pr-2 sm:pr-3'
 
-const depthStyle = (depth: number) => ({ '--depth': depth }) as CSSProperties
+export const depthStyle = (depth: number) => ({ '--depth': depth }) as CSSProperties
 
 /** Lo buscado, resaltado dentro del texto. */
-function Highlight({ text, query }: { text: string; query: string }): ReactNode {
+export function Highlight({ text, query }: { text: string; query: string }): ReactNode {
   if (query === '') return text
   const ranges = highlightRanges(text, query)
   if (ranges.length === 0) return text
@@ -50,7 +50,7 @@ function Highlight({ text, query }: { text: string; query: string }): ReactNode 
   return parts
 }
 
-function RowError({ id, message }: { id: string; message: string | undefined }) {
+export function RowError({ id, message }: { id: string; message: string | undefined }) {
   if (!message) return null
   return (
     <p id={id} data-testid="row-error" className="pb-2 text-xs text-destructive text-pretty">

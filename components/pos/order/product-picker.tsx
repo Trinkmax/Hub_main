@@ -17,6 +17,7 @@ import {
   buildBrowseTree,
   categoryLabel,
   firstAddable,
+  isBranchOffHours,
   type MenuIndex,
   quickPicks,
   searchMenu,
@@ -34,6 +35,11 @@ import { useLongPress } from './use-long-press'
  * escribir nada: lo que más sale a esta hora, repetir la última ronda de un toque y las fichas de
  * categoría para recorrer. Cada producto se agrega con un toque; mantenerlo apretado (o «⋯») lo
  * marca agotado.
+ *
+ * Lo que la carta no muestra a esta hora (un rubro con horario fuera de su franja: el menú del
+ * mediodía a la noche) se ve atenuado y dice «Fuera de horario», pero se puede cargar igual: el mozo
+ * decide. No se ofrece en «lo que más sale» y en la búsqueda va después de lo de esta hora que se
+ * llama igual.
  */
 
 const QUICK_COUNT = 6
@@ -48,6 +54,8 @@ type RowActions = {
 
 type Props = RowActions & {
   index: MenuIndex
+  /** Los productos que la carta no está mostrando a esta hora. */
+  offHours: ReadonlySet<string>
   /** Cuántos hay de cada producto en la tanda que se está armando. */
   quantities: ReadonlyMap<string, number>
   round: Round | null
@@ -63,6 +71,7 @@ type Props = RowActions & {
 
 export function ProductPicker({
   index,
+  offHours,
   quantities,
   round,
   tableTitle,
@@ -84,9 +93,12 @@ export function ProductPicker({
 
   const deferred = useDeferredValue(query)
   const searching = deferred.trim().length > 0
-  const results = useMemo(() => searchMenu(index, deferred, RESULT_LIMIT), [index, deferred])
+  const results = useMemo(
+    () => searchMenu(index, deferred, RESULT_LIMIT, offHours),
+    [index, deferred, offHours],
+  )
   const enterTarget = useMemo(() => firstAddable(results), [results])
-  const picks = useMemo(() => quickPicks(index, QUICK_COUNT), [index])
+  const picks = useMemo(() => quickPicks(index, QUICK_COUNT, offHours), [index, offHours])
   const tree = useMemo(() => buildBrowseTree(index), [index])
 
   const root = tree.find((node) => node.key === rootKey) ?? null
@@ -126,7 +138,7 @@ export function ProductPicker({
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     // Con lo que está escrito AHORA (la lista puede venir un instante atrás de los dedos).
-    const first = firstAddable(searchMenu(index, query, RESULT_LIMIT))
+    const first = firstAddable(searchMenu(index, query, RESULT_LIMIT, offHours))
     if (!first) return
     onAdd(first)
     // Lo escrito queda seleccionado: lo próximo que se escriba lo reemplaza.
@@ -234,6 +246,7 @@ export function ProductPicker({
                   quantity={quantities.get(item.id) ?? 0}
                   path={categoryLabel(index, item.category_id)}
                   enter={item.id === enterTarget?.id}
+                  offHours={offHours.has(item.id)}
                   {...actions}
                 />
               ))}
@@ -259,6 +272,7 @@ export function ProductPicker({
                       key={item.id}
                       item={item}
                       quantity={quantities.get(item.id) ?? 0}
+                      offHours={offHours.has(item.id)}
                       {...actions}
                     />
                   ))}
@@ -295,15 +309,13 @@ export function ProductPicker({
                   <ul className="cmd-chips" aria-label="Categorías de la carta">
                     {tree.map((node) => (
                       <li key={node.key}>
-                        <button
-                          type="button"
-                          className="cmd-chip"
-                          aria-pressed={node.key === rootKey}
+                        <CategoryChip
+                          name={node.name}
+                          pressed={node.key === rootKey}
+                          off={isBranchOffHours(node, offHours)}
                           onClick={() => chooseRoot(node.key)}
-                          data-testid={`cat-${node.key}`}
-                        >
-                          <span>{node.name}</span>
-                        </button>
+                          testId={`cat-${node.key}`}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -311,15 +323,13 @@ export function ProductPicker({
                     <ul className="cmd-chips is-sub" aria-label={`Dentro de ${root.name}`}>
                       {root.children.map((node) => (
                         <li key={node.key}>
-                          <button
-                            type="button"
-                            className="cmd-chip"
-                            aria-pressed={node.key === subKey}
+                          <CategoryChip
+                            name={node.name}
+                            pressed={node.key === subKey}
+                            off={isBranchOffHours(node, offHours)}
                             onClick={() => chooseSub(node.key)}
-                            data-testid={`cat-${node.key}`}
-                          >
-                            <span>{node.name}</span>
-                          </button>
+                            testId={`cat-${node.key}`}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -341,6 +351,7 @@ export function ProductPicker({
                               quantity={quantities.get(item.id) ?? 0}
                               path={null}
                               enter={false}
+                              offHours={offHours.has(item.id)}
                               {...actions}
                             />
                           ))}
@@ -369,11 +380,42 @@ export function ProductPicker({
   )
 }
 
+/** La ficha de una categoría. Atenuada si a esta hora la carta no muestra nada de lo que tiene. */
+function CategoryChip({
+  name,
+  pressed,
+  off,
+  onClick,
+  testId,
+}: {
+  name: string
+  pressed: boolean
+  off: boolean
+  onClick: () => void
+  testId: string
+}) {
+  return (
+    <button
+      type="button"
+      className={cn('cmd-chip', off && 'is-off')}
+      aria-pressed={pressed}
+      onClick={onClick}
+      data-testid={testId}
+    >
+      <span>
+        {name}
+        {off ? <span className="sr-only"> (fuera de horario)</span> : null}
+      </span>
+    </button>
+  )
+}
+
 function ProductRow({
   item,
   quantity,
   path,
   enter,
+  offHours,
   onAdd,
   onDec,
   onMenu,
@@ -384,6 +426,8 @@ function ProductRow({
   path: string | null
   /** Es el que agrega Enter. */
   enter: boolean
+  /** La carta no lo muestra a esta hora: se puede cargar igual. */
+  offHours: boolean
 }) {
   const press = useLongPress(() => onMenu(item))
   const tap = () => {
@@ -393,7 +437,14 @@ function ProductRow({
     else onAdd(item)
   }
   return (
-    <li className={cn('cmd-prod', quantity > 0 && 'has-qty', item.sold_out && 'is-out')}>
+    <li
+      className={cn(
+        'cmd-prod',
+        quantity > 0 && 'has-qty',
+        item.sold_out && 'is-out',
+        offHours && !item.sold_out && 'is-off',
+      )}
+    >
       <button
         type="button"
         className="cmd-prod-main"
@@ -416,6 +467,12 @@ function ProductRow({
           ) : (
             <b>{formatCentsShort(item.price_cents)}</b>
           )}
+          {offHours && !item.sold_out ? (
+            <>
+              {' · '}
+              <em className="cmd-off">Fuera de horario</em>
+            </>
+          ) : null}
           {path ? ` · ${path}` : null}
         </span>
       </button>
@@ -464,10 +521,11 @@ function ProductRow({
 function QuickTile({
   item,
   quantity,
+  offHours,
   onAdd,
   onDec,
   onMenu,
-}: RowActions & { item: MenuItem; quantity: number }) {
+}: RowActions & { item: MenuItem; quantity: number; offHours: boolean }) {
   const press = useLongPress(() => onMenu(item))
   const tap = () => {
     if (press.consume()) return
@@ -475,7 +533,14 @@ function QuickTile({
     else onAdd(item)
   }
   return (
-    <li className={cn('cmd-tile', quantity > 0 && 'has-qty', item.sold_out && 'is-out')}>
+    <li
+      className={cn(
+        'cmd-tile',
+        quantity > 0 && 'has-qty',
+        item.sold_out && 'is-out',
+        offHours && !item.sold_out && 'is-off',
+      )}
+    >
       <button
         type="button"
         className="cmd-tile-main"
@@ -486,6 +551,8 @@ function QuickTile({
         <span className="cmd-tile-name">{item.name}</span>
         {item.sold_out ? (
           <em className="cmd-out">Agotado</em>
+        ) : offHours ? (
+          <em className="cmd-off">Fuera de horario</em>
         ) : (
           <span className="cmd-tile-price">{formatCentsShort(item.price_cents)}</span>
         )}

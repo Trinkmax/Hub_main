@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { availabilitySchema } from './availability'
 
 const categoryImageUrl = z
   .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])
@@ -31,6 +32,15 @@ export const updateCategorySchema = z.object({
   name: z.string().trim().min(1).max(60),
   active: z.coerce.boolean(),
   image_url: categoryImageUrl,
+})
+
+/**
+ * El horario de un rubro: cuándo se muestra en la carta. `availabilitySchema` valida días y horas y
+ * lo deja en su forma más simple (`null` = siempre).
+ */
+export const setCategoryAvailabilitySchema = z.object({
+  id: z.guid(),
+  availability: availabilitySchema,
 })
 
 export const createMenuItemSchema = z.object({

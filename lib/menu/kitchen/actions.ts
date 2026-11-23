@@ -13,7 +13,14 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { orderIsCurrent, positionWrites } from './order'
-import { chunk, type FieldChange, planPatch, planRouteWrites, runLimited } from './plan'
+import {
+  chunk,
+  type FieldChange,
+  planFirstWrites,
+  planPatch,
+  planRouteWrites,
+  runLimited,
+} from './plan'
 import { countOptionUses, kitchenClient, stationWasUsed } from './queries'
 import {
   applyRouteSchema,
@@ -29,6 +36,7 @@ import {
   reorderGroupsSchema,
   reorderOptionsSchema,
   reorderStationsSchema,
+  setKitchenFirstSchema,
   setLinkSchema,
 } from './schemas'
 import type {
@@ -235,6 +243,132 @@ export async function applyRoute(slug: string, input: unknown): Promise<ApplyRou
 
   refresh(slug)
   return { ok: true, savedAt, applied, failed }
+}
+
+// ─── Lo que sale primero ─────────────────────────────────────────────────────
+
+/** La marca «sale primero» que tiene HOY cada cosa pedida. `null` si la lectura falla. */
+async function readCurrentFirst(
+  supabase: SupabaseClient,
+  tenantId: string,
+  ids: { category: string[]; item: string[] },
+) {
+  let failed = false
+  const read = async (node: 'category' | 'item') => {
+    const out = new Map<string, boolean | null>()
+    await runLimited(chunk(ids[node], IDS_PER_REQUEST), WRITE_CONCURRENCY, async (batch) => {
+      const { data, error } = await supabase
+        .from(ROUTE_TABLE[node])
+        .select('id, kitchen_first')
+        .eq('tenant_id', tenantId)
+        .in('id', batch)
+      if (error) {
+        failed = true
+        logDb(`first read ${node}`, error)
+      }
+      for (const row of (data ?? []) as Array<{ id: string; kitchen_first: boolean | null }>) {
+        out.set(row.id, row.kitchen_first)
+      }
+    })
+    return out
+  }
+  const [categories, items] = await Promise.all([read('category'), read('item')])
+  if (failed) return null
+  return {
+    // En una categoría la columna no admite vacío.
+    categories: new Map([...categories].map(([id, value]) => [id, value === true])),
+    items,
+  }
+}
+
+/**
+ * Marca (o desmarca) que una categoría o un producto sale primero en cocina: sus renglones
+ * encabezan la comanda de la mesa (`pos_kitchen_queue` los manda con `priority`). Marcar una
+ * categoría alcanza: lo de adentro la sigue, salvo el producto que diga otra cosa.
+ *
+ * Es todo o nada: si algo ya no está o alguien lo cambió recién, no se escribe ninguna.
+ */
+export async function setKitchenFirst(slug: string, input: unknown): Promise<SaveResult> {
+  const auth = await authorize(slug)
+  if (!auth.ok) return fail(auth.message)
+  const parsed = setKitchenFirstSchema.safeParse(input)
+  if (!parsed.success) return fail(INVALID)
+  const { changes } = parsed.data
+  const { tenantId, userId } = auth
+  const supabase = await kitchenClient()
+
+  const current = await readCurrentFirst(supabase, tenantId, {
+    category: changes.filter((change) => change.node === 'category').map((change) => change.id),
+    item: changes.filter((change) => change.node === 'item').map((change) => change.id),
+  })
+  if (current === null) return fail(READ_FAILED)
+
+  const plan = planFirstWrites(changes, current)
+  if (plan.kind === 'missing') {
+    refresh(slug)
+    return fail('Eso ya no está en la carta. Ya ves cómo quedó.', 'gone')
+  }
+  if (plan.kind === 'changed') {
+    refresh(slug)
+    return fail(CHANGED, 'changed')
+  }
+
+  let written = 0
+  let lost = false
+  if (plan.kind === 'write') {
+    const writes = plan.writes.flatMap((write) =>
+      chunk(write.ids, IDS_PER_REQUEST).map((ids) => ({ ...write, ids })),
+    )
+    await runLimited(writes, WRITE_CONCURRENCY, async (write) => {
+      // Solo sobre las filas que siguen valiendo lo esperado: la base decide.
+      const scoped = supabase
+        .from(ROUTE_TABLE[write.node])
+        .update({ kitchen_first: write.to })
+        .eq('tenant_id', tenantId)
+        .in('id', write.ids)
+      const { data, error } = await (write.expected === null
+        ? scoped.is('kitchen_first', null)
+        : scoped.eq('kitchen_first', write.expected)
+      ).select('id')
+      logDb(`first write ${write.node}`, error)
+      const done = error ? 0 : (data ?? []).length
+      written += done
+      if (done !== write.ids.length) lost = true
+    })
+  }
+  const savedAt = Date.now()
+
+  if (written > 0) {
+    const [only] = changes
+    if (changes.length === 1 && only) {
+      await logAudit({
+        tenantId,
+        userId,
+        action: 'menu.kitchen_first_set',
+        entity: only.node === 'category' ? 'menu_category' : 'menu_item',
+        entityId: only.id,
+        payload: { from: only.expected, to: only.to },
+      })
+    } else {
+      await logAudit({
+        tenantId,
+        userId,
+        action: 'menu.kitchen_first_bulk_set',
+        entity: 'menu',
+        payload: {
+          requested: changes.length,
+          written,
+          categories: changes.filter((change) => change.node === 'category').length,
+          items: changes.filter((change) => change.node === 'item').length,
+        },
+      })
+    }
+  }
+
+  refresh(slug)
+  // Entre la lectura y la escritura alguien tocó alguna: la pantalla se relee y lo dice.
+  if (lost) return fail(written > 0 ? CHANGED : WRITE_FAILED, written > 0 ? 'changed' : 'error')
+  return { ok: true, savedAt }
 }
 
 // ─── Estaciones ──────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 'use client'
 
-import { ChefHat, ListChecks, Search, Sparkles, X } from 'lucide-react'
+import { ChefHat, ListChecks, Search, Sparkles, X, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AdmHeader, AdmPage } from '@/components/administracion/kit/adm-page'
 import { Pill, PillLink } from '@/components/administracion/kit/pill'
@@ -19,6 +20,7 @@ import {
 } from '@/lib/menu/kitchen/view'
 import { cn } from '@/lib/utils'
 import { ChoicesPane } from './choices-pane'
+import { FirstPane } from './first-pane'
 import { notify } from './notify'
 import { CartaTreeView, FlatList, SHEET, type TreeContext } from './route-tree'
 import { type Armed, inkStyle, sortStations } from './station-bits'
@@ -28,9 +30,13 @@ import { StationsSheet } from './stations-sheet'
 import { useKitchenWrites } from './use-kitchen-writes'
 import './cocina.css'
 
+/** Las tres vistas de la pantalla (`?ver=`). */
+export type KitchenTab = 'estaciones' | 'aclaraciones' | 'primero'
+
 /**
- * «Cocina y aclaraciones»: a qué pantalla de la cocina va cada cosa de la carta, y qué se le puede
- * aclarar a cada producto (el punto de la carne, sin cebolla, un extra que se cobra).
+ * «Cocina y aclaraciones»: a qué pantalla de la cocina va cada cosa de la carta, qué se le puede
+ * aclarar a cada producto (el punto de la carne, sin cebolla, un extra que se cobra) y qué sale
+ * primero (`first-pane.tsx`: una entrada encabeza la comanda).
  *
  * Las estaciones se marcan como con un resaltador: se elige una (o la goma) y se toca en la carta
  * lo que va ahí. Marcar una categoría alcanza: lo de adentro la sigue, salvo lo que tenga su
@@ -43,7 +49,7 @@ export function KitchenBoard({
 }: {
   tenantSlug: string
   snapshot: KitchenSnapshot
-  tab: 'estaciones' | 'aclaraciones'
+  tab: KitchenTab
 }) {
   const writes = useKitchenWrites(tenantSlug, snapshot)
   const { view, commit } = writes
@@ -244,7 +250,7 @@ export function KitchenBoard({
       <AdmHeader
         back={{ href: `/${tenantSlug}/menu`, label: 'Carta' }}
         title="Cocina y aclaraciones"
-        description="A qué pantalla de la cocina va cada cosa de la carta, y qué se le puede aclarar a cada producto."
+        description="A qué pantalla de la cocina va cada cosa de la carta, qué se le puede aclarar a cada producto y qué sale primero."
         actions={
           <>
             <PillLink
@@ -264,12 +270,23 @@ export function KitchenBoard({
             >
               Aclaraciones
             </PillLink>
+            <PillLink
+              href={`/${tenantSlug}/menu/cocina?ver=primero`}
+              active={tab === 'primero'}
+              icon={Zap}
+              scroll={false}
+              data-testid="ver-primero"
+            >
+              Sale primero
+            </PillLink>
           </>
         }
       />
 
       {tab === 'aclaraciones' ? (
         <ChoicesPane writes={writes} />
+      ) : tab === 'primero' ? (
+        <FirstPane writes={writes} tree={tree} index={index} />
       ) : stations.length === 0 ? (
         <section className={cn(SHEET, 'p-6 text-center sm:p-10')} data-testid="sin-estaciones">
           <h2 className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance">
@@ -288,6 +305,19 @@ export function KitchenBoard({
               Armar las mías
             </Button>
           </div>
+          {/* Un bar que no reparte su cocina en pantallas igual puede decir qué sale primero. */}
+          <p className="mx-auto mt-5 max-w-prose text-xs text-muted-foreground text-pretty">
+            ¿Solo querés que las entradas salgan antes que el resto? Eso no necesita estaciones:{' '}
+            <Link
+              href={`/${tenantSlug}/menu/cocina?ver=primero`}
+              scroll={false}
+              className="font-medium text-foreground underline underline-offset-2"
+              data-testid="sin-estaciones-primero"
+            >
+              marcalo en «Sale primero»
+            </Link>
+            .
+          </p>
         </section>
       ) : (
         <>

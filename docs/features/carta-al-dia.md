@@ -34,6 +34,7 @@ Pedido de Nacho Badra (audios del 15/11/2026): clientes que ya habían abierto l
    - «Actualizar ahora» llama a `forceCartaRefresh`, que llama a `menu_force_refresh`. Esa función sube el número, marca `forced_at` y `forced_by` y deja `menu.carta_refresh_forced` en la auditoría.
    - Pueden usarlo el dueño y Contenido.
 8. **Lo que no se toca.** La sesión del socio del club (la cookie httpOnly `hub_wallet_<tenantId>`) sigue igual. El refresh vuelve a leer la billetera con la misma cookie.
+9. **Los rubros con horario.** Un rubro puede mostrarse solo ciertos días y horas (el menú del mediodía, el del fin de semana): la carta cambia sin que nadie la edite, así que el número de versión no se entera. El render dice en cuánto es el próximo cambio y la carta abierta se vuelve a pedir en ese momento, por este mismo camino y sin aviso. Ver [Rubros con horario y lo que sale primero](./carta-horarios-y-sale-primero.md).
 
 ## Dónde está
 

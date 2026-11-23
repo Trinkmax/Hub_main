@@ -10,6 +10,7 @@ import { getAppUrl } from '@/lib/app-url'
 import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
 import { walletCookieName } from '@/lib/capture/cookie'
 import { getSupabaseClientEnv } from '@/lib/env'
+import { visibleNow } from '@/lib/menu/availability'
 import { listActiveMenuPublic } from '@/lib/menu/queries'
 import { getMenuRev } from '@/lib/menu/revision'
 import { buildCategoryTree } from '@/lib/menu/tree'
@@ -25,7 +26,11 @@ type TenantRow = {
   name: string
   logo_url: string | null
   brand_accent: string | null
+  timezone: string | null
 }
+
+/** La hora del bar si la fila viniera sin zona. */
+const DEFAULT_TIME_ZONE = 'America/Argentina/Cordoba'
 
 // `cache` de React: generateMetadata y la page piden el mismo tenant en el
 // mismo request; sin esto son dos hops idénticos a Supabase por render.
@@ -33,7 +38,7 @@ const resolveTenant = cache(async (slug: string): Promise<TenantRow | null> => {
   const service = createServiceClient()
   const { data } = await service
     .from('tenants')
-    .select('id, name, logo_url, brand_accent')
+    .select('id, name, logo_url, brand_accent, timezone')
     .eq('slug', slug)
     .maybeSingle()
   return (data as TenantRow | null) ?? null
@@ -89,7 +94,17 @@ export default async function CartaPage({
     resolveWallet(tenant.id),
     getCanonicalCaptureLink(tenant.id),
   ])
-  const tree = buildCategoryTree(categories, items)
+  // Los rubros con horario (el menú del mediodía, el del fin de semana) se sacan acá, con la hora del
+  // bar: ni sus subcategorías ni sus productos llegan al celular, así tampoco salen en el buscador ni
+  // en los destacados. La página no se guarda en el servidor (`force-dynamic`), así que cada pedido
+  // se arma con la hora de ese momento; `changeInMs` le dice a la carta abierta cuándo volver a pedirse.
+  const renderedAt = Date.now()
+  const visible = visibleNow(
+    { categories, items },
+    renderedAt,
+    tenant.timezone || DEFAULT_TIME_ZONE,
+  )
+  const tree = buildCategoryTree(visible.categories, visible.items)
 
   let walletContent: React.ReactNode = null
   if (wallet) {
@@ -137,7 +152,12 @@ export default async function CartaPage({
         </>
       ) : null}
       {/* La carta abierta en el celular pregunta si cambió al volver a mirarla y se refresca sola. */}
-      <CartaFreshness tenantId={tenant.id} rev={menuRev} renderedAt={Date.now()} />
+      <CartaFreshness
+        tenantId={tenant.id}
+        rev={menuRev}
+        renderedAt={renderedAt}
+        changeInMs={visible.changeInMs}
+      />
       <CartaExperience
         tenantName={tenant.name}
         logoUrl={tenant.logo_url}

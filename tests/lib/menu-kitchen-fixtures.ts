@@ -55,6 +55,7 @@ export const category = (over: Partial<CartaCategory> & { id: string }): CartaCa
   position: 0,
   active: true,
   stationId: null,
+  kitchenFirst: false,
   ...over,
 })
 
@@ -93,6 +94,7 @@ export const item = (over: Partial<CartaItem> & { id: string }): CartaItem => ({
   active: true,
   priceCents: 1_000_000,
   stationId: null,
+  kitchenFirst: null,
   ...over,
 })
 

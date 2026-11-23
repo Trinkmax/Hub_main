@@ -2,7 +2,7 @@
  * Lo que se acaba de cambiar, puro.
  *
  * Cada cosa que la persona hace en la pantalla es una operación (`Op`): marcar una categoría,
- * renombrar una estación, sumar una opción. La pantalla la muestra YA, encima de lo último que
+ * renombrar una estación, sumar una opción, decir qué sale primero. La pantalla la muestra YA, encima de lo último que
  * se leyó de la base, mientras el servidor guarda:
  *
  * - `applyOp` aplica una operación a una lectura. Volver a aplicarla sobre una lectura que ya
@@ -15,6 +15,7 @@
  */
 
 import type {
+  FirstChange,
   KitchenSnapshot,
   KitchenStation,
   ModifierGroup,
@@ -22,7 +23,7 @@ import type {
   ModifierOption,
   RouteChange,
 } from './types'
-import { linkKey, nodeKey } from './types'
+import { firstKey, linkKey, nodeKey } from './types'
 
 export type StationPatch = Partial<Pick<KitchenStation, 'name' | 'color' | 'active'>>
 export type GroupPatch = Partial<Pick<ModifierGroup, 'name' | 'selection' | 'required' | 'active'>>
@@ -31,6 +32,8 @@ export type OptionPatch = Partial<Pick<ModifierOption, 'label' | 'priceDeltaCent
 export type Op =
   /** Poner o sacar la estación de categorías y productos. */
   | { type: 'route'; changes: RouteChange[] }
+  /** Marcar o desmarcar qué sale primero en cocina. */
+  | { type: 'first'; changes: FirstChange[] }
   | { type: 'station.create'; stations: KitchenStation[] }
   | { type: 'station.patch'; id: string; patch: StationPatch }
   | { type: 'station.delete'; ids: string[] }
@@ -109,6 +112,36 @@ export function applyOp(snapshot: KitchenSnapshot, op: Op): KitchenSnapshot {
             : snapshot.items.map((item) => {
                 const to = items.get(item.id)
                 return to === undefined || to === item.stationId ? item : { ...item, stationId: to }
+              }),
+      }
+    }
+    case 'first': {
+      // Una categoría sale primero o no; un producto además puede no decir nada (`null`).
+      const categories = new Map<string, boolean>()
+      const items = new Map<string, boolean | null>()
+      for (const change of op.changes) {
+        if (change.node === 'category') categories.set(change.id, change.to === true)
+        else items.set(change.id, change.to)
+      }
+      return {
+        ...snapshot,
+        categories:
+          categories.size === 0
+            ? snapshot.categories
+            : snapshot.categories.map((category) => {
+                const to = categories.get(category.id)
+                return to === undefined || to === category.kitchenFirst
+                  ? category
+                  : { ...category, kitchenFirst: to }
+              }),
+        items:
+          items.size === 0
+            ? snapshot.items
+            : snapshot.items.map((item) => {
+                const to = items.get(item.id)
+                return to === undefined || to === item.kitchenFirst
+                  ? item
+                  : { ...item, kitchenFirst: to }
               }),
       }
     }
@@ -229,6 +262,23 @@ export function invertOp(before: KitchenSnapshot, op: Op): Op | null {
         changes.push({ node: change.node, id: change.id, to: was })
       }
       return changes.length === 0 ? null : { type: 'route', changes }
+    }
+    case 'first': {
+      const categories = new Map(before.categories.map((row) => [row.id, row.kitchenFirst]))
+      const items = new Map(before.items.map((row) => [row.id, row.kitchenFirst]))
+      const changes: FirstChange[] = []
+      for (const change of op.changes) {
+        if (change.node === 'category') {
+          const was = categories.get(change.id)
+          if (was === undefined || was === (change.to === true)) continue
+          changes.push({ node: 'category', id: change.id, to: was })
+        } else {
+          const was = items.get(change.id)
+          if (was === undefined || was === change.to) continue
+          changes.push({ node: 'item', id: change.id, to: was })
+        }
+      }
+      return changes.length === 0 ? null : { type: 'first', changes }
     }
     case 'station.create': {
       const known = new Set(before.stations.map((station) => station.id))
@@ -366,6 +416,8 @@ export function opKeys(op: Op): string[] {
   switch (op.type) {
     case 'route':
       return op.changes.map((change) => nodeKey(change.node, change.id))
+    case 'first':
+      return op.changes.map((change) => firstKey(change.node, change.id))
     case 'station.create':
       return op.stations.map((station) => `station:${station.id}`)
     case 'station.patch':
