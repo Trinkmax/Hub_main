@@ -38,6 +38,7 @@ import {
   type PayrollEmployee,
   type PayrollMovementInput,
   payrollAccrualValues,
+  payrollBranchId,
   payrollMovementValues,
   personalPartyId,
 } from '@/lib/accounting/payroll'
@@ -93,6 +94,7 @@ import {
   matchRecurringRow,
   noMatchText,
   PAPER_WORDS,
+  PAYROLL_KIND_WORDS,
   PAYROLL_KINDS_OF,
   quickVoucherOfPaper,
   type RecurringChange,
@@ -265,7 +267,9 @@ const movementPayload = z.object({
   ...payrollDocumentPayload,
   employeeId: z.string(),
   employeeName: z.string(),
-  kind: z.enum(['advance', 'payment']),
+  kind: z.enum(['advance', 'payment', 'overtime']),
+  // Un tique armado antes de este cambio no lo trae: en blanco, como siempre.
+  offBooks: z.boolean().optional(),
 })
 
 const accrualPayload = z.object(payrollDocumentPayload)
@@ -936,10 +940,14 @@ export const gastosActionTools = [
   defineTool({
     name: 'preparar_movimiento_sueldo',
     description:
-      'Prepara un adelanto o un pago de sueldo a un empleado, con la caja de la que salió. No guarda nada: muestra un tique para confirmar.',
+      'Prepara un adelanto, un pago de sueldo u horas extra (se pagan aparte del sueldo y no bajan lo que se le debe) a un empleado, con la caja de la que salió. No guarda nada: muestra un tique para confirmar.',
     input: z.object({
       empleado: z.string().min(1).describe('A quién: nombre o id.'),
-      tipo: z.enum(['adelanto', 'pago']),
+      tipo: z.enum(['adelanto', 'pago', 'horas_extra']),
+      en_negro: z
+        .boolean()
+        .optional()
+        .describe('true si dijo que fue en negro. Si no lo dijo, no lo mandes: va en blanco.'),
       monto: pesosField('En pesos. En un pago, si no lo dijo, lo que se le debe.').optional(),
       caja: z.string().min(1).optional().describe('De qué caja salió: nombre o id.'),
       fecha: dayField('Fecha yyyy-MM-dd. Si no la dijo, hoy.').optional(),
@@ -947,8 +955,8 @@ export const gastosActionTools = [
     }),
     need: 'write',
     mood: 'working',
-    doing: (input) => (input.tipo === 'adelanto' ? 'Preparando el adelanto' : 'Preparando el pago'),
-    done: (input) => (input.tipo === 'adelanto' ? 'Preparé el adelanto' : 'Preparé el pago'),
+    doing: (input) => `Preparando ${PAYROLL_KIND_WORDS[PAYROLL_KINDS_OF[input.tipo]].the}`,
+    done: (input) => `Preparé ${PAYROLL_KIND_WORDS[PAYROLL_KINDS_OF[input.tipo]].done}`,
     run: async (input, ctx) => {
       const month = input.mes ?? monthOf(ctx.today)
       const [report, loaded] = await Promise.all([
@@ -973,7 +981,9 @@ export const gastosActionTools = [
         return fail(
           kind === 'payment'
             ? `${owedSentence(balance, month)} Preguntale cuánto le pagó.`
-            : 'Preguntale de cuánto fue el adelanto.',
+            : kind === 'overtime'
+              ? 'Preguntale cuánto le pagó de horas extra.'
+              : 'Preguntale de cuánto fue el adelanto.',
         )
       }
 
@@ -988,6 +998,7 @@ export const gastosActionTools = [
       if (!chosen.ok) return fail(chosen.message)
       const { treasury } = chosen
       const date = input.fecha ?? ctx.today
+      const offBooks = input.en_negro === true
       const values = payrollMovementValues(
         {
           kind,
@@ -997,27 +1008,34 @@ export const gastosActionTools = [
           amountCents: cents,
           date,
           personalPartyId: personalPartyId(posting),
+          // La caja de una sucursal se mueve desde esa sucursal; si es de todo el bar, donde trabaja.
+          branchId: payrollBranchId(treasury, employee),
         },
         posting,
       )
+      const words = PAYROLL_KIND_WORDS[kind]
       const prepared = await prepareDocument(ctx, 'cash_movement', values, {
         kind: 'movimiento_sueldo',
-        title: input.tipo === 'adelanto' ? 'Adelanto de sueldo' : 'Pago de sueldo',
+        title: words.title,
         subtitle: `${employee.name} · ${monthWord(month)}`,
         rows: [
-          { label: 'Saldo', value: owedSentence(balance, month) },
+          kind === 'overtime'
+            ? { label: 'Aparte del sueldo', value: 'No cambia lo que se le debe.' }
+            : { label: 'Saldo', value: owedSentence(balance, month) },
+          ...(offBooks ? [{ label: 'Va', value: 'En negro' }] : []),
           { label: 'Sale de', value: treasury.name },
           { label: 'Fecha', value: dayText(date) ?? date },
           ...bankTaxRows(cents, treasury, posting),
         ],
         total: { label: 'Total', value: money(cents) },
-        confirmLabel: input.tipo === 'adelanto' ? 'Registrar el adelanto' : 'Registrar el pago',
+        confirmLabel: `Registrar ${words.the}`,
       })
       return withExecutor(prepared, 'gastos.movimiento_sueldo', {
         employeeId: employee.id,
         employeeName: employee.name,
         month,
         kind,
+        offBooks,
       })
     },
   }),
@@ -1136,7 +1154,7 @@ export const gastosExecutors: Readonly<Record<string, TexExecutor>> = {
     run: async (raw, ctx) => {
       const parsed = movementPayload.safeParse(raw)
       if (!parsed.success) return { ok: false, kind: 'failed', message: TICKET_BROKEN }
-      const { values, previewHash, warningsAck, employeeId, employeeName, month, kind } =
+      const { values, previewHash, warningsAck, employeeId, employeeName, month, kind, offBooks } =
         parsed.data
       // `postPayrollMovement` lo vuelve a validar con zod: acá solo se devuelve lo que armó el tique.
       const state = await postPayrollMovement(ctx.slug, {
@@ -1146,6 +1164,7 @@ export const gastosExecutors: Readonly<Record<string, TexExecutor>> = {
         employeeId,
         month,
         kind,
+        offBooks: offBooks ?? false,
       } as unknown as PayrollMovementInput)
       return documentOutcome(state, parsed.data, {
         href: sueldosHref(ctx, month),

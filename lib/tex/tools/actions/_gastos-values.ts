@@ -476,9 +476,20 @@ export const EMPLOYEE_FREQUENCIES: Readonly<Record<'mensual' | 'quincenal', PayF
   quincenal: 'biweekly',
 }
 
-export const PAYROLL_KINDS_OF: Readonly<Record<'adelanto' | 'pago', PayrollKind>> = {
-  adelanto: 'advance',
-  pago: 'payment',
+export const PAYROLL_KINDS_OF: Readonly<Record<'adelanto' | 'pago' | 'horas_extra', PayrollKind>> =
+  {
+    adelanto: 'advance',
+    pago: 'payment',
+    horas_extra: 'overtime',
+  }
+
+/** Cómo le dice Tex a cada movimiento: «Preparando el adelanto», «Registrar las horas extra». */
+export const PAYROLL_KIND_WORDS: Readonly<
+  Record<PayrollKind, { the: string; title: string; done: string }>
+> = {
+  advance: { the: 'el adelanto', title: 'Adelanto de sueldo', done: 'el adelanto' },
+  payment: { the: 'el pago', title: 'Pago de sueldo', done: 'el pago' },
+  overtime: { the: 'las horas extra', title: 'Horas extra', done: 'las horas extra' },
 }
 
 export type EmployeeChange = {

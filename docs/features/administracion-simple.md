@@ -156,6 +156,93 @@ Pedido: Piojo pagó un gasto fijo con el Cerro elegido y quedó pagado también 
 (comprobante #158, sucursal Cerro). Caja en el Cerro muestra «Caja Cerro» y las cuentas de todo el bar, no la caja
 de Alta Córdoba. «Nuevo gasto» en «Todas» pide la sucursal.
 
+## Sueldos: en blanco y en negro, horas extra y la caja del salón (22/11/2026)
+
+Pedido de los socios (Piojo y Tomás): «en sueldos, opción en blanco y en negro», «una opción de hora extra […] se
+registra en SUELDOS como horas extra pagadas del mes», «una opción con fechas para el pago de sueldos» y, desde la
+caja del salón, «si pongo adelanto de sueldo […] que se cargue» / «cuando se selecciona el proveedor, se debe abrir
+[…] para cargar la compra, pago o comprapago».
+
+**Base** (migración `acc_sueldos_y_caja`, después de `pos_revisiones_socios` y `acc_accesos_por_nivel`):
+
+| Qué | Para qué |
+|---|---|
+| `acc_employee_salaries.off_books_cents` | La parte en negro. `salary_cents` sigue siendo el total. |
+| `acc_payroll_movements.off_books`, `period_from`, `period_to`; `kind` acepta `overtime` | La marca de cada movimiento, las fechas que cubre y las horas extra. |
+| `acc_save_employee_salary_parts(p_tenant_id, p_employee_id, p_month, p_declared_cents, p_off_books_cents)` | El sueldo en dos partes (guarda el total = la suma). La de un solo importe sigue andando y recorta la parte en negro si el total baja. |
+| `acc_payroll_prepare(p_tenant_id, p_client_ref, p_employee_id, p_month, p_kind, p_off_books, p_period_from, p_period_to)` | Reemplaza en la app a `acc_payroll_prepare_movement`. `p_kind`: `advance`, `payment`, `overtime`. |
+| `acc_report_payroll` | Suma por empleado `salary_off_books_cents`, `overtime_cents`, `settled_off_books_cents` y `pending_cash` (lo que salió de la caja del salón para esa persona en el mes y no tiene comprobante); cada movimiento trae `off_books`, `period_from`, `period_to`. `advances_cents` y `paid_cents` no incluyen horas extra. |
+| `acc_pos_cash_pending(p_tenant_id, p_branch_id?)` | Los retiros de la caja del salón que dicen para qué fueron y esperan su comprobante. Quien tiene «solo compras y pagos» recibe solo los de proveedores. |
+| `acc_pos_cash_link(p_tenant_id, p_movement_id, p_client_ref)` | Ata un retiro al comprobante que se está por guardar. Error `pos_cash_already_passed`. |
+| `acc_pos_cash_dismiss(p_tenant_id, p_movement_id)` | «Esto no va a los libros». Audita. |
+
+**Reglas**
+
+- **Un solo libro.** En blanco / en negro no cambia ningún asiento: es una parte del sueldo y una marca de cada
+  adelanto o pago. A la contadora no se le dibuja (ni la apertura del sueldo, ni la marca, ni «cuánto falta de cada
+  parte»); ella ve el total, lo pagado y el saldo. Ojo: la base igual le devuelve esas claves (lee Administración).
+- **Horas extra**: `cash_movement` D Sueldos y jornales (`ctx.sys.salaries`) / H la caja, sin partícipe, con detalle
+  «Horas extra · Nombre · mes». No bajan el saldo ni entran en «Devengar». Tienen su columna y, si hubo, su total.
+- **Las fechas que cubre** un pago son opcionales (atajos: 1.ª quincena, 2.ª quincena, todo el mes; o a mano). Se
+  leen en el detalle: «Pago · 1 al 15 nov · en negro».
+- **La sucursal del comprobante**: la de la caja si tiene (una caja de otra sucursal no se mueve desde la principal:
+  `treasury_other_branch`); si la caja es de todo el bar, la de la persona (`payrollBranchId`).
+- **Lo que salió de la caja del salón cuenta desde que sale.** `parsePayrollReport` suma `pending_cash` a Adelantos,
+  Pagado y Horas extra (una sola vez, ahí): el saldo, los totales, el Resumen, Gastos fijos y Tex quedan al día sin
+  que nadie confirme nada. Cada importe lleva la marca «de la caja» hasta que tiene comprobante.
+- **Un retiro «espera»** mientras no esté descartado ni exista un comprobante vigente con su referencia. Por eso se
+  ata ANTES de guardar (con el `clientRef` del formulario): si el guardado falla sigue esperando; si el comprobante se
+  anula, vuelve a esperar (la plata salió igual del cajón).
+- **La app puede salir antes que la base.** Sin las funciones nuevas, un sueldo sin parte en negro y un adelanto o
+  pago sin marca ni fechas van por las funciones de antes; lo nuevo avisa «todavía no está disponible»; las bandejas
+  no se dibujan.
+
+**Pantallas**
+
+- **Sueldos** (`sueldos/page.tsx`, `payroll-sheet.tsx`, `payroll-dialogs.tsx`, `salary-parts.tsx`): la celda del
+  sueldo es la de siempre; el ícono de al lado (o «Sueldo en blanco y en negro» en la fila abierta) lo abre en sus dos
+  partes con el total en vivo. Con parte en negro, la celda muestra el total y debajo «En blanco $ … · En negro $ …».
+  El diálogo de un movimiento elige qué es (Adelanto · Pago · Horas extra), en blanco o en negro (propone la parte a
+  la que más le falta) y, si se quiere, qué fechas cubre.
+- **«De la caja del salón»** (`components/administracion/caja-salon/pos-cash-tray.tsx`), arriba de la planilla y solo
+  si hay: en Sueldos, los retiros para el personal → «Pasar a <mes>» abre el diálogo de siempre ya completo (persona,
+  qué es, monto, fecha del retiro, la caja de efectivo de esa sucursal, fechas) y al guardar sigue con el que viene;
+  «¿De <otro mes>?» lleva a la planilla de ese mes. En Compras, los de proveedores → «Cargar la compra» abre «Nuevo
+  gasto» y «Era un pago» abre «Pagar», las dos con `?retiro=<id>` (proveedor, monto, fecha y caja ya puestos); desde
+  «Nuevo gasto», «Cargala completa» lleva a `compras/nueva?modo=pago&retiro=<id>`. «Descartar» pide confirmación.
+- **Links**: `…/administracion/compras?caja=<retiro>` (el que arma la caja del salón) o `?retiro=<retiro>` marcan ese
+  renglón. Con una hoja abierta (`?accion=`), `caja` vuelve a ser la caja de la hoja.
+- **Permisos**: las bandejas son de quien carga. Atar y descartar piden `buy_write` (los de proveedores los pasa
+  también quien tiene «solo compras y pagos»); la base exige acceso completo para los del personal.
+- **Tex**: `preparar_movimiento_sueldo` acepta `tipo: 'horas_extra'` y `en_negro`; `ver_sueldos` suma `horas_extra` y
+  `de_la_caja_sin_pasar`.
+
+**Decisiones mías (cambiables):** «fechas» = las fechas que cubre el pago (no un calendario de pagos); un retiro se
+pasa al mes que se está mirando (se propone el probable: un sueldo pagado del 1 al 10 es del mes anterior); un
+proveedor que la caja anotó a mano no se crea solo: se elige o se carga en el formulario; en la caja no se pregunta
+blanco o negro (se dice al pasarlo a los libros).
+
+**Pruebas:** `tests/lib/administracion-sueldos-planilla.test.tsx`, `tests/lib/accounting-pos-cash.test.ts`,
+`tests/lib/administracion-caja-salon.test.tsx`, `tests/lib/tex-actions-gastos.test.ts`.
+
+**Smoke pendiente** (con las tres migraciones aplicadas, `demo-administracion`, dueño de prueba con acceso completo):
+
+1. Sueldos → ícono al lado del sueldo de «Ana Prueba QA» → En blanco 400.000, En negro 300.000 → Guardar: la celda
+   dice $ 700.000 y debajo «En blanco $ 400.000 · En negro $ 300.000»; arriba, «$ 300.000 en negro».
+2. «Horas extra» en su fila → 45.000 desde Caja → Cargar: columna Horas extra $ 45.000, el saldo no cambia, y el
+   comprobante es D Sueldos y jornales / H Caja.
+3. «Pagar» → En negro, «1.ª quincena» → Cargar: en la fila abierta, «Pago · 1 al 15 nov · en negro» y «En negro:
+   pagaste … falta …».
+4. En la caja del salón (Cerro): Sacar plata → Adelanto de sueldo → Ana → 50.000. En Sueldos aparece «De la caja del
+   salón · 1 retiro · $ 50.000», Adelantos suma $ 50.000 con «$ 50.000 de la caja» y el saldo baja. «Pasar a
+   noviembre» abre el diálogo con Adelanto, $ 50.000, «Caja Cerro» y la fecha del retiro → Cargar: la bandeja se va,
+   la marca también, y el comprobante es de la sucursal Cerro.
+5. Sacar plata → Proveedor → uno de la lista → 25.000. En Compras: la bandeja con «Cargar la compra» / «Era un pago».
+   «Cargar la compra» abre «Nuevo gasto» con el proveedor, $ 25.000, la fecha y «Caja Cerro»; elegir el papel →
+   Cargar: el renglón sale de la bandeja. Repetir con «Era un pago» y con «Descartar».
+6. Entrar con `…/administracion/compras?caja=<id del retiro>`: ese renglón queda marcado.
+7. Con la contadora: Sueldos sin bandeja, sin «en negro» en ningún lado, sin botones.
+
 ## Smoke manual
 
 **«Nuevo gasto» lee la foto (16/11/2026, `demo-administracion`)**
