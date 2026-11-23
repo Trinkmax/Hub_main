@@ -3,6 +3,7 @@
 import './kitchen.css'
 import {
   ArrowRight,
+  BellRing,
   TriangleAlert,
   Volume1,
   Volume2,
@@ -15,16 +16,17 @@ import { type AgeLevel, ageLevel, elapsedMinutes } from '@/lib/pos/kitchen/age'
 import {
   type AdvanceTo,
   advanceTarget,
-  buildCards,
+  buildTableCards,
   CARD_STATUS_LABEL,
   hasExpired,
   type KitchenCard,
+  knownTickets,
   newArrivals,
   splitEvents,
   ticketShape,
   totalsOf,
   undoTarget,
-  unseenCards,
+  unseenTickets,
 } from '@/lib/pos/kitchen/cards'
 import { ticketSpan } from '@/lib/pos/kitchen/layout'
 import {
@@ -37,13 +39,14 @@ import {
 import type { KitchenQueue } from '@/lib/pos/types'
 import type { LiveStatus } from '@/lib/pos/use-poke'
 import { cn } from '@/lib/utils'
+import { PosBrand, type PosBrandInfo } from '../ui/pos-brand'
 import { KitchenEvent } from './kitchen-event'
 import { useClipped, useKitchenLayout, useServerNow, useWakeLock } from './kitchen-hooks'
 import { DoneStub, QueueStub } from './kitchen-stubs'
-import { FrameHint, HOLD_STYLE, KitchenTicket } from './kitchen-ticket'
+import { FrameHint, GREW_LABEL, HOLD_STYLE, KitchenTicket } from './kitchen-ticket'
 import { KitchenTotals } from './kitchen-totals'
 import { StationPicker } from './station-picker'
-import { type SoundState, useKitchenSound } from './use-kitchen-sound'
+import { type AlertLevel, type SoundState, useKitchenSound } from './use-kitchen-sound'
 import { useTwoButtons } from './use-two-buttons'
 
 /**
@@ -51,7 +54,8 @@ import { useTwoButtons } from './use-two-buttons'
  * ocupadas. Se maneja con dos botones (ver `lib/pos/kitchen/buttons.ts`).
  *
  *   arriba   la hora y la tira de lo que hay que hacer ahora, sumado entre todas las comandas;
- *   al medio el riel: las comandas más viejas sin terminar, enteras, en orden de llegada;
+ *   al medio el riel: una comanda por MESA (todas sus tandas juntas), las más viejas sin terminar
+ *            primero, enteras, en orden de llegada;
  *   abajo    los talones: lo listo (se puede deshacer por diez minutos) y lo que todavía no entra en el riel.
  *
  * El riel es una sola fila: la de más a la izquierda es la próxima que tiene que salir, y al terminarla
@@ -81,8 +85,8 @@ export type KitchenLink = {
   lastOkMs: number
 }
 
-/** Algo que se apretó y la base no aceptó. `ticketId` es la comanda sobre la que se había apretado. */
-export type KitchenFailure = { key: number; ticketId: string; title: string; detail: string }
+/** Algo que se apretó y la base no aceptó. `cardId` es la comanda sobre la que se había apretado. */
+export type KitchenFailure = { key: number; cardId: string; title: string; detail: string }
 
 type Props = {
   /** A dónde vuelve quien abrió la cocina desde un celular (la tele con botonera no lo ve). */
@@ -92,8 +96,9 @@ type Props = {
   /** Estaciones de esta pantalla (vacío = todas). */
   stations: string[]
   onStations: (next: string[]) => void
-  onAdvance: (ticketId: string, to: AdvanceTo, context: { spoken: string; undo: boolean }) => void
-  /** «Cocina lo vio». Devuelve si se pudo avisar; si no, se reintenta en la próxima lectura. */
+  /** Avanzar (o deshacer) la comanda de una mesa: quien habla con la base sabe qué tandas mover. */
+  onAdvance: (card: KitchenCard, to: AdvanceTo, context: { spoken: string; undo: boolean }) => void
+  /** «Cocina lo vio», por tanda. Devuelve si se pudo avisar; si no, se reintenta en la próxima lectura. */
   onShown: (ticketIds: string[]) => Promise<boolean>
   /**
    * Quien mira es la cocina (su usuario). El tilde «cocina lo vio» lo pone la cocina: su usuario en
@@ -107,26 +112,43 @@ type Props = {
   timeZone: string
   /** Lo que va al final de la barra (la comandera de esta compu). */
   tools?: React.ReactNode
+  /** El bar: su logo va abajo a la derecha. */
+  brand?: PosBrandInfo
 }
 
 const ACK_MS = 120
-const ARRIVAL_MS = 2600
+/** Cuánto queda marcada la comanda que recibió algo. */
+const ARRIVAL_MS = 9000
+/** Cuánto dura el cartel a pantalla completa. */
+const ALARM_MS = 4200
+/** Cada cuánto vuelve a sonar una comanda que nadie empezó (solo con la alerta fuerte)… */
+const NUDGE_MS = 25_000
+/** …y hasta cuándo insiste: después de un minuto y medio ya no es novedad, es una comanda demorada. */
+const NUDGE_FOR_MS = 95_000
 const FAILURE_MS = 9000
 const NONE: ReadonlySet<string> = new Set()
 
-const SOUND_ICON = { on: Volume2, locked: Volume1, muted: VolumeOff, none: VolumeX } as const
-const SOUND_WORD: Record<SoundState, string> = {
-  on: 'Sonido',
-  locked: 'Sonido',
-  muted: 'Silencio',
-  none: 'Sin sonido',
+function soundIcon(state: SoundState, level: AlertLevel) {
+  if (state === 'none') return VolumeX
+  if (state === 'muted') return VolumeOff
+  return level === 'loud' ? Volume2 : Volume1
 }
-const SOUND_LABEL: Record<SoundState, string> = {
-  on: 'Sonido prendido. Tocá para silenciar.',
-  locked: 'El sonido se activa con el primer toque. Tocá para silenciar.',
-  muted: 'En silencio. Tocá para prender el sonido.',
-  none: 'Este dispositivo no puede reproducir sonido.',
+function soundWord(state: SoundState, level: AlertLevel): string {
+  if (state === 'none') return 'Sin sonido'
+  if (state === 'muted') return 'Silencio'
+  return level === 'loud' ? 'Fuerte' : 'Suave'
 }
+function soundLabel(state: SoundState, level: AlertLevel): string {
+  if (state === 'none') return 'Este dispositivo no puede reproducir sonido.'
+  if (state === 'muted') return 'Alerta en silencio. Tocá para ponerla fuerte.'
+  const locked = state === 'locked' ? ' Se activa con el primer toque.' : ''
+  return level === 'loud'
+    ? `Alerta fuerte: campana, cartel a pantalla completa y se repite hasta que alguien empieza la comanda.${locked} Tocá para ponerla suave.`
+    : `Alerta suave: un timbre corto.${locked} Tocá para silenciarla.`
+}
+
+/** Lo que dice el cartel cuando entra algo. */
+type Alarm = { key: number; titles: string[]; more: number; grew: boolean }
 const LIVE_WORD: Record<LiveStatus, string> = {
   live: 'En vivo',
   connecting: 'Conectando',
@@ -146,6 +168,7 @@ export function KitchenScreen({
   onDismissFailure,
   timeZone,
   tools,
+  brand,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
   const track = useRef<HTMLOListElement>(null)
@@ -158,10 +181,11 @@ export function KitchenScreen({
   const [touch, setTouch] = useState(false)
   const [ack, setAck] = useState<string | null>(null)
   const [arriving, setArriving] = useState<ReadonlySet<string>>(NONE)
+  const [alarm, setAlarm] = useState<Alarm | null>(null)
   const [announcement, setAnnouncement] = useState('')
 
   // ── De la cola a lo que se dibuja ──────────────────────────────────────────
-  const built = useMemo(() => buildCards(queue, filter), [queue, filter])
+  const built = useMemo(() => buildTableCards(queue, filter), [queue, filter])
   const cards = useMemo(() => built.filter((card) => !hasExpired(card, now)), [built, now])
   const { events, alaCarte } = useMemo(() => splitEvents(cards), [cards])
   const eventCards = useMemo(() => events.flatMap((event) => event.cards), [events])
@@ -254,7 +278,7 @@ export function KitchenScreen({
     if (!current) return
     const to = undo ? undoTarget(current.status) : advanceTarget(current.status)
     if (!to) return
-    onAdvance(current.id, to, { spoken: current.spoken, undo })
+    onAdvance(current, to, { spoken: current.spoken, undo })
     flash(current.id)
     // Terminada una comanda, el marco vuelve solo a la más vieja que falta.
     if (to === 'ready') {
@@ -270,28 +294,45 @@ export function KitchenScreen({
     onUndo: () => act(true),
     onPress: () => {
       sound.unlock()
+      // Cualquier botón dice «ya lo vi»: el cartel se va, la comanda sigue marcada.
+      setAlarm(null)
       if (failure) onDismissFailure()
     },
   })
 
-  // ── Lo que entra: suena y se destaca ───────────────────────────────────────
-  const { beep } = sound
+  // ── Lo que entra: suena, se anuncia a pantalla completa y queda marcado ────
+  // Se mira por tanda: una mesa que ya tenía su comanda y pide algo más también avisa.
+  const { alarm: ring, nudge } = sound
   const filterKey = filter.join(',')
   const known = useRef<{ filter: string; ids: Set<string> | null }>({
     filter: filterKey,
     ids: null,
   })
   const timers = useRef<number[]>([])
+  const alarmCount = useRef(0)
+  /** Cuándo entró (o creció) cada comanda en ESTA pantalla: hasta cuándo se insiste. */
+  const arrivedAt = useRef(new Map<string, number>())
   useEffect(() => {
     // Cambiar de estaciones hace aparecer comandas que no entraron recién: no suenan.
     if (known.current.filter !== filterKey) known.current = { filter: filterKey, ids: null }
     const fresh = newArrivals(known.current.ids, cards)
-    known.current.ids = new Set(cards.map((card) => card.id))
+    known.current.ids = knownTickets(cards)
     if (fresh.length === 0) return
-    beep()
+    ring()
+    const at = Date.now()
+    for (const id of fresh) arrivedAt.current.set(id, at)
     setArriving((prev) => new Set([...prev, ...fresh]))
-    const names = cards.filter((card) => fresh.includes(card.id)).map((card) => card.spoken)
-    setAnnouncement(`Entró ${names.join(', ')}.`)
+    const entered = cards.filter((card) => fresh.includes(card.id))
+    const names = entered.map((card) => card.spoken)
+    const grew = entered.every((card) => card.grew)
+    setAnnouncement(`${grew ? 'Se sumó algo a' : 'Entró'} ${names.join(', ')}.`)
+    alarmCount.current += 1
+    setAlarm({
+      key: alarmCount.current,
+      titles: entered.slice(0, 3).map((card) => card.title),
+      more: Math.max(0, entered.length - 3),
+      grew,
+    })
     const timer = window.setTimeout(() => {
       setArriving((prev) => {
         const next = new Set(prev)
@@ -300,7 +341,51 @@ export function KitchenScreen({
       })
     }, ARRIVAL_MS)
     timers.current.push(timer)
-  }, [cards, filterKey, beep])
+  }, [cards, filterKey, ring])
+
+  // El cartel se va solo.
+  const alarmKey = alarm?.key
+  useEffect(() => {
+    if (alarmKey === undefined) return
+    const timer = window.setTimeout(() => setAlarm(null), ALARM_MS)
+    return () => window.clearTimeout(timer)
+  }, [alarmKey])
+
+  // Una comanda recién entrada que nadie empezó vuelve a sonar un par de veces: no se queda esperando
+  // porque justo nadie miró la pantalla. Se calla cuando alguien aprieta «Empezar», o sola al rato.
+  const waitingToStart = useMemo(
+    () => cards.filter((card) => card.status === 'queued').length,
+    [cards],
+  )
+  const queuedIds = useMemo(
+    () =>
+      cards
+        .filter((card) => card.status === 'queued')
+        .map((card) => card.id)
+        .join('|'),
+    [cards],
+  )
+  useEffect(() => {
+    if (queuedIds === '') return
+    const ids = queuedIds.split('|')
+    const timer = window.setInterval(() => {
+      const fresh = ids.some((id) => {
+        const at = arrivedAt.current.get(id)
+        return at !== undefined && Date.now() - at < NUDGE_FOR_MS
+      })
+      if (fresh && !document.hidden) nudge()
+    }, NUDGE_MS)
+    return () => window.clearInterval(timer)
+  }, [queuedIds, nudge])
+
+  // Si la pestaña quedó atrás, el título avisa cuántas esperan.
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s+/, '')
+    document.title = waitingToStart > 0 ? `(${waitingToStart}) ${base}` : base
+    return () => {
+      document.title = base
+    }
+  }, [waitingToStart])
 
   useEffect(
     () => () => {
@@ -315,7 +400,7 @@ export function KitchenScreen({
   const acknowledges = isKitchen || layout.mode === 'rail'
   useEffect(() => {
     if (document.hidden || !acknowledges) return
-    const ids = unseenCards(cards, reported.current)
+    const ids = unseenTickets(cards, reported.current)
     if (ids.length === 0) return
     for (const id of ids) reported.current.add(id)
     void onShown(ids).then((ok) => {
@@ -329,7 +414,7 @@ export function KitchenScreen({
   }, [])
 
   const failureKey = failure?.key
-  const failedId = failure?.ticketId
+  const failedId = failure?.cardId
   useEffect(() => {
     if (failureKey === undefined) return
     // El marco vuelve a la comanda que no se pudo mover: «probá de nuevo» es apretar otra vez, y tiene
@@ -381,13 +466,14 @@ export function KitchenScreen({
       ? `${current.spoken}${back ? ' · mantené para deshacer' : ''}`
       : `${current.spoken} · mantené apretado`
 
-  const SoundIcon = SOUND_ICON[sound.state]
+  const SoundIcon = soundIcon(sound.state, sound.level)
   const soundNote =
     sound.state === 'locked'
       ? 'Tocá un botón para activar el sonido'
       : sound.justActivated && sound.state === 'on'
         ? 'Sonido activado'
         : null
+  const loud = sound.state !== 'muted' && sound.level === 'loud'
 
   const emptyTitle =
     cards.length === 0
@@ -401,6 +487,7 @@ export function KitchenScreen({
       ref={root}
       className="kds"
       data-touch={touch ? 'true' : undefined}
+      data-alert={loud ? 'loud' : undefined}
       style={layout.unit === null ? undefined : { ['--u' as string]: `${layout.unit}px` }}
       onPointerDownCapture={() => {
         sound.unlock()
@@ -468,13 +555,14 @@ export function KitchenScreen({
             type="button"
             className="kds-tool"
             data-state={sound.state}
-            aria-label={SOUND_LABEL[sound.state]}
-            aria-pressed={sound.state === 'none' ? undefined : sound.state !== 'muted'}
+            data-level={sound.level}
+            aria-label={soundLabel(sound.state, sound.level)}
             disabled={sound.state === 'none'}
-            onClick={sound.toggle}
+            onClick={sound.cycle}
+            data-testid="cocina-sonido"
           >
             <SoundIcon aria-hidden strokeWidth={2.4} />
-            <span>{SOUND_WORD[sound.state]}</span>
+            <span>{soundWord(sound.state, sound.level)}</span>
           </button>
           {tools}
         </div>
@@ -608,6 +696,7 @@ export function KitchenScreen({
             </span>
           </p>
         ) : null}
+        {brand ? <PosBrand brand={brand} className="kds-brand" /> : null}
       </footer>
 
       <div className="kds-actions">
@@ -641,6 +730,37 @@ export function KitchenScreen({
           <span className="kds-action-sub">{goSub}</span>
         </button>
       </div>
+
+      {/* Entró una comanda: no se puede no ver. No tapa los botones ni recibe toques; el lector de
+          pantalla lo oye por el aviso de abajo. */}
+      {alarm ? (
+        <div
+          className="kds-alarm"
+          key={alarm.key}
+          data-level={loud ? 'loud' : 'soft'}
+          data-testid="cocina-alarma"
+          aria-hidden
+        >
+          <p className="kds-alarm-card">
+            <span className="kds-alarm-word">
+              <BellRing aria-hidden strokeWidth={2.8} />
+              {alarm.grew
+                ? GREW_LABEL
+                : alarm.titles.length > 1
+                  ? 'Comandas nuevas'
+                  : 'Comanda nueva'}
+            </span>
+            <span className="kds-alarm-tables">
+              {alarm.titles.map((title) => (
+                <b key={title} data-long={title.length > 3 ? 'true' : undefined}>
+                  {title}
+                </b>
+              ))}
+              {alarm.more > 0 ? <em>+{alarm.more}</em> : null}
+            </span>
+          </p>
+        </div>
+      ) : null}
 
       {failure ? (
         <div className="kds-failure" role="alert" key={failure.key}>

@@ -4,11 +4,13 @@ import {
   ArrowRight,
   Check,
   Circle,
+  CirclePlus,
   Flame,
   Leaf,
   TriangleAlert,
   Undo2,
   UsersRound,
+  Zap,
 } from 'lucide-react'
 import { memo, useLayoutEffect, useRef } from 'react'
 import { AGE_WORD, type AgeLevel, elapsedText, formatElapsed } from '@/lib/pos/kitchen/age'
@@ -27,21 +29,28 @@ import { MIN_TICKET_SCALE, nextTicketScale } from '@/lib/pos/kitchen/layout'
 import { cn } from '@/lib/utils'
 
 /**
- * Una comanda colgada del riel: una tanda de una mesa.
+ * Una comanda colgada del riel: todo lo que una mesa tiene pedido en esta pantalla.
  *
  * Arriba, la franja del estado (color + ícono + palabra). Después el número de mesa enorme, el reloj
  * desde que salió a cocina, y los renglones: cantidad grande, producto, y las aclaraciones marcadas con
- * resaltador para que no se pasen. Al pie, en chico, lo que la mesa espera de otras estaciones.
+ * resaltador para que no se pasen. Van juntos por rubro de la carta, y lo que sale primero (una
+ * entrada) va arriba, en negativo. Al pie, en chico, lo que la mesa espera de otras estaciones.
+ *
+ * Si la mesa pide algo más con la comanda ya en marcha, no nace otra tarjeta: se suma a esta, la
+ * franja dice «Se sumó» y cada renglón nuevo lleva su marca hasta que la cocina lo empieza.
  */
 
 const STATUS_ICON = { queued: Circle, preparing: Flame, ready: Check } as const
 
-export function StateWord({ status }: { status: CardStatus }) {
-  const Icon = STATUS_ICON[status]
+/** Cómo se llama una comanda en marcha a la que le agregaron algo. */
+export const GREW_LABEL = 'Se sumó'
+
+export function StateWord({ status, grew = false }: { status: CardStatus; grew?: boolean }) {
+  const Icon = grew ? CirclePlus : STATUS_ICON[status]
   return (
     <>
       <Icon aria-hidden strokeWidth={2.6} />
-      {CARD_STATUS_LABEL[status]}
+      {grew ? GREW_LABEL : CARD_STATUS_LABEL[status]}
     </>
   )
 }
@@ -147,7 +156,7 @@ function Line({ line, cardStatus }: { line: CardLine; cardStatus: CardStatus }) 
   // Solo se marca el renglón que va distinto del resto de la comanda.
   const ahead = line.status === 'served' || (line.status === 'ready' && cardStatus !== 'ready')
   return (
-    <li className="kds-line" data-status={line.status}>
+    <li className="kds-line" data-status={line.status} data-fresh={line.fresh ? 'true' : undefined}>
       <span className="kds-qty" data-many={line.quantity > 1 ? 'true' : undefined}>
         <span className="kds-qty-x" aria-hidden>
           x
@@ -155,7 +164,15 @@ function Line({ line, cardStatus }: { line: CardLine; cardStatus: CardStatus }) 
         {line.quantity}
       </span>
       <div className="kds-what">
-        <p className="kds-name">{line.name}</p>
+        <p className="kds-name">
+          {line.name}
+          {line.fresh ? (
+            <span className="kds-fresh">
+              <CirclePlus aria-hidden strokeWidth={3} />
+              Nuevo
+            </span>
+          ) : null}
+        </p>
         {line.variants.length > 0 ? (
           // El mismo producto pedido de formas distintas: cada forma con cuántas van así.
           <ul className="kds-variants" aria-label="Cómo va cada uno">
@@ -274,7 +291,7 @@ function KitchenTicketImpl({
   const age = AGE_WORD[level]
   const label = [
     `Elegir ${card.spoken}`,
-    CARD_STATUS_LABEL[card.status].toLowerCase(),
+    card.grew ? 'se sumó algo sin empezar' : CARD_STATUS_LABEL[card.status].toLowerCase(),
     `hace ${elapsedText(minutes)}`,
     age ? age.toLowerCase() : null,
   ]
@@ -290,10 +307,11 @@ function KitchenTicketImpl({
       data-arriving={arriving ? 'true' : undefined}
       data-ack={ack ? 'true' : undefined}
       data-wide={wide ? 'true' : undefined}
+      data-grew={card.grew ? 'true' : undefined}
     >
       <div className="kds-paper">
         <p className="kds-band">
-          <StateWord status={card.status} />
+          <StateWord status={card.status} grew={card.grew} />
         </p>
 
         {critical.length > 0 ? (
@@ -333,8 +351,13 @@ function KitchenTicketImpl({
 
         <div ref={body} className="kds-body">
           {card.groups.map((group) => (
-            <section key={group.stationId ?? 'sin-estacion'}>
-              {group.station ? <h3 className="kds-station">{group.station}</h3> : null}
+            <section key={group.key} data-first={group.priority ? 'true' : undefined}>
+              {group.label ? (
+                <h3 className={cn('kds-station', group.priority && 'is-first')}>
+                  {group.priority ? <Zap aria-hidden strokeWidth={2.8} /> : null}
+                  {group.label}
+                </h3>
+              ) : null}
               <ul className="kds-lines">
                 {group.lines.map((line) => (
                   <Line key={line.id} line={line} cardStatus={card.status} />

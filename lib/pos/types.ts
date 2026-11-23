@@ -273,6 +273,16 @@ export type KitchenItem = {
   prep_status: PrepStatus
   started_at: string | null
   ready_at: string | null
+  /**
+   * El rubro de la carta al que pertenece (su categoría directa: «Pizza», «Tablas y milanesas») y su
+   * lugar en la carta: la comanda junta «pizzas con pizzas». Llegan desde la migración
+   * `pos_revisiones_socios`; con la función anterior no vienen y la comanda se arma sin rubros.
+   */
+  category_id?: string | null
+  category?: string | null
+  category_order?: number | null
+  /** «Sale primero» (una entrada): lo marcó el bar en Carta › Cocina y aclaraciones. */
+  priority?: boolean | null
 }
 
 export type KitchenTicket = {

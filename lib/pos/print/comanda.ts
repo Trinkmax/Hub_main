@@ -71,9 +71,9 @@ export function comandaDoc(card: KitchenCard, context: ComandaContext): PrintDoc
 
   lines.push(p.rule('double'))
   for (const group of card.groups) {
-    if (group.station) {
-      lines.push(p.text(group.station, { size: 'sm', bold: true, upper: true }))
-    }
+    // Lo que sale primero no se puede pasar por alto: va en negativo. Los rubros, como rótulo.
+    if (group.priority) lines.push(p.banner(group.label ?? 'Sale primero'))
+    else if (group.label) lines.push(p.text(group.label, { size: 'sm', bold: true, upper: true }))
     for (const line of group.lines) lines.push(itemLine(line))
     lines.push(p.rule('solid'))
   }

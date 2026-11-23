@@ -86,6 +86,25 @@ mueve un salón) o mandarle avisos falsos. Ahora:
 - `usePosPoke` le pasa al socket la sesión de ese momento (`authorizeSocket`) y recién después se une con
   `{ config: { private: true } }`: los permisos se fijan al entrar.
 
+**El token del canal se renueva solo (23/11/2026).** Los socios avisaron que «hay que actualizar todo el
+tiempo para ver los cambios de colores». La causa: la app le escribía el token A MANO al socket
+(`realtime.setAuth(token)`), y un token puesto a mano queda fijo: la librería deja de renovarlo en cada
+latido y dura una hora. Pasada la hora, Realtime cierra los canales privados y cada reintento vuelve a
+entrar con el token vencido (`InvalidJWTExpiration`): el salón quedaba «sin conexión» hasta recargar. Peor
+todavía porque acá la sesión muchas veces la renueva el servidor (el proxy, en cada pedido) y el navegador
+nunca se entera por un evento. Ahora (`lib/supabase/browser.ts`):
+
+- `syncRealtimeAuth()` llama a `realtime.setAuth()` SIN token: el socket le pide la sesión vigente al
+  cliente (la lee de las cookies) y se la manda a los canales si cambió;
+- se repite en cada latido (`onHeartbeat`), porque cuando el navegador sí renueva la sesión supabase-js
+  vuelve a escribirle el token a mano y la renovación automática se apagaría otra vez;
+- si el canal se cae, antes de que la librería reintente se le pasa la sesión de ahora (`use-poke.ts`);
+- y la red de seguridad dejó de ser fija: 20 s con el canal en vivo, 6 s sin canal (`safetyNetMs`). Un
+  salón sin avisos se pone al día cada 6 segundos, no cada 40.
+
+Vale para toda la app (la bandeja de mensajes y las suscripciones de `lib/realtime/subscribe.ts` usan el
+mismo socket).
+
 Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
 del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
 contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de
@@ -124,6 +143,17 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
   en un bar quiere decir que el cliente se lo lleva, no que va a una mesa. El sello de «cobrado» y lo
   que salió bien usan su propio color (`--pos-good`), que no es un estado de mesa.
 - Lo urgente se mueve: la mesa con comida lista late; la demorada se pone roja.
+- **Antes de ponerse roja, avisa** (23/11/2026): cuando una mesa pasa su primer tiempo («miralo») la chapa
+  lleva un borde amarillo (`pos-urg-warn`). Antes ese paso solo sumaba al contador del sector.
+- **«Colores»** (la ficha de la paleta, abajo a la izquierda) abre la leyenda: qué quiere decir cada color
+  y a los cuántos minutos avisa y se pone roja cada estado, con los minutos del bar. Los socios lo
+  preguntaron («¿cuáles son los tiempos de las demoras?») y no había dónde leerlo. Sale de
+  `lib/pos/floor/legend.ts`, y una prueba la compara con la cuenta del mapa (`pos-floor-legend.test.ts`):
+  no puede decir otra cosa. El dueño tiene ahí «Cambiar los tiempos» (lleva a Sucursales › Ajustes).
+- **La marca del bar** va sobre el paño, abajo a la derecha, arriba del selector de vista
+  (`components/pos/ui/pos-brand.tsx`): el logo de Configuración › Apariencia pintado con máscara (sale
+  crema sin importar de qué color sea el archivo) o, si no hay logo, el nombre. En la cocina va al final
+  del estante de abajo.
 - Arriba, el salón en una línea. Cada pestaña de sector avisa cuántas mesas tienen algo pendiente.
 - Una reserva toma su mesa desde 45 minutos antes; antes de eso la mesa está libre pero avisa la hora.
 - **Cambiar de mesa:** mantener apretada una mesa ocupada la levanta; las libres quedan marcadas y se
@@ -598,7 +628,27 @@ Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta), `tests/lib/pos-t
   el dispositivo y en la dirección, `?estaciones=`), y a qué estación va cada producto se decide en
   Carta › Cocina y aclaraciones (por categoría, o producto por producto).
 
-- Una tarjeta por tanda, colgada del riel por orden de llegada; nunca se reacomoda sola.
+- **Una comanda por mesa** (pedido del 22/11/2026: «en la solapa de cocina debe mostrar un ticket por
+  mesa»). Todas las tandas vivas de una mesa van en la misma tarjeta (`buildTableCards`); los iguales se
+  suman aunque vengan de tandas distintas, mientras nadie los haya empezado. Si la mesa pide algo más con
+  la comanda ya en marcha no nace otra tarjeta: la franja pasa a **«Se sumó»** (en negativo) y cada
+  renglón nuevo lleva su marca hasta que la cocina lo empieza. «Avanzar» mueve solo las tandas que hacen
+  falta (`ticketsToMove`): lo que ya estaba listo no vuelve a «en preparación» porque la mesa sumó una
+  gaseosa. En el papel sigue saliendo un tique por tanda (`buildCards`): a un papel no se le agrega nada.
+- **Por rubro, y lo que sale primero arriba** («juntar pizzas con pizzas, milanesas con milanesas»): los
+  renglones van en bloques por rubro de la carta, en el orden de la carta, y lo que el bar marcó como «sale
+  primero» (una entrada) va arriba, en negativo. Los rubros y la marca llegan en cada renglón de la cola
+  (`category`, `category_order`, `priority`, desde la migración `pos_revisiones_socios`); con la función
+  anterior no vienen y la comanda se arma como antes (por estación).
+- **La alerta de comanda nueva** («debe ser más agresiva»): suena una campana fuerte en tres llamados, la
+  pantalla entera se enmarca en amarillo con un cartel que dice la mesa («COMANDA NUEVA · 11», o «SE SUMÓ ·
+  3»), la franja de esa comanda late nueve segundos y, si nadie la empieza, vuelve a sonar cada 25 segundos
+  durante un minuto y medio. Cualquier botón saca el cartel. El botón de sonido pasa por **Fuerte → Suave →
+  Silencio** y queda guardado en el dispositivo (`use-kitchen-sound.ts`); «Suave» es el timbre de antes, sin
+  repetición. El celular además vibra, y si la pestaña quedó atrás el título dice cuántas esperan.
+- «Nuevo» va con el resaltador (antes era la franja apagada): lo que nadie empezó se ve de lejos.
+- Cada tarjeta cuelga del riel por orden de llegada (cuenta desde la tanda más vieja que le falta
+  terminar); nunca se reacomoda sola.
 - Arriba, el total que se está preparando («8 Bacon · 5 Lomito»).
 - Dos botones: Siguiente mueve el marco, Avanzar pasa de Nuevo a En preparación y a Listo; mantenerlo deshace.
   Llegan como teclas (flecha derecha / Enter), así sirve cualquier botonera que se presente como teclado.
