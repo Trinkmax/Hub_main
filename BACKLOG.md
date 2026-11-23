@@ -1800,3 +1800,37 @@ tocó:
   nueva, buscar los embebidos entre ese par de tablas (`tabla(`, `tabla!inner(`)
   y nombrar la relación (`tabla!nombre_de_la_fk(`). Las cuatro consultas entre
   `salon_reservations` y `scheduled_events` ya la nombran.
+
+
+## Revisiones de los socios del 22/11/2026 (punto de venta, sueldos y accesos)
+
+Lo que quedó fuera de esa tanda (el detalle de lo hecho está en `docs/features/pos.md`,
+`docs/features/carta-horarios-y-sale-primero.md`, `docs/features/administracion-simple.md` y
+`docs/features/accesos-administracion.md`):
+
+- **[MEDIA] Reporte de BBVA.** Los socios pidieron «cargar el reporte de BBVA, solo está el de
+  Mercado Pago» y quedaron en revisar si el banco les da uno. Falta un archivo de ejemplo para
+  escribir el lector (el de Mercado Pago vive en el cierre del día de Administración).
+- **[MEDIA] Borrar una categoría de la carta.** En HUB hay una categoría «Postres › Eliminar, no
+  me deja»: alguien no pudo borrarla. Reproducir (probablemente tiene pedidos viejos colgando de
+  sus productos) y dar un mensaje que diga qué hacer («pausala» o «mové sus productos»).
+- **[BAJA] El retiro anulado después de pasado a los libros.** Si en la caja del salón se anula un
+  retiro que ya tiene su comprobante en Administración, el comprobante queda. Hoy hay que
+  anularlo a mano; convendría avisarlo en la ficha del comprobante.
+- **[BAJA] «Sale primero» y horarios suben la versión de la carta.** Cambiar `kitchen_first` (como
+  ya pasaba con `station_id`) hace que los teléfonos muestren «Carta actualizada» sin que cambie
+  nada visible. Arreglarlo es tocar los disparadores de `menu_revisions`.
+- **[BAJA] Nivel «solo compras y pagos»: lo que no hace.** No se le agrega el impuesto al cheque
+  automático al pagar desde el banco, no anula ni deshace, y la foto por QR desde el celular
+  depende de que el archivo quede a nombre de quien creó el link (verificar con un celular de
+  verdad; si no aparece, apagarla para ese nivel en `foto-panel.tsx`). Tex no tiene nada de
+  Administración para ese nivel.
+- **[BAJA] La contadora y «en negro».** La pantalla no le muestra la parte en negro del sueldo ni
+  la marca de los pagos, pero la base se lo devuelve igual (lee las mismas tablas). Si no tiene
+  que llegarle ni por la base, hace falta una vista sin esas columnas.
+- **[BAJA] La cola de trabajos ignora `{ fatal: true }`.** `isRecoverable` reintenta igual un
+  trabajo que el manejador marcó como fatal (visto con `pos_shift_closed` antes de desplegar su
+  manejador). Inofensivo, pero gasta los 4 intentos.
+- **[BAJA] La foto del retiro.** `pos_cash_move` acepta `p_photo_path`, pero la hoja «Sacar plata»
+  no tiene dónde sacarla. Sumarla si los socios piden el comprobante del proveedor en la caja.
+- **[BAJA] Tex no sabe de horarios de la carta ni de «sale primero».**
