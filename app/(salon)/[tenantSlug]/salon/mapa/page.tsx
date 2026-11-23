@@ -81,6 +81,7 @@ export default async function PosFloorPage({
           canEditPlan={access.role === 'owner'}
           canOperate={POS_FLOOR_ROLES.includes(access.role)}
           initialMove={mover && z.uuid().safeParse(mover).success ? mover : null}
+          brand={{ name: access.tenant.name, logoUrl: access.tenant.logo_url }}
           account={
             <AccountSheet
               email={access.user.email ?? ''}
