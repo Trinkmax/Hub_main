@@ -15,53 +15,55 @@ import type { CashMovement, ShiftSummary } from '@/lib/pos/cash/types'
 import { posFont } from '@/lib/pos/font'
 import { clockAt } from '@/lib/pos/order/clock'
 import { cn } from '@/lib/utils'
-import { attempt, type CashApi, newKey } from './api'
-import { PesosInput, TypedGuard, useTypedAmount } from './typed'
+import { attempt, type CashApi } from './api'
+import { MoveForm } from './move-form'
+import { MoveOutFlow, useCashTargets } from './move-out-flow'
 
 /**
  * Plata que entra o sale del cajón sin ser un cobro: sacar para pagar el hielo, sumar cambio. Se
  * anota con monto y motivo, y queda con el nombre de quien la anotó. Un movimiento mal anotado no
  * se borra: se anula diciendo por qué.
+ *
+ * Si el bar usa Administración (`payees`), «Sacar plata» pregunta primero para qué sale: a qué
+ * proveedor, o a quién del equipo (adelanto, horas extra, sueldo). Eso lo arma `MoveOutFlow`; el
+ * resto (lo que entra, y los bares sin Administración) es el formulario de siempre, `MoveForm`.
  */
-
-const REASONS: Readonly<Record<'in' | 'out', ReadonlyArray<string>>> = {
-  out: ['Hielo', 'Proveedor', 'Compra chica', 'Adelanto de sueldo', 'Retiro de los dueños'],
-  in: ['Cambio', 'Seña en efectivo', 'Devolución de un retiro'],
-}
-
-const COPY = {
-  out: {
-    title: 'Sacar plata del cajón',
-    sub: 'Para pagar algo en efectivo. Queda anotado con tu nombre.',
-    noun: 'retiro',
-    why: '¿Para qué?',
-  },
-  in: {
-    title: 'Entró plata al cajón',
-    sub: 'Plata que entra sin ser un cobro: cambio que trajeron, una seña en efectivo.',
-    noun: 'ingreso',
-    why: '¿De dónde viene?',
-  },
-} as const
-
 export function MoveSheet({
   kind,
   shiftId,
+  branchId,
   live,
   blind = false,
+  practice = false,
+  payees = false,
+  today = null,
+  purchaseHref = null,
   api,
   onClose,
   onDone,
+  onSaved,
 }: {
   /** `null` = cerrada. */
   kind: 'in' | 'out' | null
   shiftId: string
+  /** La sucursal de esta caja: de ahí salen las listas de a quién se le paga. */
+  branchId: string
   live: ShiftSummary
   /** Quien anota no ve cuánto tiene que haber en el cajón. */
   blind?: boolean
-  api: Pick<CashApi, 'move'>
+  /** El turno es de práctica: lo anotado no llega a Administración. */
+  practice?: boolean
+  /** El bar usa Administración: al sacar plata se elige el proveedor o a quién del equipo. */
+  payees?: boolean
+  /** El día del bar (`yyyy-MM-dd`), para los atajos de fechas del pago de un sueldo. */
+  today?: string | null
+  /** A dónde se carga la compra de un retiro; `null` si quien está no carga compras. */
+  purchaseHref?: ((movementId: string) => string) | null
+  api: Pick<CashApi, 'move' | 'targets'>
   onClose: () => void
   onDone: (message: string) => void
+  /** Se anotó un retiro con destino: hay que volver a leer la caja (la hoja ya avisa). */
+  onSaved: () => void
 }) {
   const shown = useLast(kind)
   // Cada vez que se abre arranca en blanco y con una clave nueva (al cerrarse no se vacía: baja
@@ -70,6 +72,8 @@ export function MoveSheet({
   if ((kind !== null) !== session.open) {
     setSession({ open: kind !== null, turn: session.turn + (kind !== null ? 1 : 0) })
   }
+  // Las listas se piden al abrir «Sacar plata», no al cargar la caja: casi nunca hacen falta.
+  const targets = useCashTargets(api, branchId, payees && kind === 'out')
   return (
     <Sheet open={kind !== null} onOpenChange={(next) => !next && onClose()}>
       <SheetContent
@@ -79,7 +83,22 @@ export function MoveSheet({
         data-testid="movimiento-nuevo"
       >
         <SheetGrabber />
-        {shown ? (
+        {shown === 'out' && payees ? (
+          <MoveOutFlow
+            key={session.turn}
+            shiftId={shiftId}
+            live={live}
+            blind={blind}
+            practice={practice}
+            today={today}
+            targets={targets}
+            purchaseHref={purchaseHref}
+            api={api}
+            onClose={onClose}
+            onDone={onDone}
+            onSaved={onSaved}
+          />
+        ) : shown ? (
           <MoveForm
             key={session.turn}
             kind={shown}
@@ -93,181 +112,6 @@ export function MoveSheet({
         ) : null}
       </SheetContent>
     </Sheet>
-  )
-}
-
-function MoveForm({
-  kind,
-  shiftId,
-  live,
-  blind,
-  api,
-  onClose,
-  onDone,
-}: {
-  kind: 'in' | 'out'
-  shiftId: string
-  live: ShiftSummary
-  blind: boolean
-  api: Pick<CashApi, 'move'>
-  onClose: () => void
-  onDone: (message: string) => void
-}) {
-  const amount = useTypedAmount()
-  const [reason, setReason] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  // La misma clave mientras la hoja esté abierta: reintentar sin señal no anota dos veces.
-  const [key] = useState(newKey)
-
-  const copy = COPY[kind]
-  const out = kind === 'out'
-  const expected = live.expected_cash_cents
-  // A ciegas no hay con qué comparar: «es más de lo que hay» sería decir cuánto hay.
-  const check = amount.check(out && !blind ? { capCents: expected } : {})
-  const cents = amount.cents
-  const why = reason.trim()
-  // Las propinas con tarjeta se le pagan al equipo con plata del cajón: el retiro ya se sabe.
-  const cardTips = blind ? 0 : live.tip_cents - live.cash_tips_cents
-  const ready = cents !== null && cents > 0 && why !== '' && check.kind === 'ok'
-
-  const submit = async () => {
-    if (!ready || busy || cents === null) return
-    setBusy(true)
-    setError(null)
-    const result = await attempt(() =>
-      api.move({ shiftId, kind, amountCents: cents, reason: why, idempotencyKey: key }),
-    )
-    if (!result.ok) {
-      setBusy(false)
-      setError(result.message)
-      return
-    }
-    onDone(
-      blind
-        ? `${out ? 'Retiro' : 'Ingreso'} de ${formatCentsShort(cents)} anotado.`
-        : `${out ? 'Retiro' : 'Ingreso'} de ${formatCentsShort(cents)} anotado. En el cajón tiene que haber ${formatCentsShort(expected + (out ? -cents : cents))}.`,
-    )
-    onClose()
-  }
-
-  const label =
-    cents === null || cents <= 0
-      ? 'Escribí el monto'
-      : check.kind === 'ask'
-        ? 'Elegí cuál es el monto'
-        : why === ''
-          ? out
-            ? 'Decí para qué es'
-            : 'Decí de dónde viene'
-          : `Anotar ${copy.noun} de ${formatCentsShort(cents)}`
-
-  return (
-    <>
-      <form
-        className="pos-sheet-body caja-sheet-body has-foot"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void submit()
-        }}
-      >
-        <div className="caja-sheet-head">
-          <SheetTitle className="pos-sheet-title caja-sheet-title">{copy.title}</SheetTitle>
-          <SheetDescription className="caja-sheet-sub is-ink">{copy.sub}</SheetDescription>
-        </div>
-
-        {error ? (
-          <p className="caja-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="caja-field">
-          <label htmlFor="caja-move-amount">¿Cuánto?</label>
-          <div className="caja-pesos">
-            <span aria-hidden>$</span>
-            <PesosInput
-              id="caja-move-amount"
-              value={amount.text}
-              onChange={amount.setText}
-              disabled={busy}
-              data-testid="movimiento-monto"
-            />
-          </div>
-        </div>
-
-        {check.kind === 'ask' ? (
-          <TypedGuard
-            ask={check}
-            why={
-              check.why === 'over'
-                ? `En el cajón tiene que haber ${formatCentsShort(expected)}: es más de lo que hay.`
-                : null
-            }
-            onPick={amount.set}
-          />
-        ) : null}
-
-        <fieldset className="caja-group" disabled={busy}>
-          <legend>
-            <span className="pos-sheet-q">{copy.why}</span>
-          </legend>
-          <div className="caja-opts">
-            {out && cardTips > 0 ? (
-              <button
-                type="button"
-                className="caja-opt"
-                aria-pressed={why === 'Propinas con tarjeta' && cents === cardTips}
-                onClick={() => {
-                  amount.set(cardTips)
-                  setReason('Propinas con tarjeta')
-                }}
-              >
-                <span>
-                  Propinas con tarjeta <small>· {formatCentsShort(cardTips)}</small>
-                </span>
-              </button>
-            ) : null}
-            {REASONS[kind].map((option) => (
-              <button
-                key={option}
-                type="button"
-                className="caja-opt"
-                aria-pressed={why === option}
-                onClick={() => setReason(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-          <input
-            className="caja-input"
-            type="text"
-            value={reason}
-            maxLength={200}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="O escribilo: qué se pagó, a quién"
-            aria-label={copy.why}
-            autoComplete="off"
-            enterKeyHint="done"
-            data-testid="movimiento-motivo"
-          />
-        </fieldset>
-      </form>
-
-      <div className="caja-sheet-foot">
-        <button
-          type="button"
-          className="pos-btn pos-btn-primary"
-          onClick={() => void submit()}
-          disabled={!ready || busy}
-          data-testid="movimiento-anotar"
-        >
-          {busy ? <LoaderCircle className="caja-spin size-5" aria-hidden /> : null}
-          {label}
-        </button>
-      </div>
-    </>
   )
 }
 

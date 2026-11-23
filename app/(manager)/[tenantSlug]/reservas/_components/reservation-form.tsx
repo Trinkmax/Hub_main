@@ -56,6 +56,11 @@ import { branchHasFloors } from '@/lib/salon/branch-scope'
 import { type ReservationReturnTo, reservationSavedHref } from '@/lib/salon/calendar-links'
 import { fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import {
+  DEPOSIT_METHOD_LABELS,
+  DEPOSIT_METHODS,
+  parseDepositMethod,
+} from '@/lib/salon/deposit-method'
+import {
   EVENT_FLOOR_OPTIONS,
   EVENT_FLOOR_QUESTION,
   type FloorZone,
@@ -102,6 +107,9 @@ import { QuickTemplateDialog } from './quick-template-dialog'
 import { SegmentPicker } from './segment-picker'
 
 type ReservationFormInput = CreateSalonReservationInput
+
+/** El desplegable no acepta un valor vacío: «Sin anotar» viaja con este nombre y se guarda como vacío. */
+const NO_DEPOSIT_METHOD = 'none'
 
 import {
   type CakeOptionRow,
@@ -892,6 +900,7 @@ export function ReservationForm({
         cake_option_id: 'Torta elegida',
         champagne_count: 'Champagne',
         deposit_cents: 'Seña',
+        deposit_method: 'Medio de la seña',
         primary_manager_id: 'Gestor',
         assistant_manager_id: 'Asistente',
         comments: 'Comentarios',
@@ -1646,6 +1655,39 @@ export function ReservationForm({
                 className="h-11 pl-7 text-base tabular-nums"
               />
             </div>
+            {/* Con qué pagó la seña: solo se pregunta si hay seña. Un desplegable y no fichas porque
+                esta columna es angosta; «Sin anotar» es una respuesta válida (no siempre se sabe). */}
+            {values.deposit_cents > 0 ? (
+              <div className="space-y-1.5 pt-1">
+                <Label
+                  htmlFor="deposit_method"
+                  className="text-xs uppercase tracking-wide text-muted-foreground"
+                >
+                  ¿Con qué la pagó?
+                </Label>
+                <Select
+                  value={parseDepositMethod(values.deposit_method) ?? NO_DEPOSIT_METHOD}
+                  onValueChange={(v) =>
+                    form.setValue('deposit_method', parseDepositMethod(v), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                >
+                  <SelectTrigger id="deposit_method" className="h-11 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_DEPOSIT_METHOD}>Sin anotar</SelectItem>
+                    {DEPOSIT_METHODS.map((method) => (
+                      <SelectItem key={method} value={method}>
+                        {DEPOSIT_METHOD_LABELS[method]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
           {/* Avisos: van pegados al comentario porque son la versión marcable de
               lo que antes se escribía suelto ahí y nadie leía. Chips y no un

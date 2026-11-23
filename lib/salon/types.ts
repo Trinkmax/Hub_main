@@ -10,6 +10,7 @@
  */
 
 import type { ServiceAlert } from './alerts'
+import type { DepositMethod } from './deposit-method'
 
 export type ReservationKind = 'normal' | 'birthday' | 'special'
 
@@ -170,6 +171,12 @@ export type SalonReservationRow = {
   cake_option_id: string | null
   champagne_count: number
   deposit_cents: number
+  /**
+   * Con qué se cobró la seña (los medios del punto de venta). `null` = no se anotó: las señas de antes
+   * y las de una compra online. Opcional en el tipo porque una fila leída antes de que la base tuviera
+   * la columna no lo trae.
+   */
+  deposit_method?: DepositMethod | null
   origin: ReservationOrigin
   primary_manager_id: string
   assistant_manager_id: string | null

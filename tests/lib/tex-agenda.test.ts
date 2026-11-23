@@ -1161,6 +1161,21 @@ describe('preparar una reserva', () => {
     expect(ticket.rows.find((r) => r.label === 'Dónde')?.value).toBe('Planta Baja')
   })
 
+  it('la seña dice con qué se pagó, solo si lo dijeron y si hay seña', () => {
+    const paid = okDraft(draftOf({ sena: 10_000, sena_medio: 'transferencia' }))
+    expect(createSalonReservationSchema.parse(paid.payload.values)).toMatchObject({
+      deposit_cents: 1_000_000,
+      deposit_method: 'transfer',
+    })
+    expect(paid.ticket.rows.find((r) => r.label === 'Seña')?.value).toBe('$ 10.000 · Transferencia')
+    // Sin seña, el medio no se guarda ni se muestra.
+    const none = okDraft(draftOf({ sena_medio: 'efectivo' }))
+    expect(none.payload.values).not.toHaveProperty('deposit_method')
+    expect(none.ticket.rows.find((r) => r.label === 'Seña')).toBeUndefined()
+    // Con seña y sin decir el medio, queda sin anotar.
+    expect(okDraft(draftOf({ sena: 10_000 })).payload.values).not.toHaveProperty('deposit_method')
+  })
+
   it('sin nada, como el formulario: la cena a su hora, en Planta Alta, por WhatsApp', () => {
     const { payload } = okDraft(draftOf({}))
     expect(createSalonReservationSchema.parse(payload.values)).toMatchObject({
@@ -1926,6 +1941,28 @@ describe('cambiar una reserva', () => {
       deposit_cents: 500_000,
       guest_phone: PHONE,
     })
+  })
+
+  it('anota con qué se pagó la seña sin tocar el monto', () => {
+    const r = reservation({ deposit_cents: 500_000 })
+    const { payload, ticket } = okDraft(draftOf(r, { sena_medio: 'efectivo' }))
+    expect(payload.patch).toEqual({ deposit_method: 'cash' })
+    expect(ticket.rows).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: 'Seña pagada con' })]),
+    )
+    expect(updateSalonReservationSchema.parse(fullUpdatePayload(r, payload.patch))).toMatchObject({
+      deposit_cents: 500_000,
+      deposit_method: 'cash',
+    })
+  })
+
+  it('el medio de una seña que no existe no es un cambio', () => {
+    const r = reservation({ deposit_cents: 0 })
+    const draft = draftOf(r, { sena_medio: 'efectivo' })
+    expect(draft.ok).toBe(false)
+    // Con la seña en el mismo pedido, sí.
+    const both = okDraft(draftOf(r, { sena: 8_000, sena_medio: 'qr' }))
+    expect(both.payload.patch).toEqual({ deposit_cents: 800_000, deposit_method: 'qr' })
   })
 
   it('mover la hora a otro servicio mueve el servicio, como la vista rápida', () => {

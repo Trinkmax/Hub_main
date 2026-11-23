@@ -46,6 +46,7 @@ import {
   openShiftIds,
   paymentAccess,
   pickRegister,
+  serviceDayAt,
   shiftTitle,
   staleWords,
 } from '@/lib/pos/cash/screen'
@@ -114,6 +115,10 @@ type Props = {
   tools?: React.ReactNode
   /** Un turno puntual para abrir de entrada (el link del mail de cierre). Solo para quien ve los números. */
   initialShiftId?: string | null
+  /** El bar usa Administración: al sacar plata se elige el proveedor o a quién del equipo. */
+  payees?: boolean
+  /** A dónde se carga la compra de un retiro; `null` si quien está no carga compras. */
+  purchaseHref?: ((movementId: string) => string) | null
 }
 
 /** Qué se le pide a la base: el carril (de verdad o práctica) y, si no es el de siempre, qué turno. */
@@ -136,6 +141,8 @@ export function CashScreen({
   barName,
   tools,
   initialShiftId = null,
+  payees = false,
+  purchaseHref = null,
 }: Props) {
   const router = useRouter()
   const [snapshot, setSnapshot] = useState(initial)
@@ -1245,11 +1252,17 @@ export function CashScreen({
       <MoveSheet
         kind={moveKind}
         shiftId={phase.shift.id}
+        branchId={branch.id}
         live={liveNow}
         blind={blind}
+        practice={practice}
+        payees={payees}
+        today={serviceDayAt(snapshot.now, timeZone)}
+        purchaseHref={purchaseHref}
         api={api}
         onClose={() => setMoveKind(null)}
         onDone={changed}
+        onSaved={() => void reload()}
       />
       <DetailSheet
         open={detailOpen}

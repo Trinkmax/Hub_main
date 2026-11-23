@@ -193,6 +193,11 @@ export type Bill = {
     status: string
     /** La seña entera de la reserva (lo que se usa está en `bill.deposit_cents`). */
     deposit_cents: number
+    /**
+     * Con qué se cobró esa seña (`salon_reservations.deposit_method`), si se anotó. Opcional: la
+     * cuenta lo muestra recién cuando `pos_bill` lo devuelve.
+     */
+    deposit_method?: string | null
     guests: number
   } | null
   customer: {

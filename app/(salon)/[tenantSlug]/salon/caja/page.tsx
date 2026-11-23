@@ -99,6 +99,11 @@ export default async function PosCashPage({
   const today = serviceDayAt(snapshot.data.now, timeZone)
   const visibleShifts =
     snapshot.data.role === 'owner' ? shifts : shifts.filter((shift) => shift.service_day === today)
+  // Con Administración en marcha, «Sacar plata» pregunta para qué: a qué proveedor, a quién del
+  // equipo. Sin ella no hay listas y el retiro es el de siempre. A quien además puede cargar compras
+  // se le ofrece hacerlo en el momento.
+  const payees = access.accounting.enabled && access.accounting.setUp
+  const canLoadPurchases = access.role === 'owner' && access.accounting.buyWrite === true
   const toBranch = ({
     id,
     name,
@@ -126,6 +131,8 @@ export default async function PosCashPage({
         timeZone={timeZone}
         barName={access.tenant.name}
         initialShiftId={first.ok ? shiftId : null}
+        payees={payees}
+        canLoadPurchases={canLoadPurchases}
         account={
           <AccountSheet
             email={access.user.email ?? ''}

@@ -247,6 +247,8 @@ export default async function ReservaDetailPage({
               cake_option_id: reservation.cake_option_id,
               champagne_count: reservation.champagne_count,
               deposit_cents: reservation.deposit_cents,
+              // Sin medio anotado no viaja nada: guardar otra cosa no toca la columna.
+              deposit_method: reservation.deposit_method ?? undefined,
               origin: reservation.origin,
               primary_manager_id: reservation.primary_manager_id,
               assistant_manager_id: reservation.assistant_manager_id ?? undefined,

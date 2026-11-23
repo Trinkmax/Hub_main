@@ -22,6 +22,7 @@ import { SHIFT_CLOSED_JOB } from './notice-job'
 import { getApprovalsInbox, getBill, getShiftSnapshot } from './queries'
 import { POS_CASH_ROLES, POS_CHARGE_ROLES } from './roles'
 import { countTotal } from './shift'
+import { CASH_PURPOSES, type CashTargets, isIsoDay, moveProblem, parseCashTargets } from './targets'
 import type {
   ApprovalsInbox,
   Bill,
@@ -610,18 +611,37 @@ export async function openShift(
   return { ok: true, data: result.data }
 }
 
+const isoDay = z.string().refine((value) => isIsoDay(value))
+
 const cashMovementSchema = z.object({
   shiftId: id,
   kind: z.enum(['in', 'out']),
   amountCents: positiveCents,
-  reason,
+  /**
+   * El texto libre. Sin destino es el motivo (obligatorio, como siempre). Con destino es la nota
+   * (el N.º de factura o remito), o el nombre del proveedor que no está en la lista.
+   */
+  reason: z.string().trim().max(200).nullish(),
+  /** Para qué sale: un proveedor, un adelanto, horas extra, el sueldo. Vacío = texto libre. */
+  purpose: z.enum(CASH_PURPOSES).nullish(),
+  /** El proveedor de la lista de Administración. */
+  partyId: id.nullish(),
+  /** A quién del equipo se le paga. */
+  employeeId: id.nullish(),
+  /** Qué fechas cubre el pago de un sueldo (`yyyy-MM-dd`). */
+  periodFrom: isoDay.nullish(),
+  periodTo: isoDay.nullish(),
   /** Ruta de la foto del comprobante dentro del bucket, bajo la carpeta del bar. */
   photoPath: z.string().trim().max(300).nullish(),
   idempotencyKey,
 })
 export type CashMovementInput = z.input<typeof cashMovementSchema>
 
-/** Plata que entra o sale del cajón sin ser un cobro (sacar para pagar el hielo, sumar cambio). */
+/**
+ * Plata que entra o sale del cajón sin ser un cobro (sacar para pagar el hielo, sumar cambio). Al
+ * sacar se puede decir para qué: a qué proveedor, o a quién del equipo (adelanto, horas extra,
+ * sueldo). Queda anotado para que Administración lo levante (`pos_cash_move`).
+ */
 export async function cashMovement(
   slug: string,
   input: CashMovementInput,
@@ -631,11 +651,23 @@ export async function cashMovement(
   const parsed = cashMovementSchema.safeParse(input)
   if (!parsed.success) return invalid
   const data = parsed.data
-  const result = await call<CashMovementResult>(access, 'pos_cash_movement', {
+  const purpose = data.purpose ?? null
+  const text = data.reason?.trim() || null
+  // Las mismas reglas que la base, para avisar sin hacer el viaje.
+  const problem = moveProblem({ ...data, purpose, reason: text })
+  if (problem)
+    return { ok: false, message: toCashError({ message: problem }).message, code: problem }
+
+  const result = await call<CashMovementResult>(access, 'pos_cash_move', {
     p_shift_id: data.shiftId,
     p_kind: data.kind,
     p_amount_cents: data.amountCents,
-    p_reason: data.reason,
+    p_reason: text,
+    p_purpose: purpose,
+    p_party_id: data.partyId ?? null,
+    p_employee_id: data.employeeId ?? null,
+    p_period_from: data.periodFrom ?? null,
+    p_period_to: data.periodTo ?? null,
     p_photo_path: data.photoPath || null,
     p_idempotency_key: data.idempotencyKey,
   })
@@ -650,12 +682,40 @@ export async function cashMovement(
       payload: {
         shift_id: data.shiftId,
         amount_cents: data.amountCents,
-        reason: data.reason,
+        // Con destino el texto puede traer el nombre de una persona o de un proveedor: en el
+        // registro van solo el destino y los ids.
+        ...(purpose === null
+          ? { reason: text }
+          : {
+              purpose,
+              party_id: data.partyId ?? null,
+              employee_id: data.employeeId ?? null,
+              period_from: data.periodFrom ?? null,
+              period_to: data.periodTo ?? null,
+              has_note: text !== null,
+            }),
         has_photo: Boolean(data.photoPath),
       },
     })
   }
   return { ok: true, data: result.data }
+}
+
+/**
+ * A quién se le puede pagar desde el cajón: los proveedores y el equipo, SOLO nombres. La pide la hoja
+ * de «Sacar plata» al abrirse. Si el bar no usa Administración, las dos listas vienen vacías.
+ */
+export async function cashTargets(
+  slug: string,
+  branchId: string,
+): Promise<ActionResult<CashTargets>> {
+  const access = await authorize(slug, POS_CASH_ROLES)
+  if (isDenied(access)) return access
+  const parsed = id.safeParse(branchId)
+  if (!parsed.success) return invalid
+  const result = await call<unknown>(access, 'pos_cash_targets', { p_branch_id: parsed.data })
+  if (!result.ok) return result
+  return { ok: true, data: parseCashTargets(result.data) }
 }
 
 export async function voidCashMovement(

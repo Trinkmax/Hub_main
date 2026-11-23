@@ -20,6 +20,7 @@ import { StatCard } from '@/components/ui/stat-card'
 import { formatARS } from '@/lib/commissions/calculate'
 import { BRANCH_FILTER_PARAM, branchFilterToParam } from '@/lib/salon/branch-scope'
 import { formatDayLabel } from '@/lib/salon/date-presets'
+import { DEPOSIT_METHOD_LABELS } from '@/lib/salon/deposit-method'
 import type { DepositsReport } from '@/lib/salon/deposits'
 import { cn } from '@/lib/utils'
 import { DepositsBarChart } from './deposits-bar-chart'
@@ -218,6 +219,34 @@ export function DepositsDashboard({
               hint={totals.top_day ? formatDayLabel(totals.top_day.day) : 'Sin señas todavía'}
             />
           </div>
+
+          {/* Con qué se cobraron. Recién aparece cuando alguna seña del período lo dice: con todo
+              «sin anotar» (las de antes) no hay nada que contar. Un renglón, sin tarjeta propia. */}
+          {totals.by_method.some((entry) => entry.method !== null) ? (
+            <div className="-mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1.5 px-1">
+              <h3 className="text-xs uppercase tracking-wide text-muted-foreground">
+                Con qué se cobraron
+              </h3>
+              <ul className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                {totals.by_method.map((entry) => (
+                  <li
+                    key={entry.method ?? 'sin-anotar'}
+                    className="inline-flex items-baseline gap-1.5"
+                  >
+                    <span className={entry.method ? undefined : 'text-muted-foreground'}>
+                      {entry.method ? DEPOSIT_METHOD_LABELS[entry.method] : 'Sin anotar'}
+                    </span>
+                    <span className="font-mono font-semibold tabular-nums">
+                      {formatARS(entry.cents)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {entry.count} {entry.count === 1 ? 'reserva' : 'reservas'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="card-hairline rounded-xl border bg-card">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">

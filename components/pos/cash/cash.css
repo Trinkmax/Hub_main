@@ -2472,3 +2472,387 @@ textarea.caja-input {
   font-weight: 700;
   color: var(--pos-board-ink);
 }
+
+/* ── Sacar plata: para qué sale y a quién (docs/features/pos.md › Retiros con destino) ──
+   Un paso por pantalla: primero las fichas (para qué), después la lista (a quién), después el monto.
+   Todo se toca con el pulgar: nada mide menos de 3,5 rem de alto. */
+.caja-step-back {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.15rem;
+  margin: -0.6rem 0 -0.1rem -0.35rem;
+  padding: 0 0.6rem 0 0.2rem;
+  border-radius: 0.7rem;
+  color: var(--pos-carbon);
+  font-size: 0.98rem;
+  font-weight: 700;
+  justify-self: start;
+}
+.caja-step-back svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.caja-step-back:not(:disabled):active {
+  transform: scale(var(--caja-press));
+}
+.caja-step-back:disabled {
+  opacity: 0.5;
+}
+/* El foco que se mueve solo al cambiar de paso no dibuja un aro alrededor del título. */
+.caja-sheet-head:focus,
+.caja-done:focus {
+  outline: none;
+}
+
+.caja-purposes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.caja-purpose {
+  display: grid;
+  min-width: 0;
+  min-height: 6.4rem;
+  align-content: space-between;
+  gap: 0.7rem;
+  padding: 0.85rem 0.9rem 0.8rem;
+  border-radius: 1.05rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  text-align: left;
+  transition:
+    transform 120ms var(--pos-ease),
+    background-color 120ms var(--pos-ease);
+}
+.caja-purpose:active {
+  transform: scale(var(--caja-press));
+  background: color-mix(in oklab, var(--pos-ink) 7%, var(--pos-paper-2));
+}
+.caja-purpose-icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+}
+.caja-purpose-icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.caja-purpose-text {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+.caja-purpose-text b {
+  font-size: 1.12rem;
+  font-weight: 800;
+  font-stretch: 88%;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.caja-purpose-text small {
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+/* «Otro motivo» es el de siempre: va a lo ancho, más bajo, con el ícono sin relleno. */
+.caja-purpose.is-wide {
+  grid-column: 1 / -1;
+  min-height: 4rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  background: transparent;
+}
+.caja-purpose.is-wide .caja-purpose-icon {
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+}
+
+/* «¿A quién?» no cambia de alto mientras se escribe: el buscador se queda donde está y los nombres
+   aparecen debajo (con el teclado del celular abierto, lo de arriba es lo que se ve). */
+.caja-sheet .caja-who {
+  align-content: start;
+  padding-top: 0;
+}
+.caja-sheet .caja-who.has-search {
+  min-height: min(88dvh, 44rem);
+}
+.caja-who > .caja-sheet-head {
+  padding-top: 1.6rem;
+}
+/* Ocupa también el hueco de arriba (la separación con el título): pegado al borde, tapa lo que pasa
+   por debajo y deja libre la manija de la hoja. */
+.caja-search-dock {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -1.1rem -0.25rem -0.5rem;
+  padding: 1.3rem 0.25rem 0.5rem;
+  background: var(--pos-paper);
+}
+.caja-search {
+  display: flex;
+  min-width: 0;
+  height: 3.5rem;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  transition: box-shadow 140ms var(--pos-ease);
+}
+.caja-search:focus-within {
+  box-shadow: inset 0 0 0 2px var(--pos-ink);
+}
+.caja-search svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  color: var(--pos-ink-soft);
+}
+.caja-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--pos-ink);
+  font-family: inherit;
+  font-size: 1.08rem;
+  font-weight: 600;
+  outline: none;
+  appearance: none;
+}
+.caja-search input::placeholder {
+  color: var(--caja-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+.caja-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.caja-pick {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 0.95rem;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  /* `clip` y no `hidden`: recorta las esquinas sin dejar que la hoja la aplaste (con `hidden` la lista
+     se encogía en vez de dejar que la hoja se deslice, y los últimos renglones no se podían alcanzar). */
+  overflow: clip;
+}
+.caja-pick > li + li {
+  border-top: 1px solid var(--pos-rule);
+}
+.caja-pick-row {
+  display: flex;
+  width: 100%;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.8rem 0.55rem 0.95rem;
+  color: var(--pos-ink);
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  transition: background-color 120ms var(--pos-ease);
+}
+.caja-pick-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+  overflow-wrap: anywhere;
+}
+.caja-pick-row > svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  color: var(--pos-ink-soft);
+}
+.caja-pick-row small {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--pos-ink-soft);
+}
+.caja-pick-row:active {
+  background: color-mix(in oklab, var(--pos-ink) 8%, var(--pos-paper-2));
+}
+/* Un nombre escrito a mano: va suelto, con borde de tinta (lo escribió una persona). */
+.caja-pick-row.is-typed {
+  border-radius: 0.95rem;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--pos-ink);
+}
+/* «¿No es ninguno?»: la salida para anotar un nombre nuevo cuando lo escrito se parece a uno de la lista. */
+.caja-pick-alt {
+  min-height: 2.75rem;
+  justify-self: start;
+  padding: 0 0.2rem;
+  color: var(--pos-carbon);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+}
+.caja-pick-sep {
+  padding: 0.5rem 0.95rem 0.35rem;
+  background: var(--pos-paper);
+  color: var(--pos-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.caja-pick-skel {
+  height: 3.5rem;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklab, var(--pos-ink) 6%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: caja-skel 1.2s linear infinite;
+}
+@keyframes caja-skel {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.caja-pick-empty,
+.caja-pick-hint {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pos-ink-soft);
+  text-wrap: pretty;
+}
+.caja-pick-hint {
+  font-size: 0.9rem;
+}
+.caja-error-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+/* A quién va: el talón del retiro, debajo del nombre. */
+.caja-stub {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-self: start;
+  padding: 0.3rem 0.65rem 0.3rem 0.5rem;
+  border-radius: 999px;
+  background: var(--pos-paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--pos-rule);
+  color: var(--pos-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.caja-stub svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+
+.caja-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.caja-dates label {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--pos-ink-soft);
+}
+/* Un campo de fecha trae su propio ancho mínimo: sin esto el segundo se salía de la hoja en el celular. */
+.caja-dates .caja-input {
+  min-width: 0;
+  padding: 0 0.6rem;
+  font-size: 1rem;
+}
+.caja-period-says {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--pos-carbon);
+  font-variant-numeric: tabular-nums;
+}
+.caja-period-says.is-bad {
+  color: var(--caja-bad);
+}
+
+/* Anotado: el sello, el monto y qué pasa ahora. */
+.caja-done {
+  display: grid;
+  justify-items: start;
+  gap: 0.55rem;
+  padding-top: 0.2rem;
+}
+.caja-done .caja-stamp {
+  margin-bottom: 0.35rem;
+}
+.caja-stamp.is-noted {
+  color: var(--caja-good);
+}
+.caja-done-says {
+  max-width: 34rem;
+  margin-top: 0.3rem;
+  font-size: 1.04rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+/* El enlace a Administración se dibuja como el botón principal de la hoja. */
+.caja-sheet-foot a.pos-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+@media (max-width: 21rem) {
+  .caja-purposes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .caja-purpose {
+    min-height: 4.2rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-content: center;
+    align-items: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .caja-pick-skel {
+    animation: none;
+  }
+}

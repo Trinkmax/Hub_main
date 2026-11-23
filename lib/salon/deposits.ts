@@ -24,6 +24,7 @@
 
 import { rowsToCsv } from '@/lib/stats/csv'
 import { eachIsoDayInclusive, isoDayInCordoba } from './date-presets'
+import { DEPOSIT_METHODS, type DepositMethod, parseDepositMethod } from './deposit-method'
 import type { SalonReservationStatus } from './types'
 
 /**
@@ -59,6 +60,17 @@ export type DepositSourceRow = {
   /** Centavos. `bigint` en la DB: PostgREST lo puede mandar como string. */
   deposit_cents: number | string
   status: SalonReservationStatus
+  /** Con qué se cobró. Vacío (o ausente, si la base todavía no lo trae) = no se anotó. */
+  deposit_method?: string | null
+}
+
+/** La plata de las señas que entró por un medio. */
+export type DepositMethodTotal = {
+  /** `null`: las señas que no dicen con qué se cobraron. */
+  method: DepositMethod | null
+  cents: number
+  /** Cuántas reservas. */
+  count: number
 }
 
 export type DepositDay = {
@@ -99,6 +111,12 @@ export type DepositTotals = {
    */
   avg_day_cents: number
   median_day_cents: number
+  /**
+   * Con qué se cobraron las señas del período: un renglón por medio que juntó algo, en el orden de
+   * siempre, y «sin anotar» al final. Suma `total_cents`. Las de antes de que se pudiera anotar (y
+   * las de compras online) caen todas en «sin anotar».
+   */
+  by_method: DepositMethodTotal[]
 }
 
 export type DepositsReport = {
@@ -159,6 +177,7 @@ export function aggregateDepositsByDay(input: {
   for (const day of eachIsoDayInclusive(input.from, input.to)) {
     buckets.set(day, emptyDay(day))
   }
+  const methods = new Map<DepositMethod | null, { cents: number; count: number }>()
 
   for (const row of input.rows) {
     // `reservation_date` NO se parsea a Date: `new Date('2026-09-05')` es
@@ -185,7 +204,14 @@ export function aggregateDepositsByDay(input: {
     const cents = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 
     bucket.reservations += 1
-    if (cents > 0) bucket.with_deposit += 1
+    if (cents > 0) {
+      bucket.with_deposit += 1
+      const method = parseDepositMethod(row.deposit_method)
+      const sum = methods.get(method) ?? { cents: 0, count: 0 }
+      sum.cents += cents
+      sum.count += 1
+      methods.set(method, sum)
+    }
     bucket.total_cents += cents
     if (isFallen(row.status)) {
       bucket.fallen_cents += cents
@@ -211,6 +237,10 @@ export function aggregateDepositsByDay(input: {
     top_day: null,
     avg_day_cents: 0,
     median_day_cents: 0,
+    by_method: [...DEPOSIT_METHODS, null].flatMap((method) => {
+      const sum = methods.get(method)
+      return sum ? [{ method, cents: sum.cents, count: sum.count }] : []
+    }),
   }
 
   const dailyAmounts: number[] = []

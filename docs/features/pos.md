@@ -248,7 +248,9 @@ pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
   anterior y pregunta «¿Están en el cajón?» (si no están, se escribe lo que hay).
 - **El turno abierto**: cuánto entró, las teclas de los medios (cuentan y filtran), la cinta que se escribe
   sola con cada cobro y, abajo, cuánto efectivo tiene que haber en el cajón. «Sacar plata» y «Entró plata»
-  piden monto y motivo. Tocar un cobro lo corrige (medio, factura) o lo anula; queda quién y cuándo.
+  piden monto y motivo; con Administración en marcha, «Sacar plata» pregunta además para qué sale y a
+  quién (ver «Retiros con destino»). Tocar un cobro lo corrige (medio, factura) o lo anula; queda quién y
+  cuándo.
 - **Cerrar**: se cuentan los billetes sin ver cuánto tenía que haber, después se compara (si no coincide,
   la pantalla sugiere qué cobro mirar), se dice cuánto queda de cambio y se confirma. Queda el resumen del
   turno, para copiar o mandar por WhatsApp.
@@ -291,6 +293,73 @@ esto nos lo mande a nosotros y que no manipule la información el encargado?».
 Probado en el bar de ejemplo con un usuario Cajero de prueba (`qa.cajero+demoadm`): caja abierta a ciegas,
 conteo de $ 10.000 contra $ 15.000 → «Contá una vez más» → recuento → cierre → «Turno cerrado»; y con el
 dueño de prueba, el mismo turno abierto desde el link (`?turno=`), con el resumen entero.
+
+### Retiros con destino: para qué sale la plata (23/11/2026)
+
+Pedido de los socios (22/11): «cuando se pone sacar plata de la caja y se selecciona el proveedor, se debe
+abrir el desplegable para cargar la compra, pago o comprapago», «si pongo adelanto de sueldo, debe dar la
+apertura del personal para cargar el adelanto y que se cargue» y «tiene que haber una opción de "hora extra"
+igual que "adelanto personal" o "proveedores" […] cargar el monto sin dar más información que eso».
+
+**Cómo se usa.** Con Administración en marcha, «Sacar plata» es un recorrido de un paso por pantalla:
+
+1. **¿Para qué sale la plata?** Cinco fichas: Proveedor, Adelanto de sueldo, Hora extra, Pago de sueldo y
+   Otro motivo (el retiro de siempre, con el motivo escrito y el atajo de las propinas con tarjeta).
+2. **¿A quién?** La lista, con el buscador pegado arriba (sin tildes ni mayúsculas; primero los que
+   empiezan con lo escrito). Con buscador la hoja es alta y no cambia de alto mientras se escribe: en el
+   celular, lo de arriba es lo que queda a la vista con el teclado abierto. Del equipo van primero los de
+   esta sucursal y después «De otra sucursal»; con menos de siete personas no hay buscador. Un proveedor
+   que no está en la lista se anota igual: se escribe el nombre y aparece «Usar "…" · No está en la lista»
+   (si lo escrito se parece a uno de la lista, queda como salida chica: «¿No es ninguno? Usar "…"»).
+3. **¿Cuánto?** El monto, con la misma pregunta de los ceros de toda la caja. Un proveedor de la lista
+   suma, si lo hay, el N.º de factura o remito; uno escrito a mano es el nombre y el monto (la base guarda
+   ese texto como nombre del proveedor). El pago de un sueldo suma, opcional, «¿Qué fechas cubre?»:
+   «1.ª quincena», «2.ª quincena» y «Todo noviembre» (del mes que se está pagando: hasta el día 10, el
+   anterior), «Esta semana» u «Otras fechas»; al elegir se lee el rango entero («Del 1 al 15 de
+   noviembre»), que va en sus columnas y también en el motivo, para que se lea en la cinta y en el
+   cierre. Un adelanto o unas horas extra no piden nada más.
+4. **Anotado.** El sello, el monto y qué pasa ahora: los del equipo, «los socios lo ven en Sueldos»; el
+   de un proveedor, «quedó anotado para Administración» y, si quien está puede cargar compras
+   (`access.accounting.buyWrite`), el botón **«Cargar la compra ahora»**, que lleva a
+   `/[bar]/administracion/compras?caja=<retiro>`: ahí está «De la caja del salón», con ese retiro
+   resaltado y «Cargar la compra / Era un pago / Descartar».
+
+**Lo que ve quien atiende la caja: nombres y nada más.** Ni sueldos, ni saldos, ni lo que se le debe a un
+proveedor, ni si algo va en blanco o en negro: eso es de los socios, en Administración. A ciegas tampoco
+se dice cuánto tiene que quedar en el cajón. En un turno de práctica el retiro se anota igual, avisa que
+no va a Administración y no ofrece cargar la compra.
+
+**Piezas.**
+
+- Base (`pos_revisiones_socios`): `pos_cash_targets(p_branch_id)` → `{ suppliers: [{id,name}], employees:
+  [{id,name,here}] }` (dueño o caja; listas vacías si el bar no usa Administración) y `pos_cash_move(…)`,
+  que es `pos_cash_movement` con el destino (`p_purpose`: `supplier` | `advance` | `overtime` | `salary`),
+  a quién (`p_party_id` o `p_employee_id`) y, para un sueldo, `p_period_from/to`. El motivo que queda en la
+  cinta lo arma la base («Adelanto de sueldo · Ana», «Proveedor · Hielo Sur · Remito 12»), así se lee igual
+  en la cinta, en el cierre impreso y en el mail a los socios. `pos_cash_movement` sigue existiendo para la
+  app vieja; la nueva usa siempre `pos_cash_move`.
+- `lib/pos/cash/targets.ts` (puro, con pruebas): los destinos y sus palabras, el buscador, los atajos de
+  fechas, lo que se manda (`targetFields`) y las mismas reglas de la base para avisar antes del viaje
+  (`moveProblem`).
+- `lib/pos/cash/actions.ts`: `cashMovement` (ahora con destino) y `cashTargets`. En la auditoría de un
+  retiro con destino van el destino y los ids, nunca el nombre ni la nota.
+- `components/pos/cash/move-out-flow.tsx` (el recorrido y `useCashTargets`: las listas se piden al abrir
+  la hoja, no al cargar la caja), `move-form.tsx` (el formulario de siempre) y `movement-sheets.tsx` (la
+  hoja, que elige: con `payees` el recorrido; sin Administración, o para «Entró plata», el de siempre).
+- La página de la caja le pasa `payees` (Administración prendida y configurada) y `canLoadPurchases`.
+
+**Lo que falta de este lado.** La foto del comprobante: `photo_path` viaja hasta la base pero la caja
+todavía no tiene dónde sacarla. Un retiro anulado después de pasado a los libros no avisa en
+Administración.
+
+**Recorrido el 23/11/2026** en el bar de ejemplo (Cerro, base real), en compu (1190 × 660) y celular:
+con el dueño de prueba, proveedor de la lista ($ 25.000, «Remito 12») → «Anotado» con «Cargar la compra
+ahora», que abre Compras con el retiro resaltado; hora extra y pago de sueldo con «1.ª quincena»; con el
+cajero de prueba (a ciegas), proveedor escrito a mano y adelanto → «Anotado» sin el botón y sin decir
+cuánto queda en el cajón. En un turno de práctica: «Otro motivo», «Entró plata», buscar a alguien que no
+existe («No hay nadie con ese nombre»), buscar sin tildes («nan» encuentra a Ñáñez), monto vacío (el
+botón dice qué falta) y sin conexión («No hay señal: no se guardó», y al volver se anota una sola vez).
+En la cinta, en «El turno en detalle» y en el cierre se lee «Retiro · Adelanto de sueldo · …».
 
 ### Prueba de punta a punta (13/11, bar de ejemplo, sucursal Cerro, base real)
 
@@ -389,6 +458,11 @@ lleva la cola y la lista de «Deshacer»; `lib/menu/kitchen/ops.ts` aplica cada 
   cocido). Se elige cómo se contesta (una si hace falta, una sí o sí, las que hagan falta, al menos una),
   cada opción puede sumar al precio (en pesos) y se ofrece en categorías enteras o en productos sueltos. El
   estado dice si el mozo la ve y en cuántos productos. Hay cuatro de arranque para no empezar de cero.
+
+- **Sale primero (23/11):** tercera pestaña (`?ver=primero`). Lo que se marca ahí encabeza la comanda en cocina
+  («Sale primero»): ideal para entradas. Se marca una categoría entera o un producto suelto; no depende de que
+  haya estaciones. El detalle, junto con los **horarios por categoría** (el menú del mediodía, el del fin de
+  semana), está en [`carta-horarios-y-sale-primero.md`](./carta-horarios-y-sale-primero.md).
 
 Probado contra la base real en el bar de ejemplo (13/11): Vinos a Fríos con el marcador y deshacer; marcador
 con el teclado; estación «Parrilla QA» creada y borrada; opción «Vuelta y vuelta» sumada y sacada.

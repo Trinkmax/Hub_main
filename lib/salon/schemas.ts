@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { canonicalPhone } from '@/lib/phone'
 import { SERVICE_ALERTS, type ServiceAlert } from './alerts'
+import { DEPOSIT_METHODS } from './deposit-method'
 import { parseInstagramHandle } from './instagram'
 import { TABLE_LABEL_MAX } from './types'
 
@@ -137,6 +138,19 @@ const cakeOptionField = z
   .optional()
 
 /**
+ * Con qué se cobró la seña (los medios del punto de venta). Mismo tri-estado que la torta:
+ *   - `'transfer'` → ese medio
+ *   - `''` o `null` → no se anotó (o lo sacaron a propósito)
+ *   - ausente (`undefined`) → la action NO toca la columna
+ *
+ * Sin seña no hay medio: eso lo resuelve la action con el monto (`depositMethodForSave`).
+ */
+export const depositMethodField = z
+  .union([z.enum(DEPOSIT_METHODS), z.literal(''), z.null()])
+  .transform((v) => (v ? v : null))
+  .optional()
+
+/**
  * Mesa asignada en el servicio. Texto libre corto ("12", "12+13", "Barra"):
  * se normalizan espacios internos y se recorta. Mismo tri-estado que la torta:
  *   - `'12'` → `'12'` (asignada)
@@ -224,6 +238,7 @@ export const createSalonReservationSchema = z
     cake_option_id: cakeOptionField,
     champagne_count: z.coerce.number().int().min(0).max(2).default(0),
     deposit_cents: z.coerce.number().int().min(0).default(0),
+    deposit_method: depositMethodField,
 
     origin: reservationOriginEnum.default('whatsapp'),
     primary_manager_id: z.string().uuid({ message: 'Asignar gestor' }),
@@ -285,6 +300,7 @@ export const updateSalonReservationSchema = z
     cake_option_id: cakeOptionField,
     champagne_count: z.coerce.number().int().min(0).max(2).default(0),
     deposit_cents: z.coerce.number().int().min(0).default(0),
+    deposit_method: depositMethodField,
 
     origin: reservationOriginEnum,
     primary_manager_id: z.string().uuid(),

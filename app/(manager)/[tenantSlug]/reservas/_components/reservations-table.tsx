@@ -25,6 +25,7 @@ import {
 import type { BranchRef } from '@/lib/branches/types'
 import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
+import { depositMethodLabel } from '@/lib/salon/deposit-method'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import { groupByService } from '@/lib/salon/services'
@@ -329,7 +330,14 @@ export function ReservationsTable({
                       </DataTableCell>
                       <DataTableCell className="text-right font-mono text-sm tabular-nums">
                         {r.deposit_cents > 0 ? (
-                          ARSFormat(r.deposit_cents)
+                          <span className="flex flex-col items-end leading-tight">
+                            {ARSFormat(r.deposit_cents)}
+                            {depositMethodLabel(r.deposit_method) ? (
+                              <span className="font-sans text-[11px] text-muted-foreground">
+                                {depositMethodLabel(r.deposit_method)}
+                              </span>
+                            ) : null}
+                          </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}

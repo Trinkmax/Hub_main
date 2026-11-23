@@ -17,6 +17,7 @@ import {
   type Bill,
   type BillDiscount,
   type InboxApproval,
+  isPayMethod,
   METHOD_LABEL,
   type Payment,
 } from '@/lib/pos/cash/types'
@@ -123,6 +124,12 @@ export function BillPaper({
   )
   const voidsTotal = bill.voids.reduce((sum, item) => sum + item.amount_cents, 0)
   const wholeDeposit = bill.reservation?.deposit_cents ?? 0
+  // Con qué se cobró la seña, si la reserva lo dice («otro» no suma nada: se calla).
+  const depositMethod = bill.reservation?.deposit_method
+  const depositPaidWith =
+    isPayMethod(depositMethod) && depositMethod !== 'other'
+      ? METHOD_LABEL[depositMethod].toLowerCase().replace('qr', 'QR')
+      : null
 
   return (
     <article className="pay-paper" aria-label={`Cuenta de ${title}`} data-testid="pay-paper">
@@ -316,6 +323,7 @@ export function BillPaper({
           <p className="pay-sum" data-testid="pay-deposit">
             <span>
               Seña{bill.reservation ? ` · ${bill.reservation.name}` : ''}
+              {depositPaidWith ? <small>pagada con {depositPaidWith}</small> : null}
               {wholeDeposit > numbers.deposit_cents ? (
                 <small>de {money(wholeDeposit)}: se usa lo que alcanza la cuenta</small>
               ) : null}
