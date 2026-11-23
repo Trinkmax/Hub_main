@@ -37,6 +37,22 @@ export type TreasuryDraft = {
   alias: string
   allowNegative: boolean
   createBankParty: boolean
+  /**
+   * La sucursal de la caja: un id, `null` = de todo el bar, o sin la clave (`undefined`) = no se manda (la base
+   * no la toca; una caja nueva queda de todo el bar).
+   */
+  branchId?: string | null
+}
+
+/**
+ * La sucursal con que arranca una caja nueva: el efectivo es de un local (la sucursal que se mira; en «Todas»,
+ * la principal); las billeteras, los bancos y las tarjetas, de todo el bar (como el relleno de la base).
+ */
+export function newTreasuryBranchId(
+  kind: TreasuryKind,
+  cashBranchId: string | null,
+): string | null {
+  return kind === 'cash' ? cashBranchId : null
 }
 
 /** El borrador de una edición, o el de un alta: banco, con «sumarlo como proveedor» prendido. */
@@ -53,6 +69,7 @@ export function treasuryDraftOf(t: TreasuryAccountRow | null): TreasuryDraft {
         alias: t.alias ?? '',
         allowNegative: t.allowNegative,
         createBankParty: false,
+        ...(t.branchId !== undefined ? { branchId: t.branchId } : {}),
       }
     : {
         id: null,
@@ -84,6 +101,7 @@ export function treasurySavePayload(d: TreasuryDraft): Record<string, unknown> {
     cbuCvu: transfers ? d.cbuCvu.trim() || null : null,
     alias: transfers ? d.alias.trim() || null : null,
     allowNegative: d.kind === 'cash' ? false : d.allowNegative,
+    ...(d.branchId !== undefined ? { branchId: d.branchId } : {}),
   }
   return d.id
     ? { id: d.id, expectedUpdatedAt: d.updatedAt, ...base }

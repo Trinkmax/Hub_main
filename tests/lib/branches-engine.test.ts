@@ -390,4 +390,54 @@ describe('qué pantallas se miran por sucursal', () => {
     expect(barSectionName('/hub/mensajeria/inbox', 'hub')).toBe('Mensajería')
     expect(barSectionName('/hub/configuracion/equipo', 'hub')).toBe('La configuración')
   })
+
+  it('Administración: compras, gastos fijos, caja y la ficha de un comprobante son de cada local', async () => {
+    const { branchScopeForPath } = await import('@/lib/branches/sections')
+    for (const path of [
+      '/hub/administracion/compras',
+      '/hub/administracion/compras/semana',
+      '/hub/administracion/compras/proveedores/6011ae59-1a30-4119-a45b-4152b1ba10ed',
+      '/hub/administracion/compras/nueva?modo=pago',
+      '/hub/administracion/compras/gastos-fijos/nuevo',
+      '/hub/administracion/gastos-fijos',
+      '/hub/administracion/gastos-fijos/completar',
+      '/hub/administracion/cajas',
+      '/hub/administracion/cajas/6380c468-cf88-495c-a0f3-85e42279a355',
+      '/hub/administracion/cajas/gasto-bancario',
+      '/hub/administracion/comprobantes/6380c468-cf88-495c-a0f3-85e42279a355',
+    ]) {
+      expect(branchScopeForPath(path, 'hub'), path).toBe('branch')
+    }
+  })
+
+  it('Administración: el resto sigue siendo de todo el bar (la píldora dice «Todo el bar»)', async () => {
+    const { branchScopeForPath, barSectionName } = await import('@/lib/branches/sections')
+    for (const path of [
+      '/hub/administracion',
+      '/hub/administracion/ventas',
+      '/hub/administracion/ventas/cierre',
+      '/hub/administracion/ventas/nueva-factura',
+      '/hub/administracion/sueldos',
+      '/hub/administracion/libros/sumas-y-saldos',
+      '/hub/administracion/libros/asiento-manual',
+      '/hub/administracion/asientos/6380c468-cf88-495c-a0f3-85e42279a355',
+      '/hub/administracion/plan-de-cuentas',
+      '/hub/administracion/ajustes',
+      '/hub/administracion/guias/como-arrancar',
+      '/hub/administracion/configurar',
+      '/hub/administracion/importar/mercado-pago',
+      '/hub/administracion/cajasx',
+      '/hub/compras',
+    ]) {
+      expect(branchScopeForPath(path, 'hub'), path).toBe('bar')
+    }
+    expect(barSectionName('/hub/administracion', 'hub')).toBe('El resumen de Administración')
+    expect(barSectionName('/hub/administracion/ventas/cierre', 'hub')).toBe('Ventas')
+    expect(barSectionName('/hub/administracion/sueldos', 'hub')).toBe('Sueldos')
+    expect(barSectionName('/hub/administracion/libros/mayor', 'hub')).toBe('La contabilidad')
+    expect(barSectionName('/hub/administracion/ajustes', 'hub')).toBe(
+      'Los ajustes de Administración',
+    )
+    expect(barSectionName('/hub/administracion/guias', 'hub')).toBe('Administración')
+  })
 })

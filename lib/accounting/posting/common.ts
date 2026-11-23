@@ -647,6 +647,7 @@ export function proposedDocument(
     replacesDocumentId: null,
     correctsDocumentId: null,
     recurringExpenseId: null,
+    branchId: null,
     settlesCommissions: false,
     countedCents: null,
     expectedBookCents: null,
@@ -657,13 +658,31 @@ export function proposedDocument(
   }
 }
 
+/**
+ * El bundle de un builder. La sucursal que eligió el formulario (`meta.branchId`) va en cada comprobante que
+ * todavía no tiene una: el gasto, su impuesto al cheque, la compra y su pago quedan en la misma sucursal.
+ */
 export function bundleOf(
   meta: PostingMeta,
   documents: ProposedDocument[],
   allocations: ProposedAllocation[] = [],
   newParties: NewParty[] = [],
 ): ProposedBundle {
-  return { clientRef: meta.clientRef, newParties, documents, allocations }
+  return {
+    clientRef: meta.clientRef,
+    newParties,
+    documents: withDocumentBranch(documents, meta.branchId ?? null),
+    allocations,
+  }
+}
+
+/** Los comprobantes con la sucursal puesta donde falta (sin sucursal, quedan como estaban). */
+export function withDocumentBranch(
+  documents: ProposedDocument[],
+  branchId: string | null,
+): ProposedDocument[] {
+  if (!branchId) return documents
+  return documents.map((d) => (d.branchId ? d : { ...d, branchId }))
 }
 
 // ─── Cierre de todo builder ──────────────────────────────────────────────────
@@ -824,6 +843,8 @@ export function toRpcPayload(bundle: ProposedBundle, previewHash: string): AccPo
       replaces_document_id: d.replacesDocumentId,
       corrects_document_id: d.correctsDocumentId,
       recurring_expense_id: d.recurringExpenseId,
+      // Solo si el formulario la eligió: sin la clave, la base decide (C.3.1 · sucursales).
+      ...(d.branchId ? { branch_id: d.branchId } : {}),
       settles_commissions: d.settlesCommissions,
       counted_cents: d.countedCents,
       expected_book_cents: d.expectedBookCents,

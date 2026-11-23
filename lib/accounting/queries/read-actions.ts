@@ -14,8 +14,11 @@
 
 import { z } from 'zod'
 import { authorizeAccounting } from '@/lib/accounting/access'
+import { isEmptyBranchFilter, rpcBranchIdOfFilter } from '@/lib/accounting/branch'
 import { loadPostingCatalog, type PostingCatalog } from '@/lib/accounting/context'
 import { PARTY_KINDS } from '@/lib/accounting/types'
+import { clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   type FormDefaults,
   findPossibleDuplicate,
@@ -62,16 +65,29 @@ export async function fetchAccountingCatalog(slug: string): Promise<QueryOutcome
   return withReader(slug, (tenantId) => loadPostingCatalog(tenantId))
 }
 
-/** Saldo de cada caja hoy (o al día pedido). */
+/** El filtro de sucursal con el que se dibujó la pantalla (`useBranchScope().filter`). */
+const branchFilterSchema = z.object({ ids: z.array(uuid).max(50).nullable() }).nullish()
+
+/**
+ * Saldo de cada caja hoy (o al día pedido). Con `branch` (el filtro de la pantalla, recortado a lo que la
+ * persona ve hoy): las cajas de esa sucursal y las de todo el bar.
+ */
 export async function fetchTreasuryBalances(
   slug: string,
   raw: unknown = {},
 ): Promise<QueryOutcome<TreasuryBalanceRow[]>> {
-  const parsed = z.object({ asOf: isoDay.nullish() }).safeParse(raw ?? {})
+  const parsed = z
+    .object({ asOf: isoDay.nullish(), branch: branchFilterSchema })
+    .safeParse(raw ?? {})
   if (!parsed.success) return invalid(parsed.error)
-  return withReader(slug, (tenantId) =>
-    listTreasuryBalances(tenantId, { asOf: parsed.data.asOf ?? null }),
-  )
+  return withReader(slug, async (tenantId) => {
+    const branch = clampBranchFilter(parsed.data.branch, await getBranchScope(slug))
+    if (isEmptyBranchFilter(branch)) return []
+    return listTreasuryBalances(tenantId, {
+      asOf: parsed.data.asOf ?? null,
+      branchId: rpcBranchIdOfFilter(branch),
+    })
+  })
 }
 
 const openItemsSchema = z.object({

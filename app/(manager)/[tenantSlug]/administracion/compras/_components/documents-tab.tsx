@@ -25,6 +25,7 @@ import {
   type QueryOutcome,
   settleQuery,
 } from '@/lib/accounting/queries'
+import type { BranchFilter } from '@/lib/branches/filter'
 import { periodLead } from '../_lib/libreta'
 import { comprasHref, firstParam, newPurchaseHref } from '../_lib/links'
 import { type ListPeriod, periodPhrase, resolveListPeriod } from '../_lib/period'
@@ -113,6 +114,7 @@ function listHref(
 export function DocumentsTab({
   mode,
   tenantId,
+  branch,
   tenantSlug,
   sp,
   today,
@@ -120,6 +122,8 @@ export function DocumentsTab({
 }: {
   mode: DocumentsTabMode
   tenantId: string
+  /** La sucursal que se mira: los comprobantes de esa sucursal (en «Todas» o sin filtro, todos). */
+  branch?: BranchFilter
   tenantSlug: string
   sp: Readonly<Record<string, string | string[] | undefined>>
   today: string
@@ -158,6 +162,7 @@ export function DocumentsTab({
       q,
       after: offset > 0 ? encodeCursor({ o: offset }, offset) : null,
       limit: LIST_PAGE_SIZE,
+      branch,
     }),
   )
 
@@ -239,7 +244,7 @@ export function DocumentsTab({
 
       {mode === 'comprobantes' ? (
         <Suspense key={`${period.from}|${period.to}`} fallback={<TotalizerSkeleton />}>
-          <InvoicedTotals tenantId={tenantId} from={period.from} to={period.to} />
+          <InvoicedTotals tenantId={tenantId} from={period.from} to={period.to} branch={branch} />
         </Suspense>
       ) : null}
 

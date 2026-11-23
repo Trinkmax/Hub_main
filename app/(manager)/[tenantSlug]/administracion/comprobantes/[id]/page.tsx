@@ -51,6 +51,7 @@ import {
   documentActions,
 } from '../_lib/document-view'
 import { internalVoucherNumber } from '../_lib/internal-voucher'
+import { DocumentBranch } from './_components/document-branch'
 import { DocumentHero } from './_components/document-hero'
 import { DocumentLinks } from './_components/document-links'
 import { DocumentTicket } from './_components/document-ticket'
@@ -392,6 +393,13 @@ export default async function ComprobantePage({
         <div className="text-sm text-muted-foreground">
           <HeadingLine parts={heading.parts} tenantSlug={tenantSlug} base={base} />
         </div>
+        {/* De qué sucursal es y, para quien carga, «Cambiar de sucursal» (con una sola, nada). */}
+        <DocumentBranch
+          tenantSlug={tenantSlug}
+          documentId={doc.id}
+          branchId={doc.branchId ?? null}
+          canMove={canWrite && doc.status === 'posted' && doc.period?.status === 'open'}
+        />
         {internalNumber !== null ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
             <span className="font-medium tabular-nums">

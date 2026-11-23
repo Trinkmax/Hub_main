@@ -25,6 +25,7 @@ import type {
   reverseSchema,
   salesCloseSchema,
   salesInvoiceSchema,
+  setDocumentBranchSchema,
   transferSchema,
   treasuryAdjustmentSchema,
   unallocateSchema,
@@ -54,6 +55,7 @@ export type VoidDocumentValues = z.input<typeof voidDocumentSchema>
 export type ReverseDocumentValues = z.input<typeof reverseSchema>
 export type AllocateItemsValues = z.input<typeof allocateSchema>
 export type UnallocateItemValues = z.input<typeof unallocateSchema>
+export type SetDocumentBranchValues = z.input<typeof setDocumentBranchSchema>
 
 // ─── Vista previa en el servidor («Ver asiento») ─────────────────────────────
 
@@ -113,6 +115,13 @@ export type ReverseDocumentResult = {
 
 /** `acc_allocate`: las imputaciones creadas. */
 export type AllocateItemsResult = { allocationIds: string[] }
+
+/** `acc_set_document_branch`: la sucursal con la que quedó y si cambió (`false`: ya era de esa). */
+export type SetDocumentBranchResult = {
+  documentId: string
+  branchId: string
+  moved: boolean
+}
 
 /** `acc_mark_treasury_checked`: la caja quedó verificada a esa fecha. */
 export type TreasuryCheckedResult = {

@@ -293,6 +293,11 @@ export const postingMeta = {
     .string({ message: 'Falta la vista previa. Recargá la página.' })
     .regex(PREVIEW_HASH_RE, 'Falta la vista previa. Recargá la página.'),
   warningsAck: list(warningKeyField).max(12, 'Demasiados avisos.').default([]),
+  /**
+   * La sucursal del comprobante (las pantallas por sucursal la mandan siempre). Sin ella, la decide la base: la
+   * del gasto fijo, la principal para lo operativo, ninguna para un asiento manual.
+   */
+  branchId: uuidField('Elegí la sucursal.').nullish(),
 }
 
 /** Proveedor nuevo en línea (H.5): nombre + condición (RI por defecto) + CUIT opcional. */
@@ -1328,6 +1333,16 @@ export const voidDocumentSchema = obj({
 
 export const undoDocumentSchema = obj({ documentId: uuidField('Falta el comprobante.') })
 
+/**
+ * «Cambiar de sucursal» (`acc_set_document_branch`): solo la sucursal; no toca montos, partidas ni el libro. El
+ * motivo es opcional (queda en la auditoría).
+ */
+export const setDocumentBranchSchema = obj({
+  documentId: uuidField('Falta el comprobante.'),
+  branchId: uuidField('Elegí la sucursal.'),
+  reason: optionalText(300, 'El motivo puede tener hasta 300 caracteres.').default(null),
+})
+
 /** «Anular con fecha de hoy» (comprobante de un mes cerrado). */
 export const reverseSchema = obj({
   clientRef: uuidField('Falta la referencia del formulario. Recargá la página.'),
@@ -1721,6 +1736,14 @@ export const treasurySchema = obj({
   allowNegative: formBoolDefault(false),
   createBankParty: formBoolDefault(false),
   active: formBoolDefault(true),
+  /**
+   * La sucursal de la caja: un id, o `null` = de todo el bar (se ve en todas con un solo saldo). Si la clave
+   * no viene, no se toca (una caja nueva queda de todo el bar).
+   */
+  branchId: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    uuidField('Elegí la sucursal.').nullable().optional(),
+  ),
 })
 export type TreasuryInput = z.infer<typeof treasurySchema>
 
@@ -1851,6 +1874,8 @@ export const recurringSchema = obj({
   }).default(null),
   /** El detalle (por ejemplo los sueldos): el monto pasa a ser la suma. */
   breakdown: list(recurringBreakdownLineSchema).max(200, 'Hasta 200 renglones.').default([]),
+  /** La sucursal del gasto fijo: sus pagos quedan en ella. Vacía en un alta = la que se mira. */
+  branchId: optionalUuid('Elegí la sucursal.'),
 })
 export type RecurringInput = z.infer<typeof recurringSchema>
 
@@ -1893,6 +1918,8 @@ export const recurringBulkSchema = obj({
   )
     .min(1, 'Pegá al menos un gasto fijo.')
     .max(100, 'Hasta 100 gastos fijos por vez.'),
+  /** Todos van a la misma sucursal. Vacía = la que se mira. */
+  branchId: optionalUuid('Elegí la sucursal.'),
 })
 
 export const skipRecurringDueSchema = obj({

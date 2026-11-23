@@ -14,10 +14,11 @@
  */
 
 import { fixedProgress, type RecurringPayments } from '@/lib/accounting/home'
+import { type PayrollEmployee, payrollTotals } from '@/lib/accounting/payroll'
 import { type RecurringExpenseRow, recurringMonthStatus } from '@/lib/accounting/queries/documents'
 import { type RecurringPaymentFacts, recurringLine } from '@/lib/accounting/recurring-status'
 import { addMonthsToYearMonth, isRealYearMonth, monthOf } from '@/lib/dates'
-import type { Sheet, SheetItem, SheetStretch } from './planilla-words'
+import { type Sheet, type SheetItem, type SheetStretch, sheetTotals } from './planilla-words'
 
 function factsOf(
   payments: RecurringPayments | null | undefined,
@@ -146,4 +147,47 @@ export function buildSheet(
         !(row.skippedDue !== null && row.skippedDue >= row.loadedDue),
     ),
   }
+}
+
+/** Lo que cada número del totalizador suma en cada sucursal, en centavos (por id de sucursal). */
+export type SheetBranchTotals = Record<
+  'totalCents' | 'paidCents' | 'pendingCents' | 'overdueCents',
+  Record<string, number>
+>
+
+/**
+ * La parte de cada sucursal en los números de «Todas» (la barrita debajo de cada uno): la misma hoja y la
+ * misma cuenta del totalizador, con los gastos fijos y los empleados de esa sucursal. `employees` en `null`:
+ * no se pudieron leer los sueldos (no suman, como en el total).
+ */
+export function sheetTotalsByBranch(input: {
+  branchIds: readonly string[]
+  rows: readonly RecurringExpenseRow[]
+  payments: RecurringPayments | null | undefined
+  employees: readonly PayrollEmployee[] | null
+  month: string
+  today: string
+}): SheetBranchTotals {
+  const out: SheetBranchTotals = {
+    totalCents: {},
+    paidCents: {},
+    pendingCents: {},
+    overdueCents: {},
+  }
+  for (const branchId of input.branchIds) {
+    const sheet = buildSheet(
+      input.rows.filter((row) => row.branchId === branchId),
+      input.payments,
+      { month: input.month, today: input.today },
+    )
+    const payroll = input.employees
+      ? payrollTotals(input.employees.filter((employee) => employee.branchId === branchId))
+      : null
+    const totals = sheetTotals(sheet, payroll)
+    out.totalCents[branchId] = totals.totalCents ?? 0
+    out.paidCents[branchId] = totals.paidCents ?? 0
+    out.pendingCents[branchId] = totals.pendingCents ?? 0
+    out.overdueCents[branchId] = totals.overdueCents ?? 0
+  }
+  return out
 }

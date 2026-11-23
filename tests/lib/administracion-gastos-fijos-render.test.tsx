@@ -79,6 +79,11 @@ vi.mock('@/app/(manager)/[tenantSlug]/administracion/compras/_lib/page-access', 
   requireComprasAccess: async () => ({
     access: { tenant: { id: 'tenant-1' } },
     canWrite: !ui.readOnly,
+    branch: {
+      scope: { branches: [], current: null, isAll: false, ids: [], multi: false },
+      filter: { ids: null },
+      id: null,
+    },
   }),
 }))
 vi.mock('@/lib/accounting/queries', async (original) => ({

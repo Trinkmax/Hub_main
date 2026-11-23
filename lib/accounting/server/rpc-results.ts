@@ -12,6 +12,7 @@ import type { PostBundleResult } from '@/lib/accounting/action-state'
 import type {
   AllocateItemsResult,
   ReverseDocumentResult,
+  SetDocumentBranchResult,
   TreasuryCheckedResult,
   VoidDocumentResult,
 } from './document-types'
@@ -112,6 +113,22 @@ export function parseAllocateResult(data: unknown): AllocateItemsResult {
   const root = isRecord(data) ? data : {}
   const ids = textList(root.allocation_ids)
   return { allocationIds: ids.length > 0 ? ids : textList(root.allocations) }
+}
+
+/**
+ * `acc_set_document_branch`: `{ ok, document_id, branch_id, moved }`. Lo que falte sale de lo pedido (la base ya
+ * confirmó el cambio).
+ */
+export function parseSetDocumentBranchResult(
+  data: unknown,
+  requested: { documentId: string; branchId: string },
+): SetDocumentBranchResult {
+  const root = isRecord(data) ? data : {}
+  return {
+    documentId: text(root.document_id) ?? requested.documentId,
+    branchId: text(root.branch_id) ?? requested.branchId,
+    moved: root.moved !== false,
+  }
 }
 
 /** `acc_mark_treasury_checked` (#8): devuelve la fila de la caja. */

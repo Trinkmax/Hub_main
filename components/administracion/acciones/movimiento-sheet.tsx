@@ -3,10 +3,13 @@
 import { Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { postCashMovement } from '@/lib/accounting/actions/documents'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import type { CashMovementValues } from '@/lib/accounting/server/document-types'
 import { VAT_ACCOUNT_KEYS } from '@/lib/accounting/system-keys'
 import { formatWeekdayDayMonth } from '@/lib/dates'
@@ -90,6 +93,7 @@ type Direction = MoveDirection
 type Motive = MoveMotive
 
 const KNOWN_FIELDS = new Set([
+  'branchId',
   'treasuryAccountId',
   'direction',
   'counterpartAccountId',
@@ -131,10 +135,24 @@ function MovimientoForm({
   const formRef = useRef<HTMLFormElement>(null)
   const id = useId()
   const { today } = catalog
-  // Una tarjeta de la empresa no es una caja con plata: no entra acá.
+  // La sucursal del movimiento: la de la caja de la URL, o la que se mira (en «Todas», se elige).
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () =>
+      (params.caja ? catalog.treasuries.find((t) => t.id === params.caja)?.branchId : null) ??
+      viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  // Una tarjeta de la empresa no es una caja con plata: no entra acá. Las cajas son las de la
+  // sucursal y las de todo el bar.
   const treasuries = useMemo(
-    () => catalog.treasuries.filter((t) => t.kind !== 'credit_card'),
-    [catalog.treasuries],
+    () =>
+      treasuriesForBranch(
+        catalog.treasuries.filter((t) => t.kind !== 'credit_card'),
+        branchId,
+      ),
+    [catalog.treasuries, branchId],
   )
   const accountsBySystemKey = useMemo(() => {
     const map = new Map<string, SheetAccount>()
@@ -268,8 +286,9 @@ function MovimientoForm({
       date: date ?? '',
       shortcut: motive ?? 'other',
       detail: detail.trim() === '' ? null : detail.trim(),
+      ...(branchId ? { branchId } : {}),
     }),
-    [treasuryId, direction, accountId, account, partyId, amount, date, motive, detail],
+    [treasuryId, direction, accountId, account, partyId, amount, date, motive, detail, branchId],
   )
   const preview = useDocumentPreview('cash_movement', values, catalog.ctx, catalog.firstOpenDate)
 
@@ -284,9 +303,21 @@ function MovimientoForm({
 
   const shown = posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : [])
 
+  /** Otra sucursal: la caja queda solo si también es de ahí (o de todo el bar). */
+  function changeBranch(next: string) {
+    setBranchId(next)
+    setBranchError(null)
+    setTreasuryId((current) => keepTreasuryForBranch(catalog.treasuries, current, next))
+    posting.clearFieldError('branchId')
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setAttempted(true)
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (!preview.state.ok || (direction !== null && motive === null)) {
       posting.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       requestAnimationFrame(() => {
@@ -325,6 +356,13 @@ function MovimientoForm({
       <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <form ref={formRef} noValidate onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <ActionSheetBody>
+          {/* En qué sucursal pasó. Con una sola sucursal no se ve. */}
+          <BranchField
+            value={branchId}
+            onChange={changeBranch}
+            error={branchError ?? errorOf('branchId')}
+            disabled={posting.pending}
+          />
           {/* ¿Qué pasó?: una sola elección, en dos grupos. */}
           <div className={SHEET_QUESTION_BLOCK}>
             <SheetQuestion id={`${id}-que`} required>

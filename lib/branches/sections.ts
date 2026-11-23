@@ -24,6 +24,12 @@ const PER_BRANCH: ReadonlyArray<string> = [
   'local/mesas',
   'menu/precios',
   'salon',
+  // Administración, entrega 1: lo de cada local (un solo libro). El resto de Administración (el Resumen,
+  // Ventas, Sueldos, Contabilidad, Ajustes, la guía, Configurar e Importar) sigue siendo de todo el bar.
+  'administracion/compras',
+  'administracion/gastos-fijos',
+  'administracion/cajas',
+  'administracion/comprobantes',
 ]
 
 export type BranchSectionScope = 'branch' | 'bar'
@@ -58,10 +64,22 @@ const BAR_SECTION_NAMES: ReadonlyArray<[string, string]> = [
   ['paginas', 'Marketing'],
   ['configuracion', 'La configuración'],
   ['local/sucursales', 'Sucursales'],
+  // Lo de Administración que todavía es de todo el bar (entrega 1), con el nombre de su sección.
+  ['administracion/ventas', 'Ventas'],
+  ['administracion/sueldos', 'Sueldos'],
+  ['administracion/libros', 'La contabilidad'],
+  ['administracion/asientos', 'La contabilidad'],
+  ['administracion/plan-de-cuentas', 'La contabilidad'],
+  ['administracion/ajustes', 'Los ajustes de Administración'],
   ['administracion', 'Administración'],
   ['compras', 'Compras'],
   ['estadisticas', 'Estadísticas'],
   ['docs', 'La guía'],
+]
+
+/** Las pantallas que se nombran solas (la ruta entera, no un prefijo). */
+const BAR_SCREEN_NAMES: ReadonlyArray<[string, string]> = [
+  ['administracion', 'El resumen de Administración'],
 ]
 
 export function barSectionName(pathname: string, slug: string): string {
@@ -69,6 +87,8 @@ export function barSectionName(pathname: string, slug: string): string {
   if (segments[0] !== slug) return 'Esta pantalla'
   const rest = segments.slice(1)
   if (rest.length === 0) return 'El resumen'
+  const exact = BAR_SCREEN_NAMES.find(([path]) => rest.join('/') === path)
+  if (exact) return exact[1]
   const match = BAR_SECTION_NAMES.find(([prefix]) => startsWithSegments(rest, prefix))
   return match ? match[1] : 'Esta pantalla'
 }

@@ -9,7 +9,11 @@ import 'server-only'
 
 import type { z } from 'zod'
 import { authorizeAccounting } from '@/lib/accounting/access'
-import { type AccSimpleState, invalidState } from '@/lib/accounting/action-state'
+import {
+  type AccFailureState,
+  type AccSimpleState,
+  invalidState,
+} from '@/lib/accounting/action-state'
 import { ACC_GENERIC_ERROR, accErrorMessage, mapAccError } from '@/lib/accounting/errors'
 import { createClient } from '@/lib/supabase/server'
 import { afterCommit, errorName, logFailure, revalidateAdministracion } from './post-document'
@@ -18,6 +22,8 @@ export type SimpleRpcSpec<D, T> = {
   /** Para el log: `void`, `undo`, `reverse`… */
   op: string
   schema: z.ZodType<D>
+  /** Lo que se revisa antes de llamar (con la entrada ya validada): un error corta ahí. */
+  check?: (slug: string, input: D) => Promise<AccFailureState | null>
   /**
    * La RPC y sus parámetros (el primero siempre `p_tenant_id`, el bar de la
    * URL). Puede ser async si necesita leer algo antes (con la misma sesión).
@@ -51,6 +57,8 @@ export async function runSimpleRpc<D, T>(
 
     const parsed = spec.schema.safeParse(raw)
     if (!parsed.success) return invalidState(parsed.error)
+    const checked = spec.check ? await spec.check(slug, parsed.data) : null
+    if (checked) return checked
 
     const { fn, args } = await spec.call(auth.tenantId, parsed.data)
     const supabase = await createClient()

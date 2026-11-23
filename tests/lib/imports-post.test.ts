@@ -19,6 +19,11 @@ vi.mock('@/lib/accounting/server/document-context', () => ({
   loadDocumentContext: vi.fn(),
   loadFirstOpenDate: vi.fn(),
 }))
+// La sucursal que se mira (Administración por sucursal): la decide cada test.
+const viewed = vi.hoisted(() => ({
+  scope: { isAll: false, current: null as { id: string } | null },
+}))
+vi.mock('@/lib/branches/scope', () => ({ getBranchScope: async () => viewed.scope }))
 
 import { revalidatePath } from 'next/cache'
 import type { AccountingAuthorized } from '@/lib/accounting/access'
@@ -158,6 +163,7 @@ function wireDb() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  viewed.scope = { isAll: false, current: null }
   db = new FakeDb()
   kit = makeKit({ suppliers: [{ cuit: COCA, name: 'DISTRIBUIDORA SA' }] })
   vi.mocked(createClient).mockResolvedValue(db.client() as never)
@@ -550,5 +556,66 @@ describe('transferencias: la misma no se carga dos veces', () => {
       status: 'skipped',
       error: { reason: 'already_loaded', document_id: fixedUuid(31) },
     })
+  })
+})
+
+describe('la sucursal de lo que se carga (Administración por sucursal)', () => {
+  const CERRO = '6380c468-cf88-495c-a0f3-85e42279a355'
+  const ALTA = '6011ae59-1a30-4119-a45b-4152b1ba10ed'
+  const documentsSent = () =>
+    (db.rpcCalls('acc_post_bundle')[0]?.p_bundle as { documents: Array<Record<string, unknown>> })
+      .documents
+
+  it('un lote sin caja (ARCA) va a la sucursal que se mira, sin cambiar lo revisado', async () => {
+    viewed.scope = { isAll: false, current: { id: CERRO } }
+    const e = storeProposal(mc(21))
+    const state = await postImportProposalsFor(AUTH, {
+      batchId: KIT_BATCH,
+      items: [{ key: e.key, previewHash: e.previewHash }],
+    })
+    expect(state).toMatchObject({ ok: true, data: { posted: 1 } })
+    expect(documentsSent().map((d) => d.branch_id)).toEqual([CERRO])
+    // El hash es el de la propuesta revisada: la sucursal va en el envío.
+    expect(
+      (db.rpcCalls('acc_post_bundle')[0]?.p_bundle as { preview_hash: string }).preview_hash,
+    ).toBe(e.previewHash)
+  })
+
+  it('mirando «Todas», sin sucursal: la base pone la principal', async () => {
+    viewed.scope = { isAll: true, current: null }
+    const e = storeProposal(mc(22))
+    await postImportProposalsFor(AUTH, {
+      batchId: KIT_BATCH,
+      items: [{ key: e.key, previewHash: e.previewHash }],
+    })
+    expect(documentsSent().every((d) => !('branch_id' in d))).toBe(true)
+  })
+
+  it('un lote de una caja de un local va a la sucursal de esa caja, aunque se mire otra', async () => {
+    viewed.scope = { isAll: false, current: { id: CERRO } }
+    const caja = kit.f.treasury('caja')
+    ;(kit.ctx.treasuries as Map<string, typeof caja>).set(caja.id, { ...caja, branchId: ALTA })
+    const batch = db.table('acc_import_batches')[0]
+    if (batch) batch.treasury_account_id = caja.id
+    const e = storeProposal(mc(23))
+    await postImportProposalsFor(AUTH, {
+      batchId: KIT_BATCH,
+      items: [{ key: e.key, previewHash: e.previewHash }],
+    })
+    expect(documentsSent().map((d) => d.branch_id)).toEqual([ALTA])
+  })
+
+  it('una caja de todo el bar (Mercado Pago, un banco): la sucursal que se mira', async () => {
+    viewed.scope = { isAll: false, current: { id: CERRO } }
+    const mp = kit.f.treasury('mp')
+    ;(kit.ctx.treasuries as Map<string, typeof mp>).set(mp.id, { ...mp, branchId: null })
+    const batch = db.table('acc_import_batches')[0]
+    if (batch) batch.treasury_account_id = mp.id
+    const e = storeProposal(mc(24))
+    await postImportProposalsFor(AUTH, {
+      batchId: KIT_BATCH,
+      items: [{ key: e.key, previewHash: e.previewHash }],
+    })
+    expect(documentsSent().map((d) => d.branch_id)).toEqual([CERRO])
   })
 })

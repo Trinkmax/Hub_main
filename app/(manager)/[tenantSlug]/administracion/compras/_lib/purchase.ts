@@ -60,6 +60,8 @@ export type PurchaseFormState = {
   controlTotalCents: number | null
   relatedDocumentId: string | null
   recurringExpenseId: string | null
+  /** La sucursal de la compra (y de su pago). Sin ella no se manda: la decide la base. */
+  branchId?: string | null
   payNow: {
     treasuryAccountId: string | null
     /** `null` = el total. */
@@ -318,6 +320,7 @@ export function buildPurchaseValues(state: PurchaseFormState): {
           }
         : null,
     notes: state.notes.trim() === '' ? null : state.notes.trim(),
+    ...(state.branchId ? { branchId: state.branchId } : {}),
   }
   return { values, missing: {}, fieldOf }
 }

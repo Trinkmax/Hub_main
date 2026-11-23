@@ -1,6 +1,7 @@
 import { Totalizer } from '@/components/administracion/planilla/totalizer'
 import { invoicedSplit } from '@/lib/accounting/home'
 import { getMonthSpending, settleQuery } from '@/lib/accounting/queries'
+import type { BranchFilter } from '@/lib/branches/filter'
 import { daysBetween } from '@/lib/dates'
 import { NBSP } from '@/lib/money'
 
@@ -19,13 +20,16 @@ export async function InvoicedTotals({
   tenantId,
   from,
   to,
+  branch,
 }: {
   tenantId: string
   from: string
   to: string
+  /** La sucursal que se mira (en «Todas», todo el bar). */
+  branch?: BranchFilter
 }) {
   if (daysBetween(from, to) + 1 > SPLIT_MAX_DAYS) return null
-  const outcome = await settleQuery(getMonthSpending(tenantId, { from, to }))
+  const outcome = await settleQuery(getMonthSpending(tenantId, { from, to, branch }))
   if (!outcome.ok || outcome.data.truncated) return null
   const split = invoicedSplit(outcome.data.vouchers)
   if (split.isEmpty) return null

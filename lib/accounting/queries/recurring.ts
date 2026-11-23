@@ -1,4 +1,5 @@
 import 'server-only'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import type { RecurringPaymentFacts } from '@/lib/accounting/recurring-status'
 import { callRpcRows, cents, day, dayOrNull, str } from './shared'
 
@@ -9,12 +10,17 @@ import { callRpcRows, cents, day, dayOrNull, str } from './shared'
  * la misma de «Comprobantes» y de la cuenta corriente del proveedor. Qué
  * vencimiento es y cómo se dice lo decide `lib/accounting/recurring-status.ts`.
  *
- * Por id de gasto fijo. Se importa directo de este archivo (no del barrel).
+ * Por id de gasto fijo. Se importa directo de este archivo (no del barrel). Con
+ * `branchId`, los gastos fijos de esa sucursal (con todos sus pagos); sin ella, todos.
  */
 export async function listRecurringPayments(
   tenantId: string,
+  branchId: string | null = null,
 ): Promise<Map<string, RecurringPaymentFacts>> {
-  const rows = await callRpcRows('acc_report_recurring_status', { p_tenant_id: tenantId })
+  const rows = await callRpcRows('acc_report_recurring_status', {
+    p_tenant_id: tenantId,
+    ...branchRpcParam(branchId),
+  })
   const out = new Map<string, RecurringPaymentFacts>()
   for (const row of rows) {
     const id = str(row.recurring_expense_id)

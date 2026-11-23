@@ -25,6 +25,12 @@ import 'server-only'
  *
  * Con la sesión del usuario: `acc_post_bundle` exige un escritor (D7: el cron
  * nunca contabiliza). Nunca se loguean datos: solo la operación y la clave.
+ *
+ * **Sucursal (Administración por sucursal).** Lo de un lote va a la sucursal de
+ * su caja (el efectivo es de un local); si la caja es de todo el bar (Mercado
+ * Pago, un banco) o el lote no tiene caja (ARCA), a la sucursal que se mira; en
+ * «Todas», sin sucursal (la base pone la principal). Va en el envío, no en la
+ * propuesta: lo que se revisó (y su hash) no cambia.
  */
 
 import type { AccountingAuthorized } from '@/lib/accounting/access'
@@ -34,6 +40,7 @@ import {
   invalidState,
 } from '@/lib/accounting/action-state'
 import { accFailure, asRecord, rpcFailure, textOf } from '@/lib/accounting/actions/support'
+import { importBranchId } from '@/lib/accounting/branch'
 import {
   AccountingContextError,
   loadPostingCatalog,
@@ -41,7 +48,7 @@ import {
   tryLoadPostingContext,
 } from '@/lib/accounting/context'
 import { engineErrorsState, mapAccError, type PgLikeError } from '@/lib/accounting/errors'
-import { toRpcPayload } from '@/lib/accounting/posting'
+import { toRpcPayload, withDocumentBranch } from '@/lib/accounting/posting'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import {
   buildPrimary,
@@ -56,6 +63,8 @@ import {
 } from '@/lib/accounting/server/post-document'
 import { parsePostBundleResult } from '@/lib/accounting/server/rpc-results'
 import type { PostingResult, WarningKey } from '@/lib/accounting/types'
+import { rpcBranchId } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { createClient } from '@/lib/supabase/server'
 import { importPostingContext } from './proposals/common'
 import { findPostedTransfer } from './proposals/mp'
@@ -490,6 +499,18 @@ export async function postImportProposalsFor(
     }
 
     // ── 3. Marcar «cargando» y cargar de a una ──
+    // La sucursal de lo que se carga: la de la caja del lote; si es de todo el bar (o no hay caja), la
+    // que se mira; en «Todas», ninguna (la base pone la principal).
+    const boxBranchId = batch.treasuryAccountId
+      ? (ctx.treasuries.get(batch.treasuryAccountId)?.branchId ?? null)
+      : null
+    const branchId =
+      ready.length === 0
+        ? null
+        : importBranchId({
+            boxBranchId,
+            viewedBranchId: boxBranchId ? null : rpcBranchId(await getBranchScope(auth.slug)),
+          })
     if (ready.length > 0) {
       const marking = await putProposals(
         supabase,
@@ -506,7 +527,10 @@ export async function postImportProposalsFor(
       const args = {
         p_tenant_id: tenantId,
         p_client_ref: p.clientRef,
-        p_bundle: toRpcPayload(built.bundle, built.hash),
+        p_bundle: toRpcPayload(
+          { ...built.bundle, documents: withDocumentBranch(built.bundle.documents, branchId) },
+          built.hash,
+        ),
       }
       let res = await supabase.rpc('acc_post_bundle', args)
       if (res.error && isClientRefRace(res.error)) res = await supabase.rpc('acc_post_bundle', args)

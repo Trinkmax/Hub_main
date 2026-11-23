@@ -28,6 +28,8 @@ export type SheetTreasury = {
   balanceCents: number
   active: boolean
   allowNegative: boolean
+  /** La sucursal de la caja; vacía = de todo el bar (se ofrece en todas). */
+  branchId?: string | null
 }
 
 export type SheetParty = {
@@ -77,6 +79,8 @@ export type QuickSuggestion = {
 export type SheetRecurring = {
   id: string
   name: string
+  /** La sucursal del gasto fijo: se paga desde ella. */
+  branchId?: string | null
   /** `null` si no tiene proveedor o si el proveedor está dado de baja. */
   partyId: string | null
   accountId: string

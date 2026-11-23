@@ -10,6 +10,7 @@ import {
   type SpendingLine,
   type SpendingTotals,
 } from '@/lib/accounting/home'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import {
   cents,
   chunks,
@@ -144,13 +145,14 @@ export function spendingAccounts(
  */
 export async function getMonthSpending(
   tenantId: string,
-  params: { from: string; to: string },
+  params: { from: string; to: string; branch?: BranchFilter },
 ): Promise<MonthSpending> {
   const range = requireRange(params.from, params.to)
   const supabase = await readerClient()
+  const branch = params.branch ?? WHOLE_BAR
 
-  const documents = await readAllPages('acc_documents', MAX_DOCUMENT_PAGES, (from, to) =>
-    supabase
+  const documents = await readAllPages('acc_documents', MAX_DOCUMENT_PAGES, (from, to) => {
+    let query = supabase
       .from('acc_documents')
       .select('id, kind, voucher_type, total_cents')
       .eq('tenant_id', tenantId)
@@ -159,9 +161,10 @@ export async function getMonthSpending(
       .in('kind', [...SPENDING_DOCUMENT_KINDS])
       .gte('accounting_date', range.from)
       .lte('accounting_date', range.to)
-      .order('id', { ascending: true })
-      .range(from, to),
-  )
+    // Compras y pagos mira la sucursal; el Resumen, todo el bar.
+    query = applyBranchFilter(query, branch)
+    return query.order('id', { ascending: true }).range(from, to)
+  })
   const docs = documents.rows.map(parseSpendingDocument).filter((d) => d.id !== '')
   let truncated = documents.truncated
 

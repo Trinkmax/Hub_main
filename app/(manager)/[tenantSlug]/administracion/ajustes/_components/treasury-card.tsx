@@ -85,6 +85,7 @@ export function TreasuryCard({
   balance,
   accountCode,
   controls,
+  branch,
   muted = false,
   className,
 }: {
@@ -102,6 +103,8 @@ export function TreasuryCard({
   accountCode?: string | null
   /** Los controles del pie (editar, ver movimientos, en uso). Sin esto, la tarjeta es de solo lectura. */
   controls?: ReactNode
+  /** De qué sucursal es (la etiqueta chica), o «Todo el bar». */
+  branch?: ReactNode
   /** Una caja que ya no se usa. */
   muted?: boolean
   className?: string
@@ -133,7 +136,14 @@ export function TreasuryCard({
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          {missing ? <StatusPill tone="info">{missing}</StatusPill> : <span />}
+          {missing || branch ? (
+            <span className="flex flex-wrap items-center gap-1.5">
+              {branch}
+              {missing ? <StatusPill tone="info">{missing}</StatusPill> : null}
+            </span>
+          ) : (
+            <span />
+          )}
           {balance ? <span className="text-sm whitespace-nowrap">{balance}</span> : null}
         </div>
         {accountCode ? (

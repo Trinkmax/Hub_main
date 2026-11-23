@@ -1,4 +1,5 @@
 import 'server-only'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import { TREASURY_KINDS, type TreasuryKind } from '@/lib/accounting/types'
 import { todayInCordoba } from '@/lib/dates/zone'
 import { getSubledger, getTrialBalance, type SubledgerRow } from './books'
@@ -30,6 +31,8 @@ export type TreasuryBalanceRow = {
   accountId: string | null
   name: string
   kind: TreasuryKind
+  /** La sucursal de la caja; vacía = de todo el bar (se ve en todas, con su saldo entero). */
+  branchId?: string | null
   accountCode: string
   /** Alias del CBU/CVU (se muestra chico debajo del nombre). */
   alias: string | null
@@ -52,6 +55,8 @@ export type TreasuryAccountRow = {
   accountCode: string | null
   name: string
   kind: TreasuryKind
+  /** La sucursal de la caja; vacía = de todo el bar. */
+  branchId?: string | null
   bankPartyId: string | null
   bankName: string | null
   cbuCvu: string | null
@@ -153,19 +158,26 @@ export function cashFlowCategoryLabel(category: string): string {
     : category
 }
 
-/** Saldo de cada caja al día (F.9). Sin fecha, hoy en Córdoba. */
+/**
+ * Saldo de cada caja al día (F.9). Sin fecha, hoy en Córdoba. Con `branchId`, las cajas de esa sucursal y
+ * las de todo el bar (estas con su saldo entero).
+ */
 export async function listTreasuryBalances(
   tenantId: string,
-  opts: { asOf?: string | null } = {},
+  opts: { asOf?: string | null; branchId?: string | null } = {},
 ): Promise<TreasuryBalanceRow[]> {
   const asOf = optionalDay(opts.asOf) ?? todayInCordoba()
   const supabase = await readerClient()
   const [raw, extras] = await Promise.all([
-    callRpcRows('acc_report_treasury_balances', { p_tenant_id: tenantId, p_as_of: asOf }),
+    callRpcRows('acc_report_treasury_balances', {
+      p_tenant_id: tenantId,
+      p_as_of: asOf,
+      ...branchRpcParam(opts.branchId),
+    }),
     // Lo que el reporte no trae (alias, banco, descubierto): una lectura chica.
     supabase
       .from('acc_treasury_accounts')
-      .select('id, alias, bank_name, allow_negative')
+      .select('id, alias, bank_name, allow_negative, branch_id')
       .eq('tenant_id', tenantId)
       .limit(500),
   ])
@@ -182,6 +194,7 @@ export async function listTreasuryBalances(
       accountId: strOrNull(row.account_id),
       name: str(row.name),
       kind: treasuryKind(row.kind),
+      branchId: strOrNull(row.branch_id ?? extra?.branch_id),
       accountCode: str(row.account_code),
       alias: extra ? strOrNull(extra.alias) : null,
       bankName: extra ? strOrNull(extra.bank_name) : null,
@@ -196,7 +209,7 @@ export async function listTreasuryBalances(
 }
 
 const TREASURY_COLUMNS =
-  'id, account_id, name, kind, bank_party_id, bank_name, cbu_cvu, alias, account_number, allow_negative, last_checked_on, sort, active, system_key, updated_at'
+  'id, account_id, name, kind, branch_id, bank_party_id, bank_name, cbu_cvu, alias, account_number, allow_negative, last_checked_on, sort, active, system_key, updated_at'
 
 function parseTreasury(row: UnknownRecord, codes: ReadonlyMap<string, string>): TreasuryAccountRow {
   const accountId = str(row.account_id)
@@ -206,6 +219,7 @@ function parseTreasury(row: UnknownRecord, codes: ReadonlyMap<string, string>): 
     accountCode: codes.get(accountId) ?? null,
     name: str(row.name),
     kind: treasuryKind(row.kind),
+    branchId: strOrNull(row.branch_id),
     bankPartyId: strOrNull(row.bank_party_id),
     bankName: strOrNull(row.bank_name),
     cbuCvu: strOrNull(row.cbu_cvu),
@@ -359,16 +373,20 @@ export async function getTreasuryMovements(
   }
 }
 
-/** Flujo de caja realizado por mes y categoría (F.9). */
+/**
+ * Flujo de caja realizado por mes y categoría (F.9). Con `branchId`, los movimientos de las cajas de esa
+ * sucursal y, en las de todo el bar, los de sus comprobantes.
+ */
 export async function getCashFlow(
   tenantId: string,
-  params: { from: string; to: string },
+  params: { from: string; to: string; branchId?: string | null },
 ): Promise<CashFlowRow[]> {
   const { from, to } = requireRange(params.from, params.to)
   const raw = await callRpcRows('acc_report_cash_flow', {
     p_tenant_id: tenantId,
     p_from: from,
     p_to: to,
+    ...branchRpcParam(params.branchId),
   })
   return raw.map((row) => {
     const category = str(row.category, 'other')
@@ -388,7 +406,7 @@ export async function getCashFlow(
 /** Proyección de las próximas semanas (F.9, opcional en la fase 4). */
 export async function getCashProjection(
   tenantId: string,
-  params: { asOf?: string | null; weeks?: number } = {},
+  params: { asOf?: string | null; weeks?: number; branchId?: string | null } = {},
 ): Promise<CashProjectionRow[]> {
   const asOf = optionalDay(params.asOf) ?? todayInCordoba()
   const weeks = Math.min(12, Math.max(1, Math.trunc(params.weeks ?? 4)))
@@ -396,6 +414,7 @@ export async function getCashProjection(
     p_tenant_id: tenantId,
     p_as_of: asOf,
     p_weeks: weeks,
+    ...branchRpcParam(params.branchId),
   })
   return raw.map((row) => ({
     weekStart: dayOrNull(row.week_start) ?? '',

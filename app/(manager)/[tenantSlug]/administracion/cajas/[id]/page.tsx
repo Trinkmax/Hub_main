@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
+import { AccBranchTag } from '@/components/administracion/branch-bits'
 import { PeriodError } from '@/components/administracion/cajas-ventas/block-error'
 import { ExportButton } from '@/components/administracion/cajas-ventas/export-button'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
@@ -247,6 +248,8 @@ export default async function CajaPage({
         title={treasury.name}
         badge={
           <>
+            {/* De qué sucursal es la cuenta, o «Todo el bar» (con una sola sucursal no se dice). */}
+            <AccBranchTag branchId={treasury.branchId} when="always" />
             {treasury.active ? null : <StatusPill tone="muted">Desactivada</StatusPill>}
             <ReadOnlyBadge />
           </>

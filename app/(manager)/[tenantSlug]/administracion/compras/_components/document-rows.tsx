@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { AccBranchTag } from '@/components/administracion/branch-bits'
 import { categoryShortName, StatusPill } from '@/components/administracion/kit'
 import { PRow, PTable, PTd, PTh, PTotalRow, ROW_ACTION } from '@/components/administracion/planilla'
 import { ActionButton } from '@/components/administracion/quick-actions'
@@ -149,6 +150,8 @@ export function DocumentRows({
                   >
                     <VoucherText text={row.title} />
                   </Link>
+                  {/* Mirando «Todas»: de qué sucursal es. */}
+                  <AccBranchTag branchId={row.branchId} />
                   {isNotInvoicedVoucher(row.voucherType) ? (
                     <StatusPill tone="muted" className="h-5">
                       {NOT_INVOICED_BADGE}
@@ -278,6 +281,7 @@ export function PaymentRows({
                   >
                     {row.partyName ?? 'Sin proveedor'}
                   </Link>
+                  <AccBranchTag branchId={row.branchId} />
                   {voided ? (
                     <StatusPill tone="muted" className="h-5">
                       Anulado

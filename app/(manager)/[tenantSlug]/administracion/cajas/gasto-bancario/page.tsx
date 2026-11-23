@@ -79,6 +79,7 @@ export default async function GastoBancarioPage({
       balanceCents: t.balanceCents,
       active: t.active,
       bankHasCuit: t.bankPartyId !== null && Boolean(partyTaxIds.get(t.bankPartyId)),
+      branchId: t.branchId ?? null,
     }))
 
   if (treasuries.length === 0) {

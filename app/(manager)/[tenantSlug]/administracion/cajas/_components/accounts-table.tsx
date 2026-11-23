@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAccounting } from '@/components/administracion/accounting-provider'
+import { AccBranchTag, useCashBoxBranchId } from '@/components/administracion/branch-bits'
 import { ExportButton } from '@/components/administracion/cajas-ventas/export-button'
 import { MoneyTicker } from '@/components/administracion/kit/money-ticker'
 import {
@@ -41,6 +42,7 @@ import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { useMasterAction } from '../../ajustes/_components/use-master-action'
 import {
+  newTreasuryBranchId,
   treasuryDraftOf,
   treasuryRenamePayload,
   treasurySavePayload,
@@ -280,6 +282,8 @@ function AddAccountRow({
   const [kind, setKind] = useState<AddableKind>('cash')
   const [error, setError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  // El efectivo nuevo es de la sucursal que se mira (en «Todas», de la principal); lo demás, de todo el bar.
+  const cashBranchId = useCashBoxBranchId()
   useEffect(() => {
     input.current?.focus()
   }, [])
@@ -288,7 +292,12 @@ function AddAccountRow({
     event.preventDefault()
     setError(null)
     // Mismo envío que el alta de Ajustes › Cajas y cuentas (un banco se suma como proveedor).
-    const payload = treasurySavePayload({ ...treasuryDraftOf(null), name, kind })
+    const payload = treasurySavePayload({
+      ...treasuryDraftOf(null),
+      name,
+      kind,
+      branchId: newTreasuryBranchId(kind, cashBranchId),
+    })
     run(() => saveTreasuryAccount(tenantSlug, payload), {
       quiet: true,
       onSuccess: (row, message) => {
@@ -489,6 +498,8 @@ export function AccountsTable({
               {name}
             </button>
           )}
+          {/* De todo el bar (una billetera, un banco) se dice siempre; de una sucursal, mirando «Todas». */}
+          {isRenaming ? null : <AccBranchTag branchId={account.branchId} className="ml-1.5" />}
           <span className="block text-xs text-muted-foreground sm:hidden">
             {kindText} · {account.lastMovement}
           </span>

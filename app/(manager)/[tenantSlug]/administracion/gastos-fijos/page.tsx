@@ -1,3 +1,4 @@
+import { MoneyBranchSplit } from '@/components/administracion/branch-bits'
 import { PanelError } from '@/components/administracion/kit'
 import { PlanillaBar, SimplePage } from '@/components/administracion/planilla'
 import { Totalizer } from '@/components/administracion/planilla/totalizer'
@@ -16,7 +17,12 @@ import { requireComprasAccess } from '../compras/_lib/page-access'
 import { MonthSeg } from './_components/month-seg'
 import { SheetView } from './_components/sheet'
 import { VoidedNotice } from './_components/voided-notice'
-import { buildSheet, defaultSheetMonth, parseSheetMonth } from './_lib/planilla'
+import {
+  buildSheet,
+  defaultSheetMonth,
+  parseSheetMonth,
+  sheetTotalsByBranch,
+} from './_lib/planilla'
 import {
   type AutoTaxPlan,
   autoTaxPlan,
@@ -39,6 +45,9 @@ export const metadata = { title: 'Gastos fijos' }
  *
  * El estado vive en la URL: `?mes=` (el de hoy o el que viene) y `?abrir=<uuid>` (el renglón que entra
  * a la vista).
+ *
+ * Por sucursal (entrega 1): los gastos fijos, sus pagos y la fila de sueldos son los de la sucursal que se
+ * mira; en «Todas», cada renglón dice la suya y cada número del totalizador lleva su barrita por sucursal.
  */
 export default async function GastosFijosPage({
   params,
@@ -48,13 +57,18 @@ export default async function GastosFijosPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const [{ tenantSlug }, sp] = await Promise.all([params, searchParams])
-  const { access, canWrite } = await requireComprasAccess(tenantSlug, gastosFijosHref(tenantSlug))
+  const { access, canWrite, branch } = await requireComprasAccess(
+    tenantSlug,
+    gastosFijosHref(tenantSlug),
+  )
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
   const [rowsOutcome, paymentsOutcome, catalogOutcome] = await Promise.all([
-    settleQuery(listRecurringExpenses(tenantId, { includeInactive: true, today })),
-    settleQuery(listRecurringPayments(tenantId)),
+    settleQuery(
+      listRecurringExpenses(tenantId, { includeInactive: true, today, branch: branch.filter }),
+    ),
+    settleQuery(listRecurringPayments(tenantId, branch.id)),
     canWrite ? settleQuery(loadPostingCatalog(tenantId)) : null,
   ])
 
@@ -98,7 +112,7 @@ export default async function GastosFijosPage({
             active: a.active,
             description: a.description,
           }))}
-        existingNames={rows.map((r) => r.name)}
+        existing={rows.map((r) => ({ name: r.name, branchId: r.branchId ?? null }))}
         fallbackAccountId={
           miscAccountId !== null && imputable.has(miscAccountId) ? miscAccountId : null
         }
@@ -136,10 +150,23 @@ export default async function GastosFijosPage({
   const sheet = month === nextMonth ? sheets.next : sheets.current
   const auto = asked === null && opened === null && fallback.auto
 
-  // Si los sueldos no se pueden leer, la planilla igual se dibuja: su fila lo dice y no suman.
-  const payrollOutcome = await settleQuery(getPayrollReport(tenantId, month))
+  // Si los sueldos no se pueden leer, la planilla igual se dibuja: su fila lo dice y no suman. Son los
+  // empleados de la sucursal que se mira (en «Todas», los de todas).
+  const payrollOutcome = await settleQuery(getPayrollReport(tenantId, month, branch.id))
   const payroll = payrollOutcome.ok ? payrollTotals(payrollOutcome.data.employees) : null
   const totals = sheetTotals(sheet, payroll)
+  // «Todas»: la parte de cada sucursal en cada número.
+  const split =
+    branch.scope.isAll && branch.scope.multi
+      ? sheetTotalsByBranch({
+          branchIds: branch.scope.branches.map((b) => b.id),
+          rows,
+          payments,
+          employees: payrollOutcome.ok ? payrollOutcome.data.employees : null,
+          month,
+          today,
+        })
+      : null
 
   return (
     <SimplePage>
@@ -168,8 +195,14 @@ export default async function GastosFijosPage({
               totals.payrollCents !== null
                 ? `Con ${formatCentsShort(totals.payrollCents)} de sueldos`
                 : undefined,
+            below: split ? <MoneyBranchSplit values={split.totalCents} /> : undefined,
           },
-          { label: 'Pagado', cents: totals.paidCents, tone: 'ok' },
+          {
+            label: 'Pagado',
+            cents: totals.paidCents,
+            tone: 'ok',
+            below: split ? <MoneyBranchSplit values={split.paidCents} /> : undefined,
+          },
           {
             label: 'Por pagar',
             cents: totals.pendingCents,
@@ -179,11 +212,13 @@ export default async function GastosFijosPage({
                 : totals.noAmount === 1
                   ? '1 sin monto: no suma'
                   : `${totals.noAmount} sin monto: no suman`,
+            below: split ? <MoneyBranchSplit values={split.pendingCents} /> : undefined,
           },
           {
             label: 'Vencido',
             cents: totals.overdueCents,
             tone: (totals.overdueCents ?? 0) > 0 ? 'bad' : 'default',
+            below: split ? <MoneyBranchSplit values={split.overdueCents} /> : undefined,
           },
         ]}
       />

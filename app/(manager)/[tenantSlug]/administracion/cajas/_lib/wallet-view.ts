@@ -208,6 +208,8 @@ export type CajaAccountRow = {
   id: string
   name: string
   kind: TreasuryKind
+  /** La sucursal de la cuenta; vacía = de todo el bar (se ve en todas, con un solo saldo). */
+  branchId?: string | null
   /** «Efectivo», «Banco», «Billetera». */
   kindLabel: string
   active: boolean
@@ -327,6 +329,7 @@ export function cajaView(
       id: row.treasuryId,
       name: row.name,
       kind: row.kind,
+      branchId: row.branchId ?? null,
       kindLabel: TREASURY_KIND_LABELS[row.kind] ?? 'Cuenta',
       active: row.active,
       lastMovement: lastMovementShort(row.lastMovementDate, opts.today),

@@ -937,6 +937,15 @@ export function validateLines(
         : undefined
       if (!treasury?.active || treasury.accountId !== line.accountId) {
         errors.push(err('treasury_mismatch', field, where))
+      } else if (
+        // La caja de una sucursal no mueve lo de otra (como la base, `treasury_other_branch`). «Mover
+        // plata» sí puede cruzar sucursales; una caja de todo el bar sirve en todas.
+        doc.kind !== 'transfer' &&
+        doc.branchId &&
+        treasury.branchId &&
+        treasury.branchId !== doc.branchId
+      ) {
+        errors.push(err('treasury_other_branch', field, { ...where, treasury_name: treasury.name }))
       }
     } else if (line.treasuryAccountId !== null) {
       errors.push(err('treasury_mismatch', field, where))

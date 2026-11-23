@@ -55,6 +55,7 @@ import {
 } from '@/components/ui/select'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
 import { rememberRecurringSupplier } from '@/lib/accounting/actions/master'
+import { treasuriesForBranch } from '@/lib/accounting/branch'
 import { pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
 import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
@@ -142,6 +143,10 @@ type PayStripProps = {
  * quién es (uno de la lista o uno nuevo con su CUIT). La foto del QR completa los dos. Ese proveedor
  * queda guardado en el gasto fijo después de pagar. Lo demás (otra fecha, el detalle) va por «Más
  * opciones».
+ *
+ * La sucursal del pago es la del gasto fijo, nunca la que se está mirando (22/11/2026: pagado con el
+ * Cerro elegido, aparecía pagado también en Alta Córdoba). Por eso «Salió de» ofrece las cajas de su
+ * sucursal y las de todo el bar.
  */
 export function PayStrip({ data, message, onRetry, ...form }: PayStripProps) {
   if (!data) {
@@ -181,22 +186,29 @@ function PayForm({
     () => data.recurring.find((r) => r.id === row.id) ?? null,
     [data.recurring, row.id],
   )
+  // La sucursal del gasto fijo: el pago va ahí y sale de una caja de ahí (o de todo el bar).
+  const branchId = row.branchId ?? recurring?.branchId ?? null
+  const treasuries = useMemo(
+    () => treasuriesForBranch(data.treasuries, branchId),
+    [data.treasuries, branchId],
+  )
   const prefill = useMemo(() => {
     if (!recurring) return null
     return recurringPrefill(recurring, {
       payablePartyIds: new Set(payableParties(data.parties).map((p) => p.id)),
       imputableAccountIds: new Set(data.accounts.filter(isPurchaseImputation).map((a) => a.id)),
-      activeTreasuryIds: new Set(data.treasuries.filter((t) => t.active).map((t) => t.id)),
+      activeTreasuryIds: new Set(treasuries.filter((t) => t.active).map((t) => t.id)),
     })
-  }, [data, recurring])
+  }, [data, recurring, treasuries])
 
+  // `pickTreasury` solo propone cajas de la lista: la de la última vez, si es de esta sucursal.
   const [treasuryId, setTreasuryId] = useState<string | null>(
     () =>
       prefill?.treasuryAccountId ??
       pickTreasury({
-        treasuries: data.treasuries,
+        treasuries,
         myLastQuickExpense: rememberedTreasury(tenantSlug),
-        order: data.treasuries.map((t) => t.id),
+        order: treasuries.map((t) => t.id),
       }),
   )
   // El papel de siempre. Una factura sin proveedor también (`recurringPrefill` la deja afuera): la
@@ -245,6 +257,7 @@ function PayForm({
         date: data.today,
         detail: '',
         recurringExpenseId: row.id,
+        branchId,
       }),
     [
       amountCents,
@@ -257,6 +270,7 @@ function PayForm({
       voucherNo,
       data.today,
       row.id,
+      branchId,
     ],
   )
   const key = built.values ? JSON.stringify(built.values) : ''
@@ -477,7 +491,7 @@ function PayForm({
               setTreasuryId(next)
               posting.clearFieldErrors()
             }}
-            treasuries={data.treasuries}
+            treasuries={treasuries}
             disabled={posting.pending}
             className={FIELD}
           />

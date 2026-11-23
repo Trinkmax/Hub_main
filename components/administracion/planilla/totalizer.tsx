@@ -13,6 +13,8 @@ export type TotalizerItem = {
   tone?: TotalizerTone
   /** Debajo del número, en gris. */
   hint?: ReactNode
+  /** Lo último de la celda: la parte de cada sucursal mirando «Todas» (`MoneyBranchSplit`). */
+  below?: ReactNode
 }
 
 const TONE: Readonly<Record<TotalizerTone, string>> = {
@@ -71,6 +73,7 @@ export function Totalizer({
           {item.hint ? (
             <div className="truncate text-xs text-muted-foreground">{item.hint}</div>
           ) : null}
+          {item.below ?? null}
         </div>
       ))}
     </section>

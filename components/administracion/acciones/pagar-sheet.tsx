@@ -68,6 +68,8 @@ import type {
   SheetPartyItems,
   SheetWeekPlan,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -76,11 +78,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { allocateItems, postPayment } from '@/lib/accounting/actions/documents'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import { pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { PaymentValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
+import { inBranchFilter } from '@/lib/branches/filter'
 import { formatDayLabel, formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
@@ -122,6 +126,7 @@ const LAST_TREASURY_KEY = 'hub_acc_pago_caja:'
 const PAYABLE_KINDS = new Set(['supplier', 'tax_agency', 'payroll', 'partner', 'bank', 'other'])
 
 const KNOWN_FIELDS = new Set([
+  'branchId',
   'partyId',
   'date',
   'applications',
@@ -188,9 +193,11 @@ function newRow(treasuryId: string | null, amountCents: number | null = null): M
  */
 export function PagarSheet(props: ActionSheetProps) {
   const { tenantSlug, params } = props
-  // Los saldos y los gastos fijos se piden de entrada: la primera pantalla los muestra.
+  // Los saldos (los de la sucursal que se mira) y los gastos fijos se piden de entrada: la primera
+  // pantalla los muestra.
+  const branchFilter = useBranchScope()?.filter ?? null
   const load = useSheetData(
-    () => loadSheetData(tenantSlug, { balances: true, recurring: true }),
+    () => loadSheetData(tenantSlug, { balances: true, recurring: true, branch: branchFilter }),
     tenantSlug,
   )
 
@@ -234,6 +241,8 @@ function WhoScreen({
   const { openAction } = useAccounting()
   const uid = useId()
   const [fixedOpen, setFixedOpen] = useState(false)
+  // Los gastos fijos que se ofrecen son los de la sucursal que se mira (en «Todas», todos).
+  const branchFilter = useBranchScope()?.filter ?? null
 
   const partyById = useMemo(
     () => new Map((data?.parties ?? []).map((p) => [p.id, p])),
@@ -291,14 +300,18 @@ function WhoScreen({
   const fixed = useMemo(
     () =>
       data
-        ? pendingRecurring(data.recurring).map((r) => ({
+        ? pendingRecurring(
+            data.recurring.filter(
+              (r) => branchFilter === null || inBranchFilter(r.branchId, branchFilter),
+            ),
+          ).map((r) => ({
             id: r.id,
             name: r.name,
             nextDueDate: r.nextDueDate,
             amountCents: r.amountCents,
           }))
         : null,
-    [data],
+    [data, branchFilter],
   )
   const nobodyOwed = data?.balances?.every((b) => b.debtCents === 0) ?? false
 
@@ -505,6 +518,21 @@ export function PaymentForm({
   const formRef = useRef<HTMLFormElement>(null)
   const rowsTouchedRef = useRef(false)
   const name = partyName(party)
+  // La sucursal del pago: la que se mira (en «Todas», hay que elegir); si paga un gasto fijo, la suya.
+  // «¿Con qué pagás?» ofrece las cajas de esa sucursal y las de todo el bar.
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () =>
+      (recurringExpenseId
+        ? data.recurring.find((r) => r.id === recurringExpenseId)?.branchId
+        : null) ?? viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const branchTreasuries = useMemo(
+    () => treasuriesForBranch(data.treasuries, branchId),
+    [data.treasuries, branchId],
+  )
   // Solo para dibujar: «Sin comprobante · Nombre» → «Compra sin factura» (el plan no cambia).
   const itemText = (label: string) => pendingItemText(label, [party.name, party.tradeName])
 
@@ -567,7 +595,7 @@ export function PaymentForm({
   const [rows, setRows] = useState<MethodRow[]>(() => [
     newRow(
       pickTreasury({
-        treasuries: data.treasuries.filter((t) => t.active),
+        treasuries: branchTreasuries.filter((t) => t.active),
         myLastQuickExpense: rememberedTreasury(tenantSlug),
         order: data.treasuries.map((t) => t.id),
       }),
@@ -584,10 +612,11 @@ export function PaymentForm({
   const [files, setFiles] = useState<File[]>([])
   const [weekPlan, setWeekPlan] = useState<SheetWeekPlan | null>(null)
 
-  // Lo que dice el Plan de la semana de este proveedor. Si no se puede leer, la hoja sigue sin eso.
+  // Lo que dice el Plan de la semana de este proveedor en esa sucursal. Si no se puede leer, la hoja
+  // sigue sin eso.
   useEffect(() => {
     let alive = true
-    loadPartyWeekPlan(tenantSlug, party.id)
+    loadPartyWeekPlan(tenantSlug, party.id, branchId ? { ids: [branchId] } : null)
       .then((result) => {
         if (alive && result.ok) setWeekPlan(result.data)
       })
@@ -595,7 +624,7 @@ export function PaymentForm({
     return () => {
       alive = false
     }
-  }, [tenantSlug, party.id])
+  }, [tenantSlug, party.id, branchId])
 
   // Lo que el sistema recuerda: con qué se le pagó la última vez.
   useEffect(() => {
@@ -604,7 +633,7 @@ export function PaymentForm({
       .then((result) => {
         if (!alive || !result.ok || !result.data?.treasuryAccountId) return
         const remembered = result.data.treasuryAccountId
-        if (!data.treasuries.some((t) => t.id === remembered && t.active)) return
+        if (!branchTreasuries.some((t) => t.id === remembered && t.active)) return
         setRows((prev) =>
           prev.length === 1 && prev[0] && !rowsTouchedRef.current
             ? [{ ...prev[0], treasuryId: remembered }]
@@ -615,7 +644,7 @@ export function PaymentForm({
     return () => {
       alive = false
     }
-  }, [tenantSlug, party.id, data.treasuries])
+  }, [tenantSlug, party.id, branchTreasuries])
   rowsTouchedRef.current = rowsTouched
 
   // ── La cuenta del pago (FIFO por vencimiento, saldos a favor primero) ──
@@ -662,6 +691,7 @@ export function PaymentForm({
           writeOffCents: plan.writeOffCents,
           notes: notes.trim() === '' ? null : notes.trim(),
           recurringExpenseId,
+          ...(branchId ? { branchId } : {}),
         }
   const key = values ? JSON.stringify(values) : ''
   const ctx = useMemo(() => withItems(data.ctx, partyItems.items), [data.ctx, partyItems.items])
@@ -746,6 +776,11 @@ export function PaymentForm({
     event?.preventDefault()
     if (posting.pending) return
     setSubmitted(true)
+    // Mirando «Todas» hay que decir de qué sucursal sale el pago.
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     const blocked =
       date === null ||
       (plan.amountCents <= 0 && plan.writeOffCents <= 0) ||
@@ -796,6 +831,29 @@ export function PaymentForm({
     posting.clearFieldErrors()
   }
 
+  /** Otra sucursal: los medios con una caja que no se usa ahí vuelven a proponer una. */
+  const changeBranch = (next: string) => {
+    if (next === branchId) return
+    setBranchId(next)
+    setBranchError(null)
+    const fits = treasuriesForBranch(data.treasuries, next)
+    setRows((prev) =>
+      prev.map((row) =>
+        keepTreasuryForBranch(data.treasuries, row.treasuryId, next) === null
+          ? {
+              ...row,
+              treasuryId: pickTreasury({
+                treasuries: fits.filter((t) => t.active),
+                myLastQuickExpense: rememberedTreasury(tenantSlug),
+                order: data.treasuries.map((t) => t.id),
+              }),
+            }
+          : row,
+      ),
+    )
+    posting.clearFieldErrors()
+  }
+
   const setRow = (key: string, patch: Partial<MethodRow>) => {
     setRowsTouched(true)
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -813,7 +871,7 @@ export function PaymentForm({
       const assigned = base.reduce((sum, r) => sum + (r.amountCents ?? 0), 0)
       const rest = Math.max(0, plan.amountCents - assigned)
       const used = new Set(base.map((r) => r.treasuryId))
-      const other = data.treasuries.find((t) => t.active && !used.has(t.id))?.id ?? null
+      const other = branchTreasuries.find((t) => t.active && !used.has(t.id))?.id ?? null
       return [...base, newRow(other, rest > 0 ? rest : null)]
     })
   }
@@ -846,7 +904,7 @@ export function PaymentForm({
   const singleTreasury = single?.treasuryId
     ? (data.treasuries.find((t) => t.id === single.treasuryId) ?? null)
     : null
-  const hasTreasuries = data.treasuries.some((t) => t.active)
+  const hasTreasuries = branchTreasuries.some((t) => t.active)
   // Con una tarjeta de crédito entre los medios, se pregunta en cuántas cuotas.
   const paysWithCard = rows.some((row) =>
     isCreditCard(data.treasuries.find((t) => t.id === row.treasuryId)),
@@ -909,6 +967,14 @@ export function PaymentForm({
       >
         <ActionSheetBody>
           <p className="text-sm text-muted-foreground text-pretty sm:hidden">{headline}</p>
+
+          {/* De qué sucursal sale el pago. Con una sola sucursal no se ve. */}
+          <BranchField
+            value={branchId}
+            onChange={changeBranch}
+            error={branchError ?? errors.branchId ?? null}
+            disabled={posting.pending}
+          />
 
           {/* ¿Qué le pagás?: los atajos y las compras sin pagar, cada una con su tilde */}
           {debts.length > 0 || accounts.length > 1 ? (
@@ -1244,7 +1310,7 @@ export function PaymentForm({
                   id={`${uid}-caja`}
                   value={single.treasuryId}
                   onValueChange={(next) => setRow(single.key, { treasuryId: next })}
-                  treasuries={data.treasuries}
+                  treasuries={branchTreasuries}
                   invalid={Boolean(methodsError) && !single.treasuryId}
                 />
               </div>
@@ -1287,7 +1353,7 @@ export function PaymentForm({
                       aria-label={`Medio ${index + 1}`}
                       value={row.treasuryId}
                       onValueChange={(next) => setRow(row.key, { treasuryId: next })}
-                      treasuries={data.treasuries}
+                      treasuries={branchTreasuries}
                       invalid={Boolean(methodsError) && !row.treasuryId}
                       className="min-w-0 flex-1"
                     />

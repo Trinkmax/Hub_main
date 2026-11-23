@@ -3,16 +3,25 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useCashBoxBranchId } from '@/components/administracion/branch-bits'
+import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { ChoiceCard } from '@/components/administracion/kit/choice-card'
 import { Pill } from '@/components/administracion/kit/pill'
 import { WALLET_ICONS } from '@/components/administracion/kit/wallet-card'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Input } from '@/components/ui/input'
 import type { AccFailureState } from '@/lib/accounting/action-state'
 import { type SavedTreasury, saveTreasuryAccount } from '@/lib/accounting/actions/master'
 import type { TreasuryAccountRow } from '@/lib/accounting/queries/treasury'
 import type { TreasuryKind } from '@/lib/accounting/types'
+import { branchShortLabel } from '@/lib/branches/types'
 import { cn } from '@/lib/utils'
-import { type TreasuryDraft, treasuryDraftOf, treasurySavePayload } from '../_lib/payloads'
+import {
+  newTreasuryBranchId,
+  type TreasuryDraft,
+  treasuryDraftOf,
+  treasurySavePayload,
+} from '../_lib/payloads'
 import { EditDialog } from './edit-dialog'
 import { describedBy, Field } from './form-bits'
 import { INPUT_CLASS, SwitchRow } from './inputs'
@@ -59,9 +68,18 @@ const KIND_CHOICES: ReadonlyArray<{ value: TreasuryKind; title: string; conseque
   },
 ]
 
-function draftFor(target: TreasuryDialogTarget): TreasuryDraft {
+/** El valor de «Todo el bar» en la elección de sucursal (una caja sin sucursal). */
+const WHOLE_BAR = 'todo-el-bar'
+
+/**
+ * El borrador al abrir. Una caja nueva arranca en la sucursal de su tipo (el efectivo, en la que se mira; lo
+ * demás, de todo el bar).
+ */
+function draftFor(target: TreasuryDialogTarget, cashBranchId: string | null): TreasuryDraft {
   const draft = treasuryDraftOf(target.row)
-  return target.row === null && target.kind ? { ...draft, kind: target.kind } : draft
+  if (target.row !== null) return draft
+  const kind = target.kind ?? draft.kind
+  return { ...draft, kind, branchId: newTreasuryBranchId(kind, cashBranchId) }
 }
 
 export function TreasuryDialog({
@@ -81,19 +99,24 @@ export function TreasuryDialog({
 }) {
   const router = useRouter()
   const { pending, run } = useMasterAction()
+  const branchContext = useBranchScope()
+  const cashBranchId = useCashBoxBranchId()
   const [seen, setSeen] = useState<TreasuryDialogTarget | null>(null)
   const [draft, setDraft] = useState<TreasuryDraft | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
+  // En un alta, la sucursal sigue al tipo hasta que la persona la elige a mano.
+  const [branchTouched, setBranchTouched] = useState(false)
 
   // Al abrirse para otra caja arranca limpio; al cerrarse conserva lo último
   // para que la animación de salida no muestre el formulario vacío.
   if (target !== seen) {
     setSeen(target)
     if (target) {
-      setDraft(draftFor(target))
+      setDraft(draftFor(target, cashBranchId))
       setErrors({})
       setMessage(null)
+      setBranchTouched(false)
     }
   }
 
@@ -147,6 +170,46 @@ export function TreasuryDialog({
     : KIND_CHOICES
   const offersOther = !editing || draft?.kind !== 'credit_card'
   const set = (patch: Partial<TreasuryDraft>) => setDraft((d) => (d ? { ...d, ...patch } : d))
+  /** Otro tipo: en un alta, la sucursal sigue al tipo (mientras nadie la haya elegido a mano). */
+  const setKind = (kind: TreasuryKind) =>
+    set(
+      !editing && !branchTouched
+        ? { kind, branchId: newTreasuryBranchId(kind, cashBranchId) }
+        : { kind },
+    )
+
+  // De qué sucursal es: una de las del bar o «Todo el bar». Con una sola sucursal no se pregunta.
+  const branches = branchContext?.scope.multi ? branchContext.scope.branches : []
+  const branchValue =
+    draft?.branchId === undefined ? null : draft.branchId === null ? WHOLE_BAR : draft.branchId
+  const branchField =
+    draft && branches.length > 1 ? (
+      <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+        <legend id="tr-branch-label" className="mb-2 p-0 text-sm font-medium">
+          ¿De qué sucursal es?
+        </legend>
+        <ChoiceChips<string>
+          labelledBy="tr-branch-label"
+          value={branchValue}
+          onChange={(value) => {
+            setBranchTouched(true)
+            set({ branchId: value === WHOLE_BAR ? null : value })
+          }}
+          options={[
+            ...branches.map((branch) => ({ value: branch.id, label: branchShortLabel(branch) })),
+            { value: WHOLE_BAR, label: 'Todo el bar' },
+          ]}
+        />
+        <p className="text-xs text-muted-foreground text-pretty">
+          De todo el bar se ve en todas las sucursales, con un solo saldo.
+        </p>
+        {err('branchId') ? (
+          <p role="alert" className="text-xs text-destructive">
+            {err('branchId')}
+          </p>
+        ) : null}
+      </fieldset>
+    ) : null
 
   const kindField = draft ? (
     <fieldset className="m-0 grid min-w-0 gap-2.5 border-0 p-0">
@@ -162,7 +225,7 @@ export function TreasuryDialog({
               title={c.title}
               consequence={c.consequence}
               checked={draft.kind === c.value}
-              onChange={() => set({ kind: c.value })}
+              onChange={() => setKind(c.value)}
               art={
                 <span className="flex size-9 items-center justify-center rounded-full border border-border/70 bg-card text-foreground shadow-2xs">
                   <Icon className="size-4" />
@@ -178,7 +241,7 @@ export function TreasuryDialog({
             size="touch"
             className="md:h-9 md:px-3 md:text-[13px]"
             active={draft.kind === 'other'}
-            onClick={() => set({ kind: 'other' })}
+            onClick={() => setKind('other')}
           >
             Es otra cosa
           </Pill>
@@ -234,6 +297,7 @@ export function TreasuryDialog({
           {/* En una edición, el nombre primero: es lo que se viene a cambiar. */}
           {editing ? nameField : kindField}
           {editing ? kindField : nameField}
+          {branchField}
 
           {draft.kind === 'bank' || draft.kind === 'credit_card' ? (
             <div className="grid gap-3 sm:grid-cols-2">

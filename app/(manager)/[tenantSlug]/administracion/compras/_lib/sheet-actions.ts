@@ -15,6 +15,7 @@
 
 import { z } from 'zod'
 import { authorizeAccounting } from '@/lib/accounting/access'
+import { isEmptyBranchFilter, rpcBranchIdOfFilter } from '@/lib/accounting/branch'
 import {
   AccountingContextError,
   buildPostingContext,
@@ -32,6 +33,8 @@ import { AccQueryError } from '@/lib/accounting/queries/shared'
 import { getWeekPlan } from '@/lib/accounting/queries/week-plan'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { mondayOf } from '@/lib/accounting/week-plan'
+import { type BranchFilter, clampBranchFilter } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { todayInCordoba } from '@/lib/dates'
 import type {
   QuickSuggestion,
@@ -47,6 +50,20 @@ import type {
 const LOAD_FAILED = 'No pudimos cargar los datos. Probá de nuevo; si sigue, avisanos.'
 
 const uuid = z.uuid()
+
+/** El filtro de sucursal con el que se dibujó la pantalla (`useBranchScope().filter`), tal como llega. */
+const branchFilterInput = z
+  .object({ ids: z.array(uuid).max(50).nullable() })
+  .nullish()
+  .catch(null)
+
+/**
+ * Lo que pidió el navegador, recortado a lo que la persona ve hoy (docs/features/sucursales.md, regla 2):
+ * nunca se relee la cookie. Sin filtro, lo que la persona ve.
+ */
+async function clampedBranch(slug: string, raw: unknown): Promise<BranchFilter> {
+  return clampBranchFilter(branchFilterInput.parse(raw), await getBranchScope(slug))
+}
 
 /** Sin datos personales en el log (CLAUDE.md §9): la operación y el tipo de error. */
 function failure<T>(op: string, error: unknown): SheetResult<T> {
@@ -73,15 +90,25 @@ async function optional<T>(promise: Promise<T>, fallback: T): Promise<T> {
  * (cuentas, cajas con saldo, partícipes) armado DESDE LA BASE, el primer día
  * abierto, las listas para los combos y, si se piden, los chips de «¿En qué?»,
  * los gastos fijos activos y los saldos de los proveedores.
+ *
+ * Las cajas y los gastos fijos vienen con su sucursal (el formulario ofrece los
+ * de la sucursal elegida y los de todo el bar). Los saldos son los de la sucursal
+ * que se mira (`branch`, el filtro con el que se dibujó la pantalla).
  */
 export async function loadSheetData(
   slug: string,
-  opts: { suggestions?: boolean; recurring?: boolean; balances?: boolean } = {},
+  opts: {
+    suggestions?: boolean
+    recurring?: boolean
+    balances?: boolean
+    branch?: BranchFilter | null
+  } = {},
 ): Promise<SheetResult<SheetData>> {
   try {
     const auth = await authorizeAccounting(slug, 'write')
     if (!auth.ok) return { ok: false, message: auth.state.message }
     const tenantId = auth.tenantId
+    const branch = opts.balances === true ? await clampedBranch(slug, opts.branch) : null
 
     const [catalog, firstOpenDate, rawSuggestions, rawRecurring, balances] = await Promise.all([
       loadPostingCatalog(tenantId),
@@ -90,8 +117,14 @@ export async function loadSheetData(
         ? optional(getQuickExpenseSuggestions(tenantId), [])
         : Promise.resolve([]),
       opts.recurring === true ? optional(listRecurringExpenses(tenantId), []) : Promise.resolve([]),
-      opts.balances === true
-        ? optional(listPartyBalances(tenantId, { group: 'payables' }), null)
+      opts.balances === true && branch !== null && !isEmptyBranchFilter(branch)
+        ? optional(
+            listPartyBalances(tenantId, {
+              group: 'payables',
+              branchId: rpcBranchIdOfFilter(branch),
+            }),
+            null,
+          )
         : Promise.resolve(null),
     ])
     const ctx = buildPostingContext(catalog)
@@ -129,6 +162,7 @@ export async function loadSheetData(
       recurring.push({
         id: r.id,
         name: r.name,
+        branchId: r.branchId,
         partyId: party?.active ? party.id : null,
         accountId: r.accountId,
         voucherType: r.voucherType,
@@ -156,6 +190,7 @@ export async function loadSheetData(
             balanceCents: t.balanceCents,
             active: t.active,
             allowNegative: t.allowNegative,
+            branchId: t.branchId ?? null,
           })),
         parties: catalog.parties.map((p) => ({
           id: p.id,
@@ -230,17 +265,24 @@ export async function loadPartyDefaults(
 
 /**
  * Lo presupuestado y lo pagado esta semana a un proveedor, para la nota de la hoja «Pago». Ayuda pero
- * no es imprescindible: si falla, `null` y la hoja sigue sin eso.
+ * no es imprescindible: si falla, `null` y la hoja sigue sin eso. Es el plan de la sucursal que se mira
+ * (`branch`, el filtro con el que se dibujó la pantalla).
  */
 export async function loadPartyWeekPlan(
   slug: string,
   partyId: string,
+  branch: BranchFilter | null = null,
 ): Promise<SheetResult<SheetWeekPlan | null>> {
   try {
     const auth = await authorizeAccounting(slug, 'write')
     if (!auth.ok) return { ok: false, message: auth.state.message }
     if (!uuid.safeParse(partyId).success) return { ok: true, data: null }
-    const rows = await optional(getWeekPlan(auth.tenantId, mondayOf(todayInCordoba())), [])
+    const clamped = await clampedBranch(slug, branch)
+    if (isEmptyBranchFilter(clamped)) return { ok: true, data: null }
+    const rows = await optional(
+      getWeekPlan(auth.tenantId, mondayOf(todayInCordoba()), rpcBranchIdOfFilter(clamped)),
+      [],
+    )
     const row = rows.find((candidate) => candidate.partyId === partyId)
     return {
       ok: true,

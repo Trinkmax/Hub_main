@@ -31,6 +31,8 @@ import { MoneyField, MoneyInput } from '@/components/administracion/money-input'
 import { TreasuryPicker } from '@/components/administracion/treasury-picker'
 import type { TreasuryOption } from '@/components/administracion/treasury-select'
 import { voucherStamp } from '@/components/administracion/voucher-stamp'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,6 +46,7 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { postBankExpense } from '@/lib/accounting/actions/documents'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import { vatFromNet } from '@/lib/accounting/iva'
 import { splitBankTax } from '@/lib/accounting/posting/treasury'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
@@ -105,7 +108,7 @@ export function BankExpenseForm({
   firstOpenDate,
   minDate,
   today,
-  treasuries,
+  treasuries: allTreasuries,
   accounts,
   prefill,
 }: {
@@ -125,6 +128,21 @@ export function BankExpenseForm({
   const settings = ctx.settings
   // Solo la hoja de contar la caja manda el total en la URL: vino de ahí.
   const fromCount = prefill.totalCents !== null
+  // La sucursal del gasto: la de la cuenta que vino en la URL, o la que se mira (en «Todas», se
+  // elige). Se ofrecen las cuentas de esa sucursal y las de todo el bar.
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () =>
+      (prefill.treasuryId
+        ? allTreasuries.find((t) => t.id === prefill.treasuryId)?.branchId
+        : null) ?? viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const treasuries = useMemo(
+    () => treasuriesForBranch(allTreasuries, branchId),
+    [allTreasuries, branchId],
+  )
 
   const [treasuryId, setTreasuryId] = useState<string | null>(
     prefill.treasuryId ?? (treasuries.length === 1 ? (treasuries[0]?.id ?? null) : null),
@@ -204,8 +222,10 @@ export function BankExpenseForm({
         .filter((o) => o.accountId !== null || o.amount !== null)
         .map((o) => ({ accountId: o.accountId ?? '', amountCents: o.amount })),
       notes: notes.trim() === '' ? null : notes.trim(),
+      ...(branchId ? { branchId } : {}),
     }
   }, [
+    branchId,
     treasuryId,
     date,
     inBook,
@@ -257,9 +277,21 @@ export function BankExpenseForm({
 
   const shown = posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : [])
 
+  /** Otra sucursal: la cuenta elegida queda solo si también es de ahí (o de todo el bar). */
+  function changeBranch(next: string) {
+    setBranchId(next)
+    setBranchError(null)
+    posting.clearFieldError('branchId')
+    setTreasuryId((current) => keepTreasuryForBranch(allTreasuries, current, next))
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setAttempted(true)
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (!preview.state.ok || controlError || (controlDiff !== null && controlDiff !== 0)) {
       posting.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       requestAnimationFrame(() => {
@@ -486,6 +518,14 @@ export function BankExpenseForm({
             }
           >
             <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-start">
+              {/* De qué sucursal es el gasto. Con una sola sucursal no se ve. */}
+              <BranchField
+                value={branchId}
+                onChange={changeBranch}
+                error={branchError ?? errorOf('branchId')}
+                disabled={posting.pending}
+                className="sm:col-span-2"
+              />
               <div className="grid content-start gap-1.5">
                 <span id={`${id}-caja-label`} className="text-sm leading-none font-medium">
                   Cuenta

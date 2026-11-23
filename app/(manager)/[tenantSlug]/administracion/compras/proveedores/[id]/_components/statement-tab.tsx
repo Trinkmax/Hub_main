@@ -226,11 +226,14 @@ export async function StatementTab({
   today,
   canWrite,
   unusedCreditCents,
+  branchId = null,
 }: {
   tenantId: string
   tenantSlug: string
   partyId: string
   partyName: string
+  /** La sucursal que se mira (`null` = todas): los comprobantes de esa sucursal. */
+  branchId?: string | null
   /** Su cuenta corriente (`/compras/proveedores/[id]`). */
   baseHref: string
   sp: Readonly<Record<string, string | string[] | undefined>>
@@ -252,6 +255,7 @@ export async function StatementTab({
       to: period.to,
       after,
       limit: STATEMENT_PAGE,
+      branchId,
     }),
   )
 

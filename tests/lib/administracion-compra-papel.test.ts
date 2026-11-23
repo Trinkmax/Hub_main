@@ -74,6 +74,11 @@ vi.mock('@/app/(manager)/[tenantSlug]/administracion/compras/_lib/page-access', 
   requireComprasAccess: async () => ({
     access: { tenant: { id: 't-1' } },
     canWrite: page.canWrite,
+    branch: {
+      scope: { branches: [], current: null, isAll: false, ids: [], multi: false },
+      filter: { ids: null },
+      id: null,
+    },
   }),
 }))
 vi.mock('@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-actions', () => ({
@@ -1260,7 +1265,12 @@ describe('la página de la compra: quién llega al formulario', () => {
     })
     const out = await render()
     expect(out).toContain('data-purchase-form')
-    expect(page.loadSheetData).toHaveBeenCalledWith('hub', { suggestions: true, balances: true })
+    // Los saldos son los de la sucursal que se mira (acá, todo el bar).
+    expect(page.loadSheetData).toHaveBeenCalledWith('hub', {
+      suggestions: true,
+      balances: true,
+      branch: { ids: null },
+    })
   })
 })
 

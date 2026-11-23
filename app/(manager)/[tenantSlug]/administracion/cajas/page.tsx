@@ -59,11 +59,13 @@ export default async function CajasPage({ params, searchParams }: PageProps) {
   const sp = await searchParams
   const base = `/${tenantSlug}/administracion`
   const flujo = firstParam(sp.tab) === 'flujo'
-  const { access, canWrite } = await requireAdminPage(
+  const { access, canWrite, branch } = await requireAdminPage(
     tenantSlug,
     flujo ? `${base}/cajas?tab=flujo` : `${base}/cajas`,
   )
   const tenantId = access.tenant.id
+  // Las cajas de la sucursal que se mira y las de todo el bar (en «Todas», todas).
+  const branchId = branch.id
   const today = todayInCordoba()
 
   if (flujo) {
@@ -89,6 +91,7 @@ export default async function CajasPage({ params, searchParams }: PageProps) {
             base={base}
             today={today}
             canWrite={canWrite}
+            branchId={branchId}
             sp={sp}
           />
         </Suspense>
@@ -113,6 +116,7 @@ export default async function CajasPage({ params, searchParams }: PageProps) {
           base={base}
           today={today}
           canWrite={canWrite}
+          branchId={branchId}
         />
       </Suspense>
     </SimplePage>
@@ -125,6 +129,8 @@ type BlockProps = {
   base: string
   today: string
   canWrite: boolean
+  /** La sucursal que se mira (`null` = todas). */
+  branchId: string | null
 }
 
 /**
@@ -132,9 +138,9 @@ type BlockProps = {
  * cobra el impuesto al cheque, cómo vienen los saldos iniciales), del catálogo. Si el catálogo falla
  * la tabla sale igual, sin lo que necesita ese dato.
  */
-async function Cuentas({ tenantId, tenantSlug, base, today, canWrite }: BlockProps) {
+async function Cuentas({ tenantId, tenantSlug, base, today, canWrite, branchId }: BlockProps) {
   const [balances, catalog] = await Promise.all([
-    settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
+    settleQuery(listTreasuryBalances(tenantId, { asOf: today, branchId })),
     settleQuery(loadPostingCatalog(tenantId)),
   ])
   if (!balances.ok) return <PanelError title="Las cuentas" message={balances.message} />
@@ -167,12 +173,13 @@ async function Detalle({
   base,
   today,
   canWrite,
+  branchId,
   sp,
 }: BlockProps & { sp: Record<string, string | string[] | undefined> }) {
   // El dibujo por día se pide junto con el resto pero no se espera acá: llega en su Suspense.
   const chartRange = resolveCashChartRange(firstParam(sp[CASH_CHART_RANGE_PARAM]), today)
   const cashDaily = settleQuery(
-    getCashDaily(tenantId, { from: chartRange.from, to: chartRange.to }),
+    getCashDaily(tenantId, { from: chartRange.from, to: chartRange.to, branchId }),
   )
   // Por defecto, los últimos tres meses (con el actual).
   const fallbackFrom = startOfMonth(addMonthsToYearMonth(monthOf(today), -2))
@@ -190,9 +197,11 @@ async function Detalle({
   // Los saldos y la configuración dicen si «la plata de hoy» es un dato (la
   // proyección no estima nada sobre un cero que no lo es).
   const [flow, projection, balances, settingsResult] = await Promise.all([
-    range.ok ? settleQuery(getCashFlow(tenantId, { from: range.from, to: range.to })) : null,
-    settleQuery(getCashProjection(tenantId, { asOf: today, weeks: 4 })),
-    settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
+    range.ok
+      ? settleQuery(getCashFlow(tenantId, { from: range.from, to: range.to, branchId }))
+      : null,
+    settleQuery(getCashProjection(tenantId, { asOf: today, weeks: 4, branchId })),
+    settleQuery(listTreasuryBalances(tenantId, { asOf: today, branchId })),
     settleQuery(getAccountingSettings(tenantId)),
   ])
   const rows = balances.ok ? balances.data : []

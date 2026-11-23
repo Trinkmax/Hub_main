@@ -16,7 +16,11 @@
  */
 
 import { authorizeAccounting } from '@/lib/accounting/access'
-import { type AccSimpleState, invalidState } from '@/lib/accounting/action-state'
+import {
+  type AccFailureState,
+  type AccSimpleState,
+  invalidState,
+} from '@/lib/accounting/action-state'
 import { type AccSettingsRow, parseSettingsRow } from '@/lib/accounting/context'
 import {
   type PartyContact,
@@ -69,6 +73,8 @@ import {
   TREASURY_KINDS,
   type TreasuryKind,
 } from '@/lib/accounting/types'
+import { BranchRequiredError, branchErrorMessage, branchForWrite } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { formatIsoDay } from '@/lib/dates'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -158,6 +164,8 @@ export type SavedTreasury = {
   sort: number
   active: boolean
   updatedAt: string | null
+  /** La sucursal de la caja; vacía = de todo el bar. */
+  branchId?: string | null
 }
 
 export type SavedSalesMethod = {
@@ -203,6 +211,8 @@ export type SavedRecurringExpense = {
   installmentsTotal: number | null
   breakdown: RecurringBreakdownRow[]
   updatedAt: string | null
+  /** La sucursal del gasto fijo. */
+  branchId?: string | null
 }
 
 export type BulkResult = { created: number; skipped: string[] }
@@ -285,6 +295,7 @@ function treasuryRow(r: Rec): SavedTreasury {
     sort: intOf(r.sort) ?? 0,
     active: boolOf(r.active, true),
     updatedAt: textOf(r.updated_at),
+    branchId: textOf(r.branch_id),
   }
 }
 
@@ -338,6 +349,7 @@ function recurringRow(r: Rec): SavedRecurringExpense {
     installmentsTotal: intOf(r.installments_total),
     breakdown: parseBreakdown(r.breakdown),
     updatedAt: textOf(r.updated_at),
+    branchId: textOf(r.branch_id),
   }
 }
 
@@ -377,6 +389,25 @@ async function saveVia<T>(
 function keepPresent(raw: unknown): (field: string) => boolean {
   const present = presentKeys(raw)
   return (field) => present.has(field)
+}
+
+/**
+ * La sucursal de lo que se guarda (`branchForWrite`): la que mandó el formulario, si la persona la tiene (si no,
+ * error del campo `branchId`); sin ninguna, la que se mira. Mirando «Todas» sin elegir (los formularios no lo
+ * dejan; Tex sí puede), `null`: no se manda y la base pone la principal.
+ */
+async function writeBranch(
+  slug: string,
+  requested: string | null | undefined,
+): Promise<{ ok: true; branchId: string | null } | { ok: false; state: AccFailureState }> {
+  try {
+    return { ok: true, branchId: branchForWrite(await getBranchScope(slug), requested) }
+  } catch (error) {
+    if (!requested && error instanceof BranchRequiredError) return { ok: true, branchId: null }
+    const message = branchErrorMessage(error)
+    if (!message) throw error
+    return { ok: false, state: fieldFailure('branchId', message) }
+  }
 }
 
 // ─── Datos de la SAS ─────────────────────────────────────────────────────────
@@ -699,6 +730,8 @@ const TREASURY_CREATE_FIELDS: FieldMap = [
   ['accountNumber', 'account_number'],
   ['allowNegative', 'allow_negative'],
   ['createBankParty', 'create_bank_party'],
+  // Un id o `null` explícito (= de todo el bar); sin la clave, la base no la toca.
+  ['branchId', 'branch_id'],
 ]
 
 const TREASURY_UPDATE_FIELDS: FieldMap = [...TREASURY_CREATE_FIELDS, ['active', 'active']]
@@ -722,6 +755,11 @@ export async function saveTreasuryAccount(
 
     const editing = v.id !== null
     if (editing && v.expectedUpdatedAt === null) return accFailure('stale')
+    // Una sucursal elegida tiene que ser de la persona; «de todo el bar» (`null`) siempre se puede.
+    if (v.branchId) {
+      const chosen = await writeBranch(slug, v.branchId)
+      if (!chosen.ok) return chosen.state
+    }
     const payload = editing
       ? { id: v.id, ...rpcPayload(v, TREASURY_UPDATE_FIELDS, keepPresent(input)) }
       : rpcPayload(v, TREASURY_CREATE_FIELDS)
@@ -868,6 +906,7 @@ const RECURRING_FIELDS: FieldMap = [
   ['endsOn', 'ends_on'],
   ['installmentsTotal', 'installments_total'],
   ['breakdown', 'breakdown'],
+  ['branchId', 'branch_id'],
 ]
 
 /** Alta o edición de un gasto fijo (recordatorio con vencimiento; no devenga). */
@@ -889,9 +928,18 @@ export async function saveRecurringExpense(
     }
     const editing = v.id !== null
     if (editing && v.expectedUpdatedAt === null) return accFailure('stale')
+    // Un alta lleva la sucursal elegida o la que se mira; una edición, solo si la cambia.
+    let branchId: string | null = null
+    if (!editing || v.branchId) {
+      const chosen = await writeBranch(slug, v.branchId)
+      if (!chosen.ok) return chosen.state
+      branchId = chosen.branchId
+    }
     const payload = editing
       ? { id: v.id, ...rpcPayload(v, RECURRING_FIELDS, keepPresent(input)) }
       : rpcPayload(v, RECURRING_FIELDS)
+    if (branchId) payload.branch_id = branchId
+    else delete payload.branch_id
     if (payload.breakdown !== undefined) {
       payload.breakdown = v.breakdown.map((line) => ({
         label: line.label,
@@ -1155,6 +1203,9 @@ export async function createRecurringBulk(
     if (!auth.ok) return auth.state
     const parsed = recurringBulkSchema.safeParse(formInput(raw))
     if (!parsed.success) return invalidState(parsed.error)
+    // Todos a la misma sucursal: la elegida o la que se mira (los nombres se comparan dentro de ella).
+    const chosen = await writeBranch(slug, parsed.data.branchId)
+    if (!chosen.ok) return chosen.state
 
     const supabase = await createClient()
     const { data, error } = await supabase.rpc('acc_create_recurring_bulk', {
@@ -1164,6 +1215,7 @@ export async function createRecurringBulk(
         account_id: item.accountId,
         due_day: item.dueDay,
         next_due_date: item.nextDueDate,
+        ...(chosen.branchId ? { branch_id: chosen.branchId } : {}),
       })),
     })
     if (error) return rpcFailure(op, error)

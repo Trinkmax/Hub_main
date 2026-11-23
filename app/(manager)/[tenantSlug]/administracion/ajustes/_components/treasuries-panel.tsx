@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight, Landmark, Pencil, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { Amount } from '@/components/administracion/amount'
+import { AccBranchTag } from '@/components/administracion/branch-bits'
 import { EmptyTeach } from '@/components/administracion/kit/empty-teach'
 import { Panel } from '@/components/administracion/kit/panel'
 import { WALLET_ICONS } from '@/components/administracion/kit/wallet-card'
@@ -143,6 +144,7 @@ export function TreasuriesPanel({
           muted={!t.active}
           line={treasuryLine(t)}
           missing={t.active ? treasuryMissing(t) : null}
+          branch={<AccBranchTag branchId={t.branchId} when="always" />}
           balance={
             <Balance
               kind={t.kind}

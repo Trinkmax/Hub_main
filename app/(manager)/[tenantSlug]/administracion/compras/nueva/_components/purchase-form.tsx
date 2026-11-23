@@ -46,6 +46,8 @@ import { MoneyField, MoneyInput } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
 import { SimplePage } from '@/components/administracion/planilla'
 import { TreasurySelect } from '@/components/administracion/treasury-select'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -64,6 +66,7 @@ import {
   postQuickExpense,
 } from '@/lib/accounting/actions/documents'
 import { saveParty } from '@/lib/accounting/actions/master'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import { amountLooksOff, pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
 import type { InvoiceRead } from '@/lib/accounting/invoice-read'
@@ -195,6 +198,8 @@ const NOTES_MAX = 1000
 export type RecurringOption = {
   id: string
   name: string
+  /** La sucursal del gasto fijo: se paga desde ella. */
+  branchId?: string | null
   partyId: string | null
   accountId: string
   voucherType: string | null
@@ -246,6 +251,7 @@ const ADVANCED_FIELDS = [
 
 /** Los campos de pantalla que muestran su error en su lugar. */
 const UI_FIELDS = new Set([
+  'branchId',
   'party',
   'newPartyName',
   'newPartyTaxId',
@@ -425,6 +431,24 @@ export function PurchaseForm({
   const recurringById = useMemo(() => new Map(recurring.map((r) => [r.id, r])), [recurring])
   const firstRecurring = initialRecurringId ? (recurringById.get(initialRecurringId) ?? null) : null
 
+  // La sucursal de la compra (y de su pago): la que se mira, o la del gasto fijo que vino en la URL; en
+  // «Todas», hay que elegir. «Ya la pagué» ofrece las cajas de esa sucursal y las de todo el bar.
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () => firstRecurring?.branchId ?? viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const branchTreasuries = useMemo(
+    () => treasuriesForBranch(data.treasuries, branchId),
+    [data.treasuries, branchId],
+  )
+  // Los gastos fijos que se ofrecen son los de esa sucursal (se pagan desde la suya).
+  const branchRecurring = useMemo(
+    () => recurring.filter((r) => !branchId || !r.branchId || r.branchId === branchId),
+    [recurring, branchId],
+  )
+
   // ── Estado ──
   const startParty = firstRecurring?.partyId ?? initialPartyId
   const [party, setParty] = useState<PurchaseParty | null>(() =>
@@ -473,7 +497,7 @@ export function PurchaseForm({
   const [recurringId, setRecurringId] = useState<string | null>(firstRecurring?.id ?? null)
   const [payNow, setPayNow] = useState<PurchaseFormState['payNow']>(() =>
     startPaying && initialFamily !== 'nc'
-      ? initialPayNow({ treasuries: data.treasuries, lastUsedWithParty: null, today })
+      ? initialPayNow({ treasuries: branchTreasuries, lastUsedWithParty: null, today })
       : null,
   )
   const [notes, setNotes] = useState('')
@@ -726,17 +750,17 @@ export function PurchaseForm({
             ? {
                 ...prev,
                 treasuryAccountId: pickTreasury({
-                  treasuries: data.treasuries.filter((t) => t.active),
+                  treasuries: branchTreasuries.filter((t) => t.active),
                   lastUsedWithParty,
                   myLastQuickExpense: rememberedTreasury(tenantSlug),
-                  order: data.treasuries.map((t) => t.id),
+                  order: branchTreasuries.map((t) => t.id),
                 }),
               }
             : prev,
         )
       }
     },
-    [data.treasuries, imputable, partyById, recurringById, tenantSlug],
+    [branchTreasuries, imputable, partyById, recurringById, tenantSlug],
   )
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al entrar con un proveedor elegido
@@ -755,15 +779,36 @@ export function PurchaseForm({
         ? {
             ...prev,
             treasuryAccountId: pickTreasury({
-              treasuries: data.treasuries.filter((t) => t.active),
+              treasuries: branchTreasuries.filter((t) => t.active),
               lastUsedWithParty: null,
               myLastQuickExpense: mine,
-              order: data.treasuries.map((t) => t.id),
+              order: branchTreasuries.map((t) => t.id),
             }),
           }
         : prev,
     )
   }, [])
+
+  // La caja del pago siempre es de la sucursal de la compra (o de todo el bar): si algo dejó una de
+  // otra (lo que recuerda el proveedor, un gasto fijo de otra sucursal), se propone otra.
+  useEffect(() => {
+    const current = payNow?.treasuryAccountId ?? null
+    if (current === null) return
+    if (keepTreasuryForBranch(data.treasuries, current, branchId) !== null) return
+    setPayNow((prev) =>
+      prev
+        ? {
+            ...prev,
+            treasuryAccountId: pickTreasury({
+              treasuries: treasuriesForBranch(data.treasuries, branchId).filter((t) => t.active),
+              lastUsedWithParty: null,
+              myLastQuickExpense: rememberedTreasury(tenantSlug),
+              order: data.treasuries.map((t) => t.id),
+            }),
+          }
+        : prev,
+    )
+  }, [branchId, data.treasuries, payNow?.treasuryAccountId, tenantSlug])
 
   // Si la persona se fue de la pantalla mientras subía la foto, al terminar no se la mueve.
   useEffect(() => {
@@ -894,6 +939,7 @@ export function PurchaseForm({
     controlTotalCents,
     relatedDocumentId,
     recurringExpenseId: recurringId,
+    branchId,
     payNow,
     notes: remitoActive ? withRemito(remito, notes) : notes,
   }
@@ -945,7 +991,7 @@ export function PurchaseForm({
     if (paying && payNow?.treasuryAccountId) {
       rememberTreasury(tenantSlug, payNow.treasuryAccountId)
       // Pagada con tarjeta de crédito: en cuántas cuotas (se anota aparte, después de guardar).
-      if (isCreditCard(data.treasuries.find((t) => t.id === payNow.treasuryAccountId))) {
+      if (isCreditCard(branchTreasuries.find((t) => t.id === payNow.treasuryAccountId))) {
         void saveCardInstallments(tenantSlug, saved.result.bundle_id, installments)
       }
     }
@@ -1134,11 +1180,48 @@ export function PurchaseForm({
     if (advancedError) setMoreOpen(true)
   }, [advancedError])
 
+  /**
+   * Otra sucursal: un gasto fijo de otra deja de estar elegido y la caja del pago queda solo si
+   * también se usa ahí (si no, se propone otra).
+   */
+  const changeBranch = (next: string) => {
+    if (next === branchId) return
+    setBranchId(next)
+    setBranchError(null)
+    const linked = recurringId ? recurringById.get(recurringId) : undefined
+    if (linked?.branchId && linked.branchId !== next) {
+      recurringIdRef.current = null
+      setRecurringId(null)
+    }
+    setPayNow((prev) =>
+      prev && keepTreasuryForBranch(data.treasuries, prev.treasuryAccountId, next) === null
+        ? {
+            ...prev,
+            treasuryAccountId: pickTreasury({
+              treasuries: treasuriesForBranch(data.treasuries, next).filter((t) => t.active),
+              lastUsedWithParty: defaults?.treasuryAccountId ?? null,
+              myLastQuickExpense: rememberedTreasury(tenantSlug),
+              order: data.treasuries.map((t) => t.id),
+            }),
+          }
+        : prev,
+    )
+    posting.clearFieldErrors()
+  }
+
   const submit = (event?: FormEvent, stay = false) => {
     event?.preventDefault()
     // Mientras sube la foto de la anterior no se guarda otra (esa ya quedó cargada).
     if (posting.pending || attaching) return
     setSubmitted(true)
+    // Mirando «Todas» hay que decir de qué sucursal es la compra.
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      requestAnimationFrame(() => {
+        formRef.current?.querySelector<HTMLElement>('[role="radiogroup"] button')?.focus()
+      })
+      return
+    }
     if (!built.values || !preview?.ok || !dueAnswered) {
       requestAnimationFrame(() => {
         formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
@@ -1200,18 +1283,23 @@ export function PurchaseForm({
     defaults && defaults.pointOfSale !== null && defaults.lastNumber !== null
       ? `${padPos(String(defaults.pointOfSale))}-${padNumber(String(defaults.lastNumber))}`
       : null
-  const pendingRecurring = recurring.filter(
+  const pendingRecurring = branchRecurring.filter(
     (r) => r.pending && r.partyId !== null && r.partyId === partyId && r.id !== recurringId,
   )
   const linkedRecurring = recurringId ? (recurringById.get(recurringId) ?? null) : null
   // Sin proveedor todavía, «Compra y pago» ofrece los gastos fijos de este mes, como «Nuevo gasto».
   const recurringToPick =
     party === null && paying && family === 'factura' && recurringId === null
-      ? sortRecurringForSheet(recurring.filter((r) => r.pending))
+      ? sortRecurringForSheet(branchRecurring.filter((r) => r.pending))
       : []
   const pickRecurring = (id: string) => {
     const r = recurringById.get(id)
     if (!r) return
+    // El gasto fijo es de su sucursal: la compra va ahí.
+    if (r.branchId && r.branchId !== branchId) {
+      setBranchId(r.branchId)
+      setBranchError(null)
+    }
     // `applyDefaults` lo mira para no pisar la cuenta del gasto fijo.
     recurringIdRef.current = r.id
     if (r.partyId && partyById.get(r.partyId)?.active) choosePartyId(r.partyId)
@@ -1227,8 +1315,10 @@ export function PurchaseForm({
       touched.current.voucher = true
       setVoucherType(r.voucherType)
     }
+    // Su caja de siempre, si es de su sucursal o de todo el bar.
     const treasury = r.treasuryAccountId
-    if (treasury && data.treasuries.some((t) => t.id === treasury && t.active)) {
+    const fits = treasuriesForBranch(data.treasuries, r.branchId ?? branchId)
+    if (treasury && fits.some((t) => t.id === treasury && t.active)) {
       touched.current.treasury = true
       setPayNow((prev) => (prev ? { ...prev, treasuryAccountId: treasury } : prev))
     }
@@ -1384,7 +1474,7 @@ export function PurchaseForm({
     // El mismo pago que armaba el botón de guardar y pagar de antes.
     setPayNow(
       initialPayNow({
-        treasuries: data.treasuries,
+        treasuries: branchTreasuries,
         lastUsedWithParty: defaults?.treasuryAccountId ?? null,
         myLast: rememberedTreasury(tenantSlug),
         today,
@@ -1392,7 +1482,7 @@ export function PurchaseForm({
     )
   }
   const payTreasury = payNow?.treasuryAccountId
-    ? (data.treasuries.find((t) => t.id === payNow.treasuryAccountId) ?? null)
+    ? (branchTreasuries.find((t) => t.id === payNow.treasuryAccountId) ?? null)
     : null
   // El impuesto al cheque: el motor lo suma solo en el mismo envío; acá se avisa cuánto va a ser.
   const payTreasuryRef = payNow?.treasuryAccountId
@@ -1656,6 +1746,14 @@ export function PurchaseForm({
             {lastSaved.count > 1 ? ` Llevás ${lastSaved.count}.` : null}
           </SavedNote>
         ) : null}
+
+        {/* De qué sucursal es la compra. Con una sola sucursal no se ve. */}
+        <BranchField
+          value={branchId}
+          onChange={changeBranch}
+          error={branchError ?? errors.branchId ?? null}
+          disabled={posting.pending}
+        />
 
         {/* Dos columnas recién con lugar para las dos: la factura necesita su ancho. Más abajo, la foto
             va primero: con el papel en la mano, es lo primero que se hace. */}
@@ -2379,7 +2477,7 @@ export function PurchaseForm({
                         setPayNow({ ...payNow, treasuryAccountId: next })
                         posting.clearFieldErrors()
                       }}
-                      treasuries={data.treasuries}
+                      treasuries={branchTreasuries}
                       invalid={Boolean(errors.payTreasury)}
                       className="md:data-[size=default]:h-9"
                     />
@@ -2515,7 +2613,7 @@ export function PurchaseForm({
                     </div>
                   ) : null}
                   {/* Con la tarjeta: en cuántas cuotas, a lo ancho (en la columna de «Salió de» no entra) */}
-                  {isCreditCard(data.treasuries.find((t) => t.id === payNow.treasuryAccountId)) ? (
+                  {isCreditCard(branchTreasuries.find((t) => t.id === payNow.treasuryAccountId)) ? (
                     <InstallmentsField
                       // Después de «Cargar otra» arranca de nuevo en un solo pago.
                       key={lastSaved?.count ?? 0}

@@ -12,6 +12,7 @@ import {
 import type { SheetData } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { PHONE_HIDDEN, PRow, PTd, ROW_ACTION } from '@/components/administracion/planilla'
+import { BranchTag } from '@/components/branches/branch-tag'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -247,6 +248,8 @@ export function SheetRow({
           >
             {row.name}
           </span>
+          {/* Mirando «Todas»: de qué sucursal es (al final de la primera línea). */}
+          <BranchTag branchId={row.branchId} className="ml-1.5" />
           {cuota ? <small className="block text-xs text-muted-foreground">{cuota}</small> : null}
           {/* En el celular no entran Vence y Estado como columnas: van debajo del concepto. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:hidden">
