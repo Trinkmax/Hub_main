@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { getBranchScope } from '@/lib/branches/scope'
 import { todayInCordoba } from '@/lib/dates'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import {
@@ -9,6 +10,7 @@ import {
   type TenantRole,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { texBranchView } from './branch'
 import type { TexToolContext } from './tools/types'
 
 /**
@@ -29,6 +31,8 @@ export async function texContext(slug: string): Promise<TexContextResult> {
       return { ok: false, status: 403, message: 'Tex no está disponible para tu rol.' }
     }
     const { accounting } = access
+    // La sucursal que mira este dispositivo (la misma de las pantallas): con ella lee y prepara lo de cada local.
+    const scope = await getBranchScope(slug)
     return {
       ok: true,
       ctx: {
@@ -45,6 +49,7 @@ export async function texContext(slug: string): Promise<TexContextResult> {
           admin: accounting.enabled && accounting.admin,
         },
         today: todayInCordoba(),
+        branch: texBranchView(scope),
       },
     }
   } catch (error) {

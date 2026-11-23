@@ -25,8 +25,9 @@ import {
   type TreasuryMovementRow,
   type TreasuryMovementsPage,
 } from '@/lib/accounting/queries/treasury'
+import { branchName, branchReadId, isMultiBranch, withViewedBranch } from '../../branch'
 import { resolveTreasury } from '../../resolve'
-import { dayText, defineTool, money, noInput } from '../types'
+import { dayText, defineTool, money, noInput, type TexBranchView } from '../types'
 import { compact, moneyIf, newestFirst, periodFields, plain, shortText, texPeriod } from './common'
 
 /** Lo que se muestra de una lista de movimientos. */
@@ -39,9 +40,21 @@ const MOVEMENTS_READ = 500
 /**
  * Las cuentas con lo que tienen, y el total que dice Caja y el Resumen: sin la tarjeta de la empresa,
  * que es una deuda. Si el cero no es un dato (faltan los saldos iniciales), se dice y no hay total.
+ *
+ * Con `branch` (la sucursal que se mira), cada caja dice de dónde es como en Caja: las de todo el bar
+ * (Mercado Pago, los bancos) siempre; las de una sucursal, mirando «Todas».
  */
-export function cajasData(rows: readonly TreasuryBalanceRow[], hero: HeroState) {
+export function cajasData(
+  rows: readonly TreasuryBalanceRow[],
+  hero: HeroState,
+  branch?: TexBranchView,
+) {
   const totals = walletTotals(rows)
+  const where = (branchId: string | null | undefined): string | null => {
+    if (!branch || !isMultiBranch(branch)) return null
+    if (!branchId) return 'Todo el bar'
+    return branchReadId(branch) === null ? branchName(branch, branchId) : null
+  }
   return compact({
     total: hero.kind === 'normal' ? money(totals.availableCents) : null,
     aviso: hero.kind === 'unknown' ? `${hero.title}. ${hero.sentence}` : null,
@@ -53,6 +66,7 @@ export function cajasData(rows: readonly TreasuryBalanceRow[], hero: HeroState) 
         compact({
           id: row.treasuryId,
           nombre: row.name,
+          sucursal: where(row.branchId),
           tipo: TREASURY_KIND_LABELS[row.kind] ?? row.kind,
           ...(row.kind === 'credit_card'
             ? { debe: money(Math.max(0, -row.balanceCents)) }
@@ -169,6 +183,10 @@ export function projectionData(view: ProjectionView, weeks: number, availableCen
 
 // ─── Las herramientas ────────────────────────────────────────────────────────
 
+/**
+ * Caja es de cada sucursal (como `/cajas`): las cajas de la que se mira y las de todo el bar, con su saldo
+ * entero; el flujo y la proyección, de esas cajas. Los movimientos de una caja son los de esa caja.
+ */
 export const cajasReadTools = [
   defineTool({
     name: 'ver_cajas',
@@ -180,13 +198,13 @@ export const cajasReadTools = [
     done: () => 'Miré las cajas',
     run: async (_input, ctx) => {
       const [rows, settings] = await Promise.all([
-        listTreasuryBalances(ctx.tenantId, { asOf: ctx.today }),
+        listTreasuryBalances(ctx.tenantId, { asOf: ctx.today, branchId: branchReadId(ctx.branch) }),
         settleQuery(getAccountingSettings(ctx.tenantId)),
       ])
       const hero = walletHero(rows, settings.ok ? settings.data : null, {
         canWrite: ctx.access.write,
       })
-      return { kind: 'data', data: cajasData(rows, hero) }
+      return { kind: 'data', data: withViewedBranch(cajasData(rows, hero, ctx.branch), ctx.branch) }
     },
   }),
 
@@ -204,7 +222,10 @@ export const cajasReadTools = [
     run: async (input, ctx) => {
       const period = texPeriod(input, ctx.today)
       if (!period.ok) return { kind: 'error', message: period.message }
-      const treasury = await resolveTreasury(ctx, input.caja)
+      // Dos locales pueden tener su «Caja»: se prefiere la de la sucursal que se mira.
+      const treasury = await resolveTreasury(ctx, input.caja, {
+        prefer: branchReadId(ctx.branch),
+      })
       if (!treasury.ok) return { kind: 'error', message: treasury.message }
       const page = await getTreasuryMovements(ctx.tenantId, {
         treasuryId: treasury.value.id,
@@ -213,7 +234,14 @@ export const cajasReadTools = [
         limit: MOVEMENTS_READ,
       })
       if (!page) return { kind: 'error', message: 'Esa caja ya no está.' }
-      return { kind: 'data', data: movementsData(page, period.label) }
+      return {
+        kind: 'data',
+        data: withViewedBranch(
+          movementsData(page, period.label),
+          ctx.branch,
+          isMultiBranch(ctx.branch) ? branchName(ctx.branch, treasury.value.branchId) : null,
+        ),
+      }
     },
   }),
 
@@ -228,8 +256,15 @@ export const cajasReadTools = [
     run: async (input, ctx) => {
       const period = texPeriod(input, ctx.today)
       if (!period.ok) return { kind: 'error', message: period.message }
-      const rows = await getCashFlow(ctx.tenantId, { from: period.from, to: period.to })
-      return { kind: 'data', data: flowData(flowView(rows), period.label) }
+      const rows = await getCashFlow(ctx.tenantId, {
+        from: period.from,
+        to: period.to,
+        branchId: branchReadId(ctx.branch),
+      })
+      return {
+        kind: 'data',
+        data: withViewedBranch(flowData(flowView(rows), period.label), ctx.branch),
+      }
     },
   }),
 
@@ -251,9 +286,10 @@ export const cajasReadTools = [
     done: () => 'Miré las próximas semanas',
     run: async (input, ctx) => {
       const weeks = input.semanas ?? 4
+      const branchId = branchReadId(ctx.branch)
       const [rows, balances, settings] = await Promise.all([
-        getCashProjection(ctx.tenantId, { asOf: ctx.today, weeks }),
-        listTreasuryBalances(ctx.tenantId, { asOf: ctx.today }),
+        getCashProjection(ctx.tenantId, { asOf: ctx.today, weeks, branchId }),
+        listTreasuryBalances(ctx.tenantId, { asOf: ctx.today, branchId }),
         settleQuery(getAccountingSettings(ctx.tenantId)),
       ])
       const hero = walletHero(balances, settings.ok ? settings.data : null, {
@@ -264,7 +300,10 @@ export const cajasReadTools = [
         today: ctx.today,
         known: hero.kind === 'normal',
       })
-      return { kind: 'data', data: projectionData(view, weeks, availableCents) }
+      return {
+        kind: 'data',
+        data: withViewedBranch(projectionData(view, weeks, availableCents), ctx.branch),
+      }
     },
   }),
 ]

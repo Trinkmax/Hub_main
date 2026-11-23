@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import type { BranchFilter } from '@/lib/branches/filter'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import type { TenantRole } from '@/lib/tenant/types'
 import type { TexEvent, TexMood, TexTicket, TexTicketResult, TexTicketWarning } from '../protocol'
@@ -32,6 +33,34 @@ export type TexToolContext = {
   access: { read: boolean; write: boolean; admin: boolean }
   /** Hoy en Córdoba (`yyyy-MM-dd`). */
   today: string
+  /** La sucursal que está mirando (o «Todas»): con ella se lee y se carga lo de cada local. */
+  branch: TexBranchView
+}
+
+/** Una sucursal, como la nombra Tex. */
+export type TexBranch = {
+  id: string
+  name: string
+  /** Para donde no entra el nombre entero. Vacío = el nombre. */
+  shortName: string | null
+  /** La principal: a la que cae lo que no dice sucursal. */
+  isDefault: boolean
+}
+
+/**
+ * La sucursal que mira la persona (`getBranchScope`, una vez por pedido), en datos planos. Compras y pagos,
+ * Gastos fijos y Caja se leen y se cargan con ella (`lib/tex/branch.ts`); el resto de Administración sigue
+ * siendo de todo el bar.
+ */
+export type TexBranchView = {
+  /** ¿Mira «Todas»? */
+  isAll: boolean
+  /** La que mira; `null` en «Todas» (o si no tiene ninguna). */
+  currentId: string | null
+  /** Las que ve, la principal primero. */
+  branches: readonly TexBranch[]
+  /** Para leer las tablas (`applyBranchFilter`): `ids: null` es todo el bar, sin filtrar. */
+  filter: BranchFilter
 }
 
 /** Quién puede usar la herramienta. La acción y la base lo vuelven a decidir al escribir. */

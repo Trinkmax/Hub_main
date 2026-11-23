@@ -45,7 +45,7 @@ import { isUuid, settleQuery } from '@/lib/accounting/queries/shared'
 import { getWeekPlan } from '@/lib/accounting/queries/week-plan'
 import { REIMPUTE_CLOSED_MESSAGE, reimputeTargets } from '@/lib/accounting/reimpute'
 import { bpLabel } from '@/lib/accounting/taxes'
-import type { DocumentKind } from '@/lib/accounting/types'
+import type { DocumentKind, PartyKind } from '@/lib/accounting/types'
 import { voucherLabel } from '@/lib/accounting/voucher-types'
 import {
   mondayOf,
@@ -57,6 +57,15 @@ import {
   weekPlanTotals,
 } from '@/lib/accounting/week-plan'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
+import { WHOLE_BAR } from '@/lib/branches/filter'
+import {
+  branchName,
+  branchReadId,
+  isMultiBranch,
+  rowBranchTag,
+  viewedBranchLabel,
+  withViewedBranch,
+} from '../../branch'
 import { type Resolved, resolveParty } from '../../resolve'
 import {
   capped,
@@ -180,7 +189,8 @@ export function debtRow(row: PartyListRow) {
 
 /**
  * A quién se le debe. El total es el del Resumen; `de_proveedores` es el de Compras › Proveedores, que
- * deja afuera a los organismos y a los sueldos. Se dan los dos porque las dos pantallas existen.
+ * deja afuera a los organismos y a los sueldos. Se dan los dos porque las dos pantallas existen. Mirando
+ * una sucursal son los saldos de esa sucursal, como Compras › Proveedores (el Resumen es de todo el bar).
  */
 export function debtsData(list: PartyList) {
   const owing = list.rows.filter((row) => row.debtCents > 0)
@@ -234,11 +244,13 @@ const DOCUMENT_STATE_KEYS = Object.keys(DOCUMENT_STATES) as [
   ...Array<keyof typeof DOCUMENT_STATES>,
 ]
 
-export function documentRow(row: DocumentListRow) {
+/** Un comprobante de la lista. `sucursal`, solo cuando la lista trae más de una. */
+export function documentRow(row: DocumentListRow, sucursal: string | null = null) {
   return compact({
     id: row.id,
     numero: documentRef(row.seq),
     fecha: dayText(row.accountingDate),
+    sucursal,
     comprobante: row.title,
     participe: row.partyName,
     total: money(row.totalCents),
@@ -281,9 +293,16 @@ export function documentTotals(page: Pick<DocumentListPage, 'rows' | 'totalRows'
   )
 }
 
-export function documentsData(page: DocumentListPage, label: string) {
+export function documentsData(
+  page: DocumentListPage,
+  label: string,
+  branchOf: (branchId: string | null | undefined) => string | null = () => null,
+) {
   const totales = documentTotals(page)
-  const { filas, hay_mas } = cappedBySize(page.rows.map(documentRow), LIST_MAX)
+  const { filas, hay_mas } = cappedBySize(
+    page.rows.map((row) => documentRow(row, branchOf(row.branchId))),
+    LIST_MAX,
+  )
   return compact({
     periodo: label,
     cuantos: page.totalRows,
@@ -346,6 +365,8 @@ export type DocumentFacts = {
   /** Los renglones que se pueden reimputar, por su id, con la cuenta habitual si no es esa. */
   reimputable: ReadonlyMap<string, { usual: string | null }>
   nowMs: number
+  /** De qué sucursal es («Todo el bar» si no es de ninguna). Con una sola sucursal, nada. */
+  branch?: string | null
 }
 
 /** El comprobante entero: lo que dice, sus renglones con sus ids, su asiento y si se puede anular. */
@@ -385,6 +406,7 @@ export function documentData(doc: DocumentDetail, facts: DocumentFacts) {
     numero: documentRef(doc.seq),
     comprobante: doc.title,
     tipo: documentKindLabel(doc.kind),
+    sucursal: facts.branch ?? null,
     estado: DOCUMENT_STATUS_LABELS[doc.status],
     sin_factura: isNotInvoicedVoucher(doc.voucherType) ? true : null,
     participe: doc.partyName,
@@ -493,17 +515,33 @@ const PARTY_NOT_FOUND = 'No encontré a ese partícipe. Buscalo con buscar_parti
 export async function partyOf(
   ctx: TexToolContext,
   wanted: string,
-): Promise<Resolved<{ id: string; name: string }>> {
+): Promise<Resolved<{ id: string; name: string; kind: PartyKind }>> {
   if (isUuid(wanted)) {
     const party = await getParty(ctx.tenantId, wanted)
     return party
-      ? { ok: true, value: { id: party.id, name: party.tradeName ?? party.name } }
+      ? { ok: true, value: { id: party.id, name: party.tradeName ?? party.name, kind: party.kind } }
       : { ok: false, message: PARTY_NOT_FOUND }
   }
   const found = await resolveParty(ctx, wanted)
   return found.ok
-    ? { ok: true, value: { id: found.value.id, name: found.value.name } }
+    ? { ok: true, value: { id: found.value.id, name: found.value.name, kind: found.value.kind } }
     : { ok: false, message: found.message }
+}
+
+/**
+ * Lo que se busca en Ventas y en la contabilidad sigue siendo de todo el bar (como sus pantallas); lo de
+ * Compras y pagos y de Caja, de la sucursal que se mira.
+ */
+const WHOLE_BAR_TYPES: ReadonlySet<keyof typeof DOCUMENT_TYPE_FILTER> = new Set([
+  'cierres',
+  'facturas_de_venta',
+  'cobros',
+  'asientos',
+] as const)
+
+/** Los de un cliente (tarjetas, billeteras y apps incluidas) son de Ventas: de todo el bar. */
+function isReceivableKind(kind: PartyKind): boolean {
+  return partyKindsOf('receivables').includes(kind)
 }
 
 async function arcaFacts(
@@ -600,11 +638,22 @@ export const comprasReadTools = [
       }
       const party = await getParty(ctx.tenantId, partyId)
       if (!party) return { kind: 'error', message: PARTY_NOT_FOUND }
+      // Un proveedor, como su cuenta corriente: lo de la sucursal que se mira. Un cliente es de Ventas,
+      // que sigue siendo de todo el bar.
+      const payables = party.group === 'payables'
       const position = await getPartyPosition(ctx.tenantId, {
         partyId: party.id,
         group: party.group,
+        ...(payables ? { branchId: branchReadId(ctx.branch) } : {}),
       })
-      return { kind: 'data', data: partyData(party, position) }
+      return {
+        kind: 'data',
+        data: withViewedBranch(
+          partyData(party, position),
+          ctx.branch,
+          payables ? viewedBranchLabel(ctx.branch) : null,
+        ),
+      }
     },
   }),
 
@@ -617,8 +666,12 @@ export const comprasReadTools = [
     doing: () => 'Mirando lo que se debe',
     done: () => 'Miré lo que se debe',
     run: async (_input, ctx) => {
-      const list = await listParties(ctx.tenantId, { group: 'payables', asOf: ctx.today })
-      return { kind: 'data', data: debtsData(list) }
+      const list = await listParties(ctx.tenantId, {
+        group: 'payables',
+        asOf: ctx.today,
+        branchId: branchReadId(ctx.branch),
+      })
+      return { kind: 'data', data: withViewedBranch(debtsData(list), ctx.branch) }
     },
   }),
 
@@ -641,11 +694,17 @@ export const comprasReadTools = [
       const period = texPeriod(input, ctx.today)
       if (!period.ok) return { kind: 'error', message: period.message }
       let partyId: string | null = null
+      let receivable = false
       if (input.participe) {
         const found = await partyOf(ctx, input.participe)
         if (!found.ok) return { kind: 'error', message: found.message }
         partyId = found.value.id
+        receivable = isReceivableKind(found.value.kind)
       }
+      // Compras y pagos y Caja, de la sucursal que se mira (como «Comprobantes» y «Pagos»); las ventas y
+      // los asientos, de todo el bar (como Ventas y Contabilidad).
+      const wholeBar = (input.tipo !== undefined && WHOLE_BAR_TYPES.has(input.tipo)) || receivable
+      const branch = wholeBar ? WHOLE_BAR : ctx.branch.filter
       const page = await listDocuments(ctx.tenantId, {
         from: period.from,
         to: period.to,
@@ -655,8 +714,22 @@ export const comprasReadTools = [
         status: DOCUMENT_STATES[input.estado ?? 'vigentes'],
         q: input.texto ?? null,
         limit: DOCUMENTS_READ,
+        branch,
       })
-      return { kind: 'data', data: documentsData(page, period.label) }
+      const oneBranch = branch.ids !== null && branch.ids.length === 1
+      const read = wholeBar
+        ? isMultiBranch(ctx.branch)
+          ? 'Todo el bar'
+          : null
+        : viewedBranchLabel(ctx.branch)
+      return {
+        kind: 'data',
+        data: withViewedBranch(
+          documentsData(page, period.label, rowBranchTag(ctx.branch, !oneBranch)),
+          ctx.branch,
+          read,
+        ),
+      }
     },
   }),
 
@@ -682,6 +755,8 @@ export const comprasReadTools = [
           reimputable,
           canWrite: ctx.access.write,
           nowMs: Date.now(),
+          // De qué sucursal es, como la ficha (los de todo el bar: «Todo el bar»).
+          branch: isMultiBranch(ctx.branch) ? branchName(ctx.branch, doc.branchId) : null,
         }),
       }
     },
@@ -699,8 +774,8 @@ export const comprasReadTools = [
     done: () => 'Miré el plan de la semana',
     run: async (input, ctx) => {
       const monday = input.semana ? parseWeekParam(input.semana, ctx.today) : mondayOf(ctx.today)
-      const rows = await getWeekPlan(ctx.tenantId, monday)
-      return { kind: 'data', data: weekPlanData(monday, rows) }
+      const rows = await getWeekPlan(ctx.tenantId, monday, branchReadId(ctx.branch))
+      return { kind: 'data', data: withViewedBranch(weekPlanData(monday, rows), ctx.branch) }
     },
   }),
 ]

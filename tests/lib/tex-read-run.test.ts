@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 // Las herramientas corriendo de verdad, con las lecturas simuladas: qué le piden a la base y qué hacen
 // con lo que no se pudo resolver. Lo que arman ya lo prueba cada `tex-read-*.test.ts`.
@@ -99,6 +100,7 @@ const CTX: TexToolContext = {
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-11-05',
+  branch: NO_BRANCHES,
 }
 
 function run(name: string, input: unknown, ctx: TexToolContext = CTX) {
@@ -140,9 +142,11 @@ beforeEach(() => {
 describe('el período', () => {
   it('sin decirlo, el mes en curso', async () => {
     await run('ver_flujo', {})
+    // Sin sucursales a la vista, el flujo de todo el bar (`branchId: null`).
     expect(mocks.getCashFlow).toHaveBeenCalledWith('tenant-hub', {
       from: '2026-11-01',
       to: '2026-11-30',
+      branchId: null,
     })
   })
 
@@ -220,6 +224,7 @@ describe('los partícipes', () => {
     expect(mocks.getPartyPosition).toHaveBeenCalledWith('tenant-hub', {
       partyId: ID,
       group: 'payables',
+      branchId: null,
     })
   })
 
@@ -272,6 +277,7 @@ describe('buscar_comprobantes', () => {
       status: 'posted',
       q: null,
       limit: 200,
+      branch: { ids: null },
     })
   })
 
@@ -294,6 +300,7 @@ describe('buscar_comprobantes', () => {
       status: 'unpaid',
       q: 'hielo',
       limit: 200,
+      branch: { ids: null },
     })
   })
 
@@ -415,6 +422,7 @@ describe('ver_gastos_fijos', () => {
     expect(mocks.listRecurringExpenses).toHaveBeenCalledWith('tenant-hub', {
       includeInactive: true,
       today: '2026-11-05',
+      branch: { ids: null },
     })
   })
 })
@@ -433,9 +441,9 @@ describe('ver_plan_semana', () => {
   it('cualquier día de la semana lleva a su lunes', async () => {
     mocks.getWeekPlan.mockResolvedValue([])
     await run('ver_plan_semana', { semana: '2026-11-05' })
-    expect(mocks.getWeekPlan).toHaveBeenCalledWith('tenant-hub', '2026-11-02')
+    expect(mocks.getWeekPlan).toHaveBeenCalledWith('tenant-hub', '2026-11-02', null)
     await run('ver_plan_semana', {})
-    expect(mocks.getWeekPlan).toHaveBeenLastCalledWith('tenant-hub', '2026-11-02')
+    expect(mocks.getWeekPlan).toHaveBeenLastCalledWith('tenant-hub', '2026-11-02', null)
   })
 })
 

@@ -4,6 +4,7 @@ import { listAccounts } from '@/lib/accounting/queries/accounts'
 import { getParty, searchKey, searchParties } from '@/lib/accounting/queries/parties'
 import { listTreasuryAccounts } from '@/lib/accounting/queries/treasury'
 import type { PartyKind } from '@/lib/accounting/types'
+import { boxLabel, preferFitting } from './branch'
 import type { TexToolContext } from './tools/types'
 
 /**
@@ -20,28 +21,54 @@ function options(names: readonly string[]): string {
   return names.slice(0, 8).join(', ')
 }
 
-export type ResolvedTreasury = { id: string; name: string; kind: string }
+export type ResolvedTreasury = {
+  id: string
+  name: string
+  kind: string
+  /** Su sucursal; vacía = de todo el bar (Mercado Pago, los bancos). */
+  branchId: string | null
+}
 
-/** Una caja, banco o billetera por su nombre. */
+/**
+ * Una caja, banco o billetera por su nombre. Cada local puede tener su «Caja»: con `prefer` (la sucursal de lo
+ * que se lee o se carga), entre varias que se llaman igual queda la de esa sucursal o la de todo el bar. Si no
+ * queda una sola, vuelve con las opciones, cada una con su sucursal.
+ */
 export async function resolveTreasury(
   ctx: TexToolContext,
   wanted: string,
+  opts: { prefer?: string | null } = {},
 ): Promise<Resolved<ResolvedTreasury>> {
   const treasuries = await listTreasuryAccounts(ctx.tenantId)
+  const prefer = opts.prefer ?? null
   const key = searchKey(wanted)
+  const exact = preferFitting(
+    treasuries.filter((t) => searchKey(t.name) === key),
+    prefer,
+  )
   const found = UUID_RE.test(wanted)
     ? treasuries.filter((t) => t.id === wanted)
-    : treasuries.filter((t) => searchKey(t.name) === key).length === 1
-      ? treasuries.filter((t) => searchKey(t.name) === key)
-      : treasuries.filter((t) => searchKey(t.name).includes(key) || key.includes(searchKey(t.name)))
+    : exact.length === 1
+      ? exact
+      : preferFitting(
+          treasuries.filter(
+            (t) => searchKey(t.name).includes(key) || key.includes(searchKey(t.name)),
+          ),
+          prefer,
+        )
   const [only] = found
-  if (only && found.length === 1)
-    return { ok: true, value: { id: only.id, name: only.name, kind: only.kind } }
-  const all = options(treasuries.map((t) => t.name))
+  if (only && found.length === 1) {
+    return {
+      ok: true,
+      value: { id: only.id, name: only.name, kind: only.kind, branchId: only.branchId ?? null },
+    }
+  }
+  const label = (t: { name: string; branchId?: string | null }) => boxLabel(ctx.branch, t)
+  const all = options(treasuries.map(label))
   if (found.length > 1) {
     return {
       ok: false,
-      message: `«${wanted}» puede ser ${options(found.map((t) => t.name))}. Preguntale cuál.`,
+      message: `«${wanted}» puede ser ${options(found.map(label))}. Preguntale cuál.`,
     }
   }
   return { ok: false, message: `No hay una caja llamada «${wanted}». Las que hay: ${all}.` }

@@ -23,6 +23,7 @@ import {
   type TexToolResult,
   toInputSchema,
 } from '@/lib/tex/tools/types'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 export const TEX_CTX: TexToolContext = {
   slug: 'hub',
@@ -34,6 +35,7 @@ export const TEX_CTX: TexToolContext = {
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-10-31',
+  branch: NO_BRANCHES,
 }
 
 /** Los lectores que usan `lib/tex/resolve.ts` y la vista previa, todos desde el mismo contexto. */

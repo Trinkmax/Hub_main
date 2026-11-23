@@ -25,6 +25,7 @@ import {
   saveEmployee,
   saveEmployeeSalary,
 } from '@/lib/accounting/actions/payroll'
+import { treasuryFitsBranch } from '@/lib/accounting/branch'
 import { loadOpenItems, tryLoadPostingContext } from '@/lib/accounting/context'
 import {
   accrualOffer,
@@ -50,9 +51,20 @@ import { recurringSchema, skipRecurringDueSchema } from '@/lib/accounting/schema
 import { bankTaxOf } from '@/lib/accounting/taxes'
 import type { PostingContext, TreasuryRef } from '@/lib/accounting/types'
 import { endOfMonth, monthOf } from '@/lib/dates'
+import {
+  branchName,
+  branchNotices,
+  branchReadId,
+  branchToWrite,
+  isMultiBranch,
+  otherBranchBoxMessage,
+  saidBranch,
+  sucursalField,
+  withBranchRow,
+} from '../../branch'
 import { entryLines, failureText, prepareDocument, ticketWarnings } from '../../document-action'
 import type { TexTicketWarning } from '../../protocol'
-import { resolveAccount, resolveParty, resolveTreasury } from '../../resolve'
+import { type ResolvedTreasury, resolveAccount, resolveParty, resolveTreasury } from '../../resolve'
 import { texScreenHref } from '../../screens'
 import { simpleExecutor } from '../../simple-action'
 import {
@@ -78,6 +90,7 @@ import {
   FREQUENCY_WORDS,
   frequencyOf,
   matchByName,
+  matchRecurringRow,
   noMatchText,
   PAPER_WORDS,
   PAYROLL_KINDS_OF,
@@ -103,9 +116,15 @@ const IVA_RATES: Readonly<Record<'21' | '10.5' | '27', number>> = {
 
 const TICKET_BROKEN = 'El tique está roto: armalo de nuevo.'
 
+/** Para elegir entre dos gastos fijos que se llaman igual en distintos locales. */
+const RECURRING_BRANCH_FIELD = sucursalField.describe(
+  'De qué sucursal es el gasto fijo, si hay dos que se llaman igual.',
+)
+
 /**
  * Con qué caja: la que dijo, la de siempre o, si hay una sola, esa. Si no, Tex pregunta: de dónde sale
- * la plata no se adivina.
+ * la plata no se adivina. Con `branchId`, solo las de esa sucursal o de todo el bar (la de otra se rechaza,
+ * como en los formularios); sin ella (Sueldos, de todo el bar), todas.
  */
 async function treasuryFor(
   ctx: TexToolContext,
@@ -113,14 +132,19 @@ async function treasuryFor(
   wanted: string | undefined,
   usual: ReadonlyArray<string | null | undefined>,
   usable: (t: TreasuryRef) => boolean,
+  branchId: string | null = null,
 ): Promise<{ ok: true; treasury: TreasuryRef } | { ok: false; message: string }> {
-  const list = [...posting.treasuries.values()].filter((t) => t.active && usable(t))
+  const all = [...posting.treasuries.values()].filter((t) => t.active && usable(t))
+  const list = all.filter((t) => treasuryFitsBranch(t, branchId))
   if (wanted) {
-    const found = await resolveTreasury(ctx, wanted)
+    const found = await resolveTreasury(ctx, wanted, { prefer: branchId })
     if (!found.ok) return { ok: false, message: found.message }
-    const treasury = list.find((t) => t.id === found.value.id)
+    const treasury = all.find((t) => t.id === found.value.id)
     if (!treasury) {
       return { ok: false, message: `«${found.value.name}» no sirve para esto. Preguntale otra.` }
+    }
+    if (!treasuryFitsBranch(treasury, branchId)) {
+      return { ok: false, message: otherBranchBoxMessage(ctx.branch, branchId, all) }
     }
     return { ok: true, treasury }
   }
@@ -143,6 +167,21 @@ function bankTaxRows(
 ): Array<{ label: string; value: string }> {
   const tax = bankTaxOf(cents, treasury, posting.settings.taxSettings)
   return tax > 0 ? [{ label: 'Impuesto al cheque', value: `${money(tax)}, se anota solo` }] : []
+}
+
+/**
+ * El gasto fijo que dijo. Cada local tiene los suyos y pueden llamarse igual: primero entre los de la sucursal
+ * que dijo o que mira; si ahí no está, entre todos (se paga igual, desde la suya). Las opciones, con su sucursal.
+ */
+function findRecurringRow(
+  ctx: TexToolContext,
+  rows: readonly RecurringExpenseRow[],
+  wanted: string,
+  said: string | null,
+) {
+  return matchRecurringRow(rows, wanted, said ?? branchReadId(ctx.branch), (row) =>
+    isMultiBranch(ctx.branch) ? `${row.name} (${branchName(ctx.branch, row.branchId)})` : row.name,
+  )
 }
 
 /** El tique de un comprobante, pero para que lo ejecute otra acción: la de Sueldos. */
@@ -277,12 +316,15 @@ export const gastosActionTools = [
         .describe('Si es en cuotas: de cuántas es y por cuál va, o solo cuántas faltan.'),
       pausado: z.boolean().optional().describe('true: deja de avisar y sale de la planilla.'),
       nota: z.string().max(280).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el gasto fijo',
     done: () => 'Preparé el gasto fijo',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
       const loaded = await tryLoadPostingContext(ctx.tenantId)
       if (!loaded.ok) return fail(failureText(loaded.state))
       const posting = loaded.ctx
@@ -293,9 +335,15 @@ export const gastosActionTools = [
           includeInactive: true,
           today: ctx.today,
         })
-        const match = matchByName(rows, input.gasto)
+        const match = findRecurringRow(ctx, rows, input.gasto, said.id)
         if (!match.ok) return fail(noMatchText(match, input.gasto))
         row = match.value
+        // Pasarlo a otra sucursal mueve sus pagos con él: eso se hace en su ficha, no por charla.
+        if (said.id && row.branchId && said.id !== row.branchId) {
+          return fail(
+            `«${row.name}» es de ${branchName(ctx.branch, row.branchId)}. Pasarlo a otra sucursal mueve sus pagos: se hace en su ficha. Llevalo con ir_a a gasto_fijo, id ${row.id}.`,
+          )
+        }
       } else {
         if (!input.nombre) return fail('Preguntale cómo se llama el gasto fijo.')
         if (!input.cuenta) return fail('Preguntale en qué se gasta (la categoría).')
@@ -346,10 +394,35 @@ export const gastosActionTools = [
         if (!found.ok) return fail(found.message)
         change.partyId = found.value.id
       }
+      let box: ResolvedTreasury | null = null
       if (input.caja) {
-        const found = await resolveTreasury(ctx, input.caja)
+        const found = await resolveTreasury(ctx, input.caja, {
+          prefer: row?.branchId ?? said.id ?? branchReadId(ctx.branch),
+        })
         if (!found.ok) return fail(found.message)
-        change.treasuryAccountId = found.value.id
+        box = found.value
+      }
+      // La sucursal: la suya en una edición (no se mueve); en un alta, la que dijo, la que mira o, mirando
+      // «Todas», la de su caja de siempre. Ahí quedan sus pagos.
+      let branchId = row?.branchId ?? null
+      if (!row) {
+        const pick = branchToWrite(ctx.branch, { said: said.id, box: box?.branchId })
+        if (!pick.ok) return fail(pick.message)
+        branchId = pick.branchId
+        if (branchId) change.branchId = branchId
+      }
+      if (box) {
+        const treasury = posting.treasuries.get(box.id)
+        if (treasury && !treasuryFitsBranch(treasury, branchId)) {
+          return fail(
+            otherBranchBoxMessage(
+              ctx.branch,
+              branchId,
+              [...posting.treasuries.values()].filter((t) => t.active),
+            ),
+          )
+        }
+        change.treasuryAccountId = box.id
       }
 
       const { payload, form, errors } = recurringSavePayload(row, change, ctx.today)
@@ -416,6 +489,11 @@ export const gastosActionTools = [
       if (row && rows.length === 0) {
         return fail('No hay nada para cambiar: preguntale qué quiere cambiar.')
       }
+      // Un alta dice en qué sucursal queda; una edición, de cuál es (dos locales pueden tener su «Alquiler»).
+      const subtitle =
+        row && branchId && isMultiBranch(ctx.branch)
+          ? `${form.name} · ${branchName(ctx.branch, branchId)}`
+          : form.name
       return {
         kind: 'prepared',
         prepared: {
@@ -424,8 +502,8 @@ export const gastosActionTools = [
           ticket: {
             kind: 'gasto_fijo',
             title: row ? 'Editar gasto fijo' : 'Nuevo gasto fijo',
-            subtitle: form.name,
-            rows,
+            subtitle,
+            rows: row ? rows : withBranchRow(rows, ctx.branch, branchId),
             total: null,
             entry: [],
             warnings: [],
@@ -449,12 +527,15 @@ export const gastosActionTools = [
       numero: z.number().int().min(1).max(99_999_999).optional(),
       fecha: dayField('Fecha yyyy-MM-dd. Si no la dijo, hoy.').optional(),
       nota: z.string().max(280).optional(),
+      sucursal: RECURRING_BRANCH_FIELD,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el pago',
     done: () => 'Preparé el pago',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
       const loaded = await tryLoadPostingContext(ctx.tenantId)
       if (!loaded.ok) return fail(failureText(loaded.state))
       const posting = loaded.ctx
@@ -462,9 +543,18 @@ export const gastosActionTools = [
         listRecurringExpenses(ctx.tenantId, { includeInactive: true, today: ctx.today }),
         listRecurringPayments(ctx.tenantId),
       ])
-      const match = matchByName(rows, input.gasto)
+      const match = findRecurringRow(ctx, rows, input.gasto, said.id)
       if (!match.ok) return fail(noMatchText(match, input.gasto))
       const row = match.value
+      // Se paga siempre desde su sucursal, se mire la que se mire: el pago queda en la suya y sale de una caja
+      // de ahí o de todo el bar (22/11/2026: pagado mirando el Cerro, aparecía pagado también en Alta Córdoba).
+      const branch = branchToWrite(ctx.branch, {
+        said: said.id,
+        fixed: { name: row.name, branchId: row.branchId },
+      })
+      if (!branch.ok) return fail(branch.message)
+      const { branchId } = branch
+      const elsewhere = branchNotices(ctx.branch, branchId)
 
       const item = recurringSheetItem(row, payments.get(row.id), ctx.today)
       const autoTax = autoTaxPlan({
@@ -515,6 +605,7 @@ export const gastosActionTools = [
           input.caja,
           [row.treasuryAccountId],
           () => true,
+          branchId,
         )
         if (!chosen.ok) return fail(chosen.message)
         const { treasury } = chosen
@@ -529,6 +620,7 @@ export const gastosActionTools = [
           number: input.numero ?? null,
           date,
           note: input.nota,
+          branchId,
         })
         const block = payStripBlock({
           amountCents,
@@ -553,19 +645,23 @@ export const gastosActionTools = [
           kind: 'pago_gasto_fijo',
           title: 'Pago de un gasto fijo',
           subtitle: row.name,
-          rows: [
-            ...(cuota ? [{ label: 'Cuota', value: cuota }] : []),
-            ...(row.partyName ? [{ label: 'A quién', value: row.partyName }] : []),
-            { label: 'Sale de', value: treasury.name },
-            { label: 'Papel', value: QUICK_VOUCHER_LABELS[built.voucher] },
-            { label: 'Fecha', value: dayText(date) ?? date },
-            ...bankTaxRows(amountCents, treasury, posting),
-            ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
-          ],
+          rows: withBranchRow(
+            [
+              ...(cuota ? [{ label: 'Cuota', value: cuota }] : []),
+              ...(row.partyName ? [{ label: 'A quién', value: row.partyName }] : []),
+              { label: 'Sale de', value: treasury.name },
+              { label: 'Papel', value: QUICK_VOUCHER_LABELS[built.voucher] },
+              { label: 'Fecha', value: dayText(date) ?? date },
+              ...bankTaxRows(amountCents, treasury, posting),
+              ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
+            ],
+            ctx.branch,
+            branchId,
+          ),
           total: { label: 'Total', value: money(amountCents) },
           confirmLabel: 'Cargar el pago',
         })
-        return withTicketWarnings(prepared, ahead)
+        return withTicketWarnings(prepared, [...ahead, ...elsewhere])
       }
 
       // Un pago: al organismo (Rentas, Municipalidad) o al proveedor de la factura cargada.
@@ -581,6 +677,7 @@ export const gastosActionTools = [
         input.caja,
         [row.treasuryAccountId, defaults?.ok ? defaults.data.treasuryAccountId : null],
         () => true,
+        branchId,
       )
       if (!chosen.ok) return fail(chosen.message)
       const { treasury } = chosen
@@ -595,6 +692,7 @@ export const gastosActionTools = [
         recurringExpenseId: pay.recurringId ?? null,
         documentId: pay.recurringId ? null : (item.doc?.id ?? null),
         note: input.nota,
+        branchId,
       })
       if (plan.amountCents <= 0) {
         return fail(
@@ -609,25 +707,30 @@ export const gastosActionTools = [
         kind: 'pago_gasto_fijo',
         title: 'Pago',
         subtitle: `${partyName} · ${row.name}`,
-        rows: [
-          ...ticketLines.rows.map((line) => ({ label: line.label, value: money(line.cents) })),
-          ...(ticketLines.more > 0
-            ? [{ label: `Y ${ticketLines.more} más`, value: money(ticketLines.moreCents) }]
-            : []),
-          ...(plan.creditUsedCents > 0
-            ? [{ label: 'A favor que se usa', value: money(plan.creditUsedCents) }]
-            : []),
-          { label: 'Sale de', value: treasury.name },
-          { label: 'Fecha', value: dayText(date) ?? date },
-          { label: 'Cómo queda', value: outcome.sentence },
-          ...bankTaxRows(plan.amountCents, treasury, posting),
-          ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
-        ],
+        rows: withBranchRow(
+          [
+            ...ticketLines.rows.map((line) => ({ label: line.label, value: money(line.cents) })),
+            ...(ticketLines.more > 0
+              ? [{ label: `Y ${ticketLines.more} más`, value: money(ticketLines.moreCents) }]
+              : []),
+            ...(plan.creditUsedCents > 0
+              ? [{ label: 'A favor que se usa', value: money(plan.creditUsedCents) }]
+              : []),
+            { label: 'Sale de', value: treasury.name },
+            { label: 'Fecha', value: dayText(date) ?? date },
+            { label: 'Cómo queda', value: outcome.sentence },
+            ...bankTaxRows(plan.amountCents, treasury, posting),
+            ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
+          ],
+          ctx.branch,
+          branchId,
+        ),
         total: { label: 'Pagás', value: money(plan.amountCents) },
         confirmLabel: 'Cargar el pago',
       })
       return withTicketWarnings(prepared, [
         ...ahead,
+        ...elsewhere,
         ...outcome.details.map((title, index) => ({
           key: `pay_detail_${index}`,
           title,
@@ -641,19 +744,30 @@ export const gastosActionTools = [
     name: 'preparar_saltar_gasto_fijo',
     description:
       'Prepara marcar que este mes un gasto fijo no se paga (o ya se cargó por otro lado): avanza al próximo vencimiento sin cargar nada. No guarda nada: muestra un tique para confirmar.',
-    input: z.object({ gasto: z.string().min(1).describe('El gasto fijo: nombre o id.') }),
+    input: z.object({
+      gasto: z.string().min(1).describe('El gasto fijo: nombre o id.'),
+      sucursal: RECURRING_BRANCH_FIELD,
+    }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el salteo',
     done: () => 'Preparé el salteo',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
       const [rows, payments] = await Promise.all([
         listRecurringExpenses(ctx.tenantId, { includeInactive: true, today: ctx.today }),
         listRecurringPayments(ctx.tenantId),
       ])
-      const match = matchByName(rows, input.gasto)
+      const match = findRecurringRow(ctx, rows, input.gasto, said.id)
       if (!match.ok) return fail(noMatchText(match, input.gasto))
       const row = match.value
+      // Es de su sucursal: si dijo otra, no es este.
+      const own = branchToWrite(ctx.branch, {
+        said: said.id,
+        fixed: { name: row.name, branchId: row.branchId },
+      })
+      if (!own.ok) return fail(own.message)
       const item = recurringSheetItem(row, payments.get(row.id), ctx.today)
       const actions = rowActions(item, { canWrite: true })
       if (!actions.skip) {
@@ -672,12 +786,16 @@ export const gastosActionTools = [
             kind: 'saltar_gasto_fijo',
             title: 'Este mes no se paga',
             subtitle: row.name,
-            rows: [
-              { label: 'Vencimiento', value: dayText(row.nextDueDate) ?? row.nextDueDate },
-              ...(row.amountCents !== null
-                ? [{ label: 'Monto', value: money(row.amountCents) }]
-                : []),
-            ],
+            rows: withBranchRow(
+              [
+                { label: 'Vencimiento', value: dayText(row.nextDueDate) ?? row.nextDueDate },
+                ...(row.amountCents !== null
+                  ? [{ label: 'Monto', value: money(row.amountCents) }]
+                  : []),
+              ],
+              ctx.branch,
+              own.branchId,
+            ),
             total: null,
             entry: [],
             warnings: [],

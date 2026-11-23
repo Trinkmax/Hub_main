@@ -7,6 +7,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 type Row = Record<string, unknown>
 type Filter = [op: string, column: string, value: unknown]
@@ -275,6 +276,7 @@ const USER_CTX: TexToolContext = {
   isAccountant: false,
   access: { read: false, write: false, admin: false },
   today: '2026-11-05',
+  branch: NO_BRANCHES,
 }
 
 const JUAN = '11111111-1111-4111-8111-111111111111'

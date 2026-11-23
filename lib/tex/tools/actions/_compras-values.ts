@@ -272,9 +272,17 @@ export type RecurringFacts = {
   vatRateBp: number | null
   amountCents: number | null
   treasuryAccountId: string | null
+  /** Su sucursal: lo que lo paga va ahí, siempre. */
+  branchId?: string | null
 }
 
-export type TreasuryFacts = { id: string; name: string; kind: TreasuryKind }
+export type TreasuryFacts = {
+  id: string
+  name: string
+  kind: TreasuryKind
+  /** Vacía = de todo el bar. */
+  branchId?: string | null
+}
 
 /** Los papeles que se le pueden pedir a Tex. */
 export const COMPRA_PAPERS = [
@@ -418,6 +426,8 @@ export type CompraDraft = {
   notes: string | null
   /** El primer día abierto, si hay meses cerrados. */
   firstOpenDate: string | null
+  /** La sucursal de la compra y de su pago (`lib/tex/branch.ts`). Sin ella no se manda: la decide la base. */
+  branchId?: string | null
 }
 
 export type CompraPlan = DocumentPlan<'purchase' | 'quick_expense'> & {
@@ -617,6 +627,7 @@ export function compraPlan(draft: CompraDraft): PlanFailure | CompraPlan {
     controlTotalCents: detail ? totalCents : null,
     relatedDocumentId: null,
     recurringExpenseId: recurring?.id ?? null,
+    branchId: draft.branchId ?? null,
     payNow: draft.pay
       ? {
           treasuryAccountId: draft.pay.treasury.id,
@@ -750,6 +761,8 @@ export type GastoDraft = {
   recurring: RecurringFacts | null
   /** El primer día abierto, si hay meses cerrados. */
   firstOpenDate: string | null
+  /** La sucursal del gasto (la de su gasto fijo, si es uno). Sin ella no se manda. */
+  branchId?: string | null
 }
 
 /**
@@ -834,6 +847,7 @@ export function gastoPlan(
     detail: draft.detail ?? '',
     remito: draft.remito ?? '',
     recurringExpenseId: recurring?.id ?? null,
+    branchId: draft.branchId ?? null,
   })
   if (built.values === null) {
     return fail(
@@ -897,6 +911,8 @@ export type PagoDraft = {
   taxes: Pick<PostingContext, 'treasuries' | 'settings'>
   /** Lo que dice el Plan de la semana. */
   week: { budgetCents: number; paidCents: number } | null
+  /** La sucursal del pago (la de su gasto fijo, si es uno). Sin ella no se manda. */
+  branchId?: string | null
 }
 
 /** El orden de la hoja: el que vence antes primero, los que no vencen al final. */
@@ -1082,6 +1098,7 @@ export function pagoPlan(draft: PagoDraft): PlanFailure | DocumentPlan<'payment'
       writeOffCents: plan.writeOffCents,
       notes: draft.notes,
       recurringExpenseId: draft.recurring?.id ?? null,
+      ...(draft.branchId ? { branchId: draft.branchId } : {}),
     },
     ticket: {
       kind: 'pago',

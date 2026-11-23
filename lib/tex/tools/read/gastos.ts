@@ -4,6 +4,8 @@ import { z } from 'zod'
 import {
   buildSheet,
   parseSheetMonth,
+  type SheetBranchTotals,
+  sheetTotalsByBranch,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla'
 import {
   installmentWords,
@@ -27,7 +29,8 @@ import { listRecurringPayments } from '@/lib/accounting/queries/recurring'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import type { RecurringLineState } from '@/lib/accounting/recurring-status'
 import { formatMonthLabel, monthOf } from '@/lib/dates'
-import { capped, dayText, defineTool, money, monthField } from '../types'
+import { branchReadId, isMultiBranch, rowBranchTag, withViewedBranch } from '../../branch'
+import { capped, dayText, defineTool, money, monthField, type TexBranch } from '../types'
 import { cappedBySize, compact, moneyIf, plain, texMonth } from './common'
 
 /** Lo que se muestra de una lista. */
@@ -58,11 +61,13 @@ const NEEDS_DOING: ReadonlySet<RecurringLineState> = new Set<RecurringLineState>
   'no_amount',
 ])
 
-export function sheetRow(item: SheetItem) {
+/** Un renglón de la planilla. `sucursal`, solo cuando la lectura trae más de una (mirando «Todas»). */
+export function sheetRow(item: SheetItem, sucursal: string | null = null) {
   const { row, line } = item
   return compact({
     id: row.id,
     nombre: row.name,
+    sucursal,
     proveedor: row.partyName,
     estado: LINE_STATE_WORDS[line.state],
     vence: dayText(line.dueDate ?? item.day),
@@ -76,14 +81,23 @@ export function sheetRow(item: SheetItem) {
   })
 }
 
-/** Cuáles faltan y cuáles se pagaron, con los totales de la pantalla (que suman los sueldos). */
-export function sheetData(sheet: Sheet, totals: SheetTotals, payroll: PayrollTotals | null) {
+/**
+ * Cuáles faltan y cuáles se pagaron, con los totales de la pantalla (que suman los sueldos). `branchOf` dice de
+ * qué sucursal es cada renglón cuando hace falta (mirando «Todas»).
+ */
+export function sheetData(
+  sheet: Sheet,
+  totals: SheetTotals,
+  payroll: PayrollTotals | null,
+  branchOf: (branchId: string | null | undefined) => string | null = () => null,
+) {
   const pending = sheet.items.filter((item) => NEEDS_DOING.has(item.line.state))
   const paid = sheet.items.filter((item) => item.line.state === 'paid')
   const skipped = sheet.items.filter((item) => item.line.state === 'skipped')
   const dash = (cents: number | null) => (cents === null ? null : money(cents))
-  const missing = cappedBySize(pending.map(sheetRow), LIST_MAX, PENDING_MAX_CHARS)
-  const done = cappedBySize(paid.map(sheetRow), LIST_MAX, PAID_MAX_CHARS)
+  const rowOf = (item: SheetItem) => sheetRow(item, branchOf(item.row.branchId))
+  const missing = cappedBySize(pending.map(rowOf), LIST_MAX, PENDING_MAX_CHARS)
+  const done = cappedBySize(paid.map(rowOf), LIST_MAX, PAID_MAX_CHARS)
   return compact({
     mes: formatMonthLabel(sheet.month),
     oracion: plain(sheet.progress.sentence),
@@ -110,11 +124,29 @@ export function sheetData(sheet: Sheet, totals: SheetTotals, payroll: PayrollTot
     pagados_hay_mas: done.hay_mas || null,
     este_mes_no_se_pagan:
       skipped.length > 0
-        ? skipped.map((item) => ({ id: item.row.id, nombre: item.row.name }))
+        ? skipped.map((item) =>
+            compact({
+              id: item.row.id,
+              nombre: item.row.name,
+              sucursal: branchOf(item.row.branchId),
+            }),
+          )
         : null,
     vencen_mas_adelante: sheet.later.length || null,
     pausados_o_terminados: sheet.off.length || null,
   })
+}
+
+/** Mirando «Todas»: la parte de cada sucursal en los números del mes (la barrita del totalizador). */
+export function sheetSplitData(split: SheetBranchTotals, branches: readonly TexBranch[]) {
+  const of = (sums: Record<string, number>, id: string) => money(sums[id] ?? 0)
+  return branches.map((branch) => ({
+    sucursal: branch.name,
+    total_del_mes: of(split.totalCents, branch.id),
+    pagado: of(split.paidCents, branch.id),
+    falta_pagar: of(split.pendingCents, branch.id),
+    vencido: of(split.overdueCents, branch.id),
+  }))
 }
 
 // ─── Lo puro: sueldos ────────────────────────────────────────────────────────
@@ -155,7 +187,7 @@ export function payrollData(report: PayrollReport, today: string) {
 
 // ─── Las herramientas ────────────────────────────────────────────────────────
 
-/** Gastos fijos y sueldos. */
+/** Gastos fijos (de cada sucursal, como su planilla) y sueldos (de todo el bar en esta entrega). */
 export const gastosReadTools = [
   defineTool({
     name: 'ver_gastos_fijos',
@@ -177,17 +209,44 @@ export const gastosReadTools = [
         }
       }
       // Con los inactivos: un gasto en cuotas que terminó este mes se apaga solo, pero lo que se
-      // pagó sigue contando. Es la misma lectura de la pantalla y del Resumen.
+      // pagó sigue contando. Es la misma lectura de la pantalla: los gastos fijos, sus pagos y la fila
+      // de sueldos de la sucursal que se mira (en «Todas», los de todas).
+      const branchId = branchReadId(ctx.branch)
       const [rows, payments, payroll] = await Promise.all([
-        listRecurringExpenses(ctx.tenantId, { includeInactive: true, today: ctx.today }),
-        listRecurringPayments(ctx.tenantId),
-        settleQuery(getPayrollReport(ctx.tenantId, month)),
+        listRecurringExpenses(ctx.tenantId, {
+          includeInactive: true,
+          today: ctx.today,
+          branch: ctx.branch.filter,
+        }),
+        listRecurringPayments(ctx.tenantId, branchId),
+        settleQuery(getPayrollReport(ctx.tenantId, month, branchId)),
       ])
       const sheet = buildSheet(rows, payments, { month, today: ctx.today })
       const salaries = payroll.ok ? payrollTotals(payroll.data.employees) : null
+      const data = sheetData(
+        sheet,
+        sheetTotals(sheet, salaries),
+        salaries,
+        rowBranchTag(ctx.branch, branchId === null),
+      )
+      // «Todas»: cuánto de cada número es de cada sucursal, como el totalizador de la pantalla.
+      const split =
+        ctx.branch.isAll && isMultiBranch(ctx.branch)
+          ? sheetSplitData(
+              sheetTotalsByBranch({
+                branchIds: ctx.branch.branches.map((branch) => branch.id),
+                rows,
+                payments,
+                employees: payroll.ok ? payroll.data.employees : null,
+                month,
+                today: ctx.today,
+              }),
+              ctx.branch.branches,
+            )
+          : null
       return {
         kind: 'data',
-        data: sheetData(sheet, sheetTotals(sheet, salaries), salaries),
+        data: withViewedBranch(split ? { ...data, por_sucursal: split } : data, ctx.branch),
       }
     },
   }),

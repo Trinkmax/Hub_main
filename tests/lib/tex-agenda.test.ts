@@ -7,6 +7,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({ get: () => undefined, set: () => undefined })),
@@ -229,6 +230,7 @@ const CTX: TexToolContext = {
   isAccountant: false,
   access: { read: false, write: false, admin: false },
   today: '2026-11-05',
+  branch: NO_BRANCHES,
 }
 const HOST: TexToolContext = { ...CTX, role: 'host' }
 
