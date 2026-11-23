@@ -3,23 +3,44 @@ import 'server-only'
 import { z } from 'zod'
 import { type SavedParty, saveParty } from '@/lib/accounting/actions/master'
 import { saveWeekBudgets } from '@/lib/accounting/actions/week-plan'
+import { treasuryFitsBranch } from '@/lib/accounting/branch'
 import {
   buildPostingContext,
   type CatalogParty,
+  type CatalogTreasury,
   loadOpenItems,
   loadPostingCatalog,
   type PostingCatalog,
 } from '@/lib/accounting/context'
 import { pickTreasury } from '@/lib/accounting/defaults'
-import { listRecurringExpenses } from '@/lib/accounting/queries/documents'
+import { listRecurringExpenses, type RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import { findPossibleDuplicate, getFormDefaults } from '@/lib/accounting/queries/forms'
 import { getParty } from '@/lib/accounting/queries/parties'
 import { getWeekPlan } from '@/lib/accounting/queries/week-plan'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import type { PartyKind, VoucherType } from '@/lib/accounting/types'
 import { mondayOf, saveWeekBudgetsSchema } from '@/lib/accounting/week-plan'
+import {
+  branchById,
+  branchName,
+  branchNotices,
+  branchReadId,
+  branchToWrite,
+  isMultiBranch,
+  otherBranchBoxMessage,
+  preferFitting,
+  saidBranch,
+  sucursalField,
+  withBranchTicket,
+} from '../../branch'
 import { prepareDocument } from '../../document-action'
-import { type Resolved, resolveAccount, resolveParty, resolveTreasury } from '../../resolve'
+import {
+  type Resolved,
+  type ResolvedTreasury,
+  resolveAccount,
+  resolveParty,
+  resolveTreasury,
+} from '../../resolve'
 import { texScreenHref } from '../../screens'
 import { simpleExecutor } from '../../simple-action'
 import {
@@ -203,29 +224,45 @@ async function supplierFrom(
   return { ok: true, value: fromRecurring ? await existingSupplier(ctx, fromRecurring) : null }
 }
 
+/** Un gasto fijo en una lista para Tex: con su sucursal cuando hay más de una. */
+function recurringLabel(ctx: TexToolContext, row: RecurringExpenseRow): string {
+  return isMultiBranch(ctx.branch)
+    ? `${row.name} (${branchName(ctx.branch, row.branchId)})`
+    : row.name
+}
+
+/**
+ * El gasto fijo que dijo. Son de todas las sucursales (como la hoja con `?gasto-fijo=`): lo que lo paga va a la
+ * suya. Cada local tiene los suyos y pueden llamarse igual: entre dos, el de `prefer` (la que dijo o la que mira).
+ */
 async function findRecurring(
   ctx: TexToolContext,
   wanted: string | undefined,
+  prefer: string | null,
 ): Promise<Resolved<RecurringFacts | null>> {
   if (!wanted) return { ok: true, value: null }
   const list = await listRecurringExpenses(ctx.tenantId, { today: ctx.today })
-  const byId = list.find((r) => r.id === wanted)
-  const match = byId
-    ? ({ kind: 'one', value: byId } as const)
-    : matchByName(wanted, list, (r) => [r.name])
-  if (match.kind === 'many') {
-    return {
-      ok: false,
-      message: `«${wanted}» puede ser ${match.options
-        .slice(0, 8)
-        .map((r) => r.name)
-        .join(', ')}. Preguntale cuál.`,
+  let r = list.find((row) => row.id === wanted)
+  if (!r) {
+    const match = matchByName(wanted, list, (row) => [row.name])
+    if (match.kind === 'none') {
+      return { ok: false, message: `No hay un gasto fijo «${wanted}». Mirá cuáles hay.` }
+    }
+    if (match.kind === 'one') r = match.value
+    else {
+      const [mine, ...more] = preferFitting(match.options, prefer)
+      if (!mine || more.length > 0) {
+        return {
+          ok: false,
+          message: `«${wanted}» puede ser ${match.options
+            .slice(0, 8)
+            .map((row) => recurringLabel(ctx, row))
+            .join(', ')}. Preguntale cuál.`,
+        }
+      }
+      r = mine
     }
   }
-  if (match.kind === 'none') {
-    return { ok: false, message: `No hay un gasto fijo «${wanted}». Mirá cuáles hay.` }
-  }
-  const r = match.value
   return {
     ok: true,
     value: {
@@ -237,8 +274,14 @@ async function findRecurring(
       vatRateBp: r.vatRateBp,
       amountCents: r.amountCents,
       treasuryAccountId: r.treasuryAccountId,
+      branchId: r.branchId ?? null,
     },
   }
+}
+
+/** Un gasto fijo se paga siempre desde su sucursal (`branchToWrite`). */
+function fixedOf(recurring: RecurringFacts | null) {
+  return recurring ? { name: recurring.name, branchId: recurring.branchId } : null
 }
 
 /** «Va a…»: entre las cuentas que se pueden imputar, que es lo que ofrece el formulario. */
@@ -276,31 +319,63 @@ function sortedTreasuries(catalog: PostingCatalog) {
   )
 }
 
-/** Con qué se paga: la que dijo, o la que propone la hoja (la del gasto fijo, la última con ese proveedor, la Caja). */
-async function findTreasury(
+const NO_TREASURY = 'No hay ninguna caja activa: hay que cargar una en Ajustes.'
+
+/**
+ * La caja que nombró, si nombró una. Se resuelve antes de saber la sucursal: mirando «Todas», la caja de un
+ * local dice de qué sucursal es lo que se carga. `prefer`: entre dos que se llaman igual, la de esa sucursal.
+ */
+async function namedTreasury(
+  ctx: TexToolContext,
+  wanted: string | undefined,
+  prefer: string | null,
+): Promise<Resolved<ResolvedTreasury | null>> {
+  if (!wanted) return { ok: true, value: null }
+  return resolveTreasury(ctx, wanted, { prefer })
+}
+
+/**
+ * Con qué se paga: la que nombró, o la que propone la hoja (la del gasto fijo, la última con ese proveedor, la
+ * Caja). Siempre una de esa sucursal o de todo el bar: la de otra se rechaza, como en los formularios.
+ */
+function findTreasury(
   ctx: TexToolContext,
   catalog: PostingCatalog,
-  wanted: string | undefined,
+  named: ResolvedTreasury | null,
   known: { recurring?: string | null | undefined; lastUsed?: string | null | undefined },
-): Promise<Resolved<TreasuryFacts>> {
+  branchId: string | null,
+): Resolved<TreasuryFacts> {
   const all = sortedTreasuries(catalog)
-  let id: string | null
-  if (wanted) {
-    const resolved = await resolveTreasury(ctx, wanted)
-    if (!resolved.ok) return resolved
-    id = resolved.value.id
-  } else {
-    id = pickTreasury({
-      treasuries: all.filter((t) => t.active),
-      lastUsedWithParty: known.recurring ?? known.lastUsed ?? null,
-      myLastQuickExpense: known.lastUsed ?? null,
-      order: all.map((t) => t.id),
-    })
+  const facts = (t: CatalogTreasury): TreasuryFacts => ({
+    id: t.id,
+    name: t.name,
+    kind: t.kind,
+    branchId: t.branchId ?? null,
+  })
+  if (named) {
+    const found = all.find((t) => t.id === named.id)
+    if (!found) return { ok: false, message: NO_TREASURY }
+    if (!treasuryFitsBranch(found, branchId)) {
+      return {
+        ok: false,
+        message: otherBranchBoxMessage(
+          ctx.branch,
+          branchId,
+          all.filter((t) => t.active),
+        ),
+      }
+    }
+    return { ok: true, value: facts(found) }
   }
-  const found = all.find((t) => t.id === id)
-  return found
-    ? { ok: true, value: { id: found.id, name: found.name, kind: found.kind } }
-    : { ok: false, message: 'No hay ninguna caja activa: hay que cargar una en Ajustes.' }
+  const usable = all.filter((t) => t.active && treasuryFitsBranch(t, branchId))
+  const id = pickTreasury({
+    treasuries: usable,
+    lastUsedWithParty: known.recurring ?? known.lastUsed ?? null,
+    myLastQuickExpense: known.lastUsed ?? null,
+    order: usable.map((t) => t.id),
+  })
+  const found = usable.find((t) => t.id === id)
+  return found ? { ok: true, value: facts(found) } : { ok: false, message: NO_TREASURY }
 }
 
 /** Lo que recuerda el sistema del proveedor, para la caja. */
@@ -384,7 +459,10 @@ const cuitField = z.string().max(20)
 
 // ─── Las herramientas ────────────────────────────────────────────────────────
 
-/** Compra, compra y pago, gasto, pago, proveedores y plan de la semana. */
+/**
+ * Compra, compra y pago, gasto, pago, proveedores y plan de la semana. La compra, el gasto y el pago llevan su
+ * sucursal (`branchToWrite`); los proveedores son de todo el bar.
+ */
 export const comprasActionTools = [
   defineTool({
     name: 'preparar_compra',
@@ -445,6 +523,7 @@ export const comprasActionTools = [
         .describe('Si ya la pagó: es la compra y pago.'),
       gasto_fijo: gastoFijoField,
       nota: z.string().max(1000).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
@@ -455,8 +534,11 @@ export const comprasActionTools = [
       if (papel && isScreenPaper(papel)) {
         return { kind: 'error', message: screenPaperMessage(papel) }
       }
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return { kind: 'error', message: said.message }
+      const prefer = said.id ?? branchReadId(ctx.branch)
       const catalog = await loadPostingCatalog(ctx.tenantId)
-      const recurring = await findRecurring(ctx, input.gasto_fijo)
+      const recurring = await findRecurring(ctx, input.gasto_fijo, prefer)
       if (!recurring.ok) return { kind: 'error', message: recurring.message }
       const supplier = await supplierFrom(ctx, catalog, input, recurring.value, PURCHASE_KINDS)
       if (!supplier.ok) {
@@ -479,12 +561,32 @@ export const comprasActionTools = [
       const account = await findImputation(ctx, catalog, input.cuenta)
       if (!account.ok) return { kind: 'error', message: account.message }
 
+      // La sucursal: la del gasto fijo, la que dijo, la que mira o, mirando «Todas», la de la caja.
+      const named = await namedTreasury(
+        ctx,
+        input.pagada?.caja,
+        recurring.value?.branchId ?? prefer,
+      )
+      if (!named.ok) return { kind: 'error', message: named.message }
+      const branch = branchToWrite(ctx.branch, {
+        said: said.id,
+        fixed: fixedOf(recurring.value),
+        box: named.value?.branchId,
+      })
+      if (!branch.ok) return { kind: 'error', message: branch.message }
+
       let pay = null
       if (input.pagada) {
-        const treasury = await findTreasury(ctx, catalog, input.pagada.caja, {
-          recurring: recurring.value?.treasuryAccountId,
-          lastUsed: lastTreasuryOf(supplier.value),
-        })
+        const treasury = findTreasury(
+          ctx,
+          catalog,
+          named.value,
+          {
+            recurring: recurring.value?.treasuryAccountId,
+            lastUsed: lastTreasuryOf(supplier.value),
+          },
+          branch.branchId,
+        )
         if (!treasury.ok) return { kind: 'error', message: treasury.message }
         pay = {
           treasury: treasury.value,
@@ -523,6 +625,7 @@ export const comprasActionTools = [
         recurring: recurring.value,
         notes: input.nota ?? null,
         firstOpenDate: await loadFirstOpenDate(ctx.tenantId),
+        branchId: branch.branchId,
       })
       if (!plan.ok) return { kind: 'error', message: plan.message }
 
@@ -534,10 +637,15 @@ export const comprasActionTools = [
         pointOfSale: plan.pointOfSale,
         number: plan.number,
       })
-      return withNotices(await prepareDocument(ctx, plan.form, plan.values, plan.ticket), [
-        ...plan.notices,
-        ...duplicates,
-      ])
+      return withNotices(
+        await prepareDocument(
+          ctx,
+          plan.form,
+          plan.values,
+          withBranchTicket(plan.ticket, ctx.branch, branch.branchId),
+        ),
+        [...plan.notices, ...duplicates, ...branchNotices(ctx.branch, branch.branchId)],
+      )
     },
   }),
 
@@ -573,23 +681,42 @@ export const comprasActionTools = [
       fecha: dayField('Fecha yyyy-MM-dd. Si no la dijo, hoy.').optional(),
       detalle: z.string().max(240).optional(),
       gasto_fijo: gastoFijoField,
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el gasto',
     done: () => 'Preparé el gasto',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return { kind: 'error', message: said.message }
+      const prefer = said.id ?? branchReadId(ctx.branch)
       const catalog = await loadPostingCatalog(ctx.tenantId)
-      const recurring = await findRecurring(ctx, input.gasto_fijo)
+      const recurring = await findRecurring(ctx, input.gasto_fijo, prefer)
       if (!recurring.ok) return { kind: 'error', message: recurring.message }
       const supplier = await supplierFrom(ctx, catalog, input, recurring.value, SUPPLIER_KINDS)
       if (!supplier.ok) return { kind: 'error', message: supplier.message }
       const account = await findImputation(ctx, catalog, input.cuenta)
       if (!account.ok) return { kind: 'error', message: account.message }
-      const treasury = await findTreasury(ctx, catalog, input.caja, {
-        recurring: recurring.value?.treasuryAccountId,
-        lastUsed: lastTreasuryOf(supplier.value),
+      // La sucursal: la del gasto fijo, la que dijo, la que mira o, mirando «Todas», la de la caja.
+      const named = await namedTreasury(ctx, input.caja, recurring.value?.branchId ?? prefer)
+      if (!named.ok) return { kind: 'error', message: named.message }
+      const branch = branchToWrite(ctx.branch, {
+        said: said.id,
+        fixed: fixedOf(recurring.value),
+        box: named.value?.branchId,
       })
+      if (!branch.ok) return { kind: 'error', message: branch.message }
+      const treasury = findTreasury(
+        ctx,
+        catalog,
+        named.value,
+        {
+          recurring: recurring.value?.treasuryAccountId,
+          lastUsed: lastTreasuryOf(supplier.value),
+        },
+        branch.branchId,
+      )
       if (!treasury.ok) return { kind: 'error', message: treasury.message }
 
       const plan = gastoPlan({
@@ -606,11 +733,17 @@ export const comprasActionTools = [
         detail: input.detalle ?? null,
         recurring: recurring.value,
         firstOpenDate: await loadFirstOpenDate(ctx.tenantId),
+        branchId: branch.branchId,
       })
       if (!plan.ok) return { kind: 'error', message: plan.message }
       return withNotices(
-        await prepareDocument(ctx, plan.form, plan.values, plan.ticket),
-        plan.notices,
+        await prepareDocument(
+          ctx,
+          plan.form,
+          plan.values,
+          withBranchTicket(plan.ticket, ctx.branch, branch.branchId),
+        ),
+        [...plan.notices, ...branchNotices(ctx.branch, branch.branchId)],
       )
     },
   }),
@@ -641,17 +774,21 @@ export const comprasActionTools = [
       referencia: z.string().max(60).optional().describe('N.º de transferencia.'),
       gasto_fijo: gastoFijoField,
       nota: z.string().max(1000).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el pago',
     done: () => 'Preparé el pago',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return { kind: 'error', message: said.message }
+      const prefer = said.id ?? branchReadId(ctx.branch)
       const catalog = await loadPostingCatalog(ctx.tenantId)
       const party = await findParty(ctx, catalog, input.proveedor, PAYABLE_KINDS)
       if (!party.ok) return { kind: 'error', message: party.message }
       const partyId = party.value.id
-      const recurring = await findRecurring(ctx, input.gasto_fijo)
+      const recurring = await findRecurring(ctx, input.gasto_fijo, prefer)
       if (!recurring.ok) return { kind: 'error', message: recurring.message }
       if (recurring.value?.partyId && recurring.value.partyId !== partyId) {
         return {
@@ -659,14 +796,29 @@ export const comprasActionTools = [
           message: `«${recurring.value.name}» es un gasto fijo de otro proveedor. Preguntale cuál es.`,
         }
       }
+      // La sucursal del pago: la del gasto fijo, la que dijo, la que mira o, mirando «Todas», la de la caja.
+      // Cancela lo que se le debe en cualquier sucursal, como la hoja «Pago».
+      const named = await namedTreasury(ctx, input.caja, recurring.value?.branchId ?? prefer)
+      if (!named.ok) return { kind: 'error', message: named.message }
+      const branch = branchToWrite(ctx.branch, {
+        said: said.id,
+        fixed: fixedOf(recurring.value),
+        box: named.value?.branchId,
+      })
+      if (!branch.ok) return { kind: 'error', message: branch.message }
       const [items, memory, week] = await Promise.all([
         loadOpenItems(ctx.tenantId, { openItemsOf: [{ partyId }] }),
         optional(getFormDefaults(ctx.tenantId, partyId)),
-        optional(getWeekPlan(ctx.tenantId, mondayOf(ctx.today))),
+        // El Plan de la semana de esa sucursal, como la nota de la hoja.
+        optional(getWeekPlan(ctx.tenantId, mondayOf(ctx.today), branch.branchId)),
       ])
-      const treasury = await findTreasury(ctx, catalog, input.caja, {
-        lastUsed: memory?.treasuryAccountId,
-      })
+      const treasury = findTreasury(
+        ctx,
+        catalog,
+        named.value,
+        { lastUsed: memory?.treasuryAccountId },
+        branch.branchId,
+      )
       if (!treasury.ok) return { kind: 'error', message: treasury.message }
 
       const plan = pagoPlan({
@@ -691,9 +843,18 @@ export const comprasActionTools = [
         recurring: recurring.value,
         taxes: buildPostingContext(catalog),
         week: week?.find((r) => r.partyId === partyId) ?? null,
+        branchId: branch.branchId,
       })
       if (!plan.ok) return { kind: 'error', message: plan.message }
-      return prepareDocument(ctx, plan.form, plan.values, plan.ticket)
+      return withNotices(
+        await prepareDocument(
+          ctx,
+          plan.form,
+          plan.values,
+          withBranchTicket(plan.ticket, ctx.branch, branch.branchId),
+        ),
+        branchNotices(ctx.branch, branch.branchId),
+      )
     },
   }),
 
@@ -806,6 +967,16 @@ export const comprasActionTools = [
     doing: () => 'Preparando el plan de la semana',
     done: () => 'Preparé el plan de la semana',
     run: async (input, ctx) => {
+      // Los presupuestos todavía son uno por proveedor y semana: como en su pantalla, se escriben mirando
+      // «Todas» o la principal, que es donde quedan. Desde otra sucursal, la semana se mira.
+      const viewed = branchById(ctx.branch, ctx.branch.currentId)
+      if (!ctx.branch.isAll && viewed && !viewed.isDefault) {
+        const main = ctx.branch.branches.find((b) => b.isDefault)
+        return {
+          kind: 'error',
+          message: `El plan de la semana todavía es uno solo para todo el bar: se arma mirando «Todas»${main ? ` o ${main.name}` : ''}. Desde ${viewed.name} se mira, no se cambia.`,
+        }
+      }
       const catalog = await loadPostingCatalog(ctx.tenantId)
       const items: Array<{ partyId: string; name: string; cents: number }> = []
       const found = await Promise.all(
@@ -820,7 +991,7 @@ export const comprasActionTools = [
         })
       }
       const weekStart = mondayOf(input.semana ?? ctx.today)
-      const current = await optional(getWeekPlan(ctx.tenantId, weekStart))
+      const current = await optional(getWeekPlan(ctx.tenantId, weekStart, branchReadId(ctx.branch)))
       const plan = planSemanaPlan({ weekStart, items, current: current ?? [] })
       if (!plan.ok) return { kind: 'error', message: plan.message }
       return {

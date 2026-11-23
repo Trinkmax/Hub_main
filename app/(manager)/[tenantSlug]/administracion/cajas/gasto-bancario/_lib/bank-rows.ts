@@ -23,6 +23,7 @@ export type BankAmountField = (typeof BANK_AMOUNT_FIELDS)[number]
 
 /** Los campos que el formulario dibuja en su lugar (para no repetir arriba un error que ya se ve). */
 export const BANK_KNOWN_FIELDS: ReadonlySet<string> = new Set([
+  'branchId',
   'treasuryAccountId',
   'date',
   'includeInIvaBook',

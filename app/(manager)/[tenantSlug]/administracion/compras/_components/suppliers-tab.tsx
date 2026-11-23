@@ -61,10 +61,17 @@ export type LibretaData = {
   settings: QueryOutcome<AccountingSettings | null>
 }
 
-/** Arranca las lecturas sin esperarlas: cada bloque espera la suya detrás de su `Suspense`. */
-export function loadLibreta(tenantId: string, canWrite: boolean): Promise<LibretaData> {
+/**
+ * Arranca las lecturas sin esperarlas: cada bloque espera la suya detrás de su `Suspense`. Los saldos son
+ * los de la sucursal que se mira (`branchId`; `null` = todas).
+ */
+export function loadLibreta(
+  tenantId: string,
+  canWrite: boolean,
+  branchId: string | null = null,
+): Promise<LibretaData> {
   return Promise.all([
-    settleQuery(listParties(tenantId, { group: 'payables' })),
+    settleQuery(listParties(tenantId, { group: 'payables', branchId })),
     settleQuery(listPartyClassifications(tenantId, 'payables')),
     canWrite ? settleQuery(listAccounts(tenantId)) : null,
     settleQuery(getAccountingSettings(tenantId)),

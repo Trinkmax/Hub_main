@@ -225,6 +225,23 @@ describe('parsePostingCatalog', () => {
   })
 })
 
+describe('la sucursal de cada caja (Administración por sucursal)', () => {
+  it('`branch_id` → `branchId`, en el catálogo y en el contexto del motor; sin la clave, de todo el bar', () => {
+    const { raw, ids } = rawCatalog()
+    const branch = fixedUuid(9100)
+    const withBranch = {
+      ...raw,
+      treasuries: raw.treasuries.map((t) => ({ ...t, branch_id: branch })),
+    }
+    const catalog = parsePostingCatalog(withBranch)
+    if (!catalog) throw new Error('catálogo')
+    expect(catalog.treasuries[0]?.branchId).toBe(branch)
+    expect(buildPostingContext(catalog).treasuries.get(ids.treasuryId)?.branchId).toBe(branch)
+    const plain = parsePostingCatalog(raw)
+    expect(plain?.treasuries[0]?.branchId).toBeNull()
+  })
+})
+
 describe('buildPostingContext', () => {
   it('arma el contexto del motor con todas las cuentas de sistema', () => {
     const { raw, ids } = rawCatalog()

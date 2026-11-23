@@ -52,10 +52,17 @@ import type { IsoDate, PostingContext, PostingResult, WarningKey } from '@/lib/a
 import { type DocumentRefs, refsFor } from './document-refs'
 import type { DocumentForm, PreviewBundleState } from './document-types'
 
-type FormMeta = { clientRef: string; previewHash: string; warningsAck: WarningKey[] }
+type FormMeta = {
+  clientRef: string
+  previewHash: string
+  warningsAck: WarningKey[]
+  branchId?: string | null
+}
 
 /** Un formulario ya validado: sus datos de envío y cómo armar su propuesta. */
-export type ParsedDocumentForm = FormMeta & {
+export type ParsedDocumentForm = Omit<FormMeta, 'branchId'> & {
+  /** La sucursal que eligió el formulario (`null` = no mandó ninguna: decide la base). */
+  branchId: string | null
   refs: DocumentRefs
   build: (ctx: PostingContext, meta: BuildMeta) => PostingResult
 }
@@ -82,6 +89,7 @@ function defineForm<T extends FormMeta>(
           clientRef: data.clientRef,
           previewHash: data.previewHash,
           warningsAck: data.warningsAck,
+          branchId: data.branchId ?? null,
           refs: refsFor(form, data),
           build: (ctx, meta) => build(data, ctx, meta),
         },
@@ -144,6 +152,7 @@ export function buildPrimary(
 ): PostingResult {
   return parsed.build(ctx, {
     clientRef: parsed.clientRef,
+    branchId: parsed.branchId,
     validate: firstOpenDate ? { firstOpenDate } : {},
   })
 }
@@ -157,7 +166,7 @@ export function buildIgnoringClosedMonths(
   parsed: ParsedDocumentForm,
   ctx: PostingContext,
 ): PostingResult {
-  return parsed.build(ctx, { clientRef: parsed.clientRef, validate: {} })
+  return parsed.build(ctx, { clientRef: parsed.clientRef, branchId: parsed.branchId, validate: {} })
 }
 
 /** `clientRef` de relleno para armar una vista previa (no entra al hash). */

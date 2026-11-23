@@ -41,6 +41,7 @@ ${sections}
 ${everywhere}
 
 ## Reglas que conviene saber
+- Compras y pagos, Gastos fijos y Caja son de cada sucursal: se ve y se carga lo de la sucursal que se está mirando, y en «Todas» se ve todo y se pregunta en cuál cargar. Un gasto fijo se paga siempre desde su sucursal; Mercado Pago y los bancos son de todo el bar (sirven en todas), y el Resumen, Ventas, Sueldos y la contabilidad siguen siendo de todo el bar.
 - Cada cierre del día devenga Ingresos Brutos y Comercio e Industria con los porcentajes de Ajustes › Impuestos, contra Rentas y Municipalidad. Se pagan después, con un Pago a esos organismos.
 - Cada pago con banco o billetera suma el impuesto al cheque (0,6 % por defecto), salvo que esté apagado en Ajustes › Impuestos.
 - La contadora reimputa y hace asientos; no carga compras, pagos ni ventas.

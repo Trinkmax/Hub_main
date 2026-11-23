@@ -739,6 +739,8 @@ describe('Gastos del banco: los renglones del resumen', () => {
   it('los campos que el formulario dibuja son los de siempre', () => {
     expect([...BANK_KNOWN_FIELDS].sort()).toEqual(
       [
+        // La sucursal del gasto (Administración por sucursal).
+        'branchId',
         'treasuryAccountId',
         'date',
         'includeInIvaBook',

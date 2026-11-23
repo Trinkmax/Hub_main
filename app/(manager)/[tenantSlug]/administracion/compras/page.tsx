@@ -36,6 +36,9 @@ export const metadata = { title: 'Compras y pagos' }
  * Las solapas las dibuja `AdmNav`; las vistas van por URL (`?tab=`). La contadora ve lo mismo, sin
  * ningún botón de carga. «Gastos fijos» tiene su pantalla (`/administracion/gastos-fijos`); el link
  * viejo redirige.
+ *
+ * Por sucursal (entrega 1): los saldos de cada proveedor y los comprobantes son los de la sucursal que se
+ * mira; en «Todas», todo, y cada comprobante dice de qué sucursal es. Los proveedores son del bar.
  */
 export default async function ComprasPage({
   params,
@@ -52,7 +55,10 @@ export default async function ComprasPage({
   if (moved) redirect(moved)
   const rawTab = firstParam(sp.tab)
   const tab: ComprasTab = isComprasTab(rawTab) ? rawTab : 'proveedores'
-  const { access, canWrite } = await requireComprasAccess(tenantSlug, comprasHref(tenantSlug, tab))
+  const { access, canWrite, branch } = await requireComprasAccess(
+    tenantSlug,
+    comprasHref(tenantSlug, tab),
+  )
   const tenantId = access.tenant.id
   const today = todayInCordoba()
 
@@ -76,7 +82,7 @@ export default async function ComprasPage({
         <h1 className="font-serif text-2xl font-semibold tracking-tight">Clasificar proveedores</h1>
         <Suspense fallback={<SorterSkeleton />}>
           <SupplierSorterBlock
-            data={loadLibreta(tenantId, canWrite)}
+            data={loadLibreta(tenantId, canWrite, branch.id)}
             tenantSlug={tenantSlug}
             sp={sp}
           />
@@ -94,7 +100,7 @@ export default async function ComprasPage({
       {tab === 'proveedores' ? (
         <Suspense fallback={<LibretaSkeleton />}>
           <SuppliersBody
-            data={loadLibreta(tenantId, canWrite)}
+            data={loadLibreta(tenantId, canWrite, branch.id)}
             tenantSlug={tenantSlug}
             sp={sp}
             today={today}
@@ -105,6 +111,7 @@ export default async function ComprasPage({
         <DocumentsTab
           mode={payments ? 'pagos' : 'comprobantes'}
           tenantId={tenantId}
+          branch={branch.filter}
           tenantSlug={tenantSlug}
           sp={sp}
           today={today}

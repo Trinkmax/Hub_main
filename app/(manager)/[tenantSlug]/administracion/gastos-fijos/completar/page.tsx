@@ -42,7 +42,7 @@ export default async function CompletarPlanillaPage({
   const [{ tenantSlug }, sp] = await Promise.all([params, searchParams])
   const backHref = gastosFijosHref(tenantSlug)
   const back = { href: backHref, label: 'Gastos fijos' }
-  const { access, canWrite } = await requireComprasAccess(
+  const { access, canWrite, branch } = await requireComprasAccess(
     tenantSlug,
     gastosFijosFillHref(tenantSlug),
   )
@@ -63,7 +63,8 @@ export default async function CompletarPlanillaPage({
   const tenantId = access.tenant.id
   const today = todayInCordoba()
   const [rowsOutcome, accountsOutcome] = await Promise.all([
-    settleQuery(listRecurringExpenses(tenantId, { today })),
+    // Los de la sucursal que se mira (en «Todas», los de todas).
+    settleQuery(listRecurringExpenses(tenantId, { today, branch: branch.filter })),
     settleQuery(listAccounts(tenantId)),
   ])
 

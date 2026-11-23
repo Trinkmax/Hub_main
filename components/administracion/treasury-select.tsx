@@ -21,6 +21,8 @@ export type TreasuryOption = {
    */
   balanceCents: number
   active?: boolean
+  /** La sucursal de la caja; vacía = de todo el bar (el formulario filtra con `treasuriesForBranch`). */
+  branchId?: string | null
 }
 
 export type TreasurySelectProps = {

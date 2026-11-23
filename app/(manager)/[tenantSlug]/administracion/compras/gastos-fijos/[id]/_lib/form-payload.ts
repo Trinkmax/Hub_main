@@ -37,6 +37,8 @@ export type RecurringFormValues = {
   /** En cuotas: de cuántas es (`null` = no se sabe). */
   installmentsTotal: number | null
   breakdown: RecurringBreakdownRow[]
+  /** La sucursal del gasto fijo (vacía = todavía no se eligió: mirando «Todas»). */
+  branchId?: string | null
 }
 
 // ─── El detalle (los sueldos) ────────────────────────────────────────────────
@@ -175,6 +177,9 @@ export function buildRecurringPayload({ form, initial, dues, lines }: RecurringP
     endsOn: dues === null ? null : ended ? initial.endsOn : lastDue,
     installmentsTotal: dues === null ? null : form.installmentsTotal,
     breakdown,
+    // La sucursal va siempre que hay una: en un alta es la de sus pagos; en una edición, si cambia, la base
+    // mueve sus pagos con ella.
+    ...(form.branchId ? { branchId: form.branchId } : {}),
   }
 }
 

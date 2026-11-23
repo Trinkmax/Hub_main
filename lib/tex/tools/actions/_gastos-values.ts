@@ -31,6 +31,7 @@ import {
   dueDayPatch,
   type SheetItem,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
+import { treasuryFitsBranch } from '@/lib/accounting/branch'
 import type {
   EmployeeValues,
   PayFrequency,
@@ -67,11 +68,12 @@ export type NameMatch<T> =
 
 /**
  * Uno solo o nada: por id, por nombre exacto o por parte del nombre. Tex nunca elige a ojo entre dos
- * empleados.
+ * empleados. `label` es cómo se nombra cada opción (con su sucursal, si hay más de una).
  */
 export function matchByName<T extends { id: string; name: string }>(
   rows: readonly T[],
   wanted: string,
+  label: (row: T) => string = (row) => row.name,
 ): NameMatch<T> {
   const key = nameKey(wanted)
   const exact = rows.filter((row) => nameKey(row.name) === key)
@@ -83,9 +85,27 @@ export function matchByName<T extends { id: string; name: string }>(
   const [only] = found
   if (only && found.length === 1) return { ok: true, value: only }
   if (found.length > 1) {
-    return { ok: false, reason: 'many', options: found.slice(0, 8).map((row) => row.name) }
+    return { ok: false, reason: 'many', options: found.slice(0, 8).map(label) }
   }
-  return { ok: false, reason: 'none', options: rows.slice(0, 8).map((row) => row.name) }
+  return { ok: false, reason: 'none', options: rows.slice(0, 8).map(label) }
+}
+
+/**
+ * Un gasto fijo, primero entre los de la sucursal que se mira (`prefer`): cada local tiene los suyos y pueden
+ * llamarse igual. Si ahí no está, entre todos: se paga igual, desde su sucursal.
+ */
+export function matchRecurringRow<T extends { id: string; name: string; branchId?: string | null }>(
+  rows: readonly T[],
+  wanted: string,
+  prefer: string | null,
+  label: (row: T) => string = (row) => row.name,
+): NameMatch<T> {
+  if (prefer) {
+    const mine = rows.filter((row) => treasuryFitsBranch(row, prefer))
+    const inMine = matchByName(mine, wanted, label)
+    if (inMine.ok || inMine.reason === 'many') return inMine
+  }
+  return matchByName(rows, wanted, label)
 }
 
 /** El mismo tono que los otros resolvers (`lib/tex/resolve.ts`): qué tiene que preguntar Tex. */
@@ -203,6 +223,8 @@ export type RecurringChange = {
   active?: boolean
   notes?: string
   installments?: { total?: number; current?: number; remaining?: number }
+  /** La sucursal de un alta: sus pagos quedan ahí. En una edición no se manda (no se mueve de sucursal). */
+  branchId?: string
 }
 
 /** «¿De cuántas cuotas es? / ¿Por cuál vas?», o «solo sé cuántas faltan». Sin decir nada, como estaba. */
@@ -279,7 +301,10 @@ export function recurringSheetItem(
   return { row, line, doc, realStatus: row.monthStatus, day }
 }
 
-/** El «Nuevo gasto» de la tira de pago: lo que precarga el gasto fijo, con lo que se haya dicho. */
+/**
+ * El «Nuevo gasto» de la tira de pago: lo que precarga el gasto fijo, con lo que se haya dicho. Como la tira,
+ * va en la sucursal del gasto fijo (`branchId`) y solo propone cajas de ahí o de todo el bar.
+ */
 export function recurringExpenseValues(input: {
   row: RecurringExpenseRow
   posting: Pick<PostingContext, 'parties' | 'accounts' | 'treasuries'>
@@ -291,6 +316,8 @@ export function recurringExpenseValues(input: {
   number: number | null
   date: string
   note?: string | null
+  /** La sucursal del gasto fijo. Sin ella no se manda: la base pone la del gasto fijo. */
+  branchId?: string | null
 }): {
   values: QuickExpenseFormValues | null
   missing: Record<string, string>
@@ -322,7 +349,9 @@ export function recurringExpenseValues(input: {
         [...posting.accounts.values()].filter(isPurchaseImputation).map((a) => a.id),
       ),
       activeTreasuryIds: new Set(
-        [...posting.treasuries.values()].filter((t) => t.active).map((t) => t.id),
+        [...posting.treasuries.values()]
+          .filter((t) => t.active && treasuryFitsBranch(t, input.branchId ?? null))
+          .map((t) => t.id),
       ),
     },
   )
@@ -339,6 +368,7 @@ export function recurringExpenseValues(input: {
     date: input.date,
     detail: input.note ?? '',
     recurringExpenseId: row.id,
+    branchId: input.branchId ?? null,
   })
   return { ...built, voucher, target: prefill?.target ?? null }
 }
@@ -359,6 +389,8 @@ export function recurringPaymentValues(input: {
   /** La factura que se cancela: la del gasto fijo, si ya está cargada. */
   documentId: string | null
   note?: string | null
+  /** La sucursal del pago: la del gasto fijo. Sin ella no se manda. */
+  branchId?: string | null
 }): {
   values: PaymentFormValues
   plan: PaymentPlan
@@ -429,6 +461,7 @@ export function recurringPaymentValues(input: {
       writeOffCents: plan.writeOffCents,
       notes: notes === '' ? null : notes,
       recurringExpenseId: input.recurringExpenseId,
+      ...(input.branchId ? { branchId: input.branchId } : {}),
     },
     plan,
     debtTotalCents: debts.reduce((sum, d) => sum + d.openCents, 0),

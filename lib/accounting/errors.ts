@@ -323,6 +323,23 @@ export const ACC_ERRORS = {
     message: 'Ese gasto fijo ya no está. Recargá la página.',
   },
 
+  // ─── Sucursales (Administración por sucursal, entrega 1) ──────────────────
+  branch_required: { code: 'invalid', message: 'Elegí la sucursal.' },
+  branch_forbidden: { code: 'invalid', message: 'No tenés acceso a esa sucursal.' },
+  branch_not_found: { code: 'invalid', message: 'Esa sucursal no existe o está apagada.' },
+  recurring_branch_mismatch: {
+    code: 'invalid',
+    message: 'Ese gasto fijo es de otra sucursal: se paga desde su sucursal.',
+  },
+  treasury_other_branch: {
+    code: 'invalid',
+    message: 'Esa caja es de otra sucursal. Elegí una de esta sucursal o de todo el bar.',
+  },
+  document_branch_general: {
+    code: 'conflict',
+    message: 'Este comprobante es de todo el bar: no se cambia de sucursal.',
+  },
+
   // ─── Apertura ─────────────────────────────────────────────────────────────
   opening_locked: {
     code: 'conflict',

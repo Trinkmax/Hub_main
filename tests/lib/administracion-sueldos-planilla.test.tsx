@@ -243,6 +243,8 @@ describe('lo que devuelve `acc_report_payroll`', () => {
         {
           id: uuid(1),
           name: 'Martina Ríos',
+          // Sin la sucursal en la respuesta (la base de antes): vacía.
+          branchId: null,
           payFrequency: 'biweekly',
           active: true,
           notes: null,

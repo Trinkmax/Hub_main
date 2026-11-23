@@ -42,6 +42,8 @@ export type SheetTreasury = {
   bankName: string | null
   lastCheckedOn: string | null
   active: boolean
+  /** La sucursal de la caja; vacía = de todo el bar (se ofrece en todas). */
+  branchId?: string | null
 }
 
 export type SheetAccount = {

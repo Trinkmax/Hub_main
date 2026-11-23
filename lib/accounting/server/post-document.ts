@@ -53,6 +53,8 @@ import type {
   PostingResult,
   PostingWarning,
 } from '@/lib/accounting/types'
+import { branchErrorMessage, branchForWrite } from '@/lib/branches/filter'
+import { getBranchScope } from '@/lib/branches/scope'
 import { createClient } from '@/lib/supabase/server'
 import { loadDocumentContext } from './document-context'
 import {
@@ -119,6 +121,26 @@ function forbiddenState(): AccFailureState {
     code: 'forbidden',
     message: accErrorMessage('forbidden'),
     detail: { key: 'forbidden' },
+  }
+}
+
+/**
+ * La sucursal que mandó el formulario, si la persona la tiene (`branchForWrite`). Sin sucursal no se mira nada:
+ * la decide la base (la del gasto fijo, la principal, ninguna en un asiento manual). Una que no es suya vuelve
+ * como error del campo, con el texto de siempre.
+ */
+export async function checkFormBranch(
+  slug: string,
+  branchId: string | null,
+): Promise<AccFailureState | null> {
+  if (!branchId) return null
+  try {
+    branchForWrite(await getBranchScope(slug), branchId)
+    return null
+  } catch (error) {
+    const message = branchErrorMessage(error)
+    if (!message) throw error
+    return { ok: false, code: 'invalid', message, fieldErrors: { branchId: message } }
   }
 }
 
@@ -195,9 +217,22 @@ export function dbWarnings(
   return out
 }
 
+/** Lo que la base dice de la sucursal se marca en el campo «Sucursal» del formulario. */
+const BRANCH_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'branch_required',
+  'branch_forbidden',
+  'branch_not_found',
+  'recurring_branch_mismatch',
+])
+
 /** Error de `acc_post_bundle` → estado del formulario (avisos de la base incluidos). */
 function postFailure(op: string, error: PgLikeError, ctx: PostingContext): AccFailureState {
-  const state = mapAccError(error)
+  const mapped = mapAccError(error)
+  const mappedKey = mapped.detail?.key
+  const state: AccFailureState =
+    typeof mappedKey === 'string' && BRANCH_FIELD_KEYS.has(mappedKey)
+      ? { ...mapped, fieldErrors: { branchId: mapped.message } }
+      : mapped
   if (state.detail?.key === 'warning_requires_ack') {
     const warnings = dbWarnings(error.details, ctx)
     if (warnings.length > 0) {
@@ -274,6 +309,8 @@ export async function runPostDocument(
     const parsed = parseDocumentForm(form, raw)
     if (!parsed.ok) return invalidState(parsed.error)
     const input = parsed.value
+    const branchFailure = await checkFormBranch(slug, input.branchId)
+    if (branchFailure) return branchFailure
 
     const loaded = await loadDocumentContext(auth.tenantId, input.refs)
     if (!loaded.ok) {
@@ -377,6 +414,8 @@ export async function runPreviewDocument(
     const parsed = parseDocumentForm(form, withPreviewMeta(request.values))
     if (!parsed.ok) return invalidState(parsed.error)
     const input = parsed.value
+    const branchFailure = await checkFormBranch(slug, input.branchId)
+    if (branchFailure) return branchFailure
 
     const loaded = await loadDocumentContext(auth.tenantId, input.refs)
     if (!loaded.ok) {

@@ -31,6 +31,14 @@ import { money, type TexToolResult } from '../types'
 
 type FormValues<T> = Omit<T, 'clientRef' | 'previewHash' | 'warningsAck'>
 
+/**
+ * La sucursal del comprobante, como la mandan las hojas (`lib/tex/branch.ts` dice cuál): sin ella no va la clave
+ * y la decide la base.
+ */
+function branchOf(branchId: string | null | undefined): { branchId?: string } {
+  return branchId ? { branchId } : {}
+}
+
 /** Le suma avisos al tique que armó el motor. Son solo para leer: no cambian lo que se guarda. */
 export function withTicketWarnings(
   result: TexToolResult,
@@ -105,6 +113,7 @@ export function movementValues(input: {
   cents: number
   date: string
   note?: string | null
+  branchId?: string | null
 }): CashMovementFormValues {
   const { direction, motive } = MOVEMENT_PAIRS[input.kind]
   const detail = input.note?.trim() ?? ''
@@ -117,6 +126,7 @@ export function movementValues(input: {
     date: input.date,
     shortcut: motive,
     detail: detail === '' ? null : detail,
+    ...branchOf(input.branchId),
   }
 }
 
@@ -144,6 +154,7 @@ export function bankExpenseValues(input: {
   voucher: BankVoucher | null
   others: ReadonlyArray<{ accountId: string; amountCents: number }>
   note?: string | null
+  branchId?: string | null
 }): BankExpenseFormValues {
   const { amounts } = input
   const notes = input.note?.trim() ?? ''
@@ -163,6 +174,7 @@ export function bankExpenseValues(input: {
     interestCents: amounts.interestCents ?? 0,
     others: input.others.map((o) => ({ accountId: o.accountId, amountCents: o.amountCents })),
     notes: notes === '' ? null : notes,
+    ...branchOf(input.branchId),
   }
 }
 
@@ -243,6 +255,7 @@ export function treasuryAdjustmentValues(input: {
   bookCents: number
   reason: CountReason | null
   interestAccountId: string
+  branchId?: string | null
 }): TreasuryAdjustmentFormValues {
   const diff = input.countedBook - input.bookCents
   return {
@@ -262,6 +275,7 @@ export function treasuryAdjustmentValues(input: {
           ]
         : [],
     notes: null,
+    ...branchOf(input.branchId),
   }
 }
 
@@ -317,6 +331,7 @@ export function walletCheckValues(input: {
   breakdown: WalletBreakdown
   certificate?: string | null
   otherFeesAccountId: string
+  branchId?: string | null
 }): WalletCheckFormValues {
   const diff = input.countedBook - input.bookCents
   // Sin partidas y con plata de más, todo es rendimiento: no lleva desglose.
@@ -344,6 +359,7 @@ export function walletCheckValues(input: {
           ]
         })
       : [],
+    ...branchOf(input.branchId),
   }
 }
 

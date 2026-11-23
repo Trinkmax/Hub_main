@@ -6,6 +6,7 @@ import { friendlyApiError, runTexLoop, toolResultContent, unansweredToolUses } f
 import type { TexEvent } from '@/lib/tex/protocol'
 import type { TexPending, TexThread } from '@/lib/tex/store'
 import { defineTool, type TexToolContext, texApiTools } from '@/lib/tex/tools/types'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 const CTX: TexToolContext = {
   slug: 'hub',
@@ -17,6 +18,7 @@ const CTX: TexToolContext = {
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: '2026-11-05',
+  branch: NO_BRANCHES,
 }
 
 const THREAD: TexThread = {

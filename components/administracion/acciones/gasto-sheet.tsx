@@ -84,12 +84,15 @@ import {
   accountToRemember,
   supplierDefaultAccount,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/supplier-account'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import { amountLooksOff, pickTreasury } from '@/lib/accounting/defaults'
 import { isCreditCard } from '@/lib/accounting/installments'
 import { type InvoiceRead, readSummary } from '@/lib/accounting/invoice-read'
@@ -211,6 +214,7 @@ const MAX_TREASURY_CHIPS = 4
 
 /** Los campos que este formulario dibuja (el resto del error va arriba de los botones). */
 const KNOWN_FIELDS = new Set([
+  'branchId',
   'amountCents',
   'target',
   'target.partyId',
@@ -278,6 +282,16 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const targetRef = useRef<HTMLDivElement>(null)
 
   const activeTreasuries = useMemo(() => data.treasuries.filter((t) => t.active), [data.treasuries])
+  // La sucursal del gasto: arranca en la que se mira; en «Todas», hay que elegir. Las cajas que se
+  // ofrecen son las de esa sucursal y las de todo el bar.
+  const branchScope = useBranchScope()
+  const startBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(startBranchId)
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const branchTreasuries = useMemo(
+    () => treasuriesForBranch(activeTreasuries, branchId),
+    [activeTreasuries, branchId],
+  )
   const partyById = useMemo(() => new Map(data.parties.map((p) => [p.id, p])), [data.parties])
   const accountById = useMemo(() => new Map(data.accounts.map((a) => [a.id, a])), [data.accounts])
   const imputable = useMemo(
@@ -289,27 +303,32 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     () => ({
       payablePartyIds: new Set(payableParties(data.parties).map((p) => p.id)),
       imputableAccountIds: imputable,
-      activeTreasuryIds: new Set(activeTreasuries.map((t) => t.id)),
+      activeTreasuryIds: new Set(branchTreasuries.map((t) => t.id)),
     }),
-    [data.parties, imputable, activeTreasuries],
+    [data.parties, imputable, branchTreasuries],
   )
-  const recurringOptions = useMemo(
+  // Todos los que se pueden cargar (para `?gasto-fijo=`) y los de la sucursal elegida (los chips).
+  const recurringUsableAll = useMemo(
     () =>
       sortRecurringForSheet(
         data.recurring.filter((r) => recurringPrefill(r, recurringUsable) !== null),
       ),
     [data.recurring, recurringUsable],
   )
+  const recurringOptions = useMemo(
+    () => recurringUsableAll.filter((r) => !branchId || !r.branchId || r.branchId === branchId),
+    [recurringUsableAll, branchId],
+  )
 
   const defaultTreasury = useCallback(
     (lastWithParty: string | null) =>
       pickTreasury({
-        treasuries: activeTreasuries,
+        treasuries: branchTreasuries,
         lastUsedWithParty: lastWithParty,
         myLastQuickExpense: rememberedTreasury(tenantSlug),
         order: data.treasuries.map((t) => t.id),
       }),
-    [activeTreasuries, data.treasuries, tenantSlug],
+    [branchTreasuries, data.treasuries, tenantSlug],
   )
 
   const [amount, setAmount] = useState<number | null>(null)
@@ -528,10 +547,44 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     posting.clearFieldErrors()
   }
 
+  /**
+   * Otra sucursal: un gasto fijo de otra deja de estar elegido (se paga desde la suya) y la caja queda
+   * solo si también se usa ahí (si no, se propone otra).
+   */
+  const changeBranch = (next: string) => {
+    if (next === branchId) return
+    setBranchId(next)
+    setBranchError(null)
+    const linked = recurringId ? data.recurring.find((r) => r.id === recurringId) : undefined
+    if (linked?.branchId && linked.branchId !== next) unlinkRecurring()
+    if (keepTreasuryForBranch(activeTreasuries, treasuryId, next) === null) {
+      setTreasuryId(
+        pickTreasury({
+          treasuries: treasuriesForBranch(activeTreasuries, next),
+          myLastQuickExpense: rememberedTreasury(tenantSlug),
+          order: data.treasuries.map((t) => t.id),
+        }),
+      )
+    }
+    posting.clearFieldErrors()
+  }
+
   // ── Un gasto fijo: su proveedor o su cuenta, y lo habitual (todo se puede cambiar) ──
   const pickRecurring = (r: SheetRecurring) => {
-    const prefill = recurringPrefill(r, recurringUsable)
+    // El gasto fijo es de su sucursal: el pago va ahí (mirando «Todas», queda elegida), y su caja de
+    // siempre se propone solo si es de ahí o de todo el bar.
+    const nextBranch = r.branchId ?? branchId
+    const prefill = recurringPrefill(r, {
+      ...recurringUsable,
+      activeTreasuryIds: new Set(
+        treasuriesForBranch(activeTreasuries, nextBranch).map((t) => t.id),
+      ),
+    })
     if (!prefill) return
+    if (nextBranch !== branchId) {
+      setBranchId(nextBranch)
+      setBranchError(null)
+    }
     const treasuryFromRecurring =
       prefill.treasuryAccountId !== null && !touched.current.treasury
         ? prefill.treasuryAccountId
@@ -565,7 +618,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al abrir la hoja
   useEffect(() => {
     if (initialRecurring) {
-      const found = recurringOptions.find((r) => r.id === initialRecurring)
+      const found = recurringUsableAll.find((r) => r.id === initialRecurring)
       if (found) {
         pickRecurring(found)
         return
@@ -579,6 +632,20 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     setTarget({ kind: 'party', partyId: known.id, accountId: account })
     void applyPartyDefaults(known.id, null)
   }, [])
+
+  // La caja siempre es de la sucursal del gasto (o de todo el bar): si algo dejó una de otra (lo que
+  // recuerda el proveedor, un gasto fijo de otra sucursal), se propone otra.
+  useEffect(() => {
+    if (treasuryId === null) return
+    if (keepTreasuryForBranch(activeTreasuries, treasuryId, branchId) !== null) return
+    setTreasuryId(
+      pickTreasury({
+        treasuries: treasuriesForBranch(activeTreasuries, branchId),
+        myLastQuickExpense: rememberedTreasury(tenantSlug),
+        order: data.treasuries.map((t) => t.id),
+      }),
+    )
+  }, [activeTreasuries, branchId, data.treasuries, tenantSlug, treasuryId])
 
   // El foco arranca en el monto (meta: 7 segundos).
   useEffect(() => {
@@ -610,6 +677,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         detail,
         remito,
         recurringExpenseId: recurringId,
+        branchId,
       }),
     [
       amount,
@@ -624,6 +692,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       detail,
       remito,
       recurringId,
+      branchId,
     ],
   )
   const key = built.values ? JSON.stringify(built.values) : ''
@@ -831,6 +900,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     // Mientras sube la foto del gasto anterior no se guarda otro (ese ya quedó cargado).
     if (posting.pending || attaching !== null) return
     setSubmitted(true)
+    // Mirando «Todas» hay que decir en qué sucursal fue el gasto.
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (!built.values || !preview?.ok) {
       requestAnimationFrame(() => {
         formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
@@ -960,7 +1034,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       .filter((part) => part !== null)
       .join(' ')
 
-  const treasuryChips = activeTreasuries.length <= MAX_TREASURY_CHIPS
+  const treasuryChips = branchTreasuries.length <= MAX_TREASURY_CHIPS
   const ids = {
     amount: `${uid}-monto`,
     target: `${uid}-en-que`,
@@ -1041,6 +1115,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               Completamos {readNote} con lo que leímos de la foto. Revisalo antes de cargar.
             </InlineNotice>
           ) : null}
+
+          {/* En qué sucursal: viene elegida la que se mira. Con una sola sucursal no se ve. */}
+          <BranchField
+            value={branchId}
+            onChange={changeBranch}
+            error={branchError ?? errors.branchId ?? null}
+            disabled={posting.pending}
+          />
 
           {/* ¿Cuánto?: el número grande de la hoja, con foco al abrir */}
           <MoneyField
@@ -1143,7 +1225,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                   setTreasuryId(next)
                   posting.clearFieldErrors()
                 }}
-                options={activeTreasuries.map((t) => ({
+                options={branchTreasuries.map((t) => ({
                   value: t.id,
                   ariaLabel: `${t.name}, ${treasuryMoneyText(t.kind, t.balanceCents)}`,
                   label: (
@@ -1173,7 +1255,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                   setTreasuryId(next)
                   posting.clearFieldErrors()
                 }}
-                treasuries={data.treasuries}
+                treasuries={treasuriesForBranch(data.treasuries, branchId)}
                 invalid={Boolean(errors.treasuryAccountId)}
               />
             )}

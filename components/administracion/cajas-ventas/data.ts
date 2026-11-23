@@ -84,6 +84,7 @@ export async function loadCajasVentasCatalog(slug: string): Promise<SheetLoad<Ca
             bankName: t.bankName,
             lastCheckedOn: t.lastCheckedOn,
             active: t.active,
+            branchId: t.branchId ?? null,
           })),
         accounts: catalog.accounts.map((a) => ({
           id: a.id,

@@ -81,7 +81,7 @@ export default async function NuevaCompraPage({
   const gastoFijo = firstParam(sp['gasto-fijo'])
   const volver = firstParam(sp.volver)
   const returnHref = safeReturnHref(tenantSlug, volver)
-  const { access, canWrite } = await requireComprasAccess(
+  const { access, canWrite, branch } = await requireComprasAccess(
     tenantSlug,
     newPurchaseHref(tenantSlug, { tipo: family }),
   )
@@ -101,7 +101,7 @@ export default async function NuevaCompraPage({
 
   const today = todayInCordoba()
   const [sheet, recurringOutcome, relatedOutcome] = await Promise.all([
-    loadSheetData(tenantSlug, { suggestions: true, balances: true }),
+    loadSheetData(tenantSlug, { suggestions: true, balances: true, branch: branch.filter }),
     settleQuery(listRecurringExpenses(access.tenant.id, { today })),
     family === 'nc' && isUuidLike(relacionada)
       ? settleQuery(getDocument(access.tenant.id, relacionada))
@@ -122,6 +122,7 @@ export default async function NuevaCompraPage({
         .map((r) => ({
           id: r.id,
           name: r.name,
+          branchId: r.branchId ?? null,
           partyId: r.partyId,
           accountId: r.accountId,
           voucherType: r.voucherType,

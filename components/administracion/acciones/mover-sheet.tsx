@@ -3,6 +3,8 @@
 import { ArrowDown, ArrowDownUp, ArrowRight, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,7 +69,14 @@ export function MoverSheet(props: ActionSheetProps) {
   return <MoverForm {...props} catalog={load.data} />
 }
 
-const KNOWN_FIELDS = new Set(['fromTreasuryId', 'toTreasuryId', 'amountCents', 'date', 'reference'])
+const KNOWN_FIELDS = new Set([
+  'branchId',
+  'fromTreasuryId',
+  'toTreasuryId',
+  'amountCents',
+  'date',
+  'reference',
+])
 
 /** Una píldora de atajo: la elegida va rellena, como todas las de las hojas. */
 const SHORTCUT =
@@ -161,6 +170,14 @@ function MoverForm({
 
   // La caja de la URL va como origen; una tarjeta de la empresa, como destino.
   const [initial] = useState(() => moveInitial(treasuries, params.caja))
+  // La sucursal del pase: la que se mira, o la de la caja de donde sale (la plata puede ir a una caja
+  // de otra sucursal: por eso acá se ofrecen todas las cajas).
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () => (initial.fromId ? byId.get(initial.fromId)?.branchId : null) ?? viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
   const [fromId, setFromId] = useState<string | null>(initial.fromId)
   const [toId, setToId] = useState<string | null>(initial.toId)
   const [amount, setAmount] = useState<number | null>(null)
@@ -183,8 +200,9 @@ function MoverForm({
       amountCents: amount,
       date: date ?? '',
       reference: reference.trim() === '' ? null : reference.trim(),
+      ...(branchId ? { branchId } : {}),
     }),
-    [fromId, toId, amount, date, reference],
+    [fromId, toId, amount, date, reference, branchId],
   )
   const preview = useDocumentPreview('transfer', values, catalog.ctx, catalog.firstOpenDate)
 
@@ -214,6 +232,12 @@ function MoverForm({
     if (next.from !== undefined) {
       setFromId(next.from)
       posting.clearFieldError('fromTreasuryId')
+      // Sale de una caja de una sucursal: el pase es de esa sucursal.
+      const fromBranch = next.from ? byId.get(next.from)?.branchId : null
+      if (fromBranch) {
+        setBranchId(fromBranch)
+        setBranchError(null)
+      }
     }
     if (next.to !== undefined) {
       setToId(next.to)
@@ -224,6 +248,10 @@ function MoverForm({
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setAttempted(true)
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (!preview.state.ok) {
       posting.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       requestAnimationFrame(() => {
@@ -245,6 +273,17 @@ function MoverForm({
       <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <form ref={formRef} noValidate onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <ActionSheetBody>
+          {/* De qué sucursal es el pase. Con una sola sucursal no se ve. */}
+          <BranchField
+            value={branchId}
+            onChange={(next) => {
+              setBranchId(next)
+              setBranchError(null)
+              posting.clearFieldError('branchId')
+            }}
+            error={branchError ?? errorOf('branchId')}
+            disabled={posting.pending}
+          />
           {onlyTwo ? (
             // Con dos cajas no hay nada más que elegir: de cuál a cuál.
             <div className={SHEET_QUESTION_BLOCK}>

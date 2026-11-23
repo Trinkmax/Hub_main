@@ -35,7 +35,7 @@ export default async function GastoFijoPage({
   if (!creating && !isUuidLike(id)) notFound()
   const backHref = gastosFijosHref(tenantSlug)
   const back = { href: backHref, label: 'Gastos fijos' }
-  const { access, canWrite } = await requireComprasAccess(
+  const { access, canWrite, branch } = await requireComprasAccess(
     tenantSlug,
     recurringHref(tenantSlug, creating ? 'nuevo' : id),
   )
@@ -113,6 +113,7 @@ export default async function GastoFijoPage({
         endsOn: row.endsOn,
         installmentsTotal: row.installmentsTotal,
         breakdown: row.breakdown,
+        branchId: row.branchId ?? null,
       }
     : {
         id: null,
@@ -133,6 +134,10 @@ export default async function GastoFijoPage({
         endsOn: null,
         installmentsTotal: null,
         breakdown: [],
+        // El alta arranca en la sucursal que se mira (o la única); en «Todas», se elige.
+        branchId:
+          branch.scope.current?.id ??
+          (branch.scope.branches.length === 1 ? (branch.scope.branches[0]?.id ?? null) : null),
       }
 
   return (
@@ -170,6 +175,7 @@ export default async function GastoFijoPage({
           kind: t.kind,
           balanceCents: t.balanceCents,
           active: t.active,
+          branchId: t.branchId ?? null,
         }))}
       />
     </SimplePage>

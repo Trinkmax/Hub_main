@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -16,6 +18,7 @@ import {
   postTreasuryAdjustment,
   postWalletCheck,
 } from '@/lib/accounting/actions/documents'
+import { keepTreasuryForBranch, treasuriesForBranch } from '@/lib/accounting/branch'
 import type {
   TreasuryAdjustmentValues,
   WalletCheckValues,
@@ -128,6 +131,7 @@ const BREAKDOWN_ROWS: ReadonlyArray<{ key: BreakdownKey; label: string; short: s
 ]
 
 const KNOWN_FIELDS = new Set([
+  'branchId',
   'treasuryAccountId',
   'date',
   'countedCents',
@@ -153,7 +157,21 @@ function AjustarForm({
   const formRef = useRef<HTMLFormElement>(null)
   const countedRef = useRef<HTMLInputElement>(null)
   const id = useId()
-  const { treasuries, today } = catalog
+  const { today } = catalog
+  // La sucursal del conteo: la de la caja de la URL, o la que se mira (en «Todas», se elige). Se
+  // ofrecen las cajas de esa sucursal y las de todo el bar.
+  const branchScope = useBranchScope()
+  const viewedBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(
+    () =>
+      (params.caja ? catalog.treasuries.find((t) => t.id === params.caja)?.branchId : null) ??
+      viewedBranchId,
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const treasuries = useMemo(
+    () => treasuriesForBranch(catalog.treasuries, branchId),
+    [catalog.treasuries, branchId],
+  )
   const interestAccountId = catalog.ctx.sys.interest_income.id
   const otherFeesAccountId = catalog.ctx.sys.fees_other.id
 
@@ -278,8 +296,9 @@ function AjustarForm({
             ]
           : [],
       notes: null,
+      ...(branchId ? { branchId } : {}),
     }),
-    [treasuryId, date, countedBook, book, activeReason, diff, interestAccountId],
+    [treasuryId, date, countedBook, book, activeReason, diff, interestAccountId, branchId],
   )
   const walletValues = useMemo(() => {
     // Sin partidas y con plata de más, todo es rendimiento: no lleva desglose.
@@ -307,6 +326,7 @@ function AjustarForm({
             ]
           })
         : [],
+      ...(branchId ? { branchId } : {}),
     }
   }, [
     treasuryId,
@@ -318,6 +338,7 @@ function AjustarForm({
     breakdown,
     sircupaCert,
     otherFeesAccountId,
+    branchId,
   ])
   const walletCtx = useMemo(() => withOpenItems(catalog.ctx, items), [catalog.ctx, items])
   const adjustPreview = useDocumentPreview(
@@ -440,6 +461,16 @@ function AjustarForm({
       ? (posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : []))
       : []
 
+  /** Otra sucursal: la caja elegida queda solo si también es de ahí (o de todo el bar). */
+  function changeBranch(next: string) {
+    setBranchId(next)
+    setBranchError(null)
+    adjust.clearFieldError('branchId')
+    wallet.clearFieldError('branchId')
+    const kept = keepTreasuryForBranch(catalog.treasuries, treasuryId, next)
+    if (kept !== treasuryId) setTreasuryId(null)
+  }
+
   function selectTreasury(next: string) {
     setTreasuryId(next)
     setReason(null)
@@ -496,6 +527,10 @@ function AjustarForm({
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setAttempted(true)
+    if (branchScope?.scope.multi && !branchId) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (!treasuryId || !date || plan === null) {
       adjust.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       focusFirstError()
@@ -558,6 +593,14 @@ function AjustarForm({
             // Con `key`, el tilde se vuelve a dibujar con cada caja que se cuenta.
             <SavedNote key={lastSaved.count}>{lastSaved.text}</SavedNote>
           ) : null}
+
+          {/* En qué sucursal se contó. Con una sola sucursal no se ve. */}
+          <BranchField
+            value={branchId}
+            onChange={changeBranch}
+            error={branchError ?? errorOf('branchId')}
+            disabled={busy}
+          />
 
           <div className={SHEET_QUESTION_BLOCK}>
             <SheetQuestion id={`${id}-caja-label`} required>

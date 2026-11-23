@@ -21,6 +21,8 @@ import { MoneyField } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
 import { Planilla } from '@/components/administracion/planilla'
 import type { TreasuryOption } from '@/components/administracion/treasury-select'
+import { BranchField } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,6 +30,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveRecurringExpense } from '@/lib/accounting/actions/master'
+import { treasuryFitsBranch } from '@/lib/accounting/branch'
 import { addMonthsToYearMonth, formatIsoDay, monthOf, weekdayName } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { suggestAccount } from '../../../_lib/bulk'
@@ -144,6 +147,7 @@ export function RecurringForm({
   // todo el plan aparecen recién cuando hace falta.
   const [pickCategory, setPickCategory] = useState(initial.accountId === null)
   const [dateOpen, setDateOpen] = useState(false)
+  const branchContext = useBranchScope()
 
   const initialDues = initialDuesOf(initial)
   const { dues, installmentsTotal } = installmentsValues(installments)
@@ -173,6 +177,20 @@ export function RecurringForm({
     }
   }
 
+  /** Otra sucursal: la caja de siempre queda solo si también se usa ahí (o es de todo el bar). */
+  const changeBranch = (next: string) => {
+    const keep = treasuryFitsBranch(
+      treasuries.find((t) => t.id === form.treasuryAccountId),
+      next,
+    )
+    setForm((prev) => ({
+      ...prev,
+      branchId: next,
+      treasuryAccountId: keep ? prev.treasuryAccountId : null,
+    }))
+    if (errors.branchId) setErrors(({ branchId: _b, ...rest }) => rest)
+  }
+
   const setDueDay = (day: number) => {
     setForm((prev) => ({
       ...prev,
@@ -190,6 +208,8 @@ export function RecurringForm({
     event.preventDefault()
     setBanner(null)
     const local = validateRecurringForm(payloadInput, installments)
+    // Mirando «Todas» hay que decir de qué sucursal es (sus pagos quedan ahí).
+    if (branchContext?.scope.multi && !form.branchId) local.branchId = 'Elegí en qué sucursal.'
     if (Object.keys(local).length > 0) {
       setErrors(local)
       if (local.breakdown) setMoreOpen(true)
@@ -228,8 +248,11 @@ export function RecurringForm({
 
   const id = (name: string) => `${uid}-${name}`
   const account = accounts.find((a) => a.id === form.accountId) ?? null
+  // Las cajas de su sucursal y las de todo el bar (la elegida se ve siempre).
   const treasuryOptions = treasuries.filter(
-    (t) => t.active !== false || t.id === form.treasuryAccountId,
+    (t) =>
+      t.id === form.treasuryAccountId ||
+      (t.active !== false && treasuryFitsBranch(t, form.branchId ?? null)),
   )
   // La categoría que propone el nombre: se muestra como «Sugerida»; la elige la persona.
   const suggestedId = useMemo(
@@ -255,6 +278,14 @@ export function RecurringForm({
     >
       <Planilla className="overflow-visible">
         <div className="grid gap-x-6 gap-y-5 p-4 sm:p-5 md:grid-cols-2">
+          {/* De qué sucursal es (sus pagos quedan ahí). Con una sola sucursal no se ve. */}
+          <BranchField
+            value={form.branchId ?? null}
+            onChange={changeBranch}
+            error={errors.branchId}
+            disabled={pending}
+            className="md:col-span-2"
+          />
           <Ask label="Nombre" htmlFor={id('name')} error={errors.name}>
             <Input
               id={id('name')}

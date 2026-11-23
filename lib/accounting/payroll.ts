@@ -55,6 +55,8 @@ export type PayrollMovement = {
 export type PayrollEmployee = {
   id: string
   name: string
+  /** Dónde trabaja (`acc_report_payroll` › `branch_id`). Vacía si la base todavía no lo dice. */
+  branchId?: string | null
   payFrequency: PayFrequency
   active: boolean
   notes: string | null
@@ -87,6 +89,7 @@ const rawMovementSchema = z.object({
 const rawEmployeeSchema = z.object({
   id: z.string(),
   name: z.string(),
+  branch_id: z.string().nullish(),
   pay_frequency: z.enum(PAY_FREQUENCIES),
   active: z.boolean(),
   notes: z.string().nullish(),
@@ -113,6 +116,7 @@ export function parsePayrollReport(raw: unknown, month: string): PayrollReport |
     employees: employees.map((e) => ({
       id: e.id,
       name: e.name,
+      branchId: e.branch_id ?? null,
       payFrequency: e.pay_frequency,
       active: e.active,
       notes: e.notes ?? null,

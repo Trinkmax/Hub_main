@@ -329,6 +329,8 @@ function parseTreasury(r: Rec): CatalogTreasury | null {
     balanceCents: int(r.balance_cents) ?? 0,
     active: bool(r.active, true),
     chargesBankTax: typeof r.charges_bank_tax === 'boolean' ? r.charges_bank_tax : null,
+    // Vacía = de todo el bar (billeteras, bancos y tarjetas arrancan así; el efectivo es de un local).
+    branchId: text(r.branch_id),
     accountCode: text(r.account_code) ?? '',
     bankName: text(r.bank_name),
     cbuCvu: text(r.cbu_cvu),
@@ -509,6 +511,7 @@ export function buildPostingContext(
       balanceCents: t.balanceCents,
       active: t.active,
       chargesBankTax: t.chargesBankTax ?? null,
+      branchId: t.branchId ?? null,
     })
   }
   const methods = new Map<string, SalesMethodRef>()

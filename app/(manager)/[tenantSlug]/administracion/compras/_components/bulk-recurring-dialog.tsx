@@ -6,6 +6,8 @@ import { useId, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
 import { Pill } from '@/components/administracion/kit'
+import { BranchField, useDefaultBranchId } from '@/components/branches/branch-field'
+import { useBranchScope } from '@/components/branches/branch-scope-provider'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -43,8 +45,10 @@ const TYPICAL_AT_A_GLANCE = 8
  * vencen). Se cargan todos de una, sin monto.
  *
  * Manda lo mismo de siempre: `createRecurringBulk({ items: [{ name, accountId,
- * dueDay, nextDueDate }] })`, con el mismo día para todos. Lo que cambia es a
- * dónde va después: a «Completar la planilla», para ponerles el monto.
+ * dueDay, nextDueDate }] })`, con el mismo día para todos, y la sucursal: todos
+ * van a la que se elige arriba (la que se mira; en «Todas» hay que elegir). Los
+ * que ya están se comparan dentro de esa sucursal. Después va a «Completar la
+ * planilla», para ponerles el monto.
  *
  * `trigger` es cómo se ve el botón que la abre: `link` (callado, debajo de la
  * planilla) o `primary` (el botón del estado vacío).
@@ -53,7 +57,7 @@ export function BulkRecurringDialog({
   tenantSlug,
   today,
   accounts,
-  existingNames,
+  existing,
   fallbackAccountId,
   trigger = 'link',
   className,
@@ -62,7 +66,8 @@ export function BulkRecurringDialog({
   today: string
   /** Las cuentas que se pueden elegir para un gasto (grupos incluidos para la ruta). */
   accounts: readonly AccountOption[]
-  existingNames: readonly string[]
+  /** Los gastos fijos que ya están, con su sucursal (no se repiten dentro de una sucursal). */
+  existing: ReadonlyArray<{ name: string; branchId: string | null }>
   /** La cuenta para los nombres que no reconocemos («Gastos varios»), si existe. */
   fallbackAccountId: string | null
   trigger?: 'link' | 'primary'
@@ -79,6 +84,19 @@ export function BulkRecurringDialog({
   const [error, setError] = useState<string | null>(null)
   const [allTypical, setAllTypical] = useState(false)
   const [pending, start] = useTransition()
+  const branchScope = useBranchScope()
+  const defaultBranchId = useDefaultBranchId()
+  const [branchId, setBranchId] = useState<string | null>(defaultBranchId)
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const needsBranch = Boolean(branchScope?.scope.multi) && branchId === null
+  // Los nombres se comparan dentro de la sucursal elegida (sin elegir, contra todos).
+  const existingNames = useMemo(
+    () =>
+      existing
+        .filter((e) => branchId === null || e.branchId === null || e.branchId === branchId)
+        .map((e) => e.name),
+    [existing, branchId],
+  )
   const parsed = useMemo(
     () => parseNameList(joinNameSources(picked, text), { existing: existingNames, maxLength: 80 }),
     [picked, text, existingNames],
@@ -106,6 +124,10 @@ export function BulkRecurringDialog({
 
   const review = () => {
     setError(null)
+    if (needsBranch) {
+      setBranchError('Elegí en qué sucursal.')
+      return
+    }
     if (parsed.names.length === 0) {
       setError(
         parsed.existing.length > 0
@@ -138,6 +160,7 @@ export function BulkRecurringDialog({
       try {
         const result = await createRecurringBulk(tenantSlug, {
           items: recurringBulkItems(rows, dueDay, nextDueDate),
+          ...(branchId ? { branchId } : {}),
         })
         if (!result.ok) {
           setError(result.message)
@@ -165,6 +188,7 @@ export function BulkRecurringDialog({
 
   const openDialog = () => {
     setError(null)
+    setBranchError(null)
     setStep('paste')
     setOpen(true)
   }
@@ -202,6 +226,17 @@ export function BulkRecurringDialog({
 
           {step === 'paste' ? (
             <div className="grid gap-4">
+              {/* Con una sola sucursal no se ve (va sola en un campo oculto). */}
+              <BranchField
+                value={branchId}
+                onChange={(next) => {
+                  setBranchId(next)
+                  setBranchError(null)
+                }}
+                label="¿De qué sucursal son?"
+                error={branchError}
+                disabled={pending}
+              />
               {typical.length > 0 ? (
                 <fieldset className="m-0 min-w-0 border-0 p-0">
                   <legend className="mb-2 p-0 text-sm font-medium">Lo típico de un bar</legend>

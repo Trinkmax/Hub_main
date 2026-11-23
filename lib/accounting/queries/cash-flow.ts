@@ -1,4 +1,5 @@
 import 'server-only'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import {
   CASH_DAILY_MAX_DAYS,
   type CashDailyAccount,
@@ -87,10 +88,13 @@ export function parseCashDaily(
   }
 }
 
-/** Saldo, entradas y salidas de cada caja por día, y de todas juntas. Hasta 366 días. */
+/**
+ * Saldo, entradas y salidas de cada caja por día, y de todas juntas. Hasta 366 días. Con `branchId`, las
+ * cajas de esa sucursal y las de todo el bar.
+ */
 export async function getCashDaily(
   tenantId: string,
-  params: { from: string; to: string },
+  params: { from: string; to: string; branchId?: string | null },
 ): Promise<CashDailyReport> {
   const range = requireRange(params.from, params.to)
   if (daysBetween(range.from, range.to) + 1 > CASH_DAILY_MAX_DAYS) {
@@ -104,6 +108,7 @@ export async function getCashDaily(
     p_tenant_id: tenantId,
     p_from: range.from,
     p_to: range.to,
+    ...branchRpcParam(params.branchId),
   })
   return parseCashDaily(raw, range)
 }

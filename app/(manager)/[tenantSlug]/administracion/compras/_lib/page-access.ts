@@ -6,6 +6,8 @@ import {
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
+import { type AccBranchView, accBranchView } from '@/lib/accounting/branch'
+import { getBranchScope } from '@/lib/branches/scope'
 import {
   RoleRequiredError,
   type TenantAccess,
@@ -22,14 +24,19 @@ import {
  * `canWrite` decide qué botones de carga, pago y edición se MUESTRAN: a la
  * contadora no se le dibujan (H.19). La base igual rechaza cualquier
  * escritura que no sea de un dueño con acceso.
+ *
+ * `branch` es la sucursal que se mira (`getBranchScope`, una vez por pedido): las pantallas por sucursal se la
+ * pasan a sus lecturas (docs/features/sucursales.md › La regla para cada pantalla).
  */
 export async function requireComprasAccess(
   tenantSlug: string,
   returnTo: string,
-): Promise<{ access: TenantAccess; canWrite: boolean }> {
+): Promise<{ access: TenantAccess; canWrite: boolean; branch: AccBranchView }> {
   try {
     const access = await requireAccountingAccess(tenantSlug, 'read')
-    return { access, canWrite: access.role === 'owner' && access.accounting.write }
+    // La sucursal que se mira, una vez por pedido (las pantallas de todo el bar no la usan).
+    const branch = accBranchView(await getBranchScope(tenantSlug))
+    return { access, canWrite: access.role === 'owner' && access.accounting.write, branch }
   } catch (error) {
     if (error instanceof UnauthenticatedError) {
       redirect(`/login?reason=session&redirectTo=${encodeURIComponent(returnTo)}`)

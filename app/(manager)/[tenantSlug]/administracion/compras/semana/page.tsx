@@ -50,8 +50,17 @@ export default async function WeekPlanPage({
 }) {
   const { tenantSlug } = await params
   const sp = await searchParams
-  const { access, canWrite } = await requireComprasAccess(tenantSlug, weekPlanHref(tenantSlug))
+  const { access, canWrite, branch } = await requireComprasAccess(
+    tenantSlug,
+    weekPlanHref(tenantSlug),
+  )
   const tenantId = access.tenant.id
+  // Lo de la sucursal que se mira (en «Todas», `null`: todo el bar).
+  const branchId = branch.id
+  // Los presupuestos todavía son uno por proveedor y semana (su clave por sucursal llega en la tanda 2): se
+  // escriben mirando «Todas» o la principal, que es donde quedan. En otra sucursal, la semana se mira.
+  const budgetsWritable =
+    canWrite && (branch.scope.isAll || branch.scope.current?.isDefault !== false)
   const today = todayInCordoba()
   const thisWeek = mondayOf(today)
   const weekStart = parseWeekParam(firstParam(sp.semana), today)
@@ -89,7 +98,12 @@ export default async function WeekPlanPage({
             </>
           }
         >
-          <MonthBody tenantId={tenantId} tenantSlug={tenantSlug} month={month} />
+          <MonthBody
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            month={month}
+            branchId={branchId}
+          />
         </Suspense>
       </SimplePage>
     )
@@ -121,7 +135,8 @@ export default async function WeekPlanPage({
           tenantId={tenantId}
           tenantSlug={tenantSlug}
           weekStart={weekStart}
-          canWrite={canWrite}
+          canWrite={budgetsWritable}
+          branchId={branchId}
         />
       </Suspense>
     </SimplePage>
@@ -144,14 +159,16 @@ async function WeekBody({
   tenantSlug,
   weekStart,
   canWrite,
+  branchId,
 }: {
   tenantId: string
   tenantSlug: string
   weekStart: string
   canWrite: boolean
+  branchId: string | null
 }) {
   const [plan, parties] = await Promise.all([
-    settleQuery(getWeekPlan(tenantId, weekStart)),
+    settleQuery(getWeekPlan(tenantId, weekStart, branchId)),
     canWrite ? settleQuery(listPlanParties(tenantId)) : null,
   ])
   if (!plan.ok) {
@@ -179,12 +196,14 @@ async function MonthBody({
   tenantId,
   tenantSlug,
   month,
+  branchId,
 }: {
   tenantId: string
   tenantSlug: string
   month: string
+  branchId: string | null
 }) {
-  const outcome = await settleQuery(getMonthPlan(tenantId, month))
+  const outcome = await settleQuery(getMonthPlan(tenantId, month, branchId))
   if (!outcome.ok) {
     return (
       <Planilla>

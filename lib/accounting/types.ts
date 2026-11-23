@@ -316,6 +316,8 @@ export type TreasuryRef = {
   active: boolean
   /** ¿Al salir plata se calcula el impuesto a los débitos y créditos? `null`: según el tipo (`chargesBankTax`). */
   chargesBankTax?: boolean | null
+  /** La sucursal de la caja. `null` = de todo el bar (se ve en todas, con un solo saldo). */
+  branchId?: string | null
 }
 
 export type SalesMethodRef = {
@@ -497,6 +499,11 @@ export type ProposedDocument = {
   replacesDocumentId: string | null
   correctsDocumentId: string | null
   recurringExpenseId: string | null
+  /**
+   * La sucursal del comprobante (`acc_post_bundle` › `branch_id`). `null` = la decide la base: la del gasto
+   * fijo, la principal para lo operativo, ninguna para un asiento manual. Entra al hash solo cuando viene.
+   */
+  branchId?: string | null
   settlesCommissions: boolean
   countedCents: Cents | null
   expectedBookCents: Cents | null
@@ -584,7 +591,11 @@ export type PostingResult =
     }
   | { ok: false; errors: PostingError[] }
 
-export type PostingMeta = { clientRef: string }
+export type PostingMeta = {
+  clientRef: string
+  /** La sucursal que eligió el formulario: va en cada comprobante del bundle. Sin ella, decide la base. */
+  branchId?: string | null
+}
 
 /** Firma de todo `build*` (E.2): determinista, misma entrada y contexto → mismo resultado. */
 export type PostingBuilder<Input> = (

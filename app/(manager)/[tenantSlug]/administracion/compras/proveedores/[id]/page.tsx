@@ -52,7 +52,7 @@ export default async function SupplierPage({
   const sp = await searchParams
   const ficha = firstParam(sp.tab) === 'datos'
   const baseHref = supplierHref(tenantSlug, id)
-  const { access, canWrite } = await requireComprasAccess(tenantSlug, baseHref)
+  const { access, canWrite, branch } = await requireComprasAccess(tenantSlug, baseHref)
   if (!isUuidLike(id)) notFound()
 
   const tenantId = access.tenant.id
@@ -72,7 +72,10 @@ export default async function SupplierPage({
   // también desde el totalizador. Si fallan, la página se ve igual, sin esos dos botones.
   const [positionOutcome, verificationOutcome, accounts, arcaLookup, settingsOutcome, compras] =
     await Promise.all([
-      settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
+      // Lo que se le debe en la sucursal que se mira (en «Todas», en todas).
+      settleQuery(
+        getPartyPosition(tenantId, { partyId: id, group: 'payables', branchId: branch.id }),
+      ),
       cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
       canWrite ? settleQuery(listAccounts(tenantId)) : null,
       canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
@@ -156,6 +159,7 @@ export default async function SupplierPage({
               today={today}
               canWrite={canWrite}
               unusedCreditCents={position?.creditCents ?? 0}
+              branchId={branch.id}
             />
           </Suspense>
           {position ? (

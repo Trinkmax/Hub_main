@@ -25,6 +25,7 @@ import {
   voucherTotalLabel,
 } from '@/components/administracion/acciones/movimiento-vista'
 import { markTreasuryChecked } from '@/lib/accounting/actions/documents'
+import { treasuryFitsBranch } from '@/lib/accounting/branch'
 import { loadOpenItems, tryLoadPostingContext } from '@/lib/accounting/context'
 import { getTreasuryCheck, type TreasuryCheck } from '@/lib/accounting/queries/forms'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
@@ -34,6 +35,16 @@ import { bankTaxOf } from '@/lib/accounting/taxes'
 import type { OpenItemRef, PostingContext, VatRateBp } from '@/lib/accounting/types'
 import { isImputationAccount } from '@/lib/accounting/validate'
 import { voucherDisplay } from '@/lib/accounting/voucher-types'
+import {
+  boxLabel,
+  branchNotices,
+  branchReadId,
+  branchToWrite,
+  otherBranchBoxMessage,
+  saidBranch,
+  sucursalField,
+  withBranchRow,
+} from '../../branch'
 import { failureText, prepareDocument } from '../../document-action'
 import type { TexTicketWarning } from '../../protocol'
 import { resolveAccount, resolveParty, resolveTreasury } from '../../resolve'
@@ -120,6 +131,10 @@ const REASON_WORDS: Readonly<Record<CountReason, string>> = {
   other: 'otra',
 }
 
+/**
+ * Caja es de cada sucursal: lo que se prepara lleva la suya (`branchToWrite`) y sale de una caja de ahí o de todo
+ * el bar. «Mover plata» es la excepción de la hoja: puede ir de una sucursal a otra.
+ */
 export const cajasActionTools = [
   defineTool({
     name: 'preparar_transferencia',
@@ -131,19 +146,31 @@ export const cajasActionTools = [
       monto: pesosField('En pesos.'),
       fecha: dayField('Fecha yyyy-MM-dd. Si no la dijo, hoy.').optional(),
       nota: z.string().max(200).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando la transferencia',
     done: () => 'Preparé la transferencia',
     run: async (input, ctx) => {
-      const from = await resolveTreasury(ctx, input.desde)
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
+      const prefer = said.id ?? branchReadId(ctx.branch)
+      const from = await resolveTreasury(ctx, input.desde, { prefer })
       if (!from.ok) return { kind: 'error', message: from.message }
-      const to = await resolveTreasury(ctx, input.hacia)
+      const to = await resolveTreasury(ctx, input.hacia, { prefer })
       if (!to.ok) return { kind: 'error', message: to.message }
+      // «Mover plata» puede cruzar sucursales (como la hoja, las cajas no se recortan). El pase es de la que
+      // dijo, de la caja de donde sale si es de un local, o de la que se mira; mirando «Todas», de la caja a
+      // donde va si es de un local. Si no, se pregunta.
+      const branch = branchToWrite(ctx.branch, {
+        said: said.id ?? from.value.branchId,
+        box: to.value.branchId,
+      })
+      if (!branch.ok) return fail(branch.message)
       const cents = pesosToCents(input.monto)
       const date = input.fecha ?? ctx.today
-      return prepareDocument(
+      const prepared = await prepareDocument(
         ctx,
         'transfer',
         {
@@ -152,21 +179,27 @@ export const cajasActionTools = [
           amountCents: cents,
           date,
           notes: input.nota ?? null,
+          ...(branch.branchId ? { branchId: branch.branchId } : {}),
         },
         {
           kind: 'transferencia',
           title: 'Mover plata',
           subtitle: `${from.value.name} → ${to.value.name}`,
-          rows: [
-            { label: 'Sale de', value: from.value.name },
-            { label: 'Entra a', value: to.value.name },
-            { label: 'Fecha', value: dayText(date) ?? date },
-            ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
-          ],
+          rows: withBranchRow(
+            [
+              { label: 'Sale de', value: from.value.name },
+              { label: 'Entra a', value: to.value.name },
+              { label: 'Fecha', value: dayText(date) ?? date },
+              ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
+            ],
+            ctx.branch,
+            branch.branchId,
+          ),
           total: { label: 'Total', value: money(cents) },
           confirmLabel: 'Mover la plata',
         },
       )
+      return withTicketWarnings(prepared, branchNotices(ctx.branch, branch.branchId))
     },
   }),
 
@@ -200,12 +233,16 @@ export const cajasActionTools = [
         ),
       fecha: dayField('Fecha yyyy-MM-dd. Si no la dijo, hoy.').optional(),
       nota: z.string().max(280).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el movimiento',
     done: () => 'Preparé el movimiento',
     run: async (input, ctx) => {
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
+      const prefer = said.id ?? branchReadId(ctx.branch)
       const loaded = await tryLoadPostingContext(ctx.tenantId)
       if (!loaded.ok) return fail(failureText(loaded.state))
       const posting = loaded.ctx
@@ -227,19 +264,21 @@ export const cajasActionTools = [
         )
       }
 
+      // Las que se ofrecen: las de la sucursal (la que dijo o la que mira) y las de todo el bar, como la hoja.
+      const fitting = usable.filter((t) => treasuryFitsBranch(t, prefer))
       let treasuryId: string
       if (input.caja) {
-        const found = await resolveTreasury(ctx, input.caja)
+        const found = await resolveTreasury(ctx, input.caja, { prefer })
         if (!found.ok) return fail(found.message)
         treasuryId = found.value.id
       } else {
-        const wallets = usable.filter((t) => t.kind === 'wallet')
+        const wallets = fitting.filter((t) => t.kind === 'wallet')
         const only = motive === 'mp_yield' && wallets.length === 1 ? wallets[0] : undefined
         if (!only) {
           return fail(
             motive === 'mp_yield'
-              ? `Preguntale qué billetera rindió: ${wallets.map((t) => t.name).join(', ')}.`
-              : `Preguntale ${direction === 'out' ? 'de qué caja salió' : 'a qué caja entró'}: ${usable.map((t) => t.name).join(', ')}.`,
+              ? `Preguntale qué billetera rindió: ${wallets.map((t) => boxLabel(ctx.branch, t)).join(', ')}.`
+              : `Preguntale ${direction === 'out' ? 'de qué caja salió' : 'a qué caja entró'}: ${fitting.map((t) => boxLabel(ctx.branch, t)).join(', ')}.`,
           )
         }
         treasuryId = only.id
@@ -249,6 +288,12 @@ export const cajasActionTools = [
         return fail(
           'Una tarjeta de la empresa no es una caja con plata: esto se anota en una caja, un banco o una billetera.',
         )
+      }
+      // La sucursal: la que dijo, la que mira o, mirando «Todas», la de la caja. La caja, de ahí o de todo el bar.
+      const branch = branchToWrite(ctx.branch, { said: said.id, box: treasury.branchId })
+      if (!branch.ok) return fail(branch.message)
+      if (!treasuryFitsBranch(treasury, branch.branchId)) {
+        return fail(otherBranchBoxMessage(ctx.branch, branch.branchId, usable))
       }
       if (!motiveStillValid(direction, motive, treasury.kind, available)) {
         return fail(`«${treasury.name}» no es una billetera: lo que rinde es una billetera.`)
@@ -296,7 +341,7 @@ export const cajasActionTools = [
 
       const cents = pesosToCents(input.monto)
       const date = input.fecha ?? ctx.today
-      return prepareDocument(
+      const prepared = await prepareDocument(
         ctx,
         'cash_movement',
         movementValues({
@@ -307,24 +352,30 @@ export const cajasActionTools = [
           cents,
           date,
           note: input.nota,
+          branchId: branch.branchId,
         }),
         {
           kind: 'movimiento',
           title: picked.what,
           subtitle: treasury.name,
-          rows: [
-            ...(partyName ? [{ label: 'Quién', value: partyName }] : []),
-            ...(motive === 'other'
-              ? [{ label: direction === 'in' ? 'De qué' : 'En qué', value: account.name }]
-              : []),
-            { label: 'Fecha', value: dayText(date) ?? date },
-            ...(direction === 'out' ? bankTaxRows(cents, treasury, posting) : []),
-            ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
-          ],
+          rows: withBranchRow(
+            [
+              ...(partyName ? [{ label: 'Quién', value: partyName }] : []),
+              ...(motive === 'other'
+                ? [{ label: direction === 'in' ? 'De qué' : 'En qué', value: account.name }]
+                : []),
+              { label: 'Fecha', value: dayText(date) ?? date },
+              ...(direction === 'out' ? bankTaxRows(cents, treasury, posting) : []),
+              ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
+            ],
+            ctx.branch,
+            branch.branchId,
+          ),
           total: { label: voucherTotalLabel(direction, treasury.name), value: money(cents) },
           confirmLabel: movementSubmitLabel(direction, money(cents)),
         },
       )
+      return withTicketWarnings(prepared, branchNotices(ctx.branch, branch.branchId))
     },
   }),
 
@@ -365,13 +416,18 @@ export const cajasActionTools = [
       total_resumen: pesosField('El total que dice el resumen, para controlar la suma.').optional(),
       fecha: dayField('La del resumen o la del último débito. Si no la dijo, hoy.').optional(),
       nota: z.string().max(1000).optional(),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando los gastos del banco',
     done: () => 'Preparé los gastos del banco',
     run: async (input, ctx) => {
-      const found = await resolveTreasury(ctx, input.caja)
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
+      const found = await resolveTreasury(ctx, input.caja, {
+        prefer: said.id ?? branchReadId(ctx.branch),
+      })
       if (!found.ok) return fail(found.message)
       const loaded = await tryLoadPostingContext(ctx.tenantId)
       if (!loaded.ok) return fail(failureText(loaded.state))
@@ -383,9 +439,21 @@ export const cajasActionTools = [
           `«${found.value.name}» es efectivo: no tiene débitos del banco. Preguntale de qué banco o billetera fue.`,
         )
       }
+      // La sucursal del gasto: la que dijo, la que mira o, mirando «Todas», la de la cuenta si es de un local.
+      const branch = branchToWrite(ctx.branch, { said: said.id, box: treasury.branchId })
+      if (!branch.ok) return fail(branch.message)
+      if (!treasuryFitsBranch(treasury, branch.branchId)) {
+        return fail(
+          otherBranchBoxMessage(
+            ctx.branch,
+            branch.branchId,
+            [...posting.treasuries.values()].filter((t) => t.active && t.kind !== 'cash'),
+          ),
+        )
+      }
 
       const amounts: BankAmounts = {}
-      const said: ReadonlyArray<[BankAmountField, number | undefined]> = [
+      const told: ReadonlyArray<[BankAmountField, number | undefined]> = [
         ['feesNetCents', input.comisiones],
         ['ley25413DebitCents', input.cheque_debitos],
         ['ley25413CreditCents', input.cheque_creditos],
@@ -394,7 +462,7 @@ export const cajasActionTools = [
         ['vatPerceptionCents', input.percepcion_iva],
         ['feesNoVatCents', input.comisiones_sin_iva],
       ]
-      for (const [field, pesos] of said) {
+      for (const [field, pesos] of told) {
         if (pesos !== undefined) amounts[field] = pesosToCents(pesos)
       }
 
@@ -453,7 +521,7 @@ export const cajasActionTools = [
 
       const date = input.fecha ?? ctx.today
       const vat = bankVatCents(amounts.feesNetCents ?? 0, rate)
-      return prepareDocument(
+      const prepared = await prepareDocument(
         ctx,
         'bank_expense',
         bankExpenseValues({
@@ -464,35 +532,45 @@ export const cajasActionTools = [
           voucher,
           others: others.map(({ accountId, amountCents }) => ({ accountId, amountCents })),
           note: input.nota,
+          branchId: branch.branchId,
         }),
         {
           kind: 'gasto_bancario',
           title: 'Gastos del banco',
           subtitle: `${treasury.name} · ${dayText(date) ?? date}`,
-          rows: [
-            ...BANK_ROWS.flatMap((row) => {
-              const value = amounts[row.field]
-              if (value === undefined || value <= 0) return []
-              const line = { label: row.label, value: money(value) }
-              return row.field === 'feesNetCents' && vat > 0
-                ? [line, { label: `IVA ${vatRateLabel(rate)}`, value: money(vat) }]
-                : [line]
-            }),
-            ...others.map((o) => ({ label: o.name, value: money(o.amountCents) })),
-            ...(voucher
-              ? [
-                  {
-                    label: 'Comprobante',
-                    value: voucherDisplay(voucher.voucherType, voucher.pointOfSale, voucher.number),
-                  },
-                ]
-              : []),
-            ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
-          ],
+          rows: withBranchRow(
+            [
+              ...BANK_ROWS.flatMap((row) => {
+                const value = amounts[row.field]
+                if (value === undefined || value <= 0) return []
+                const line = { label: row.label, value: money(value) }
+                return row.field === 'feesNetCents' && vat > 0
+                  ? [line, { label: `IVA ${vatRateLabel(rate)}`, value: money(vat) }]
+                  : [line]
+              }),
+              ...others.map((o) => ({ label: o.name, value: money(o.amountCents) })),
+              ...(voucher
+                ? [
+                    {
+                      label: 'Comprobante',
+                      value: voucherDisplay(
+                        voucher.voucherType,
+                        voucher.pointOfSale,
+                        voucher.number,
+                      ),
+                    },
+                  ]
+                : []),
+              ...(input.nota ? [{ label: 'Nota', value: input.nota }] : []),
+            ],
+            ctx.branch,
+            branch.branchId,
+          ),
           total: { label: 'Total debitado', value: money(total) },
           confirmLabel: 'Guardar gastos del banco',
         },
       )
+      return withTicketWarnings(prepared, branchNotices(ctx.branch, branch.branchId))
     },
   }),
 
@@ -526,19 +604,36 @@ export const cajasActionTools = [
         })
         .optional()
         .describe('Solo billeteras, si tiene el reporte: lo que se quedó. Si no, se estima.'),
+      sucursal: sucursalField,
     }),
     need: 'write',
     mood: 'working',
     doing: () => 'Preparando el conteo',
     done: () => 'Preparé el conteo',
     run: async (input, ctx) => {
-      const found = await resolveTreasury(ctx, input.caja)
+      const said = saidBranch(ctx.branch, input.sucursal)
+      if (!said.ok) return fail(said.message)
+      const found = await resolveTreasury(ctx, input.caja, {
+        prefer: said.id ?? branchReadId(ctx.branch),
+      })
       if (!found.ok) return fail(found.message)
       const loaded = await tryLoadPostingContext(ctx.tenantId)
       if (!loaded.ok) return fail(failureText(loaded.state))
       const posting = loaded.ctx
       const treasury = posting.treasuries.get(found.value.id)
       if (!treasury) return fail(`No encontré «${found.value.name}». Mirá las cajas con ver_cajas.`)
+      // Se cuentan las cajas de la sucursal y las de todo el bar, como la hoja. La sucursal hace falta recién si
+      // queda un comprobante (una diferencia): mirando «Todas», la de la caja si es de un local.
+      const branch = branchToWrite(ctx.branch, { said: said.id, box: treasury.branchId })
+      if (branch.ok && !treasuryFitsBranch(treasury, branch.branchId)) {
+        return fail(
+          otherBranchBoxMessage(
+            ctx.branch,
+            branch.branchId,
+            [...posting.treasuries.values()].filter((t) => t.active),
+          ),
+        )
+      }
 
       const date = input.fecha ?? ctx.today
       if (date > ctx.today) return fail('La fecha del conteo no puede ser futura: preguntale cuál.')
@@ -629,6 +724,12 @@ export const cajasActionTools = [
         )
       }
 
+      // De acá en adelante queda un comprobante: lleva su sucursal.
+      if (!branch.ok) return fail(branch.message)
+      const { branchId } = branch
+      const docRows = withBranchRow(rows, ctx.branch, branchId)
+      const elsewhere = branchNotices(ctx.branch, branchId)
+
       const resultTotal = verdict.label
         ? { label: verdict.label, value: money(Math.abs(diff)) }
         : null
@@ -651,15 +752,16 @@ export const cajasActionTools = [
             bookCents: book,
             reason,
             interestAccountId: posting.sys.interest_income.id,
+            branchId,
           }),
           {
             ...head,
-            rows,
+            rows: docRows,
             total: resultTotal,
             confirmLabel: countSubmitLabel('adjust', 0),
           },
         )
-        return withTicketWarnings(prepared, warnings)
+        return withTicketWarnings(prepared, [...warnings, ...elsewhere])
       }
 
       // Billetera: lo mismo que «Ajustar saldo de Mercado Pago».
@@ -673,19 +775,21 @@ export const cajasActionTools = [
           'La app dice lo mismo que el sistema: no entró nada. Si es así, mandá ventas_en_camino no_entraron.',
         )
       }
-      const said = input.descuentos
+      const discounts = input.descuentos
       const breakdown = walletBreakdown(
         check.estimates,
-        said
+        discounts
           ? {
-              ...(said.comision !== undefined ? { comision: pesosToCents(said.comision) } : {}),
-              ...(said.iva_comision !== undefined
-                ? { iva_comision: pesosToCents(said.iva_comision) }
+              ...(discounts.comision !== undefined
+                ? { comision: pesosToCents(discounts.comision) }
                 : {}),
-              ...(said.ingresos_brutos !== undefined
-                ? { sircupa: pesosToCents(said.ingresos_brutos) }
+              ...(discounts.iva_comision !== undefined
+                ? { iva_comision: pesosToCents(discounts.iva_comision) }
                 : {}),
-              ...(said.otros !== undefined ? { otro: pesosToCents(said.otros) } : {}),
+              ...(discounts.ingresos_brutos !== undefined
+                ? { sircupa: pesosToCents(discounts.ingresos_brutos) }
+                : {}),
+              ...(discounts.otros !== undefined ? { otro: pesosToCents(discounts.otros) } : {}),
             }
           : null,
       )
@@ -708,13 +812,14 @@ export const cajasActionTools = [
           bookCents: book,
           items: ticked,
           breakdown,
-          certificate: said?.certificado,
+          certificate: discounts?.certificado,
           otherFeesAccountId: posting.sys.fees_other.id,
+          branchId,
         }),
         {
           ...head,
           rows: [
-            ...rows,
+            ...docRows,
             ...(ticked.length > 0
               ? [
                   {
@@ -741,6 +846,7 @@ export const cajasActionTools = [
       )
       return withTicketWarnings(prepared, [
         ...warnings,
+        ...elsewhere,
         ...(unexplained !== null && unexplained > 0
           ? [
               {

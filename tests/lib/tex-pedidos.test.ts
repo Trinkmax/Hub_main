@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 vi.mock('@/lib/supabase/server', async () => {
   const { fake, fakeClient } = await import('./tex-mensajeria-kit')
@@ -76,6 +77,7 @@ const CTX: TexToolContext = {
   isAccountant: false,
   access: { read: true, write: true, admin: false },
   today: TODAY,
+  branch: NO_BRANCHES,
 }
 
 const S = { waggon: id(1), dulcar: id(2), verdu: id(3) }

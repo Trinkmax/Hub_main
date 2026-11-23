@@ -1,4 +1,5 @@
 import 'server-only'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import {
   buildMonthPlan,
   isMonday,
@@ -45,23 +46,38 @@ function toWeekPlanRow(row: UnknownRecord): WeekPlanRow {
   }
 }
 
-/** Una fila por proveedor con deuda, presupuesto o movimiento en esa semana. */
-export async function getWeekPlan(tenantId: string, weekStart: string): Promise<WeekPlanRow[]> {
+/**
+ * Una fila por proveedor con deuda, presupuesto o movimiento en esa semana. Con `branchId`, lo de esa
+ * sucursal; sin ella, todo el bar.
+ */
+export async function getWeekPlan(
+  tenantId: string,
+  weekStart: string,
+  branchId: string | null = null,
+): Promise<WeekPlanRow[]> {
   const rows = await callRpcRows('acc_report_week_plan', {
     p_tenant_id: tenantId,
     p_week_start: requireMonday(weekStart),
+    ...branchRpcParam(branchId),
   })
   return rows.map(toWeekPlanRow)
 }
 
 /** Las semanas del mes una al lado de la otra: una lectura por semana, en paralelo. */
-export async function getMonthPlan(tenantId: string, month: string): Promise<MonthPlan> {
+export async function getMonthPlan(
+  tenantId: string,
+  month: string,
+  branchId: string | null = null,
+): Promise<MonthPlan> {
   const weeks = weeksOfMonth(month)
   if (weeks.length === 0) {
     throw new AccQueryError('params', 'invalid', 'Ese mes no existe. Elegilo de nuevo.')
   }
   const perWeek = await Promise.all(
-    weeks.map(async (weekStart) => ({ weekStart, rows: await getWeekPlan(tenantId, weekStart) })),
+    weeks.map(async (weekStart) => ({
+      weekStart,
+      rows: await getWeekPlan(tenantId, weekStart, branchId),
+    })),
   )
   return buildMonthPlan(month, perWeek)
 }

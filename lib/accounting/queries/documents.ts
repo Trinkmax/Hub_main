@@ -10,6 +10,7 @@ import {
   type FiscalAmountKey,
   type Side,
 } from '@/lib/accounting/types'
+import { applyBranchFilter, type BranchFilter, WHOLE_BAR } from '@/lib/branches/filter'
 import {
   addDays,
   addMonthsToYearMonth,
@@ -84,12 +85,19 @@ export type DocumentListFilters = {
   q?: string | null
   after?: string | null
   limit?: number | null
+  /**
+   * La sucursal que se mira (Compras y pagos). Sin filtro, todo el bar. Los comprobantes de todo el bar
+   * (liquidación de IVA, ejercicio, asientos manuales) solo aparecen en «Todas».
+   */
+  branch?: BranchFilter
 }
 
 export type DocumentListRow = {
   id: string
   seq: number
   kind: DocumentKind
+  /** La sucursal del comprobante (vacía = de todo el bar). */
+  branchId?: string | null
   /** «Factura A 0003-00001290», «Pago», «Cierre del día». */
   title: string
   voucherType: string | null
@@ -263,6 +271,8 @@ export type DocumentDetail = {
   seq: number
   bundleId: string
   kind: DocumentKind
+  /** La sucursal del comprobante. Vacía = de todo el bar (liquidación de IVA, ejercicio, asiento manual). */
+  branchId?: string | null
   title: string
   voucherType: string | null
   afipVoucherCode: number | null
@@ -317,6 +327,8 @@ export type RecurringMonthStatus = 'loaded' | 'pending' | 'skipped' | 'upcoming'
 export type RecurringExpenseRow = {
   id: string
   name: string
+  /** La sucursal del gasto fijo: sus pagos quedan en ella (vacía solo si la base todavía no la tiene). */
+  branchId?: string | null
   partyId: string | null
   partyName: string | null
   accountId: string
@@ -426,6 +438,7 @@ type DocBase = {
   id: string
   seq: number
   kind: DocumentKind
+  branchId: string | null
   voucherType: string | null
   pointOfSale: number | null
   number: number | null
@@ -452,13 +465,14 @@ function attachmentCountOf(value: unknown): number {
 }
 
 const DOC_LIST_COLUMNS =
-  'id, seq, kind, voucher_type, point_of_sale, number, party_id, party_name_snapshot, issue_date, accounting_date, due_date, description, total_cents, status, control_account_id, created_by_name, created_at, acc_document_attachments(count)'
+  'id, seq, kind, branch_id, voucher_type, point_of_sale, number, party_id, party_name_snapshot, issue_date, accounting_date, due_date, description, total_cents, status, control_account_id, created_by_name, created_at, acc_document_attachments(count)'
 
 function parseDocBase(row: UnknownRecord): DocBase {
   return {
     id: str(row.id),
     seq: int(row.seq),
     kind: documentKind(row.kind),
+    branchId: strOrNull(row.branch_id),
     voucherType: strOrNull(row.voucher_type),
     pointOfSale: intOrNull(row.point_of_sale),
     number: intOrNull(row.number),
@@ -899,6 +913,7 @@ async function enrichDocuments(
       id: doc.id,
       seq: doc.seq,
       kind: doc.kind,
+      branchId: doc.branchId,
       title: titleOf(doc),
       voucherType: doc.voucherType,
       pointOfSale: doc.pointOfSale,
@@ -964,6 +979,7 @@ export async function listDocuments(
     .eq('tenant_id', tenantId)
     .gte('accounting_date', from)
     .lte('accounting_date', to)
+  query = applyBranchFilter(query, filters.branch ?? WHOLE_BAR)
 
   let kinds = (filters.kinds ?? []).filter((k) => (DOCUMENT_KINDS as readonly string[]).includes(k))
   if (byPaymentStatus) {
@@ -1044,7 +1060,7 @@ export async function listDocuments(
 // ─── Detalle ─────────────────────────────────────────────────────────────────
 
 const DOC_DETAIL_COLUMNS =
-  'id, bundle_id, period_id, seq, kind, voucher_type, afip_voucher_code, party_id, party_name_snapshot, party_doc_number_snapshot, party_iva_condition_snapshot, issue_date, accounting_date, due_date, point_of_sale, number, shift, description, notes, total_cents, control_account_id, related_document_id, replaces_document_id, reverses_document_id, corrects_document_id, recurring_expense_id, settles_commissions, counted_cents, expected_book_cents, warnings_ack, override_reason, status, voided_at, voided_by_name, void_reason, created_by_name, created_at'
+  'id, bundle_id, period_id, seq, kind, branch_id, voucher_type, afip_voucher_code, party_id, party_name_snapshot, party_doc_number_snapshot, party_iva_condition_snapshot, issue_date, accounting_date, due_date, point_of_sale, number, shift, description, notes, total_cents, control_account_id, related_document_id, replaces_document_id, reverses_document_id, corrects_document_id, recurring_expense_id, settles_commissions, counted_cents, expected_book_cents, warnings_ack, override_reason, status, voided_at, voided_by_name, void_reason, created_by_name, created_at'
 
 const DOC_LINK_COLUMNS =
   'id, seq, kind, voucher_type, point_of_sale, number, accounting_date, total_cents, status, bundle_id, replaces_document_id, reverses_document_id'
@@ -1487,6 +1503,7 @@ export async function getDocument(
     seq: int(doc.seq),
     bundleId: str(doc.bundle_id),
     kind,
+    branchId: docBase.branchId,
     title: titleOf(docBase),
     voucherType: docBase.voucherType,
     afipVoucherCode: intOrNull(doc.afip_voucher_code),
@@ -1833,7 +1850,7 @@ export async function getDailyCloseCalendar(
 // ─── Gastos fijos ────────────────────────────────────────────────────────────
 
 const RECURRING_COLUMNS =
-  'id, name, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, ends_on, installments_total, skipped_due, loaded_due, breakdown, updated_at'
+  'id, name, branch_id, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, ends_on, installments_total, skipped_due, loaded_due, breakdown, updated_at'
 
 const FREQUENCY_MONTHS = { monthly: 1, bimonthly: 2, quarterly: 3, yearly: 12 } as const
 type Frequency = keyof typeof FREQUENCY_MONTHS
@@ -1941,6 +1958,7 @@ async function parseRecurring(
     return {
       id: str(row.id),
       name: str(row.name),
+      branchId: strOrNull(row.branch_id),
       partyId: strOrNull(row.party_id),
       partyName: party ? str(party.name) : null,
       accountId: str(row.account_id),
@@ -1981,10 +1999,13 @@ async function parseRecurring(
   })
 }
 
-/** Gastos fijos (H.7 «Gastos fijos»), el próximo a vencer primero. */
+/**
+ * Gastos fijos (H.7 «Gastos fijos»), el próximo a vencer primero. Con `branch`, solo los de esa sucursal (en
+ * «Todas», los de todas: cada uno dice la suya).
+ */
 export async function listRecurringExpenses(
   tenantId: string,
-  opts: { includeInactive?: boolean; today?: string | null } = {},
+  opts: { includeInactive?: boolean; today?: string | null; branch?: BranchFilter } = {},
 ): Promise<RecurringExpenseRow[]> {
   const today = optionalDay(opts.today) ?? todayInCordoba()
   const supabase = await readerClient()
@@ -1998,6 +2019,7 @@ export async function listRecurringExpenses(
     .order('name', { ascending: true })
     .limit(500)
   if (!opts.includeInactive) query = query.eq('active', true)
+  query = applyBranchFilter(query, opts.branch ?? WHOLE_BAR)
   const { data, error } = await query
   if (error) throw queryError('acc_recurring_expenses', error)
   return parseRecurring(tenantId, ((data ?? []) as unknown[]).filter(isRecord), today)

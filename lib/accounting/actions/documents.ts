@@ -46,6 +46,7 @@ import {
   allocateSchema,
   markTreasuryCheckedSchema,
   reverseSchema,
+  setDocumentBranchSchema,
   unallocateSchema,
   undoDocumentSchema,
   voidDocumentSchema,
@@ -67,6 +68,8 @@ import type {
   ReverseDocumentValues,
   SalesCloseValues,
   SalesInvoiceValues,
+  SetDocumentBranchResult,
+  SetDocumentBranchValues,
   TransferValues,
   TreasuryAdjustmentValues,
   TreasuryCheckedResult,
@@ -75,10 +78,15 @@ import type {
   VoidDocumentValues,
   WalletCheckValues,
 } from '@/lib/accounting/server/document-types'
-import { runPostDocument, runPreviewDocument } from '@/lib/accounting/server/post-document'
+import {
+  checkFormBranch,
+  runPostDocument,
+  runPreviewDocument,
+} from '@/lib/accounting/server/post-document'
 import {
   parseAllocateResult,
   parseReverseResult,
+  parseSetDocumentBranchResult,
   parseTreasuryChecked,
   parseVoidResult,
 } from '@/lib/accounting/server/rpc-results'
@@ -309,6 +317,41 @@ export async function undoDocument(
       done: (data) => ({ data: parseVoidResult(data), message: 'Listo, lo deshicimos.' }),
     },
   )
+}
+
+/**
+ * «Cambiar de sucursal» de un comprobante (Administración por sucursal): solo la sucursal, sin tocar montos,
+ * partidas ni el libro. Dueño con carga, comprobante vigente y mes abierto; los de todo el bar (liquidación de
+ * IVA, ejercicio, asientos manuales) no se mueven (`document_branch_general`). La base lo audita.
+ */
+export async function setDocumentBranch(
+  slug: string,
+  input: SetDocumentBranchValues,
+): Promise<AccSimpleState<SetDocumentBranchResult>> {
+  return runSimpleRpc(slug, input, {
+    op: 'set_branch',
+    schema: setDocumentBranchSchema,
+    // Una sucursal que la persona no ve no se pide (la base igual lo vuelve a decidir).
+    check: (s, v) => checkFormBranch(s, v.branchId),
+    call: (tenantId, v) => ({
+      fn: 'acc_set_document_branch',
+      args: {
+        p_tenant_id: tenantId,
+        p_document_id: v.documentId,
+        p_branch_id: v.branchId,
+        p_reason: v.reason,
+      },
+    }),
+    done: (data, v) => {
+      const result = parseSetDocumentBranchResult(data, v)
+      return {
+        data: result,
+        message: result.moved
+          ? 'Listo: el comprobante cambió de sucursal.'
+          : 'Ya era de esa sucursal.',
+      }
+    },
+  })
 }
 
 /**

@@ -901,6 +901,7 @@ export type Database = {
         Row: {
           accounting_date: string
           afip_voucher_code: number | null
+          branch_id: string | null
           bundle_id: string
           control_account_id: string | null
           corrects_document_id: string | null
@@ -945,6 +946,7 @@ export type Database = {
         Insert: {
           accounting_date: string
           afip_voucher_code?: number | null
+          branch_id?: string | null
           bundle_id: string
           control_account_id?: string | null
           corrects_document_id?: string | null
@@ -989,6 +991,7 @@ export type Database = {
         Update: {
           accounting_date?: string
           afip_voucher_code?: number | null
+          branch_id?: string | null
           bundle_id?: string
           control_account_id?: string | null
           corrects_document_id?: string | null
@@ -1031,6 +1034,13 @@ export type Database = {
           warnings_ack?: string[]
         }
         Relationships: [
+          {
+            foreignKeyName: "adoc_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_documents_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -1148,6 +1158,7 @@ export type Database = {
       acc_employees: {
         Row: {
           active: boolean
+          branch_id: string
           created_at: string
           created_by: string | null
           id: string
@@ -1161,6 +1172,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          branch_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -1174,6 +1186,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          branch_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -1186,6 +1199,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "aem_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_employees_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2291,6 +2311,7 @@ export type Database = {
       acc_payment_budgets: {
         Row: {
           amount_cents: number
+          branch_id: string
           created_at: string
           created_by: string | null
           party_id: string
@@ -2301,6 +2322,7 @@ export type Database = {
         }
         Insert: {
           amount_cents?: number
+          branch_id?: string
           created_at?: string
           created_by?: string | null
           party_id: string
@@ -2311,6 +2333,7 @@ export type Database = {
         }
         Update: {
           amount_cents?: number
+          branch_id?: string
           created_at?: string
           created_by?: string | null
           party_id?: string
@@ -2320,6 +2343,13 @@ export type Database = {
           week_start?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "apb_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_payment_budgets_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2571,6 +2601,7 @@ export type Database = {
           active: boolean
           amount_cents: number | null
           archived_at: string | null
+          branch_id: string
           breakdown: Json
           created_at: string
           created_by: string | null
@@ -2599,6 +2630,7 @@ export type Database = {
           active?: boolean
           amount_cents?: number | null
           archived_at?: string | null
+          branch_id?: string
           breakdown?: Json
           created_at?: string
           created_by?: string | null
@@ -2627,6 +2659,7 @@ export type Database = {
           active?: boolean
           amount_cents?: number | null
           archived_at?: string | null
+          branch_id?: string
           breakdown?: Json
           created_at?: string
           created_by?: string | null
@@ -2651,6 +2684,13 @@ export type Database = {
           voucher_type?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "arx_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_recurring_expenses_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2807,6 +2847,7 @@ export type Database = {
       }
       acc_sales_targets: {
         Row: {
+          branch_id: string
           day: string
           note: string | null
           target_cents: number | null
@@ -2815,6 +2856,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          branch_id?: string
           day: string
           note?: string | null
           target_cents?: number | null
@@ -2823,6 +2865,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          branch_id?: string
           day?: string
           note?: string | null
           target_cents?: number | null
@@ -2831,6 +2874,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "astg_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_sales_targets_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -3175,6 +3225,7 @@ export type Database = {
           allow_negative: boolean
           bank_name: string | null
           bank_party_id: string | null
+          branch_id: string | null
           cbu_cvu: string | null
           charges_bank_tax: boolean | null
           created_at: string
@@ -3198,6 +3249,7 @@ export type Database = {
           allow_negative?: boolean
           bank_name?: string | null
           bank_party_id?: string | null
+          branch_id?: string | null
           cbu_cvu?: string | null
           charges_bank_tax?: boolean | null
           created_at?: string
@@ -3221,6 +3273,7 @@ export type Database = {
           allow_negative?: boolean
           bank_name?: string | null
           bank_party_id?: string | null
+          branch_id?: string | null
           cbu_cvu?: string | null
           charges_bank_tax?: boolean | null
           created_at?: string
@@ -3237,6 +3290,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "atr_branch_fk"
+            columns: ["branch_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "acc_treasury_accounts_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -11900,7 +11960,7 @@ export type Database = {
         Returns: Json
       }
       acc_report_cash_daily: {
-        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Args: { p_branch_id?: string; p_from: string; p_tenant_id: string; p_to: string }
         Returns: {
           active: boolean
           closing_cents: number
@@ -11912,7 +11972,7 @@ export type Database = {
         }[]
       }
       acc_report_cash_flow: {
-        Args: { p_from: string; p_tenant_id: string; p_to: string }
+        Args: { p_branch_id?: string; p_from: string; p_tenant_id: string; p_to: string }
         Returns: {
           category: string
           inflow_cents: number
@@ -11921,7 +11981,7 @@ export type Database = {
         }[]
       }
       acc_report_cash_projection: {
-        Args: { p_as_of: string; p_tenant_id: string; p_weeks?: number }
+        Args: { p_as_of: string; p_branch_id?: string; p_tenant_id: string; p_weeks?: number }
         Returns: {
           expected_in_cents: number
           expected_out_cents: number
@@ -12144,6 +12204,7 @@ export type Database = {
         Args: {
           p_account_id?: string
           p_as_of: string
+          p_branch_id?: string
           p_party_id: string
           p_side: string
           p_tenant_id: string
@@ -12169,7 +12230,7 @@ export type Database = {
         }[]
       }
       acc_report_party_balances: {
-        Args: { p_as_of: string; p_group: string; p_tenant_id: string }
+        Args: { p_as_of: string; p_branch_id?: string; p_group: string; p_tenant_id: string }
         Returns: {
           active: boolean
           credit_cents: number
@@ -12199,6 +12260,7 @@ export type Database = {
         Args: {
           p_account_id: string
           p_after?: Json
+          p_branch_id?: string
           p_from: string
           p_limit?: number
           p_party_id: string
@@ -12226,11 +12288,11 @@ export type Database = {
         }[]
       }
       acc_report_payroll: {
-        Args: { p_month: string; p_tenant_id: string }
+        Args: { p_branch_id?: string; p_month: string; p_tenant_id: string }
         Returns: Json
       }
       acc_report_recurring_status: {
-        Args: { p_tenant_id: string }
+        Args: { p_branch_id?: string; p_tenant_id: string }
         Returns: {
           accounting_date: string
           document_id: string
@@ -12321,12 +12383,13 @@ export type Database = {
         Returns: Json
       }
       acc_report_treasury_balances: {
-        Args: { p_as_of: string; p_tenant_id: string }
+        Args: { p_as_of: string; p_branch_id?: string; p_tenant_id: string }
         Returns: {
           account_code: string
           account_id: string
           active: boolean
           balance_cents: number
+          branch_id: string
           kind: string
           last_checked_on: string
           last_movement_date: string
@@ -12372,7 +12435,7 @@ export type Database = {
         }[]
       }
       acc_report_week_plan: {
-        Args: { p_tenant_id: string; p_week_start: string }
+        Args: { p_branch_id?: string; p_tenant_id: string; p_week_start: string }
         Returns: {
           budget_cents: number
           debt_cents: number
@@ -12498,6 +12561,15 @@ export type Database = {
       acc_set_treasury_bank_tax: {
         Args: { p_tenant_id: string; p_treasury_id: string; p_value: boolean }
         Returns: undefined
+      }
+      acc_set_document_branch: {
+        Args: {
+          p_branch_id: string
+          p_document_id: string
+          p_reason?: string
+          p_tenant_id: string
+        }
+        Returns: Json
       }
       acc_skip_opening: { Args: { p_tenant_id: string }; Returns: undefined }
       acc_skip_recurring_due: {

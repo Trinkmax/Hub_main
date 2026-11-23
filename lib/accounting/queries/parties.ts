@@ -10,6 +10,7 @@ import {
   type TrafficLightResult,
   trafficLight,
 } from '@/lib/accounting/aging'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import {
   type PartyContact,
   parseDeliveryDays,
@@ -355,16 +356,20 @@ export function partyKindsOf(group: PartyGroup): readonly PartyKind[] {
 
 // ─── Funciones ───────────────────────────────────────────────────────────────
 
-/** Saldos con antigüedad y semáforo de un grupo al día (F.7). Sin fecha, hoy. */
+/**
+ * Saldos con antigüedad y semáforo de un grupo al día (F.7). Sin fecha, hoy. Con `branchId`, las partidas
+ * de los comprobantes de esa sucursal; sin ella, todo el bar.
+ */
 export async function listPartyBalances(
   tenantId: string,
-  params: { group: PartyGroup; asOf?: string | null },
+  params: { group: PartyGroup; asOf?: string | null; branchId?: string | null },
 ): Promise<PartyBalanceRow[]> {
   const asOf = optionalDay(params.asOf) ?? todayInCordoba()
   const raw = await callRpcRows('acc_report_party_balances', {
     p_tenant_id: tenantId,
     p_as_of: asOf,
     p_group: params.group,
+    ...branchRpcParam(params.branchId),
   })
   return raw.map(parseBalance)
 }
@@ -415,10 +420,16 @@ export async function listParties(
     asOf?: string | null
     q?: string | null
     filter?: PartyListFilter
+    /** La sucursal que se mira (Compras y pagos); sin ella, todo el bar. */
+    branchId?: string | null
   },
 ): Promise<PartyList> {
   const asOf = optionalDay(params.asOf) ?? todayInCordoba()
-  const all = await listPartyBalances(tenantId, { group: params.group, asOf })
+  const all = await listPartyBalances(tenantId, {
+    group: params.group,
+    asOf,
+    branchId: params.branchId,
+  })
 
   const totals: PartyListTotals = {
     debtCents: 0,
@@ -556,6 +567,8 @@ export async function getPartyStatement(
     to: string
     after?: string | null
     limit?: number | null
+    /** La sucursal que se mira; sin ella, todo el bar. */
+    branchId?: string | null
   },
 ): Promise<PartyStatementPage> {
   const { from, to } = requireRange(params.from, params.to)
@@ -576,6 +589,7 @@ export async function getPartyStatement(
     p_to: to,
     p_after,
     p_limit,
+    ...branchRpcParam(params.branchId),
   })
   const page = keysetPage(raw, {
     limit: p_limit,
@@ -607,6 +621,8 @@ export async function listOpenItems(
     side: OpenItemSide
     asOf?: string | null
     accountId?: string | null
+    /** Las partidas de los comprobantes de esa sucursal; sin ella, todas. */
+    branchId?: string | null
   },
 ): Promise<OpenItemRow[]> {
   if (!isUuid(params.partyId)) return []
@@ -617,6 +633,7 @@ export async function listOpenItems(
     p_as_of: asOf,
     p_side: params.side,
     p_account_id: params.accountId && isUuid(params.accountId) ? params.accountId : null,
+    ...branchRpcParam(params.branchId),
   })
   const reference = asOf ?? todayInCordoba()
   return raw
@@ -631,14 +648,22 @@ export async function listOpenItems(
  */
 export async function getPartyPosition(
   tenantId: string,
-  params: { partyId: string; group: PartyGroup; asOf?: string | null; soonDays?: number },
+  params: {
+    partyId: string
+    group: PartyGroup
+    asOf?: string | null
+    soonDays?: number
+    /** La sucursal que se mira; sin ella, todo el bar. */
+    branchId?: string | null
+  },
 ): Promise<PartyPosition> {
   const asOf = optionalDay(params.asOf)
   const reference = asOf ?? todayInCordoba()
   const soonDays = params.soonDays ?? DEFAULT_SOON_DAYS
+  const branchId = params.branchId ?? null
   const [debtItems, creditItems] = await Promise.all([
-    listOpenItems(tenantId, { partyId: params.partyId, side: 'debt', asOf }),
-    listOpenItems(tenantId, { partyId: params.partyId, side: 'credit', asOf }),
+    listOpenItems(tenantId, { partyId: params.partyId, side: 'debt', asOf, branchId }),
+    listOpenItems(tenantId, { partyId: params.partyId, side: 'credit', asOf, branchId }),
   ])
   const items = debtItems.map((i) => ({ dueDate: i.dueDate, openCents: i.openCents }))
   const debtCents = debtItems.reduce((sum, i) => sum + i.openCents, 0)

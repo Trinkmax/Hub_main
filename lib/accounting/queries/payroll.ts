@@ -1,4 +1,5 @@
 import 'server-only'
+import { branchRpcParam } from '@/lib/accounting/branch'
 import { type PayrollReport, parsePayrollReport } from '@/lib/accounting/payroll'
 import { AccQueryError, callRpc, QUERY_FAILED_MESSAGE } from './shared'
 
@@ -7,12 +8,18 @@ import { AccQueryError, callRpc, QUERY_FAILED_MESSAGE } from './shared'
  * y pagos con comprobante vigente, y el devengamiento del mes. La leen los dueños con acceso y la
  * contadora (`acc_assert_reader`).
  *
- * Se importa directo de este archivo (no del barrel). `month` es `yyyy-MM`.
+ * Se importa directo de este archivo (no del barrel). `month` es `yyyy-MM`. Con `branchId`, solo los
+ * empleados de esa sucursal (la fila de sueldos de Gastos fijos); sin ella, todo el bar (Sueldos).
  */
-export async function getPayrollReport(tenantId: string, month: string): Promise<PayrollReport> {
+export async function getPayrollReport(
+  tenantId: string,
+  month: string,
+  branchId: string | null = null,
+): Promise<PayrollReport> {
   const raw = await callRpc('acc_report_payroll', {
     p_tenant_id: tenantId,
     p_month: `${month}-01`,
+    ...branchRpcParam(branchId),
   })
   const report = parsePayrollReport(raw, month)
   if (!report) {

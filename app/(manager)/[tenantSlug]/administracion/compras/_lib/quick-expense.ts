@@ -239,6 +239,11 @@ export type QuickExpenseFormState = {
   remito?: string
   /** El gasto fijo elegido en «¿En qué?» (`null` si no es uno). */
   recurringExpenseId: string | null
+  /**
+   * La sucursal del gasto (la del formulario; la de su gasto fijo si es uno). Sin ella (`null` o ausente) no se
+   * manda: la decide la base.
+   */
+  branchId?: string | null
 }
 
 /** Lo que manda el formulario sin lo que agrega el envío (`clientRef`, `previewHash`, avisos). */
@@ -311,6 +316,7 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
     date: state.date,
     detail: detail === '' ? null : detail,
     recurringExpenseId: state.recurringExpenseId,
+    ...(state.branchId ? { branchId: state.branchId } : {}),
   }
   return { values, missing: {} }
 }
@@ -389,6 +395,7 @@ export function buildQuickFromPurchase(
     detail: input.notes,
     remito: input.remito,
     recurringExpenseId: state.recurringExpenseId,
+    branchId: state.branchId ?? null,
   })
   const missing: Record<string, string> = {}
   for (const [path, message] of Object.entries(built.missing)) {

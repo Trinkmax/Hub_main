@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_BRANCHES } from './tex-branch-kit'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
@@ -1105,6 +1106,7 @@ function toolCtx(today: string): TexToolContext {
     isAccountant: false,
     access: { read: true, write: true, admin: false },
     today,
+    branch: NO_BRANCHES,
   }
 }
 
