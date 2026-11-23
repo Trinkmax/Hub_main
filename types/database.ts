@@ -25,6 +25,7 @@ export type Database = {
           revoke_reason: string | null
           revoked_at: string | null
           revoked_by: string | null
+          scope: string
           source: string
           tenant_id: string
           updated_at: string
@@ -40,6 +41,7 @@ export type Database = {
           revoke_reason?: string | null
           revoked_at?: string | null
           revoked_by?: string | null
+          scope?: string
           source?: string
           tenant_id: string
           updated_at?: string
@@ -55,6 +57,7 @@ export type Database = {
           revoke_reason?: string | null
           revoked_at?: string | null
           revoked_by?: string | null
+          scope?: string
           source?: string
           tenant_id?: string
           updated_at?: string
@@ -1117,6 +1120,7 @@ export type Database = {
         Row: {
           employee_id: string
           month: string
+          off_books_cents: number
           salary_cents: number
           tenant_id: string
           updated_at: string
@@ -1125,6 +1129,7 @@ export type Database = {
         Insert: {
           employee_id: string
           month: string
+          off_books_cents?: number
           salary_cents: number
           tenant_id: string
           updated_at?: string
@@ -1133,6 +1138,7 @@ export type Database = {
         Update: {
           employee_id?: string
           month?: string
+          off_books_cents?: number
           salary_cents?: number
           tenant_id?: string
           updated_at?: string
@@ -2407,6 +2413,10 @@ export type Database = {
           id: string
           kind: string
           month: string
+          off_books: boolean
+          overtime: boolean
+          period_from: string | null
+          period_to: string | null
           tenant_id: string
         }
         Insert: {
@@ -2417,6 +2427,10 @@ export type Database = {
           id?: string
           kind: string
           month: string
+          off_books?: boolean
+          overtime?: boolean
+          period_from?: string | null
+          period_to?: string | null
           tenant_id: string
         }
         Update: {
@@ -2427,6 +2441,10 @@ export type Database = {
           id?: string
           kind?: string
           month?: string
+          off_books?: boolean
+          overtime?: boolean
+          period_from?: string | null
+          period_to?: string | null
           tenant_id?: string
         }
         Relationships: [
@@ -6180,9 +6198,11 @@ export type Database = {
       menu_categories: {
         Row: {
           active: boolean
+          availability: Json | null
           created_at: string
           id: string
           image_url: string | null
+          kitchen_first: boolean
           name: string
           parent_id: string | null
           position: number
@@ -6191,9 +6211,11 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          availability?: Json | null
           created_at?: string
           id?: string
           image_url?: string | null
+          kitchen_first?: boolean
           name: string
           parent_id?: string | null
           position?: number
@@ -6202,9 +6224,11 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          availability?: Json | null
           created_at?: string
           id?: string
           image_url?: string | null
+          kitchen_first?: boolean
           name?: string
           parent_id?: string | null
           position?: number
@@ -6357,6 +6381,7 @@ export type Database = {
           featured: boolean
           id: string
           image_url: string | null
+          kitchen_first: boolean | null
           name: string
           points_override: number | null
           position: number
@@ -6374,6 +6399,7 @@ export type Database = {
           featured?: boolean
           id?: string
           image_url?: string | null
+          kitchen_first?: boolean | null
           name: string
           points_override?: number | null
           position?: number
@@ -6391,6 +6417,7 @@ export type Database = {
           featured?: boolean
           id?: string
           image_url?: string | null
+          kitchen_first?: boolean | null
           name?: string
           points_override?: number | null
           position?: number
@@ -7356,15 +7383,25 @@ export type Database = {
       }
       pos_cash_movements: {
         Row: {
+          acc_client_ref: string | null
+          acc_dismissed_at: string | null
+          acc_dismissed_by: string | null
           amount_cents: number
           branch_id: string
           created_at: string
           created_by: string | null
           created_by_name: string
+          employee_id: string | null
+          employee_name: string | null
           id: string
           idempotency_key: string | null
           kind: string
+          party_id: string | null
+          party_name: string | null
+          period_from: string | null
+          period_to: string | null
           photo_path: string | null
+          purpose: string | null
           reason: string
           shift_id: string
           tenant_id: string
@@ -7374,15 +7411,25 @@ export type Database = {
           voided_by_name: string | null
         }
         Insert: {
+          acc_client_ref?: string | null
+          acc_dismissed_at?: string | null
+          acc_dismissed_by?: string | null
           amount_cents: number
           branch_id: string
           created_at?: string
           created_by?: string | null
           created_by_name: string
+          employee_id?: string | null
+          employee_name?: string | null
           id?: string
           idempotency_key?: string | null
           kind: string
+          party_id?: string | null
+          party_name?: string | null
+          period_from?: string | null
+          period_to?: string | null
           photo_path?: string | null
+          purpose?: string | null
           reason: string
           shift_id: string
           tenant_id: string
@@ -7392,15 +7439,25 @@ export type Database = {
           voided_by_name?: string | null
         }
         Update: {
+          acc_client_ref?: string | null
+          acc_dismissed_at?: string | null
+          acc_dismissed_by?: string | null
           amount_cents?: number
           branch_id?: string
           created_at?: string
           created_by?: string | null
           created_by_name?: string
+          employee_id?: string | null
+          employee_name?: string | null
           id?: string
           idempotency_key?: string | null
           kind?: string
+          party_id?: string | null
+          party_name?: string | null
+          period_from?: string | null
+          period_to?: string | null
           photo_path?: string | null
+          purpose?: string | null
           reason?: string
           shift_id?: string
           tenant_id?: string
@@ -9507,6 +9564,7 @@ export type Database = {
           created_by: string | null
           customer_id: string | null
           deposit_cents: number
+          deposit_method: string | null
           estimated_guests: number
           guest_email: string | null
           guest_instagram: string | null
@@ -9549,6 +9607,7 @@ export type Database = {
           created_by?: string | null
           customer_id?: string | null
           deposit_cents?: number
+          deposit_method?: string | null
           estimated_guests: number
           guest_email?: string | null
           guest_instagram?: string | null
@@ -9591,6 +9650,7 @@ export type Database = {
           created_by?: string | null
           customer_id?: string | null
           deposit_cents?: number
+          deposit_method?: string | null
           estimated_guests?: number
           guest_email?: string | null
           guest_instagram?: string | null
@@ -11657,6 +11717,8 @@ export type Database = {
         Returns: Json
       }
       acc_assert_admin: { Args: { p_tenant: string }; Returns: undefined }
+      acc_assert_buyer: { Args: { p_tenant: string }; Returns: undefined }
+      acc_assert_buyer_writer: { Args: { p_tenant: string }; Returns: undefined }
       acc_assert_reader: { Args: { p_tenant: string }; Returns: undefined }
       acc_assert_writer: { Args: { p_tenant: string }; Returns: undefined }
       acc_attach_document_file: {
@@ -11674,6 +11736,7 @@ export type Database = {
         Args: { p_payload: Json; p_tenant_id: string }
         Returns: Json
       }
+      acc_buyer_tenant_ids: { Args: never; Returns: string[] }
       acc_check_integrity: {
         Args: { p_tenant_id: string }
         Returns: {
@@ -11889,6 +11952,19 @@ export type Database = {
         Args: { p_as_of?: string; p_line_id: string }
         Returns: number
       }
+      acc_payroll_prepare: {
+        Args: {
+          p_client_ref: string
+          p_employee_id: string
+          p_kind: string
+          p_month: string
+          p_off_books?: boolean
+          p_period_from?: string
+          p_period_to?: string
+          p_tenant_id: string
+        }
+        Returns: undefined
+      }
       acc_payroll_prepare_accrual: {
         Args: { p_client_ref: string; p_month: string; p_tenant_id: string }
         Returns: undefined
@@ -11906,6 +11982,18 @@ export type Database = {
       acc_platform_designate_admin: {
         Args: { p_tenant_id: string; p_user_id: string }
         Returns: undefined
+      }
+      acc_pos_cash_dismiss: {
+        Args: { p_movement_id: string; p_tenant_id: string }
+        Returns: undefined
+      }
+      acc_pos_cash_link: {
+        Args: { p_client_ref: string; p_movement_id: string; p_tenant_id: string }
+        Returns: undefined
+      }
+      acc_pos_cash_pending: {
+        Args: { p_branch_id?: string; p_tenant_id: string }
+        Returns: Json
       }
       acc_possible_duplicate: {
         Args: {
@@ -12490,6 +12578,16 @@ export type Database = {
         }
         Returns: Json
       }
+      acc_save_employee_salary_parts: {
+        Args: {
+          p_declared_cents: number
+          p_employee_id: string
+          p_month: string
+          p_off_books_cents: number
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       acc_save_party: {
         Args: {
           p_expected_updated_at: string
@@ -12547,6 +12645,16 @@ export type Database = {
           p_expected_updated_at: string
           p_tenant_id: string
           p_treasury: Json
+        }
+        Returns: Json
+      }
+      acc_set_access: {
+        Args: {
+          p_display_name?: string
+          p_is_admin?: boolean
+          p_scope: string
+          p_tenant_id: string
+          p_user_id: string
         }
         Returns: Json
       }
@@ -13064,6 +13172,22 @@ export type Database = {
         Args: { p_item_id: string; p_reason: string }
         Returns: Json
       }
+      pos_cash_move: {
+        Args: {
+          p_amount_cents: number
+          p_employee_id?: string
+          p_idempotency_key?: string
+          p_kind: string
+          p_party_id?: string
+          p_period_from?: string
+          p_period_to?: string
+          p_photo_path?: string
+          p_purpose?: string
+          p_reason?: string
+          p_shift_id: string
+        }
+        Returns: Json
+      }
       pos_cash_movement: {
         Args: {
           p_amount_cents: number
@@ -13075,6 +13199,7 @@ export type Database = {
         }
         Returns: Json
       }
+      pos_cash_targets: { Args: { p_branch_id: string }; Returns: Json }
       pos_close_shift: {
         Args: {
           p_breakdown?: Json
