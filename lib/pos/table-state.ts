@@ -6,10 +6,10 @@
  * tandas, la reserva): nadie marca un estado a mano.
  *
  * Cuando una mesa está en más de una situación gana la que no puede esperar:
- *   en despacho (lista, sin llevar a la mesa) > pidió la cuenta > en preparación > comiendo > sin pedido.
+ *   para retirar (lista, sin llevar a la mesa) > pidió la cuenta > en preparación > comiendo > sin pedido.
  *
  * Cómo se llama cada estado lo eligió el bar (16/11): «En preparación» mientras cocina trabaja y
- * «En despacho» cuando ya salió y espera que la lleven. «Para llevar» NO se usa para esto: en un bar
+ * «Para retirar» cuando ya salió y espera que la lleven. «Para llevar» NO se usa para esto: en un bar
  * quiere decir que el cliente se lo lleva, no que va a una mesa.
  */
 import type { FloorReservation, FloorSession, PosThresholds } from './types'
@@ -40,7 +40,7 @@ export const STATE_LABEL: Record<TableStateKey, string> = {
   reserved: 'Reservada',
   seated: 'Sin pedido',
   kitchen: 'En preparación',
-  ready: 'En despacho',
+  ready: 'Para retirar',
   eating: 'Comiendo',
   bill: 'Cuenta',
 }

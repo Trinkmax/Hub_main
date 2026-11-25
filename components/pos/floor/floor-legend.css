@@ -5,7 +5,7 @@
 .pos {
   --pos-warn: oklch(0.85 0.17 92);
 }
-/* «En despacho» ya salta sola y lo demorado ya es rojo: el borde es para lo que viene en camino. */
+/* «Para retirar» ya salta sola y lo demorado ya es rojo: el borde es para lo que viene en camino. */
 .pos-flag.pos-urg-warn:not(.pos-st-ready) .pos-flag-plate {
   box-shadow:
     0 0 0 2px var(--pos-ink),

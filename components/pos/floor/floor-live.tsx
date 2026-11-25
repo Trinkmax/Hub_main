@@ -421,7 +421,7 @@ export function FloorLive({
 
   const chips = (
     [
-      { key: 'ready', count: summary.ready, label: 'en despacho', icon: STATE_ICON.ready },
+      { key: 'ready', count: summary.ready, label: 'para retirar', icon: STATE_ICON.ready },
       {
         key: 'bill',
         count: summary.bill,

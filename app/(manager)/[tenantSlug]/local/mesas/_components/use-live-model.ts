@@ -12,7 +12,7 @@ import type { ModelTable } from '@/lib/floor-plan/model'
 import { type FloorSummary, serviceMinutesAt, summarize } from '@/lib/pos/table-state'
 import type { FloorSnapshot } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
-import { type LiveStatus, usePosPoke } from '@/lib/pos/use-poke'
+import { type LiveStatus, safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 
 export type LiveModel = {
@@ -83,7 +83,7 @@ export function useLiveModel({
   }, [active, reload])
 
   const connection = usePosPoke(active ? branchId : null, poke)
-  useVisibleInterval(reload, 40_000)
+  useVisibleInterval(reload, safetyNetMs(connection))
 
   // El reloj de la computadora puede estar corrido: se usa la hora de la base y se la hace avanzar acá.
   const serverNow = snapshot?.now ?? null

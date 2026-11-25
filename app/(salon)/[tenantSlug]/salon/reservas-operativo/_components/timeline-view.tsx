@@ -44,8 +44,18 @@ import { ReservationCard } from './reservation-card'
  *   entero y el pull-to-refresh del shell ya cubre el refresco manual.
  */
 
-// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
-const SAFETY_NET_INTERVAL_MS = 90_000
+// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval). Con el canal en vivo
+// alcanza con una pasada cada tanto; sin canal (conectando o caído) la lectura es lo único que hay.
+const SAFETY_NET_LIVE_MS = 30_000
+const SAFETY_NET_OFFLINE_MS = 6_000
+/** Un INSERT llega sin joins (cliente, gestores, torta, evento) y un UPDATE que cambia una FK los deja viejos. */
+const JOIN_KEYS = [
+  'customer_id',
+  'cake_option_id',
+  'primary_manager_id',
+  'assistant_manager_id',
+  'scheduled_event_id',
+] as const
 // El reloj solo elige qué servicio va adelante: con un minuto de precisión sobra.
 const CLOCK_TICK_MS = 60_000
 
@@ -119,16 +129,38 @@ export function TimelineView({
   const reservationsRef = useRef(reservations)
   reservationsRef.current = reservations
 
+  // El día que se está mirando, por ref: una respuesta que vuelve después de cambiar de día no pisa nada.
+  const activeDate = useRef(date)
+  activeDate.current = date
+  // Solo vale la última lectura de reservas: una vieja que tarda más no pisa a una nueva.
+  const readSeq = useRef(0)
+  // Estado real del canal: decide cada cuánto se vuelve a leer por las dudas.
+  const [live, setLive] = useState<'connecting' | 'live' | 'offline'>('connecting')
+
   // Una sola server action (eventos + cupos por servicio): cada action es una
   // invocación de función aparte en Vercel.
   const refreshExtras = useCallback(async () => {
     const r = await fetchDayExtras(tenantSlug, date, branchRef.current)
-    if (!r.ok) return
+    if (!r.ok || activeDate.current !== date) return
     setSegmentCaps(r.caps)
     setEvents(r.events)
   }, [tenantSlug, date])
 
+  // Las reservas del día, enteras. Lo que llega en vivo trae solo la fila: esto completa los joins y, sobre todo,
+  // recupera lo que pasó mientras el celular estuvo bloqueado o sin señal (Realtime no lo reenvía).
+  const refreshReservations = useCallback(async () => {
+    const seq = ++readSeq.current
+    const res = await fetchReservationsForDate(tenantSlug, date, branchRef.current)
+    if (!res.ok || seq !== readSeq.current || activeDate.current !== date) return
+    setReservations(res.reservations)
+  }, [tenantSlug, date])
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refreshReservations(), refreshExtras()])
+  }, [refreshReservations, refreshExtras])
+
   const debouncedCapacity = useDebouncedRefresh(refreshExtras, 600)
+  const debouncedReservations = useDebouncedRefresh(refreshReservations, 700)
 
   // Resetear estado al cambiar de fecha (el RSC re-renderea con props nuevas).
   useEffect(() => setReservations(initialReservations), [initialReservations])
@@ -158,11 +190,10 @@ export function TimelineView({
   useEffect(() => {
     // Al montar, sincronizar YA: con staleTimes (next.config.ts) la página puede
     // venir del Client Router Cache con reservas de hasta 30 s; Realtime sólo
-    // trae cambios FUTUROS y el safety net de abajo no refresca reservas.
+    // trae cambios FUTUROS.
     let cancelled = false
-    void fetchReservationsForDate(tenantSlug, date, branchRef.current).then((res) => {
-      if (!cancelled && res.ok) setReservations(res.reservations)
-    })
+    let joinedOnce = false
+    void refreshReservations()
     void refreshExtras()
 
     const cleanup = subscribeChanges({
@@ -185,6 +216,13 @@ export function TimelineView({
             ) {
               return
             }
+            // Un INSERT llega sin joins, y un UPDATE que mueve una FK los deja viejos: completar leyendo.
+            const current = next ? reservationsRef.current.find((r) => r.id === next.id) : undefined
+            const needsJoins =
+              payload.eventType === 'INSERT' ||
+              (payload.eventType === 'UPDATE' &&
+                next !== undefined &&
+                (!current || JOIN_KEYS.some((key) => current[key] !== next[key])))
             setReservations((prev) =>
               mergeRow<ReservationWithJoins>(
                 prev,
@@ -194,6 +232,7 @@ export function TimelineView({
                   r.reservation_date === date && inBranchFilter(r.branch_id, branchRef.current),
               ),
             )
+            if (needsJoins) debouncedReservations()
             debouncedCapacity()
           },
         },
@@ -204,15 +243,44 @@ export function TimelineView({
           onChange: () => debouncedCapacity(),
         },
       ],
+      // Tras una reconexión se relee todo: lo que pasó en el hueco no vuelve a llegar.
+      onStatus: (status) => {
+        if (cancelled) return
+        if (status === 'SUBSCRIBED') {
+          setLive('live')
+          if (joinedOnce) void refreshAll()
+          joinedOnce = true
+        } else {
+          setLive('offline')
+        }
+      },
     })
+
+    // Vuelve la red: se lee ya, sin esperar a que el canal avise.
+    const onOnline = () => void refreshAll()
+    const onOffline = () => setLive('offline')
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
 
     return () => {
       cancelled = true
       cleanup()
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
     }
-  }, [tenantId, tenantSlug, date, branchKey, refreshExtras, debouncedCapacity])
+  }, [
+    tenantId,
+    date,
+    branchKey,
+    refreshReservations,
+    refreshExtras,
+    refreshAll,
+    debouncedCapacity,
+    debouncedReservations,
+  ])
 
-  useVisibleInterval(refreshExtras, SAFETY_NET_INTERVAL_MS)
+  // Red de seguridad: reservas Y cupos. Corre al volver a la pantalla (celular desbloqueado) y cada tanto.
+  useVisibleInterval(refreshAll, live === 'live' ? SAFETY_NET_LIVE_MS : SAFETY_NET_OFFLINE_MS)
 
   const totals = useMemo(() => {
     let waiting = 0

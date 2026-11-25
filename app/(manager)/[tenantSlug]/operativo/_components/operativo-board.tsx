@@ -66,8 +66,10 @@ import { useBoardClock } from './use-board-clock'
 import { useHaptic } from './use-haptic'
 import { useIsDesktop } from './use-is-desktop'
 
-// Realtime es el camino principal; esto es la red de seguridad.
-const SAFETY_NET_INTERVAL_MS = 60_000
+// Realtime es el camino principal; esto es la red de seguridad. Con el canal en vivo alcanza con una pasada cada
+// tanto; sin canal (conectando o caído) la lectura es lo único que hay.
+const SAFETY_NET_LIVE_MS = 30_000
+const SAFETY_NET_OFFLINE_MS = 6_000
 const FILTER_STORAGE_KEY = 'hub_operativo_filter'
 const UNDO_MS = 6000
 
@@ -417,7 +419,7 @@ export function OperativoBoard({
 
   // Red de seguridad: reservas Y extras (al volver de segundo plano, Realtime
   // puede haberse perdido cambios).
-  useVisibleInterval(refreshAll, SAFETY_NET_INTERVAL_MS)
+  useVisibleInterval(refreshAll, live === 'live' ? SAFETY_NET_LIVE_MS : SAFETY_NET_OFFLINE_MS)
 
   // ── Derivados ────────────────────────────────────────────────────────
   const searching = normalizeText(deferredQuery).length > 0

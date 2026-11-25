@@ -284,7 +284,7 @@ export function OrderScreen({
     const ready = summarizeSession(server.tickets).readyItemIds
     if (readySeen.current !== null && newlyReady(readySeen.current, server.tickets).length > 0) {
       buzz([60, 40, 60])
-      toast.success(`${title}: en despacho`)
+      toast.success(`${title}: para retirar`)
     }
     readySeen.current = new Set(ready)
   }, [server, title])

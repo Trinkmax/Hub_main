@@ -219,7 +219,7 @@ describe('liveSummaryLine', () => {
     const line = liveSummaryLine(
       summarize(entries.map((e) => ({ state: e.state, partySize: e.session?.party_size ?? null }))),
     )
-    expect(line).toBe('2 de 5 mesas · 6 personas · 1 en despacho · 1 en preparación')
+    expect(line).toBe('2 de 5 mesas · 6 personas · 1 para retirar · 1 en preparación')
   })
 
   it('singulares y plurales', () => {
