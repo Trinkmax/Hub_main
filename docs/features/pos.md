@@ -129,6 +129,26 @@ Medido antes y después (bar de ejemplo, misma prueba): un cambio después de de
 a 5,7 s en el tablero del salón y de 57 s a 0,9 s en el Operativo; al volver la red, de **nunca** a 4,6 s
 en el salón.
 
+**Volver a una pantalla nunca muestra lo de antes (25/11/2026).** Nacho: «aprieto [servido] y a veces no se
+marca, y el tema de la cuenta también». Para que ir y volver sea instantáneo, el navegador guarda la última
+versión de cada pantalla (Next: `staleTimes.dynamic = 30`, y «atrás» siempre usa la copia). Las pantallas del
+punto de venta arrancaban con esa copia y no se volvían a leer hasta la red de seguridad: reproducido en
+producción, marcar como servido → volver al mapa → entrar otra vez a la mesa mostraba «Servido · 6» de
+nuevo durante 20 s (el servidor ya lo tenía servido). La cuenta podía arrancar con un total viejo.
+
+- `lib/pos/freshest.ts`: cada versión que llega (la copia guardada, una lectura, la respuesta de una acción)
+  se compara por la hora del servidor (`now`) con la más nueva que vio la pestaña, y gana la más nueva. La
+  mesa, la cuenta y el mapa nunca vuelven para atrás (tampoco cuando una lectura lenta vuelve después de la
+  respuesta de una acción).
+- La mesa, la cuenta, el mapa, la caja y la cocina leen apenas se abren.
+- El mapa no se vuelve a montar al cambiar de sucursal (cambia solo `?sucursal=`): lee siempre la sucursal de
+  la página, guarda cada lectura con la sucursal que trae adentro y descarta la que vuelve después de un
+  cambio de sucursal, para no mostrar nunca una sucursal en lugar de otra.
+
+Con el arreglo, misma secuencia: al volver a la mesa ya aparece servido desde el primer instante, y una baja
+hecha desde otro celular se ve en la cuenta en ~1 s al volver a entrar (antes, hasta 20 s: lo que tardaba la
+red de seguridad).
+
 Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
 del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
 contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de

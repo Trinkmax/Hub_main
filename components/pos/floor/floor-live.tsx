@@ -25,6 +25,7 @@ import { planHref } from '@/lib/floor-plan/branches'
 import { mergeTables, moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
 import { settingsHref } from '@/lib/pos/branches/links'
 import { posFont } from '@/lib/pos/font'
+import { freshKey, keepFreshest } from '@/lib/pos/freshest'
 import { clockAt } from '@/lib/pos/order/clock'
 import {
   attentionRank,
@@ -129,7 +130,9 @@ export function FloorLive({
   brand,
 }: Props) {
   const router = useRouter()
-  const [snapshot, setSnapshot] = useState(initial)
+  // Nunca más viejo que lo último que vio esta pestaña (al volver de una mesa, la copia guardada sí lo es).
+  const freshFloor = freshKey.floor(initial.branch.id)
+  const [snapshot, setSnapshot] = useState(() => keepFreshest(freshFloor, initial))
   const [view, setView] = useState<View>('model')
   const [areaId, setAreaId] = useState<string | null>(initial.areas[0]?.id ?? null)
   const [opening, setOpening] = useState<TableEntry | null>(null)
@@ -142,7 +145,7 @@ export function FloorLive({
   const [legend, setLegend] = useState(false)
   const now = useNow(snapshot.now)
 
-  useEffect(() => setSnapshot(initial), [initial])
+  useEffect(() => setSnapshot(keepFreshest(freshFloor, initial)), [freshFloor, initial])
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(VIEW_KEY)
@@ -160,12 +163,25 @@ export function FloorLive({
     }
   }
 
+  // Se lee la sucursal de la página. Cambiar de sucursal no vuelve a montar esta pantalla (cambia solo
+  // `?sucursal=`): justo en ese instante `snapshot` todavía es la anterior, y leer con la de `snapshot`
+  // traía la sucursal vieja y la mostraba en lugar de la nueva.
+  const branchId = initial.branch.id
   const read = useCallback(async () => {
-    const result = await refreshFloor(slug, snapshot.branch.id)
-    if (result.ok) setSnapshot(result.data)
-  }, [slug, snapshot.branch.id])
+    const result = await refreshFloor(slug, branchId)
+    if (!result.ok) return
+    // Se guarda con la sucursal que trae adentro: nunca queda una sucursal guardada como si fuera otra.
+    const fresh = keepFreshest(freshKey.floor(result.data.branch.id), result.data)
+    // Si mientras se leía se cambió de sucursal, lo leído ya no es de esta pantalla.
+    setSnapshot((current) => (current.branch.id === fresh.branch.id ? fresh : current))
+  }, [slug, branchId])
   // No pierde un aviso que llega durante una lectura y nunca lee de más (ver `lib/pos/live-reload.ts`).
   const { poke, now: reload } = useLiveReload(read)
+  // Al entrar, leer YA: volviendo de una mesa, la página viene de la copia que guarda el navegador.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: una vez, al entrar al salón
+  useEffect(() => {
+    void reload()
+  }, [freshFloor])
   // La campanita de pedidos no abre su propio canal: se entera por acá de que hay novedades.
   const [approvalsTick, setApprovalsTick] = useState(0)
   const live = usePosPoke(snapshot.branch.id, (what, pokedSession) => {
