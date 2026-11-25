@@ -105,6 +105,30 @@ nunca se entera por un evento. Ahora (`lib/supabase/browser.ts`):
 Vale para toda la app (la bandeja de mensajes y las suscripciones de `lib/realtime/subscribe.ts` usan el
 mismo socket).
 
+**Al desbloquear el celular, la conexión se revisa sola (25/11/2026).** Nacho avisó que «en el sistema de
+los mozos no se actualizan las cosas en tiempo real». En HUB los mozos son dueños en el sistema y anoche
+usaron los tableros de reservas, no el mapa. Medido en producción con dos navegadores (uno cambia una
+reserva, el otro la espera): en vivo llegaba en menos de un segundo, pero al bloquear y desbloquear la
+pantalla el navegador congela la página y el servidor corta la conexión sin que la página se entere. El
+socket seguía figurando abierto y la librería recién lo daba por muerto cuando un latido quedaba sin
+respuesta (hasta ~50 s). Con el tablero del salón era peor: no volvía a leer las reservas ni al
+reconectar ni en su red de seguridad, que solo releía los cupos, así que **no se ponía al día nunca**
+hasta recargar.
+
+- `lib/realtime/probe.ts` + `probeRealtime()` en `lib/supabase/browser.ts`: al volver la pantalla
+  (después de 4 s oculta), al volver la red y al restaurar la página desde la caché se manda un latido. Si
+  no contesta en 3,5 s, se usa el camino de la librería para un latido vencido: canales con error,
+  reconexión y vuelven a unirse. Cada pantalla, al ver su canal otra vez en vivo, relee lo suyo.
+- Tablero de reservas del salón (`/salon/reservas-operativo`): relee reservas y cupos al reconectar, al
+  volver la red, al volver la pantalla y cada 30 s (6 s sin canal). Un INSERT o un cambio de cliente,
+  gestor, torta o evento se completa leyendo (la fila en vivo llega sin esos datos).
+- El Operativo y las Mesas del panel pasaron a la misma red de seguridad que el salón: 30 s / 20 s con el
+  canal en vivo y 6 s sin él.
+
+Medido antes y después (bar de ejemplo, misma prueba): un cambio después de desbloquear pasó de **nunca**
+a 5,7 s en el tablero del salón y de 57 s a 0,9 s en el Operativo; al volver la red, de **nunca** a 4,6 s
+en el salón.
+
 Es la única política que tiene `realtime.messages`; los canales públicos del resto del sistema (billetera
 del cliente, cambios de tablas) no se enteran. Lo prueban `tests/rls/pos-live-channel.test.ts` (la puerta,
 contra el servicio de verdad) y 31 comprobaciones en la base local. Una pantalla sin usuario (la tele de
@@ -135,12 +159,13 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
   sobre el escenario), y entre dos igual de altas (paredes en una esquina) va adelante la que llega más
   cerca. Las paredes se siguen partiendo en tramos: así dos que se cruzan se intercalan bien.
 - **Estados** (de `lib/pos/table-state.ts`, sin que nadie marque nada a mano), por prioridad:
-  en despacho › pidió la cuenta › en preparación › comiendo › sin pedido › reservada › libre.
+  para retirar › pidió la cuenta › en preparación › comiendo › sin pedido › reservada › libre.
   Cada uno escala a «miralo» y «ya es tarde» con los minutos de `pos_settings`.
 - **Cómo se llaman y de qué color van lo eligió el bar (16/11/2026):** «En preparación» (naranja)
-  mientras cocina trabaja, «En despacho» (verde) cuando ya salió y espera que la lleven, «Comiendo»
+  mientras cocina trabaja, «Para retirar» (verde) cuando ya salió y espera que la lleven, «Comiendo»
   en violeta, «Cuenta» en azul y «Reservada» en gris. «Para llevar» NO se usa para lo que está listo:
-  en un bar quiere decir que el cliente se lo lleva, no que va a una mesa. El sello de «cobrado» y lo
+  en un bar quiere decir que el cliente se lo lleva, no que va a una mesa. El 25/11/2026, a pedido de Nacho, «En despacho» pasó a llamarse
+  «Para retirar». El sello de «cobrado» y lo
   que salió bien usan su propio color (`--pos-good`), que no es un estado de mesa.
 - Lo urgente se mueve: la mesa con comida lista late; la demorada se pone roja.
 - **Antes de ponerse roja, avisa** (23/11/2026): cuando una mesa pasa su primer tiempo («miralo») la chapa

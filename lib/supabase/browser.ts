@@ -1,10 +1,18 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClientEnv } from '@/lib/env'
+import { probeConnection } from '@/lib/realtime/probe'
 
 let client: SupabaseClient | undefined
 let authReady: Promise<void> | undefined
 let keeping = false
+let watching = false
+
+/**
+ * Cuánto tiene que haber estado oculta la pantalla (celular bloqueado, otra app adelante) para desconfiar de la
+ * conexión en vivo al volver. Una ojeada rápida a otra pestaña no hace falta revisarla.
+ */
+const WAKE_AFTER_HIDDEN_MS = 4_000
 
 /**
  * Cliente Supabase del browser (singleton: un solo websocket para toda la app).
@@ -69,8 +77,46 @@ export function realtimeAuthReady(): Promise<void> {
   let ready = authReady
   if (!ready) {
     keepRealtimeAuthFresh(supabase)
+    keepRealtimeAlive()
     ready = syncRealtimeAuth()
     authReady = ready
   }
   return ready
+}
+
+/**
+ * ¿Sigue viva la conexión en vivo? Si no, que la librería la levante de nuevo y vuelva a unir los canales.
+ *
+ * Por qué (25/11/2026, «en el sistema de los mozos no se actualizan las cosas en tiempo real»): al bloquear el
+ * celular el navegador congela la página y el servidor corta la conexión, pero la página no se entera. Al
+ * desbloquear, el socket sigue figurando abierto y la librería recién lo da por muerto cuando un latido queda sin
+ * respuesta: hasta ~50 segundos sin avisos (medido en producción: 57 s en el Operativo y, en el tablero del salón,
+ * nunca más). Apenas vuelve la pantalla (o la red) se manda un latido y, si no contesta, se reconecta
+ * (`lib/realtime/probe.ts`). Cada pantalla, al ver su canal de nuevo en vivo, relee lo que se perdió en el medio.
+ */
+export function probeRealtime(): void {
+  probeConnection(createClient().realtime)
+}
+
+/**
+ * Revisa la conexión en vivo cada vez que la pantalla vuelve a estar a la vista después de un rato, cuando
+ * vuelve la red y cuando el navegador restaura la página de su caché (atrás/adelante).
+ */
+function keepRealtimeAlive(): void {
+  if (watching || typeof window === 'undefined') return
+  watching = true
+  let hiddenAt: number | null = document.hidden ? Date.now() : null
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      hiddenAt = Date.now()
+      return
+    }
+    const since = hiddenAt
+    hiddenAt = null
+    if (since !== null && Date.now() - since >= WAKE_AFTER_HIDDEN_MS) probeRealtime()
+  })
+  window.addEventListener('online', () => probeRealtime())
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) probeRealtime()
+  })
 }
