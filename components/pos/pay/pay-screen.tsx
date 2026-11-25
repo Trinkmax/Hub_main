@@ -37,6 +37,7 @@ import {
   type PayResult,
   type PointsAwarded,
 } from '@/lib/pos/cash/types'
+import { freshKey, keepFreshest } from '@/lib/pos/freshest'
 import { clockAt } from '@/lib/pos/order/clock'
 import {
   type ChargeInput,
@@ -132,8 +133,12 @@ export function PayScreen({
   const branchId = initial.session.branch_id
   const router = useRouter()
 
-  const [bill, setBill] = useState(initial)
-  const [split, setSplit] = useState<Split>(() => initialSplit(initial))
+  // La copia guardada del navegador (al volver a la cuenta) puede ser más vieja que lo último que vio esta
+  // pestaña: se arranca con la más nueva.
+  const freshBill = freshKey.bill(sessionId)
+  const [start] = useState(() => keepFreshest(freshBill, initial))
+  const [bill, setBill] = useState(start)
+  const [split, setSplit] = useState<Split>(() => initialSplit(start))
   const [step, setStep] = useState<StubStep>('method')
   const [method, setMethod] = useState<PayMethod | null>(null)
   const [tender, setTender] = useState<Tender>({ kind: 'exact' })
@@ -155,7 +160,7 @@ export function PayScreen({
   const [unsentOrder, setUnsentOrder] = useState({ outbox: 0, draft: 0 })
 
   /** La última cuenta que llegó: para comparar con la que sigue sin esperar a que se dibuje. */
-  const billRef = useRef(initial)
+  const billRef = useRef(start)
   /** Los cobros que hizo esta pantalla: los de los demás se avisan. */
   const ownPayments = useRef(new Set<string>())
   /** La clave del cobro en curso. Se repite en cada reintento y cambia recién con una respuesta. */
@@ -181,30 +186,35 @@ export function PayScreen({
   }, [])
 
   // ── La cuenta que llega (de una lectura, de un aviso en vivo o de la respuesta de una acción) ──
-  const land = useCallback((next: Bill) => {
-    const previous = billRef.current
-    billRef.current = next
-    setBill(next)
-    const groups = groupLines(next.lines)
-    setSplit((current) => reconcileSplit(current, next, groups))
-    if (next.bill.remaining_cents !== previous.bill.remaining_cents) setTender({ kind: 'exact' })
+  const land = useCallback(
+    (incoming: Bill) => {
+      // Nunca para atrás: una lectura lenta o la copia guardada no pisan algo más nuevo.
+      const next = keepFreshest(freshBill, incoming)
+      const previous = billRef.current
+      billRef.current = next
+      setBill(next)
+      const groups = groupLines(next.lines)
+      setSplit((current) => reconcileSplit(current, next, groups))
+      if (next.bill.remaining_cents !== previous.bill.remaining_cents) setTender({ kind: 'exact' })
 
-    // Otro celular cobró esta mesa: se dice, con lo que queda. (Con un cobro propio viajando no se
-    // anuncia nada: lo nuevo que aparezca puede ser ese mismo cobro, que todavía no contestó.)
-    if (sendingRef.current) return
-    const known = new Set(previous.payments.map((payment) => payment.id))
-    for (const payment of next.payments) {
-      if (payment.status !== 'ok' || known.has(payment.id)) continue
-      if (ownPayments.current.has(payment.id)) continue
-      ownPayments.current.add(payment.id)
-      toast(`${payment.created_by_name} cobró ${money(payment.amount_cents)} de esta mesa`, {
-        description:
-          next.session.status === 'open'
-            ? `${METHOD_LABEL[payment.method]}. Ahora faltan ${money(next.bill.remaining_cents)}.`
-            : `${METHOD_LABEL[payment.method]}. Con eso la mesa quedó cobrada.`,
-      })
-    }
-  }, [])
+      // Otro celular cobró esta mesa: se dice, con lo que queda. (Con un cobro propio viajando no se
+      // anuncia nada: lo nuevo que aparezca puede ser ese mismo cobro, que todavía no contestó.)
+      if (sendingRef.current) return
+      const known = new Set(previous.payments.map((payment) => payment.id))
+      for (const payment of next.payments) {
+        if (payment.status !== 'ok' || known.has(payment.id)) continue
+        if (ownPayments.current.has(payment.id)) continue
+        ownPayments.current.add(payment.id)
+        toast(`${payment.created_by_name} cobró ${money(payment.amount_cents)} de esta mesa`, {
+          description:
+            next.session.status === 'open'
+              ? `${METHOD_LABEL[payment.method]}. Ahora faltan ${money(next.bill.remaining_cents)}.`
+              : `${METHOD_LABEL[payment.method]}. Con eso la mesa quedó cobrada.`,
+        })
+      }
+    },
+    [freshBill],
+  )
 
   // Si la página se vuelve a leer entera (al volver a la app), manda lo nuevo.
   useEffect(() => land(initial), [initial, land])
@@ -215,6 +225,11 @@ export function PayScreen({
   }, [actions, land])
   // No pierde un aviso que llega durante una lectura y nunca lee de más (ver `lib/pos/live-reload.ts`).
   const { poke, now: reload } = useLiveReload(read)
+  // Al entrar, leer YA: la página puede venir de la copia que guarda el navegador, con un total viejo.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: una vez, al entrar a la cuenta
+  useEffect(() => {
+    void reload()
+  }, [freshBill])
 
   const live = usePosPoke(branchId, (what, pokedSession) => {
     // Un pedido nuevo o contestado (o la vuelta del canal): la bandeja vuelve a leer.

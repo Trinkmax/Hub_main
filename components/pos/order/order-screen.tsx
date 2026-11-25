@@ -20,6 +20,7 @@ import {
   setStockout,
   updateTable,
 } from '@/lib/pos/actions'
+import { freshKey, keepFreshest } from '@/lib/pos/freshest'
 import { MAX_LINES, priceDraft, quantityByItem } from '@/lib/pos/order/cart'
 import { clockAt, minutesSince } from '@/lib/pos/order/clock'
 import { buildMenuIndex, needsChoice, offHoursItems } from '@/lib/pos/order/menu-index'
@@ -143,7 +144,9 @@ export function OrderScreen({
   // Al salón de ESTA mesa: un dispositivo que estaba mirando la otra sucursal no cae en la otra.
   const mapHref = `/${slug}/salon/mapa${branchSlug ? `?sucursal=${encodeURIComponent(branchSlug)}` : ''}`
 
-  const [server, setServer] = useState(initial)
+  // Nunca más viejo que lo último que vio esta pestaña (la copia guardada del navegador, al volver, sí lo es).
+  const freshSession = freshKey.session(initial.session.id)
+  const [server, setServer] = useState(() => keepFreshest(freshSession, initial))
   const [menu, setMenu] = useState(initialMenu)
   const [overlay, setOverlay] = useState<Overlay>(NO_OVERLAY)
   const [pickerOpen, setPickerOpen] = useState(startAdding)
@@ -162,7 +165,7 @@ export function OrderScreen({
   const [endTick, setEndTick] = useState(0)
 
   // Si la página se vuelve a leer entera (al volver a la app), manda lo nuevo.
-  useEffect(() => setServer(initial), [initial])
+  useEffect(() => setServer(keepFreshest(freshSession, initial)), [freshSession, initial])
   useEffect(() => setMenu(initialMenu), [initialMenu])
   useEffect(() => setAlive(true), [])
 
@@ -171,7 +174,7 @@ export function OrderScreen({
     try {
       const result = await refreshSession(slug, sessionId)
       if (!result.ok) return false
-      setServer(result.data)
+      setServer(keepFreshest(freshSession, result.data))
       return true
     } catch {
       return false
@@ -204,6 +207,12 @@ export function OrderScreen({
   })
   // Red de seguridad: si un aviso en vivo se pierde, igual se pone al día.
   useVisibleInterval(() => void reloadSession(), safetyNetMs(live))
+  // Al entrar, leer YA: la página puede venir de la copia que guarda el navegador (al volver del mapa o con
+  // «atrás»), con lo de hace un rato. Sin esto, lo recién servido volvía a aparecer durante 20 s.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: una vez, al entrar a la mesa
+  useEffect(() => {
+    void reloadSession()
+  }, [freshSession])
 
   const online = useOnline()
   const offline = !online || live === 'offline'

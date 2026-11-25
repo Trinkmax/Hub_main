@@ -192,6 +192,11 @@ export function CashScreen({
   // No pierde un aviso que llega durante una lectura (un cobro que entra mientras se relee tiene
   // que verse) y nunca lee más de una vez cada 900 ms: las reglas de `lib/pos/live-reload.ts`.
   const { poke, now: reload } = useLiveReload(read)
+  // Al entrar, leer YA: la página puede venir de la copia que guarda el navegador (con cobros de hace un rato).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: una vez, al entrar a la caja
+  useEffect(() => {
+    void reload()
+  }, [])
   const loadLane = async (next: Lane, quiet = false): Promise<ShiftSnapshot | null> => {
     readTicket.current += 1
     const ticket = readTicket.current

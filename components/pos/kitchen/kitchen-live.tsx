@@ -191,6 +191,11 @@ export function KitchenLive({
     if (what !== 'menu') reloadSoon()
   })
   useVisibleInterval(reload, POLL_MS)
+  // Al entrar, leer YA (la página puede venir de la copia que guarda el navegador).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: una vez, al entrar a la cocina
+  useEffect(() => {
+    void reload()
+  }, [])
 
   // Al entrar a la página de nuevo (volver de otra pestaña) el servidor manda una cola fresca.
   useEffect(() => {
