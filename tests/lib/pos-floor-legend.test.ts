@@ -68,7 +68,7 @@ describe('la leyenda dice lo mismo que hace el mapa', () => {
         expect(urgencyAt(lateAt)).toBe('late')
         expect(urgencyAt(lateAt - 1)).not.toBe('late')
         if (warnAt === 0) {
-          // «En despacho» avisa desde el primer momento.
+          // «Para retirar» avisa desde el primer momento.
           expect(urgencyAt(0)).toBe('warn')
         } else {
           expect(urgencyAt(warnAt)).toBe('warn')

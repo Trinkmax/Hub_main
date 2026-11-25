@@ -87,13 +87,13 @@ export function pendingByArea(entries: readonly LiveEntry[]): Record<string, num
   return out
 }
 
-/** El salón en una línea: «12 de 25 mesas · 46 personas · 2 en despacho». */
+/** El salón en una línea: «12 de 25 mesas · 46 personas · 2 para retirar». */
 export function liveSummaryLine(summary: FloorSummary): string {
   const parts = [
     `${summary.open} de ${summary.tables} ${summary.tables === 1 ? 'mesa' : 'mesas'}`,
     `${summary.people} ${summary.people === 1 ? 'persona' : 'personas'}`,
   ]
-  if (summary.ready > 0) parts.push(`${summary.ready} en despacho`)
+  if (summary.ready > 0) parts.push(`${summary.ready} para retirar`)
   if (summary.waitingFood > 0) parts.push(`${summary.waitingFood} en preparación`)
   if (summary.bill > 0) {
     parts.push(`${summary.bill} ${summary.bill === 1 ? 'pidió' : 'pidieron'} la cuenta`)

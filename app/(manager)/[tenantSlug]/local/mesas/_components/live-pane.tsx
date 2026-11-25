@@ -25,7 +25,7 @@ const SINCE: Record<TableStateKey, string> = {
   reserved: 'Pasó la hora hace',
   seated: 'Sentados hace',
   kitchen: 'En preparación hace',
-  ready: 'En despacho hace',
+  ready: 'Para retirar hace',
   eating: 'Última tanda hace',
   bill: 'Pidió la cuenta hace',
 }
