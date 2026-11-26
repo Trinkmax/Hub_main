@@ -1834,3 +1834,70 @@ Lo que quedó fuera de esa tanda (el detalle de lo hecho está en `docs/features
 - **[BAJA] La foto del retiro.** `pos_cash_move` acepta `p_photo_path`, pero la hoja «Sacar plata»
   no tiene dónde sacarla. Sumarla si los socios piden el comprobante del proveedor en la caja.
 - **[BAJA] Tex no sabe de horarios de la carta ni de «sale primero».**
+
+## Las dos cartas — lo que queda (26/11/2026)
+
+Del rediseño de la carta pública (`docs/features/carta-rediseno.md`). La que ven los clientes es la de
+siempre (`/carta/<bar>`, ahora con sponsors); la nueva está en `/carta/<bar>/nueva` hasta que haya
+mejores fotos.
+
+- **Pasar HUB a la carta nueva** cuando estén las fotos: prender «Carta nueva» en `/admin`. Antes,
+  conviene que tengan foto las secciones que hoy casi no tienen (Vinos 4 de 28, Bebidas calientes 6
+  de 16, Sin TACC 1 de 5) y marcar algunos **recomendados** (hoy HUB no tiene ninguno: la tira «Los
+  elegidos de la casa» no aparece).
+- **Retirar la carta de siempre** cuando todos los bares estén en la nueva (los pasos están en el doc).
+  Mientras tanto hay dos `wallet-drawer.tsx` casi iguales (el de la nueva no tiene el borde verde y se
+  abre desde la barra).
+- **Los sponsors se cargan por soporte.** No hay pantalla para que el dueño los sume, saque u ordene:
+  hoy es `scripts/carta-sponsors.ts`. Falta una sección en `/[slug]/menu` (solo dueños) que suba el
+  logo, arme el sello en el navegador (lo mismo que hace el script con `sharp`: forma en un canal,
+  recorte, una tinta), deje editar las palabras que lo vinculan con productos y guarde en
+  `tenants.settings.carta_sponsors` con `audit_log`.
+- **El buscador de la carta de siempre sigue siendo el viejo**: «hamburguesa» no trae ninguna
+  hamburguesa (compara contra el nombre y la descripción, no contra la sección). El nuevo
+  (`lib/menu/search.ts`) ya está en el repo y se le podría poner sin cambiarle el aspecto.
+- **Una subcategoría vacía que no se pudo borrar.** En HUB, adentro de Postres, hay una subcategoría
+  activa sin productos llamada «Eliminar, no me deja»: alguien quiso borrarla desde el editor y no
+  pudo. Las cartas no la muestran (no tiene nada adentro), pero hay que ver por qué el editor no dejó.
+- **Nombres para revisar en la carta de HUB**: «Chesse burger» (cheese), «1/2 Muzarella» al lado de
+  «Muzzarella», «Clasica» sin tilde, y un rubro y una sección que se llaman igual («Bebidas» adentro
+  de «Bebidas»).
+- **Probar la nueva en un iPhone de verdad** lo que solo se pudo probar en Chrome: el teclado que sale
+  al tocar la lupa (el foco entra en el mismo toque), bajar la ficha con el dedo, el «tic» al pasar de
+  plato y el viaje del nombre del rubro (iOS 18 o más).
+- **`components/shell/dock`**: la barra de vidrio elige al LEVANTAR el dedo, y el navegador manda
+  después el `click` de ese mismo toque. Si lo que se abre pone algo clicable debajo del dedo (el fondo
+  de la billetera), ese click lo cierra en el acto. En la carta nueva se resolvió en el cajón
+  (`nueva/_components/wallet-drawer.tsx`, ignora el toque pegado a la apertura); si otra hoja abierta
+  desde la barra hiciera lo mismo, conviene resolverlo en la barra.
+- **`use-dismiss-on-back.ts`**: una hoja que se monta ya abierta suma su paso de «atrás» al nacer; en
+  desarrollo React monta dos veces y ese paso doble la cierra en el acto (pasa al entrar con `?wallet=1`
+  en `next dev`). La ficha nueva lo esquiva armando el paso una vuelta después; el arreglo de fondo es
+  que el hook demore su `history.back()` y lo cancele si se vuelve a montar.
+
+### Revisión independiente de la carta nueva (26/11/2026)
+
+Una segunda revisión (Chrome sin interfaz a 390 × 844 con toques, sobre la versión compilada) encontró
+siete cosas. Se arreglaron tres antes de subir: la ficha que quedaba colgada si se pasaba al plato de
+al lado mientras se cerraba (`item-stage.tsx`, `go`), la barra que no volvía después de cerrar sesión
+(`carta-experience.tsx`, `hidden`), y `--prune-orphans`, que no miraba las fotos de los beneficios del
+club ni paginaba (`scripts/backfill-menu-media.ts`). Quedan, todas en la carta nueva:
+
+- **Dos hojas apiladas y el «atrás» (el más importante).** Abrir un plato desde el buscador y cerrarlo
+  cierra también el buscador; cerrándolo con «atrás» se retroceden tres pasos para dos hojas (dentro de
+  un rubro se vuelve al inicio; en el inicio se puede salir de la carta). Causa: cada hoja escucha
+  `popstate` por su cuenta en `use-dismiss-on-back.ts` y la rama `|| history.state?.cartaSheet` de su
+  cleanup. Arreglo propuesto: un único listener de módulo con la pila de hojas abiertas y un contador de
+  «atrás propios» (el `popstate` de un «atrás propio» se descuenta y no cierra nada; si no, se cierra
+  solo la última de la pila). Ojo: el hook lo usa también la carta de siempre; probar las dos.
+- **El primer toque a un plato tarda ~330 ms** aunque el código de la ficha ya esté bajado: es la demora
+  que React le pone a un `Suspense` que acaba de mostrar su reserva. Arreglo: en el efecto que
+  precalienta, `loadStage().then(() => setStageUsed(true))` (con `request={null}` no dibuja nada).
+- **Sin `error.tsx` en `app/carta/[tenantSlug]`**: si el trozo de la ficha o del club no baja (sin señal
+  justo en el primer toque), cae la pantalla entera. Sumar uno con «Reintentar».
+- **Un rubro de nombre largo no vuelve de su propia dirección** (latente: el más largo de producción
+  tiene 21 letras). `slugify` corta en 48 y puede dejar un guion al final, y `parseCartaHash` lo vuelve a
+  pasar por `slugify`. Arreglo: sacar los guiones finales después del corte y no volver a cortar al leer.
+- **`wallet-drawer.tsx` de la nueva**: el `style` del panel sale de la prop `initialOpen`; si cambiara en
+  un re-render, React pisaría lo que puso el JS. Guardarla en un `useState` al montar.
+

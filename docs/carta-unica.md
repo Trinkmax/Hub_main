@@ -17,6 +17,13 @@ Pública, sin login. Server Component (`force-dynamic`) → `CartaExperience` (c
   wordmark serif del nombre con acento "!" (para HUB ⇒ "Hub!").
 - **Botonera inferior:** `Carta` (volver al inicio) + `Mi billetera` /
   `Sumate al club` según identidad.
+- **Sponsors** (desde el 26/11/2026): las marcas que acompañan al bar
+  (`tenants.settings.carta_sponsors`, `lib/menu/sponsors.ts`) van en una franja debajo de los
+  rubros del inicio y, adentro de un rubro o buscando, en el pie. Sin ninguna cargada no se ve
+  nada. Cómo se cargan: `docs/features/carta-rediseno.md` › Los sponsors.
+- **La carta nueva** (el rediseño de noviembre de 2026) está guardada en `/carta/[tenantSlug]/nueva`
+  y reemplaza a esta cuando al bar se le prende el interruptor «Carta nueva»:
+  `docs/features/carta-rediseno.md`.
 
 ## Club de beneficios (formulario embebido)
 
