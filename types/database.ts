@@ -5527,7 +5527,9 @@ export type Database = {
           active: boolean
           color: string
           created_at: string
+          icon: string | null
           id: string
+          kind: string
           name: string
           position: number
           tenant_id: string
@@ -5537,7 +5539,9 @@ export type Database = {
           active?: boolean
           color?: string
           created_at?: string
+          icon?: string | null
           id?: string
+          kind?: string
           name: string
           position?: number
           tenant_id: string
@@ -5547,7 +5551,9 @@ export type Database = {
           active?: boolean
           color?: string
           created_at?: string
+          icon?: string | null
           id?: string
+          kind?: string
           name?: string
           position?: number
           tenant_id?: string
@@ -7713,6 +7719,88 @@ export type Database = {
           },
         ]
       }
+      pos_notices: {
+        Row: {
+          alias: string | null
+          branch_id: string
+          created_at: string
+          id: string
+          items: Json
+          kind: string
+          push_result: string | null
+          pushed_at: string | null
+          session_id: string
+          station_icon: string | null
+          station_id: string | null
+          station_kind: string | null
+          station_name: string | null
+          table_label: string | null
+          tenant_id: string
+          units: number
+          user_id: string
+        }
+        Insert: {
+          alias?: string | null
+          branch_id: string
+          created_at?: string
+          id?: string
+          items?: Json
+          kind: string
+          push_result?: string | null
+          pushed_at?: string | null
+          session_id: string
+          station_icon?: string | null
+          station_id?: string | null
+          station_kind?: string | null
+          station_name?: string | null
+          table_label?: string | null
+          tenant_id: string
+          units?: number
+          user_id: string
+        }
+        Update: {
+          alias?: string | null
+          branch_id?: string
+          created_at?: string
+          id?: string
+          items?: Json
+          kind?: string
+          push_result?: string | null
+          pushed_at?: string | null
+          session_id?: string
+          station_icon?: string | null
+          station_id?: string | null
+          station_kind?: string | null
+          station_name?: string | null
+          table_label?: string | null
+          tenant_id?: string
+          units?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_notices_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_notices_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "table_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_notices_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pos_payment_edits: {
         Row: {
           created_at: string
@@ -9212,6 +9300,59 @@ export type Database = {
           },
         ]
       }
+      push_subscriptions: {
+        Row: {
+          auth_key: string
+          created_at: string
+          endpoint: string
+          events: string[]
+          failures: number
+          id: string
+          last_ok_at: string | null
+          p256dh: string
+          tenant_id: string
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth_key: string
+          created_at?: string
+          endpoint: string
+          events?: string[]
+          failures?: number
+          id?: string
+          last_ok_at?: string | null
+          p256dh: string
+          tenant_id: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth_key?: string
+          created_at?: string
+          endpoint?: string
+          events?: string[]
+          failures?: number
+          id?: string
+          last_ok_at?: string | null
+          p256dh?: string
+          tenant_id?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quick_messages: {
         Row: {
           body: string
@@ -10289,6 +10430,7 @@ export type Database = {
           tenant_id: string
           total_cents: number
           updated_at: string
+          waiter_id: string | null
         }
         Insert: {
           abandoned_reason?: string | null
@@ -10315,6 +10457,7 @@ export type Database = {
           tenant_id: string
           total_cents?: number
           updated_at?: string
+          waiter_id?: string | null
         }
         Update: {
           abandoned_reason?: string | null
@@ -10341,6 +10484,7 @@ export type Database = {
           tenant_id?: string
           total_cents?: number
           updated_at?: string
+          waiter_id?: string | null
         }
         Relationships: [
           {
@@ -13167,6 +13311,10 @@ export type Database = {
         Returns: Json
       }
       pos_approvals_inbox: { Args: { p_branch_id: string }; Returns: Json }
+      pos_assign_waiter: {
+        Args: { p_session_id: string; p_user_id: string }
+        Returns: Json
+      }
       pos_bill: { Args: { p_session_id: string }; Returns: Json }
       pos_cancel_item: {
         Args: { p_item_id: string; p_reason: string }
@@ -13227,8 +13375,19 @@ export type Database = {
       }
       pos_fire_ticket: { Args: { p_ticket_id: string }; Returns: Json }
       pos_floor_snapshot: { Args: { p_branch_id: string }; Returns: Json }
+      pos_floor_team: { Args: { p_branch_id: string }; Returns: Json }
       pos_kitchen_advance: {
         Args: { p_station_ids?: string[]; p_ticket_id: string; p_to: string }
+        Returns: Json
+      }
+      pos_kitchen_move: {
+        Args: {
+          p_from_station_ids?: string[]
+          p_item_ids?: string[]
+          p_station_id?: string
+          p_ticket_ids?: string[]
+          p_to?: string
+        }
         Returns: Json
       }
       pos_kitchen_queue: { Args: { p_branch_id: string }; Returns: Json }
@@ -13376,6 +13535,24 @@ export type Database = {
         Args: { p_count_id: string; p_orders: Json }
         Returns: Json
       }
+      push_public_key: { Args: never; Returns: string }
+      push_subscribe: {
+        Args: {
+          p_auth: string
+          p_endpoint: string
+          p_events?: string[]
+          p_p256dh: string
+          p_tenant_id: string
+          p_user_agent?: string
+        }
+        Returns: string
+      }
+      push_unsubscribe: { Args: { p_endpoint: string }; Returns: boolean }
+      push_vapid_init: {
+        Args: { p_private: string; p_public: string }
+        Returns: string
+      }
+      push_vapid_keys: { Args: never; Returns: Json }
       recalc_event_commissions: {
         Args: { p_scheduled_event_id: string }
         Returns: undefined
