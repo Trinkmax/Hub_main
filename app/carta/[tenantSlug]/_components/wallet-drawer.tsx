@@ -1,8 +1,16 @@
 'use client'
 
-import { ChevronUp, LogOut, Wallet, X } from 'lucide-react'
+import { LogOut, X } from 'lucide-react'
 import Image from 'next/image'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type Ref,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,21 +38,13 @@ export type WalletSummary = {
 // ── Física del cajón ────────────────────────────────────────────────────────
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)' // easeOutQuint: desaceleración larga y suave (no brusca)
 const FLICK = 0.4 // px/ms — un "envión" rápido decide el snap aunque el arrastre sea corto
-const OPEN_AT = 0.16 // fracción arrastrada hacia arriba para confirmar apertura
 const CLOSE_AT = 0.3 // fracción arrastrada hacia abajo para confirmar cierre (más difícil: evita cierres accidentales)
-const LIP_FALLBACK = 88 // alto del labio (incl. safe-area) antes de medirlo
 const MIN_MS = 340 // piso de duración: incluso un flick rápido se siente suave
 const MAX_MS = 560 // recorrido completo: apertura/cierre calmos, premium
 
-// Alto del "labio" que asoma en peek (incl. safe-area del home indicator). El labio
-// lleva este `min-height` y el reposo usa este MISMO valor como fallback → aunque el
-// JS no llegue a medir `--lip-h`, el verde llena exactamente la banda visible (sin
-// sliver del header ni banda negra), en cualquier dispositivo.
-const PEEK_H = 'calc(3.5rem + env(safe-area-inset-bottom))'
-
-// Reposo en `peek` por CSS (no px): auto-adapta cuando iOS muestra/oculta la barra
-// de URL (cambia dvh). El px sólo se usa DURANTE el gesto/animación.
-const PEEK_TRANSFORM = `translateY(calc(100% - var(--lip-h, ${PEEK_H})))`
+// Reposo cerrado por CSS (no px): el panel entero queda debajo de la pantalla, y se adapta solo cuando
+// iOS muestra u oculta la barra de URL (cambia dvh). El px sólo se usa DURANTE el gesto/animación.
+const REST_TRANSFORM = 'translateY(100%)'
 
 // useLayoutEffect avisa en SSR; en cliente lo necesitamos para posicionar antes del paint.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -126,39 +126,48 @@ function TierChip({ name, color }: { name: string; color: string | null }): Reac
   )
 }
 
+/** Lo que la carta puede pedirle al cajón desde afuera (la barra de abajo lo abre). */
+export type WalletDrawerHandle = { open: () => void }
+
 /**
  * Cajón (drawer) de la billetera del cliente en la carta.
  *
- * A diferencia de un Sheet clásico (botón → diálogo full-screen), acá el borde
- * verde SIEMPRE está montado "asomando" desde abajo (estado `peek`) y se arrastra
- * hacia arriba hasta `open`. Una sola superficie física, el gesto se lleva 1:1 con
- * el dedo, y al soltar hace snap por distancia + velocidad con la curva de iOS.
+ * Vive montado debajo de la pantalla y sube entero al abrirlo desde la barra de vidrio de la carta
+ * (`carta-dock.tsx`, pestaña «Billetera»). Una sola superficie física: para cerrarlo el gesto se lleva
+ * 1:1 con el dedo (el asa de arriba o el cuerpo, tirando hacia abajo) y al soltar hace snap por
+ * distancia + velocidad con la curva de iOS.
+ *
+ * (Hasta el rediseño de noviembre 2026 asomaba un «labio» verde fijo abajo, que se arrastraba hacia
+ * arriba. Lo reemplazó la barra, que además lleva el buscador.)
  *
  * Nota iOS (Fraunces): NO dejamos `transform` en reposo abierto. Un transform
  * persistente promueve una capa compositada y Safari rasteriza la serif fina
  * lavada. Por eso: transform SÓLO durante el gesto/animación; al asentar en
- * abierto lo QUITAMOS (`transform=''`) → sin capa, serif nítida. En `peek` sí hay
- * transform, pero el cuerpo serif está fuera de pantalla, así que no importa.
+ * abierto lo QUITAMOS (`transform=''`) → sin capa, serif nítida.
  *
- * El cross-fade verde↔crema, el chevron y el scrim se derivan de una custom
- * property animable `--wallet-p` (0 = peek, 1 = open), registrada con @property
- * en globals.css para poder transicionarla junto con el transform.
+ * El scrim y el cromo de arriba se derivan de una custom property animable `--wallet-p`
+ * (0 = cerrado, 1 = abierto), registrada con @property en globals.css para poder
+ * transicionarla junto con el transform.
  */
 export function WalletDrawer({
   summary,
   tenantSlug,
   children,
   initialOpen = false,
+  onOpenChange,
+  ref,
 }: {
   summary: WalletSummary
   /** Necesario para cerrar sesión: la cookie de identidad es tenant-scoped. */
   tenantSlug: string
   children: React.ReactNode
   initialOpen?: boolean
+  /** Avisa cuando abre o cierra (la carta esconde su barra mientras está abierto). */
+  onOpenChange?: (open: boolean) => void
+  ref?: Ref<WalletDrawerHandle>
 }): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const lipRef = useRef<HTMLButtonElement>(null)
   const handleRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -166,12 +175,24 @@ export function WalletDrawer({
   const [open, setOpen] = useState(initialOpen)
   const [collapsed, setCollapsed] = useState(false)
   const openRef = useRef(open)
-  const geom = useRef({ peekY: 0 }) // desplazamiento en px del panel para el estado peek
+  const geom = useRef({ peekY: 0 }) // cuánto baja el panel para quedar cerrado (su alto)
+  /** Quién tenía el foco antes de abrir: se le devuelve al cerrar. */
+  const returnFocus = useRef<HTMLElement | null>(null)
+  /** Cuándo se abrió (ms): el fondo ignora el toque que todavía está en el aire (ver el SCRIM). */
+  const openedAt = useRef(0)
   const curY = useRef(0) // posición actual del panel (para duración/decisiones al soltar)
   const settleTimer = useRef(0)
 
   useEffect(() => {
     openRef.current = open
+  }, [open])
+
+  const onOpenChangeRef = useRef(onOpenChange)
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange
+  }, [onOpenChange])
+  useEffect(() => {
+    onOpenChangeRef.current?.(open)
   }, [open])
 
   // ── Primitivas de posición ────────────────────────────────────────────────
@@ -190,18 +211,15 @@ export function WalletDrawer({
     [setVar],
   )
 
-  /** Mide alto de labio/panel, publica `--lip-h` (para el calc de reposo) y el peek en px. */
+  /** Mide el alto del panel: es lo que tiene que bajar para quedar cerrado. */
   const measure = useCallback(() => {
     const panel = panelRef.current
     if (!panel) return
-    const h = panel.getBoundingClientRect().height
-    const lip = lipRef.current?.offsetHeight || LIP_FALLBACK
-    panel.style.setProperty('--lip-h', `${lip}px`)
-    geom.current.peekY = Math.max(0, h - lip)
+    geom.current.peekY = Math.max(0, panel.getBoundingClientRect().height)
   }, [])
 
   /** Asienta el cajón en reposo (sin transición). Abierto: sin transform (serif nítida).
-   *  Peek: transform por CSS calc (adaptativo a dvh) en vez de px stale. */
+   *  Cerrado: debajo de la pantalla por CSS (adaptativo a dvh) y sin dibujarse. */
   const settleRest = useCallback(
     (toOpen: boolean) => {
       const panel = panelRef.current
@@ -210,11 +228,14 @@ export function WalletDrawer({
       panel.style.transition = 'none'
       root.style.transition = 'none'
       if (toOpen) {
+        panel.style.visibility = 'visible'
         panel.style.transform = '' // sin capa compositada → serif nítida
         curY.current = 0
         setVar(1)
       } else {
-        panel.style.transform = PEEK_TRANSFORM
+        panel.style.transform = REST_TRANSFORM
+        // Cerrado no se dibuja: su sombra no asoma por el borde de abajo ni se puede tocar.
+        panel.style.visibility = 'hidden'
         curY.current = geom.current.peekY
         setVar(0)
       }
@@ -241,6 +262,7 @@ export function WalletDrawer({
         velocity ? Math.max(MIN_MS, Math.min(base, dist / (Math.abs(velocity) * 0.6))) : base,
       )
 
+      panel.style.visibility = 'visible'
       panel.style.willChange = 'transform'
       panel.style.transition = `transform ${ms}ms ${EASE}`
       root.style.transition = `--wallet-p ${ms}ms ${EASE}`
@@ -249,8 +271,9 @@ export function WalletDrawer({
 
       window.clearTimeout(settleTimer.current)
       settleTimer.current = window.setTimeout(() => {
-        // Abierto: soltar la capa (serif nítida). Peek: pasar a calc adaptativo a dvh.
-        panel.style.transform = toOpen ? '' : PEEK_TRANSFORM
+        // Abierto: soltar la capa (serif nítida). Cerrado: abajo por CSS y sin dibujarse.
+        panel.style.transform = toOpen ? '' : REST_TRANSFORM
+        if (!toOpen) panel.style.visibility = 'hidden'
         panel.style.willChange = ''
         panel.style.transition = ''
         root.style.transition = ''
@@ -259,8 +282,33 @@ export function WalletDrawer({
     [place],
   )
 
-  const openDrawer = useCallback((v = 0) => animateTo('open', v), [animateTo])
+  const openDrawer = useCallback(
+    (v = 0) => {
+      if (!openRef.current) {
+        openedAt.current = performance.now()
+        if (document.activeElement instanceof HTMLElement)
+          returnFocus.current = document.activeElement
+      }
+      // Se mide y se parte de abajo recién al abrir: cerrado, el panel no tiene por qué estar al día.
+      measure()
+      if (!openRef.current) {
+        const panel = panelRef.current
+        if (panel) {
+          panel.style.transition = 'none'
+          panel.style.visibility = 'visible'
+          panel.style.transform = `translateY(${geom.current.peekY}px)`
+          curY.current = geom.current.peekY
+          // Sin esto el navegador junta este estado con el de llegada y no anima.
+          void panel.offsetHeight
+        }
+      }
+      animateTo('open', v)
+    },
+    [animateTo, measure],
+  )
   const closeDrawer = useCallback((v = 0) => animateTo('peek', v), [animateTo])
+
+  useImperativeHandle(ref, () => ({ open: () => openDrawer() }), [openDrawer])
 
   // ── Posición inicial antes del primer paint (sin flash del panel entero) ────
   useIsoLayoutEffect(() => {
@@ -270,8 +318,7 @@ export function WalletDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Remedir en resize / rotación / toggle de la barra de URL de iOS; si está en peek,
-  // reasentar por CSS calc (adaptativo). Esto mata la banda negra al aparecer la barra.
+  // Remedir en resize / rotación / toggle de la barra de URL de iOS; cerrado, se reasienta por CSS.
   useEffect(() => {
     const onResize = () => {
       measure()
@@ -300,7 +347,8 @@ export function WalletDrawer({
     return () => {
       document.body.style.overflow = prevOverflow
       window.clearTimeout(t)
-      lipRef.current?.focus({ preventScroll: true })
+      returnFocus.current?.focus({ preventScroll: true })
+      returnFocus.current = null
     }
   }, [open])
 
@@ -319,11 +367,9 @@ export function WalletDrawer({
 
   useEffect(() => () => window.clearTimeout(settleTimer.current), [])
 
-  // ── Gesto por puntero (labio = abrir desde peek; asa = cerrar desde open) ───
+  // ── Gesto por puntero (el asa de arriba: tirar hacia abajo para cerrar) ───
   const drag = useRef<{
-    from: 'peek' | 'open'
     startY: number
-    baseY: number
     lastY: number
     lastT: number
     v: number
@@ -331,7 +377,7 @@ export function WalletDrawer({
   } | null>(null)
 
   const onPointerDown = useCallback(
-    (from: 'peek' | 'open') => (e: React.PointerEvent) => {
+    (e: React.PointerEvent) => {
       if (e.button !== 0) return
       measure()
       const panel = panelRef.current
@@ -347,9 +393,7 @@ export function WalletDrawer({
         // sin puntero activo (ej. evento sintético) → seguimos sin captura
       }
       drag.current = {
-        from,
         startY: e.clientY,
-        baseY: from === 'peek' ? geom.current.peekY : 0,
         lastY: e.clientY,
         lastT: e.timeStamp,
         v: 0,
@@ -365,10 +409,10 @@ export function WalletDrawer({
       if (!d) return
       const { peekY } = geom.current
       const dy = e.clientY - d.startY
-      let y = d.baseY + dy
+      let y = dy
       if (y < 0)
-        y = -rubber(-y) // resistencia al pasar de abierto
-      else if (y > peekY) y = peekY + rubber(y - peekY) // resistencia al pasar de peek
+        y = -rubber(-y) // resistencia al tirar hacia arriba de lo abierto
+      else if (y > peekY) y = peekY + rubber(y - peekY)
       const clamped = Math.max(0, Math.min(peekY, y))
       place(y, peekY ? 1 - clamped / peekY : 0)
       d.v = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastT)
@@ -389,23 +433,17 @@ export function WalletDrawer({
       } catch {
         // el puntero ya pudo haberse liberado
       }
-      const { peekY } = geom.current
-      const p = peekY ? 1 - curY.current / peekY : d.from === 'open' ? 1 : 0
       if (!d.moved) {
-        // Tap: en el labio abre; en el asa se queda abierto (reasienta).
-        if (d.from === 'peek') openDrawer()
-        else settleRest(true)
+        // Un toque en el asa no hace nada: se queda abierto (reasienta).
+        settleRest(true)
         return
       }
-      if (d.from === 'peek') {
-        if (p > OPEN_AT || d.v < -FLICK) openDrawer(d.v)
-        else closeDrawer(d.v)
-      } else {
-        if (1 - p > CLOSE_AT || d.v > FLICK) closeDrawer(d.v)
-        else openDrawer(d.v)
-      }
+      const { peekY } = geom.current
+      const traveled = peekY ? curY.current / peekY : 0
+      if (traveled > CLOSE_AT || d.v > FLICK) closeDrawer(d.v)
+      else animateTo('open', d.v)
     },
-    [openDrawer, closeDrawer, settleRest],
+    [animateTo, closeDrawer, settleRest],
   )
 
   // ── Arrastrar el CUERPO hacia abajo para cerrar (touch; sólo si el scroll está
@@ -470,7 +508,7 @@ export function WalletDrawer({
       const { peekY } = geom.current
       const traveled = peekY ? curY.current / peekY : 0
       if (traveled > CLOSE_AT || v > FLICK) closeDrawer(v)
-      else openDrawer(v)
+      else animateTo('open', v)
     }
 
     scroller.addEventListener('touchstart', onStart, { passive: true })
@@ -483,7 +521,7 @@ export function WalletDrawer({
       scroller.removeEventListener('touchend', onEnd)
       scroller.removeEventListener('touchcancel', onEnd)
     }
-  }, [measure, place, openDrawer, closeDrawer])
+  }, [measure, place, animateTo, closeDrawer])
 
   // Trampa de foco mínima + ESC mientras está abierto.
   const onPanelKeyDown = useCallback(
@@ -522,12 +560,18 @@ export function WalletDrawer({
       className="force-light pointer-events-none fixed inset-0 z-40"
       style={{ '--wallet-p': initialOpen ? 1 : 0 } as React.CSSProperties}
     >
-      {/* SCRIM — se oscurece con la openness; sólo intercepta toques cuando abre. */}
+      {/* SCRIM — se oscurece con la openness; sólo intercepta toques cuando abre.
+          La barra de la carta abre el cajón al LEVANTAR el dedo, y el navegador manda después el
+          `click` de ese mismo toque: cae acá (el fondo ya está encima de la barra) y lo cerraba en el
+          acto. Por eso un toque que llega pegado a la apertura no cuenta. */}
       <button
         type="button"
         aria-label="Cerrar mi billetera"
         tabIndex={open ? 0 : -1}
-        onClick={() => closeDrawer()}
+        onClick={() => {
+          if (performance.now() - openedAt.current < 450) return
+          closeDrawer()
+        }}
         className={cn(
           'fixed inset-0 cursor-default bg-black',
           open ? 'pointer-events-auto' : 'pointer-events-none',
@@ -535,14 +579,16 @@ export function WalletDrawer({
         style={{ opacity: 'calc(var(--wallet-p) * 0.5)' }}
       />
 
-      {/* PANEL — alto completo; transform lo lleva de peek a open. */}
+      {/* PANEL — alto completo; transform lo lleva de cerrado (debajo de la pantalla) a abierto. */}
       <section
         ref={panelRef}
         aria-label="Mi billetera"
         aria-modal={open || undefined}
         role="dialog"
+        // Cerrado, nada de adentro recibe foco ni lo lee el lector de pantalla.
+        inert={!open}
         onKeyDown={onPanelKeyDown}
-        style={{ transform: initialOpen ? undefined : PEEK_TRANSFORM }}
+        style={initialOpen ? undefined : { transform: REST_TRANSFORM, visibility: 'hidden' }}
         className="bg-app-gradient pointer-events-auto fixed inset-x-0 bottom-0 flex h-[100dvh] flex-col overflow-hidden rounded-t-[1.75rem] shadow-[0_-24px_60px_-24px_rgba(0,0,0,0.5)] outline-none"
       >
         {/* CHROME (cara abierta): asa + barra compacta al scrollear. */}
@@ -567,7 +613,7 @@ export function WalletDrawer({
               type="button"
               aria-label="Arrastrá para cerrar"
               tabIndex={-1}
-              onPointerDown={onPointerDown('open')}
+              onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
@@ -647,31 +693,6 @@ export function WalletDrawer({
 
           <div className="h-[max(env(safe-area-inset-bottom),8px)]" />
         </div>
-
-        {/* LABIO (cara peek): el borde verde que asoma. Botón + tirador para abrir. */}
-        <button
-          ref={lipRef}
-          type="button"
-          aria-label="Abrir mi billetera"
-          aria-hidden={open}
-          tabIndex={open ? -1 : 0}
-          onPointerDown={onPointerDown('peek')}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          className={cn(
-            'absolute inset-x-0 top-0 z-30 flex min-h-[calc(3.5rem_+_env(safe-area-inset-bottom))] touch-none select-none flex-col items-center gap-1.5 rounded-t-[1.75rem] bg-[color:var(--brand-accent,var(--primary))] px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-2.5 text-[color:var(--brand-accent-foreground,var(--primary-foreground))] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70',
-            open ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing',
-          )}
-          style={{ opacity: 'calc(1 - var(--wallet-p))' }}
-        >
-          <span className="h-1.5 w-10 rounded-full bg-current/40" aria-hidden />
-          <span className="flex items-center gap-2 text-sm font-semibold">
-            <Wallet className="size-4" aria-hidden />
-            Mi billetera
-            <ChevronUp className="wallet-hint-bob size-4" aria-hidden />
-          </span>
-        </button>
       </section>
     </div>
   )
