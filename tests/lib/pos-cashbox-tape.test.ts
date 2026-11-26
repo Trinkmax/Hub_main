@@ -288,4 +288,28 @@ describe('lo que dice cada renglón', () => {
       }),
     ).toEqual({ text: 'Nacho abrió esta caja por primera vez', differs: false })
   })
+
+  it('a ciegas no dice cuánto había dejado el turno anterior (ni que era la primera vez): solo que se contó', () => {
+    expect(
+      openingLine(
+        {
+          opening_float_cents: pesos(12_000),
+          opening_expected_cents: null,
+          opened_by_name: 'Caro',
+        },
+        true,
+      ),
+    ).toEqual({ text: 'Caro contó el cajón al abrir', differs: false })
+    // Aunque por error llegara lo que había quedado, a ciegas no se escribe.
+    const leaked = openingLine(
+      {
+        opening_float_cents: pesos(12_000),
+        opening_expected_cents: pesos(15_000),
+        opened_by_name: 'Caro',
+      },
+      true,
+    )
+    expect(leaked.text).toBe('Caro contó el cajón al abrir')
+    expect(leaked.differs).toBe(false)
+  })
 })
