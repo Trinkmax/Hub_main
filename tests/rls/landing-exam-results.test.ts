@@ -231,10 +231,18 @@ describeIfRls('RLS — landing_exam_results', () => {
       'submit_landing_exam_result',
       payload(pages.exam.slug),
     )
-    const { error } = await ownerA.client
+    // Según el proyecto, el UPDATE choca con los permisos (sin grant de update) o pasa sin tocar
+    // ninguna fila (los proyectos viejos dan todos los permisos por defecto, pero no hay policy de
+    // update). Lo que importa es lo mismo en los dos: la nota sigue igual.
+    await ownerA.client
       .from('landing_exam_results')
       .update({ score: 2 })
       .eq('id', id as string)
-    expect(error).not.toBeNull()
+    const { data } = await getServiceClient()
+      .from('landing_exam_results')
+      .select('score')
+      .eq('id', id as string)
+      .single()
+    expect((data as { score: number }).score).toBe(1)
   })
 })
