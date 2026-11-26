@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { detailKey, nextHeld, quickCard, withPending } from '@/lib/pos/floor/quick'
+import {
+  detailKey,
+  ECHO_MS,
+  isEchoTap,
+  nextHeld,
+  quickCard,
+  withPending,
+} from '@/lib/pos/floor/quick'
 import { deriveSessionState } from '@/lib/pos/table-state'
 import type { FloorSession, SessionDetail, SessionItem, SessionTicket } from '@/lib/pos/types'
 
@@ -263,5 +270,26 @@ describe('cuándo volver a leer el detalle de la mesa elegida', () => {
   it('no cambia porque pase el tiempo ni porque cambie otra cosa de la mesa', () => {
     const base = floor({ items_preparing: 2 })
     expect(detailKey({ ...base, party_size: 6, alias: 'Cumple' })).toBe(detailKey(base))
+  })
+})
+
+describe('un doble toque sobre la mesa no dispara un botón de la ficha', () => {
+  const origin = { x: 200, y: 600, t: 1_000 }
+
+  it('el segundo toque de un doble toque (mismo lugar, enseguida) se ignora', () => {
+    expect(isEchoTap(origin, { x: 204, y: 596, t: 1_180 })).toBe(true)
+  })
+
+  it('un toque rápido en OTRO lugar anda siempre: el mozo que toca la mesa y enseguida «Servido»', () => {
+    expect(isEchoTap(origin, { x: 290, y: 760, t: 1_150 })).toBe(false)
+    expect(isEchoTap(origin, { x: 200, y: 660, t: 1_090 })).toBe(false)
+  })
+
+  it('en el mismo lugar pero ya pasado el instante, es una decisión', () => {
+    expect(isEchoTap(origin, { x: 200, y: 600, t: 1_000 + ECHO_MS + 1 })).toBe(false)
+  })
+
+  it('sin toque de origen (teclado, o una mesa soltada) no hay eco', () => {
+    expect(isEchoTap(null, { x: 200, y: 600, t: 1_010 })).toBe(false)
   })
 })

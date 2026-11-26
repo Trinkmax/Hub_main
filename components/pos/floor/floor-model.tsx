@@ -67,7 +67,8 @@ type Props = {
   /** Estado de cada mesa, por id de mesa. */
   tables: Readonly<Record<string, FloorTable>>
   view: 'model' | 'plan'
-  onTable: (tableId: string) => void
+  /** `at`: dónde fue el toque en la pantalla (no viene cuando se suelta una mesa arrastrada). */
+  onTable: (tableId: string, at?: { x: number; y: number }) => void
   className?: string
   /** Texto para lectores de pantalla: «Salón, 12 mesas». */
   label: string
@@ -104,8 +105,8 @@ type Props = {
    */
   picked?: string | null
   coverBottom?: number
-  /** Un toque en el paño, fuera de toda mesa. */
-  onBackground?: () => void
+  /** Un toque en el paño, fuera de toda mesa (con el lugar de la pantalla donde fue). */
+  onBackground?: (at: { x: number; y: number }) => void
 }
 
 /** Cuánto hay que mantener apretada una mesa para levantarla. */
@@ -482,7 +483,9 @@ export function FloorModel({
         onBackground
           ? (event) => {
               // Las mesas son botones: cualquier otro toque es en el paño.
-              if (!(event.target as Element).closest('button')) onBackground()
+              if (!(event.target as Element).closest('button')) {
+                onBackground({ x: event.clientX, y: event.clientY })
+              }
             }
           : undefined
       }
@@ -712,12 +715,12 @@ export function FloorModel({
                 aria-pressed={picked === anchor.tableId ? true : undefined}
                 data-table={anchor.label}
                 {...hold}
-                onClick={() => {
+                onClick={(event) => {
                   // El toque que cierra un «mantener apretado» no abre la mesa.
                   const skip = skipClick.current
                   skipClick.current = null
                   if (skip && skip.tableId === anchor.tableId && Date.now() < skip.until) return
-                  onTable(anchor.tableId)
+                  onTable(anchor.tableId, { x: event.clientX, y: event.clientY })
                 }}
               />
             )

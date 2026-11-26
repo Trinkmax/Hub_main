@@ -1,9 +1,9 @@
 'use client'
 
 import { BellRing, Check, ChevronRight, Pause, Play, Plus, Receipt, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { formatCentsShort } from '@/lib/money/format'
-import type { QuickCard } from '@/lib/pos/floor/quick'
+import { isEchoTap, type PickOrigin, type QuickCard } from '@/lib/pos/floor/quick'
 import { formatMinutes, STATE_LABEL, type TableState } from '@/lib/pos/table-state'
 import { cn } from '@/lib/utils'
 import { STATE_ICON } from './floor-model'
@@ -20,9 +20,6 @@ import './table-quick.css'
  *   al medio qué hay para retirar (o qué tanda espera), dicho en una línea
  *   abajo    Cuenta · Agregar · y lo que manda: Servido, Marchar tanda o Cobrar
  */
-
-/** Lo que tarda en poder tocarse: un doble toque sobre una mesa de abajo caía en un botón de la ficha. */
-const ARM_MS = 350
 
 type Props = {
   /** El número de la mesa. */
@@ -44,6 +41,8 @@ type Props = {
   onClose: () => void
   /** Cuánto mide: el mapa corre la mesa elegida si quedaba debajo. */
   onHeight: (px: number) => void
+  /** El toque que eligió la mesa: su «eco» (un doble toque en el mismo lugar) no dispara nada. */
+  origin: PickOrigin | null
 }
 
 export function TableQuick({
@@ -62,12 +61,15 @@ export function TableQuick({
   onOpen,
   onClose,
   onHeight,
+  origin,
 }: Props) {
   const ref = useRef<HTMLElement>(null)
-  const [bornAt] = useState(() => performance.now())
-  const armed = (run: () => void) => () => {
-    if (performance.now() - bornAt < ARM_MS) return
-    run()
+  // Un toque en otro lugar de la pantalla anda siempre, por rápido que sea. El segundo toque de un doble
+  // toque sobre la mesa, si cae acá, no es para el botón que quedó debajo del dedo: doble toque es entrar a
+  // la mesa, en todo el mapa (ver `isEchoTap`).
+  const armed = (run: () => void) => (event: React.MouseEvent) => {
+    if (isEchoTap(origin, { x: event.clientX, y: event.clientY, t: event.timeStamp })) onOpen()
+    else run()
   }
 
   const onHeightRef = useRef(onHeight)
@@ -154,7 +156,7 @@ export function TableQuick({
         <button
           type="button"
           className="pos-quick-close"
-          onClick={onClose}
+          onClick={armed(onClose)}
           aria-label="Cerrar las acciones de la mesa"
           data-testid="quick-close"
         >

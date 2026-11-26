@@ -35,7 +35,9 @@ import {
 import { settingsHref } from '@/lib/pos/branches/links'
 import {
   detailKey,
+  isEchoTap,
   nextHeld,
+  type PickOrigin,
   type QuickPending,
   quickCard,
   withPending,
@@ -173,6 +175,9 @@ export function FloorLive({
   // La mesa elegida (su ficha de acciones está abierta), el detalle que la completa y lo que se acaba de
   // tocar en una ficha y la base todavía no confirmó (por mesa abierta).
   const [picked, setPicked] = useState<string | null>(null)
+  const [pickOrigin, setPickOrigin] = useState<PickOrigin | null>(null)
+  // El mismo dato, para leerlo dentro de un toque sin esperar al próximo dibujo.
+  const pickOriginRef = useRef<PickOrigin | null>(null)
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [pending, setPending] = useState<Readonly<Record<string, QuickPending>>>({})
   const [billBusy, setBillBusy] = useState(false)
@@ -346,6 +351,16 @@ export function FloorLive({
     return () => window.removeEventListener('keydown', onKey)
   }, [picked])
   const closeQuick = useCallback(() => setPicked(null), [])
+  // El «eco» de un doble toque: el segundo toque llega en el mismo lugar de la pantalla, pero el mapa ya
+  // se corrió para dejar ver la mesa elegida y debajo del dedo hay otra cosa (otra mesa, el paño, la ficha).
+  // La regla es una sola: un toque, acciones rápidas; doble toque, entrar a la mesa.
+  const isEcho = useCallback(
+    (at?: { x: number; y: number }) =>
+      at !== undefined &&
+      (at.x !== 0 || at.y !== 0) &&
+      isEchoTap(pickOriginRef.current, { ...at, t: performance.now() }),
+    [],
+  )
 
   // ── Cambiar una mesa de lugar ──
   // Se levanta manteniéndola apretada (o con «Cambiar de mesa» desde la comanda) y va a una libre.
@@ -451,7 +466,7 @@ export function FloorLive({
   }, [entries, canOperate, router, slug, snapshot.branch.slug])
 
   const onTable = useCallback(
-    (tableId: string) => {
+    (tableId: string, at?: { x: number; y: number }) => {
       const entry = byId.get(tableId)
       if (!entry) return
       if (moving) {
@@ -460,6 +475,13 @@ export function FloorLive({
         else if (entry.session) {
           setMerging({ from: moving, into: { sessionId: entry.session.id, label: entry.label } })
         } else toast('Esa mesa no está libre. Elegí una de las marcadas.')
+        return
+      }
+      // Doble toque = entrar a la mesa. Si el segundo toque cayó sobre OTRA mesa (el mapa se corrió debajo
+      // del dedo), sigue siendo para la elegida, no para esa.
+      if (picked !== null && picked !== tableId && isEcho(at)) {
+        const chosen = byId.get(picked)?.session
+        if (chosen) router.push(`/${slug}/salon/mesa/${chosen.id}`)
         return
       }
       if (!entry.session) {
@@ -474,9 +496,13 @@ export function FloorLive({
         return
       }
       buzz(8)
+      // Un «clic» de teclado o de un lector de pantalla llega sin lugar (0, 0): ahí no hay eco que cuidar.
+      const origin = at && (at.x !== 0 || at.y !== 0) ? { ...at, t: performance.now() } : null
+      pickOriginRef.current = origin
+      setPickOrigin(origin)
       setPicked(tableId)
     },
-    [byId, router, slug, moving, moveTargets, finishMove, canOperate, picked],
+    [byId, router, slug, moving, moveTargets, finishMove, canOperate, picked, isEcho],
   )
 
   // ── Las acciones de la ficha ──
@@ -858,7 +884,9 @@ export function FloorLive({
                         picked === entry.tableId && 'is-picked',
                       )}
                       aria-pressed={picked === entry.tableId ? true : undefined}
-                      onClick={() => onTable(entry.tableId)}
+                      onClick={(event) =>
+                        onTable(entry.tableId, { x: event.clientX, y: event.clientY })
+                      }
                     >
                       <span className="pos-row-num">{entry.label}</span>
                       <span className="min-w-0 flex-1">
@@ -907,7 +935,11 @@ export function FloorLive({
               onDrop={onTable}
               picked={pickedEntry ? picked : null}
               coverBottom={pickedEntry ? quickHeight + 22 : 0}
-              onBackground={closeQuick}
+              onBackground={(at) => {
+                // El segundo toque de un doble toque, caído en el paño: es entrar a la mesa elegida.
+                if (isEcho(at)) quickOpen()
+                else setPicked(null)
+              }}
               label={`${activeArea?.name ?? 'Salón'}: ${areaElements.filter((e) => e.kind === 'table').length} mesas`}
             />
           )}
@@ -990,6 +1022,7 @@ export function FloorLive({
               onOpen={quickOpen}
               onClose={closeQuick}
               onHeight={setQuickHeight}
+              origin={pickOrigin}
             />
           ) : null}
 

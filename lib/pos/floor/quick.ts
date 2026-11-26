@@ -90,6 +90,36 @@ export function quickCard(
   return { billOn, primary: { kind: 'add' } }
 }
 
+// ─── El toque que eligió la mesa ─────────────────────────────────────────────
+
+/** Dónde y cuándo se tocó la mesa que abrió la ficha (coordenadas de pantalla, reloj de `performance`). */
+export type PickOrigin = { x: number; y: number; t: number }
+
+/** Dos toques tan seguidos y tan juntos son un doble toque, no dos decisiones. */
+export const ECHO_MS = 500
+export const ECHO_PX = 44
+
+/**
+ * ¿Este toque es el «eco» del que eligió la mesa, es decir, el segundo de un doble toque?
+ *
+ * La regla del mapa es una sola: un toque, acciones rápidas; doble toque, entrar a la mesa. Pero entre un
+ * toque y el otro la pantalla cambia debajo del dedo: aparece la ficha, y el mapa se corre para dejar ver la
+ * mesa. Sin esto, el segundo toque caía en un botón («Servido») que nadie había leído, o en la mesa de al
+ * lado. Quien recibe un eco no hace lo suyo: entra a la mesa elegida.
+ *
+ * Se lo reconoce por el LUGAR, no solo por el tiempo: un mozo rápido que toca la mesa y enseguida el botón
+ * (en otro lugar de la pantalla) tiene que andar siempre, aunque tarde 150 ms. Ignorarle ese toque sería
+ * volver a «aprieto y a veces no se marca».
+ */
+export function isEchoTap(
+  origin: PickOrigin | null,
+  tap: { x: number; y: number; t: number },
+): boolean {
+  if (!origin) return false
+  if (tap.t - origin.t > ECHO_MS) return false
+  return Math.hypot(tap.x - origin.x, tap.y - origin.y) < ECHO_PX
+}
+
 // ─── Lo que se acaba de tocar ────────────────────────────────────────────────
 
 /** Lo que el mozo tocó en la ficha y la base todavía no confirmó. */

@@ -251,8 +251,11 @@ ocupada entraba a la comanda: marcar algo como servido eran dos cambios de panta
   justo (`.pos-pan`); no se vuelve a encuadrar, el salón no cambia de tamaño por tocar una mesa.
 - **Con ancho (la compu de la caja) es una sola fila baja**, en el lugar de las fichas del resumen: en una
   notebook el mapa mide poco de alto y la ficha del celular le tapaba un tercio.
-- **Un doble toque no dispara nada por error:** la ficha tarda 350 ms en aceptar toques (un doble toque sobre
-  una mesa de abajo caía justo en un botón).
+- **Un toque, acciones rápidas; doble toque, entrar a la mesa.** Entre un toque y el otro la pantalla cambia
+  debajo del dedo (aparece la ficha, el mapa se corre): el segundo toque de un doble toque caía en un botón
+  («Servido») o en la mesa de al lado. Se lo reconoce por el lugar (`isEchoTap`: mismo punto de la pantalla,
+  menos de medio segundo) y entra a la mesa elegida, caiga donde caiga. No es una espera: tocar la mesa y
+  enseguida un botón, en otro lugar de la pantalla, anda siempre (probado a los 165 ms).
 - Lo que hay que llevar junta lo igual (`unitsLabel`): una mesa que pidió lo mismo en dos tandas dice
   «4 Mojito», no «2 Mojito · 2 Mojito». Vale también para la barra de la comanda.
 - Quien solo mira (la cocina) sigue entrando al pedido con un toque. En la lista funciona igual: la fila
