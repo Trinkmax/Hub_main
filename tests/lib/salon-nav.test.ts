@@ -50,11 +50,27 @@ describe('visibleSalonTabs — con el punto de venta manda el salón en vivo', (
     ])
   })
 
-  it('el mozo no ve la caja', () => {
+  it('el mozo no ve la caja ni la pantalla de cocina', () => {
     const waiter = keys('waiter', on)
-    expect(waiter.slice(0, 3)).toEqual(['mapa', 'reservas', 'tele'])
+    expect(waiter.slice(0, 2)).toEqual(['mapa', 'reservas'])
     expect(waiter).not.toContain('caja')
+    expect(waiter).not.toContain('tele')
     expect(waiter).not.toContain('stock')
+  })
+
+  it('el cajero ve el salón, la caja y las reservas, no la pantalla de cocina', () => {
+    const cashier = keys('cashier', on)
+    expect(cashier.slice(0, 3)).toEqual(['mapa', 'caja', 'reservas'])
+    expect(cashier).not.toContain('tele')
+  })
+
+  it('al mozo le entran todas sus pestañas en la barra, sin «Más»', () => {
+    const tabs = visibleSalonTabs({
+      role: 'waiter',
+      features: features(on),
+      isPlatformAdmin: false,
+    })
+    expect(splitSalonTabs(tabs).more).toEqual([])
   })
 
   it('la cocina entra a su pantalla y al stock, nada más', () => {

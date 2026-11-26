@@ -13,7 +13,7 @@ import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import { POS_CASH_ROLES } from '@/lib/pos/cash/roles'
 import {
   POS_FLOOR_ROLES,
-  POS_KITCHEN_ROLES,
+  POS_KITCHEN_SCREEN_ROLES,
   PURCHASING_KITCHEN_ROLES,
   REDEMPTION_STAFF_ROLES,
   SALON_READ_ROLES,
@@ -79,14 +79,15 @@ export const SALON_TABS: ReadonlyArray<SalonTab> = [
     feature: 'pos',
   },
   {
-    // La pantalla de cocina del punto de venta: la misma que va en la tele, desde cualquier celular.
+    // La pantalla de cocina del punto de venta: la misma que va en la tele. La ven la cocina y el dueño;
+    // a mozos y cajeros no les aparece (no es su pantalla, y les sacaba un lugar de la barra).
     key: 'tele',
     label: 'Cocina',
     title: 'Cocina',
     icon: ChefHat,
     href: (s) => `/${s}/salon/tele`,
     match: (p, s) => p.startsWith(`/${s}/salon/tele`),
-    roles: POS_KITCHEN_ROLES,
+    roles: POS_KITCHEN_SCREEN_ROLES,
     feature: 'pos',
   },
   {
