@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { listLandingPages } from '@/lib/landings/queries'
+import { countExamResultsByPage, listLandingPages } from '@/lib/landings/queries'
 import { getLandingsBase, landingsPrefix } from '@/lib/landings/urls'
 import {
   RoleRequiredError,
@@ -30,9 +30,10 @@ export default async function PaginasPage({ params }: { params: Promise<{ tenant
     throw error
   }
 
-  const [pages, landingsBase] = await Promise.all([
+  const [pages, landingsBase, resultCounts] = await Promise.all([
     listLandingPages(access.tenant.id),
     getLandingsBase(),
+    countExamResultsByPage(access.tenant.id),
   ])
   const urlPrefix = landingsPrefix(landingsBase)
 
@@ -45,7 +46,12 @@ export default async function PaginasPage({ params }: { params: Promise<{ tenant
         actions={<NewPageButton tenantSlug={tenantSlug} urlPrefix={urlPrefix} />}
       />
 
-      <PagesList tenantSlug={tenantSlug} pages={pages} landingsBase={landingsBase} />
+      <PagesList
+        tenantSlug={tenantSlug}
+        pages={pages}
+        landingsBase={landingsBase}
+        resultCounts={resultCounts}
+      />
     </PageShell>
   )
 }

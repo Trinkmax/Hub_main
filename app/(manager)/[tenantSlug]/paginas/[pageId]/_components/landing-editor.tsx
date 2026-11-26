@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  ClipboardList,
   Clock,
   Code2,
   FileUp,
@@ -77,6 +78,7 @@ export function LandingEditor({
   versions,
   views,
   landingsBase,
+  resultsCount = 0,
 }: {
   tenantSlug: string
   tenantId: string
@@ -85,6 +87,8 @@ export function LandingEditor({
   views: LandingViewPoint[]
   /** Base pública ya resuelta: `${landingsBase}/${slug}` es el link. */
   landingsBase: string
+  /** Si la página es un examen y alguien lo rindió: cuántos intentos hay guardados. */
+  resultsCount?: number
 }) {
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -426,6 +430,24 @@ export function LandingEditor({
           {/* flex-wrap + textos que se esconden abajo de sm: con la página
               publicada, los cinco controles no entran en 360px de ancho. */}
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {resultsCount > 0 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/${tenantSlug}/paginas/${page.id}/resultados`}
+                  onClick={(event) => {
+                    // Irse con cambios sin guardar los perdería: primero guardar o descartar.
+                    if (!dirty) return
+                    event.preventDefault()
+                    toast.info('Guardá o descartá los cambios antes de ir a los resultados.')
+                  }}
+                >
+                  <ClipboardList className="size-4" aria-hidden />
+                  <span className="hidden sm:inline">Resultados</span>
+                  <span className="tabular-nums">{resultsCount}</span>
+                </Link>
+              </Button>
+            ) : null}
+
             {/* Baja lo que está en el editor, no lo último guardado: si retocaste
                 algo y se lo vas a pasar a ChatGPT, es eso lo que tiene que ver. */}
             <DownloadHtmlButton
