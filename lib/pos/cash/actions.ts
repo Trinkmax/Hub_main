@@ -16,7 +16,14 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { percentToBp } from './bill'
-import { type BlindCloseResult, blindCloseResult, blindSnapshot, seesSalonNumbers } from './blind'
+import {
+  type BlindCloseResult,
+  blindCloseResult,
+  blindOpenResult,
+  blindSnapshot,
+  openingMatches,
+  seesSalonNumbers,
+} from './blind'
 import { toCashError } from './errors'
 import { SHIFT_CLOSED_JOB } from './notice-job'
 import { getApprovalsInbox, getBill, getShiftSnapshot } from './queries'
@@ -179,6 +186,45 @@ export async function checkShiftCount(
     return { ok: false, message: 'Ese turno ya se cerró.', code: 'shift_not_open' }
   }
   return { ok: true, data: { matches: expected === parsed.data.countedCents } }
+}
+
+const openingCheckSchema = z.object({
+  branchId: id,
+  registerId: id.nullish(),
+  countedCents: cents,
+  practice: z.boolean().optional(),
+})
+
+/**
+ * Abrir a ciegas no dice cuánto dejó el turno anterior. Igual que al cerrar, antes de abrir se puede
+ * preguntar UNA cosa: ¿lo contado coincide con lo que quedó? Sí o no, sin montos ni para qué lado.
+ */
+export async function checkOpeningCount(
+  slug: string,
+  input: z.input<typeof openingCheckSchema>,
+): Promise<ActionResult<{ matches: boolean }>> {
+  const access = await authorize(slug, POS_CASH_ROLES)
+  if (isDenied(access)) return access
+  const parsed = openingCheckSchema.safeParse(input)
+  if (!parsed.success) return invalid
+  const result = await getShiftSnapshot(parsed.data.branchId, {
+    shiftId: null,
+    practice: parsed.data.practice === true,
+  })
+  if (!result.ok) return { ok: false, message: result.error.message, code: result.error.code }
+  const registers = result.data.registers
+  const register =
+    (parsed.data.registerId
+      ? registers.find((candidate) => candidate.id === parsed.data.registerId)
+      : undefined) ??
+    registers[0] ??
+    null
+  return {
+    ok: true,
+    data: {
+      matches: openingMatches(register?.last_closed?.leave_float_cents, parsed.data.countedCents),
+    },
+  }
 }
 
 export async function refreshApprovals(
@@ -605,10 +651,12 @@ export async function openShift(
         opening_float_cents: result.data.opening_float_cents,
         opening_expected_cents: result.data.opening_expected_cents,
         practice: data.practice ?? false,
+        blind: !access.numbers,
       },
     })
   }
-  return { ok: true, data: result.data }
+  // Quien no es socio no recibe cuánto había dejado el turno anterior: abrió contando.
+  return { ok: true, data: access.numbers ? result.data : blindOpenResult(result.data) }
 }
 
 const isoDay = z.string().refine((value) => isIsoDay(value))

@@ -1003,6 +1003,40 @@ button.caja-line:active {
 .caja-open .caja-say {
   max-width: 30rem;
 }
+/* Abrir a ciegas: lo contado no es lo que dejó el turno anterior. Se pide contar una vez más, sin
+   decir cuánto ni para qué lado. Va sobre el paño (oscuro), no sobre el papel. */
+.caja-open-recount {
+  display: grid;
+  max-width: 30rem;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.9rem;
+  background: oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.2);
+}
+.caja-open-recount b {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--pos-board-ink);
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-stretch: 86%;
+  line-height: 1.1;
+}
+.caja-open-recount b svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex: none;
+}
+.caja-open-recount p {
+  color: var(--pos-board-ink);
+  font-size: 0.98rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
 /* El número grande, cuando lo escribe quien abre. */
 .caja-hero-field {
   display: flex;

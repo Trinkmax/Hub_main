@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   blindCloseResult,
+  blindOpenResult,
   blindSnapshot,
   blindSummary,
   isBlindClose,
+  openingMatches,
   seesSalonNumbers,
 } from '@/lib/pos/cash/blind'
 import { pickPartners } from '@/lib/pos/cash/partners'
-import type { CloseShiftResult, ShiftSnapshot } from '@/lib/pos/cash/types'
+import type { CloseShiftResult, OpenShiftResult, ShiftSnapshot } from '@/lib/pos/cash/types'
 import { sampleLive, sampleNightClosed } from './pos-cashbox-samples'
 
 /**
@@ -84,7 +86,10 @@ describe('qué viaja al navegador de quien no los ve', () => {
     expect(blind.live?.payments_count).toBe(open.live?.payments_count)
     expect(blind.live?.open_tables.count).toBe(open.live?.open_tables.count)
     expect(blind.live?.opening_float_cents).toBe(open.live?.opening_float_cents)
-    expect(blind.registers).toEqual(open.registers)
+    // Las cajas viajan (hay que poder elegir cuál se abre), sin lo que dejó su último turno.
+    expect(blind.registers.map((r) => [r.id, r.name, r.open_shift_id])).toEqual(
+      open.registers.map((r) => [r.id, r.name, r.open_shift_id]),
+    )
   })
 
   it('los cobros del turno abierto siguen (hay que poder corregir uno); los de otros turnos, no', () => {
@@ -108,9 +113,57 @@ describe('qué viaja al navegador de quien no los ve', () => {
     expect(closed.shift?.expected_cash_cents).toBeNull()
     expect(closed.shift?.difference_cents).toBeNull()
     expect(closed.payments).toEqual([])
-    // Lo que contó y lo que dejó lo escribió quien cerró.
-    expect(closed.shift?.counted_cash_cents).toBe(sampleNightClosed().shift?.counted_cash_cents)
-    expect(closed.shift?.leave_float_cents).toBe(sampleNightClosed().shift?.leave_float_cents)
+  })
+
+  it('un turno cerrado tampoco dice cuánto se contó ni cuánto quedó de cambio: es lo que cuenta quien abre el siguiente', () => {
+    const source = sampleNightClosed()
+    expect(source.shift?.counted_cash_cents).toBeGreaterThan(0)
+    expect(source.shift?.leave_float_cents).toBeGreaterThan(0)
+    const closed = blindSnapshot(source)
+    expect(closed.shift?.counted_cash_cents).toBeNull()
+    expect(closed.shift?.count_breakdown).toBeNull()
+    expect(closed.shift?.leave_float_cents).toBeNull()
+    expect(closed.shift?.closing_note).toBeNull()
+    // Ni con cuánto había abierto (casi siempre se deja el mismo cambio), ni sus retiros.
+    expect(closed.shift?.opening_float_cents).toBe(0)
+    expect(closed.live).toBeNull()
+    // Quién cerró y cuándo sí: sirve para ubicarse y no es un número.
+    expect(closed.shift?.closed_by_name).toBe(source.shift?.closed_by_name)
+    expect(closed.shift?.closed_at).toBe(source.shift?.closed_at)
+  })
+
+  it('la caja no dice cuánto dejó su último turno (con eso se compara lo que cuente quien abre)', () => {
+    const source = sampleNightClosed()
+    const left = source.registers.map((r) => r.last_closed?.leave_float_cents ?? null)
+    expect(left.some((cents) => cents !== null && cents > 0)).toBe(true)
+    const closed = blindSnapshot(source)
+    for (const register of closed.registers) {
+      if (!register.last_closed) continue
+      expect(register.last_closed.leave_float_cents).toBeNull()
+      // Qué turno fue, quién lo cerró y cuándo, sí.
+      const original = source.registers.find((r) => r.id === register.id)?.last_closed
+      expect(register.last_closed.shift_id).toBe(original?.shift_id)
+      expect(register.last_closed.closed_by_name).toBe(original?.closed_by_name)
+    }
+    // Y no quedó en ningún otro rincón de lo que viaja.
+    const text = JSON.stringify(closed)
+    for (const cents of left) {
+      if (cents !== null && cents > 0) expect(text).not.toContain(String(cents))
+    }
+  })
+
+  it('con el turno abierto, lo que el turno anterior había dejado tampoco viaja', () => {
+    const withExpected: ShiftSnapshot = {
+      ...open,
+      shift: open.shift ? { ...open.shift, opening_expected_cents: 1_234_500 } : null,
+      live: open.live ? { ...open.live, opening_expected_cents: 1_234_500 } : null,
+    }
+    const out = blindSnapshot(withExpected)
+    expect(out.shift?.opening_expected_cents).toBeNull()
+    expect(out.live?.opening_expected_cents).toBeNull()
+    expect(JSON.stringify(out)).not.toContain('1234500')
+    // Con cuánto abrió (lo que contó quien abrió) sí.
+    expect(out.shift?.opening_float_cents).toBe(open.shift?.opening_float_cents)
   })
 
   it('en todo lo que viaja no queda ninguno de los montos del resumen', () => {
@@ -221,5 +274,35 @@ describe('a quién le llega el cierre', () => {
       'a',
       'b',
     ])
+  })
+})
+
+describe('abrir a ciegas: se cuenta el cajón sin saber cuánto dejó el turno anterior', () => {
+  const opened: OpenShiftResult = {
+    shift_id: 'turno-nuevo',
+    register_id: 'caja-1',
+    already_open: false,
+    opening_float_cents: 1_200_000,
+    opening_expected_cents: 1_500_000,
+  }
+
+  it('la respuesta de abrir no trae lo que había dejado el turno anterior', () => {
+    const out = blindOpenResult(opened)
+    expect(out.opening_expected_cents).toBeNull()
+    expect(out.opening_float_cents).toBe(1_200_000)
+    expect(JSON.stringify(out)).not.toContain('1500000')
+  })
+
+  it('la única pregunta que se contesta es si coincide, por sí o por no', () => {
+    expect(openingMatches(1_500_000, 1_500_000)).toBe(true)
+    expect(openingMatches(1_500_000, 1_200_000)).toBe(false)
+    expect(openingMatches(1_500_000, 1_500_001)).toBe(false)
+    expect(openingMatches(0, 0)).toBe(true)
+    expect(openingMatches(0, 100)).toBe(false)
+  })
+
+  it('sin turno anterior (la primera vez de una caja) no hay con qué comparar: no se pide recuento', () => {
+    expect(openingMatches(null, 1_200_000)).toBe(true)
+    expect(openingMatches(undefined, 0)).toBe(true)
   })
 })

@@ -188,11 +188,16 @@ export function tenderedLine(
   return `Pagó con ${formatCentsShort(payment.tendered_cents)} · vuelto ${formatCentsShort(payment.change_cents)}`
 }
 
-/** Cómo arrancó el turno: si quien abrió confirmó lo que había o contó otra cosa. */
+/**
+ * Cómo arrancó el turno: si quien abrió confirmó lo que había o contó otra cosa. A ciegas (`blind`) no se
+ * sabe cuánto había dejado el turno anterior (no viaja): solo se dice que se contó.
+ */
 export function openingLine(
   shift: Pick<Shift, 'opening_float_cents' | 'opening_expected_cents' | 'opened_by_name'>,
+  blind = false,
 ): { text: string; differs: boolean } {
   const who = shift.opened_by_name
+  if (blind) return { text: `${who} contó el cajón al abrir`, differs: false }
   if (shift.opening_expected_cents === null) {
     return { text: `${who} abrió esta caja por primera vez`, differs: false }
   }

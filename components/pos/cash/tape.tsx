@@ -105,7 +105,7 @@ export function Tape({
           onOpen={onMovement}
         />
       ) : entry.kind === 'opening' ? (
-        <OpeningRow shift={entry.shift} timeZone={timeZone} />
+        <OpeningRow shift={entry.shift} timeZone={timeZone} blind={blind} />
       ) : (
         <ClosingRow shift={entry.shift} timeZone={timeZone} blind={blind} />
       )}
@@ -322,8 +322,16 @@ function MovementRow({
   )
 }
 
-function OpeningRow({ shift, timeZone }: { shift: Shift; timeZone: string }) {
-  const opening = openingLine(shift)
+function OpeningRow({
+  shift,
+  timeZone,
+  blind,
+}: {
+  shift: Shift
+  timeZone: string
+  blind: boolean
+}) {
+  const opening = openingLine(shift, blind)
   return (
     <div className="caja-line is-hand">
       <time dateTime={shift.opened_at}>{clockAt(shift.opened_at, timeZone)}</time>

@@ -336,8 +336,13 @@ no, queda el pedido y la comanda avisa «Baja pedida».
 `/[bar]/salon/caja` (dueño y caja), `components/pos/cash/*`, lecturas y acciones en `lib/pos/cash/*`. Una
 pantalla por sucursal (`?sucursal=<slug>` o la que eligió el dispositivo).
 
-- **Abrir**: la primera vez se escribe con cuánto cambio arranca; después muestra lo que dejó el turno
-  anterior y pregunta «¿Están en el cajón?» (si no están, se escribe lo que hay).
+- **Abrir**: la primera vez se escribe con cuánto cambio arranca. Después, a un socio le muestra lo que
+  dejó el turno anterior y pregunta «¿Están en el cajón?» (si no están, escribe lo que hay); quien no es
+  socio abre a ciegas: cuenta y escribe, sin ver cuánto había quedado (ver «La caja a ciegas»).
+- **En un día nuevo la caja arranca limpia**: la cinta del turno anterior acompaña mientras sea del mismo
+  día (se cerró el mediodía, se abre la noche). Si el último turno es de otro día, a la derecha queda la
+  cinta vacía; lo de antes está en «Ver cómo cerró» y en «Turnos». (Nacho, 26/11/2026, mirando el jueves la
+  cinta del domingo: «¿por qué me sale esto así, si hoy es un día nuevo?».)
 - **El turno abierto**: cuánto entró, las teclas de los medios (cuentan y filtran), la cinta que se escribe
   sola con cada cobro y, abajo, cuánto efectivo tiene que haber en el cajón. «Sacar plata» y «Entró plata»
   piden monto y motivo; con Administración en marcha, «Sacar plata» pregunta además para qué sale y a
@@ -364,6 +369,18 @@ esto nos lo mande a nosotros y que no manipule la información el encargado?».
   poder corregir uno, sacar y entrar plata, contar y cerrar), pero sin totales: el visor dice cuántos cobros
   lleva el turno, las teclas de los medios cuentan cobros y el cajón dice «se cuenta al cerrar». No hay
   «Turnos» anteriores ni «Así viene el turno».
+- **Abrir a ciegas (26/11/2026).** Nacho: «en el arqueo se ve todo el tiempo la plata que debería de haber,
+  la idea es que ellos tengan que contarla, así se hace el arqueo. No quiero que roben nada». Cerrar ya era
+  a ciegas, pero ABRIR le mostraba a cualquiera cuánto había dejado el turno anterior y pedía confirmar
+  («¿Están en el cajón?»): si la pantalla dice cuánto tiene que haber, nadie cuenta. Ahora quien no es
+  socio ve «¿Cuánto hay en el cajón?», cuenta y escribe. Antes de abrir se le pregunta UNA cosa al servidor
+  (`checkOpeningCount`: ¿coincide con lo que quedó?, sí o no); si no coincide se pide contar una vez más,
+  sin decir cuánto ni para qué lado, y si insiste abre igual: queda anotado lo que contó, lo que había
+  quedado y quién abrió, y la diferencia sale en el resumen del turno que reciben los socios. Lo que dejó
+  el turno anterior ya no viaja a su navegador por ningún lado: ni en la caja (`last_closed`), ni en el
+  turno cerrado (lo contado, lo que quedó, con cuánto había abierto, sus retiros), ni en la respuesta de
+  abrir. Quien cierra a ciegas sigue viendo su comprobante («Contaste $ X»), pero desde la respuesta de su
+  propio cierre: si recarga, o lo mira otro, ya no está.
 - **Cerrar a ciegas:** se cuentan los billetes y se dice cuánto queda de cambio. No hay paso de comparar. Para
   que un fajo mal contado no sea una falsa alarma, antes de seguir se le pregunta UNA cosa a la base
   (`checkShiftCount`: ¿coincide?, sí o no) y, si no coincide, se pide contar de nuevo una sola vez, sin decir
