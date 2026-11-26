@@ -425,7 +425,9 @@ export function ItemStage({
 
   const go = useCallback((step: 1 | -1) => {
     const current = sessionRef.current
-    if (!current) return
+    // Mientras se cierra no se cambia de plato: el cambio cancelaría el cierre a mitad de camino y la
+    // ficha quedaría colgada, invisible y tapando la carta.
+    if (!current || closing.current) return
     const next = current.index + step
     if (next < 0 || next >= current.list.length) return
     hapticTick()

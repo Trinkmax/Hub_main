@@ -328,7 +328,8 @@ export function CartaExperience(props: {
 
       <CartaDock
         member={member}
-        hidden={overlay || clubOpen || walletOpen}
+        // `member &&`: al cerrar sesión la billetera se desmonta abierta sin avisar; sin esto la barra no volvía.
+        hidden={overlay || clubOpen || (member && walletOpen)}
         onCarta={goHome}
         onClub={openClub}
         onSearch={openSearch}

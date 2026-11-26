@@ -266,37 +266,71 @@ async function migratePng(path: string): Promise<void> {
 // referenciadas: _t de imágenes y _vp de videos).
 // ---------------------------------------------------------------------------
 
+/**
+ * Columnas que pueden guardar una dirección de este bucket. Lo que apunta a otro lado se ignora, así que
+ * sobra antes que falte: una columna olvidada acá es una foto en uso que `--prune-orphans` borra.
+ * Si una pantalla nueva sube a `menu-images`, su columna va en esta lista.
+ */
+const REFERENCE_COLUMNS: Array<[table: string, columns: string[]]> = [
+  ['menu_items', ['image_url', 'video_url']],
+  ['menu_categories', ['image_url']],
+  ['rewards', ['image_url']],
+  ['punch_card_templates', ['image_url']],
+  // Los logos de las marcas aliadas del club se suben al mismo bucket (partners-manager.tsx).
+  ['partners', ['logo_url']],
+  // Las fotos de los beneficios del club (benefits-editor.tsx) y de los de las marcas aliadas.
+  ['tier_benefits', ['image_url']],
+  ['partner_benefits', ['image_url']],
+  // Lo demás que guarda una imagen, por las dudas.
+  ['event_experiences', ['card_image_url', 'hero_url', 'poster_url', 'video_url']],
+  ['tenants', ['logo_url']],
+  ['marketing_tasks', ['file_url']],
+]
+
+/** Lo que PostgREST devuelve como máximo por pedido. */
+const PAGE = 1000
+
+/** Todas las filas de una tabla, de a páginas: sin paginar, pasadas las 1000 se borrarían fotos en uso. */
+async function selectAll(table: string, columns: string): Promise<Record<string, unknown>[]> {
+  const raw = supabase as unknown as SupabaseClient
+  const rows: Record<string, unknown>[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await raw
+      .from(table)
+      .select(columns)
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw new Error(`select de referencias en ${table} falló: ${error.message}`)
+    // Con columnas armadas en el momento el cliente no puede inferir la forma de la fila.
+    const page = (data ?? []) as unknown as Record<string, unknown>[]
+    rows.push(...page)
+    if (page.length < PAGE) return rows
+  }
+}
+
+/** Una foto del bucket pegada a mano en el HTML de una página de Marketing (`/p/<slug>`). */
+const LANDING_REFERENCE = new RegExp(`${MARKER}[^"'\\s)<>?#]+`, 'g')
+
 async function collectReferencedPaths(): Promise<Set<string>> {
   const referenced = new Set<string>()
-  const add = (url: string | null) => {
-    if (!url) return
+  const add = (url: unknown) => {
+    if (typeof url !== 'string' || !url) return
     const p = pathFromPublicUrl(url)
     if (p) referenced.add(p)
   }
 
-  const [items, cats, rewards, punch, partners, tenants] = await Promise.all([
-    supabase.from('menu_items').select('image_url, video_url'),
-    supabase.from('menu_categories').select('image_url'),
-    supabase.from('rewards').select('image_url'),
-    supabase.from('punch_card_templates').select('image_url'),
-    // Los logos de las marcas aliadas del club se suben al mismo bucket (partners-manager.tsx).
-    supabase.from('partners').select('logo_url'),
-    // Y los sellos de los sponsors de la carta (`settings.carta_sponsors`, lib/menu/sponsors.ts).
-    supabase.from('tenants').select('settings'),
-  ])
-  for (const q of [items, cats, rewards, punch, partners, tenants]) {
-    if (q.error) throw new Error(`select de referencias falló: ${q.error.message}`)
+  for (const [table, columns] of REFERENCE_COLUMNS) {
+    for (const row of await selectAll(table, columns.join(', '))) {
+      for (const column of columns) add(row[column])
+    }
   }
-  for (const row of items.data ?? []) {
-    add(row.image_url)
-    add(row.video_url)
-  }
-  for (const row of cats.data ?? []) add(row.image_url)
-  for (const row of rewards.data ?? []) add(row.image_url)
-  for (const row of punch.data ?? []) add(row.image_url)
-  for (const row of partners.data ?? []) add(row.logo_url)
-  for (const row of tenants.data ?? []) {
+  // Los sellos de los sponsors de la carta (`settings.carta_sponsors`, lib/menu/sponsors.ts).
+  for (const row of await selectAll('tenants', 'id, settings')) {
     for (const sponsor of parseCartaSponsors(row.settings)) add(sponsor.logoUrl)
+  }
+  for (const row of await selectAll('landing_pages', 'id, html')) {
+    const html = typeof row.html === 'string' ? row.html : ''
+    for (const match of html.matchAll(LANDING_REFERENCE)) add(match[0])
   }
   return referenced
 }
