@@ -62,7 +62,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: script estático sin user input — evita FOUC de tema antes de hidratar */}
         <script dangerouslySetInnerHTML={{ __html: noFlashScript }} />
       </head>
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      {/* `min-h-dvh` y no `min-h-screen`: en un iPhone con la app instalada, «100vh» es la pantalla
+          entera (con la barra de estado) y la página quedaba 54 puntos más alta que lo que se ve: todo
+          se podía correr esos 54 puntos, y el mapa del salón, que mide justo la pantalla, se movía. */}
+      <body className="min-h-dvh bg-background text-foreground antialiased">
         <ThemeProvider initialPreference={preference}>{children}</ThemeProvider>
         {/* sonner resuelve su tema solo (`theme="system"` mira el SO, no la clase
             del <html>), así que en el salón hay que decírselo a mano o los toasts

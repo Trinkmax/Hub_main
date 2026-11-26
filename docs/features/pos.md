@@ -971,7 +971,10 @@ sonidos».
 
 - **Qué avisa.** Cuando una estación empieza lo de una mesa («Mesa 3 · en preparación»), cuando lo
   termina («Mesa 2 · para retirar — 🍔 Cocina: 3 Clásica triple · 1 Milanesa») y si lo vuelve atrás
-  («todavía no»). Le llega a **quien atiende esa mesa**, nunca a quien hizo el movimiento.
+  («todavía no»). Le llega **siempre a quien atiende esa mesa**, lo haya marcado quien lo haya marcado
+  (migración `pos_avisos_tambien_a_quien_movio`: al principio se salteaba a quien hacía el movimiento,
+  y un dueño que atiende mesas con la cocina abierta en su mismo usuario no recibía nada). La pantalla
+  de cocina no muestra estos avisos, aunque esté abierta con el usuario de alguien que atiende.
 - **Con la app abierta** suena (tres notas que suben para «para retirar», un toque corto para «en
   preparación»), vibra y muestra el aviso con «Ver mesa». Vive en el marco del salón, así que avisa se
   mire el mapa, una mesa o la caja (`WaiterNotices`). Lo que pudo perderse con la app atrás se lee al
@@ -982,7 +985,9 @@ sonidos».
   llega el primer aviso de una mesa suya. Siempre está en Tu cuenta › Avisos de cocina: prender o apagar
   en ese equipo, probar cómo suena, y elegir si avisa también cuando empiezan o solo cuando está listo.
 - **En iPhone** las notificaciones andan desde la app instalada (Compartir › «Agregar a pantalla de
-  inicio»). En Android y en la compu, desde el navegador.
+  inicio»). En Android y en la compu, desde el navegador. Dos límites de Apple: la app abierta **no
+  puede hacer vibrar** el iPhone y su sonido se calla con la tecla de silencio; por eso ahí la
+  notificación nunca va en silencio (es la única que hace vibrar) y llega aunque la app esté adelante.
 - **Cómo está hecho.** Un disparador sobre `ticket_items` escribe el aviso en `pos_notices`, lo manda por
   el canal en vivo de la sucursal (evento `notice`) y, si esa persona tiene un equipo anotado, le pega a
   `/api/cron/pos-push` (con `pg_net`, el secreto de los cron). Esa ruta manda la notificación con Web Push
@@ -999,4 +1004,11 @@ Migraciones: `20261126182818_pos_estaciones_mozos_avisos` (estaciones con tipo y
 `pos_kitchen_move`, `pos_assign_waiter`, `pos_floor_team`, `pos_notices`, `push_subscriptions` y las
 funciones de las claves), probada antes en una base local (74 comprobaciones) y con un ensayo sin guardar
 en producción; y `20261126195348_pos_solo_mozos_toman_mesa` (solo un mozo toma una mesa por cargarle un pedido; 10
-comprobaciones locales). Los permisos de las tablas nuevas se prueban en `tests/rls/pos-avisos.test.ts`.
+comprobaciones locales); y `20261126203418_pos_avisos_tambien_a_quien_movio` (el aviso llega aunque quien
+atiende sea quien movió el pedido; 6 comprobaciones locales). Los permisos de las tablas nuevas se prueban
+en `tests/rls/pos-avisos.test.ts`.
+
+**El mapa no se corre en el iPhone (26/11):** la página medía `min-h-screen` (100vh) y en un iPhone con la
+app instalada eso es la pantalla entera, 54 puntos más que lo que se ve debajo de la barra de estado: el
+mapa se podía correr esos 54 puntos. El `<body>` ahora mide `min-h-dvh`, y con el mapa a la vista la
+página no rebota (`overscroll-behavior: none`).

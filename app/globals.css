@@ -1897,6 +1897,11 @@ html[data-tex-drag] [data-tex-ui] {
   .pos-solid .pos-top, .pos-solid [class*='pos-side-'] { transition: none; }
 }
 
+/* El mapa mide justo la pantalla y se toca todo el tiempo: que la página no rebote debajo del dedo. */
+html:has(.pos-floor-screen),
+html:has(.pos-floor-screen) body {
+  overscroll-behavior: none;
+}
 /* Pantalla del salón: franja de la sucursal, pestañas de sector y la maqueta ocupando el resto. */
 .pos-floor-screen {
   position: relative;

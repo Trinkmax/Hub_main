@@ -1,9 +1,10 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { buzz } from '@/components/pos/order/haptics'
+import { BARE } from '@/components/shell/salon/salon-main'
 import { stationIcon } from '@/lib/pos/kitchen/station-kind'
 import { wantsNotice } from '@/lib/pos/notices/prefs'
 import { createNoticeSound, type NoticeSound } from '@/lib/pos/notices/sound'
@@ -61,6 +62,12 @@ function shouldAsk(): 'push' | 'install' | null {
 
 export function WaiterNotices({ slug, userId, branchIds, askOnEntry }: Props) {
   const router = useRouter()
+  // La pantalla de cocina no es de quien atiende: si está abierta con el usuario de alguien que además
+  // tiene mesas (un dueño), ahí no suena ni aparece nada. El aviso le llega a su teléfono.
+  const pathname = usePathname()
+  const kitchenScreen = BARE.test(pathname)
+  const kitchenRef = useRef(kitchenScreen)
+  kitchenRef.current = kitchenScreen
   const [prefs] = useNoticePrefs()
   const prefsRef = useRef(prefs)
   prefsRef.current = prefs
@@ -135,6 +142,7 @@ export function WaiterNotices({ slug, userId, branchIds, askOnEntry }: Props) {
       if (notice.user_id !== userId || seen.current.has(notice.id)) return
       seen.current.add(notice.id)
       if (notice.created_at > since.current) since.current = notice.created_at
+      if (kitchenRef.current) return
       // Le llegó un aviso: atiende mesas. Si este equipo todavía no avisa bloqueado, se le ofrece.
       ask(ASK_AFTER_NOTICE_MS)
       if (!wantsNotice(prefsRef.current, notice.kind)) return
@@ -225,8 +233,8 @@ export function WaiterNotices({ slug, userId, branchIds, askOnEntry }: Props) {
 
   // Al mozo, la primera vez en un equipo que puede, se le ofrecen apenas entra.
   useEffect(() => {
-    if (askOnEntry) ask(ASK_AFTER_MS)
-  }, [askOnEntry, ask])
+    if (askOnEntry && !kitchenScreen) ask(ASK_AFTER_MS)
+  }, [askOnEntry, kitchenScreen, ask])
 
   return null
 }

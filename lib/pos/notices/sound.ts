@@ -71,11 +71,20 @@ export function createNoticeSound(): NoticeSound {
   return {
     unlock: () => {
       const audio = ensure()
-      if (audio && audio.state === 'suspended') void audio.resume().catch(() => {})
+      // `suspended` al empezar; `interrupted` en el iPhone cuando la app volvió de segundo plano o entró
+      // una llamada. En los dos casos hay que retomarlo desde un toque.
+      if (audio && audio.state !== 'running' && audio.state !== 'closed') {
+        void audio.resume().catch(() => {})
+      }
     },
     play: (kind) => {
       const audio = ensure()
-      if (!audio || audio.state !== 'running') return
+      if (!audio) return
+      if (audio.state !== 'running') {
+        // Por si quedó dormido: se intenta despertar para el próximo aviso (este ya no suena).
+        if (audio.state !== 'closed') void audio.resume().catch(() => {})
+        return
+      }
       const at = audio.currentTime + 0.02
       for (const [offset, frequency, seconds, level] of TUNES[kind]) {
         note(audio, at + offset, frequency, seconds, level)
