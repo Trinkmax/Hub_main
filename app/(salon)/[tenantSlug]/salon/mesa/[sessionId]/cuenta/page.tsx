@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
+import { TakenTable } from '@/components/pos/order/taken-table'
 import { PayScreen } from '@/components/pos/pay/pay-screen'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
 import { signOutAction } from '@/components/shell/sign-out-action'
@@ -17,8 +18,9 @@ import {
 } from '@/lib/pos/cash/actions'
 import { getBill } from '@/lib/pos/cash/queries'
 import { POS_CASH_ROLES, POS_CHARGE_ROLES } from '@/lib/pos/cash/roles'
+import { isLockedFor, tableOwner } from '@/lib/pos/floor/waiter'
 import { posFont } from '@/lib/pos/font'
-import { listBranches } from '@/lib/pos/queries'
+import { getSessionDetail, listBranches } from '@/lib/pos/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -61,6 +63,26 @@ export default async function PosBillPage({
   }
   const branch = branches.find((item) => item.id === bill.data.session.branch_id)
   if (!branch) notFound()
+
+  // A un mozo, la cuenta de una mesa que atiende otro tampoco se le abre (una lectura más, solo para él).
+  if (access.role === 'waiter') {
+    const detail = await getSessionDetail(sessionId)
+    if (
+      detail.ok &&
+      detail.data.session.status === 'open' &&
+      isLockedFor(access.role, tableOwner(detail.data.session.waiter_id, access.user.id))
+    ) {
+      return (
+        <div className={cn('pos', posFont.variable)}>
+          <TakenTable
+            slug={tenantSlug}
+            label={detail.data.table?.label ?? null}
+            waiter={detail.data.session.waiter ?? null}
+          />
+        </div>
+      )
+    }
+  }
 
   return (
     <div className={cn('pos', posFont.variable)}>

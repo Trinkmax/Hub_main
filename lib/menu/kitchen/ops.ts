@@ -25,7 +25,9 @@ import type {
 } from './types'
 import { firstKey, linkKey, nodeKey } from './types'
 
-export type StationPatch = Partial<Pick<KitchenStation, 'name' | 'color' | 'active'>>
+export type StationPatch = Partial<
+  Pick<KitchenStation, 'name' | 'color' | 'active' | 'kind' | 'icon'>
+>
 export type GroupPatch = Partial<Pick<ModifierGroup, 'name' | 'selection' | 'required' | 'active'>>
 export type OptionPatch = Partial<Pick<ModifierOption, 'label' | 'priceDeltaCents' | 'active'>>
 

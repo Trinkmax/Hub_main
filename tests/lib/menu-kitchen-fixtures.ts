@@ -30,6 +30,8 @@ export const station = (over: Partial<KitchenStation> & { id: string }): Kitchen
   color: '#b45309',
   position: 0,
   active: true,
+  kind: 'food',
+  icon: null,
   ...over,
 })
 

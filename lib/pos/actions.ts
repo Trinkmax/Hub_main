@@ -316,6 +316,56 @@ export async function requestBill(
   return result.ok ? { ok: true } : result
 }
 
+/** Quién puede atender una mesa en esta sucursal: nombres y rol, para «Pasar la mesa». */
+export type FloorTeamMember = { id: string; name: string; role: TenantRole }
+
+export async function floorTeam(
+  slug: string,
+  branchId: string,
+): Promise<ActionResult<FloorTeamMember[]>> {
+  const access = await authorize(slug, POS_FLOOR_ROLES)
+  if (isDenied(access)) return access
+  if (!id.safeParse(branchId).success) return invalid
+  const result = await call<FloorTeamMember[]>(access, 'pos_floor_team', { p_branch_id: branchId })
+  if (!result.ok) return result
+  return { ok: true, data: Array.isArray(result.data) ? result.data : [] }
+}
+
+/**
+ * Cambiar quién atiende una mesa. El encargado (dueño, caja, anfitriona) la pasa a quien haga falta, o
+ * la deja sin nadie (`userId: null`). Un mozo toma una que no tiene a nadie o le pasa la suya a un
+ * compañero; la de otro no la toca (lo decide la base: `pos_assign_waiter`).
+ */
+export async function assignWaiter(
+  slug: string,
+  sessionId: string,
+  userId: string | null,
+): Promise<ActionResult<{ waiterId: string | null; waiter: string | null }>> {
+  const access = await authorize(slug, POS_FLOOR_ROLES)
+  if (isDenied(access)) return access
+  if (!id.safeParse(sessionId).success || (userId !== null && !id.safeParse(userId).success)) {
+    return invalid
+  }
+  const result = await call<{
+    waiter_id: string | null
+    waiter: string | null
+    previous_id: string | null
+    changed: boolean
+  }>(access, 'pos_assign_waiter', { p_session_id: sessionId, p_user_id: userId })
+  if (!result.ok) return result
+  if (result.data.changed) {
+    await logAudit({
+      tenantId: access.tenantId,
+      userId: access.userId,
+      action: 'pos.table_waiter_changed',
+      entity: 'table_session',
+      entityId: sessionId,
+      payload: { waiter_id: result.data.waiter_id, previous_id: result.data.previous_id },
+    })
+  }
+  return { ok: true, data: { waiterId: result.data.waiter_id, waiter: result.data.waiter } }
+}
+
 /**
  * Juntar dos mesas: todo lo de `fromSessionId` (lo pedido, lo cobrado, los descuentos) pasa a la
  * cuenta de `intoSessionId`, y la primera queda libre. No tiene vuelta: la pantalla pregunta antes.
@@ -540,27 +590,48 @@ export async function cancelItem(
 
 // ─── Cocina ─────────────────────────────────────────────────────────────────
 
-const advanceSchema = z.object({
-  ticketId: id,
-  to: z.enum(['queued', 'preparing', 'ready']),
-  stationIds: z.array(id).max(20).optional(),
-})
+const moveSchema = z
+  .object({
+    /** Los renglones que se mueven (los de una comanda entera, o uno suelto). */
+    itemIds: z.array(id).min(1).max(400),
+    /** El paso al que van. */
+    to: z.enum(['queued', 'preparing', 'ready']).optional(),
+    /** La estación a la que pasan (lo que cambia de estación llega como nuevo). */
+    stationId: id.optional(),
+  })
+  .refine((value) => value.to !== undefined || value.stationId !== undefined)
 
-export async function kitchenAdvance(
+/**
+ * El pase: avanzar, volver atrás o cambiar de estación los renglones de una comanda, en un solo viaje
+ * (`pos_kitchen_move`). Es lo que usan las pantallas de cocina: una comanda es una mesa, puede traer
+ * varias tandas, y así el mozo recibe UN aviso por estación y no uno por tanda.
+ */
+export async function kitchenMove(
   slug: string,
-  input: z.input<typeof advanceSchema>,
-): Promise<ActionResult<{ status: string; moved: number }>> {
+  input: z.input<typeof moveSchema>,
+): Promise<ActionResult<{ moved: number }>> {
   const access = await authorize(slug, POS_KITCHEN_ROLES)
   if (isDenied(access)) return access
-  const parsed = advanceSchema.safeParse(input)
+  const parsed = moveSchema.safeParse(input)
   if (!parsed.success) return invalid
-  const result = await call<{ status: string; moved: number }>(access, 'pos_kitchen_advance', {
-    p_ticket_id: parsed.data.ticketId,
-    p_to: parsed.data.to,
-    p_station_ids: parsed.data.stationIds?.length ? parsed.data.stationIds : null,
+  const result = await call<{ moved: number; tickets: number }>(access, 'pos_kitchen_move', {
+    p_item_ids: parsed.data.itemIds,
+    p_to: parsed.data.to ?? null,
+    p_station_id: parsed.data.stationId ?? null,
   })
   if (!result.ok) return result
-  return { ok: true, data: { status: result.data.status, moved: result.data.moved } }
+  // Cambiar algo de estación es corregir a dónde salió un pedido: queda quién fue.
+  if (parsed.data.stationId) {
+    await logAudit({
+      tenantId: access.tenantId,
+      userId: access.userId,
+      action: 'pos.kitchen_rerouted',
+      entity: 'kitchen_station',
+      entityId: parsed.data.stationId,
+      payload: { items: parsed.data.itemIds.length, moved: result.data.moved },
+    })
+  }
+  return { ok: true, data: { moved: result.data.moved } }
 }
 
 /** «Cocina lo vio»: una pantalla mostró estas tandas por primera vez. */

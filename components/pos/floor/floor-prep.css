@@ -1,0 +1,260 @@
+/* Los dibujos de comida y bebida sobre cada mesa, y la mesa que atiende otro mozo.
+   Va en su propio archivo (y no al final de globals.css) porque solo lo usa el mapa. */
+
+/* ── Lo que la mesa espera de cada estación: un dibujo por estación, en la bandera de la mesa ──
+   Van en lugar del ícono y la palabra del estado (el color de la bandera ya dice en qué está): así
+   la bandera no crece para arriba y no tapa la mesa de atrás. */
+.pos-eats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+}
+.pos-flag.has-eats .pos-flag-plate {
+  height: 2.2em;
+  padding: 0 0.55em 0 0.22em;
+  gap: 0.36em;
+}
+.pos-eat {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.72em;
+  height: 1.72em;
+  border-radius: 999px;
+  /* Lo están preparando: el dibujo apagado sobre una ficha oscura. */
+  background: oklch(0.2 0.03 165 / 0.42);
+  font-size: 1.02em;
+  line-height: 1;
+  filter: saturate(0.5);
+}
+/* Ya está para retirar: prendido, sobre blanco, con su tilde. */
+.pos-eat[data-state="ready"] {
+  background: var(--pos-paper);
+  box-shadow: 0 0 0 1.5px oklch(0.2 0.04 165 / 0.3);
+  filter: none;
+}
+.pos-eat i {
+  position: absolute;
+  right: -0.3em;
+  bottom: -0.22em;
+  display: grid;
+  place-items: center;
+  width: 0.92em;
+  height: 0.92em;
+  border-radius: 999px;
+  background: var(--pos-good);
+  color: var(--pos-on-dark);
+  box-shadow: 0 0 0 1.5px var(--pos-paper);
+}
+.pos-eat :where(i) svg {
+  width: 0.6em;
+  height: 0.6em;
+}
+/* Algo listo en una mesa que todavía espera el resto: ese dibujo salta para que se vea. */
+@media (prefers-reduced-motion: no-preference) {
+  .pos-flag:not(.pos-st-ready) .pos-eat[data-state="ready"] {
+    animation: pos-eat-ready 1.3s var(--pos-ease) infinite;
+  }
+}
+@keyframes pos-eat-ready {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-0.24em);
+  }
+}
+.pos-flag.pos-dim .pos-eats {
+  opacity: 0.35;
+}
+
+/* En la lista: los mismos dibujos, en la fila de la mesa (sobre papel, así que la ficha es clara). */
+.pos-row .pos-eats {
+  flex: none;
+  font-size: 0.86rem;
+}
+.pos-row .pos-eat {
+  background: color-mix(in oklab, var(--pos-ink) 9%, transparent);
+  animation: none;
+}
+.pos-row .pos-eat[data-state="ready"] {
+  background: var(--pos-paper);
+  box-shadow: 0 0 0 1.5px var(--pos-st-ready);
+}
+
+/* ── La mesa que atiende otro mozo: apagada, con candado y el nombre de quien la tiene ── */
+.pos-solid.pos-taken {
+  filter: saturate(0.18);
+  opacity: 0.62;
+}
+.pos-num.pos-taken {
+  opacity: 0.5;
+}
+.pos-flag.is-taken {
+  animation: none;
+}
+.pos-flag.is-taken .pos-flag-plate {
+  background: oklch(0.34 0.02 165);
+  color: var(--pos-on-dark);
+  box-shadow: 0 0.35em 0.7em -0.25em oklch(0.15 0.04 165 / 0.55);
+}
+.pos-flag.is-taken .pos-flag-pole {
+  background: oklch(0.3 0.02 165);
+}
+.pos-row.is-taken {
+  opacity: 0.62;
+}
+.pos-row.is-taken .pos-row-num {
+  filter: saturate(0.2);
+}
+
+/* ── Quién atiende, en la ficha de la mesa ── */
+.pos-quick-waiter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+  max-width: 34%;
+  flex: none;
+  padding: 0 0.7rem;
+  border-radius: 0.9rem;
+  background: oklch(1 0 0 / 0.08);
+  color: var(--pos-board-ink);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-stretch: 86%;
+  line-height: 1.05;
+  white-space: nowrap;
+  transition: background-color 140ms var(--pos-ease);
+}
+.pos-quick-waiter span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* En el celular el renglón de arriba es angosto: el cartel va apretado y la flechita de «entrar» se va
+   (toda la franja de la mesa ya es el botón), así el nombre de la mesa y el total entran enteros. */
+@media (max-width: 899px) {
+  .pos-quick-waiter {
+    padding: 0 0.5rem;
+    gap: 0.22rem;
+    font-size: 0.82rem;
+  }
+  .pos-quick-head:has(.pos-quick-waiter) .pos-quick-chev {
+    display: none;
+  }
+}
+.pos-quick-waiter > svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  opacity: 0.8;
+}
+.pos-quick-waiter:active {
+  background: oklch(1 0 0 / 0.16);
+}
+.pos-quick-waiter.is-mine {
+  background: color-mix(in oklab, var(--pos-st-ready) 26%, transparent);
+}
+.pos-quick-waiter.is-none {
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 0.3);
+  background: none;
+}
+/* La ficha de una mesa tomada: dice de quién es y nada más. */
+.pos-quick-locked {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem 0.65rem;
+  color: var(--pos-board-soft);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pos-quick-locked > svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+}
+.pos-quick-locked b {
+  color: var(--pos-board-ink);
+}
+
+/* ── «Pasar la mesa»: la lista del equipo ── */
+.pos-team {
+  display: grid;
+  /* En el celular, una persona por renglón; con ancho, varias por fila (un renglón de punta a punta de
+     la compu no se lee). */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 0.35rem;
+  max-height: min(56vh, 26rem);
+  margin: 0.6rem 0 0.2rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pos-team-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--pos-paper-2);
+  color: var(--pos-ink);
+  font-size: 1.02rem;
+  font-weight: 700;
+  font-stretch: 88%;
+  text-align: left;
+  transition: transform 140ms var(--pos-ease);
+}
+.pos-team-row:active {
+  transform: scale(0.98);
+}
+.pos-team-row:disabled {
+  opacity: 0.55;
+}
+.pos-team-row[aria-current="true"] {
+  box-shadow: inset 0 0 0 2px var(--pos-st-ready);
+}
+.pos-team-row em {
+  margin-left: auto;
+  color: var(--pos-ink-soft);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 600;
+}
+/* Un renglón con su aclaración abajo («Dejarla sin mozo»). */
+.pos-team-two {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+.pos-team-two small {
+  color: var(--pos-ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.pos-team-initial {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pos-ink);
+  color: var(--pos-paper);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+.pos-team-empty {
+  padding: 1rem 0.2rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.95rem;
+}
+
+/* ── «Mis mesas»: la ficha del resumen que deja solo las propias ── */
+.pos-hud-chip.is-mine.is-on {
+  background: var(--pos-paper);
+  color: var(--pos-ink);
+}

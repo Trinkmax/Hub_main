@@ -1,9 +1,21 @@
 'use client'
 
-import { BellRing, Check, ChevronRight, Pause, Play, Plus, Receipt, X } from 'lucide-react'
+import {
+  BellRing,
+  Check,
+  ChevronRight,
+  Lock,
+  Pause,
+  Play,
+  Plus,
+  Receipt,
+  UserRound,
+  X,
+} from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { formatCentsShort } from '@/lib/money/format'
 import { isEchoTap, type PickOrigin, type QuickCard } from '@/lib/pos/floor/quick'
+import { shortName, type TableOwner } from '@/lib/pos/floor/waiter'
 import { formatMinutes, STATE_LABEL, type TableState } from '@/lib/pos/table-state'
 import { cn } from '@/lib/utils'
 import { STATE_ICON } from './floor-model'
@@ -19,7 +31,20 @@ import './table-quick.css'
  *   arriba   la mesa, en qué está y cuánto lleva; tocarla entra a la comanda
  *   al medio qué hay para retirar (o qué tanda espera), dicho en una línea
  *   abajo    Cuenta · Agregar · y lo que manda: Servido, Marchar tanda o Cobrar
+ *
+ * Al lado del nombre va quién la atiende: tocarlo la pasa a otra persona (o la toma, si no la atiende
+ * nadie). La mesa de otro mozo, vista por un mozo, no tiene acciones: dice de quién es y nada más.
  */
+
+/** Quién atiende la mesa y qué puede hacer con eso quien mira. */
+export type QuickWaiter = {
+  owner: TableOwner
+  name: string | null
+  /** La atiende otra persona y quien mira es un mozo: sin acciones. */
+  locked: boolean
+  /** Puede pasarla (o tomarla): el nombre es un botón. */
+  canChange: boolean
+}
 
 type Props = {
   /** El número de la mesa. */
@@ -30,6 +55,10 @@ type Props = {
   practice: boolean
   state: TableState
   card: QuickCard
+  /** Quién la atiende. `null` si la base todavía no lo dice (no se dibuja nada). */
+  waiter: QuickWaiter | null
+  /** Tocar el nombre de quien atiende: pasarla o tomarla. */
+  onWaiter: () => void
   /** Se está pidiendo la cuenta: el botón espera. */
   billBusy: boolean
   onServe: () => void
@@ -53,6 +82,8 @@ export function TableQuick({
   practice,
   state,
   card,
+  waiter,
+  onWaiter,
   billBusy,
   onServe,
   onFire,
@@ -89,6 +120,7 @@ export function TableQuick({
 
   const Icon = STATE_ICON[state.key]
   const { primary } = card
+  const locked = waiter?.locked === true
   const title = alias ?? `Mesa ${label}`
   const minutes = state.minutes !== null ? formatMinutes(state.minutes) : ''
   // Lo que se va a llevar (o la tanda que espera), en una línea. Mientras llega el detalle queda el lugar
@@ -119,15 +151,20 @@ export function TableQuick({
         state.urgency === 'late' && 'pos-urg-late',
         state.urgency === 'warn' && 'pos-urg-warn',
       )}
-      data-primary={primary.kind}
-      aria-label={`Mesa ${label}: acciones rápidas`}
+      data-primary={locked ? 'locked' : primary.kind}
+      aria-label={
+        locked
+          ? `Mesa ${label}: la atiende ${waiter?.name ?? 'otra persona'}`
+          : `Mesa ${label}: acciones rápidas`
+      }
       data-testid="table-quick"
     >
       <div className="pos-quick-head">
         <button
           type="button"
           className="pos-quick-open"
-          onClick={armed(onOpen)}
+          onClick={locked ? undefined : armed(onOpen)}
+          disabled={locked}
           aria-label={`Ver el pedido de la mesa ${label}`}
           data-testid="quick-open"
         >
@@ -151,8 +188,39 @@ export function TableQuick({
               </span>
             </span>
           </span>
-          <ChevronRight aria-hidden className="pos-quick-chev" />
+          {locked ? null : <ChevronRight aria-hidden className="pos-quick-chev" />}
         </button>
+        {waiter && !locked ? (
+          waiter.canChange ? (
+            <button
+              type="button"
+              className={`pos-quick-waiter is-${waiter.owner}`}
+              onClick={armed(onWaiter)}
+              aria-label={
+                waiter.owner === 'none'
+                  ? 'Nadie atiende esta mesa todavía. Tocá para tomarla o pasarla.'
+                  : waiter.owner === 'mine'
+                    ? 'La atendés vos. Tocá para pasarla.'
+                    : `La atiende ${waiter.name ?? 'otra persona'}. Tocá para pasarla.`
+              }
+              data-testid="quick-waiter"
+            >
+              <UserRound aria-hidden strokeWidth={2.4} />
+              <span>
+                {waiter.owner === 'none'
+                  ? 'Sin mozo'
+                  : waiter.owner === 'mine'
+                    ? 'Vos'
+                    : shortName(waiter.name)}
+              </span>
+            </button>
+          ) : waiter.owner !== 'none' ? (
+            <span className={`pos-quick-waiter is-${waiter.owner}`}>
+              <UserRound aria-hidden strokeWidth={2.4} />
+              <span>{shortName(waiter.name)}</span>
+            </span>
+          ) : null
+        ) : null}
         <button
           type="button"
           className="pos-quick-close"
@@ -164,7 +232,17 @@ export function TableQuick({
         </button>
       </div>
 
-      {what ? (
+      {locked ? (
+        <p className="pos-quick-locked" data-testid="quick-locked">
+          <Lock aria-hidden strokeWidth={2.4} />
+          <span>
+            La atiende <b>{waiter?.name ?? 'otra persona'}</b>. Si te la pasa (o te la pasa el
+            encargado), la vas a ver como tuya.
+          </span>
+        </p>
+      ) : null}
+
+      {what && !locked ? (
         <p className="pos-quick-what" data-testid="quick-what">
           <what.icon aria-hidden strokeWidth={2.5} />
           <span>
@@ -174,7 +252,7 @@ export function TableQuick({
         </p>
       ) : null}
 
-      <div className="pos-quick-row">
+      <div className="pos-quick-row" hidden={locked}>
         {primary.kind === 'bill' ? null : (
           <button
             type="button"

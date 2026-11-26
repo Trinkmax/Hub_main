@@ -19,6 +19,8 @@ export function safetyNetMs(status: LiveStatus): number {
 
 type Listener = (what: PokeWhat, sessionId: string | null) => void
 type StatusListener = (status: LiveStatus) => void
+/** Un aviso de cocina para alguien del equipo: llega con sus datos (ver `lib/pos/notices/types.ts`). */
+type NoticeListener = (payload: unknown) => void
 
 /**
  * Un canal por sucursal, compartido por todo lo que escucha en la página.
@@ -37,6 +39,7 @@ type Shared = {
   gone: boolean
   listeners: Set<Listener>
   statusListeners: Set<StatusListener>
+  noticeListeners: Set<NoticeListener>
   status: LiveStatus
   /** Estuvo caído: al volver, a todos les toca releer (lo que pasó en el medio no se reenvía). */
   wasDown: boolean
@@ -66,7 +69,12 @@ function setShared(entry: Shared, status: LiveStatus) {
   for (const notify of [...entry.statusListeners]) notify(status)
 }
 
-function join(branchId: string, listener: Listener, onStatus: StatusListener): () => void {
+function join(
+  branchId: string,
+  listener: Listener | null,
+  onStatus: StatusListener,
+  onNotice: NoticeListener | null = null,
+): () => void {
   let entry = shared.get(branchId)
   if (!entry) {
     const supabase = createClient() as unknown as SupabaseClient
@@ -76,6 +84,7 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
       gone: false,
       listeners: new Set(),
       statusListeners: new Set(),
+      noticeListeners: new Set(),
       status: 'connecting',
       wasDown: false,
       release: null,
@@ -97,6 +106,11 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
           for (const each of [...created.listeners]) {
             each(payload.what ?? 'floor', payload.session_id ?? null)
           }
+        })
+        // Los avisos de cocina al mozo viajan por el mismo canal, con sus datos: cada dispositivo se
+        // queda con los suyos (`useKitchenNotices`).
+        .on('broadcast', { event: 'notice' }, (message) => {
+          for (const each of [...created.noticeListeners]) each(message.payload)
         })
         .subscribe((state) => {
           if (state === 'SUBSCRIBED') {
@@ -122,17 +136,22 @@ function join(branchId: string, listener: Listener, onStatus: StatusListener): (
     clearTimeout(current.release)
     current.release = null
   }
-  current.listeners.add(listener)
+  if (listener) current.listeners.add(listener)
+  if (onNotice) current.noticeListeners.add(onNotice)
   current.statusListeners.add(onStatus)
   onStatus(current.status)
 
+  // Quién escucha: los que esperan avisos de «algo cambió», los de avisos al mozo, o los dos.
+  const users = () => current.statusListeners.size
+
   return () => {
-    current.listeners.delete(listener)
+    if (listener) current.listeners.delete(listener)
+    if (onNotice) current.noticeListeners.delete(onNotice)
     current.statusListeners.delete(onStatus)
-    if (current.listeners.size > 0 || current.release !== null) return
+    if (users() > 0 || current.release !== null) return
     current.release = setTimeout(() => {
       current.release = null
-      if (current.listeners.size > 0) return
+      if (users() > 0) return
       if (shared.get(branchId) === current) shared.delete(branchId)
       current.gone = true
       if (current.channel) void current.supabase.removeChannel(current.channel)
@@ -197,4 +216,49 @@ export function usePosPoke(
   }, [branchId])
 
   return status
+}
+
+/**
+ * Los avisos de cocina al mozo, en vivo. La base los manda por el canal de la sucursal (el mismo de
+ * `usePosPoke`, que se comparte: no abre otra conexión) cuando una estación empieza o termina lo de una
+ * mesa. Llegan a todos los dispositivos de la sucursal; `onNotice` recibe el aviso tal cual y decide
+ * si es para quien mira.
+ *
+ * `onStatus` avisa cuando el canal vuelve después de un corte: lo que pasó en el medio no se reenvía,
+ * así que ahí conviene leer la bandeja.
+ */
+export function useKitchenNotices(
+  branchIds: readonly string[],
+  onNotice: (payload: unknown) => void,
+  onBack?: () => void,
+): void {
+  const handler = useRef(onNotice)
+  const back = useRef(onBack)
+  useEffect(() => {
+    handler.current = onNotice
+    back.current = onBack
+  }, [onNotice, onBack])
+
+  const key = branchIds.join(',')
+  useEffect(() => {
+    if (key === '') return
+    const leaves = key.split(',').map((branchId) => {
+      let wasDown = false
+      return join(
+        branchId,
+        null,
+        (status) => {
+          if (status === 'offline') wasDown = true
+          else if (status === 'live' && wasDown) {
+            wasDown = false
+            back.current?.()
+          }
+        },
+        (payload) => handler.current(payload),
+      )
+    })
+    return () => {
+      for (const leave of leaves) leave()
+    }
+  }, [key])
 }

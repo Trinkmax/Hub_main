@@ -80,6 +80,15 @@ export type FloorCustomer = {
   tier_color: string | null
 }
 
+/** Lo que una mesa espera de una estación: unidades en cola, en preparación y listas para retirar. */
+export type StationPrep = {
+  /** `null` = productos sin estación. */
+  station_id: string | null
+  queued: number
+  preparing: number
+  ready: number
+}
+
 export type FloorSession = {
   id: string
   table_id: string | null
@@ -104,6 +113,14 @@ export type FloorSession = {
   ready_since: string | null
   last_served_at: string | null
   first_order_at: string | null
+  /**
+   * Quién atiende la mesa (el mozo que la abrió o quien le cargó el primer pedido) y cómo se llama.
+   * Llegan desde la migración `pos_estaciones_mozos_avisos`; con la función anterior no vienen.
+   */
+  waiter_id?: string | null
+  waiter?: string | null
+  /** Qué espera la mesa de cada estación: de acá salen los dibujos de comida y bebida sobre la mesa. */
+  prep?: StationPrep[]
 }
 
 export type FloorReservation = {
@@ -132,6 +149,10 @@ export type FloorSnapshot = {
   loose_tables: { id: string; label: string; capacity: number | null }[]
   sessions: FloorSession[]
   reservations: FloorReservation[]
+  /** Las estaciones del bar (cocina, barra, pizzeros), con su tipo y su dibujo. */
+  stations?: MenuStation[]
+  /** Quién está mirando (para saber cuáles mesas son suyas). */
+  me?: string | null
   /**
    * Hasta cuándo la sucursal está en modo práctica (`null` = no está). No viene de la RPC: lo suma la
    * capa de servidor (`getFloorSnapshot`) leyendo la sucursal.
@@ -193,6 +214,9 @@ export type SessionDetail = {
     is_practice: boolean
     kind: 'table' | 'quick' | 'delivery'
     paid_at: string | null
+    /** Quién atiende la mesa (ver `FloorSession.waiter_id`). */
+    waiter_id?: string | null
+    waiter?: string | null
   }
   table: { id: string; label: string; capacity: number | null; area: string | null } | null
   reservation: {
@@ -247,7 +271,15 @@ export type MenuItem = {
   sold_out: boolean
 }
 
-export type MenuStation = { id: string; name: string; color: string }
+export type MenuStation = {
+  id: string
+  name: string
+  color: string
+  /** De qué es: `food` (comida) o `drink` (bebida). Ver `lib/pos/kitchen/station-kind.ts`. */
+  kind?: string | null
+  /** El dibujo (un emoji) con el que se la reconoce. */
+  icon?: string | null
+}
 
 export type ModifierGroup = {
   id: string
@@ -309,6 +341,9 @@ export type KitchenTicket = {
   /** Nombre del evento, si la mesa vino por una reserva de evento. */
   event: string | null
   alerts: string[] | null
+  /** Quién atiende la mesa (o quién cargó la tanda): a quién llamar cuando sale. */
+  waiter?: string | null
+  waiter_id?: string | null
   items: KitchenItem[]
 }
 

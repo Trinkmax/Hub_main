@@ -1,13 +1,13 @@
 /**
- * La cola de cocina convertida en comandas para UNA pantalla — PURO y testeado.
+ * La cola de cocina convertida en comandas para UNA estación — PURO y testeado.
  *
- * En la tele, una comanda es UNA MESA (pedido de los socios, 22/11/2026: «en la solapa de cocina debe
- * mostrar un ticket por mesa»): todas sus tandas vivas van en la misma tarjeta, y lo que se suma
+ * En la pantalla, una comanda es UNA MESA (pedido de los socios, 22/11/2026: «en la solapa de cocina
+ * debe mostrar un ticket por mesa»): todas sus tandas vivas van en la misma tarjeta, y lo que se suma
  * después a una mesa que la cocina ya empezó se marca como nuevo (`buildTableCards`). En el papel sigue
  * siendo una tanda por tique, porque a un papel impreso no se le puede agregar nada (`buildCards`).
  *
- * Cada pantalla elige qué estaciones muestra: lo de esas estaciones son los renglones de la comanda, y
- * lo demás queda en una línea al pie para saber qué más espera la mesa.
+ * Cada estación (cocina, barra, pizzeros) tiene su muro (`board.ts`): lo suyo son los renglones de la
+ * comanda, y lo demás queda al pie para saber qué más espera la mesa.
  *
  * Los renglones van juntos por rubro de la carta («pizzas con pizzas, milanesas con milanesas») y lo
  * que el bar marcó como «sale primero» (una entrada) va arriba de todo.
@@ -114,6 +114,9 @@ export type OtherStation = {
   stationId: string
   name: string
   color: string | null
+  /** De qué es y con qué dibujo se la reconoce (ver `station-kind.ts`). */
+  kind: string | null
+  icon: string | null
   /** Unidades (suma de cantidades), no renglones. */
   quantity: number
   /** El renglón más atrasado de esa estación; `served` = ya salió todo. */
@@ -140,6 +143,8 @@ export type KitchenCard = {
   where: string | null
   alias: string | null
   partySize: number | null
+  /** Quién atiende la mesa: a quién llamar cuando sale. `null` si la cola no lo trae. */
+  waiter: string | null
   course: number
   event: string | null
   isPractice: boolean
@@ -452,8 +457,24 @@ function assembleCard(
 
   const rank = RANK[slowest(pending.map(({ item }) => item.prep_status))]
   const status = BY_RANK[Math.min(rank, 2)] ?? 'queued'
-  // Se sumó algo a una comanda en marcha: hay renglones sin empezar entre los que ya arrancaron.
-  const grew = status === 'queued' && pending.some(({ item }) => item.prep_status !== 'queued')
+  // Se sumó algo a una comanda en marcha: hay renglones sin empezar que SALIERON DESPUÉS de que la
+  // estación arrancara con los otros. Dar por listo un renglón suelto de la misma tanda (la cerveza
+  // antes que los tragos) no es sumar nada: ahí todo salió junto, antes de empezar.
+  const startedAt = pending
+    .filter(({ item }) => item.prep_status !== 'queued')
+    .map(
+      ({ item, ticket }) => time(item.started_at) ?? time(item.ready_at) ?? time(ticket.fired_at),
+    )
+    .filter((ms): ms is number => ms !== null)
+  const firstStart = startedAt.length > 0 ? Math.min(...startedAt) : null
+  const grew =
+    status === 'queued' &&
+    firstStart !== null &&
+    pending.some(
+      ({ item, ticket }) =>
+        item.prep_status === 'queued' &&
+        (time(ticket.fired_at) ?? Number.NEGATIVE_INFINITY) > firstStart,
+    )
 
   let doneMs: number | null = null
   if (status === 'ready') {
@@ -497,6 +518,8 @@ function assembleCard(
       stationId,
       name: stations.get(stationId)?.name ?? 'Otra estación',
       color: stations.get(stationId)?.color ?? null,
+      kind: stations.get(stationId)?.kind ?? null,
+      icon: stations.get(stationId)?.icon ?? null,
       quantity: items.reduce((sum, item) => sum + item.quantity, 0),
       status: slowest(items.map((item) => item.prep_status)),
     }))
@@ -535,6 +558,8 @@ function assembleCard(
     where: named.where,
     alias: named.alias,
     partySize: head.party_size && head.party_size > 0 ? head.party_size : null,
+    // El de la tanda más nueva: si la mesa cambió de manos, vale quien la tiene ahora.
+    waiter: clean(live[live.length - 1]?.waiter ?? head.waiter),
     course,
     event: clean(head.event),
     isPractice: live.some((ticket) => ticket.is_practice === true),
@@ -551,25 +576,6 @@ function assembleCard(
   // Lo que no se dibuja queda afuera, para que «cocina lo vio» no vuelva a pintar la comanda.
   const { seen: _seen, sessionId: _session, unseenIds: _unseen, ...drawn } = card
   return { ...card, signature: JSON.stringify(drawn) }
-}
-
-/** Lo que cuenta para estimar cuánto mide la comanda dibujada (ver `estimateTicket`). */
-export function ticketShape(card: KitchenCard): {
-  strips: number
-  meta: boolean
-  labels: number
-  footer: boolean
-  lines: readonly CardLine[]
-} {
-  const critical = card.alerts.some((alert) => alert.critical)
-  const diet = card.alerts.some((alert) => !alert.critical)
-  return {
-    strips: Number(critical) + Number(diet) + Number(card.isPractice),
-    meta: Boolean(card.where || card.partySize || card.course > 1 || card.alias),
-    labels: card.groups.filter((group) => group.label !== null).length,
-    footer: card.others.length > 0,
-    lines: card.lines,
-  }
 }
 
 /** Orden de llegada: cuándo salió a cocina, y el id para desempatar igual que la base. */
@@ -669,65 +675,66 @@ function syncTicket(ticket: KitchenTicket, atIso: string): KitchenTicket {
   return { ...ticket, status, ready_at: finished ? (ticket.ready_at ?? atIso) : null }
 }
 
-/**
- * Lo que va a hacer la base (`pos_kitchen_advance`), hecho acá primero para que
- * la comanda cambie al instante. Mueve los renglones de esta pantalla que no
- * estén servidos; lo de otras estaciones no se toca.
- */
-export function applyAdvance(
-  queue: KitchenQueue,
-  ticketId: string,
-  to: AdvanceTo,
-  filter: readonly string[],
-  atIso: string,
-): KitchenQueue {
-  let touched = false
-  const tickets = queue.tickets.map((ticket) => {
-    if (ticket.id !== ticketId) return ticket
-    const items = ticket.items.map((item) => {
-      if (item.prep_status === 'served' || item.prep_status === to) return item
-      if (!showsStation(filter, item.station_id)) return item
-      touched = true
-      return {
-        ...item,
-        prep_status: to,
-        started_at: to === 'queued' ? null : (item.started_at ?? atIso),
-        ready_at: to === 'ready' ? (item.ready_at ?? atIso) : null,
-      }
-    })
-    return touched ? syncTicket({ ...ticket, items }, atIso) : ticket
-  })
-  return touched ? { ...queue, tickets } : queue
-}
+// ─── Mover renglones (el pase) ──────────────────────────────────────────────
 
 /**
- * Qué tandas hay que mover para avanzar (o deshacer) la comanda de una mesa en esta pantalla.
- *
- * La base avanza de a una tanda. Al avanzar se mueven las que tienen algo atrasado respecto del paso
- * pedido; las que ya estaban más adelante no se tocan (lo que ya está listo no vuelve a «en
- * preparación» porque la mesa sumó una gaseosa). Al deshacer, vuelven un paso las que están en el
- * paso de la comanda.
+ * Qué renglones de una comanda hay que mover para llevarla a un paso. Al avanzar, los que están
+ * atrasados respecto de ese paso (lo que ya estaba más adelante no se toca); al volver atrás, los que
+ * están en el paso de la comanda. Lo entregado no se mueve nunca.
  */
-export function ticketsToMove(
-  queue: KitchenQueue,
-  card: Pick<KitchenCard, 'ticketIds' | 'status'>,
-  to: AdvanceTo,
-  filter: readonly string[],
-): string[] {
+export function itemsToMove(card: Pick<KitchenCard, 'lines' | 'status'>, to: AdvanceTo): string[] {
   const forward = RANK[to] > RANK[card.status]
-  const wanted = new Set(card.ticketIds)
-  const out: string[] = []
-  for (const ticket of queue.tickets) {
-    if (!wanted.has(ticket.id)) continue
-    const mine = ticket.items.filter(
-      (item) => item.prep_status !== 'served' && showsStation(filter, item.station_id),
-    )
-    const moves = forward
-      ? mine.some((item) => RANK[item.prep_status] < RANK[to])
-      : mine.some((item) => item.prep_status === card.status)
-    if (moves) out.push(ticket.id)
+  const ids: string[] = []
+  for (const line of card.lines) {
+    if (line.status === 'served') continue
+    const moves = forward ? RANK[line.status] < RANK[to] : line.status === card.status
+    if (moves) ids.push(...line.itemIds)
   }
-  return out
+  return ids
+}
+
+/** Un movimiento del pase: a qué paso van los renglones, a qué estación, o las dos cosas. */
+export type ItemsChange = { to?: AdvanceTo; stationId?: string }
+
+/**
+ * Lo que va a hacer la base (`pos_kitchen_move`), hecho acá primero para que la pantalla cambie al
+ * instante. Lo que cambia de estación llega como nuevo, salvo que además se diga un paso.
+ */
+export function applyItemsMove(
+  queue: KitchenQueue,
+  itemIds: ReadonlySet<string>,
+  change: ItemsChange,
+  atIso: string,
+): KitchenQueue {
+  if (itemIds.size === 0 || (change.to === undefined && change.stationId === undefined))
+    return queue
+  let touched = false
+  const tickets = queue.tickets.map((ticket) => {
+    let mine = false
+    const items = ticket.items.map((item) => {
+      if (!itemIds.has(item.id) || item.prep_status === 'served') return item
+      const station = change.stationId ?? item.station_id
+      const status: PrepStatus =
+        change.to ??
+        (change.stationId !== undefined && change.stationId !== item.station_id
+          ? 'queued'
+          : item.prep_status)
+      if (status === item.prep_status && station === item.station_id) return item
+      mine = true
+      if (status === item.prep_status) return { ...item, station_id: station }
+      return {
+        ...item,
+        station_id: station,
+        prep_status: status,
+        started_at: status === 'queued' ? null : (item.started_at ?? atIso),
+        ready_at: status === 'ready' ? (item.ready_at ?? atIso) : null,
+      }
+    })
+    if (!mine) return ticket
+    touched = true
+    return syncTicket({ ...ticket, items }, atIso)
+  })
+  return touched ? { ...queue, tickets } : queue
 }
 
 // ─── Lo que hay que cocinar ─────────────────────────────────────────────────
@@ -758,78 +765,6 @@ export function totalsOf(cards: readonly KitchenCard[]): TotalEntry[] {
   return [...totals.values()].sort(
     (a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name, 'es'),
   )
-}
-
-export type EventDish = {
-  menuItemId: string
-  name: string
-  total: number
-  /** Listo o ya entregado. */
-  done: number
-  /** Lo que falta hacer. */
-  pending: number
-}
-
-export type EventGroup = {
-  name: string
-  cards: KitchenCard[]
-  dishes: EventDish[]
-  total: number
-  done: number
-}
-
-/**
- * Con un evento, la pantalla se parte: de un lado el evento (cuánto va de cada
- * plato entre todas sus mesas) y del otro las comandas a la carta.
- * Los platos van de más a menos por su total, que no cambia mientras se cocina:
- * la lista no se mueve cuando algo se termina.
- */
-export function splitEvents(cards: readonly KitchenCard[]): {
-  events: EventGroup[]
-  alaCarte: KitchenCard[]
-} {
-  const alaCarte: KitchenCard[] = []
-  const byEvent = new Map<string, KitchenCard[]>()
-  for (const card of cards) {
-    if (!card.event) {
-      alaCarte.push(card)
-      continue
-    }
-    const list = byEvent.get(card.event)
-    if (list) list.push(card)
-    else byEvent.set(card.event, [card])
-  }
-
-  const events: EventGroup[] = []
-  for (const [name, eventCards] of byEvent) {
-    const dishes = new Map<string, EventDish>()
-    for (const card of eventCards) {
-      for (const line of card.lines) {
-        const dish = dishes.get(line.menuItemId) ?? {
-          menuItemId: line.menuItemId,
-          name: line.name,
-          total: 0,
-          done: 0,
-          pending: 0,
-        }
-        dish.total += line.quantity
-        if (line.status === 'ready' || line.status === 'served') dish.done += line.quantity
-        else dish.pending += line.quantity
-        dishes.set(line.menuItemId, dish)
-      }
-    }
-    const list = [...dishes.values()].sort(
-      (a, b) => b.total - a.total || a.name.localeCompare(b.name, 'es'),
-    )
-    events.push({
-      name,
-      cards: eventCards,
-      dishes: list,
-      total: list.reduce((sum, dish) => sum + dish.total, 0),
-      done: list.reduce((sum, dish) => sum + dish.done, 0),
-    })
-  }
-  return { events, alaCarte }
 }
 
 // ─── Lo que acaba de entrar ─────────────────────────────────────────────────

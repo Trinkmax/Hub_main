@@ -4,12 +4,15 @@ import {
   Armchair,
   BellRing,
   CalendarClock,
+  Check,
   Flame,
+  Lock,
   type LucideIcon,
   Receipt,
   UtensilsCrossed,
 } from 'lucide-react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type PrepChip, prepSpoken } from '@/lib/pos/floor/prep'
 import { fitBounds, mixCamera, PLAN_CAMERA, turned } from '@/lib/pos/floor/projection'
 import {
   buildScene,
@@ -19,6 +22,7 @@ import {
   type Scene,
   type Solid,
 } from '@/lib/pos/floor/scene'
+import { shortName } from '@/lib/pos/floor/waiter'
 import {
   formatMinutes,
   formatMinutesTight,
@@ -29,6 +33,7 @@ import {
 import type { FloorElement } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
 import './floor-move.css'
+import './floor-prep.css'
 import './table-quick.css'
 import '../ui/pos-practice.css'
 
@@ -60,6 +65,10 @@ export type FloorTable = {
   alias: string | null
   /** Abierta en modo práctica: lo que se cargue no llega a la cocina de verdad ni a la caja. */
   practice?: boolean
+  /** Lo que la mesa espera de cada estación: los dibujos de comida y bebida que van arriba. */
+  chips?: readonly PrepChip[]
+  /** La atiende otra persona y quien mira es un mozo: se muestra tomada, con el nombre de quien la tiene. */
+  taken?: string | null
 }
 
 type Props = {
@@ -219,6 +228,8 @@ function describe(label: string, table: FloorTable | undefined): string {
   else if (state.urgency === 'warn' && state.key !== 'ready') parts.push('con aviso')
   if (state.nextCourseDue) parts.push('hay una tanda para marchar')
   if (table.practice && state.key !== 'free' && state.key !== 'reserved') parts.push('de práctica')
+  if (table.chips && table.chips.length > 0) parts.push(prepSpoken(table.chips))
+  if (table.taken) parts.push(`la atiende ${table.taken}`)
   return parts.join(', ')
 }
 
@@ -564,6 +575,7 @@ export function FloorModel({
                     `pos-r-${solid.role}`,
                     solid.tableId ? stateClasses(tables[solid.tableId]?.state) : null,
                     solid.tableId && dimmed?.has(solid.tableId) ? 'pos-dim' : null,
+                    solid.tableId && tables[solid.tableId]?.taken ? 'pos-taken' : null,
                     solid.tableId && solid.tableId === picked ? 'pos-picked' : null,
                     moveClass(solid.tableId),
                   )}
@@ -595,6 +607,7 @@ export function FloorModel({
                   'pos-num',
                   !open && 'pos-is-free',
                   dimmed?.has(anchor.tableId) && 'pos-dim',
+                  table?.taken && 'pos-taken',
                   move?.from === anchor.tableId && 'pos-lifted',
                 )}
                 style={{
@@ -660,6 +673,14 @@ export function FloorModel({
                 ? `En espera · ${state.heldTickets}`
                 : null
             const note = practice ? (todo ? `Práctica · ${todo}` : 'Práctica') : todo
+            // La mesa de otro mozo: en vez de en qué está, de quién es.
+            const taken = !reservation && table?.taken ? table.taken : null
+            // Los dibujos de comida y bebida van en la bandera, en lugar del ícono y la palabra del estado
+            // (el color de la bandera ya lo dice). Con las mesas muy chicas, solo lo que está para retirar.
+            const chips =
+              reservation || taken
+                ? []
+                : (table?.chips ?? []).filter((chip) => showTime || chip.state === 'ready')
             return (
               <span
                 key={`f:${anchor.tableId}`}
@@ -667,7 +688,9 @@ export function FloorModel({
                   'pos-flag',
                   stateClasses(state),
                   practice && 'is-practice',
-                  !word && !time && 'is-icon',
+                  !word && !time && !taken && chips.length === 0 && 'is-icon',
+                  chips.length > 0 && 'has-eats',
+                  taken && 'is-taken',
                   dimmed?.has(anchor.tableId) && 'pos-dim',
                   move?.from === anchor.tableId && 'pos-lifted',
                 )}
@@ -680,13 +703,37 @@ export function FloorModel({
                 }}
                 aria-hidden
               >
-                {note && showWord ? <span className="pos-flag-note">{note}</span> : null}
-                <span className="pos-flag-plate">
-                  <Icon aria-hidden strokeWidth={2.4} />
-                  {word ? <span>{word}</span> : null}
-                  {time ? <span className="pos-flag-time">{time}</span> : null}
-                  {todo && !showWord ? <i className="pos-flag-dot" /> : null}
-                </span>
+                {note && showWord && !taken ? <span className="pos-flag-note">{note}</span> : null}
+                {taken ? (
+                  <span className="pos-flag-plate">
+                    <Lock aria-hidden strokeWidth={2.6} />
+                    {showTime ? <span>{shortName(taken)}</span> : null}
+                  </span>
+                ) : chips.length > 0 ? (
+                  <span className="pos-flag-plate">
+                    <span className="pos-eats">
+                      {chips.map((chip) => (
+                        <span key={chip.key} className="pos-eat" data-state={chip.state}>
+                          {chip.icon}
+                          {chip.state === 'ready' ? (
+                            <i>
+                              <Check aria-hidden strokeWidth={4} />
+                            </i>
+                          ) : null}
+                        </span>
+                      ))}
+                    </span>
+                    {time ? <span className="pos-flag-time">{time}</span> : null}
+                    {todo && !showWord ? <i className="pos-flag-dot" /> : null}
+                  </span>
+                ) : (
+                  <span className="pos-flag-plate">
+                    <Icon aria-hidden strokeWidth={2.4} />
+                    {word ? <span>{word}</span> : null}
+                    {time ? <span className="pos-flag-time">{time}</span> : null}
+                    {todo && !showWord ? <i className="pos-flag-dot" /> : null}
+                  </span>
+                )}
                 <span className="pos-flag-pole" />
               </span>
             )

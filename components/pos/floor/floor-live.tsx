@@ -5,9 +5,11 @@ import {
   ChevronDown,
   GraduationCap,
   LayoutList,
+  Lock,
   Map as MapIcon,
   Palette,
   SquareDashed,
+  UserRound,
   WifiOff,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -23,6 +25,7 @@ import {
 } from '@/components/ui/sheet'
 import { planHref } from '@/lib/floor-plan/branches'
 import {
+  assignWaiter,
   fireTicket,
   markServed,
   mergeTables,
@@ -33,6 +36,7 @@ import {
   setActiveBranch,
 } from '@/lib/pos/actions'
 import { settingsHref } from '@/lib/pos/branches/links'
+import { prepChips } from '@/lib/pos/floor/prep'
 import {
   detailKey,
   isEchoTap,
@@ -42,6 +46,7 @@ import {
   quickCard,
   withPending,
 } from '@/lib/pos/floor/quick'
+import { isLockedFor, type TableOwner, tableOwner, waiterMoves } from '@/lib/pos/floor/waiter'
 import { posFont } from '@/lib/pos/font'
 import { freshKey, keepFreshest } from '@/lib/pos/freshest'
 import { clockAt } from '@/lib/pos/order/clock'
@@ -61,6 +66,7 @@ import type { FloorSession, FloorSnapshot, PosBranch, SessionDetail } from '@/li
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
+import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { ApprovalsBell } from '../approvals/approvals-bell'
 import { buzz } from '../order/haptics'
@@ -71,6 +77,7 @@ import { PosTopbar } from '../ui/pos-topbar'
 import { FloorLegend } from './floor-legend'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
+import { PassTableSheet } from './pass-table-sheet'
 import { TableQuick } from './table-quick'
 import '../ui/pos-toast.css'
 import '../ui/pos-practice.css'
@@ -83,6 +90,11 @@ import '../ui/pos-practice.css'
  * abre (dos toques). Tocar una ocupada la ELIGE: abajo aparece su ficha con lo
  * que se puede hacer ya, sin cambiar de pantalla (servido, marchar la tanda,
  * agregar, la cuenta); tocarla otra vez entra a su pedido (`table-quick.tsx`).
+ *
+ * Arriba de cada mesa van los dibujos de lo que espera de cada estación (la barra, la cocina, los
+ * pizzeros): apagados mientras lo preparan, prendidos cuando está para retirar (`lib/pos/floor/prep.ts`).
+ * Cada mesa tiene quién la atiende: a un mozo, la de otro se le muestra tomada y no la opera
+ * (`lib/pos/floor/waiter.ts`).
  */
 
 type View = 'model' | 'plan' | 'list'
@@ -95,6 +107,10 @@ type TableEntry = {
   areaId: string | null
   session: FloorSession | null
   state: TableState
+  /** De quién es la mesa abierta, vista por quien mira. */
+  owner: TableOwner
+  /** La atiende otra persona y quien mira es un mozo: se ve, pero no se opera. */
+  locked: boolean
 }
 
 type Props = {
@@ -105,6 +121,8 @@ type Props = {
   canEditPlan: boolean
   /** Puede abrir y mover mesas (el salón); la cocina solo mira. */
   canOperate: boolean
+  /** El rol de quien mira: a un mozo, la mesa de otro se le muestra tomada. */
+  role: TenantRole
   /** Mesa (sesión) que llega pidiendo cambiar de lugar: «Cambiar de mesa» desde la comanda. */
   initialMove?: string | null
   /** El botón de la cuenta, armado en la página. */
@@ -126,10 +144,11 @@ const NO_SIGNAL: Failure = {
 }
 
 /** Lo que se puede aislar tocando una ficha del resumen. */
-type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late'
+type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late' | 'mine'
 
-function matchesFocus(state: TableState, key: FocusKey): boolean {
-  return key === 'late' ? state.urgency === 'late' : state.key === key
+function matchesFocus(entry: Pick<TableEntry, 'state' | 'owner'>, key: FocusKey): boolean {
+  if (key === 'mine') return entry.owner === 'mine'
+  return key === 'late' ? entry.state.urgency === 'late' : entry.state.key === key
 }
 
 function useNow(serverNow: string): number {
@@ -154,6 +173,7 @@ export function FloorLive({
   timeZone,
   canEditPlan,
   canOperate,
+  role,
   initialMove = null,
   account,
   brand,
@@ -182,6 +202,13 @@ export function FloorLive({
   const [pending, setPending] = useState<Readonly<Record<string, QuickPending>>>({})
   const [billBusy, setBillBusy] = useState(false)
   const [quickHeight, setQuickHeight] = useState(0)
+  // La mesa a la que se le está cambiando quién la atiende («Pasar la mesa»).
+  const [passing, setPassing] = useState<{
+    sessionId: string
+    label: string
+    waiterId: string | null
+  } | null>(null)
+  const [passBusy, setPassBusy] = useState(false)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(keepFreshest(freshFloor, initial)), [freshFloor, initial])
@@ -254,25 +281,45 @@ export function FloorLive({
       const state = session
         ? deriveSessionState(session, now, snapshot.settings)
         : deriveFreeState(reservationForTable(label, snapshot.reservations, nowService))
-      return { tableId, label, capacity, areaId: area, session, state }
+      const owner = session ? tableOwner(session.waiter_id, snapshot.me) : 'none'
+      return {
+        tableId,
+        label,
+        capacity,
+        areaId: area,
+        session,
+        state,
+        owner,
+        locked: session !== null && isLockedFor(role, owner),
+      }
     }
     const placed = snapshot.elements
       .filter((el) => el.kind === 'table' && el.table_id)
       .map((el) => build(el.table_id as string, el.table_label ?? '', el.capacity, el.area_id))
     const loose = snapshot.loose_tables.map((t) => build(t.id, t.label, t.capacity, null))
     return [...placed, ...loose]
-  }, [snapshot, now, nowService, pending])
+  }, [snapshot, now, nowService, pending, role])
 
+  // A cada mozo, lo suyo: las mesas que atiende otro no cuentan en su resumen ni en lo pendiente.
   const summary = useMemo(
     () =>
-      summarize(entries.map((e) => ({ state: e.state, partySize: e.session?.party_size ?? null }))),
+      summarize(
+        entries
+          .filter((e) => !e.locked)
+          .map((e) => ({ state: e.state, partySize: e.session?.party_size ?? null })),
+      ),
+    [entries],
+  )
+  const mineCount = useMemo(() => entries.filter((e) => e.owner === 'mine').length, [entries])
+  const othersCount = useMemo(
+    () => entries.filter((e) => e.session && e.owner !== 'mine').length,
     [entries],
   )
 
   const pendingByArea = useMemo(() => {
     const out: Record<string, number> = {}
     for (const entry of entries) {
-      if (entry.areaId && needsAttention(entry.state))
+      if (entry.areaId && !entry.locked && needsAttention(entry.state))
         out[entry.areaId] = (out[entry.areaId] ?? 0) + 1
     }
     return out
@@ -297,10 +344,12 @@ export function FloorLive({
         partySize: entry.session?.party_size ?? null,
         alias: entry.session?.alias ?? null,
         practice: entry.session?.is_practice === true,
+        chips: entry.session ? prepChips(entry.session.prep, snapshot.stations) : undefined,
+        taken: entry.locked ? (entry.session?.waiter ?? 'otra persona') : null,
       }
     }
     return out
-  }, [entries])
+  }, [entries, snapshot.stations])
 
   const areaName = useMemo(
     () => Object.fromEntries(snapshot.areas.map((a) => [a.id, a.name])) as Record<string, string>,
@@ -317,7 +366,8 @@ export function FloorLive({
   }, [picked, pickedSession])
   // El detalle completa la ficha (cuántas unidades, qué productos, qué tanda). Se lee al elegir la mesa y
   // cada vez que el mapa dice que algo de esa mesa cambió. Mientras llega, la ficha ya anda con lo del mapa.
-  const pickedId = pickedSession?.id ?? null
+  const pickedLocked = pickedEntry?.locked === true
+  const pickedId = pickedLocked ? null : (pickedSession?.id ?? null)
   const pickedKey = pickedSession ? detailKey(pickedSession) : null
   // biome-ignore lint/correctness/useExhaustiveDependencies: `pickedKey` dice cuándo conviene volver a leer
   useEffect(() => {
@@ -365,7 +415,10 @@ export function FloorLive({
   // ── Cambiar una mesa de lugar ──
   // Se levanta manteniéndola apretada (o con «Cambiar de mesa» desde la comanda) y va a una libre.
   const holdable = useMemo(
-    () => (canOperate ? new Set(entries.filter((e) => e.session).map((e) => e.tableId)) : null),
+    () =>
+      canOperate
+        ? new Set(entries.filter((e) => e.session && !e.locked).map((e) => e.tableId))
+        : null,
     [entries, canOperate],
   )
   const moveTargets = useMemo(
@@ -381,7 +434,7 @@ export function FloorLive({
       moving
         ? new Set(
             entries
-              .filter((e) => e.session && e.tableId !== moving.fromTableId)
+              .filter((e) => e.session && !e.locked && e.tableId !== moving.fromTableId)
               .map((e) => e.tableId),
           )
         : null,
@@ -455,7 +508,8 @@ export function FloorLive({
     if (!sessionId || !canOperate) return
     askedMove.current = null
     const entry = entries.find((e) => e.session?.id === sessionId)
-    if (!entry) return
+    // La mesa de otro mozo no se levanta, aunque se llegue con su dirección.
+    if (!entry || entry.locked) return
     if (entry.areaId) setAreaId(entry.areaId)
     setView((current) => (current === 'list' ? 'model' : current))
     setMoving({ sessionId, fromTableId: entry.tableId, label: entry.label })
@@ -472,6 +526,8 @@ export function FloorLive({
       if (moving) {
         if (tableId === moving.fromTableId) setMoving(null)
         else if (moveTargets?.has(tableId)) void finishMove(tableId)
+        else if (entry.locked)
+          toast(`La mesa ${entry.label} la atiende ${entry.session?.waiter ?? 'otra persona'}.`)
         else if (entry.session) {
           setMerging({ from: moving, into: { sessionId: entry.session.id, label: entry.label } })
         } else toast('Esa mesa no está libre. Elegí una de las marcadas.')
@@ -480,13 +536,22 @@ export function FloorLive({
       // Doble toque = entrar a la mesa. Si el segundo toque cayó sobre OTRA mesa (el mapa se corrió debajo
       // del dedo), sigue siendo para la elegida, no para esa.
       if (picked !== null && picked !== tableId && isEcho(at)) {
-        const chosen = byId.get(picked)?.session
-        if (chosen) router.push(`/${slug}/salon/mesa/${chosen.id}`)
+        const chosen = byId.get(picked)
+        if (chosen?.session && !chosen.locked)
+          router.push(`/${slug}/salon/mesa/${chosen.session.id}`)
         return
       }
       if (!entry.session) {
         setPicked(null)
         if (canOperate) setOpening(entry)
+        return
+      }
+      // La mesa de otro mozo: se elige para ver de quién es, pero no se entra ni se opera.
+      if (entry.locked) {
+        buzz(8)
+        pickOriginRef.current = null
+        setPickOrigin(null)
+        setPicked(tableId)
         return
       }
       // Quien solo mira (la cocina) entra a ver el pedido, como siempre. Para el salón, el primer toque
@@ -539,7 +604,7 @@ export function FloorLive({
     [read, reload],
   )
   const quickServe = () => {
-    if (!pickedEntry?.session) return
+    if (!pickedEntry?.session || pickedEntry.locked) return
     const { session, label } = pickedEntry
     buzz(12)
     setPicked(null)
@@ -551,7 +616,7 @@ export function FloorLive({
     )
   }
   const quickFire = () => {
-    if (!pickedEntry?.session) return
+    if (!pickedEntry?.session || pickedEntry.locked) return
     const { session, label } = pickedEntry
     // La tanda sale del detalle; si todavía no llegó, se lee antes de marchar.
     const known = detail?.session.id === session.id ? nextHeld(detail) : null
@@ -578,16 +643,62 @@ export function FloorLive({
     )
   }
   const quickAdd = () => {
-    if (!pickedSession) return
+    if (!pickedSession || pickedEntry?.locked) return
     // Entra derecho a cargar (lo mismo que al abrir una mesa nueva).
     router.push(`/${slug}/salon/mesa/${pickedSession.id}?nueva=1`)
   }
   const quickOpen = () => {
-    if (pickedSession) router.push(`/${slug}/salon/mesa/${pickedSession.id}`)
+    if (pickedSession && !pickedLocked) router.push(`/${slug}/salon/mesa/${pickedSession.id}`)
+  }
+
+  // ── Quién atiende la mesa ──
+  const changeWaiter = async (
+    target: { sessionId: string; label: string },
+    userId: string | null,
+    name: string | null,
+  ) => {
+    if (passBusy) return
+    setPassBusy(true)
+    let result: Awaited<ReturnType<typeof assignWaiter>>
+    try {
+      result = await assignWaiter(slug, target.sessionId, userId)
+    } catch {
+      result = NO_SIGNAL
+    }
+    setPassBusy(false)
+    setPassing(null)
+    if (!result.ok) {
+      toast.error(result.message)
+    } else if (userId === null) {
+      toast.success(`Mesa ${target.label}: quedó sin mozo`)
+    } else if (userId === snapshot.me) {
+      toast.success(`Mesa ${target.label}: la atendés vos`)
+    } else {
+      toast.success(
+        `Mesa ${target.label}: la atiende ${name ?? result.data.waiter ?? 'otra persona'}`,
+      )
+    }
+    void reload()
+  }
+  const pickedMoves = pickedEntry ? waiterMoves(role, pickedEntry.owner) : null
+  const quickWaiter = () => {
+    if (!pickedEntry?.session || !pickedMoves) return
+    const target = {
+      sessionId: pickedEntry.session.id,
+      label: pickedEntry.label,
+      waiterId: pickedEntry.session.waiter_id ?? null,
+    }
+    // Un mozo frente a una mesa que no atiende nadie: la toma, sin lista.
+    if (!pickedMoves.pass && pickedMoves.take && snapshot.me) {
+      buzz(10)
+      void changeWaiter(target, snapshot.me, null)
+      return
+    }
+    if (pickedMoves.pass) setPassing(target)
   }
   // Lo mismo que «Cuenta» en la comanda: un toque la pide (la mesa cambia de estado) y la abre para cobrar.
   const quickBill = async () => {
-    if (!pickedSession || billBusy) return
+    if (!pickedSession || billBusy || pickedEntry?.locked) return
     const session = pickedSession
     if (session.bill_requested_at === null) {
       buzz(10)
@@ -645,8 +756,10 @@ export function FloorLive({
 
   const listed = useMemo(() => {
     const scope = view === 'list' ? entries : []
+    // Las de otro mozo van al final: no son trabajo de quien mira.
     return [...scope].sort(
       (a, b) =>
+        Number(a.locked) - Number(b.locked) ||
         attentionRank(a.state) - attentionRank(b.state) ||
         a.label.localeCompare(b.label, 'es', { numeric: true }),
     )
@@ -680,6 +793,13 @@ export function FloorLive({
         icon: STATE_ICON.kitchen,
       },
       { key: 'late', count: summary.late, label: 'con demora', icon: AlarmClock },
+      // «Mis mesas»: para quien atiende y además ve las de los demás (el encargado que también sirve).
+      {
+        key: 'mine',
+        count: role !== 'waiter' && othersCount > 0 ? mineCount : 0,
+        label: mineCount === 1 ? 'mesa mía' : 'mesas mías',
+        icon: UserRound,
+      },
     ] as const
   ).filter((chip) => chip.count > 0)
 
@@ -694,9 +814,9 @@ export function FloorLive({
     setFocus(next)
     if (!next || view === 'list') return
     // Si en este sector no hay ninguna, salta al primero que tenga.
-    const here = entries.some((e) => e.areaId === activeArea?.id && matchesFocus(e.state, next))
+    const here = entries.some((e) => e.areaId === activeArea?.id && matchesFocus(e, next))
     if (here) return
-    const first = entries.find((e) => e.areaId && matchesFocus(e.state, next))
+    const first = entries.find((e) => e.areaId && matchesFocus(e, next))
     if (first?.areaId) setAreaId(first.areaId)
   }
 
@@ -712,12 +832,12 @@ export function FloorLive({
       )
     }
     if (!focusAlive || focus === null) return null
-    return new Set(entries.filter((e) => !matchesFocus(e.state, focus)).map((e) => e.tableId))
+    return new Set(entries.filter((e) => !matchesFocus(e, focus)).map((e) => e.tableId))
   }, [entries, focus, focusAlive, moving, moveTargets])
 
   const focusChip = focusAlive ? (chips.find((chip) => chip.key === focus) ?? null) : null
   const visibleList =
-    focusAlive && focus !== null ? listed.filter((e) => matchesFocus(e.state, focus)) : listed
+    focusAlive && focus !== null ? listed.filter((e) => matchesFocus(e, focus)) : listed
   const occupancy = `${summary.people} ${summary.people === 1 ? 'persona' : 'personas'} · ${summary.open} de ${summary.tables} mesas`
 
   return (
@@ -882,6 +1002,7 @@ export function FloorLive({
                         entry.state.urgency === 'late' && 'pos-urg-late',
                         entry.state.urgency === 'warn' && 'pos-urg-warn',
                         picked === entry.tableId && 'is-picked',
+                        entry.locked && 'is-taken',
                       )}
                       aria-pressed={picked === entry.tableId ? true : undefined}
                       onClick={(event) =>
@@ -897,10 +1018,24 @@ export function FloorLive({
                               : (areaName[entry.areaId ?? ''] ?? 'Sin nombre'))}
                           {people ? <em> ×{people}</em> : null}
                         </span>
-                        {entry.state.nextCourseDue ? (
+                        {entry.locked ? (
+                          <span className="pos-row-note">
+                            <Lock className="inline size-3.5" aria-hidden /> La atiende{' '}
+                            {entry.session?.waiter ?? 'otra persona'}
+                          </span>
+                        ) : entry.state.nextCourseDue ? (
                           <span className="pos-row-note">Hay una tanda para marchar</span>
                         ) : null}
                       </span>
+                      {(tables[entry.tableId]?.chips?.length ?? 0) > 0 ? (
+                        <span className="pos-eats" aria-hidden>
+                          {tables[entry.tableId]?.chips?.map((chip) => (
+                            <span key={chip.key} className="pos-eat" data-state={chip.state}>
+                              {chip.icon}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
                       {entry.state.key !== 'free' ? (
                         <span className="pos-chip">
                           <Icon aria-hidden strokeWidth={2.4} />
@@ -967,7 +1102,9 @@ export function FloorLive({
           ) : (
             <p className={cn('pos-caption', focusChip && 'is-focus')}>
               {focusChip
-                ? `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
+                ? focusChip.key === 'mine'
+                  ? `Solo tus ${focusChip.count === 1 ? 'mesa' : `${focusChip.count} mesas`}. Tocá la ficha de nuevo para ver todo.`
+                  : `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
                 : occupancy}
             </p>
           )}
@@ -1014,6 +1151,18 @@ export function FloorLive({
               practice={pickedEntry.session.is_practice}
               state={pickedEntry.state}
               card={quickCard(pickedEntry.session, pickedEntry.state, detail)}
+              waiter={
+                // Con la función anterior de la base no viene quién atiende: no se dibuja nada.
+                'waiter_id' in pickedEntry.session
+                  ? {
+                      owner: pickedEntry.owner,
+                      name: pickedEntry.session.waiter ?? null,
+                      locked: pickedEntry.locked,
+                      canChange: canOperate && (pickedMoves?.pass || pickedMoves?.take) === true,
+                    }
+                  : null
+              }
+              onWaiter={quickWaiter}
               billBusy={billBusy}
               onServe={quickServe}
               onFire={quickFire}
@@ -1111,6 +1260,20 @@ export function FloorLive({
           </div>
         </SheetContent>
       </Sheet>
+
+      <PassTableSheet
+        slug={slug}
+        branchId={snapshot.branch.id}
+        table={passing}
+        me={snapshot.me ?? null}
+        onlyTake={false}
+        canClear={pickedMoves?.clear === true}
+        busy={passBusy}
+        onPick={(userId, name) => {
+          if (passing) void changeWaiter(passing, userId, name)
+        }}
+        onClose={() => setPassing(null)}
+      />
 
       <FloorLegend
         open={legend}

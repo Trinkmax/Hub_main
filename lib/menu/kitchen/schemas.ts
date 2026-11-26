@@ -43,6 +43,14 @@ const color = z
   .regex(/^#[0-9a-fA-F]{6}$/)
   .transform((hex) => hex.toLowerCase())
 const deltaCents = z.number().int().min(0).max(OPTION_DELTA_MAX_CENTS)
+const stationKind = z.enum(['food', 'drink'])
+/** Un emoji (pueden ser varios caracteres pegados); vacío = sin dibujo propio. */
+const stationIcon = z
+  .string()
+  .trim()
+  .max(16)
+  .nullable()
+  .transform((value) => (value ? value : null))
 
 /** Un campo que cambia: lo que la persona veía y lo que tiene que quedar. */
 const change = <Schema extends z.ZodType>(schema: Schema) => z.object({ from: schema, to: schema })
@@ -122,6 +130,8 @@ const stationRow = z.object({
   color,
   position,
   active: z.boolean(),
+  kind: stationKind.default('food'),
+  icon: stationIcon.default(null),
 })
 
 export const createStationsSchema = z
@@ -146,6 +156,8 @@ export const patchStationSchema = z.object({
       name: change(text(STATION_NAME_MAX)).optional(),
       color: change(color).optional(),
       active: change(z.boolean()).optional(),
+      kind: change(stationKind).optional(),
+      icon: change(stationIcon).optional(),
     })
     .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
       message: 'No hay nada que cambiar.',

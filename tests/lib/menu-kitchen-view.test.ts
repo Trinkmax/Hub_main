@@ -28,6 +28,7 @@ import {
   PIZZA,
   POSTRES,
   STATIONS,
+  station,
   TRAGOS,
   VACIA,
   WRAP,
@@ -304,7 +305,7 @@ describe('barParts', () => {
   it('una estación apagada se dibuja distinta; una vacía no se dibuja', () => {
     const off = [
       ...STATIONS.map((each) => (each.id === BARRA ? { ...each, active: false } : each)),
-      { id: id('a', 9), name: 'Parrilla', color: '#9f0c54', position: 9, active: true },
+      station({ id: id('a', 9), name: 'Parrilla', color: '#9f0c54', position: 9 }),
     ]
     const parts = barParts(routingStats(tree, off), off)
     expect(parts.find((part) => part.key === BARRA)?.kind).toBe('off')

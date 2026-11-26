@@ -1,4 +1,5 @@
 import { BranchScopeProvider } from '@/components/branches/branch-scope-provider'
+import { WaiterNotices } from '@/components/pos/notices/waiter-notices'
 import { PosPrintStation } from '@/components/pos/print/print-station'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import type { BranchScopeClient } from '@/lib/branches/types'
@@ -37,6 +38,7 @@ export function AppShellSalon({
   email,
   viewAs = null,
   printStation = null,
+  waiterNotices = null,
   branchScope,
   children,
 }: {
@@ -52,6 +54,11 @@ export function AppShellSalon({
    * dispositivo que no prendió «Imprimir las comandas acá» (se guarda por sucursal en cada uno).
    */
   printStation?: { branchIds: string[]; timeZone: string } | null
+  /**
+   * Con el punto de venta, para quien atiende mesas: los avisos de cocina de SUS mesas (suena, vibra y
+   * muestra el aviso, se mire la pantalla del salón que se mire). No dibuja nada.
+   */
+  waiterNotices?: { userId: string; branchIds: string[]; askOnEntry: boolean } | null
   /** La sucursal en la que trabaja este dispositivo (`getBranchScope(slug, 'device')`). */
   branchScope: BranchScopeClient
   children: React.ReactNode
@@ -71,6 +78,7 @@ export function AppShellSalon({
                 tenantName={tenant.name}
                 tenantSlug={tenant.slug}
                 signOut={signOutAction}
+                posNotices={waiterNotices !== null}
               />
             }
           />
@@ -92,6 +100,14 @@ export function AppShellSalon({
               timeZone={printStation.timeZone}
             />
           ))}
+          {waiterNotices ? (
+            <WaiterNotices
+              slug={tenant.slug}
+              userId={waiterNotices.userId}
+              branchIds={waiterNotices.branchIds}
+              askOnEntry={waiterNotices.askOnEntry}
+            />
+          ) : null}
           <ServiceWorkerRegistration />
           <PwaInstallPrompt />
         </div>

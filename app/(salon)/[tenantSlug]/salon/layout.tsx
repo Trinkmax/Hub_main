@@ -12,7 +12,12 @@ import { getBranchScope } from '@/lib/branches/scope'
 import { toClientScope } from '@/lib/branches/types'
 import { getEffectiveFeatures } from '@/lib/platform/features'
 import { getActiveBranch } from '@/lib/pos/queries'
-import { requireTenantAccess, TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
+import {
+  POS_FLOOR_ROLES,
+  requireTenantAccess,
+  TenantNotFoundError,
+  UnauthenticatedError,
+} from '@/lib/tenant'
 import { roleForSlug } from '@/lib/tenant/claims'
 
 export const metadata: Metadata = {
@@ -124,6 +129,17 @@ export default async function SalonLayout({
           ? {
               branchIds: printBranches,
               timeZone: access.tenant.timezone || 'America/Argentina/Cordoba',
+            }
+          : null
+      }
+      // Los avisos de cocina son de quien atiende mesas (con «Ver como» no: sonarían los de otra persona).
+      waiterNotices={
+        printBranches.length > 0 && POS_FLOOR_ROLES.includes(access.realRole)
+          ? {
+              userId: access.user.id,
+              branchIds: printBranches,
+              // Al mozo se le ofrecen al entrar; al resto, recién cuando atiende una mesa.
+              askOnEntry: access.realRole === 'waiter',
             }
           : null
       }

@@ -197,13 +197,22 @@ export type SessionSummary = {
 }
 
 /**
+ * «4 Mojito». Si el nombre arranca con un número se separa con un «×», porque «2 1/2 Pizza» se lee
+ * «dos y media» y son dos medias pizzas: «2 × 1/2 Pizza».
+ */
+export function countedName(quantity: number, name: string): string {
+  const clean = name.trim()
+  return /^\d/.test(clean) ? `${quantity} × ${clean}` : `${quantity} ${clean}`
+}
+
+/**
  * «4 Mojito · 3 Branca y Cola»: unidades por producto, lo igual junto, en el orden en que aparece. Una
  * mesa que pidió lo mismo en dos tandas (o en dos renglones) se lee de un vistazo, como en la cocina.
  */
 export function unitsLabel(items: readonly Pick<SessionItem, 'name' | 'quantity'>[]): string {
   const units = new Map<string, number>()
   for (const item of items) units.set(item.name, (units.get(item.name) ?? 0) + item.quantity)
-  return [...units].map(([name, quantity]) => `${quantity} ${name}`).join(' · ')
+  return [...units].map(([name, quantity]) => countedName(quantity, name)).join(' · ')
 }
 
 export function summarizeSession(tickets: readonly SessionTicket[]): SessionSummary {

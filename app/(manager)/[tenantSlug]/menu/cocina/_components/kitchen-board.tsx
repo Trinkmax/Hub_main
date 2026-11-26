@@ -237,11 +237,13 @@ export function KitchenBoard({
       color: classic.color,
       position: view.stations.length + offset,
       active: true,
+      kind: classic.kind,
+      icon: classic.icon,
     }))
     if (fresh.length === 0) return
     commit(
       { type: 'station.create', stations: fresh },
-      { say: 'Listas las tres de siempre: Cocina, Fríos y Barra' },
+      { say: `Listas las de siempre: ${fresh.map((station) => station.name).join(', ')}` },
     )
   }
 

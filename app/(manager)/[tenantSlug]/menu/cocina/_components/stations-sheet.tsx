@@ -7,8 +7,14 @@ import { Switch } from '@/components/ui/switch'
 import { moveBy } from '@/lib/menu/kitchen/order'
 import { type CartaTree, marksByStation } from '@/lib/menu/kitchen/routing'
 import { MAX_STATIONS, STATION_NAME_MAX } from '@/lib/menu/kitchen/schemas'
-import { CLASSIC_STATIONS, nextStationColor, STATION_COLORS } from '@/lib/menu/kitchen/suggest'
+import {
+  CLASSIC_STATIONS,
+  guessStationKind,
+  nextStationColor,
+  STATION_COLORS,
+} from '@/lib/menu/kitchen/suggest'
 import type { KitchenStation } from '@/lib/menu/kitchen/types'
+import { STATION_ICON_CHOICES, stationIcon } from '@/lib/pos/kitchen/station-kind'
 import { cn } from '@/lib/utils'
 import { InlineText } from './inline-fields'
 import { SideSheet, SideSheetBody } from './side-sheet'
@@ -45,7 +51,10 @@ export function StationsSheet({
   const taken = (candidate: string, exceptId?: string) =>
     stations.some((station) => station.id !== exceptId && plain(station.name) === plain(candidate))
 
-  const add = (label: string, color?: string) => {
+  const add = (
+    label: string,
+    classic?: { color: string; kind: 'food' | 'drink'; icon: string },
+  ) => {
     const clean = label.trim().replace(/\s+/g, ' ')
     if (clean === '') return 'Ponele un nombre.'
     if (clean.length > STATION_NAME_MAX) return `El nombre entra en ${STATION_NAME_MAX} letras.`
@@ -54,9 +63,11 @@ export function StationsSheet({
     const station: KitchenStation = {
       id: crypto.randomUUID(),
       name: clean,
-      color: color ?? nextStationColor(stations),
+      color: classic?.color ?? nextStationColor(stations),
       position: stations.length === 0 ? 0 : Math.max(...stations.map((item) => item.position)) + 1,
       active: true,
+      kind: classic?.kind ?? guessStationKind(clean),
+      icon: classic?.icon ?? null,
     }
     commit({ type: 'station.create', stations: [station] }, { say: `Estación nueva: ${clean}` })
     return null
@@ -113,6 +124,21 @@ export function StationsSheet({
                     commit(
                       { type: 'station.patch', id: station.id, patch: { color } },
                       { say: `${station.name}: color cambiado`, toastId: `color:${station.id}` },
+                    )
+                  }
+                  onKind={(kind) =>
+                    commit(
+                      { type: 'station.patch', id: station.id, patch: { kind } },
+                      {
+                        say: `${station.name} es de ${kind === 'drink' ? 'bebidas' : 'comida'}`,
+                        toastId: `kind:${station.id}`,
+                      },
+                    )
+                  }
+                  onIcon={(icon) =>
+                    commit(
+                      { type: 'station.patch', id: station.id, patch: { icon } },
+                      { say: `${station.name}: dibujo cambiado`, toastId: `icon:${station.id}` },
                     )
                   }
                   onActive={(active) =>
@@ -186,7 +212,7 @@ export function StationsSheet({
                   key={classic.name}
                   type="button"
                   title={classic.hint}
-                  onClick={() => setProblem(add(classic.name, classic.color))}
+                  onClick={() => setProblem(add(classic.name, classic))}
                   className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3 text-sm outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11"
                 >
                   <span aria-hidden className="kc-ink kc-dot" style={inkStyle(classic.color)} />
@@ -211,6 +237,8 @@ function StationRow({
   nameTaken,
   onRename,
   onColor,
+  onKind,
+  onIcon,
   onActive,
   onMove,
   onDelete,
@@ -225,6 +253,8 @@ function StationRow({
   nameTaken: (candidate: string) => boolean
   onRename: (next: string) => void
   onColor: (hex: string) => void
+  onKind: (kind: 'food' | 'drink') => void
+  onIcon: (icon: string | null) => void
   onActive: (active: boolean) => void
   onMove: (delta: -1 | 1) => void
   onDelete: () => void
@@ -245,11 +275,16 @@ function StationRow({
         <button
           type="button"
           aria-expanded={palette}
-          aria-label={`Color de ${station.name}`}
+          aria-label={`Color, tipo y dibujo de ${station.name}`}
           onClick={() => setPalette((current) => !current)}
-          className="flex size-9 shrink-0 items-center justify-center rounded-md outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
+          className="relative flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
         >
-          <span aria-hidden className="kc-ink kc-dot size-4" style={inkStyle(station.color)} />
+          <span aria-hidden>{stationIcon(station)}</span>
+          <span
+            aria-hidden
+            className="kc-ink kc-dot absolute right-0.5 bottom-0.5 size-2.5 ring-2 ring-card"
+            style={inkStyle(station.color)}
+          />
         </button>
         <InlineText
           value={station.name}
@@ -292,6 +327,67 @@ function StationRow({
               </button>
             )
           })}
+        </div>
+      ) : null}
+
+      {/* De qué es y con qué dibujo se la reconoce: lo que va sobre la mesa en el mapa del salón, y lo
+          que decide si la comanda muestra los vasos (una estación de bebidas). */}
+      {palette ? (
+        <div className="mt-3 space-y-2 pl-11">
+          <fieldset className="flex flex-wrap items-center gap-2">
+            <legend className="sr-only">De qué es {station.name}</legend>
+            {(
+              [
+                ['food', 'Comida'],
+                ['drink', 'Bebida'],
+              ] as const
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={station.kind === kind}
+                disabled={saving}
+                onClick={() => {
+                  if (station.kind !== kind) onKind(kind)
+                }}
+                className={cn(
+                  'inline-flex h-9 items-center rounded-full border border-border px-3 text-sm outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11',
+                  station.kind === kind &&
+                    'border-foreground bg-foreground text-background hover:bg-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="text-xs text-muted-foreground">
+              {station.kind === 'drink'
+                ? 'Su comanda muestra los vasos de la mesa.'
+                : 'En el mapa del salón va con su dibujo.'}
+            </span>
+          </fieldset>
+          <div className="flex flex-wrap gap-1.5">
+            {STATION_ICON_CHOICES.map((icon) => {
+              const chosen = stationIcon(station) === icon
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  aria-pressed={chosen}
+                  aria-label={`Dibujo ${icon}`}
+                  disabled={saving}
+                  onClick={() => {
+                    if (station.icon !== icon) onIcon(icon)
+                  }}
+                  className={cn(
+                    'flex size-9 items-center justify-center rounded-md text-lg leading-none outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11',
+                    chosen && 'bg-secondary ring-2 ring-foreground',
+                  )}
+                >
+                  {icon}
+                </button>
+              )
+            })}
+          </div>
         </div>
       ) : null}
 

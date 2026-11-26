@@ -69,6 +69,8 @@ type StationRow = {
   color: string | null
   position: number | null
   active: boolean | null
+  kind: string | null
+  icon: string | null
 }
 type CategoryRow = {
   id: string
@@ -136,7 +138,7 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     readAll<StationRow>('stations', (from, to) =>
       supabase
         .from('kitchen_stations')
-        .select('id, name, color, position, active')
+        .select('id, name, color, position, active, kind, icon')
         .eq('tenant_id', tenantId)
         .order('position', { ascending: true })
         .order('name', { ascending: true })
@@ -199,6 +201,8 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     color: row.color && HEX.test(row.color) ? row.color.toLowerCase() : FALLBACK_COLOR,
     position: row.position ?? 0,
     active: row.active ?? true,
+    kind: row.kind === 'drink' ? 'drink' : 'food',
+    icon: row.icon?.trim() || null,
   }))
   const categories: CartaCategory[] = categoryRows.map((row) => ({
     id: row.id,

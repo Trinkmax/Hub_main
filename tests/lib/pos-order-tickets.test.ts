@@ -229,6 +229,8 @@ describe('la mesa entera', () => {
     expect(summary.readyLabel).toBe('4 Mojito · 2 Branca y Cola')
     expect(summary.readyUnits).toBe(6)
     expect(unitsLabel([])).toBe('')
+    // «2 1/2 Muzzarella» se leería «dos y media».
+    expect(unitsLabel([{ name: '1/2 Muzzarella', quantity: 2 }])).toBe('2 × 1/2 Muzzarella')
   })
 
   it('una mesa sin tandas vivas no tiene pedidos', () => {
