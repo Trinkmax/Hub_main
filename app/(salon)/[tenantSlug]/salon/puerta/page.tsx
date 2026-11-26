@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { DoorScreen } from '@/components/door/door-screen'
+import { HoldReload } from '@/components/shell/hold-reload'
 import { getBranchScope } from '@/lib/branches/scope'
 import { requireRole, requireTenantAccess } from '@/lib/tenant'
 import { TICKET_DOOR_ROLES } from '@/lib/tenant/roles'
@@ -39,13 +40,17 @@ export default async function PuertaPage({
   const branch = scope.current
   const today = await getDoorToday(tenantId, branch?.id ?? null)
   return (
-    <DoorScreen
-      tenantSlug={tenantSlug}
-      initialCode={code ?? null}
-      today={today}
-      branchId={branch?.id ?? null}
-      // Con una sola sucursal no hace falta decir cuál es.
-      branchName={scope.multi && branch ? branch.name : null}
-    />
+    <>
+      {/* La cámara prendida o una entrada en pantalla: no se recarga sola (lib/app-version). */}
+      <HoldReload />
+      <DoorScreen
+        tenantSlug={tenantSlug}
+        initialCode={code ?? null}
+        today={today}
+        branchId={branch?.id ?? null}
+        // Con una sola sucursal no hace falta decir cuál es.
+        branchName={scope.multi && branch ? branch.name : null}
+      />
+    </>
   )
 }

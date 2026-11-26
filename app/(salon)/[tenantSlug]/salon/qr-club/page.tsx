@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { HoldReload } from '@/components/shell/hold-reload'
 import { getAppUrl } from '@/lib/app-url'
 import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
 import { renderQrSvg } from '@/lib/qr'
@@ -38,6 +39,8 @@ export default async function QrClubPage({ params }: { params: Promise<{ tenantS
 
   return (
     <div className="space-y-4">
+      {/* El cliente está apuntando su cámara a esta pantalla: no se recarga sola (lib/app-version). */}
+      <HoldReload />
       <ClubQrStage qrSvg={qrSvg} tenantName={tenant.name} clubUrl={clubUrl} />
 
       {captureLink === null ? (
