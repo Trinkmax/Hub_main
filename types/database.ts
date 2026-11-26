@@ -5569,6 +5569,72 @@ export type Database = {
           },
         ]
       }
+      landing_exam_results: {
+        Row: {
+          answers: Json
+          attempt: number
+          created_at: string
+          device_id: string | null
+          duration_seconds: number
+          id: string
+          left_screen: number
+          page_id: string
+          score: number
+          stations: Json
+          submission_id: string
+          taker_name: string
+          tenant_id: string
+          total: number
+        }
+        Insert: {
+          answers?: Json
+          attempt?: number
+          created_at?: string
+          device_id?: string | null
+          duration_seconds: number
+          id?: string
+          left_screen?: number
+          page_id: string
+          score: number
+          stations?: Json
+          submission_id: string
+          taker_name: string
+          tenant_id: string
+          total: number
+        }
+        Update: {
+          answers?: Json
+          attempt?: number
+          created_at?: string
+          device_id?: string | null
+          duration_seconds?: number
+          id?: string
+          left_screen?: number
+          page_id?: string
+          score?: number
+          stations?: Json
+          submission_id?: string
+          taker_name?: string
+          tenant_id?: string
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_exam_results_page_fk"
+            columns: ["page_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "landing_pages"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "landing_exam_results_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_page_versions: {
         Row: {
           created_at: string
@@ -13699,6 +13765,22 @@ export type Database = {
           p_user_agent: string
         }
         Returns: Json
+      }
+      submit_landing_exam_result: {
+        Args: {
+          p_answers: Json
+          p_attempt: number
+          p_device_id: string
+          p_duration_seconds: number
+          p_left_screen: number
+          p_name: string
+          p_score: number
+          p_slug: string
+          p_stations: Json
+          p_submission_id: string
+          p_total: number
+        }
+        Returns: string
       }
       submit_ticket: {
         Args: {

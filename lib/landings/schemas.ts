@@ -81,6 +81,12 @@ export const landingIdSchema = z.object({
   id: z.uuid('ID inválido'),
 })
 
+/** Borrar un intento de un examen: el intento y la página a la que pertenece. */
+export const examResultDeleteSchema = z.object({
+  id: z.uuid('Resultado inválido'),
+  pageId: z.uuid('Página inválida'),
+})
+
 export const landingRestoreSchema = z.object({
   id: z.uuid('ID inválido'),
   versionId: z.uuid('Versión inválida'),

@@ -2,6 +2,7 @@ import 'server-only'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { type ExamResult, parseExamResult } from './exam-results'
 
 export type LandingPageRow = {
   id: string
@@ -234,4 +235,54 @@ export async function bumpLandingView(pageId: string): Promise<void> {
     // Que falle el contador nunca puede tumbar la página del bar.
     console.error('[landings.bump]', error.message)
   }
+}
+
+// ──────────────────────────────────────────────
+// Resultados de exámenes (panel del dueño — RLS del usuario)
+// ──────────────────────────────────────────────
+
+const EXAM_RESULT_COLUMNS =
+  'id, taker_name, score, total, stations, answers, duration_seconds, left_screen, attempt, device_id, created_at'
+
+/**
+ * Los intentos de un examen, del más viejo al más nuevo. `null` si la consulta falló (la pantalla
+ * ofrece reintentar en vez de decir «nadie lo rindió»).
+ */
+export async function listExamResults(
+  tenantId: string,
+  pageId: string,
+): Promise<ExamResult[] | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('landing_exam_results')
+    .select(EXAM_RESULT_COLUMNS)
+    .eq('tenant_id', tenantId)
+    .eq('page_id', pageId)
+    .order('created_at', { ascending: true })
+    .limit(1000)
+
+  if (error) {
+    console.error('[landings.exam-results]', error.message)
+    return null
+  }
+  return (data ?? []).map((row) => parseExamResult(row as Record<string, unknown>))
+}
+
+/** Cuántos intentos tiene cada página del bar (solo aparecen las que tienen alguno). */
+export async function countExamResultsByPage(tenantId: string): Promise<Record<string, number>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('landing_exam_results')
+    .select('page_id')
+    .eq('tenant_id', tenantId)
+    .limit(10000)
+
+  if (error) {
+    // El listado de páginas no depende de esto: sin el número, se ve igual.
+    console.error('[landings.exam-counts]', error.message)
+    return {}
+  }
+  const counts: Record<string, number> = {}
+  for (const row of data ?? []) counts[row.page_id] = (counts[row.page_id] ?? 0) + 1
+  return counts
 }

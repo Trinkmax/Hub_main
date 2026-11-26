@@ -2,7 +2,7 @@
 
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Copy, Eye, FileUp, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { ClipboardList, Copy, Eye, FileUp, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
@@ -48,11 +48,14 @@ export function PagesList({
   tenantSlug,
   pages,
   landingsBase,
+  resultCounts = {},
 }: {
   tenantSlug: string
   pages: LandingPageRow[]
   /** Base pública ya resuelta: `${landingsBase}/${slug}` es el link. */
   landingsBase: string
+  /** Intentos guardados por página (solo las que son examen y alguien rindió). */
+  resultCounts?: Record<string, number>
 }) {
   const router = useRouter()
   const [deleting, setDeleting] = useState<LandingPageRow | null>(null)
@@ -148,6 +151,8 @@ export function PagesList({
         <ul className="grid gap-3">
           {pages.map((page) => {
             const publicUrl = `${landingsBase}/${page.slug}`
+            const results = resultCounts[page.id] ?? 0
+            const resultsHref = `/${tenantSlug}/paginas/${page.id}/resultados`
             return (
               <li
                 key={page.id}
@@ -190,6 +195,21 @@ export function PagesList({
                   </div>
 
                   <div className="flex items-center gap-4 sm:gap-6">
+                    {/* Los exámenes: cuántos lo rindieron, y de ahí a la lista de notas. */}
+                    {results > 0 ? (
+                      <Link
+                        href={resultsHref}
+                        className="group/results relative z-10 rounded-md text-right"
+                      >
+                        <div className="font-display text-lg font-semibold tabular-nums leading-none">
+                          {numberFormat.format(results)}
+                        </div>
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground underline-offset-2 group-hover/results:text-foreground group-hover/results:underline">
+                          {results === 1 ? 'resultado' : 'resultados'}
+                        </div>
+                      </Link>
+                    ) : null}
+
                     <div className="text-right">
                       <div className="font-display text-lg font-semibold tabular-nums leading-none">
                         {numberFormat.format(page.views)}
@@ -231,6 +251,14 @@ export function PagesList({
                               Editar
                             </Link>
                           </DropdownMenuItem>
+                          {results > 0 ? (
+                            <DropdownMenuItem asChild>
+                              <Link href={resultsHref}>
+                                <ClipboardList className="size-4" aria-hidden />
+                                Ver resultados
+                              </Link>
+                            </DropdownMenuItem>
+                          ) : null}
                           {page.published ? (
                             <DropdownMenuItem asChild>
                               <a href={publicUrl} target="_blank" rel="noopener noreferrer">

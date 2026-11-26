@@ -12,6 +12,7 @@ import {
 } from '@/lib/tenant'
 import { isLandingSlugTaken } from './queries'
 import {
+  examResultDeleteSchema,
   landingCreateSchema,
   landingHtmlSchema,
   landingIdSchema,
@@ -523,4 +524,49 @@ export async function restoreLandingVersion(
 
   revalidate(tenantSlug, parsed.data.id)
   return { ok: true, id: parsed.data.id }
+}
+
+/**
+ * Borra un intento de un examen (una prueba, uno repetido): sale de la lista y del promedio. Los
+ * resultados los escribe la página del examen; desde el panel solo se pueden leer y borrar.
+ */
+export async function deleteExamResult(
+  tenantSlug: string,
+  input: { id: string; pageId: string },
+): Promise<LandingActionState> {
+  const auth = await authorizeOwner(tenantSlug)
+  if (!auth) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = examResultDeleteSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: 'Resultado inválido' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('landing_exam_results')
+    .delete()
+    .eq('id', parsed.data.id)
+    .eq('page_id', parsed.data.pageId)
+    .eq('tenant_id', auth.tenant.id)
+    .select('id')
+
+  if (error) {
+    console.error('[landings.exam-result.delete]', error.message)
+    return { ok: false, message: 'No pudimos borrar el resultado. Probá de nuevo.' }
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, message: 'Ese resultado ya no estaba.' }
+  }
+
+  await logAudit({
+    tenantId: auth.tenant.id,
+    userId: auth.userId,
+    action: 'landing_exam_result.deleted',
+    entity: 'landing_exam_result',
+    entityId: parsed.data.id,
+    payload: { page_id: parsed.data.pageId },
+  })
+
+  revalidate(tenantSlug, parsed.data.pageId)
+  revalidatePath(`/${tenantSlug}/paginas/${parsed.data.pageId}/resultados`)
+  return { ok: true }
 }

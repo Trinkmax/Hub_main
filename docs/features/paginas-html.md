@@ -251,6 +251,42 @@ La respuesta va con `Cache-Control: no-store` a propósito: sin eso el CDN
 serviría la página sin pasar por el origen y el contador mentiría, además de
 demorar los cambios que el dueño espera ver al toque en el celular.
 
+## 5. Exámenes con resultados — `/[slug]/paginas/[pageId]/resultados`
+
+Pedido de Nacho el 26/11/2026: los exámenes de la carta para mozos y cocina se
+publican como páginas y «que se guarden los resultados de todos». Una página es
+examen si su HTML trae `<meta name="hub-exam" content="1">`.
+
+- **Cómo llega una nota.** El examen es HTML suelto sin sesión: al terminar
+  llama a `submit_landing_exam_result(...)` por PostgREST con la **clave
+  pública** (la misma que viaja en el JS de la carta). La función es `security
+  definer` y es la única puerta de escritura: acepta solo páginas publicadas con
+  la marca de examen, recalcula que la nota coincida con las respuestas, frena en
+  300 resultados por examen cada 10 minutos y es idempotente por
+  `submission_id` (el celular lo genera al terminar y lo repite en cada
+  reintento: una respuesta perdida no duplica la nota).
+- **Qué se guarda.** Nombre, nota, total, nota por estación, cada respuesta con
+  el **texto** de la pregunta, lo elegido y lo correcto (si el examen se corrige
+  después, el resultado sigue diciendo qué vio esa persona), tiempo, veces que
+  salió de la pantalla, número de intento en ese celular y un id al azar del
+  celular.
+- **Quién lo ve.** Solo el dueño: RLS `user_role_in_tenant = 'owner'` para leer
+  y borrar; nadie puede insertar ni cambiar una nota (no hay grant).
+- **La pantalla.** Número grande + oración («A todos les fue bien: sacaron 14 o
+  más»; «les fue bien» = 70 % o más), por estación con barras, «Lo que más les
+  costó» (las 3 preguntas con más errores, con la respuesta correcta) y la lista
+  uno por uno, ordenable por nota o por los más nuevos, con lo que tuvo mal
+  desplegable y un botón para borrar un intento (prueba o repetido).
+- **Para el promedio cuenta el primer intento de cada persona** (por nombre sin
+  tildes ni mayúsculas); los demás se ven marcados «Lo volvió a rendir».
+- Se llega desde la lista de Páginas (el número de resultados al lado de las
+  visitas, y «Ver resultados» en el menú) y desde el botón «Resultados» del
+  editor.
+- El generador de los exámenes no está en el repo (se armaron por soporte); lo
+  que importa para que un HTML nuevo guarde notas es la marca y la llamada a la
+  función. Los resultados que quedaron solo en un celular antes de esto se
+  suben cuando la persona vuelve a abrir el link.
+
 ---
 
 ## Datos
@@ -263,6 +299,10 @@ landing_page_versions  -- id, tenant_id, page_id, html, label, created_by
                        -- FK compuesta (page_id, tenant_id)
 landing_page_views     -- tenant_id, page_id, day, views  PK (page_id, day)
 bump_landing_view(uuid)-- suma total + día, atómico, sólo service_role
+landing_exam_results   -- un intento de un examen: nombre, nota, estaciones,
+                       -- respuestas (texto), tiempo, salidas, intento, celular
+                       -- FK compuesta (page_id, tenant_id); unique (page_id, submission_id)
+submit_landing_exam_result(...) -- la única escritura; anon y authenticated
 ```
 
 - **El slug es único en TODA la plataforma**, no por bar: `/p/promo` no lleva el
@@ -344,6 +384,8 @@ app/(manager)/[tenantSlug]/paginas/[pageId]/  page + loading + _components/
   _components/media-panel.tsx                 galería de imágenes
   _components/history-panel.tsx               visitas + versiones
   _components/settings-dialog.tsx             nombre, link, indexable
+app/(manager)/[tenantSlug]/paginas/[pageId]/resultados/  notas de un examen
+lib/landings/exam-results.ts                  resumen, orden y formato (con tests)
 app/p/[slug]/route.ts                         la landing publicada (HTML crudo)
 lib/landings/security.ts                      ← los headers, en un solo lugar
 lib/landings/{schemas,checks,queries,actions,media}.ts
