@@ -1,19 +1,16 @@
-import './carta.css'
+import { UtensilsCrossed } from 'lucide-react'
 
 export default function CartaNotFound() {
   return (
-    <div className="force-light">
-      <div className="carta flex flex-col justify-center px-6">
-        <div className="mx-auto w-full max-w-md">
-          <h1 className="font-serif text-[2.25rem] font-medium leading-[1.05] tracking-[-0.03em] text-balance">
-            No encontramos esta carta.
-          </h1>
-          <p className="mt-4 text-[1rem] leading-[1.55] text-(--carta-soft)">
-            El enlace puede estar vencido o el bar todavía no publicó su carta. Pedile el QR
-            actualizado a quien te atiende.
-          </p>
-        </div>
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+        <UtensilsCrossed className="size-7" aria-hidden />
       </div>
+      <h1 className="font-serif text-2xl font-semibold">Carta no encontrada</h1>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        El enlace puede estar vencido o el bar todavía no publicó su carta. Pedile el QR actualizado
+        al personal.
+      </p>
     </div>
   )
 }

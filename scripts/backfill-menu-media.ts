@@ -21,7 +21,6 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import sharp from 'sharp'
-import { parseCartaSponsors } from '../lib/menu/sponsors-schema'
 import type { Database } from '../types/database'
 
 const BUCKET = 'menu-images'
@@ -115,11 +114,7 @@ function publicUrlFor(path: string): string {
 const isDerived = (p: string): boolean =>
   THUMB_SUFFIX.test(p) || MEDIUM_SUFFIX.test(p) || POSTER_SUFFIX.test(p) || VIDEO_SUFFIX.test(p)
 
-/** Los sellos de los sponsors de la carta (scripts/carta-sponsors.ts): se usan tal cual, sin variantes. */
-const isSponsorSeal = (p: string): boolean => p.includes('/sponsors/')
-
-const isBaseImage = (p: string): boolean =>
-  !isDerived(p) && !isSponsorSeal(p) && IMAGE_EXTS.has(extOf(p))
+const isBaseImage = (p: string): boolean => !isDerived(p) && IMAGE_EXTS.has(extOf(p))
 
 // ---------------------------------------------------------------------------
 // Listado completo del bucket (top-level = carpetas por tenant, con paginación)
@@ -274,17 +269,13 @@ async function collectReferencedPaths(): Promise<Set<string>> {
     if (p) referenced.add(p)
   }
 
-  const [items, cats, rewards, punch, partners, tenants] = await Promise.all([
+  const [items, cats, rewards, punch] = await Promise.all([
     supabase.from('menu_items').select('image_url, video_url'),
     supabase.from('menu_categories').select('image_url'),
     supabase.from('rewards').select('image_url'),
     supabase.from('punch_card_templates').select('image_url'),
-    // Los logos de las marcas aliadas del club se suben al mismo bucket (partners-manager.tsx).
-    supabase.from('partners').select('logo_url'),
-    // Y los sellos de los sponsors de la carta (`settings.carta_sponsors`, lib/menu/sponsors.ts).
-    supabase.from('tenants').select('settings'),
   ])
-  for (const q of [items, cats, rewards, punch, partners, tenants]) {
+  for (const q of [items, cats, rewards, punch]) {
     if (q.error) throw new Error(`select de referencias falló: ${q.error.message}`)
   }
   for (const row of items.data ?? []) {
@@ -294,10 +285,6 @@ async function collectReferencedPaths(): Promise<Set<string>> {
   for (const row of cats.data ?? []) add(row.image_url)
   for (const row of rewards.data ?? []) add(row.image_url)
   for (const row of punch.data ?? []) add(row.image_url)
-  for (const row of partners.data ?? []) add(row.logo_url)
-  for (const row of tenants.data ?? []) {
-    for (const sponsor of parseCartaSponsors(row.settings)) add(sponsor.logoUrl)
-  }
   return referenced
 }
 
@@ -309,7 +296,7 @@ function expectedPaths(referenced: Set<string>): Set<string> {
     if (VIDEO_SUFFIX.test(p)) {
       // video referenciado → su poster derivado
       expected.add(`${base.slice(0, -2)}_vp.webp`)
-    } else if (IMAGE_EXTS.has(ext) && !isSponsorSeal(p)) {
+    } else if (IMAGE_EXTS.has(ext)) {
       // imagen referenciada → sus derivados thumb + media
       expected.add(`${base}_t.${ext}`)
       expected.add(`${base}_m.${ext}`)

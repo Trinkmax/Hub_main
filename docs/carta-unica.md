@@ -8,16 +8,15 @@ Consolidación de cartas y QRs (jun 2026). Antes había sprawl: dos cartas
 
 Pública, sin login. Server Component (`force-dynamic`) → `CartaExperience` (client).
 
-- **Cómo se ve y cómo se recorre:** desde el rediseño de noviembre de 2026 está en
-  `docs/features/carta-rediseno.md` (inicio con portadas, un rubro por página con todas sus
-  secciones, ficha a pantalla completa, buscador, sponsors y la barra de vidrio de abajo).
+- **Hub drill-down:** el landing muestra tarjetas de las secciones madre
+  (Comida, Bebidas, Vinos, Brunch & Café, Dulces, Sin TACC). Tap → entrás a sus
+  subsecciones/ítems con breadcrumb. Búsqueda global sobre todo el árbol.
 - **Anidamiento:** usa `menu_categories.parent_id` + `lib/menu/tree.ts`
-  (`buildCategoryTree`). El dueño organiza la jerarquía en `/[slug]/menu`; `lib/menu/carta.ts`
-  lo aplana en rubros y secciones para mostrarlo.
+  (`buildCategoryTree`). El dueño organiza la jerarquía en `/[slug]/menu`.
 - **Logo:** `CartaBrand` muestra `tenants.logo_url`; si es null, cae a un
   wordmark serif del nombre con acento "!" (para HUB ⇒ "Hub!").
-- **Barra de abajo:** `Carta` (volver al inicio), `Club` / `Billetera` según identidad, y el
-  buscador en el círculo.
+- **Botonera inferior:** `Carta` (volver al inicio) + `Mi billetera` /
+  `Sumate al club` según identidad.
 
 ## Club de beneficios (formulario embebido)
 
@@ -58,16 +57,15 @@ que el dueño abra su pantalla de QRs (donde obtiene los QRs igual).
 
 ## Smoke manual
 
-El recorrido de la carta está en `docs/features/carta-rediseno.md` («Cómo probarla»). Lo que es de esta
-consolidación:
-
-1. Barra de abajo → *Club* → *Unirme al club* → completar y enviar → éxito → *Ver mi billetera*.
-2. La wallet muestra puntos/nivel/visitas/canjes/QR. Recargar `/carta/hub`
-   mantiene la identidad (cookie), la barra dice *Billetera* y el inicio saluda por el nombre.
-3. `/carta/hub?club=1` abre la carta con el formulario del club abierto.
-4. `/[slug]/local/captura` muestra solo 2 QRs (carta + club), sin generador.
-5. `/capture/<slug-viejo>` redirige a `/carta/hub?club=1`.
-6. Sin regresiones: `/c/[token]` y `/print/c-qr` siguen funcionando; `/m/*` sigue
+1. `/carta/hub` → 6 tarjetas madre; entrar a *Comida* → subsecciones + ítems con
+   breadcrumb; buscar "milanesa" encuentra ítems de cualquier rama; header "Hub!".
+2. Botonera → *Sumate al club* → completar y enviar → éxito → *Ver mi billetera*.
+3. La wallet muestra puntos/nivel/visitas/canjes/QR. Recargar `/carta/hub`
+   mantiene la identidad (cookie) y la barra muestra *Mi billetera*.
+4. `/carta/hub?club=1` abre la carta con el formulario del club abierto.
+5. `/[slug]/local/captura` muestra solo 2 QRs (carta + club), sin generador.
+6. `/capture/<slug-viejo>` redirige a `/carta/hub?club=1`.
+7. Sin regresiones: `/c/[token]` y `/print/c-qr` siguen funcionando; `/m/*` sigue
    apagado por flag.
 
 ## Migración

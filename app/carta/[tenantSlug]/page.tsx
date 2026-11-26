@@ -10,17 +10,14 @@ import { getAppUrl } from '@/lib/app-url'
 import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
 import { walletCookieName } from '@/lib/capture/cookie'
 import { getSupabaseClientEnv } from '@/lib/env'
-import { localClock, visibleNow } from '@/lib/menu/availability'
-import { daypartOf } from '@/lib/menu/carta'
+import { visibleNow } from '@/lib/menu/availability'
 import { listActiveMenuPublic } from '@/lib/menu/queries'
 import { getMenuRev } from '@/lib/menu/revision'
-import { parseCartaSponsors } from '@/lib/menu/sponsors-schema'
 import { buildCategoryTree } from '@/lib/menu/tree'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getWalletByToken, type WalletData } from '@/lib/wallet/queries'
 import { CartaExperience } from './_components/carta-experience'
 import { CartaFreshness } from './_components/carta-freshness'
-import './carta.css'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,8 +27,6 @@ type TenantRow = {
   logo_url: string | null
   brand_accent: string | null
   timezone: string | null
-  /** La bolsa de configuración del bar; de acá salen los sponsors de la carta (`carta_sponsors`). */
-  settings: unknown
 }
 
 /** La hora del bar si la fila viniera sin zona. */
@@ -43,7 +38,7 @@ const resolveTenant = cache(async (slug: string): Promise<TenantRow | null> => {
   const service = createServiceClient()
   const { data } = await service
     .from('tenants')
-    .select('id, name, logo_url, brand_accent, timezone, settings')
+    .select('id, name, logo_url, brand_accent, timezone')
     .eq('slug', slug)
     .maybeSingle()
   return (data as TenantRow | null) ?? null
@@ -104,13 +99,12 @@ export default async function CartaPage({
   // en los destacados. La página no se guarda en el servidor (`force-dynamic`), así que cada pedido
   // se arma con la hora de ese momento; `changeInMs` le dice a la carta abierta cuándo volver a pedirse.
   const renderedAt = Date.now()
-  const timeZone = tenant.timezone || DEFAULT_TIME_ZONE
-  const visible = visibleNow({ categories, items }, renderedAt, timeZone)
+  const visible = visibleNow(
+    { categories, items },
+    renderedAt,
+    tenant.timezone || DEFAULT_TIME_ZONE,
+  )
   const tree = buildCategoryTree(visible.categories, visible.items)
-  // El saludo sigue el reloj del bar, igual que los horarios de los rubros: sale ya escrito del
-  // servidor (el teléfono de quien mira puede estar en otra hora).
-  const daypart = daypartOf(localClock(renderedAt, timeZone).minutes)
-  const sponsors = parseCartaSponsors(tenant.settings)
 
   let walletContent: React.ReactNode = null
   if (wallet) {
@@ -173,8 +167,6 @@ export default async function CartaPage({
         walletContent={walletContent}
         walletSummary={walletSummary}
         initialSheet={initialSheet}
-        sponsors={sponsors}
-        daypart={daypart}
       />
     </BrandAccent>
   )

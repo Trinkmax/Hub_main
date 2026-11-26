@@ -1,57 +1,61 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { hapticTick } from '@/components/shell/dock/haptics'
-import {
-  buildCartaRoots,
-  type CartaPlace,
-  cartaGreeting,
-  cartaHash,
-  type Daypart,
-  parseCartaHash,
-  resolveCartaPlace,
-} from '@/lib/menu/carta'
+import { ChevronLeft, ChevronRight, SearchX, UtensilsCrossed } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MenuItem } from '@/lib/menu/queries'
-import type { CartaSponsor } from '@/lib/menu/sponsors'
 import type { MenuTreeNode } from '@/lib/menu/tree'
-import { CartaCategory, sectionDomId } from './carta-category'
-import { CartaDock } from './carta-dock'
-import { CartaHome } from './carta-home'
-import { CartaSearch, type CartaSearchHandle } from './carta-search'
-import type { StageRequest } from './item-stage'
-import { WalletDrawer, type WalletDrawerHandle, type WalletSummary } from './wallet-drawer'
+import { CartaBrand } from './carta-brand'
+import { CartaSearch } from './carta-search'
+import { CategoryHubCard } from './category-hub-card'
+import { ClubLip } from './club-lip'
+import { ClubSheet } from './club-sheet'
+import { FeaturedCarousel } from './featured-carousel'
+import { ItemCard } from './item-card'
+import { ItemDetailSheet } from './item-detail-sheet'
+import { WalletDrawer, type WalletSummary } from './wallet-drawer'
 
 /** Estado de apertura pasado por deep-link (?club / ?wallet). */
 type InitialSheet = 'none' | 'club' | 'wallet'
+/** El único overlay que este componente controla directamente es el club: la
+ *  billetera es un cajón autónomo (WalletDrawer) que maneja su propio open. */
+type SheetState = 'none' | 'club'
 
-// La ficha (con su motor de gestos) y el alta del club (con el campo de teléfono y sus datos de todos
-// los países) pesan y no hacen falta para ver la carta: se bajan aparte. Apenas la página queda quieta
-// se traen de fondo, así cuando alguien toca un plato ya están.
-const loadStage = () => import('./item-stage')
-const loadClub = () => import('./club-sheet')
-const ItemStage = dynamic(() => loadStage().then((module) => module.ItemStage), { ssr: false })
-const ClubSheet = dynamic(() => loadClub().then((module) => module.ClubSheet), { ssr: false })
+/** Todos los ítems del bosque en orden de árbol. */
+function collectItems(nodes: MenuTreeNode[]): MenuItem[] {
+  const out: MenuItem[] = []
+  const walk = (ns: MenuTreeNode[]) => {
+    for (const n of ns) {
+      out.push(...n.items)
+      walk(n.children)
+    }
+  }
+  walk(nodes)
+  return out
+}
 
-const HOME: CartaPlace = { root: null, section: null }
+/** ¿La categoría tiene algún ítem propio o en su subárbol? */
+function hasContent(node: MenuTreeNode): boolean {
+  return node.items.length > 0 || node.children.some(hasContent)
+}
 
-const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+/** Cantidad de ítems en todo el subárbol. */
+function countSubtreeItems(node: MenuTreeNode): number {
+  return node.items.length + node.children.reduce((acc, c) => acc + countSubtreeItems(c), 0)
+}
 
-/** El `#` no se manda al servidor: la carta entera es una sola página y el lugar va ahí. */
-const urlFor = (place: CartaPlace) =>
-  `${window.location.pathname}${window.location.search}${cartaHash({ root: place.root, section: null })}`
+function cardSubtitle(node: MenuTreeNode): string {
+  const withContent = node.children.filter(hasContent)
+  if (withContent.length > 0) {
+    return `${withContent.length} ${withContent.length === 1 ? 'sección' : 'secciones'}`
+  }
+  const n = countSubtreeItems(node)
+  return `${n} ${n === 1 ? 'producto' : 'productos'}`
+}
 
-/**
- * La carta pública, del lado del celular. Arma los rubros (`lib/menu/carta.ts`), sabe en qué lugar está
- * parado quien mira y coordina lo que se abre por encima: la ficha de un producto, el buscador, el club
- * y la billetera.
- *
- * **El lugar** (inicio o un rubro) va en el `#` de la URL. Entrar a un rubro suma un paso al historial,
- * así el «atrás» del teléfono vuelve al inicio en vez de sacar de la carta; pasar de un rubro a otro lo
- * reemplaza (para volver alcanza un «atrás»). Donde el navegador lo permite, el cambio de lugar es una
- * transición: el nombre del rubro viaja entre la portada y el título.
- */
+function normalize(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+
 export function CartaExperience(props: {
   tenantName: string
   logoUrl: string | null
@@ -61,299 +65,297 @@ export function CartaExperience(props: {
   walletContent: React.ReactNode | null
   walletSummary: WalletSummary | null
   initialSheet: InitialSheet
-  sponsors: CartaSponsor[]
-  /** La parte del día en el reloj del bar, para el saludo. */
-  daypart: Daypart
 }): React.JSX.Element {
   const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, walletContent } = props
-  const { walletSummary, sponsors, daypart } = props
-  const member = Boolean(walletContent && walletSummary)
+  const { walletSummary } = props
 
-  const roots = useMemo(() => buildCartaRoots(tree), [tree])
-  const itemsById = useMemo(() => {
-    const map = new Map<string, MenuItem>()
-    for (const root of roots) {
-      for (const section of root.sections) for (const item of section.items) map.set(item.id, item)
-    }
-    return map
-  }, [roots])
-  const featured = useMemo(
-    () => [...itemsById.values()].filter((item) => item.featured),
-    [itemsById],
-  )
-  // Si la carta se actualiza con una ficha abierta (carta-freshness), la ficha muestra el producto de
-  // la carta nueva: el precio de adentro también queda al día.
-  const resolveItem = useCallback((id: string) => itemsById.get(id) ?? null, [itemsById])
-
-  // ── El lugar ────────────────────────────────────────────────────────────────
-  const [place, setPlace] = useState<CartaPlace>(HOME)
-  /** El rubro cuyo nombre viaja en la transición (el que se abre, o del que se vuelve). */
-  const [travelRoot, setTravelRoot] = useState<string | null>(null)
-  /** La entrada animada del inicio corre una sola vez: la primera vez que se lo dibuja. */
-  const [introDone, setIntroDone] = useState(false)
-  const placeRef = useRef(place)
-  placeRef.current = place
-  /** ¿El rubro abierto se sumó al historial desde el inicio? Entonces «volver» es un paso atrás. */
-  const pushedRef = useRef(false)
-  /** Dónde estaba el inicio al salir de él, para dejarlo igual al volver. */
-  const homeScrollRef = useRef(0)
-  /** La sección de la dirección con la que se entró: se baja hasta ella cuando su rubro ya está dibujado. */
-  const landingSectionRef = useRef<string | null>(null)
-
-  const resolved = useMemo(() => resolveCartaPlace(roots, place), [roots, place])
-
-  /** Cambia de lugar y, recién con la pantalla nueva ya armada, acomoda el scroll. */
-  const move = useCallback((next: CartaPlace, afterRender: () => void) => {
-    const from = placeRef.current
-    const run = () => {
-      flushSync(() => {
-        setPlace(next)
-        setIntroDone(true)
-        setTravelRoot(next.root ?? from.root)
-      })
-      afterRender()
-    }
-    const doc = document as Document & { startViewTransition?: (update: () => void) => unknown }
-    if (typeof doc.startViewTransition === 'function' && !reducedMotion()) {
-      doc.startViewTransition(run)
-    } else {
-      run()
-    }
-  }, [])
-
-  const scrollToSection = useCallback((sectionSlug: string | null, smooth: boolean) => {
-    const element = sectionSlug
-      ? document.getElementById(sectionDomId({ slug: sectionSlug }))
-      : null
-    if (!element) {
-      window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' })
-      return
-    }
-    const rail = document.querySelector<HTMLElement>('[data-carta-rail]')?.offsetHeight ?? 0
-    const top = element.getBoundingClientRect().top + window.scrollY - rail - 6
-    window.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' })
-  }, [])
-
-  const openRoot = useCallback(
-    (rootSlug: string, sectionSlug: string | null = null) => {
-      const current = placeRef.current
-      if (current.root === rootSlug) {
-        scrollToSection(sectionSlug, !reducedMotion())
-        return
-      }
-      const next: CartaPlace = { root: rootSlug, section: sectionSlug }
-      if (current.root === null) {
-        homeScrollRef.current = window.scrollY
-        window.history.pushState(null, '', urlFor(next))
-        pushedRef.current = true
-        // La portada tiene que llevar el nombre que viaja ANTES de la foto de la pantalla vieja.
-        flushSync(() => setTravelRoot(rootSlug))
-      } else {
-        window.history.replaceState(null, '', urlFor(next))
-      }
-      move(next, () => scrollToSection(sectionSlug, false))
-    },
-    [move, scrollToSection],
-  )
-
-  const goHome = useCallback(() => {
-    const current = placeRef.current
-    if (current.root === null) {
-      window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' })
-      return
-    }
-    if (pushedRef.current) {
-      // El inicio está un paso atrás en el historial: `popstate` hace el resto.
-      window.history.back()
-      return
-    }
-    // Se entró directo a un rubro (un QR, un link): no hay inicio detrás, se lo pone en su lugar.
-    window.history.replaceState(null, '', urlFor(HOME))
-    move(HOME, () => window.scrollTo(0, 0))
-  }, [move])
-
-  useEffect(() => {
-    // La carta acomoda su propio scroll al cambiar de lugar (el navegador restauraría el del rubro
-    // sobre el inicio, que mide otra cosa).
-    const previous = window.history.scrollRestoration
-    window.history.scrollRestoration = 'manual'
-
-    // La dirección con la que se entró (`#bebidas/tragos-hub`).
-    const initial = parseCartaHash(window.location.hash)
-    if (initial.root) {
-      landingSectionRef.current = initial.section
-      setIntroDone(true)
-      setPlace(initial)
-    }
-
-    const onPop = () => {
-      const next = parseCartaHash(window.location.hash)
-      // El «atrás» que cierra una hoja (la ficha, el buscador) no cambia de lugar.
-      if (next.root === placeRef.current.root) return
-      if (next.root === null) pushedRef.current = false
-      move(next, () => {
-        if (next.root === null) window.scrollTo(0, homeScrollRef.current)
-        else scrollToSection(next.section, false)
-      })
-    }
-    window.addEventListener('popstate', onPop)
-    return () => {
-      window.removeEventListener('popstate', onPop)
-      window.history.scrollRestoration = previous
-    }
-  }, [move, scrollToSection])
-
-  useEffect(() => {
-    if (!resolved.root || !landingSectionRef.current) return
-    scrollToSection(landingSectionRef.current, false)
-    landingSectionRef.current = null
-  }, [resolved.root, scrollToSection])
-
-  // La carta se puede actualizar con alguien adentro de un rubro que ya no está (terminó su horario,
-  // lo pausaron): vuelve al inicio en vez de quedar mirando una pantalla que no existe.
-  useEffect(() => {
-    if (place.root === null || resolved.root !== null) return
-    pushedRef.current = false
-    window.history.replaceState(null, '', urlFor(HOME))
-    setPlace(HOME)
-    window.scrollTo(0, 0)
-  }, [place.root, resolved.root])
-
-  // ── Lo que se abre por encima ───────────────────────────────────────────────
-  const [stage, setStage] = useState<StageRequest | null>(null)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [clubOpen, setClubOpen] = useState(props.initialSheet === 'club')
-  // Se montan la primera vez que hacen falta y quedan (la ficha sigue dibujada mientras se va).
-  const [stageUsed, setStageUsed] = useState(false)
-  const [clubUsed, setClubUsed] = useState(props.initialSheet === 'club')
-
-  useEffect(() => {
-    const warm = () => {
-      void loadStage()
-      void loadClub()
-    }
-    if (typeof window.requestIdleCallback === 'function') {
-      const idle = window.requestIdleCallback(warm, { timeout: 2500 })
-      return () => window.cancelIdleCallback(idle)
-    }
-    // Safari no tiene `requestIdleCallback`: un momento después de dibujar alcanza.
-    const timer = window.setTimeout(warm, 1200)
-    return () => window.clearTimeout(timer)
-  }, [])
-  const [walletOpen, setWalletOpen] = useState(props.initialSheet === 'wallet' && member)
-  const searchRef = useRef<CartaSearchHandle>(null)
-  const walletRef = useRef<WalletDrawerHandle>(null)
+  const [storedPath, setPath] = useState<string[]>([])
+  const [query, setQuery] = useState('')
+  const [activeItem, setActiveItem] = useState<MenuItem | null>(null)
+  const [sheet, setSheet] = useState<SheetState>(props.initialSheet === 'club' ? 'club' : 'none')
+  const walletInitiallyOpen = props.initialSheet === 'wallet'
 
   // El sheet inicial ya se sembró desde ?club/?wallet; limpiamos el query de la
   // URL para que al cerrar y recargar/compartir no se vuelva a abrir solo.
   useEffect(() => {
-    if (props.initialSheet === 'none') return
-    window.history.replaceState(
-      window.history.state,
-      '',
-      `${window.location.pathname}${window.location.hash}`,
-    )
+    if (props.initialSheet !== 'none' && typeof window !== 'undefined') {
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
   }, [props.initialSheet])
 
-  const openItem = useCallback((item: MenuItem, from: HTMLElement | null, list: MenuItem[]) => {
-    hapticTick()
-    setStageUsed(true)
-    setStage({ item, from, list })
-  }, [])
-  const openFeatured = useCallback(
-    (item: MenuItem, from: HTMLElement | null) => openItem(item, from, featured),
-    [featured, openItem],
-  )
-  const closeStage = useCallback(() => setStage(null), [])
-  const openSearch = useCallback(() => searchRef.current?.open(), [])
-  const openClub = useCallback(() => {
-    if (member) {
-      walletRef.current?.open()
-      return
-    }
-    setClubUsed(true)
-    setClubOpen(true)
-  }, [member])
+  const openItem = useCallback((item: MenuItem) => setActiveItem(item), [])
 
-  const overlay = stage !== null || searchOpen
+  const nodeById = useMemo(() => {
+    const map = new Map<string, MenuTreeNode>()
+    const walk = (ns: MenuTreeNode[]) => {
+      for (const n of ns) {
+        map.set(n.id, n)
+        walk(n.children)
+      }
+    }
+    walk(tree)
+    return map
+  }, [tree])
+
+  // La carta se puede actualizar con alguien adentro de una sección que ya no está: un rubro con
+  // horario que terminó (el menú del mediodía a las 16) o uno que se pausó. El camino se corta en la
+  // última sección que sigue existiendo, así nadie queda mirando una pantalla vacía sin «volver».
+  const path = useMemo(() => {
+    const cut = storedPath.findIndex((id) => !nodeById.has(id))
+    return cut === -1 ? storedPath : storedPath.slice(0, cut)
+  }, [storedPath, nodeById])
+  useEffect(() => {
+    if (path !== storedPath) setPath(path)
+  }, [path, storedPath])
+
+  const allItems = useMemo(() => collectItems(tree), [tree])
+  // Si la carta se actualiza con el detalle abierto (carta-freshness), el detalle muestra el ítem de
+  // la carta nueva: el precio de adentro también queda al día. Si el ítem ya no está, sigue el que era.
+  const shownItem = useMemo(
+    () => (activeItem ? (allItems.find((i) => i.id === activeItem.id) ?? activeItem) : null),
+    [activeItem, allItems],
+  )
+  const featured = useMemo(() => allItems.filter((i) => i.featured), [allItems])
+  const rootNodes = useMemo(() => tree.filter(hasContent), [tree])
+
+  const trimmed = query.trim()
+  const isSearching = trimmed.length > 0
+  const results = useMemo(() => {
+    if (!isSearching) return []
+    const q = normalize(trimmed)
+    return allItems.filter((it) => normalize(`${it.name} ${it.description ?? ''}`).includes(q))
+  }, [allItems, trimmed, isSearching])
+
+  const currentNode = path.length > 0 ? (nodeById.get(path[path.length - 1] ?? '') ?? null) : null
+  const breadcrumb = useMemo(
+    () => path.map((id) => nodeById.get(id)).filter((n): n is MenuTreeNode => Boolean(n)),
+    [path, nodeById],
+  )
+  const childrenToShow = (currentNode ? currentNode.children : rootNodes).filter(hasContent)
+  const itemsToShow = currentNode ? currentNode.items : []
+
+  const openCategory = useCallback((id: string) => {
+    setPath((p) => [...p, id])
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 })
+  }, [])
+  const goHome = useCallback(() => setPath([]), [])
+  const goBack = useCallback(() => setPath((p) => p.slice(0, -1)), [])
+  const jumpTo = useCallback((index: number) => setPath((p) => p.slice(0, index + 1)), [])
 
   return (
-    <div className="carta">
-      {/* Con la ficha o el buscador encima, la página de atrás no recibe foco ni la lee el lector de pantalla. */}
-      <div data-art-scope inert={overlay}>
-        {resolved.root ? (
-          <CartaCategory
-            key={resolved.root.id}
-            tenantName={tenantName}
-            roots={roots}
-            root={resolved.root}
-            startSection={resolved.section}
-            sponsors={sponsors}
-            onHome={goHome}
-            onOpenRoot={openRoot}
-            onOpenItem={openItem}
-          />
+    <div className="min-h-dvh bg-background pb-24 text-foreground">
+      {/* HEADER */}
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur-md">
+        <div className="mx-auto w-full max-w-2xl px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)]">
+          <div className="flex items-center gap-3 py-2">
+            {/* Sólo el logo (sin duplicar el nombre) + el rótulo de la página. */}
+            <CartaBrand tenantName={tenantName} logoUrl={logoUrl} />
+            <span className="ml-auto text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              Carta
+            </span>
+          </div>
+
+          <CartaSearch value={query} onChange={setQuery} className="mt-1" />
+
+          {/* BREADCRUMB */}
+          {!isSearching && breadcrumb.length > 0 ? (
+            <nav
+              aria-label="Migas de pan"
+              className="mt-2.5 flex items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <button
+                type="button"
+                onClick={goBack}
+                aria-label="Volver"
+                className="-ml-1 mr-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={goHome}
+                className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Carta
+              </button>
+              {breadcrumb.map((node, i) => {
+                const isLast = i === breadcrumb.length - 1
+                return (
+                  <span key={node.id} className="flex shrink-0 items-center gap-1">
+                    <ChevronRight className="size-3.5 text-muted-foreground/50" aria-hidden />
+                    {isLast ? (
+                      <span className="px-1.5 py-0.5 font-semibold text-foreground">
+                        {node.name}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => jumpTo(i)}
+                        className="rounded-md px-1.5 py-0.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {node.name}
+                      </button>
+                    )}
+                  </span>
+                )
+              })}
+            </nav>
+          ) : null}
+        </div>
+      </header>
+
+      {/* CONTENIDO */}
+      <main className="mx-auto w-full max-w-2xl px-4 pt-4">
+        {isSearching ? (
+          <SearchResults query={trimmed} results={results} onOpenItem={openItem} />
         ) : (
-          <CartaHome
-            tenantName={tenantName}
-            logoUrl={logoUrl}
-            greeting={cartaGreeting(daypart, walletSummary?.firstName)}
-            roots={roots}
-            featured={featured}
-            sponsors={sponsors}
-            member={member}
-            intro={!introDone}
-            titleFor={travelRoot}
-            onOpenRoot={openRoot}
-            onOpenItem={openFeatured}
-            onSearch={openSearch}
-            onClub={openClub}
-          />
+          <div key={path.join('/') || 'root'} className="animate-in fade-in duration-200">
+            {path.length === 0 ? (
+              <div className="flex flex-col gap-8">
+                <FeaturedCarousel items={featured} onOpen={openItem} />
+                {rootNodes.length === 0 ? (
+                  <EmptyMenu />
+                ) : (
+                  <CardGrid nodes={rootNodes} onOpen={openCategory} />
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {currentNode ? (
+                  <h2 className="px-1 font-serif text-2xl font-semibold tracking-tight text-balance">
+                    {currentNode.name}
+                  </h2>
+                ) : null}
+                {itemsToShow.length > 0 ? (
+                  <ul className="flex flex-col gap-2">
+                    {itemsToShow.map((item) => (
+                      <li key={item.id}>
+                        <ItemCard item={item} onOpen={openItem} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {childrenToShow.length > 0 ? (
+                  <CardGrid nodes={childrenToShow} onOpen={openCategory} />
+                ) : null}
+                {itemsToShow.length === 0 && childrenToShow.length === 0 ? <EmptyMenu /> : null}
+              </div>
+            )}
+          </div>
         )}
-      </div>
 
-      <CartaDock
-        member={member}
-        hidden={overlay || clubOpen || walletOpen}
-        onCarta={goHome}
-        onClub={openClub}
-        onSearch={openSearch}
-      />
+        <footer className="mt-12 border-t border-border/50 pt-5 text-center">
+          <p className="font-serif text-sm text-foreground/70">Carta de {tenantName}</p>
+          <p className="mt-1 text-[11px] tracking-wide text-muted-foreground/70">Hecho con HUB</p>
+        </footer>
+      </main>
 
-      <CartaSearch
-        ref={searchRef}
-        roots={roots}
-        onOpenItem={openItem}
-        onGo={openRoot}
-        onOpenChange={setSearchOpen}
-      />
-
-      {stageUsed ? (
-        <ItemStage request={stage} resolve={resolveItem} sponsors={sponsors} onClose={closeStage} />
-      ) : null}
-
+      {/* CAJÓN DE LA BILLETERA — el borde verde asoma desde abajo y se arrastra
+          hacia arriba para abrir. Si en este celular no hay sesión, el MISMO labio
+          (mismo gesto: arrastrá o tocá) abre el club → ClubSheet, que ofrece los
+          dos caminos: sumarse o entrar con la cuenta que ya existe. */}
       {walletContent && walletSummary ? (
         <WalletDrawer
-          ref={walletRef}
           summary={walletSummary}
           tenantSlug={tenantSlug}
-          initialOpen={props.initialSheet === 'wallet'}
-          onOpenChange={setWalletOpen}
+          initialOpen={walletInitiallyOpen}
         >
           {walletContent}
         </WalletDrawer>
-      ) : null}
+      ) : (
+        <ClubLip onOpen={() => setSheet('club')} />
+      )}
 
-      {clubUsed ? (
-        <ClubSheet
-          open={clubOpen}
-          onClose={() => setClubOpen(false)}
-          tenantName={tenantName}
-          tenantSlug={tenantSlug}
-          logoUrl={logoUrl}
-          linkSlug={captureLinkSlug}
+      <ItemDetailSheet item={shownItem} onClose={() => setActiveItem(null)} />
+
+      <ClubSheet
+        open={sheet === 'club'}
+        onClose={() => setSheet('none')}
+        tenantName={tenantName}
+        tenantSlug={tenantSlug}
+        logoUrl={logoUrl}
+        linkSlug={captureLinkSlug}
+      />
+    </div>
+  )
+}
+
+function CardGrid({
+  nodes,
+  onOpen,
+}: {
+  nodes: MenuTreeNode[]
+  onOpen: (id: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {nodes.map((node, i) => (
+        <CategoryHubCard
+          key={node.id}
+          name={node.name}
+          imageUrl={node.image_url}
+          subtitle={cardSubtitle(node)}
+          onOpen={() => onOpen(node.id)}
+          // Las 4 primeras (2 filas) entran en la pantalla inicial: que no
+          // esperen al lazy-load ni compitan con el resto por la red.
+          priority={i < 4}
         />
-      ) : null}
+      ))}
+    </div>
+  )
+}
+
+function SearchResults({
+  query,
+  results,
+  onOpenItem,
+}: {
+  query: string
+  results: MenuItem[]
+  onOpenItem: (item: MenuItem) => void
+}): React.JSX.Element {
+  if (results.length === 0) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center gap-3 py-20 text-center"
+      >
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-secondary/60 text-muted-foreground">
+          <SearchX className="size-6" aria-hidden />
+        </span>
+        <p className="font-serif text-lg font-semibold tracking-tight">Sin resultados</p>
+        <p className="max-w-xs text-sm text-muted-foreground">
+          No encontramos nada para “{query}”. Probá con otra palabra.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <section aria-label={`Resultados para ${query}`}>
+      <p className="mb-3 px-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+        {results.length} {results.length === 1 ? 'resultado' : 'resultados'}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {results.map((item) => (
+          <li key={item.id}>
+            <ItemCard item={item} onOpen={onOpenItem} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function EmptyMenu(): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
+      <span className="flex size-14 items-center justify-center rounded-2xl bg-secondary/60 text-muted-foreground">
+        <UtensilsCrossed className="size-6" aria-hidden />
+      </span>
+      <p className="font-serif text-lg font-semibold tracking-tight">Carta en preparación</p>
+      <p className="max-w-xs text-sm text-muted-foreground">
+        Todavía no hay productos para mostrar. Volvé en un rato.
+      </p>
     </div>
   )
 }
