@@ -1,15 +1,16 @@
 'use client'
 
-import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, ShieldCheck } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, LogOut, ShieldCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useActionState, useEffect, useId, useState } from 'react'
+import { useActionState, useEffect, useId, useState, useTransition } from 'react'
 import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
 import { BrandWordmarkLarge } from '@/components/shell/brand-mark'
+import { signOutAction } from '@/components/shell/sign-out-action'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { type AuthState, updatePasswordAction } from '@/lib/auth/actions'
+import { type AuthState, finishFirstPasswordAction, updatePasswordAction } from '@/lib/auth/actions'
 import { cn } from '@/lib/utils'
 
 const initialState: AuthState = { status: 'idle' }
@@ -24,20 +25,26 @@ function passwordStrength(value: string): { score: 0 | 1 | 2 | 3 | 4; label: str
   return { score: score as 0 | 1 | 2 | 3 | 4, label: labels[score] ?? 'Muy débil' }
 }
 
-function SubmitButton({ disabled }: { disabled?: boolean }) {
+function SubmitButton({ disabled, label }: { disabled?: boolean; label: string }) {
   const { pending } = useFormStatus()
   return (
-    <Button type="submit" disabled={pending || disabled} className="h-10 w-full gap-2" size="lg">
+    <Button type="submit" disabled={pending || disabled} className="h-11 w-full gap-2" size="lg">
       <ShieldCheck className={cn('size-4', pending && 'animate-pulse')} />
-      {pending ? 'Guardando…' : 'Guardar contraseña'}
+      {pending ? 'Guardando…' : label}
       {!pending ? <ArrowRight className="size-3.5" /> : null}
     </Button>
   )
 }
 
+/** La tarjeta de estas pantallas. En el celular va lisa: el desenfoque del fondo es caro en un teléfono modesto. */
+const CARD =
+  'card-hairline rounded-2xl border border-border/70 bg-card shadow-lg sm:bg-card/90 sm:backdrop-blur-xl'
+
 export function UpdatePasswordForm({
   email,
   requiresReauth = false,
+  firstTime = false,
+  pendingFinish = false,
 }: {
   email: string
   /**
@@ -45,9 +52,21 @@ export function UpdatePasswordForm({
    * de recovery). Mostramos el campo "Contraseña actual" y exigimos reauth.
    */
   requiresReauth?: boolean
+  /** Le pusieron una contraseña para arrancar y tiene que elegir la suya (no puede seguir sin hacerlo). */
+  firstTime?: boolean
+  /** Ya la eligió en este equipo y solo faltó terminar: se le ofrece reintentar, sin pedirle nada. */
+  pendingFinish?: boolean
 }) {
   const router = useRouter()
   const [state, formAction] = useActionState(updatePasswordAction, initialState)
+  const [finishing, startFinish] = useTransition()
+  const [finished, setFinished] = useState(false)
+  const finish = () =>
+    startFinish(async () => {
+      const result = await finishFirstPasswordAction()
+      if (result.status === 'success') setFinished(true)
+      else toast.error(result.message ?? 'Probá de nuevo en un momento.')
+    })
   const [show, setShow] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showCurrent, setShowCurrent] = useState(false)
@@ -56,32 +75,63 @@ export function UpdatePasswordForm({
   const confirmId = useId()
   const currentId = useId()
 
+  const done = state.status === 'success' || finished
   useEffect(() => {
     if (state.status === 'error' && state.message) toast.error(state.message)
-    if (state.status === 'success') {
-      toast.success('Contraseña actualizada.')
-      // Pequeño delay para que el usuario vea el feedback antes de navegar.
-      const t = setTimeout(() => router.replace('/'), 900)
-      return () => clearTimeout(t)
-    }
-  }, [state, router])
+  }, [state])
+  useEffect(() => {
+    if (!done) return
+    // Pequeño delay para que el usuario vea el feedback antes de navegar.
+    const t = setTimeout(() => router.replace('/'), firstTime ? 600 : 900)
+    return () => clearTimeout(t)
+  }, [done, router, firstTime])
 
   const passError = state.status === 'error' ? state.fieldErrors?.password : undefined
   const confirmError = state.status === 'error' ? state.fieldErrors?.confirm : undefined
   const currentError = state.status === 'error' ? state.fieldErrors?.currentPassword : undefined
 
-  if (state.status === 'success') {
+  if (done) {
     return (
-      <div className="space-y-7 animate-in fade-in-0 zoom-in-95 duration-300">
+      <div className="space-y-7">
         <div className="flex justify-center">
           <BrandWordmarkLarge />
         </div>
-        <div className="card-hairline rounded-2xl border border-border/70 bg-card/90 p-8 text-center shadow-lg backdrop-blur-xl">
+        <div className={cn(CARD, 'p-8 text-center')}>
           <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-success/30 bg-success/15 text-success">
             <CheckCircle2 className="size-7" aria-hidden />
           </div>
           <h1 className="mt-4 font-serif text-2xl font-semibold tracking-tight">¡Listo!</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Te llevamos a tu panel…</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {firstTime ? 'Ya tenés tu contraseña. Entrando…' : 'Te llevamos a tu panel…'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // La contraseña ya quedó guardada en este equipo; solo falta terminar el trámite.
+  const stuck =
+    pendingFinish || (state.status === 'error' && /quedó guardada/.test(state.message ?? ''))
+  if (firstTime && stuck) {
+    return (
+      <div className="space-y-7">
+        <div className="flex justify-center">
+          <BrandWordmarkLarge />
+        </div>
+        <div className={cn(CARD, 'space-y-4 p-6 text-center sm:p-8')}>
+          <h1 className="font-serif text-2xl font-semibold tracking-tight">Ya casi</h1>
+          <p className="text-sm text-muted-foreground text-balance">
+            Tu contraseña nueva quedó guardada. Falta un paso que no depende de vos.
+          </p>
+          <Button
+            type="button"
+            className="h-11 w-full"
+            size="lg"
+            disabled={finishing}
+            onClick={finish}
+          >
+            {finishing ? 'Terminando…' : 'Reintentar'}
+          </Button>
         </div>
       </div>
     )
@@ -90,22 +140,32 @@ export function UpdatePasswordForm({
   const strength = pwd.length > 0 ? passwordStrength(pwd) : null
 
   return (
-    <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+    <div className="space-y-7 sm:animate-in sm:fade-in-0 sm:slide-in-from-bottom-2 sm:duration-500">
       <div className="flex justify-center">
         <BrandWordmarkLarge />
       </div>
 
-      <div className="card-hairline rounded-2xl border border-border/70 bg-card/90 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+      <div className={cn(CARD, 'p-6 sm:p-8')}>
         <div className="space-y-2 text-center">
           <h1 className="font-serif text-2xl font-semibold tracking-tight">
-            {requiresReauth ? 'Cambiar tu contraseña' : 'Crear nueva contraseña'}
+            {firstTime
+              ? 'Elegí tu contraseña'
+              : requiresReauth
+                ? 'Cambiar tu contraseña'
+                : 'Crear nueva contraseña'}
           </h1>
-          {email ? (
-            <p className="text-sm text-muted-foreground">
-              Para <span className="font-mono text-foreground">{email}</span>
+          {firstTime ? (
+            <p className="text-sm text-muted-foreground text-balance">
+              La que te dieron era para entrar la primera vez. Ahora elegí una que sepas solo vos:
+              es la que vas a usar de acá en adelante.
             </p>
           ) : null}
-          {requiresReauth ? (
+          {email ? (
+            <p className="text-sm text-muted-foreground">
+              Para <span className="break-all font-mono text-foreground">{email}</span>
+            </p>
+          ) : null}
+          {requiresReauth && !firstTime ? (
             <p className="text-xs text-muted-foreground/80 text-balance">
               Por seguridad, confirmá tu contraseña actual antes de cambiarla.
             </p>
@@ -116,7 +176,7 @@ export function UpdatePasswordForm({
           {requiresReauth ? (
             <div className="space-y-1.5">
               <Label htmlFor={currentId} className="text-xs font-medium text-muted-foreground">
-                Contraseña actual
+                {firstTime ? 'La contraseña que te dieron' : 'Contraseña actual'}
               </Label>
               <div className="relative">
                 <Lock
@@ -173,7 +233,7 @@ export function UpdatePasswordForm({
                 autoComplete="new-password"
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
-                placeholder="Mínimo 8 caracteres"
+                placeholder="8 o más, con letras y números"
                 aria-invalid={Boolean(passError) || undefined}
                 className={cn(
                   'h-10 pl-9 pr-10 transition-colors',
@@ -263,8 +323,21 @@ export function UpdatePasswordForm({
             ) : null}
           </div>
 
-          <SubmitButton />
+          <SubmitButton label={firstTime ? 'Guardar y entrar' : 'Guardar contraseña'} />
         </form>
+
+        {/* Quien todavía no eligió su contraseña no puede ir a ningún otro lado: que al menos pueda salir. */}
+        {firstTime ? (
+          <form action={signOutAction} className="mt-4 text-center">
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <LogOut className="size-3.5" aria-hidden />
+              Salir
+            </button>
+          </form>
+        ) : null}
       </div>
     </div>
   )

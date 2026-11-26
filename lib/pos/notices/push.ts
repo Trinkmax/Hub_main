@@ -12,9 +12,11 @@ import {
 import { createServiceClient } from '@/lib/supabase/service'
 import {
   emptyTally,
+  NOT_PUSHED,
   type NoticePush,
   noticePush,
   type PushTally,
+  pushesNotice,
   pushResultLabel,
   subscriptionFate,
 } from './push-payload'
@@ -256,6 +258,8 @@ async function deliverTenant(
   const tallies = new Map(notices.map((notice) => [notice, emptyTally()]))
   const sends: Send[] = []
   for (const [notice, tally] of tallies) {
+    // Solo «para retirar» llega como notificación; el resto se ve con la app abierta.
+    if (!pushesNotice(notice.kind)) continue
     const event = noticeEvent(notice.kind)
     const message = noticePush(notice, slug)
     for (const subscription of byUser.get(notice.user_id) ?? []) {
@@ -303,7 +307,12 @@ async function deliverTenant(
     noteResults(
       service,
       tenantId,
-      new Map([...tallies].map(([notice, tally]) => [notice.id, pushResultLabel(tally)])),
+      new Map(
+        [...tallies].map(([notice, tally]) => [
+          notice.id,
+          pushesNotice(notice.kind) ? pushResultLabel(tally) : NOT_PUSHED,
+        ]),
+      ),
     ),
   ]
   if (healthy.length > 0) {

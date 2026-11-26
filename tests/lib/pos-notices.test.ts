@@ -125,16 +125,18 @@ describe('leer un aviso que llega de afuera', () => {
 })
 
 describe('de qué avisos se entera cada dispositivo', () => {
-  it('de fábrica, de todos y con sonido', () => {
+  it('de fábrica, solo «para retirar», y con sonido', () => {
+    // «Lo empezaron» viene apagado: si no, son demasiados avisos (Nacho, 26/11).
+    expect(DEFAULT_NOTICE_PREFS).toEqual({ ready: true, preparing: false, sound: true })
     expect(parseNoticePrefs(null)).toEqual(DEFAULT_NOTICE_PREFS)
     expect(parseNoticePrefs('no es json')).toEqual(DEFAULT_NOTICE_PREFS)
     expect(parseNoticePrefs('[]')).toEqual(DEFAULT_NOTICE_PREFS)
   })
 
   it('lo guardado manda; lo que falta queda de fábrica', () => {
-    expect(parseNoticePrefs('{"preparing":false}')).toEqual({
+    expect(parseNoticePrefs('{"preparing":true}')).toEqual({
       ready: true,
-      preparing: false,
+      preparing: true,
       sound: true,
     })
     expect(parseNoticePrefs('{"sound":"no"}')).toEqual(DEFAULT_NOTICE_PREFS)
@@ -148,5 +150,11 @@ describe('de qué avisos se entera cada dispositivo', () => {
     expect(wantsNotice(onlyReady, 'preparing')).toBe(false)
     expect(prefEvents(onlyReady)).toEqual(['ready'])
     expect(prefEvents({ ready: false, preparing: false, sound: true })).toEqual([])
+  })
+
+  it('a la base solo se le pide «para retirar»: es lo único que llega como notificación', () => {
+    // Aunque en este equipo quiera ver «lo empezaron» con la app abierta.
+    expect(prefEvents({ ready: true, preparing: true, sound: true })).toEqual(['ready'])
+    expect(prefEvents({ ready: false, preparing: true, sound: true })).toEqual([])
   })
 })

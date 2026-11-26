@@ -7,7 +7,18 @@
  */
 import type { PushOutcome, PushUrgency } from '@/lib/push/web-push'
 import { noticeText } from './text'
-import type { PosNotice } from './types'
+import type { NoticeKind, PosNotice } from './types'
+
+/**
+ * Qué avisos llegan como notificación al teléfono: SOLO «para retirar» (pedido de Nacho, 26/11: «si no
+ * le van a llegar muchas notificaciones»). «En preparación» y «todavía no» quedan para la app abierta.
+ */
+export function pushesNotice(kind: NoticeKind): boolean {
+  return kind === 'ready'
+}
+
+/** Lo que queda anotado en un aviso que no se manda como notificación. */
+export const NOT_PUSHED = 'no'
 
 /** Lo que recibe el service worker. `v` deja cambiar la forma más adelante sin romper al que no se actualizó. */
 export type NoticePushPayload = {

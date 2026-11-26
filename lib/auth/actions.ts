@@ -1,6 +1,17 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import {
+  canSkipCurrentPassword,
+  FIRST_PASSWORD_PATH,
+  mustChangePassword,
+} from '@/lib/auth/first-password'
+import {
+  clearMustChangePassword,
+  forgetPasswordChosen,
+  passwordAlreadyChosen,
+  rememberPasswordChosen,
+} from '@/lib/auth/first-password-server'
 import { clearRecoveryFlowCookie, isInRecoveryFlow } from '@/lib/auth/recovery-cookie'
 import { createClient } from '@/lib/supabase/server'
 import { requestResetSchema, signInSchema, updatePasswordSchema } from './schemas'
@@ -41,7 +52,7 @@ export async function signInWithPasswordAction(
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data: signedIn, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
   })
@@ -64,6 +75,10 @@ export async function signInWithPasswordAction(
 
   // Refresh para que el custom_access_token_hook inyecte active_tenant_id.
   await supabase.auth.refreshSession()
+
+  // Entró con la contraseña que le dieron para arrancar: va derecho a elegir la suya. (El proxy lo
+  // mandaría igual, pero así la dirección queda bien y el formulario se envía a donde corresponde.)
+  if (mustChangePassword(signedIn.user?.app_metadata)) redirect(FIRST_PASSWORD_PATH)
 
   const next = parsed.data.redirectTo?.startsWith('/') ? parsed.data.redirectTo : '/'
   redirect(next)
@@ -146,12 +161,17 @@ export async function updatePasswordAction(
   }
 
   const fromRecovery = await isInRecoveryFlow()
+  // La primera vez: la cuenta está marcada y esta sesión acaba de entrar con la contraseña que le
+  // dieron. No se la volvemos a pedir.
+  const firstTime = mustChangePassword(user.app_metadata)
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const justTypedIt = firstTime && canSkipCurrentPassword(user.app_metadata, claimsData?.claims)
 
   // Si NO viene del flow de recovery, exigimos reauth con la contraseña actual.
   // Defensa contra: alguien con sesión activa intentando cambiar la pass sin
   // saber la actual (cookie hijack, dispositivo robado, sesión olvidada en
   // un tablet del bar).
-  if (!fromRecovery) {
+  if (!fromRecovery && !justTypedIt) {
     if (!parsed.data.currentPassword) {
       return initialError('Confirmá tu contraseña actual para cambiarla.', {
         currentPassword: 'Requerida',
@@ -179,9 +199,12 @@ export async function updatePasswordAction(
   if (error) {
     const code = (error as { code?: string }).code
     if (code === 'same_password') {
-      return initialError('Esa es tu contraseña actual. Elegí una distinta.', {
-        password: 'Elegí una contraseña distinta',
-      })
+      return initialError(
+        firstTime
+          ? 'Esa es la contraseña que te dieron para arrancar. Elegí una tuya.'
+          : 'Esa es tu contraseña actual. Elegí una distinta.',
+        { password: 'Elegí una contraseña distinta' },
+      )
     }
     console.error('[auth.updatePassword]', { code, message: error.message })
     return initialError('No pudimos cambiar la contraseña. Probá de nuevo.')
@@ -193,5 +216,41 @@ export async function updatePasswordAction(
     await clearRecoveryFlowCookie()
   }
 
+  // Ya es suya: se le saca la marca y se le renueva la sesión, que es la que lleva la marca al proxy.
+  if (firstTime) {
+    await rememberPasswordChosen(user.id)
+    const cleared = await clearMustChangePassword(user.id)
+    if (!cleared) {
+      return initialError(
+        'Tu contraseña quedó guardada, pero no pudimos terminar. Tocá «Reintentar» en un momento.',
+      )
+    }
+    await forgetPasswordChosen()
+    await supabase.auth.refreshSession()
+  }
+
   return { status: 'success', message: 'Contraseña actualizada.' }
+}
+
+// ──────────────────────────────────────────────────────────
+// 4. Terminar de elegir la primera contraseña
+//    (la contraseña ya quedó guardada y lo único que falló fue sacar la marca)
+// ──────────────────────────────────────────────────────────
+export async function finishFirstPasswordAction(): Promise<AuthState> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return initialError('Tu sesión expiró. Volvé a entrar.')
+  if (!mustChangePassword(user.app_metadata)) return { status: 'success' }
+  // Solo si en este mismo equipo ya eligió su contraseña hace un momento.
+  if (!(await passwordAlreadyChosen(user.id))) {
+    return initialError('Primero elegí tu contraseña.')
+  }
+  if (!(await clearMustChangePassword(user.id))) {
+    return initialError('Todavía no pudimos terminar. Probá de nuevo en un momento.')
+  }
+  await forgetPasswordChosen()
+  await supabase.auth.refreshSession()
+  return { status: 'success' }
 }
