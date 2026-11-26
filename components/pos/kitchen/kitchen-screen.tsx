@@ -12,6 +12,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useHoldReload } from '@/components/shell/hold-reload'
 import { type AgeLevel, ageLevel, elapsedMinutes } from '@/lib/pos/kitchen/age'
 import {
   type AdvanceTo,
@@ -176,6 +177,11 @@ export function KitchenScreen({
   const now = useServerNow(queue.now)
   const sound = useKitchenSound()
   useWakeLock()
+  // Con la alarma armada, la pantalla no se recarga sola por una versión nueva (`lib/app-version`): el
+  // navegador deja sonar recién después de un toque, y una recarga dejaría la cocina sin alarma hasta que
+  // alguien toque la pantalla. Se pone al día cuando la alarma no está armada (en silencio, o recién
+  // prendida), cuando alguien la recarga, o si su versión deja de contestar (ahí no hay opción).
+  useHoldReload(sound.state === 'on')
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [touch, setTouch] = useState(false)

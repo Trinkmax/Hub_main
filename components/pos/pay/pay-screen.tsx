@@ -26,6 +26,7 @@ import { useOnline } from '@/components/pos/order/use-online'
 import { printJob } from '@/components/pos/print/print-frame'
 import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
+import { useHoldReload } from '@/components/shell/hold-reload'
 import {
   type Bill,
   type BillDiscount,
@@ -168,6 +169,10 @@ export function PayScreen({
   const sendingRef = useRef(false)
 
   useEffect(() => setAlive(true), [])
+  // La cuenta no se recarga sola por una versión nueva (sí al salir de ella): con un cobro viajando se
+  // perdería la clave que evita cobrar dos veces, y con el talón a medio armar, lo elegido. Quien cobra con
+  // el posnet sale de la app y vuelve: justo ahí es cuando menos se puede recargar.
+  useHoldReload(true)
 
   // Los avisos suben justo por encima del talón (ver pay-toast.css): hay que saber cuánto mide.
   const dockRef = useRef<HTMLElement>(null)
