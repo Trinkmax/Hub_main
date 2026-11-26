@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { BranchGate } from '@/components/branches/branch-gate'
+import { AppVersionWatcher } from '@/components/shell/app-version-watcher'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import { AppShellSalon } from '@/components/shell/salon/app-shell-salon'
 import { signOutAction } from '@/components/shell/sign-out-action'
+import { currentDeploymentId } from '@/lib/app-version/deployment'
 import { getBranchPulses } from '@/lib/branches/pulse'
 import { getBranchScope } from '@/lib/branches/scope'
 import { toClientScope } from '@/lib/branches/types'
@@ -128,6 +130,8 @@ export default async function SalonLayout({
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />
+      {/* Con una versión nueva publicada, la app se recarga sola cuando no le saca nada de las manos a nadie. */}
+      <AppVersionWatcher servedId={currentDeploymentId()} workspace="salon" />
       {children}
     </AppShellSalon>
   )

@@ -33,6 +33,7 @@ const PUBLIC_PATHS = new Set([
   '/apple-touch-icon.png',
   '/robots.txt',
   '/forgot-password',
+  '/api/version', // qué versión está publicada: la pregunta cada pantalla abierta para ponerse al día sola
 ])
 const PUBLIC_PREFIXES = [
   '/capture/',
@@ -64,6 +65,7 @@ const MACHINE_PREFIXES = [
   '/api/cron/',
   '/api/webhooks/',
   '/api/wallet/',
+  '/api/version', // sin sesión y muy seguido (ver `proxy.ts`): si alguna vez pasa por acá, que no haga nada
   // Las landings del bar son 100% anónimas: no hay sesión que refrescar y el
   // Route Handler no lee cookies. Saltear el cliente de Supabase le saca un
   // hop a cada visita que llega desde Instagram.

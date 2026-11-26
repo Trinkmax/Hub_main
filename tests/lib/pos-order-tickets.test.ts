@@ -11,6 +11,7 @@ import {
   summarizeSession,
   tandaNumbers,
   ticketDisplay,
+  unitsLabel,
 } from '@/lib/pos/order/tickets'
 import type { PrepStatus, SessionDetail, SessionItem, SessionTicket } from '@/lib/pos/types'
 
@@ -211,6 +212,23 @@ describe('la mesa entera', () => {
       hasOrders: true,
     })
     expect(summary.held.map((t) => t.id)).toEqual([held.id])
+  })
+
+  it('lo que hay que llevar junta lo igual: dos tandas con el mismo producto se leen de un vistazo', () => {
+    const summary = summarizeSession([
+      tanda([
+        line('ready', { quantity: 2, name: 'Mojito' }),
+        line('ready', { name: 'Branca y Cola' }),
+      ]),
+      tanda([
+        line('ready', { name: 'Branca y Cola' }),
+        line('ready', { quantity: 2, name: 'Mojito' }),
+        line('preparing', { quantity: 5, name: 'Mojito' }),
+      ]),
+    ])
+    expect(summary.readyLabel).toBe('4 Mojito · 2 Branca y Cola')
+    expect(summary.readyUnits).toBe(6)
+    expect(unitsLabel([])).toBe('')
   })
 
   it('una mesa sin tandas vivas no tiene pedidos', () => {

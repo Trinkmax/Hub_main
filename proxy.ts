@@ -9,7 +9,9 @@ export const config = {
   // Excluimos estáticos y los endpoints máquina-a-máquina (cron de pg_cron,
   // webhooks de Meta, pulso de la billetera): no tienen sesión de usuario y
   // se auto-protegen (CRON_SECRET / firma de Meta / capability por token).
+  // `api/version` (qué versión está publicada) la pregunta cada pantalla abierta una vez por minuto: es
+  // pública, no lleva sesión y no tiene por qué pagar el proxy.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icons/|api/cron/|api/webhooks/|api/wallet/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|css|js|map|webmanifest)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons/|api/cron/|api/webhooks/|api/wallet/|api/version$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|css|js|map|webmanifest)$).*)',
   ],
 }

@@ -6,6 +6,11 @@ body:has(.pos-floor-screen) [data-sonner-toaster][data-y-position="bottom"] {
   --mobile-offset-bottom: calc(var(--salon-tabbar-h, 0px) + 4.6rem) !important;
   --offset-bottom: calc(var(--salon-tabbar-h, 0px) + 4.6rem) !important;
 }
+/* Con la ficha de una mesa abierta en el mapa (`../floor/table-quick.tsx`), el aviso sube por encima de ella. */
+body:has(.pos-quick) [data-sonner-toaster][data-y-position="bottom"] {
+  --mobile-offset-bottom: calc(var(--salon-tabbar-h, 0px) + 13.5rem) !important;
+  --offset-bottom: calc(var(--salon-tabbar-h, 0px) + 13.5rem) !important;
+}
 body:has(.cmd) [data-sonner-toaster][data-y-position="bottom"] {
   --mobile-offset-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px)) !important;
   --offset-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px)) !important;

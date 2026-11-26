@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { printJob } from '@/components/pos/print/print-frame'
 import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
+import { useHoldReload } from '@/components/shell/hold-reload'
 import { formatCentsShort } from '@/lib/money/format'
 import {
   fireTicket,
@@ -243,6 +244,10 @@ export function OrderScreen({
     },
   })
   const { draft, dispatch, outbox } = local
+  // Con cosas cargadas sin enviar (o una tanda viajando) la pantalla no se recarga sola por una versión
+  // nueva: lo cargado está guardado en el celular y no se perdería, pero a nadie le gusta que la pantalla
+  // parpadee con el cliente dictando. Se pone al día al volver al salón.
+  useHoldReload(draft.lines.length > 0 || local.flying !== null)
 
   // ── Lo que se ve ──
   const now = useNow(server.now)

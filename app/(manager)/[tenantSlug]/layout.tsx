@@ -4,9 +4,11 @@ import { redirect } from 'next/navigation'
 import { Tex } from '@/components/administracion/tex/tex'
 import { BranchGate } from '@/components/branches/branch-gate'
 import { AppShell } from '@/components/shell/app-shell'
+import { AppVersionWatcher } from '@/components/shell/app-version-watcher'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import { signOutAction } from '@/components/shell/sign-out-action'
+import { currentDeploymentId } from '@/lib/app-version/deployment'
 import { getBranchPulses } from '@/lib/branches/pulse'
 import { getBranchScope } from '@/lib/branches/scope'
 import { branchShortLabel, toClientScope } from '@/lib/branches/types'
@@ -163,6 +165,8 @@ export default async function DashboardLayout({
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />
+      {/* Con una versión nueva publicada, el panel se pone al día al cambiar de pantalla (nunca con algo a medio escribir). */}
+      <AppVersionWatcher servedId={currentDeploymentId()} workspace="panel" />
       {children}
       {/* En todo el panel de gestión; el salón (mozos, caja, cocina) es otro espacio. */}
       {texEnabled() ? (

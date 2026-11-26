@@ -124,6 +124,12 @@ export const POS_KITCHEN_ROLES: ReadonlyArray<TenantRole> = [
   'cashier',
   'waiter',
 ]
+/**
+ * Quién tiene la pantalla de cocina entre sus pestañas del salón. Es menos gente que la que puede avanzar
+ * comandas (`POS_KITCHEN_ROLES`): la pantalla es de la cocina, y a un mozo o a un cajero no les sirve
+ * (pedido de Nacho, 25/11/2026: «solo debe de verse en la cocina»). El dueño la conserva para mirar.
+ */
+export const POS_KITCHEN_SCREEN_ROLES: ReadonlyArray<TenantRole> = ['owner', 'kitchen']
 export const POS_VIEW_ROLES: ReadonlyArray<TenantRole> = [
   'owner',
   'cashier',

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { ScanScreen } from '@/components/loyalty/scan-screen'
+import { HoldReload } from '@/components/shell/hold-reload'
 import { resolveEarnRate } from '@/lib/points/earn-rate'
 import { listRules } from '@/lib/points/queries'
 import { requireRole, requireTenantAccess } from '@/lib/tenant'
@@ -40,5 +41,11 @@ export default async function EscanearPage({
 
   const earnRate = resolveEarnRate(await listRules({ tenantId }))
 
-  return <ScanScreen tenantSlug={tenantSlug} initialCode={code ?? null} earnRate={earnRate} />
+  return (
+    <>
+      {/* La cámara prendida o un socio en mano: esta pantalla no se recarga sola (lib/app-version). */}
+      <HoldReload />
+      <ScanScreen tenantSlug={tenantSlug} initialCode={code ?? null} earnRate={earnRate} />
+    </>
+  )
 }

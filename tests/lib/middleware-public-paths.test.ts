@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPublicPath } from '@/lib/supabase/middleware'
+import { isMachinePath, isPublicPath } from '@/lib/supabase/middleware'
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
 
 // Regresión: el proxy redirigía /api/cron/* a /login (sin sesión) → pg_cron/Vercel
@@ -44,6 +44,15 @@ describe('isPublicPath', () => {
     // Y 'subir' está en RESERVED_SLUGS, así que no se la come el ruteo por tenant.
     expect(RESERVED_SLUGS.has('subir')).toBe(true)
     expect(isPublicPath('/subiendo/clientes')).toBe(false)
+  })
+
+  it('la pregunta «¿qué versión está publicada?» es pública y no hace trabajo de sesión', () => {
+    // La hace cada pantalla abierta una vez por minuto, también en la pantalla de entrar.
+    expect(isPublicPath('/api/version')).toBe(true)
+    expect(isMachinePath('/api/version')).toBe(true)
+    // El resto de la API sigue cerrado.
+    expect(isPublicPath('/api/stats')).toBe(false)
+    expect(isMachinePath('/api/stats')).toBe(false)
   })
 
   it('las rutas de tenant NO son públicas', () => {

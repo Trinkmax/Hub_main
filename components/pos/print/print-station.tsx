@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import { holdReload } from '@/lib/app-version/hold'
 import { refreshKitchen } from '@/lib/pos/actions'
 import { comandaDocs, type DuePrint, duePrints, rememberPrinted } from '@/lib/pos/print/station'
 import { usePosPoke } from '@/lib/pos/use-poke'
@@ -58,40 +59,47 @@ function Runner({ slug, branchId, timeZone }: Props) {
     // Los ajustes se leen recién ahora: pueden haber cambiado mientras viajaba la lectura.
     const settings = readPrinter(branchId)
 
-    const claimed = await exclusive<DuePrint[]>(lockName(branchId), async () => {
-      const log = readPrinted(branchId)
-      const due = duePrints(queue, settings, log)
-      if (due.length === 0) return []
-      const keys = due.map((entry) => entry.key)
-      writePrinted(branchId, rememberPrinted(log, keys, Date.now()))
-      return due
-    })
-    if (claimed.length === 0) return
-
+    // Desde que se anota qué se imprime hasta que el papel salió, la app no se recarga sola por una versión
+    // nueva (`lib/app-version`): una recarga justo ahí dejaría la comanda anotada como impresa sin haber salido.
+    const release = holdReload()
     try {
-      await printJob({
-        paper: settings.paper,
-        docs: comandaDocs(claimed, {
-          branch: queue.branch.name,
-          timeZone,
-          copies: settings.copies,
-        }),
-      })
-    } catch (error) {
-      console.error('[pos.print]', error instanceof Error ? error.message : 'unknown')
-      // No salió: se desanota para que la próxima vuelta lo intente de nuevo.
-      await exclusive(lockName(branchId), async () => {
+      const claimed = await exclusive<DuePrint[]>(lockName(branchId), async () => {
         const log = readPrinted(branchId)
-        for (const entry of claimed) delete log[entry.key]
-        writePrinted(branchId, log)
+        const due = duePrints(queue, settings, log)
+        if (due.length === 0) return []
+        const keys = due.map((entry) => entry.key)
+        writePrinted(branchId, rememberPrinted(log, keys, Date.now()))
+        return due
       })
-      // Un aviso por minuto alcanza: si la impresora está apagada, falla en cada vuelta.
-      if (Date.now() - failedAt.current > 60_000) {
-        failedAt.current = Date.now()
-        toast.error('No pude mandar la comanda a la impresora', {
-          description: 'Fijate que esté prendida y con papel. Lo vuelvo a intentar solo.',
+      if (claimed.length === 0) return
+
+      try {
+        await printJob({
+          paper: settings.paper,
+          docs: comandaDocs(claimed, {
+            branch: queue.branch.name,
+            timeZone,
+            copies: settings.copies,
+          }),
         })
+      } catch (error) {
+        console.error('[pos.print]', error instanceof Error ? error.message : 'unknown')
+        // No salió: se desanota para que la próxima vuelta lo intente de nuevo.
+        await exclusive(lockName(branchId), async () => {
+          const log = readPrinted(branchId)
+          for (const entry of claimed) delete log[entry.key]
+          writePrinted(branchId, log)
+        })
+        // Un aviso por minuto alcanza: si la impresora está apagada, falla en cada vuelta.
+        if (Date.now() - failedAt.current > 60_000) {
+          failedAt.current = Date.now()
+          toast.error('No pude mandar la comanda a la impresora', {
+            description: 'Fijate que esté prendida y con papel. Lo vuelvo a intentar solo.',
+          })
+        }
       }
+    } finally {
+      release()
     }
   }, [slug, branchId, timeZone])
 

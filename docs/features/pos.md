@@ -159,7 +159,8 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
 ## Quién puede
 
 `lib/tenant/roles.ts`: `POS_FLOOR_ROLES` (dueño, caja, mozo, anfitriona: abrir, pedir, servir, cuenta),
-`POS_KITCHEN_ROLES` (dueño, cocina, caja, mozo: avanzar comandas), `POS_VIEW_ROLES` (ver el salón).
+`POS_KITCHEN_ROLES` (dueño, cocina, caja, mozo: avanzar comandas), `POS_VIEW_ROLES` (ver el salón) y
+`POS_KITCHEN_SCREEN_ROLES` (dueño y cocina: quién tiene la pantalla de cocina entre sus pestañas).
 
 ## El mapa
 
@@ -216,11 +217,57 @@ cocina, el QR del cliente) va a necesitar su propio camino cuando se haga: hoy n
 - Con más de una sucursal, la primera vez que entra un dispositivo se le pregunta dónde está
   («¿Dónde trabajás hoy?»). Después no pregunta más.
 
+### Acciones rápidas: la ficha de la mesa (25/11/2026)
+
+Nacho: «si yo toco en una mesa, poder tener la acción rápida, para que no se me abra un menú completo o
+cambiar de pantalla para marcar servida una comida […] desde el celu principalmente». Antes, tocar una mesa
+ocupada entraba a la comanda: marcar algo como servido eran dos cambios de pantalla.
+
+- **Tocar una mesa ocupada la elige** (aro en el piso, borde de la tapa marcado) y abajo aparece su **ficha**
+  (`components/pos/floor/table-quick.tsx`): la mesa, en qué está, cuánto lleva, y a lo sumo tres botones. Es
+  la barra de abajo de la comanda traída al mapa: las mismas palabras, el mismo orden, y el botón que manda
+  a la derecha, donde cae el pulgar. **Tocar la misma mesa otra vez** (o el encabezado de la ficha) entra a
+  la comanda. Tocar el paño, Escape o la cruz la cierra. Una mesa libre se abre como siempre.
+- **Qué manda** lo decide `quickCard` (`lib/pos/floor/quick.ts`, con pruebas), siempre lo mismo que se ve
+  pintado en la mesa:
+
+  | La mesa está | Botón que manda | Qué hace |
+  | --- | --- | --- |
+  | Para retirar | **Servido · N** | Marca servido todo lo listo, sin salir del mapa |
+  | Pidió la cuenta | **Cobrar** | Abre la cuenta |
+  | Comiendo o sin pedido, con una tanda esperando | **Marchar tanda N** | La manda a cocina, sin salir del mapa |
+  | Cualquier otra cosa | **Agregar** | Entra a la comanda con la carta abierta |
+
+  «Cuenta» (la pide y la abre, igual que en la comanda) y «Agregar» están siempre.
+- **Dos fuentes.** El mapa (en vivo) decide QUÉ se ofrece. El detalle de la mesa, que se lee al elegirla,
+  solo lo completa: cuántas unidades («Servido · 7»), qué hay que llevar («4 Mojito · 3 Branca y Cola») y qué
+  tanda espera. Si todavía no llegó, la ficha ya anda (el lugar del rótulo queda reservado: no cambia de
+  alto). Ese detalle queda como «lo más nuevo» de la mesa: si después se entra a la comanda, arranca con eso.
+- **Se ve al instante.** «Servido» y «Marchar» cierran la ficha y pintan la mesa como va a quedar
+  (`withPending`); la base confirma después y un aviso lo dice («Mesa 2: servido»). Si la base dice que no,
+  se avisa y la mesa vuelve a como estaba. Medido en el bar de ejemplo: a los 120 ms de tocar, la mesa ya
+  cambió; el aviso de confirmación llega a los ~0,7 s.
+- **La mesa elegida nunca queda tapada.** Si caía debajo de la ficha (un celular chico), el mapa se corre lo
+  justo (`.pos-pan`); no se vuelve a encuadrar, el salón no cambia de tamaño por tocar una mesa.
+- **Con ancho (la compu de la caja) es una sola fila baja**, en el lugar de las fichas del resumen: en una
+  notebook el mapa mide poco de alto y la ficha del celular le tapaba un tercio.
+- **Un toque, acciones rápidas; doble toque, entrar a la mesa.** Entre un toque y el otro la pantalla cambia
+  debajo del dedo (aparece la ficha, el mapa se corre): el segundo toque de un doble toque caía en un botón
+  («Servido») o en la mesa de al lado. Se lo reconoce por el lugar (`isEchoTap`: mismo punto de la pantalla,
+  menos de medio segundo) y entra a la mesa elegida, caiga donde caiga. No es una espera: tocar la mesa y
+  enseguida un botón, en otro lugar de la pantalla, anda siempre (probado a los 165 ms).
+- Lo que hay que llevar junta lo igual (`unitsLabel`): una mesa que pidió lo mismo en dos tandas dice
+  «4 Mojito», no «2 Mojito · 2 Mojito». Vale también para la barra de la comanda.
+- Quien solo mira (la cocina) sigue entrando al pedido con un toque. En la lista funciona igual: la fila
+  elegida queda marcada.
+
 ## La barra de abajo del salón
 
 `components/shell/salon/salon-nav.ts`. Entran cinco pestañas; con más, la quinta es «Más» y abre el resto en
 una hoja. Con el punto de venta el orden es salón, caja, reservas, cocina; el club (sumar puntos, QR) y lo de
-algunas noches quedan detrás de «Más». La comanda (`/salon/mesa/*`) no lleva pestañas: se vuelve con la
+algunas noches quedan detrás de «Más». **La pestaña «Cocina» la ven solo la cocina y el dueño** (25/11/2026,
+Nacho: «no tiene sentido esa pantalla, solo debe de verse en la cocina»): a mozos y cajeros no les aparece,
+y al mozo le entran todas sus pestañas sin «Más». No cambia quién puede avanzar una comanda. La comanda (`/salon/mesa/*`) no lleva pestañas: se vuelve con la
 flecha. El punto de venta trae el plano del salón: prender `pos` alcanza (`getEffectiveFeatures`).
 
 ## Cobro y caja por turno
