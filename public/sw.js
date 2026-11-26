@@ -8,7 +8,7 @@
 // v4: notificaciones push. Cuando una estación empieza o termina lo de una mesa, a quien la atiende le
 // llega un aviso aunque tenga la app cerrada o el celular bloqueado (lo manda /api/cron/pos-push).
 
-const VERSION = 'hub-salon-v4'
+const VERSION = 'hub-salon-v5'
 const SHELL_CACHE = `${VERSION}-shell`
 const ASSETS_CACHE = `${VERSION}-assets`
 
@@ -107,15 +107,20 @@ self.addEventListener('push', (event) => {
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       // «A la vista» es el salón abierto y adelante: es la única parte de la app que suena por su cuenta.
-      // Con otra pantalla abierta (la carta, el panel) la notificación avisa completa.
-      const watching = windows.some((client) => {
-        if (client.visibilityState !== 'visible') return false
-        try {
-          return /\/salon(\/|$)/.test(new URL(client.url).pathname)
-        } catch {
-          return false
-        }
-      })
+      // Con otra pantalla abierta (la carta, el panel) la notificación avisa completa. En el iPhone la app
+      // no puede vibrar (Apple no deja) y su sonido se calla con la tecla de silencio: ahí la notificación
+      // avisa completa siempre, que es la única que hace vibrar el teléfono.
+      const iPhone = /iPhone|iPad|iPod/.test(self.navigator.userAgent || '')
+      const watching =
+        !iPhone &&
+        windows.some((client) => {
+          if (client.visibilityState !== 'visible') return false
+          try {
+            return /\/salon(\/|$)/.test(new URL(client.url).pathname)
+          } catch {
+            return false
+          }
+        })
       await self.registration.showNotification(title, {
         body: typeof data.body === 'string' ? data.body : '',
         // Un aviso nuevo de la misma mesa y estación reemplaza al anterior, y vuelve a avisar.
