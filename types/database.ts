@@ -4783,6 +4783,59 @@ export type Database = {
           },
         ]
       }
+      device_pins: {
+        Row: {
+          created_at: string
+          device_id: string
+          failed_attempts: number
+          id: string
+          last_used_at: string | null
+          locked_at: string | null
+          pin_hash: string
+          secret_hash: string
+          tenant_id: string
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          failed_attempts?: number
+          id?: string
+          last_used_at?: string | null
+          locked_at?: string | null
+          pin_hash: string
+          secret_hash: string
+          tenant_id: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          failed_attempts?: number
+          id?: string
+          last_used_at?: string | null
+          locked_at?: string | null
+          pin_hash?: string
+          secret_hash?: string
+          tenant_id?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_pins_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_experiences: {
         Row: {
           accent_hex: string | null
@@ -13149,6 +13202,30 @@ export type Database = {
       }
       deliver_reward_redemption: {
         Args: { p_redeem_token: string }
+        Returns: Json
+      }
+      device_pin_accounts: {
+        Args: { p_device_id: string; p_secret: string }
+        Returns: Json
+      }
+      device_pin_remove: { Args: { p_device_id: string }; Returns: boolean }
+      device_pin_set: {
+        Args: {
+          p_device_id: string
+          p_pin: string
+          p_secret_hash: string
+          p_user_agent?: string
+        }
+        Returns: string
+      }
+      device_pin_status: { Args: { p_device_id: string }; Returns: Json }
+      device_pin_verify: {
+        Args: {
+          p_device_id: string
+          p_pin: string
+          p_pin_id: string
+          p_secret: string
+        }
         Returns: Json
       }
       encrypt_meta_token: {

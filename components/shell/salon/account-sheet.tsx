@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutDashboard, LogOut } from 'lucide-react'
+import { ChevronRight, KeyRound, LayoutDashboard, LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useState } from 'react'
 import { NoticeSettings } from '@/components/pos/notices/notice-settings'
@@ -76,6 +76,23 @@ export function AccountSheet({
         {viewAs ? <ViewAsSheetSection onSettled={close} /> : null}
 
         {posNotices ? <NoticeSettings slug={tenantSlug} /> : null}
+
+        {/* El PIN para entrar más rápido en este equipo (`lib/auth/pin.ts`). */}
+        <div className="border-t border-border/60 px-4 py-3">
+          <Link
+            href={`/auth/pin?next=${encodeURIComponent(`/${tenantSlug}/salon`)}`}
+            className="flex min-h-12 items-center gap-3 rounded-xl px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KeyRound className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium text-sm">PIN de este equipo</span>
+              <span className="block text-muted-foreground text-xs">
+                Cuatro números para entrar sin la contraseña.
+              </span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+        </div>
 
         <div className="space-y-2 px-4 pb-4">
           {role === 'owner' ? (

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { roleMustChoosePassword } from '@/lib/auth/first-password'
 import { markMustChangePassword } from '@/lib/auth/first-password-server'
+import { forgetPinsOf } from '@/lib/auth/pin-server'
 import { emailSchema, passwordSchema } from '@/lib/auth/schemas'
 import { sendEmail } from '@/lib/email/send'
 import { renderCredentialsEmail } from '@/lib/email/templates/credentials'
@@ -421,6 +422,9 @@ export async function setMemberPassword(
     console.error('[equipo.setPassword]', error.code ?? error.status, error.message)
     return { ok: false, message: 'No pudimos actualizar la contraseña.' }
   }
+
+  // Con otra contraseña, los PIN que tenía en sus equipos dejan de valer.
+  await forgetPinsOf(target.user_id)
 
   // La contraseña que le pone otra persona es para arrancar: al entrar tiene que elegir la suya. No
   // vale para la propia (el dueño que se cambia la suya ya la eligió) ni para la cuenta de la cocina.

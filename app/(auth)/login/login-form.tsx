@@ -28,9 +28,12 @@ function SubmitButton() {
 export function LoginForm({
   initialEmail,
   redirectTo,
+  pinAvailable = false,
 }: {
   initialEmail: string
   redirectTo: string
+  /** En este equipo alguien ya eligió su PIN: se ofrece volver a ese ingreso. */
+  pinAvailable?: boolean
 }) {
   const [state, formAction] = useActionState(signInWithPasswordAction, initialState)
   const [showPassword, setShowPassword] = useState(false)
@@ -53,12 +56,13 @@ export function LoginForm({
   const passwordError = state.status === 'error' ? state.fieldErrors?.password : undefined
 
   return (
-    <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
+    <div className="space-y-7 sm:animate-in sm:fade-in-0 sm:slide-in-from-bottom-2 sm:duration-500">
       <div className="flex justify-center">
         <BrandWordmarkLarge />
       </div>
 
-      <div className="card-hairline relative overflow-hidden rounded-2xl border border-border/70 bg-card/90 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+      {/* En el celular va lisa: el desenfoque del fondo es lo más caro de dibujar en un teléfono modesto. */}
+      <div className="card-hairline relative overflow-hidden rounded-2xl border border-border/70 bg-card p-6 shadow-lg sm:bg-card/90 sm:p-8 sm:backdrop-blur-xl">
         <div className="space-y-2 text-center">
           <h1 className="font-serif text-2xl font-semibold tracking-tight">Ingresá a tu bar</h1>
           <p className="text-sm text-muted-foreground text-balance">
@@ -163,6 +167,17 @@ export function LoginForm({
           <input type="hidden" name="redirectTo" value={redirectTo} />
           <SubmitButton />
         </form>
+
+        {pinAvailable ? (
+          <p className="mt-4 text-center text-sm">
+            <Link
+              href={`/login${redirectTo ? `?redirectTo=${encodeURIComponent(redirectTo)}` : ''}`}
+              className="inline-flex min-h-11 items-center rounded-md px-2 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Entrar con mi PIN
+            </Link>
+          </p>
+        ) : null}
       </div>
     </div>
   )

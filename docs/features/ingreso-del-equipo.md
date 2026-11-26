@@ -1,4 +1,4 @@
-# Ingreso del equipo: primera contraseña
+# Ingreso del equipo: primera contraseña y PIN
 
 Pedido de Nacho (26/11/2026): «para las contraseñas de los chicos poneles como primera contraseña
 [una de arranque] y luego de que entren por primera vez ellos pongan la contraseña que quieran».
@@ -61,3 +61,65 @@ En el bar de ejemplo, con las cuentas de prueba del mozo y del cajero, en un cel
 con la contraseña de arranque lleva directo a «Elegí tu contraseña»; ir a mano al mapa del salón
 vuelve a esa pantalla; repetir la misma contraseña o una corta se rechaza; con una válida entra al
 salón y ya puede ir a donde quiera.
+
+## El PIN por equipo
+
+Pedido de Nacho (26/11/2026): «estaría bueno que tengan un PIN para entrar luego más fácil», y «debes
+asegurarte que ande bien y rápido en cualquier dispositivo, así sea un Android de gama media baja».
+
+### Cómo se usa
+
+- **La primera vez en un equipo** (un celular, la compu de la caja) se entra con mail y contraseña.
+  Apenas la persona elige su contraseña se le ofrece el PIN (`/auth/pin?primera=1`); lo puede dejar
+  para después y ponerlo cuando quiera desde **Tu cuenta › PIN de este equipo**.
+- El PIN son **4 números**. Se tipea y se repite. No se aceptan los que cualquiera prueba primero:
+  cuatro iguales o una escalera (1234, 9876).
+- **Desde entonces, en ese equipo se entra con el PIN.** La pantalla de ingreso muestra «Hola, Juan» y
+  el teclado. Si en el equipo hay varias personas (la compu de la caja), primero pregunta «¿Quién
+  sos?». Siempre queda «Entrar con mi contraseña».
+- **A los 5 errores seguidos el PIN se bloquea** en ese equipo: hay que entrar con la contraseña y
+  elegir uno nuevo.
+- El PIN es **de cada equipo**: tenerlo en el celular no sirve en la compu de la caja hasta entrar ahí
+  una vez con la contraseña.
+
+### Por qué alcanza con 4 números
+
+- El PIN **solo no abre nada**. Cada equipo guarda un secreto largo y al azar en una cookie que las
+  páginas no pueden leer (`hub_device`, `httpOnly`); en la base queda su huella (sha256), nunca el
+  secreto. La base le cree a un PIN solo si llega con el secreto de ese equipo.
+- Los errores se cuentan en la base, en la misma operación que comprueba el PIN: no hay forma de
+  probar de más.
+- Se borra solo cuando a la persona la sacan del bar, y cuando el dueño le cambia la contraseña desde
+  Equipo. Con la contraseña de arranque todavía puesta, el PIN no vale.
+
+### Cómo está hecho
+
+- **Base** (`20261126213014_ingreso_pin_por_equipo`): la tabla `device_pins` (una fila por persona y
+  por equipo; RLS prendida, sin políticas y sin permisos para ningún rol del navegador) y cinco
+  funciones. `device_pin_set`, `device_pin_status` y `device_pin_remove` las llama la persona con su
+  sesión; `device_pin_accounts` y `device_pin_verify` son solo para la clave de servicio.
+- **Entrar con PIN** (`signInWithPinAction` en `lib/auth/pin-actions.ts`) es lo único que usa la clave
+  de servicio fuera de lo de siempre: todavía no hay sesión, así que la app comprueba el PIN contra la
+  base y, si es de esa persona y de ese equipo, le abre la sesión con un enlace de un solo uso que
+  nunca sale del servidor (`generateLink` + `verifyOtp`). Es el mismo camino que ya usa Equipo para
+  crear cuentas: una operación de administración después de comprobar un secreto.
+- Las reglas puras están en `lib/auth/pin.ts` (`tests/lib/auth-pin.test.ts`); la cookie del equipo, en
+  `lib/auth/pin-server.ts`; los permisos se prueban en `tests/rls/device-pins.test.ts`.
+
+### Que ande en un teléfono modesto
+
+- El teclado del PIN (`components/auth/pin-pad.tsx`) **no abre el teclado del teléfono**, que es lo
+  más lento de toda la pantalla: son doce botones propios.
+- Cada tecla responde **cuando el dedo apoya** (`pointerdown`), sin esperar a que se levante.
+- Sin animaciones ni desenfoques. Las pantallas de ingreso, en el celular, van sin el manchón de fondo
+  ni el vidrio esmerilado de la tarjeta, que es lo más caro de dibujar en un teléfono de gama baja.
+- Entrar con PIN es un solo viaje al servidor.
+
+### Lo que queda
+
+- Cada ingreso con PIN gasta una «verificación» del servicio de autenticación, que tiene un tope por
+  minuto compartido por toda la app. Con el equipo de un bar entrando a la vez no se llega; si algún
+  día pasa, la pantalla dice «hay muchos entrando a la vez» y queda la contraseña.
+- No hay «olvidar este equipo» ni una lista de equipos con PIN para el dueño.
+- El PIN se ofrece en el salón (Tu cuenta). En el panel del dueño todavía no hay acceso directo:
+  se entra a mano a `/auth/pin`.
