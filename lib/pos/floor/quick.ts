@@ -142,6 +142,8 @@ export function withPending(
       items_ready: 0,
       ready_since: null,
       last_served_at: nowIso,
+      // Los dibujos de «para retirar» se apagan con el mismo toque.
+      prep: session.prep?.map((row) => (row.ready > 0 ? { ...row, ready: 0 } : row)),
     }
   }
   if (pending === 'fire') {

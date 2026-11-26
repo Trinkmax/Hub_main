@@ -3,6 +3,8 @@
 import { LayoutDashboard, LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useState } from 'react'
+import { NoticeSettings } from '@/components/pos/notices/notice-settings'
+import { disableNotices } from '@/components/pos/notices/notice-setup'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -23,6 +25,9 @@ import { useViewAs, ViewAsDot, ViewAsSheetSection } from '../view-as'
  * turnos no puede quedar con la cuenta del anterior.
  *
  * Va en el topbar y no en una tab: no es una tarea de la operativa, es chrome.
+ *
+ * Con el punto de venta, acá también se prenden los avisos de cocina de este equipo (`posNotices`). Y
+ * al cerrar sesión el equipo deja de recibirlos: el teléfono pasa al del turno siguiente.
  */
 export function AccountSheet({
   email,
@@ -30,6 +35,7 @@ export function AccountSheet({
   tenantName,
   tenantSlug,
   signOut,
+  posNotices = false,
 }: {
   email: string
   role: TenantRole
@@ -37,6 +43,8 @@ export function AccountSheet({
   tenantSlug: string
   /** Server action de logout, inyectada por el shell (server component). */
   signOut: () => Promise<void>
+  /** Muestra «Avisos de cocina»: el bar usa el punto de venta y esta persona atiende mesas. */
+  posNotices?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -67,6 +75,8 @@ export function AccountSheet({
         {/* «Ver como»: solo para un superadmin que es dueño del bar (lib/tenant/view-as.ts). */}
         {viewAs ? <ViewAsSheetSection onSettled={close} /> : null}
 
+        {posNotices ? <NoticeSettings slug={tenantSlug} /> : null}
+
         <div className="space-y-2 px-4 pb-4">
           {role === 'owner' ? (
             <Button asChild variant="outline" size="xl" className="w-full justify-start gap-3">
@@ -77,7 +87,19 @@ export function AccountSheet({
             </Button>
           ) : null}
 
-          <form action={signOut}>
+          <form
+            action={async () => {
+              // Este equipo deja de recibir los avisos de quien se va. Si no hay señal, no traba la
+              // salida: la base lo da de baja sola cuando el próximo envío rebote.
+              if (posNotices) {
+                await Promise.race([
+                  disableNotices(tenantSlug).catch(() => {}),
+                  new Promise((done) => setTimeout(done, 2500)),
+                ])
+              }
+              await signOut()
+            }}
+          >
             <Button
               type="submit"
               variant="outline"

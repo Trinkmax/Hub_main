@@ -41,6 +41,10 @@ const MESSAGES: Record<string, string> = {
   merge_invalid: 'Una mesa no se junta consigo misma.',
   merge_practice_mismatch: 'Una mesa de práctica no se junta con una de verdad.',
   merge_two_reservations: 'Las dos mesas tienen su reserva: se cobran por separado.',
+  not_your_table: 'Esa mesa la atiende otra persona. Pedile al encargado que te la pase.',
+  waiter_not_found: 'Esa persona no atiende mesas en este bar.',
+  station_not_found: 'Esa estación ya no existe o está apagada.',
+  too_many_tickets: 'Son demasiadas comandas juntas: probá de a menos.',
 }
 
 export type PosError = { code: string; message: string; detail: string | null }

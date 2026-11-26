@@ -80,6 +80,7 @@ export default async function PosFloorPage({
           timeZone={access.tenant.timezone || 'America/Argentina/Cordoba'}
           canEditPlan={access.role === 'owner'}
           canOperate={POS_FLOOR_ROLES.includes(access.role)}
+          role={access.role}
           initialMove={mover && z.uuid().safeParse(mover).success ? mover : null}
           brand={{ name: access.tenant.name, logoUrl: access.tenant.logo_url }}
           account={
@@ -89,6 +90,7 @@ export default async function PosFloorPage({
               tenantName={access.tenant.name}
               tenantSlug={tenantSlug}
               signOut={signOutAction}
+              posNotices={POS_FLOOR_ROLES.includes(access.role)}
             />
           }
         />

@@ -24,11 +24,34 @@ export const STATION_COLORS: ReadonlyArray<{ hex: string; name: string }> = [
 ]
 
 /** Las tres de siempre, con los colores que ya usa la cocina. */
-export const CLASSIC_STATIONS: ReadonlyArray<{ name: string; color: string; hint: string }> = [
-  { name: 'Cocina', color: '#b45309', hint: 'Plancha, horno y fuegos.' },
-  { name: 'Fríos', color: '#0e7490', hint: 'Ensaladas, postres y lo que no lleva fuego.' },
-  { name: 'Barra', color: '#6d28d9', hint: 'Tragos, cafetería y bebidas.' },
+export const CLASSIC_STATIONS: ReadonlyArray<{
+  name: string
+  color: string
+  hint: string
+  kind: 'food' | 'drink'
+  icon: string
+}> = [
+  { name: 'Cocina', color: '#b45309', hint: 'Plancha, horno y fuegos.', kind: 'food', icon: '🍔' },
+  {
+    name: 'Fríos',
+    color: '#0e7490',
+    hint: 'Ensaladas, postres y lo que no lleva fuego.',
+    kind: 'food',
+    icon: '🍰',
+  },
+  {
+    name: 'Barra',
+    color: '#6d28d9',
+    hint: 'Tragos, cafetería y bebidas.',
+    kind: 'drink',
+    icon: '🍹',
+  },
 ]
+
+/** Una estación nueva, por su nombre: una barra es de bebidas; lo demás, de comida. */
+export function guessStationKind(name: string): 'food' | 'drink' {
+  return /(barra|bebida|trago|caf|vino|cervez)/i.test(name) ? 'drink' : 'food'
+}
 
 /** El primer color que todavía no usa ninguna estación (o el primero, si ya están todos). */
 export function nextStationColor(stations: ReadonlyArray<Pick<KitchenStation, 'color'>>): string {

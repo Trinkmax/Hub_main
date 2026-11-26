@@ -8,10 +8,11 @@ import {
 } from '@/lib/pos/kitchen/age'
 import {
   advanceTarget,
-  applyAdvance,
+  applyItemsMove,
   buildCards,
   buildTableCards,
   hasExpired,
+  itemsToMove,
   kitchenAlerts,
   knownTickets,
   NO_CATEGORY_LABEL,
@@ -19,8 +20,6 @@ import {
   PRIORITY_LABEL,
   READY_LINGER_MS,
   showsStation,
-  splitEvents,
-  ticketsToMove,
   totalsOf,
   undoTarget,
   unseenTickets,
@@ -115,7 +114,15 @@ describe('qué muestra cada pantalla', () => {
     )
     expect(card?.lines.map((l) => l.name)).toEqual(['Lomito'])
     expect(card?.others).toEqual([
-      { stationId: BARRA, name: 'Barra', color: '#6d28d9', quantity: 3, status: 'ready' },
+      {
+        stationId: BARRA,
+        name: 'Barra',
+        color: '#6d28d9',
+        kind: null,
+        icon: null,
+        quantity: 3,
+        status: 'ready',
+      },
     ])
   })
 
@@ -509,12 +516,14 @@ describe('avanzar y deshacer', () => {
     expect(undoTarget('queued')).toBeNull()
   })
 
-  it('mueve al instante todos los renglones sin servir, con sus horas', () => {
+  const ids = (q: KitchenQueue) => new Set(q.tickets.flatMap((t) => t.items.map((i) => i.id)))
+
+  it('mueve al instante los renglones pedidos que no están servidos, con sus horas', () => {
     const q = queue([
       ticket({ items: [item(), item({ prep_status: 'served' }), item({ station_id: BARRA })] }),
     ])
     const at = ago(0)
-    const started = applyAdvance(q, 't1', 'preparing', [], at)
+    const started = applyItemsMove(q, ids(q), { to: 'preparing' }, at)
     expect(started.tickets[0]?.items.map((i) => i.prep_status)).toEqual([
       'preparing',
       'served',
@@ -523,21 +532,18 @@ describe('avanzar y deshacer', () => {
     expect(started.tickets[0]?.items[0]?.started_at).toBe(at)
     expect(started.tickets[0]?.status).toBe('preparing')
 
-    const ready = applyAdvance(started, 't1', 'ready', [], at)
+    const ready = applyItemsMove(started, ids(q), { to: 'ready' }, at)
     expect(ready.tickets[0]?.items.map((i) => i.prep_status)).toEqual(['ready', 'served', 'ready'])
     expect(ready.tickets[0]?.items[0]?.ready_at).toBe(at)
     expect(ready.tickets[0]).toMatchObject({ status: 'ready', ready_at: at })
     expect(buildCards(ready, [])[0]?.status).toBe('ready')
   })
 
-  it('con estaciones elegidas mueve solo las suyas (y lo que no tiene estación)', () => {
-    const q = queue([
-      ticket({
-        items: [item(), item({ station_id: BARRA }), item({ station_id: null })],
-      }),
-    ])
-    const next = applyAdvance(q, 't1', 'ready', [BARRA], ago(0))
-    expect(next.tickets[0]?.items.map((i) => i.prep_status)).toEqual(['queued', 'ready', 'ready'])
+  it('mover los de una estación no toca los de otra', () => {
+    const bar = item({ station_id: BARRA })
+    const q = queue([ticket({ items: [item(), bar] })])
+    const next = applyItemsMove(q, new Set([bar.id]), { to: 'ready' }, ago(0))
+    expect(next.tickets[0]?.items.map((i) => i.prep_status)).toEqual(['queued', 'ready'])
     // La tanda no está lista: cocina todavía no empezó.
     expect(next.tickets[0]?.status).toBe('preparing')
     expect(buildCards(next, [BARRA])[0]?.status).toBe('ready')
@@ -552,7 +558,7 @@ describe('avanzar y deshacer', () => {
         items: [item({ prep_status: 'ready', started_at: ago(6), ready_at: ago(1) })],
       }),
     ])
-    const back = applyAdvance(q, 't1', 'preparing', [], ago(0))
+    const back = applyItemsMove(q, ids(q), { to: 'preparing' }, ago(0))
     expect(back.tickets[0]?.items[0]).toMatchObject({
       prep_status: 'preparing',
       started_at: ago(6),
@@ -560,22 +566,71 @@ describe('avanzar y deshacer', () => {
     })
     expect(back.tickets[0]).toMatchObject({ status: 'preparing', ready_at: null })
 
-    const fresh = applyAdvance(back, 't1', 'queued', [], ago(0))
+    const fresh = applyItemsMove(back, ids(q), { to: 'queued' }, ago(0))
     expect(fresh.tickets[0]?.items[0]).toMatchObject({ prep_status: 'queued', started_at: null })
     expect(fresh.tickets[0]?.status).toBe('accepted')
   })
 
+  it('pasar de estación: llega como nuevo, salvo que además se diga un paso', () => {
+    const cooking = item({ prep_status: 'preparing', started_at: ago(3) })
+    const q = queue([ticket({ status: 'preparing', items: [cooking] })])
+    const moved = applyItemsMove(q, new Set([cooking.id]), { stationId: BARRA }, ago(0))
+    expect(moved.tickets[0]?.items[0]).toMatchObject({
+      station_id: BARRA,
+      prep_status: 'queued',
+      started_at: null,
+    })
+    const kept = applyItemsMove(
+      q,
+      new Set([cooking.id]),
+      { stationId: BARRA, to: 'preparing' },
+      ago(0),
+    )
+    expect(kept.tickets[0]?.items[0]).toMatchObject({ station_id: BARRA, prep_status: 'preparing' })
+    // A la estación en la que ya está: nada cambia.
+    expect(applyItemsMove(q, new Set([cooking.id]), { stationId: COCINA }, ago(0))).toBe(q)
+  })
+
   it('si no hay nada que mover devuelve la misma cola', () => {
     const q = queue([ticket({ items: [item({ prep_status: 'preparing' })] })])
-    expect(applyAdvance(q, 't1', 'preparing', [], ago(0))).toBe(q)
-    expect(applyAdvance(q, 'otra', 'ready', [], ago(0))).toBe(q)
-    expect(applyAdvance(q, 't1', 'ready', [BARRA], ago(0))).toBe(q)
+    expect(applyItemsMove(q, ids(q), { to: 'preparing' }, ago(0))).toBe(q)
+    expect(applyItemsMove(q, new Set(['otro']), { to: 'ready' }, ago(0))).toBe(q)
+    expect(applyItemsMove(q, new Set(), { to: 'ready' }, ago(0))).toBe(q)
+    expect(applyItemsMove(q, ids(q), {}, ago(0))).toBe(q)
   })
 
   it('no toca las otras tandas', () => {
     const other = ticket({ id: 't2' })
-    const q = queue([ticket(), other])
-    expect(applyAdvance(q, 't1', 'preparing', [], ago(0)).tickets[1]).toBe(other)
+    const first = ticket()
+    const q = queue([first, other])
+    const mine = new Set(first.items.map((i) => i.id))
+    expect(applyItemsMove(q, mine, { to: 'preparing' }, ago(0)).tickets[1]).toBe(other)
+  })
+
+  it('qué renglones mueve una comanda: al avanzar los atrasados, al volver los de su paso', () => {
+    const q = queue([
+      ticket({
+        items: [
+          item({ id: 'a' }),
+          item({ id: 'b', name: 'Papas', prep_status: 'preparing' }),
+          item({ id: 'c', name: 'Flan', prep_status: 'ready' }),
+          item({ id: 'd', name: 'Agua', prep_status: 'served' }),
+        ],
+      }),
+    ])
+    const card = buildTableCards(q, [])[0]
+    if (!card) throw new Error('sin comanda')
+    expect(card.status).toBe('queued')
+    expect(itemsToMove(card, 'preparing')).toEqual(['a'])
+    expect(itemsToMove(card, 'ready').sort()).toEqual(['a', 'b'])
+    const cooking = buildTableCards(
+      applyItemsMove(q, new Set(['a']), { to: 'preparing' }, ago(0)),
+      [],
+    )[0]
+    if (!cooking) throw new Error('sin comanda')
+    expect(cooking.status).toBe('preparing')
+    // Volver atrás: los que están en «en preparación»; lo listo y lo entregado no se tocan.
+    expect(itemsToMove(cooking, 'queued').sort()).toEqual(['a', 'b'])
   })
 })
 
@@ -644,93 +699,6 @@ describe('la tira de totales', () => {
 
   it('sin comandas no hay nada', () => {
     expect(totalsOf([])).toEqual([])
-  })
-})
-
-describe('evento', () => {
-  it('sin mesas de evento no hay división', () => {
-    const cards = buildCards(queue([ticket()]), [])
-    expect(splitEvents(cards)).toEqual({ events: [], alaCarte: cards })
-  })
-
-  it('separa el evento de la carta y cuenta cuánto va de cada plato', () => {
-    const cards = buildCards(
-      queue([
-        ticket({
-          id: 'e1',
-          event: 'Shrek 2',
-          fired_at: ago(9),
-          items: [
-            item({ name: 'Lomito', quantity: 2, prep_status: 'ready' }),
-            item({ name: 'Ravioles', quantity: 2 }),
-          ],
-        }),
-        ticket({ id: 'c1', fired_at: ago(8) }),
-        ticket({
-          id: 'e2',
-          event: 'Shrek 2',
-          fired_at: ago(7),
-          items: [
-            item({ name: 'Lomito', quantity: 3 }),
-            item({ name: 'Lomito', quantity: 1, prep_status: 'served' }),
-          ],
-        }),
-      ]),
-      [],
-    )
-    const { events, alaCarte } = splitEvents(cards)
-    expect(alaCarte.map((c) => c.id)).toEqual(['c1'])
-    expect(events).toHaveLength(1)
-    expect(events[0]?.name).toBe('Shrek 2')
-    expect(events[0]?.cards.map((c) => c.id)).toEqual(['e1', 'e2'])
-    expect(events[0]?.dishes).toEqual([
-      { menuItemId: 'm-Lomito', name: 'Lomito', total: 6, done: 3, pending: 3 },
-      { menuItemId: 'm-Ravioles', name: 'Ravioles', total: 2, done: 0, pending: 2 },
-    ])
-    expect(events[0]).toMatchObject({ total: 8, done: 3 })
-  })
-
-  it('los platos no cambian de lugar cuando algo se termina', () => {
-    const build = (status: PrepStatus) =>
-      splitEvents(
-        buildCards(
-          queue([
-            ticket({
-              event: 'Cine',
-              items: [
-                item({ name: 'Lomito', quantity: 4, prep_status: status }),
-                item({ name: 'Ravioles', quantity: 3 }),
-              ],
-            }),
-          ]),
-          [],
-        ),
-      ).events[0]?.dishes.map((d) => d.name)
-    expect(build('queued')).toEqual(build('ready'))
-  })
-
-  it('dos eventos a la vez, cada uno con lo suyo, por orden de llegada', () => {
-    const cards = buildCards(
-      queue([
-        ticket({ id: 'b', event: 'Cumple', fired_at: ago(3) }),
-        ticket({ id: 'a', event: 'Cine', fired_at: ago(6) }),
-      ]),
-      [],
-    )
-    expect(splitEvents(cards).events.map((e) => e.name)).toEqual(['Cine', 'Cumple'])
-  })
-
-  it('solo cuenta lo de las estaciones de esta pantalla', () => {
-    const cards = buildCards(
-      queue([
-        ticket({
-          event: 'Cine',
-          items: [item({ name: 'Lomito', quantity: 2 }), item({ name: 'Vino', station_id: BARRA })],
-        }),
-      ]),
-      [COCINA],
-    )
-    expect(splitEvents(cards).events[0]?.dishes.map((d) => d.name)).toEqual(['Lomito'])
   })
 })
 
@@ -872,6 +840,23 @@ describe('una comanda por mesa (la tele)', () => {
     expect(card?.grew).toBe(false)
   })
 
+  it('dar por listo un renglón suelto de la misma tanda no es «se sumó»', () => {
+    // La barra tilda la cerveza antes de empezar los tragos: todo salió junto, nadie sumó nada.
+    const [card] = table(
+      ticket({
+        id: 't1',
+        fired_at: ago(6),
+        items: [
+          item({ name: 'Stella', quantity: 2, prep_status: 'ready', ready_at: ago(2) }),
+          item({ name: 'Mojito', quantity: 4 }),
+        ],
+      }),
+    )
+    expect(card?.status).toBe('queued')
+    expect(card?.grew).toBe(false)
+    expect(card?.lines.find((line) => line.name === 'Mojito')?.fresh).toBe(false)
+  })
+
   it('lo que se suma a una mesa ya empezada queda aparte y marcado como nuevo', () => {
     const [card] = table(
       ticket({
@@ -938,56 +923,6 @@ describe('una comanda por mesa (la tele)', () => {
     const after = table(ticket({ id: 't1' }), ticket({ id: 't2', fired_at: ago(0) }))
     expect(newArrivals(before, after)).toEqual(['s1'])
     expect(newArrivals(knownTickets(after), after)).toEqual([])
-  })
-})
-
-describe('avanzar la comanda de una mesa', () => {
-  const two = () =>
-    queue([
-      ticket({
-        id: 't1',
-        status: 'ready',
-        fired_at: ago(12),
-        items: [item({ name: 'Lomito', prep_status: 'ready', ready_at: ago(2) })],
-      }),
-      ticket({ id: 't2', fired_at: ago(1), items: [item({ name: 'Flan' })] }),
-    ])
-
-  it('«Empezar» mueve solo la tanda atrasada: lo que ya estaba listo no vuelve atrás', () => {
-    const q = two()
-    const [card] = buildTableCards(q, [])
-    expect(card && ticketsToMove(q, card, 'preparing', [])).toEqual(['t2'])
-  })
-
-  it('«Listo» mueve todo lo que falta', () => {
-    const q = queue([
-      ticket({ id: 't1', items: [item({ prep_status: 'preparing' })] }),
-      ticket({ id: 't2', fired_at: ago(1), items: [item({ prep_status: 'preparing' })] }),
-    ])
-    const [card] = buildTableCards(q, [])
-    expect(card?.status).toBe('preparing')
-    expect(card && ticketsToMove(q, card, 'ready', [])).toEqual(['t1', 't2'])
-  })
-
-  it('deshacer vuelve un paso las tandas que están en el paso de la comanda', () => {
-    const q = queue([
-      ticket({ id: 't1', status: 'ready', items: [item({ prep_status: 'ready' })] }),
-      ticket({ id: 't2', fired_at: ago(1), items: [item({ prep_status: 'preparing' })] }),
-    ])
-    const [card] = buildTableCards(q, [])
-    expect(card?.status).toBe('preparing')
-    // De «en preparación» a «nuevo»: la que ya está lista no se toca.
-    expect(card && ticketsToMove(q, card, 'queued', [])).toEqual(['t2'])
-  })
-
-  it('no toca tandas que esta pantalla no muestra', () => {
-    const q = queue([
-      ticket({ id: 't1', items: [item({ name: 'Negroni', station_id: BARRA })] }),
-      ticket({ id: 't2', fired_at: ago(1), items: [item({ name: 'Lomito' })] }),
-    ])
-    const [card] = buildTableCards(q, [COCINA])
-    expect(card?.ticketIds).toEqual(['t2'])
-    expect(card && ticketsToMove(q, card, 'preparing', [COCINA])).toEqual(['t2'])
   })
 })
 

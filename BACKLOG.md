@@ -1835,6 +1835,42 @@ Lo que quedó fuera de esa tanda (el detalle de lo hecho está en `docs/features
   no tiene dónde sacarla. Sumarla si los socios piden el comprobante del proveedor en la caja.
 - **[BAJA] Tex no sabe de horarios de la carta ni de «sale primero».**
 
+## El pase, mozos y avisos — lo que queda (26/11/2026)
+
+Del rediseño de la comandera por estación (`docs/features/pos.md`, «La pantalla de cocina: el pase» y
+«Avisos al mozo»). Nada de esto frena el uso.
+
+- **[MEDIA] Combos que cruzan dos estaciones.** «Infusión + torta» sale entero en Cocina (así lo pidió
+  Nacho): la barra no ve que hay un café. Haría falta que un producto se parta en dos renglones, uno por
+  estación, o que una estación «también avise» a otra.
+- **[MEDIA] El bloqueo de la mesa de otro mozo es de pantalla, no de la base.** El mapa y las páginas de
+  la mesa no dejan operar la de otro, pero `pos_send_order`, `pos_request_bill` y compañía no lo
+  rechazan. Si los socios lo quieren duro, el chequeo va en esas funciones (con excepción para el
+  encargado).
+- **[MEDIA] La comanda en papel no dice el mozo ni los vasos.** La cola ya los trae (`waiter`,
+  `party_size`, `kind` de la estación): falta sumarlos en `lib/pos/print/comanda.ts`.
+- **[BAJA] Si falla la llamada de la base a `/api/cron/pos-push`, ese aviso no sale como notificación**
+  (por la app sí). No hay barrido periódico: un cron de un minuto que haga el `GET` (ya barre lo de los
+  últimos 3 minutos) lo cubriría.
+- **[BAJA] `pos_notices` se limpia de paso, 1 de cada 40 envíos.** Un bar donde nadie prendió las
+  notificaciones junta filas (chicas) sin que nada las borre: sumar la limpieza a un cron que ya exista.
+- **[BAJA] Más de 200 avisos en un solo movimiento:** se mandan 50 y el resto no sale como notificación.
+- **[BAJA] «Mandar siempre acá» al pasar un renglón de estación.** Hoy vale para ese pedido; el cambio
+  definitivo se hace en Carta › Cocina y aclaraciones.
+- **[MEDIA] Pasar de una todas las mesas de un mozo a otro** (cambio de turno, alguien que se va antes):
+  hoy se pasan de a una, desde la ficha de cada mesa.
+- **[BAJA] La botonera de cuatro flechas no avanza comandas:** las flechas mueven el marco y Enter avanza,
+  pero la botonera no tiene Enter. Con el teclado numérico alcanza; si la quieren usar igual, hay que
+  decidir qué flecha avanza.
+- **[BAJA] Un usuario de cocina puede mirar y mover cualquier estación.** Si hiciera falta, atar cada
+  usuario a su estación.
+- **[BAJA] El aviso en vivo llega a todos los de la sucursal y cada app muestra solo los suyos.** Lleva
+  mesa, estación y productos (nada sensible); si se quisiera privado, un canal por persona.
+- **[BAJA] El número pendiente en el ícono de la app** (`navigator.setAppBadge`) para el mozo.
+- **[BAJA] Tex no sabe de quién es cada mesa ni de los avisos.**
+- **[BAJA] No hay un usuario de prueba con rol cocina** en el bar de ejemplo: la pantalla se probó como
+  dueño y como encargado.
+
 ## Las dos cartas — lo que queda (26/11/2026)
 
 Del rediseño de la carta pública (`docs/features/carta-rediseno.md`). La que ven los clientes es la de

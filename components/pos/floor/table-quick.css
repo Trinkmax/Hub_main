@@ -325,7 +325,7 @@
     left: 0.75rem;
     max-width: 58rem;
     margin-inline: auto;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 0.5rem;
   }
@@ -336,14 +336,23 @@
     grid-row: 1;
     grid-column: 1;
   }
-  .pos-quick-row {
+  /* Quién la atiende va en la misma fila, entre la mesa y los botones (`floor-prep.css`). */
+  .pos-quick-waiter {
+    max-width: 9.5rem;
     grid-row: 1;
     grid-column: 2;
+  }
+  .pos-quick-row {
+    grid-row: 1;
+    grid-column: 3;
   }
   .pos-quick-close {
     height: 2.75rem;
     grid-row: 1;
-    grid-column: 3;
+    grid-column: 4;
+  }
+  .pos-quick-locked {
+    grid-column: 1 / -1;
   }
   .pos-quick-what {
     display: none;

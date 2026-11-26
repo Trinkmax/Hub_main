@@ -44,6 +44,10 @@ lo prende un superadmin por bar).
 | La Proyección de Administración toma estas ventas | `withPosSales`, `projectionUsesPos` (sin cambios en la base) | hecho |
 | El cierre del día arranca precargado con lo cobrado | `posCloseFill`, `getPosCloseDay` (sin cambios en la base) | hecho |
 | Comandas, cuenta y cierre de caja por la comandera | `lib/pos/print/*`, `components/pos/print/*` (sin cambios en la base) | hecho |
+| El pase: una pantalla por estación (Cocina, Barra, Pizzeros, Plancha) con teclado numérico y mouse | `/[bar]/salon/tele`, `components/pos/kitchen/pass-*`, `lib/pos/kitchen/{board,keypad,station-kind}.ts`, RPC `pos_kitchen_move` | hecho (26/11) |
+| De quién es cada mesa (el mozo ve las suyas; las de otro, tomadas) | `table_sessions.waiter_id`, `lib/pos/floor/waiter.ts`, RPC `pos_assign_waiter` y `pos_floor_team` | hecho (26/11) |
+| Dibujos de comida y bebida sobre cada mesa | `lib/pos/floor/prep.ts`, `floor-model.tsx` | hecho (26/11) |
+| Avisos al mozo: con la app abierta y notificación con el celular bloqueado | `pos_notices`, `push_subscriptions`, `lib/pos/notices/*`, `lib/push/*`, `/api/cron/pos-push` | hecho (26/11) |
 | QR del cliente, vincular la tele, PIN | — | sigue |
 
 ## Modelo de datos
@@ -260,6 +264,36 @@ ocupada entraba a la comanda: marcar algo como servido eran dos cambios de panta
   «4 Mojito», no «2 Mojito · 2 Mojito». Vale también para la barra de la comanda.
 - Quien solo mira (la cocina) sigue entrando al pedido con un toque. En la lista funciona igual: la fila
   elegida queda marcada.
+
+### Los dibujos sobre la mesa y de quién es cada una (26/11/2026)
+
+Nacho: «en las mesas que aparezcan los emojis arriba de la mesa si hay comida y bebida» y «el mozo debe
+ver las que él atiende; las ya atendidas por otro mozo le tienen que aparecer así, bloqueadas o atendidas».
+
+- **Un dibujo por estación** en la bandera de la mesa (🍔 cocina, 🍹 barra, 🍕 pizzeros; el dibujo es el de
+  la estación, `stationIcon`). Mientras se prepara va apagado; cuando esa estación lo tiene **para
+  retirar** lleva un tilde y salta. El color de la bandera sigue diciendo el estado de la mesa, así que
+  los dibujos reemplazan al ícono y a la palabra. Con las mesas muy chicas se muestra solo lo que ya está
+  para retirar. Sale de `prep` en cada mesa de `pos_floor_snapshot` (unidades por estación y paso) y lo
+  arma `prepChips` (`lib/pos/floor/prep.ts`). Al marcar «Servido» los tildes se van al instante.
+- **Cada mesa abierta tiene quién la atiende** (`table_sessions.waiter_id`): el mozo que la abrió o, si
+  la sentó la anfitriona, el primer **mozo** que le carga un pedido. Lo ponen dos disparadores, así vale
+  para cualquier pantalla que abra o cargue. La caja o un dueño pueden cargarle lo que haga falta sin
+  quedársela (migración `pos_solo_mozos_toman_mesa`): si no, con el primer pedido de la caja la mesa se
+  les bloqueaba a todos los mozos. El aviso de cocina de un pedido cargado en una mesa sin mozo le llega
+  a quien lo cargó.
+- **Al mozo, la mesa de otro se le muestra tomada**: gris, con candado y el nombre de quien la atiende.
+  La puede tocar (la ficha dice de quién es) pero no abrirla ni cargarle nada, ni desde el mapa ni
+  entrando por la dirección (`TakenTable`). El resumen de arriba y «lo que tengo que llevar» cuentan solo
+  las suyas y las que todavía no tienen a nadie.
+- **Al encargado no se le bloquea nada** (dueño, caja, anfitriona): ve quién atiende cada mesa en la
+  ficha y la puede pasar. El filtro «Mis mesas» deja a la vista solo las propias.
+- **Pasar una mesa**: en la ficha, el cartel con el nombre abre «¿Quién atiende la mesa N?» con el equipo
+  de esa sucursal (`pos_floor_team`). La pasa su propio mozo o el encargado (`pos_assign_waiter`); el
+  encargado además puede dejarla sin nadie. Queda en auditoría (`pos.table_waiter_changed`).
+- **Decisión (cambiable):** el bloqueo es de pantalla, no de la base. Un mozo no ve cómo operar la mesa de
+  otro, pero las funciones de la base no lo rechazan; se eligió así para que una noche complicada
+  (alguien se va antes, un celular sin batería) nunca deje una mesa sin poder atenderse.
 
 ## La barra de abajo del salón
 
@@ -524,7 +558,8 @@ la base.
 - **El cierre de caja** (`shiftDoc`): el mismo resumen del turno que se copia o se manda por WhatsApp,
   con el arqueo arriba (en negativo si no cuadra) y lugar para firmar («Contó», «Controló»). El formato
   definitivo lo van a pasar los dueños: cuando llegue se cambia en `lib/pos/print/shift.ts` y solo ahí.
-- **Qué no hace todavía:** no imprime el nombre del mozo (la cola de cocina no lo trae), no reimprime
+- **Qué no hace todavía:** no imprime el nombre del mozo ni los vasos (la cola de cocina ya los trae
+  desde el 26/11; falta ponerlos en el papel), no reimprime
   sola una comanda a la que le dieron de baja algo, y si dos compus distintas tienen prendida la
   impresión de la misma estación, las dos imprimen (es a propósito: cada una tiene su impresora).
 
@@ -562,7 +597,8 @@ lleva la cola y la lista de «Deshacer»; `lib/menu/kitchen/ops.ts` aplica cada 
   lo que tenga su propia marca («Todo a Barra, menos Postres (Fríos)»). También se puede cambiar un renglón
   solo desde su etiqueta. «Lo que falta» lista lo que quedó sin estación o va a una apagada, y si los nombres
   lo dejan claro se ofrece marcar por nombre. «Editar estaciones» abre la hoja para crearlas, renombrarlas,
-  cambiarles el color, ordenarlas, apagarlas o borrarlas (una que ya recibió pedidos queda apagada).
+  cambiarles el color, decir **de qué son (comida o bebida) y con qué dibujo** se las reconoce (26/11),
+  ordenarlas, apagarlas o borrarlas (una que ya recibió pedidos queda apagada).
 - **Aclaraciones:** cada una es una pregunta con sus opciones («Punto de la carne»: jugoso, a punto, bien
   cocido). Se elige cómo se contesta (una si hace falta, una sí o sí, las que hagan falta, al menos una),
   cada opción puede sumar al precio (en pesos) y se ofrece en categorías enteras o en productos sueltos. El
@@ -837,41 +873,130 @@ Pruebas: `tests/lib/pos-floor.test.ts` (proyección y maqueta), `tests/lib/pos-t
 - Un pedido nunca se pierde ni se duplica: cada tanda lleva su clave, se guarda en el teléfono hasta que la base
   la confirma y se reintenta sola; lo que quedó sin enviar también sale desde el mapa (`PosOutboxRunner`).
 
-## La pantalla de cocina
+## La pantalla de cocina: el pase (rediseño del 26/11/2026)
 
-- **Los productos iguales van juntos** (pedido del 16/11/2026): un renglón por producto con todas sus
-  unidades («x2 Cheese Burger»), aunque el mozo las haya cargado por separado. Si todas van igual, las
-  aclaraciones van una vez; si no (una sin cebolla, otra con otra guarnición), cada forma va debajo con
-  su cantidad y la que no lleva nada dice «Común» (`groupSameProducts` en `lib/pos/kitchen/cards.ts`).
-  Solo se juntan los de la misma estación y el mismo paso: uno entregado no se mezcla con uno que falta.
-- **Un monitor por estación** ya existía: cada pantalla elige qué estaciones muestra (queda guardado en
-  el dispositivo y en la dirección, `?estaciones=`), y a qué estación va cada producto se decide en
-  Carta › Cocina y aclaraciones (por categoría, o producto por producto).
+Pedido de Nacho: «lo que es comida a cocina, lo que es bebida a la barra, lo que es pizza a la pantalla
+de pizzeros […] en cocina va a estar el encargado, que va a manejar todo desde ahí […] cada estación va a
+tener un keypad numérico que va a marcar los estados; el de la cocina también un mouse, porque ve en la
+tele de 42 pulgadas la cocina y las otras dos pantallas más chicas […] deben entrar muchas comandas».
 
-- **Una comanda por mesa** (pedido del 22/11/2026: «en la solapa de cocina debe mostrar un ticket por
-  mesa»). Todas las tandas vivas de una mesa van en la misma tarjeta (`buildTableCards`); los iguales se
-  suman aunque vengan de tandas distintas, mientras nadie los haya empezado. Si la mesa pide algo más con
-  la comanda ya en marcha no nace otra tarjeta: la franja pasa a **«Se sumó»** (en negativo) y cada
-  renglón nuevo lleva su marca hasta que la cocina lo empieza. «Avanzar» mueve solo las tandas que hacen
-  falta (`ticketsToMove`): lo que ya estaba listo no vuelve a «en preparación» porque la mesa sumó una
-  gaseosa. En el papel sigue saliendo un tique por tanda (`buildCards`): a un papel no se le agrega nada.
-- **Por rubro, y lo que sale primero arriba** («juntar pizzas con pizzas, milanesas con milanesas»): los
-  renglones van en bloques por rubro de la carta, en el orden de la carta, y lo que el bar marcó como «sale
-  primero» (una entrada) va arriba, en negativo. Los rubros y la marca llegan en cada renglón de la cola
-  (`category`, `category_order`, `priority`, desde la migración `pos_revisiones_socios`); con la función
-  anterior no vienen y la comanda se arma como antes (por estación).
-- **La alerta de comanda nueva** («debe ser más agresiva»): suena una campana fuerte en tres llamados, la
-  pantalla entera se enmarca en amarillo con un cartel que dice la mesa («COMANDA NUEVA · 11», o «SE SUMÓ ·
-  3»), la franja de esa comanda late nueve segundos y, si nadie la empieza, vuelve a sonar cada 25 segundos
-  durante un minuto y medio. Cualquier botón saca el cartel. El botón de sonido pasa por **Fuerte → Suave →
-  Silencio** y queda guardado en el dispositivo (`use-kitchen-sound.ts`); «Suave» es el timbre de antes, sin
-  repetición. El celular además vibra, y si la pestaña quedó atrás el título dice cuántas esperan.
-- «Nuevo» va con el resaltador (antes era la franja apagada): lo que nadie empezó se ve de lejos.
-- Cada tarjeta cuelga del riel por orden de llegada (cuenta desde la tanda más vieja que le falta
-  terminar); nunca se reacomoda sola.
-- Arriba, el total que se está preparando («8 Bacon · 5 Lomito»).
-- Dos botones: Siguiente mueve el marco, Avanzar pasa de Nuevo a En preparación y a Listo; mantenerlo deshace.
-  Llegan como teclas (flecha derecha / Enter), así sirve cualquier botonera que se presente como teclado.
-- Cada pantalla elige qué estaciones muestra (`?estaciones=`); lo de las otras queda de pie de tarjeta.
-- Con un evento, la pantalla se parte: el evento con totales por plato a un lado, las mesas a la carta al otro.
+### Estaciones
+
+- Cada estación es una fila de `kitchen_stations` con su color, **de qué es** (`kind`: comida o bebida) y
+  **su dibujo** (`icon`, un emoji). Se editan en Carta › Cocina y aclaraciones › Editar estaciones. El
+  dibujo es el que va sobre la mesa en el mapa; el tipo decide si la comanda muestra los vasos y cómo se
+  le dice al mozo («para retirar en la barra»).
+- **A dónde va cada cosa** se decide en la Carta (por rubro, o producto por producto). El reparto que
+  pidió Nacho: cafetería, bebidas, tragos, botellas y vinos a **Barra**; las pizzas a **Pizzeros**;
+  hamburguesas, lomitos, tostados y milanesas a **Plancha**; el resto de la comida (pastelería,
+  medialunas, postres, los combos «Infusión + …», las tablas y lo de la freidora: papas, rabas, nuggets
+  y nachos) a **Cocina**; y solo la limonada y la pomelada, que son bebidas, a **Cocina**.
+- **Las pantallas de HUB**: la tele grande es la de Cocina (el encargado, que ve las cuatro), y hay tres
+  monitores, uno para Barra, otro para Pizzeros y otro para Plancha.
+
+### Qué se ve
+
+- **El pase** (la tele del encargado): la estación principal ocupa media pantalla y las otras van al
+  costado, cada una en su columna de arriba a abajo, con la letra un 20 % más chica. Con tres al costado
+  (Barra, Pizzeros y Plancha) cada una queda de una columna de comandas y su encabezado muestra solo lo
+  que falta empezar y lo demorado. Cada monitor de
+  estación muestra solo la suya. Qué estaciones muestra cada pantalla queda guardado en ese equipo y en
+  la dirección (`?estaciones=`); «Agrandar» pasa una del costado al medio.
+- **Una pared de comandas, no una fila**: las comandas se acomodan solas en columnas, siempre en la más
+  corta, sin cambiar el orden de llegada (`packWall`, con la altura real de cada una). Una comanda
+  gigante toma dos columnas o se achica hasta entrar; nunca se corta. A 1920 × 1080 entran unas 23
+  comandas a la vista con tres estaciones.
+- **Lo que no entra no se pierde**: queda en «En cola», una ficha por mesa con sus minutos, y sube sola
+  cuando se libera lugar. Lo que ya está listo pasa a «Listos» (la ficha se pone roja si nadie lo retira).
+- **Cada comanda**: el número de mesa bien grande, quién la atiende, el estado en la franja (**Nuevo**
+  amarillo, **En preparación** naranja, **Listo** verde), los minutos (en rojo si está demorada), cuántos
+  son, el nombre de la mesa, los renglones por rubro con lo que «sale primero» arriba y las aclaraciones
+  resaltadas. Al pie, lo que esa misma mesa tiene en las otras estaciones y cómo viene.
+- **Los vasos**: en una estación de bebidas cada comanda dice cuántos vasos lleva la mesa, que son las
+  personas (`glassesFor`): una mesa de 6 son 6 vasos.
+- Arriba de la principal, la suma de lo que hay que hacer ahora («5 Pancakes · 5 Tabla mixta»).
+- Los productos iguales van juntos y hay una comanda por mesa, como antes (`buildTableCards`,
+  `groupSameProducts`). Si la mesa suma algo con la comanda en marcha, la franja dice «Se sumó».
+- **La alerta de comanda nueva** no cambió: campana, cartel con la mesa, la franja late, y vuelve a sonar
+  si nadie la empieza. En el pase, lo que entra a una estación del costado suena más bajo y marca su
+  panel. El sonido pasa por Fuerte, Suave y Silencio.
+- **Tamaño de la letra**: tres medidas (Chica, Media, Grande), por equipo. Con la chica entran más.
+- **En un celular** se ve como lista, una estación por vez.
 - Sin conexión, la franja de arriba es el aviso, con la hora del último dato.
+
+### El teclado numérico
+
+Se usa como una calculadora: **el número de la mesa y Enter** (`lib/pos/kitchen/keypad.ts`).
+
+| Tecla | Qué hace |
+|---|---|
+| `12` `Enter` | La comanda de la mesa 12 avanza un paso: Nuevo → En preparación → Listo |
+| `Enter` | Avanza la enmarcada (la más vieja sin terminar) |
+| `12` `+` | La 12 queda lista de una (una gaseosa no pasa por «en preparación») |
+| `12` `−` | La 12 vuelve un paso atrás, aunque ya esté en «Listos» |
+| `−` | Recién apretado Enter: deshace eso (7 segundos). Si no, vuelve atrás la enmarcada |
+| `.` | Borra lo tecleado |
+| `÷` `×` | En el pase: pasa a la estación anterior o siguiente |
+| flechas | Mueven el marco |
+
+- Mientras se teclea, el marco salta a esa mesa: se ve cuál va a cambiar **antes** de apretar Enter. Si
+  esa mesa no tiene nada en la estación, la pantalla lo dice («No está en Cocina»), no cambia nada y el
+  marco vuelve a donde estaba (teclear «12» cuando existe la 1 no deja el marco en la 1).
+- El marco no se queda pegado: si la comanda enmarcada pasa a «Listos» o se va, vuelve a la más vieja
+  sin terminar. Con una hoja abierta (la de la comandera), las teclas son de esa hoja.
+- Las teclas se reconocen por su lugar, no por lo que escriben: anda con «Bloq Num» prendido o apagado.
+- Una mesa sin número (una barra, «Terraza A») recibe un código corto que se ve en su comanda («01»).
+- El botón **Teclas** de arriba muestra el teclado dibujado con qué hace cada tecla.
+- La barra de abajo repite lo mismo con botones, para el mouse o el dedo.
+
+### El mouse (el encargado)
+
+- Un clic enmarca una comanda; doble clic la avanza.
+- Un clic en la cantidad de un renglón da por listo **ese** renglón (o lo vuelve atrás).
+- **Arrastrar** una comanda entera, o un renglón, a otra estación la pasa a esa estación. Lo mismo hacen
+  los botones «Pasar a Barra / Pizzeros» de la barra de abajo. Llega como «Nuevo» y suena allá.
+- Todo se mueve por renglones con `pos_kitchen_move` (estado, estación o las dos cosas). Pasar algo de
+  estación queda en auditoría (`pos.kitchen_rerouted`).
+
+### Lo que se sacó
+
+- La pantalla partida de los eventos: un evento ahora es una etiqueta en su comanda.
+- Los «dos botones» como concepto: las flechas y Enter siguen andando, así que una botonera de flechas
+  sirve igual.
+
+## Avisos al mozo (26/11/2026)
+
+Nacho: «que le llegue una notificación push cuando esté su pedido en el próximo paso, vibrar y hacer
+sonidos».
+
+- **Qué avisa.** Cuando una estación empieza lo de una mesa («Mesa 3 · en preparación»), cuando lo
+  termina («Mesa 2 · para retirar — 🍔 Cocina: 3 Clásica triple · 1 Milanesa») y si lo vuelve atrás
+  («todavía no»). Le llega a **quien atiende esa mesa**, nunca a quien hizo el movimiento.
+- **Con la app abierta** suena (tres notas que suben para «para retirar», un toque corto para «en
+  preparación»), vibra y muestra el aviso con «Ver mesa». Vive en el marco del salón, así que avisa se
+  mire el mapa, una mesa o la caja (`WaiterNotices`). Lo que pudo perderse con la app atrás se lee al
+  volver.
+- **Con el celular bloqueado o la app cerrada** llega una notificación de verdad, con vibración. Tocarla
+  abre esa mesa. Lo que hay que ir a buscar queda en pantalla hasta que se toca.
+- **Cómo se prende.** Al mozo se le ofrece una vez al entrar. A la caja o al dueño, recién cuando le
+  llega el primer aviso de una mesa suya. Siempre está en Tu cuenta › Avisos de cocina: prender o apagar
+  en ese equipo, probar cómo suena, y elegir si avisa también cuando empiezan o solo cuando está listo.
+- **En iPhone** las notificaciones andan desde la app instalada (Compartir › «Agregar a pantalla de
+  inicio»). En Android y en la compu, desde el navegador.
+- **Cómo está hecho.** Un disparador sobre `ticket_items` escribe el aviso en `pos_notices`, lo manda por
+  el canal en vivo de la sucursal (evento `notice`) y, si esa persona tiene un equipo anotado, le pega a
+  `/api/cron/pos-push` (con `pg_net`, el secreto de los cron). Esa ruta manda la notificación con Web Push
+  escrito acá, sin dependencias nuevas (`lib/push/web-push.ts`: cifrado RFC 8291 y firma VAPID RFC 8292
+  con `node:crypto`, probados contra los vectores de las normas). Las claves VAPID se generan solas la
+  primera vez y viven cifradas en Vault; no hay variables de entorno nuevas. Solo se le escribe a
+  servicios de push conocidos (`lib/push/allowed.ts`).
+- **Se limpia solo.** Un equipo que falla 12 veces seguidas o que el servicio da por caído se da de baja;
+  los avisos de más de 7 días se borran. Al cerrar sesión, ese equipo deja de recibir.
+- **Probado de punta a punta** en el bar de ejemplo (26/11): un navegador anotado como el mozo de prueba
+  recibió «Mesa 2 · para retirar» al mover su mesa desde la cocina.
+
+Migraciones: `20261126182818_pos_estaciones_mozos_avisos` (estaciones con tipo y dibujo, `waiter_id`,
+`pos_kitchen_move`, `pos_assign_waiter`, `pos_floor_team`, `pos_notices`, `push_subscriptions` y las
+funciones de las claves), probada antes en una base local (74 comprobaciones) y con un ensayo sin guardar
+en producción; y `20261126195348_pos_solo_mozos_toman_mesa` (solo un mozo toma una mesa por cargarle un pedido; 10
+comprobaciones locales). Los permisos de las tablas nuevas se prueban en `tests/rls/pos-avisos.test.ts`.

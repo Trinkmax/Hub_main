@@ -2,13 +2,16 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
 import { OrderScreen } from '@/components/pos/order/order-screen'
+import { TakenTable } from '@/components/pos/order/taken-table'
 import { PosViewerProvider } from '@/components/pos/ui/pos-viewer'
 import { AccountSheet } from '@/components/shell/salon/account-sheet'
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { requireFeature } from '@/lib/platform/guards'
+import { isLockedFor, tableOwner } from '@/lib/pos/floor/waiter'
 import { posFont } from '@/lib/pos/font'
 import { getPosMenu, getSessionDetail, listBranches } from '@/lib/pos/queries'
 import {
+  POS_FLOOR_ROLES,
   POS_VIEW_ROLES,
   RoleRequiredError,
   requireRole,
@@ -56,6 +59,22 @@ export default async function PosOrderPage({
   const { session, tickets } = detail.data
   if (!branches.some((branch) => branch.id === session.branch_id)) notFound()
 
+  // A un mozo, la mesa que atiende otro no se le abre (en el mapa ya la ve tomada).
+  if (
+    session.status === 'open' &&
+    isLockedFor(access.role, tableOwner(session.waiter_id, access.user.id))
+  ) {
+    return (
+      <div className={cn('pos', posFont.variable)}>
+        <TakenTable
+          slug={tenantSlug}
+          label={detail.data.table?.label ?? null}
+          waiter={session.waiter ?? null}
+        />
+      </div>
+    )
+  }
+
   const menu = await getPosMenu(session.branch_id)
   if (!menu.ok) {
     if (menu.error.code === 'forbidden') notFound()
@@ -79,6 +98,7 @@ export default async function PosOrderPage({
               tenantName={access.tenant.name}
               tenantSlug={tenantSlug}
               signOut={signOutAction}
+              posNotices={POS_FLOOR_ROLES.includes(access.role)}
             />
           }
         />

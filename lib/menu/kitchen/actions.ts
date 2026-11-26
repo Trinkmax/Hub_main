@@ -373,7 +373,15 @@ export async function setKitchenFirst(slug: string, input: unknown): Promise<Sav
 
 // ─── Estaciones ──────────────────────────────────────────────────────────────
 
-type StationRow = { id: string; name: string; color: string; position: number; active: boolean }
+type StationRow = {
+  id: string
+  name: string
+  color: string
+  position: number
+  active: boolean
+  kind: string
+  icon: string | null
+}
 
 /** Crea estaciones: una (la que se tipeó) o las tres de siempre de un toque. */
 export async function createStations(slug: string, input: unknown): Promise<SaveResult> {
@@ -393,6 +401,8 @@ export async function createStations(slug: string, input: unknown): Promise<Save
       color: station.color,
       position: station.position,
       active: station.active,
+      kind: station.kind,
+      icon: station.icon,
     })),
   )
   if (error) {
@@ -432,7 +442,7 @@ export async function createStations(slug: string, input: unknown): Promise<Save
   return { ok: true, savedAt }
 }
 
-/** Cambia el nombre, el color o si está prendida. */
+/** Cambia el nombre, el color, de qué es, su dibujo o si está prendida. */
 export async function patchStation(slug: string, input: unknown): Promise<SaveResult> {
   const auth = await authorize(slug)
   if (!auth.ok) return fail(auth.message)
@@ -444,7 +454,7 @@ export async function patchStation(slug: string, input: unknown): Promise<SaveRe
 
   const { data: row, error: readError } = await supabase
     .from('kitchen_stations')
-    .select('id, name, color, position, active')
+    .select('id, name, color, position, active, kind, icon')
     .eq('tenant_id', tenantId)
     .eq('id', id)
     .maybeSingle()

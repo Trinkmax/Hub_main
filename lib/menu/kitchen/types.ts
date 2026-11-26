@@ -16,6 +16,13 @@ export type KitchenStation = {
   position: number
   /** Apagada: ninguna pantalla la puede elegir, pero lo que tenía adentro la sigue nombrando. */
   active: boolean
+  /**
+   * De qué es: comida o bebida. Decide el dibujo sobre la mesa en el mapa del salón, cómo se dice en el
+   * aviso al mozo y si su comanda muestra los vasos de la mesa (`lib/pos/kitchen/station-kind.ts`).
+   */
+  kind: 'food' | 'drink'
+  /** El dibujo (un emoji) con el que se la reconoce. `null` = el de su nombre o su tipo. */
+  icon: string | null
 }
 
 export type CartaCategory = {
