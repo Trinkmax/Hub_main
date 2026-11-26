@@ -1870,6 +1870,16 @@ Del rediseño de la comandera por estación (`docs/features/pos.md`, «La pantal
 - **[BAJA] Tex no sabe de quién es cada mesa ni de los avisos.**
 - **[BAJA] No hay un usuario de prueba con rol cocina** en el bar de ejemplo: la pantalla se probó como
   dueño y como encargado.
+- **[MEDIA] iPhone: confirmar con un teléfono de verdad** que la notificación suena y vibra con la app
+  adelante y con el celular bloqueado, y que el mapa ya no se corre (se corrigió a ciegas el 26/11: no
+  hay forma de simular la app instalada de iOS desde la compu). El iPhone no deja vibrar a una app web
+  abierta: lo único que vibra es la notificación.
+- **[BAJA] Otras pantallas con `min-h-screen`/`100vh`** (quedan 15 usos fuera del salón): en un iPhone con
+  la app instalada miden la pantalla entera, 54 puntos más que lo visible. El `<body>` ya usa `min-h-dvh`.
+- **[BAJA] El reparto de HUB en estaciones se hizo por base** (26/11, con el sí de Nacho, y quedó en
+  auditoría como `kitchen_routing.bulk_assigned`): Cocina 73, Barra 117, Pizzeros 18, Plancha 30. Las
+  tablas quedaron enteras en Cocina aunque «algunas cosas van a freidora»; si la plancha tiene que ver
+  una parte, hace falta partir el producto (ver «Combos que cruzan dos estaciones»).
 
 ## Las dos cartas — lo que queda (26/11/2026)
 
