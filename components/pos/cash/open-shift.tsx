@@ -1,15 +1,22 @@
 'use client'
 
-import { ArrowRight, GraduationCap, LoaderCircle, ReceiptText } from 'lucide-react'
-import { useId, useState } from 'react'
+import { ArrowRight, GraduationCap, LoaderCircle, ReceiptText, RotateCcw } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
 import { formatCentsShort } from '@/lib/money/format'
 import { type CashPhase, SHIFT_LABELS, suggestShiftLabel, whenWords } from '@/lib/pos/cash/screen'
 import { PesosInput, TypedGuard, useTypedAmount } from './typed'
 
 /**
- * Abrir el turno es confirmar lo que dejó el anterior: «Dejaron $ 15.000 de cambio. ¿Están?». Un
- * toque si están; si no, se escribe cuánto hay (y queda anotada la diferencia). La primera vez de
- * una caja no hay nada que confirmar: se escribe con cuánto cambio arranca.
+ * Abrir el turno. La primera vez de una caja se escribe con cuánto cambio arranca.
+ *
+ * **Un socio** confirma lo que dejó el anterior: «Dejaron $ 15.000 de cambio. ¿Están?». Un toque si
+ * están; si no, escribe cuánto hay (y queda anotada la diferencia).
+ *
+ * **Quien no es socio abre a ciegas** (`blind`): cuenta el cajón y escribe el total, sin ver cuánto dejó
+ * el turno anterior (ese dato ni siquiera viaja a su pantalla). Así se hace un arqueo: si la pantalla
+ * le dice cuánto tiene que haber, no hace falta contar. Para que un fajo mal contado no sea una falsa
+ * alarma se le pregunta UNA cosa al servidor (`onCheck`: ¿coincide?, sí o no) y, si no coincide, se pide
+ * contar una vez más, sin decir cuánto ni para qué lado. La diferencia les llega a los socios.
  */
 
 export type OpenInput = { openingFloatCents: number; label: string | null; note: string | null }
@@ -23,8 +30,10 @@ export function OpenShift({
   practice,
   manyRegisters,
   busy,
+  blind = false,
   children,
   onOpen,
+  onCheck,
   onSeeLast,
   onPractice,
 }: {
@@ -36,6 +45,10 @@ export function OpenShift({
   /** Hay más de una caja en la sucursal: se nombra cuál se abre. */
   manyRegisters: boolean
   busy: boolean
+  /** Quien abre no ve los números del salón: cuenta el cajón sin saber cuánto dejó el turno anterior. */
+  blind?: boolean
+  /** A ciegas: ¿lo contado es lo que dejó el turno anterior? `null` = no se pudo preguntar. */
+  onCheck?: (countedCents: number) => Promise<boolean | null>
   /** La cinta del turno anterior (o lo que vaya a la derecha). */
   children?: React.ReactNode
   onOpen: (input: OpenInput) => void
@@ -45,9 +58,16 @@ export function OpenShift({
   onPractice?: () => void
 }) {
   const last = phase.kind === 'closed' ? phase.last : null
-  const expected = last?.leave_float_cents ?? null
+  // A ciegas no hay «esperado»: no viaja, y aunque viajara no se usa.
+  const expected = blind ? null : (last?.leave_float_cents ?? null)
+  // Hay un turno anterior contra el que el servidor puede comparar lo que se cuente.
+  const blindCount = blind && last !== null
   const [typing, setTyping] = useState(expected === null)
   const amount = useTypedAmount()
+  // A ciegas: ya se preguntó una vez si coincide (no se vuelve a preguntar) y dijo que no.
+  const asked = useRef(false)
+  const [checking, setChecking] = useState(false)
+  const [recount, setRecount] = useState(false)
   const [label, setLabel] = useState<string>(() => suggestShiftLabel(now, timeZone))
   const [custom, setCustom] = useState('')
   const [note, setNote] = useState('')
@@ -61,14 +81,29 @@ export function OpenShift({
   const ready = cents !== null && (check === null || check.kind === 'ok')
   const chosenLabel = label === OTHER ? custom.trim() : label
 
-  const submit = () => {
-    if (!ready || busy || cents === null) return
+  const send = (openingFloatCents: number) =>
     onOpen({
-      openingFloatCents: cents,
+      openingFloatCents,
       label: chosenLabel || null,
-      note: differs && note.trim() ? note.trim() : null,
+      note: (differs || recount) && note.trim() ? note.trim() : null,
     })
+  const submit = () => {
+    if (!ready || busy || checking || cents === null) return
+    // A ciegas: una sola pregunta al servidor, y solo la primera vez.
+    if (blindCount && onCheck && !asked.current) {
+      setChecking(true)
+      void onCheck(cents).then((matches) => {
+        setChecking(false)
+        if (matches === false) {
+          asked.current = true
+          setRecount(true)
+        } else send(cents)
+      })
+      return
+    }
+    send(cents)
   }
+  const working = busy || checking
 
   return (
     <>
@@ -84,9 +119,11 @@ export function OpenShift({
             <div className="caja-open-main">
               <h1 className="caja-ask">
                 <label htmlFor={fieldId}>
-                  {expected === null
-                    ? `¿Con cuánto cambio arranca ${manyRegisters ? registerName : 'la caja'}?`
-                    : '¿Cuánto hay en el cajón?'}
+                  {blindCount
+                    ? `¿Cuánto hay en ${manyRegisters ? registerName : 'el cajón'}?`
+                    : expected === null
+                      ? `¿Con cuánto cambio arranca ${manyRegisters ? registerName : 'la caja'}?`
+                      : '¿Cuánto hay en el cajón?'}
                 </label>
               </h1>
               <div className="caja-hero-field">
@@ -95,12 +132,19 @@ export function OpenShift({
                   id={fieldId}
                   value={amount.text}
                   onChange={amount.setText}
-                  disabled={busy}
+                  disabled={working}
                   data-testid="abrir-monto"
                 />
               </div>
               <p className="caja-say">
-                {expected === null ? (
+                {blindCount ? (
+                  <>
+                    Contá los billetes y escribí el total: queda anotado con tu nombre.
+                    {last?.closed_by_name
+                      ? ` El turno anterior lo cerró ${last.closed_by_name} ${whenWords(last.closed_at, now, timeZone)}.`
+                      : ''}
+                  </>
+                ) : expected === null ? (
                   <>
                     Es la primera vez que se abre. Contá lo que hay en el cajón y escribilo; si
                     arranca vacío, poné 0.
@@ -113,6 +157,20 @@ export function OpenShift({
                 )}
               </p>
               {check?.kind === 'ask' ? <TypedGuard ask={check} onPick={amount.set} /> : null}
+              {recount ? (
+                <div className="caja-open-recount" role="status" data-testid="abrir-recuento">
+                  <b>
+                    <RotateCcw aria-hidden strokeWidth={2.6} />
+                    No coincide: contá una vez más
+                  </b>
+                  <p>
+                    Lo que contaste no es lo que dejó el turno anterior. Casi siempre es un fajo
+                    pasado de largo o un billete de más: pasalos de nuevo y corregí el número si
+                    hace falta. Si ya está bien contado, abrí igual: la diferencia la revisan los
+                    socios.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="caja-open-main">
@@ -131,7 +189,7 @@ export function OpenShift({
             </div>
           )}
 
-          {differs ? (
+          {differs || recount ? (
             <div className="caja-set">
               <label htmlFor={`${fieldId}-nota`}>
                 ¿Qué pasó? <small>si lo sabés</small>
@@ -150,7 +208,7 @@ export function OpenShift({
             </div>
           ) : null}
 
-          <fieldset className="caja-set" disabled={busy}>
+          <fieldset className="caja-set" disabled={working}>
             <legend>
               Nombre del turno <small>si querés</small>
             </legend>
@@ -218,7 +276,7 @@ export function OpenShift({
               type="button"
               className="caja-go is-quiet"
               onClick={() => setTyping((value) => !value)}
-              disabled={busy}
+              disabled={working}
               data-testid="abrir-otra"
             >
               {typing ? 'Volver' : 'No están'}
@@ -228,10 +286,10 @@ export function OpenShift({
             type="button"
             className="caja-go"
             onClick={submit}
-            disabled={!ready || busy}
+            disabled={!ready || working}
             data-testid="abrir-turno"
           >
-            {busy ? (
+            {working ? (
               <LoaderCircle className="caja-spin" aria-hidden />
             ) : ready ? (
               <ArrowRight aria-hidden strokeWidth={2.6} />

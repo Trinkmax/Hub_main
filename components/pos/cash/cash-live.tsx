@@ -5,6 +5,7 @@ import { setActiveBranch } from '@/lib/pos/actions'
 import {
   cashMovement,
   cashTargets,
+  checkOpeningCount,
   checkShiftCount,
   closeShift,
   editPayment,
@@ -63,6 +64,7 @@ export function CashLive({
       close: (input) => closeShift(slug, input),
       checkCount: (shiftId, countedCents) =>
         checkShiftCount(slug, { branchId: branch.id, shiftId, countedCents }),
+      checkOpening: (input) => checkOpeningCount(slug, { branchId: branch.id, ...input }),
       edit: (input) => editPayment(slug, input),
       voidPay: (paymentId, why) => voidPayment(slug, paymentId, why),
       setBranch: (branchId) => setActiveBranch(slug, branchId),

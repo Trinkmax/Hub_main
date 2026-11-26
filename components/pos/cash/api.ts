@@ -35,6 +35,12 @@ export type CashApi = {
   close: (input: CloseShiftInput) => Promise<ActionResult<CloseShiftResult | BlindCloseResult>>
   /** Cierre a ciegas: ¿lo contado coincide? Solo sí o no, sin montos. */
   checkCount: (shiftId: string, countedCents: number) => Promise<ActionResult<{ matches: boolean }>>
+  /** Apertura a ciegas: ¿lo contado es lo que dejó el turno anterior? Solo sí o no, sin montos. */
+  checkOpening: (input: {
+    registerId: string | null
+    countedCents: number
+    practice: boolean
+  }) => Promise<ActionResult<{ matches: boolean }>>
   edit: (input: EditPaymentInput) => Promise<ActionResult<EditPaymentResult>>
   voidPay: (paymentId: string, why: string) => Promise<ActionResult<VoidPaymentResult>>
   /** Pasar a trabajar en otra sucursal (queda guardado en el dispositivo). */

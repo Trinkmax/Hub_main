@@ -197,6 +197,15 @@ export function CashScreen({
   useEffect(() => {
     void reload()
   }, [])
+  // Lo que contó quien acaba de cerrar a ciegas. Llega una vez, en la respuesta de su cierre, y se guarda
+  // acá: la lectura de la caja ya no lo trae (quien abre el turno siguiente tiene que contar sin saberlo).
+  const [blindDone, setBlindDone] = useState<{
+    shiftId: string
+    countedCents: number
+    leaveFloatCents: number
+    note: string | null
+  } | null>(null)
+
   const loadLane = async (next: Lane, quiet = false): Promise<ShiftSnapshot | null> => {
     readTicket.current += 1
     const ticket = readTicket.current
@@ -364,6 +373,14 @@ export function CashScreen({
     // El turno ya cerró: si no se puede volver a leer no es un error para mostrar.
     const fresh = await loadLane({ practice: lane.practice, shiftId: closing.id }, true)
     const data = result.data
+    if (isBlindClose(data)) {
+      setBlindDone({
+        shiftId: closing.id,
+        countedCents: data.counted_cash_cents,
+        leaveFloatCents: data.leave_float_cents,
+        note: input.note ?? null,
+      })
+    }
     if (!fresh && isBlindClose(data)) {
       // A ciegas, el cierre contesta solo lo que se contó: con eso alcanza para decir «listo».
       setSnapshot((current) => ({
@@ -526,7 +543,8 @@ export function CashScreen({
 
   /** El comprobante de un cierre a ciegas: lo que contó quien cerró, para firmar. */
   const printSlip = async () => {
-    if (!shift || shift.counted_cash_cents === null) return
+    const done = shift && blindDone?.shiftId === shift.id ? blindDone : null
+    if (!shift || !done) return
     try {
       await printJob({
         paper: readPrinter(branch.id).paper,
@@ -537,9 +555,9 @@ export function CashScreen({
               day: dayLabel(shift.service_day, 'long'),
               closedBy: shift.closed_by_name,
               closedAt: shift.closed_at,
-              countedCents: shift.counted_cash_cents,
-              leaveFloatCents: shift.leave_float_cents ?? 0,
-              note: shift.closing_note,
+              countedCents: done.countedCents,
+              leaveFloatCents: done.leaveFloatCents,
+              note: done.note,
             },
             { barName: barName ?? snapshot.branch.name, timeZone, printedAt: Date.now() },
           ),
@@ -754,8 +772,9 @@ export function CashScreen({
 
   // ── El turno cerrado, a ciegas: lo que contó quien cerró, y nada más ──
   if (view === 'summary' && shift && blind) {
-    const counted = shift.counted_cash_cents ?? 0
-    const left = shift.leave_float_cents ?? 0
+    const done = blindDone?.shiftId === shift.id ? blindDone : null
+    const counted = done?.countedCents ?? 0
+    const left = done?.leaveFloatCents ?? 0
     return shell(
       <>
         <PosTopbar account={account}>
@@ -787,22 +806,32 @@ export function CashScreen({
                   Turno cerrado
                 </span>
               </p>
-              <h1 className="caja-hero" data-testid="cierre-contado">
-                <span className="sr-only">Contaste </span>
-                <i>$</i>
-                {digitsOf(counted)}
-              </h1>
-              <p className="caja-say">
-                Es lo que contaste. Quedan <b>{formatCentsShort(left)}</b> de cambio y{' '}
-                {counted - left > 0 ? (
-                  <>
-                    retirás <b>{formatCentsShort(counted - left)}</b>
-                  </>
-                ) : (
-                  'no se retira nada'
-                )}
-                .
-              </p>
+              {done ? (
+                <>
+                  <h1 className="caja-hero" data-testid="cierre-contado">
+                    <span className="sr-only">Contaste </span>
+                    <i>$</i>
+                    {digitsOf(counted)}
+                  </h1>
+                  <p className="caja-say">
+                    Es lo que contaste. Quedan <b>{formatCentsShort(left)}</b> de cambio y{' '}
+                    {counted - left > 0 ? (
+                      <>
+                        retirás <b>{formatCentsShort(counted - left)}</b>
+                      </>
+                    ) : (
+                      'no se retira nada'
+                    )}
+                    .
+                  </p>
+                </>
+              ) : (
+                // Otra persona, o la misma después de recargar: lo contado ya no se muestra (quien abra el
+                // turno siguiente tiene que contar el cajón sin saberlo).
+                <p className="caja-say" data-testid="cierre-sin-numeros">
+                  Lo que se contó y cuánto quedó de cambio lo tienen los socios.
+                </p>
+              )}
               {practice ? null : (
                 <p className="caja-blind-sent" data-testid="cierre-aviso">
                   <MailCheck aria-hidden strokeWidth={2.2} />
@@ -815,7 +844,7 @@ export function CashScreen({
             </div>
           </section>
           {/* El comprobante, como va a salir en papel: lo único que sabe quien cerró. */}
-          <section className="caja-roll" aria-label="El comprobante del cierre">
+          <section className="caja-roll" aria-label="El comprobante del cierre" hidden={!done}>
             <article className="caja-report caja-slip" data-testid="cierre-comprobante">
               <header className="caja-report-top">
                 <div>
@@ -850,10 +879,10 @@ export function CashScreen({
                   </div>
                 </dl>
               </section>
-              {shift.closing_note ? (
+              {done?.note ? (
                 <section>
                   <h3>Nota de quien cerró</h3>
-                  <p className="caja-report-note">«{shift.closing_note}»</p>
+                  <p className="caja-report-note">«{done.note}»</p>
                 </section>
               ) : null}
               <section>
@@ -866,15 +895,17 @@ export function CashScreen({
         </div>
         <footer className="caja-bar">
           <div className="caja-actions">
-            <button
-              type="button"
-              className="caja-go is-quiet"
-              onClick={() => void printSlip()}
-              data-testid="cierre-imprimir"
-            >
-              <Printer aria-hidden strokeWidth={2.3} />
-              Imprimir comprobante
-            </button>
+            {done ? (
+              <button
+                type="button"
+                className="caja-go is-quiet"
+                onClick={() => void printSlip()}
+                data-testid="cierre-imprimir"
+              >
+                <Printer aria-hidden strokeWidth={2.3} />
+                Imprimir comprobante
+              </button>
+            ) : null}
             <button
               type="button"
               className="caja-go"
@@ -1071,6 +1102,12 @@ export function CashScreen({
   // ── Sin turno abierto: abrir ──
   if (phase.kind === 'first' || phase.kind === 'closed') {
     const lastIsShown = phase.kind === 'closed' && shift?.id === phase.last.shift_id
+    // La cinta del turno anterior acompaña mientras sea del mismo día (se cerró el mediodía, se abre la
+    // noche). En un día nuevo la caja arranca limpia: lo de antes está en «Ver cómo cerró» y en «Turnos».
+    // (Nacho, 26/11/2026, mirando el jueves la cinta del domingo: «¿por qué me sale esto así, si hoy es
+    // un día nuevo?».)
+    // «Hoy» sale de la hora de la base (`snapshot.service_day` es el día del turno que se está mirando).
+    const lastIsToday = shift?.service_day === serviceDayAt(snapshot.now, timeZone)
     return shell(
       <>
         {topbar}
@@ -1083,7 +1120,18 @@ export function CashScreen({
           practice={practice}
           manyRegisters={manyRegisters}
           busy={busy === 'open'}
+          blind={blind}
           onOpen={(input) => void open(input)}
+          onCheck={async (countedCents) => {
+            const result = await attempt(() =>
+              api.checkOpening({
+                registerId: register?.id ?? null,
+                countedCents,
+                practice: lane.practice,
+              }),
+            )
+            return result.ok ? result.data.matches : null
+          }}
           onSeeLast={
             phase.kind === 'closed' && !blind
               ? () => {
@@ -1095,7 +1143,7 @@ export function CashScreen({
           onPractice={() => void togglePractice()}
         >
           <section className="caja-roll" aria-label="La cinta del turno anterior">
-            {lastIsShown && shift && !blind ? (
+            {lastIsShown && lastIsToday && shift && !blind ? (
               <Tape
                 key={shift.id}
                 tape={tape}

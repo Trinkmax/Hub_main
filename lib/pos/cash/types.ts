@@ -470,7 +470,11 @@ export type RegisterRef = {
     label: string | null
     closed_at: string
     closed_by_name: string | null
-    leave_float_cents: number
+    /**
+     * `null` = no viaja: quien abre a ciegas cuenta el cajón sin saber cuánto dejó el turno anterior
+     * (`lib/pos/cash/blind.ts`). Para un socio viene siempre.
+     */
+    leave_float_cents: number | null
   } | null
 }
 
