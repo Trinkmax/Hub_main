@@ -27,12 +27,12 @@ const ROWS: { key: keyof NoticePrefs; title: string; hint: string }[] = [
   {
     key: 'ready',
     title: 'Cuando está para retirar',
-    hint: 'Lo terminó la cocina, la barra o los pizzeros.',
+    hint: 'Es lo único que llega como notificación.',
   },
   {
     key: 'preparing',
-    title: 'Cuando lo empiezan a preparar',
-    hint: 'Un toque corto: ya lo vieron.',
+    title: 'También cuando lo empiezan',
+    hint: 'Solo con la app abierta, sin notificación.',
   },
   {
     key: 'sound',

@@ -8,15 +8,15 @@ import type { NoticeEvent, NoticeKind } from './types'
 import { noticeEvent } from './types'
 
 export type NoticePrefs = {
-  /** Cuando algo está para retirar (y su «todavía no», si se arrepienten). */
+  /** Cuando algo está para retirar (y su «todavía no», si se arrepienten). Es lo único que llega como notificación. */
   ready: boolean
-  /** Cuando una estación empieza a prepararlo. */
+  /** Cuando una estación empieza a prepararlo. Solo con la app abierta, y apagado de entrada. */
   preparing: boolean
   /** Sonido y vibración con la app abierta. */
   sound: boolean
 }
 
-export const DEFAULT_NOTICE_PREFS: NoticePrefs = { ready: true, preparing: true, sound: true }
+export const DEFAULT_NOTICE_PREFS: NoticePrefs = { ready: true, preparing: false, sound: true }
 export const NOTICE_PREFS_KEY = 'hub:pos:notices'
 
 export function parseNoticePrefs(raw: string | null | undefined): NoticePrefs {
@@ -34,12 +34,12 @@ export function parseNoticePrefs(raw: string | null | undefined): NoticePrefs {
   }
 }
 
-/** Los pasos que se le piden a la base para este dispositivo. */
+/**
+ * Los pasos que se le piden a la base para las notificaciones de este dispositivo: solo «para retirar».
+ * «En preparación» no manda notificación nunca (`pushesNotice`), así que no se pide.
+ */
 export function prefEvents(prefs: NoticePrefs): NoticeEvent[] {
-  const events: NoticeEvent[] = []
-  if (prefs.ready) events.push('ready')
-  if (prefs.preparing) events.push('preparing')
-  return events
+  return prefs.ready ? ['ready'] : []
 }
 
 /** ¿Este aviso se muestra acá? */

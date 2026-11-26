@@ -18,6 +18,7 @@ import {
   MAX_PUSH_FAILURES,
   noticePush,
   noticeUrl,
+  pushesNotice,
   pushResultLabel,
   subscriptionFate,
 } from '@/lib/pos/notices/push-payload'
@@ -319,6 +320,14 @@ const callTo = (one: Phone) => calls.find((call) => call.url === one.endpoint)
 const logged = () => JSON.stringify(errors.mock.calls)
 const NOTHING = { notices: 0, sent: 0, gone: 0, failed: 0, skipped: 0 }
 
+describe('qué avisos llegan como notificación', () => {
+  it('solo «para retirar»', () => {
+    expect(pushesNotice('ready')).toBe(true)
+    expect(pushesNotice('preparing')).toBe(false)
+    expect(pushesNotice('not_ready')).toBe(false)
+  })
+})
+
 describe('pushNotices', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -448,21 +457,25 @@ describe('pushNotices', () => {
 
     const result = await (await load())(kinds.map((_, index) => noticeId(index + 1)))
 
-    expect(result).toEqual({ notices: 3, sent: 6, gone: 0, failed: 0, skipped: 0 })
+    // Solo «para retirar» sale como notificación (26/11: «si no le van a llegar muchas»).
+    expect(result).toEqual({ notices: 3, sent: 2, gone: 0, failed: 0, skipped: 0 })
     const received = (one: Phone) =>
       calls
         .filter((call) => call.url === one.endpoint)
         .map((call) => (one.open(call.init.body) as { id: string }).id)
         .sort()
-    expect(received(everything)).toEqual([noticeId(1), noticeId(2), noticeId(3)])
-    // «Todavía no» corrige un «listo»: va con esa preferencia.
-    expect(received(onlyReady)).toEqual([noticeId(2), noticeId(3)])
-    expect(received(onlyPreparing)).toEqual([noticeId(1)])
+    expect(received(everything)).toEqual([noticeId(2)])
+    expect(received(onlyReady)).toEqual([noticeId(2)])
+    // Un teléfono que había quedado anotado solo para «lo empezaron» ya no recibe nada.
+    expect(received(onlyPreparing)).toEqual([])
     expect(received(nothing)).toEqual([])
-    expect(noticeIn(noticeId(1))).toMatchObject({ push_result: 'ok:2 gone:0 fail:0 skip:0' })
+    expect(noticeIn(noticeId(2))).toMatchObject({ push_result: 'ok:2 gone:0 fail:0 skip:0' })
+    // Los otros dos quedan reclamados y anotados como «no se manda».
+    expect(noticeIn(noticeId(1))).toMatchObject({ pushed_at: NOW.toISOString(), push_result: 'no' })
+    expect(noticeIn(noticeId(3))).toMatchObject({ pushed_at: NOW.toISOString(), push_result: 'no' })
   })
 
-  it('lo que no es «para retirar» va sin apuro y se guarda menos', async () => {
+  it('lo que no es «para retirar» no sale como notificación', async () => {
     const android = phone('https://fcm.googleapis.com/fcm/send/android-1')
     seed({
       notices: [
@@ -472,13 +485,13 @@ describe('pushNotices', () => {
       phones: [android],
     })
 
-    await (await load())([noticeId(1), noticeId(2)])
+    const result = await (await load())([noticeId(1), noticeId(2)])
 
-    expect(calls).toHaveLength(2)
-    for (const call of calls) {
-      expect(call.headers).toMatchObject({ TTL: '300', Urgency: 'normal' })
-      expect((android.open(call.init.body) as { strong: boolean }).strong).toBe(false)
-    }
+    expect(result).toEqual({ ...NOTHING, notices: 2 })
+    expect(calls).toHaveLength(0)
+    // No se lo deja para después: queda reclamado, y el teléfono ni suma una falla.
+    expect(noticeIn(noticeId(1))).toMatchObject({ pushed_at: NOW.toISOString(), push_result: 'no' })
+    expect(subscription(android)).toMatchObject({ failures: 0 })
   })
 
   it('si no hay ningún teléfono anotado, el aviso queda reclamado y sin envíos', async () => {
@@ -521,7 +534,7 @@ describe('pushNotices', () => {
       last_ok_at: minutesAgo(9000),
     })
     seed({
-      notices: [noticeRow({ id: noticeId(1) }), noticeRow({ id: noticeId(2), kind: 'preparing' })],
+      notices: [noticeRow({ id: noticeId(1) }), noticeRow({ id: noticeId(2) })],
       phones: [flaky, offline, lost],
     })
     respond = (url) => {
@@ -542,7 +555,7 @@ describe('pushNotices', () => {
   it('si de dos avisos juntos uno llegó, el teléfono está sano', async () => {
     const android = phone('https://fcm.googleapis.com/fcm/send/android-1', { failures: 9 })
     seed({
-      notices: [noticeRow({ id: noticeId(1) }), noticeRow({ id: noticeId(2), kind: 'preparing' })],
+      notices: [noticeRow({ id: noticeId(1) }), noticeRow({ id: noticeId(2) })],
       phones: [android],
     })
     let answered = 0

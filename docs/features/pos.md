@@ -983,9 +983,12 @@ sonidos».
   volver.
 - **Con el celular bloqueado o la app cerrada** llega una notificación de verdad, con vibración. Tocarla
   abre esa mesa. Lo que hay que ir a buscar queda en pantalla hasta que se toca.
+- **La notificación es solo para «para retirar»** (Nacho, 26/11: «si no le van a llegar muchas
+  notificaciones»). «En preparación» y «todavía no» no mandan notificación nunca (`pushesNotice`);
+  «en preparación» además viene apagado dentro de la app y cada uno lo puede prender en su equipo.
 - **Cómo se prende.** Al mozo se le ofrece una vez al entrar. A la caja o al dueño, recién cuando le
   llega el primer aviso de una mesa suya. Siempre está en Tu cuenta › Avisos de cocina: prender o apagar
-  en ese equipo, probar cómo suena, y elegir si avisa también cuando empiezan o solo cuando está listo.
+  en ese equipo, probar cómo suena, y elegir si con la app abierta avisa también cuando lo empiezan.
 - **En iPhone** las notificaciones andan desde la app instalada (Compartir › «Agregar a pantalla de
   inicio»). En Android y en la compu, desde el navegador. Dos límites de Apple: la app abierta **no
   puede hacer vibrar** el iPhone y su sonido se calla con la tecla de silencio; por eso ahí la

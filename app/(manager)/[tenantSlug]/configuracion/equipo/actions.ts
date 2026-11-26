@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { roleMustChoosePassword } from '@/lib/auth/first-password'
+import { markMustChangePassword } from '@/lib/auth/first-password-server'
 import { emailSchema, passwordSchema } from '@/lib/auth/schemas'
 import { sendEmail } from '@/lib/email/send'
 import { renderCredentialsEmail } from '@/lib/email/templates/credentials'
@@ -179,6 +181,14 @@ export async function createMemberWithPassword(
     return { ok: false, message: 'No pudimos asignar el rol al miembro.' }
   }
 
+  // La contraseña que le pone el dueño es para arrancar: al entrar tiene que elegir la suya. (La cuenta
+  // de la cocina no: es de una pantalla, no de una persona.) Si la persona ya tenía cuenta, no se le
+  // tocó la contraseña y tampoco se la marca.
+  let mustChoose = false
+  if (createdNew && roleMustChoosePassword(parsed.data.role)) {
+    mustChoose = await markMustChangePassword(userId)
+  }
+
   // 4. Mandar credenciales por email solo si la cuenta es nueva. Si ya existía
   //    no pisamos su contraseña, así que no tiene sentido mandarle credenciales.
   let emailSent = false
@@ -214,6 +224,7 @@ export async function createMemberWithPassword(
       target_user_id: userId,
       role: parsed.data.role,
       email_sent: emailSent,
+      must_change_password: mustChoose,
     },
   })
 
@@ -380,7 +391,7 @@ export async function setMemberPassword(
   const supabase = await createClient()
   const { data: target } = await supabase
     .from('memberships')
-    .select('user_id')
+    .select('user_id, role')
     .eq('id', parsedId.data.id)
     .eq('tenant_id', tenant.id)
     .maybeSingle()
@@ -411,17 +422,29 @@ export async function setMemberPassword(
     return { ok: false, message: 'No pudimos actualizar la contraseña.' }
   }
 
+  // La contraseña que le pone otra persona es para arrancar: al entrar tiene que elegir la suya. No
+  // vale para la propia (el dueño que se cambia la suya ya la eligió) ni para la cuenta de la cocina.
+  const mustChoose =
+    target.user_id !== access.user.id && roleMustChoosePassword(target.role)
+      ? await markMustChangePassword(target.user_id)
+      : false
+
   await logAudit({
     tenantId: tenant.id,
     userId: access.user.id,
     action: 'membership.password_reset',
     entity: 'membership',
     entityId: parsedId.data.id,
-    payload: { target_user_id: target.user_id },
+    payload: { target_user_id: target.user_id, must_change_password: mustChoose },
   })
 
   revalidatePath(`/${slug}/configuracion/equipo`)
-  return { ok: true, message: 'Contraseña actualizada.' }
+  return {
+    ok: true,
+    message: mustChoose
+      ? 'Contraseña actualizada. Cuando entre, va a tener que elegir la suya.'
+      : 'Contraseña actualizada.',
+  }
 }
 
 // ──────────────────────────────────────────────────────────

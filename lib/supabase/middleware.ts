@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
+import { firstPasswordRedirect } from '@/lib/auth/first-password'
 import { getSupabaseClientEnv } from '@/lib/env'
 import { isLandingsHost } from '@/lib/landings/security'
 import {
@@ -289,6 +290,13 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!userId || !claims) return response
+
+  // La contraseña que le puso otra persona es para arrancar: hasta que elija la suya no pasa a ninguna
+  // otra pantalla (`lib/auth/first-password.ts`). La marca viaja en el JWT: no cuesta un viaje a la base.
+  const firstPassword = firstPasswordRedirect(claims.app_metadata, pathname, isPublicPath(pathname))
+  if (firstPassword) {
+    return NextResponse.redirect(new URL(firstPassword, request.url))
+  }
 
   // Memberships desde el JWT (null = token viejo sin el claim → fallback a DB).
   const tenantClaims = readTenantClaims(claims.app_metadata)
