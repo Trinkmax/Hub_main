@@ -887,10 +887,12 @@ tele de 42 pulgadas la cocina y las otras dos pantallas más chicas […] deben 
   dibujo es el que va sobre la mesa en el mapa; el tipo decide si la comanda muestra los vasos y cómo se
   le dice al mozo («para retirar en la barra»).
 - **A dónde va cada cosa** se decide en la Carta (por rubro, o producto por producto). El reparto que
-  pidió Nacho: cafetería, bebidas, tragos, botellas y vinos a **Barra**; las pizzas a **Pizzeros**;
-  hamburguesas, lomitos, tostados y milanesas a **Plancha**; el resto de la comida (pastelería,
-  medialunas, postres, los combos «Infusión + …», las tablas y lo de la freidora: papas, rabas, nuggets
-  y nachos) a **Cocina**; y solo la limonada y la pomelada, que son bebidas, a **Cocina**.
+  pidió Nacho: cafetería, bebidas, tragos, botellas y vinos a **Barra**; las pizzas a **Pizzeros**; y
+  la cocina en sus dos sectores, «así se divide»: **lomitos, hamburguesas y papas** (con los tostados,
+  las rabas, los nuggets y los nachos) a **Plancha**, y **tablas, milanesas y pastas** a **Cocina**, con
+  el resto de la comida (platos especiales, brunch, pastelería, medialunas, postres, los combos
+  «Infusión + …»). Solo la limonada y la pomelada, que son bebidas, van a **Cocina**. En HUB quedó
+  Cocina 67 · Barra 117 · Pizzeros 18 · Plancha 36.
 - **Las pantallas de HUB**: la tele grande es la de Cocina (el encargado, que ve las cuatro), y hay tres
   monitores, uno para Barra, otro para Pizzeros y otro para Plancha.
 

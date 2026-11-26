@@ -1877,9 +1877,10 @@ Del rediseño de la comandera por estación (`docs/features/pos.md`, «La pantal
 - **[BAJA] Otras pantallas con `min-h-screen`/`100vh`** (quedan 15 usos fuera del salón): en un iPhone con
   la app instalada miden la pantalla entera, 54 puntos más que lo visible. El `<body>` ya usa `min-h-dvh`.
 - **[BAJA] El reparto de HUB en estaciones se hizo por base** (26/11, con el sí de Nacho, y quedó en
-  auditoría como `kitchen_routing.bulk_assigned`): Cocina 73, Barra 117, Pizzeros 18, Plancha 30. Las
-  tablas quedaron enteras en Cocina aunque «algunas cosas van a freidora»; si la plancha tiene que ver
-  una parte, hace falta partir el producto (ver «Combos que cruzan dos estaciones»).
+  auditoría como `kitchen_routing.bulk_assigned`): Cocina 67, Barra 117, Pizzeros 18, Plancha 36, con
+  la división que marcó («tablas, milanesas y pastas en una sección; lomitos, hamburguesas y papas en
+  otra»). Los cuatro tostados del brunch fueron a Plancha por ser el mismo producto que los del rubro
+  «Lomitos y tostados»: lo decidí yo, falta que lo confirme.
 
 ## Las dos cartas — lo que queda (26/11/2026)
 
