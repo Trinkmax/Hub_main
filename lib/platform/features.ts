@@ -19,6 +19,7 @@ export type FeatureKey =
   | 'ticket_door' // puerta: validar con QR las entradas compradas online /salon/puerta
   | 'purchasing' // compras: conteo de stock, pedidos a proveedores y recepción /compras + /salon/stock
   | 'pos' // punto de venta: plano, mapa en vivo, comanda, cocina, cobro y caja (docs/features/pos.md)
+  | 'carta_nueva' // la carta pública con el rediseño de noviembre de 2026 (docs/features/carta-rediseno.md)
 
 export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
 
@@ -36,6 +37,16 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     key: 'reviews',
     label: 'Reseñas',
     description: 'Panel de reseñas y pedido de reseña al cliente.',
+    group: 'Fidelización',
+    defaultEnabled: false,
+  },
+  // Apagado, los clientes ven la carta de siempre y la nueva solo se ve en `/carta/<bar>/nueva`.
+  // Prenderlo la pasa a la dirección del QR (`/carta/<bar>`) en el acto, sin publicar nada.
+  carta_nueva: {
+    key: 'carta_nueva',
+    label: 'Carta nueva',
+    description:
+      'Los clientes ven la carta rediseñada (portadas, ficha a pantalla completa, buscador). Apagado, ven la de siempre.',
     group: 'Fidelización',
     defaultEnabled: false,
   },
