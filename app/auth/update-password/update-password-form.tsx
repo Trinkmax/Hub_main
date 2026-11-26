@@ -82,7 +82,11 @@ export function UpdatePasswordForm({
   useEffect(() => {
     if (!done) return
     // Pequeño delay para que el usuario vea el feedback antes de navegar.
-    const t = setTimeout(() => router.replace('/'), firstTime ? 600 : 900)
+    // La primera vez sigue a elegir el PIN de este equipo (se puede dejar para después).
+    const t = setTimeout(
+      () => router.replace(firstTime ? '/auth/pin?primera=1' : '/'),
+      firstTime ? 600 : 900,
+    )
     return () => clearTimeout(t)
   }, [done, router, firstTime])
 
@@ -102,7 +106,7 @@ export function UpdatePasswordForm({
           </div>
           <h1 className="mt-4 font-serif text-2xl font-semibold tracking-tight">¡Listo!</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {firstTime ? 'Ya tenés tu contraseña. Entrando…' : 'Te llevamos a tu panel…'}
+            {firstTime ? 'Ya tenés tu contraseña.' : 'Te llevamos a tu panel…'}
           </p>
         </div>
       </div>
