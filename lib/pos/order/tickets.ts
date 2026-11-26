@@ -196,6 +196,16 @@ export type SessionSummary = {
   hasOrders: boolean
 }
 
+/**
+ * «4 Mojito · 3 Branca y Cola»: unidades por producto, lo igual junto, en el orden en que aparece. Una
+ * mesa que pidió lo mismo en dos tandas (o en dos renglones) se lee de un vistazo, como en la cocina.
+ */
+export function unitsLabel(items: readonly Pick<SessionItem, 'name' | 'quantity'>[]): string {
+  const units = new Map<string, number>()
+  for (const item of items) units.set(item.name, (units.get(item.name) ?? 0) + item.quantity)
+  return [...units].map(([name, quantity]) => `${quantity} ${name}`).join(' · ')
+}
+
 export function summarizeSession(tickets: readonly SessionTicket[]): SessionSummary {
   const summary: SessionSummary = {
     inKitchen: 0,
@@ -206,7 +216,7 @@ export function summarizeSession(tickets: readonly SessionTicket[]): SessionSumm
     held: [],
     hasOrders: false,
   }
-  const readyNames: string[] = []
+  const ready: SessionItem[] = []
   for (const ticket of tickets) {
     const counts = countLines(ticket)
     if (counts.live === 0) continue
@@ -221,10 +231,10 @@ export function summarizeSession(tickets: readonly SessionTicket[]): SessionSumm
       if (lineState(item) !== 'ready') continue
       summary.readyUnits += item.quantity
       summary.readyItemIds.push(item.id)
-      readyNames.push(`${item.quantity} ${item.name}`)
+      ready.push(item)
     }
   }
-  summary.readyLabel = readyNames.join(' · ')
+  summary.readyLabel = unitsLabel(ready)
   return summary
 }
 

@@ -29,6 +29,7 @@ import {
 import type { FloorElement } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
 import './floor-move.css'
+import './table-quick.css'
 import '../ui/pos-practice.css'
 
 /**
@@ -96,6 +97,15 @@ type Props = {
     joins?: ReadonlySet<string> | null
   } | null
   onDrop?: (tableId: string) => void
+  /**
+   * La mesa elegida (la que tiene su ficha de acciones abierta): se marca con un aro. `coverBottom` son los
+   * píxeles de abajo que tapa esa ficha: si la mesa quedaba debajo, el mapa se corre lo justo para que se
+   * siga viendo (no se vuelve a encuadrar: el salón no cambia de tamaño por tocar una mesa).
+   */
+  picked?: string | null
+  coverBottom?: number
+  /** Un toque en el paño, fuera de toda mesa. */
+  onBackground?: () => void
 }
 
 /** Cuánto hay que mantener apretada una mesa para levantarla. */
@@ -225,6 +235,9 @@ export function FloorModel({
   onHold,
   move = null,
   onDrop,
+  picked = null,
+  coverBottom = 0,
+  onBackground,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const full = useSize(ref)
@@ -305,6 +318,19 @@ export function FloorModel({
   const flagSize = Math.max(11, Math.min(14, 9 + tablePx * 0.05))
   const numSize = Math.max(12, Math.min(30, tablePx * 0.38))
   const pole = Math.max(5, Math.min(16, tablePx * 0.13))
+
+  // ── La mesa elegida ──
+  const pickedAnchor = picked ? (scene.anchors.find((a) => a.tableId === picked) ?? null) : null
+  // Cuánto sube el mapa para que la mesa elegida no quede debajo de su ficha. Nunca tanto como para que
+  // su bandera se vaya por arriba.
+  const panY = (() => {
+    if (!pickedAnchor || !fit || coverBottom <= 0) return 0
+    const bottom = pickedAnchor.bounds.maxY * scale + fit.offsetY + 18
+    const need = bottom - (full.height - coverBottom)
+    if (need <= 0) return 0
+    const flagTop = pickedAnchor.topY * scale + fit.offsetY - 46
+    return Math.round(Math.max(0, Math.min(need, flagTop - 6)))
+  })()
 
   // ── Levantar una mesa y arrastrarla ──
   const press = useRef<{
@@ -447,9 +473,22 @@ export function FloorModel({
             : null
 
   return (
-    <div ref={ref} className={cn('pos-board', className)}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: tocar el paño solo suelta la mesa elegida; con teclado se suelta con Escape o con el botón de cerrar de la ficha.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: ídem.
+    <div
+      ref={ref}
+      className={cn('pos-board', className)}
+      onClick={
+        onBackground
+          ? (event) => {
+              // Las mesas son botones: cualquier otro toque es en el paño.
+              if (!(event.target as Element).closest('button')) onBackground()
+            }
+          : undefined
+      }
+    >
       {fit ? (
-        <>
+        <div className="pos-pan" style={{ transform: panY ? `translateY(${-panY}px)` : undefined }}>
           <svg
             width={full.width}
             height={full.height}
@@ -500,6 +539,19 @@ export function FloorModel({
                   />
                 )
               })}
+              {pickedAnchor ? (
+                <ellipse
+                  key={`pick:${pickedAnchor.tableId}`}
+                  className="pos-pick"
+                  cx={(pickedAnchor.bounds.minX + pickedAnchor.bounds.maxX) / 2}
+                  cy={
+                    pickedAnchor.bounds.maxY -
+                    (pickedAnchor.bounds.maxY - pickedAnchor.bounds.minY) * 0.36
+                  }
+                  rx={(pickedAnchor.bounds.maxX - pickedAnchor.bounds.minX) * 0.62}
+                  ry={(pickedAnchor.bounds.maxY - pickedAnchor.bounds.minY) * 0.48}
+                />
+              ) : null}
               {scene.solids.map((solid) => (
                 <SolidPaths
                   key={solid.key}
@@ -509,6 +561,7 @@ export function FloorModel({
                     `pos-r-${solid.role}`,
                     solid.tableId ? stateClasses(tables[solid.tableId]?.state) : null,
                     solid.tableId && dimmed?.has(solid.tableId) ? 'pos-dim' : null,
+                    solid.tableId && solid.tableId === picked ? 'pos-picked' : null,
                     moveClass(solid.tableId),
                   )}
                 />
@@ -656,6 +709,8 @@ export function FloorModel({
                   zIndex: Math.round(anchor.depth) + 2,
                 }}
                 aria-label={describe(anchor.label, tables[anchor.tableId])}
+                aria-pressed={picked === anchor.tableId ? true : undefined}
+                data-table={anchor.label}
                 {...hold}
                 onClick={() => {
                   // El toque que cierra un «mantener apretado» no abre la mesa.
@@ -683,7 +738,7 @@ export function FloorModel({
               ) : null}
             </span>
           ) : null}
-        </>
+        </div>
       ) : null}
     </div>
   )

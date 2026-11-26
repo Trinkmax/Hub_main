@@ -22,8 +22,24 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { planHref } from '@/lib/floor-plan/branches'
-import { mergeTables, moveTable, refreshFloor, setActiveBranch } from '@/lib/pos/actions'
+import {
+  fireTicket,
+  markServed,
+  mergeTables,
+  moveTable,
+  refreshFloor,
+  refreshSession,
+  requestBill,
+  setActiveBranch,
+} from '@/lib/pos/actions'
 import { settingsHref } from '@/lib/pos/branches/links'
+import {
+  detailKey,
+  nextHeld,
+  type QuickPending,
+  quickCard,
+  withPending,
+} from '@/lib/pos/floor/quick'
 import { posFont } from '@/lib/pos/font'
 import { freshKey, keepFreshest } from '@/lib/pos/freshest'
 import { clockAt } from '@/lib/pos/order/clock'
@@ -39,12 +55,13 @@ import {
   summarize,
   type TableState,
 } from '@/lib/pos/table-state'
-import type { FloorSession, FloorSnapshot, PosBranch } from '@/lib/pos/types'
+import type { FloorSession, FloorSnapshot, PosBranch, SessionDetail } from '@/lib/pos/types'
 import { useLiveReload } from '@/lib/pos/use-live-reload'
 import { safetyNetMs, usePosPoke } from '@/lib/pos/use-poke'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { ApprovalsBell } from '../approvals/approvals-bell'
+import { buzz } from '../order/haptics'
 import { PosOutboxRunner } from '../order/outbox-runner'
 import { PrinterButton } from '../print/printer-button'
 import { PosBrand, type PosBrandInfo } from '../ui/pos-brand'
@@ -52,6 +69,7 @@ import { PosTopbar } from '../ui/pos-topbar'
 import { FloorLegend } from './floor-legend'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
+import { TableQuick } from './table-quick'
 import '../ui/pos-toast.css'
 import '../ui/pos-practice.css'
 
@@ -60,7 +78,9 @@ import '../ui/pos-practice.css'
  *
  * Arriba, dónde estás y el salón en una línea. Después un sector por vez, con
  * cuántas mesas tienen algo pendiente en cada pestaña. Tocar una mesa libre la
- * abre (dos toques); tocar una ocupada entra a su pedido.
+ * abre (dos toques). Tocar una ocupada la ELIGE: abajo aparece su ficha con lo
+ * que se puede hacer ya, sin cambiar de pantalla (servido, marchar la tanda,
+ * agregar, la cuenta); tocarla otra vez entra a su pedido (`table-quick.tsx`).
  */
 
 type View = 'model' | 'plan' | 'list'
@@ -95,6 +115,13 @@ type Props = {
 type Moving = { sessionId: string; fromTableId: string; label: string }
 /** Dos mesas que alguien quiere juntar: se pregunta antes, porque no tiene vuelta. */
 type Merging = { from: Moving; into: { sessionId: string; label: string } }
+
+type Failure = { ok: false; message: string; code: string }
+const NO_SIGNAL: Failure = {
+  ok: false,
+  message: 'No hay señal: no se guardó. Probá de nuevo cuando vuelva.',
+  code: 'network',
+}
 
 /** Lo que se puede aislar tocando una ficha del resumen. */
 type FocusKey = 'ready' | 'bill' | 'kitchen' | 'late'
@@ -143,6 +170,13 @@ export function FloorLive({
   const [merging, setMerging] = useState<Merging | null>(null)
   const [mergeBusy, setMergeBusy] = useState(false)
   const [legend, setLegend] = useState(false)
+  // La mesa elegida (su ficha de acciones está abierta), el detalle que la completa y lo que se acaba de
+  // tocar en una ficha y la base todavía no confirmó (por mesa abierta).
+  const [picked, setPicked] = useState<string | null>(null)
+  const [detail, setDetail] = useState<SessionDetail | null>(null)
+  const [pending, setPending] = useState<Readonly<Record<string, QuickPending>>>({})
+  const [billBusy, setBillBusy] = useState(false)
+  const [quickHeight, setQuickHeight] = useState(0)
   const now = useNow(snapshot.now)
 
   useEffect(() => setSnapshot(keepFreshest(freshFloor, initial)), [freshFloor, initial])
@@ -198,8 +232,12 @@ export function FloorLive({
 
   const entries = useMemo<TableEntry[]>(() => {
     const byTable = new Map<string, FloorSession>()
+    const nowIso = new Date(now).toISOString()
     for (const session of snapshot.sessions) {
-      if (session.table_id) byTable.set(session.table_id, session)
+      // Lo que se tocó recién en una ficha se ve al instante, sin esperar a la base.
+      if (session.table_id) {
+        byTable.set(session.table_id, withPending(session, pending[session.id], nowIso))
+      }
     }
     const build = (
       tableId: string,
@@ -218,7 +256,7 @@ export function FloorLive({
       .map((el) => build(el.table_id as string, el.table_label ?? '', el.capacity, el.area_id))
     const loose = snapshot.loose_tables.map((t) => build(t.id, t.label, t.capacity, null))
     return [...placed, ...loose]
-  }, [snapshot, now, nowService])
+  }, [snapshot, now, nowService, pending])
 
   const summary = useMemo(
     () =>
@@ -236,6 +274,12 @@ export function FloorLive({
   }, [entries])
 
   const activeArea = snapshot.areas.find((a) => a.id === areaId) ?? snapshot.areas[0] ?? null
+  // La mesa elegida siempre se ve: si se la eligió en la lista y es de otro sector, al volver a la maqueta
+  // se muestra su sector (y no una ficha suelta de una mesa que no está a la vista).
+  const pickedAreaId = picked ? (entries.find((e) => e.tableId === picked)?.areaId ?? null) : null
+  useEffect(() => {
+    if (view !== 'list' && pickedAreaId && pickedAreaId !== activeArea?.id) setAreaId(pickedAreaId)
+  }, [view, pickedAreaId, activeArea?.id])
   const areaElements = useMemo(
     () => (activeArea ? snapshot.elements.filter((el) => el.area_id === activeArea.id) : []),
     [snapshot.elements, activeArea],
@@ -258,6 +302,50 @@ export function FloorLive({
     [snapshot.areas],
   )
   const byId = useMemo(() => new Map(entries.map((e) => [e.tableId, e])), [entries])
+
+  // ── La mesa elegida y su ficha de acciones rápidas ──
+  const pickedEntry = picked ? (byId.get(picked) ?? null) : null
+  const pickedSession = pickedEntry?.session ?? null
+  // Si la mesa elegida se cerró, se liberó o la movió otro, la ficha se va sola.
+  useEffect(() => {
+    if (picked !== null && !pickedSession) setPicked(null)
+  }, [picked, pickedSession])
+  // El detalle completa la ficha (cuántas unidades, qué productos, qué tanda). Se lee al elegir la mesa y
+  // cada vez que el mapa dice que algo de esa mesa cambió. Mientras llega, la ficha ya anda con lo del mapa.
+  const pickedId = pickedSession?.id ?? null
+  const pickedKey = pickedSession ? detailKey(pickedSession) : null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `pickedKey` dice cuándo conviene volver a leer
+  useEffect(() => {
+    if (!pickedId) {
+      setDetail(null)
+      return
+    }
+    // De otra mesa no sirve; de esta misma se deja a la vista hasta que llegue el nuevo (sin parpadeo).
+    setDetail((current) => (current?.session.id === pickedId ? current : null))
+    let stale = false
+    void (async () => {
+      try {
+        const result = await refreshSession(slug, pickedId)
+        if (stale || !result.ok) return
+        // Queda como lo más nuevo de esa mesa: si después se entra a la comanda, arranca con esto.
+        setDetail(keepFreshest(freshKey.session(result.data.session.id), result.data))
+      } catch {
+        // Sin señal: la ficha sigue con lo que sabe el mapa.
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [slug, pickedId, pickedKey])
+  useEffect(() => {
+    if (picked === null) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPicked(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [picked])
+  const closeQuick = useCallback(() => setPicked(null), [])
 
   // ── Cambiar una mesa de lugar ──
   // Se levanta manteniéndola apretada (o con «Cambiar de mesa» desde la comanda) y va a una libre.
@@ -289,6 +377,7 @@ export function FloorLive({
       const entry = byId.get(tableId)
       if (!entry?.session) return
       setFocus(null)
+      setPicked(null)
       setMoving({ sessionId: entry.session.id, fromTableId: tableId, label: entry.label })
     },
     [byId],
@@ -373,11 +462,124 @@ export function FloorLive({
         } else toast('Esa mesa no está libre. Elegí una de las marcadas.')
         return
       }
-      if (entry.session) router.push(`/${slug}/salon/mesa/${entry.session.id}`)
-      else if (canOperate) setOpening(entry)
+      if (!entry.session) {
+        setPicked(null)
+        if (canOperate) setOpening(entry)
+        return
+      }
+      // Quien solo mira (la cocina) entra a ver el pedido, como siempre. Para el salón, el primer toque
+      // elige la mesa y muestra lo que se puede hacer ya; el segundo, sobre la misma, entra.
+      if (!canOperate || picked === tableId) {
+        router.push(`/${slug}/salon/mesa/${entry.session.id}`)
+        return
+      }
+      buzz(8)
+      setPicked(tableId)
     },
-    [byId, router, slug, moving, moveTargets, finishMove, canOperate],
+    [byId, router, slug, moving, moveTargets, finishMove, canOperate, picked],
   )
+
+  // ── Las acciones de la ficha ──
+  // Se ve al instante; la base confirma después. Primero la lectura nueva y recién ahí se saca lo
+  // provisorio (así no parpadea). Si la base dice que no, se avisa y la mesa vuelve a como estaba.
+  const quickAct = useCallback(
+    async (
+      sessionId: string,
+      what: QuickPending,
+      call: () => Promise<{ ok: true } | Failure>,
+      done: string,
+    ) => {
+      setPending((current) => ({ ...current, [sessionId]: what }))
+      let result: { ok: true } | Failure
+      try {
+        result = await call()
+      } catch {
+        result = NO_SIGNAL
+      }
+      if (result.ok) {
+        toast.success(done, { duration: 1800 })
+        // Una lectura que arranca DESPUÉS de la acción: seguro que ya la trae.
+        await read().catch(() => {})
+      }
+      setPending((current) => {
+        const { [sessionId]: _done, ...rest } = current
+        return rest
+      })
+      if (!result.ok) {
+        toast.error(result.message)
+        void reload()
+      }
+    },
+    [read, reload],
+  )
+  const quickServe = () => {
+    if (!pickedEntry?.session) return
+    const { session, label } = pickedEntry
+    buzz(12)
+    setPicked(null)
+    void quickAct(
+      session.id,
+      'serve',
+      () => markServed(slug, { sessionId: session.id, onlyReady: true }),
+      `Mesa ${label}: servido`,
+    )
+  }
+  const quickFire = () => {
+    if (!pickedEntry?.session) return
+    const { session, label } = pickedEntry
+    // La tanda sale del detalle; si todavía no llegó, se lee antes de marchar.
+    const known = detail?.session.id === session.id ? nextHeld(detail) : null
+    buzz(12)
+    setPicked(null)
+    void quickAct(
+      session.id,
+      'fire',
+      async () => {
+        let ticketId = known?.ticketId ?? null
+        if (!ticketId) {
+          const fresh = await refreshSession(slug, session.id)
+          if (!fresh.ok) return fresh
+          ticketId = nextHeld(fresh.data)?.ticketId ?? null
+        }
+        if (!ticketId) {
+          return { ok: false, message: 'Esa mesa ya no tiene una tanda esperando.', code: 'gone' }
+        }
+        return fireTicket(slug, ticketId)
+      },
+      known?.number
+        ? `Mesa ${label}: marchó la tanda ${known.number}`
+        : `Mesa ${label}: tanda marchada`,
+    )
+  }
+  const quickAdd = () => {
+    if (!pickedSession) return
+    // Entra derecho a cargar (lo mismo que al abrir una mesa nueva).
+    router.push(`/${slug}/salon/mesa/${pickedSession.id}?nueva=1`)
+  }
+  const quickOpen = () => {
+    if (pickedSession) router.push(`/${slug}/salon/mesa/${pickedSession.id}`)
+  }
+  // Lo mismo que «Cuenta» en la comanda: un toque la pide (la mesa cambia de estado) y la abre para cobrar.
+  const quickBill = async () => {
+    if (!pickedSession || billBusy) return
+    const session = pickedSession
+    if (session.bill_requested_at === null) {
+      buzz(10)
+      setBillBusy(true)
+      let result: { ok: true } | Failure
+      try {
+        result = await requestBill(slug, session.id, true)
+      } catch {
+        result = NO_SIGNAL
+      }
+      setBillBusy(false)
+      if (!result.ok) {
+        toast.error(result.message)
+        return
+      }
+    }
+    router.push(`/${slug}/salon/mesa/${session.id}/cuenta`)
+  }
 
   const confirmMerge = async () => {
     if (!merging || mergeBusy) return
@@ -402,6 +604,7 @@ export function FloorLive({
 
   const switchBranch = (branch: PosBranch) => {
     setBranchMenu(false)
+    setPicked(null)
     if (branch.id === snapshot.branch.id) return
     startSwitch(async () => {
       const result = await setActiveBranch(slug, branch.id)
@@ -558,6 +761,7 @@ export function FloorLive({
                   className={cn('pos-top-tab', selected && 'is-active')}
                   onClick={() => {
                     setAreaId(area.id)
+                    setPicked(null)
                     if (view === 'list') chooseView('model')
                   }}
                 >
@@ -626,7 +830,12 @@ export function FloorLive({
           )}
         </div>
       ) : (
-        <div className="pos-stage" data-view={view}>
+        <div
+          className="pos-stage"
+          data-view={view}
+          data-picked={pickedEntry ? '' : undefined}
+          style={pickedEntry ? { ['--quick-h' as string]: `${quickHeight}px` } : undefined}
+        >
           {view === 'list' ? (
             <ul className="pos-list">
               {visibleList.map((entry) => {
@@ -646,7 +855,9 @@ export function FloorLive({
                         `pos-st-${entry.state.key}`,
                         entry.state.urgency === 'late' && 'pos-urg-late',
                         entry.state.urgency === 'warn' && 'pos-urg-warn',
+                        picked === entry.tableId && 'is-picked',
                       )}
+                      aria-pressed={picked === entry.tableId ? true : undefined}
                       onClick={() => onTable(entry.tableId)}
                     >
                       <span className="pos-row-num">{entry.label}</span>
@@ -694,6 +905,9 @@ export function FloorLive({
               }
               // Soltar sobre una mesa es lo mismo que tocarla: a una libre pasa, con una ocupada se junta.
               onDrop={onTable}
+              picked={pickedEntry ? picked : null}
+              coverBottom={pickedEntry ? quickHeight + 22 : 0}
+              onBackground={closeQuick}
               label={`${activeArea?.name ?? 'Salón'}: ${areaElements.filter((e) => e.kind === 'table').length} mesas`}
             />
           )}
@@ -757,6 +971,27 @@ export function FloorLive({
               })}
             </div>
           </div>
+
+          {pickedEntry?.session && !moving ? (
+            <TableQuick
+              key={pickedEntry.tableId}
+              label={pickedEntry.label}
+              alias={pickedEntry.session.alias}
+              partySize={pickedEntry.session.party_size}
+              totalCents={pickedEntry.session.total_cents}
+              practice={pickedEntry.session.is_practice}
+              state={pickedEntry.state}
+              card={quickCard(pickedEntry.session, pickedEntry.state, detail)}
+              billBusy={billBusy}
+              onServe={quickServe}
+              onFire={quickFire}
+              onAdd={quickAdd}
+              onBill={() => void quickBill()}
+              onOpen={quickOpen}
+              onClose={closeQuick}
+              onHeight={setQuickHeight}
+            />
+          ) : null}
 
           {brand ? <PosBrand brand={brand} /> : null}
 
