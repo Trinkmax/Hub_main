@@ -1948,3 +1948,25 @@ club ni paginaba (`scripts/backfill-menu-media.ts`). Quedan, todas en la carta n
 - **`wallet-drawer.tsx` de la nueva**: el `style` del panel sale de la prop `initialOpen`; si cambiara en
   un re-render, React pisaría lo que puso el JS. Guardarla en un `useState` al montar.
 
+## Ingreso del equipo: primera contraseña y PIN — lo que queda (26/11/2026)
+
+Detalle en `docs/features/ingreso-del-equipo.md`.
+
+- **[MEDIA] Confirmar en los teléfonos de los chicos** que entran con la contraseña de arranque, eligen
+  la suya y el PIN les anda. Se probó de punta a punta con las cuentas de prueba (también en producción)
+  y en un Android modesto simulado (procesador 6× más lento, 4G lenta: 2,6 s desde el último número hasta
+  el salón), pero no en un teléfono de verdad.
+- **[MEDIA] Tope de verificaciones del servicio de autenticación.** Cada ingreso con PIN gasta una, y el
+  tope por minuto es compartido por toda la app (las llamadas salen del servidor). Si un día entran
+  muchos a la vez, la pantalla lo dice y queda la contraseña. Mirar el tope configurado en Supabase.
+- **[BAJA] «Olvidar este equipo»** desde la pantalla de ingreso, y una lista de equipos con PIN para el
+  dueño (para quitárselo a un teléfono perdido sin cambiar la contraseña).
+- **[BAJA] El PIN en el panel del dueño:** hoy se ofrece en el salón (Tu cuenta) y después de elegir la
+  primera contraseña; en el panel hay que entrar a mano a `/auth/pin`.
+- **[BAJA] Si a alguien se le bloqueó el PIN**, después de entrar con la contraseña no se lo lleva solo a
+  elegir uno nuevo: lo hace desde Tu cuenta.
+- **[BAJA] La primera carga de la pantalla de ingreso pesa unos 600 KB de JavaScript** (lo compartido de
+  la app). En un equipo que ya entró alguna vez sale de la copia local en medio segundo; la primera vez,
+  con 4G lenta, son varios segundos.
+- **[BAJA] La base llama a la app también por los avisos «en preparación»**, que ya no mandan
+  notificación: se podría filtrar en el disparador y ahorrar esas llamadas.

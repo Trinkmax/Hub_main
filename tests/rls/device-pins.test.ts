@@ -155,7 +155,8 @@ describeIfRls('Ingreso — el PIN por equipo', () => {
     const pinOf = (userId: string) => (rows ?? []).find((row) => row.user_id === userId)?.id ?? ''
 
     const right = await verify(pinOf(ana.userId), '4827')
-    expect(right).toMatchObject({ ok: true, user_id: ana.userId, email: ana.email })
+    // El servicio de autenticación guarda el mail en minúsculas.
+    expect(right).toMatchObject({ ok: true, user_id: ana.userId, email: ana.email.toLowerCase() })
     // El PIN de un compañero del mismo equipo no abre la cuenta de otra persona.
     expect(await verify(pinOf(ana.userId), '1593')).toEqual({ ok: false, reason: 'wrong', left: 4 })
     // Con otro secreto ni se cuenta el intento.
