@@ -74,6 +74,7 @@ import { PosOutboxRunner } from '../order/outbox-runner'
 import { PrinterButton } from '../print/printer-button'
 import { PosBrand, type PosBrandInfo } from '../ui/pos-brand'
 import { PosTopbar } from '../ui/pos-topbar'
+import { StationIcon } from '../ui/station-icon'
 import { FloorLegend } from './floor-legend'
 import { FloorModel, type FloorTable, STATE_ICON } from './floor-model'
 import { OpenTableSheet } from './open-table-sheet'
@@ -1031,7 +1032,7 @@ export function FloorLive({
                         <span className="pos-eats" aria-hidden>
                           {tables[entry.tableId]?.chips?.map((chip) => (
                             <span key={chip.key} className="pos-eat" data-state={chip.state}>
-                              {chip.icon}
+                              <StationIcon icon={chip.icon} strokeWidth={2.4} />
                             </span>
                           ))}
                         </span>

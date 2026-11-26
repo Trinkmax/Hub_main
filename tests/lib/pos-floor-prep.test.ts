@@ -10,7 +10,8 @@ import {
 import type { MenuStation } from '@/lib/pos/types'
 
 const STATIONS: MenuStation[] = [
-  { id: 'cocina', name: 'Cocina', color: '#b45309', kind: 'food', icon: '🍔' },
+  { id: 'cocina', name: 'Cocina', color: '#b45309', kind: 'food', icon: 'chef' },
+  // Lo que se guardó el primer día (un emoji) se lee como el ícono que le corresponde.
   { id: 'barra', name: 'Barra', color: '#6d28d9', kind: 'drink', icon: '🍹' },
   { id: 'pizza', name: 'Pizzeros', color: '#b91c1c', kind: 'food', icon: null },
 ]
@@ -25,8 +26,8 @@ describe('los dibujos de comida y bebida sobre la mesa', () => {
   it('uno por estación que le debe algo a la mesa, en el orden del bar', () => {
     const chips = prepChips([row('barra', 4, 0, 0), row('cocina', 0, 2, 0)], STATIONS)
     expect(chips.map((c) => [c.icon, c.name, c.state, c.units])).toEqual([
-      ['🍔', 'Cocina', 'cooking', 2],
-      ['🍹', 'Barra', 'cooking', 4],
+      ['chef', 'Cocina', 'cooking', 2],
+      ['cocktail', 'Barra', 'cooking', 4],
     ])
     expect(chips.map((c) => c.kind)).toEqual(['food', 'drink'])
   })
@@ -37,7 +38,7 @@ describe('los dibujos de comida y bebida sobre la mesa', () => {
   })
 
   it('una estación sin dibujo elegido toma el de su nombre', () => {
-    expect(prepChips([row('pizza', 1, 0, 0)], STATIONS)[0]?.icon).toBe('🍕')
+    expect(prepChips([row('pizza', 1, 0, 0)], STATIONS)[0]?.icon).toBe('pizza')
   })
 
   it('lo que no tiene estación (o va a una apagada) se suma a la primera', () => {
@@ -58,7 +59,7 @@ describe('los dibujos de comida y bebida sobre la mesa', () => {
   it('un bar sin estaciones igual muestra que hay comida en camino', () => {
     const chips = prepChips([row(null, 2, 0, 0)], [])
     expect(chips).toHaveLength(1)
-    expect(chips[0]).toMatchObject({ icon: '🍽️', kind: 'food', state: 'cooking', units: 2 })
+    expect(chips[0]).toMatchObject({ icon: 'chef', kind: 'food', state: 'cooking', units: 2 })
   })
 
   it('se dice en voz alta para quien no ve la pantalla', () => {

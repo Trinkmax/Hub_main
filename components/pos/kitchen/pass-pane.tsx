@@ -8,6 +8,7 @@ import { type CardLine, type KitchenCard, totalsOf } from '@/lib/pos/kitchen/car
 import { stationIcon, stationKind } from '@/lib/pos/kitchen/station-kind'
 import type { KitchenQueue } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
+import { StationIcon } from '../ui/station-icon'
 import { DRAG_TYPE, type DragPayload, PassCard } from './pass-card'
 
 /**
@@ -300,7 +301,7 @@ export function PassPane({
       <header className="kds-pane-head">
         <h2 className="kds-pane-name">
           <span className="kds-pane-icon" aria-hidden>
-            {icon}
+            <StationIcon icon={icon} strokeWidth={2.3} />
           </span>
           {station.name}
         </h2>

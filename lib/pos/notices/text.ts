@@ -4,7 +4,6 @@
  * El mismo texto va en la notificación push y en el aviso dentro de la app. Dice lo que el mozo
  * necesita para moverse sin abrir nada: qué mesa, de dónde se retira y qué es.
  */
-import { stationIcon } from '@/lib/pos/kitchen/station-kind'
 import { countedName } from '@/lib/pos/order/tickets'
 import type { NoticeItem, PosNotice } from './types'
 
@@ -46,18 +45,13 @@ const VIBRATE = {
 export function noticeText(notice: PosNotice): NoticeText {
   const where = noticeWhere(notice)
   const station = notice.station_name ?? 'Cocina'
-  const icon = stationIcon({
-    name: station,
-    kind: notice.station_kind,
-    icon: notice.station_icon,
-  })
   const items = itemsLabel(notice.items)
   const tag = `pos:${notice.session_id}:${notice.station_id ?? 'sin-estacion'}`
 
   if (notice.kind === 'ready') {
     return {
       title: `${where} · para retirar`,
-      body: items ? `${icon} ${station}: ${items}` : `${icon} Ya está en ${station}.`,
+      body: items ? `${station}: ${items}` : `Ya está en ${station}.`,
       tag,
       strong: true,
       vibrate: [...VIBRATE.ready],
@@ -66,7 +60,7 @@ export function noticeText(notice: PosNotice): NoticeText {
   if (notice.kind === 'preparing') {
     return {
       title: `${where} · en preparación`,
-      body: items ? `${icon} ${station} empezó: ${items}` : `${icon} ${station} empezó tu pedido.`,
+      body: items ? `${station} empezó: ${items}` : `${station} empezó tu pedido.`,
       tag,
       strong: false,
       vibrate: [...VIBRATE.preparing],
@@ -74,7 +68,7 @@ export function noticeText(notice: PosNotice): NoticeText {
   }
   return {
     title: `${where} · todavía no`,
-    body: `${icon} ${station} lo volvió atrás: te avisamos cuando salga.`,
+    body: `${station} lo volvió atrás: te avisamos cuando salga.`,
     tag,
     strong: false,
     vibrate: [...VIBRATE.not_ready],

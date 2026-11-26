@@ -4,6 +4,7 @@
  * fríos). La propuesta nunca se aplica sola: se muestra y la persona decide.
  */
 
+import type { StationIconKey } from '@/lib/pos/kitchen/station-kind'
 import { plainName } from './modifiers'
 import { type CartaTree, resolveCategory } from './routing'
 import type { KitchenStation, RouteChange } from './types'
@@ -29,22 +30,28 @@ export const CLASSIC_STATIONS: ReadonlyArray<{
   color: string
   hint: string
   kind: 'food' | 'drink'
-  icon: string
+  icon: StationIconKey
 }> = [
-  { name: 'Cocina', color: '#b45309', hint: 'Plancha, horno y fuegos.', kind: 'food', icon: '🍔' },
+  {
+    name: 'Cocina',
+    color: '#b45309',
+    hint: 'Plancha, horno y fuegos.',
+    kind: 'food',
+    icon: 'chef',
+  },
   {
     name: 'Fríos',
     color: '#0e7490',
     hint: 'Ensaladas, postres y lo que no lleva fuego.',
     kind: 'food',
-    icon: '🍰',
+    icon: 'salad',
   },
   {
     name: 'Barra',
     color: '#6d28d9',
     hint: 'Tragos, cafetería y bebidas.',
     kind: 'drink',
-    icon: '🍹',
+    icon: 'cocktail',
   },
 ]
 

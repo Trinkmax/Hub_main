@@ -97,7 +97,7 @@ export function NoticeSettings({ slug }: { slug: string }) {
     buzz([240, 90, 240, 90, 460])
     const shown = await showLocalNotice(
       'Mesa 12 · para retirar',
-      '🍹 Barra: 4 Mojito · 2 Stella',
+      'Barra: 4 Mojito · 2 Stella',
       [240, 90, 240, 90, 460],
     )
     if (!shown) toast('Así suena con la app abierta.', { description: 'Mesa 12 · para retirar' })

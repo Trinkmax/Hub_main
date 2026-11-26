@@ -21,17 +21,26 @@
   width: 1.72em;
   height: 1.72em;
   border-radius: 999px;
-  /* Lo están preparando: el dibujo apagado sobre una ficha oscura. */
+  /* Lo están preparando: el ícono en claro, apagado, sobre una ficha oscura. */
   background: oklch(0.2 0.03 165 / 0.42);
+  color: var(--pos-on-dark);
   font-size: 1.02em;
   line-height: 1;
-  filter: saturate(0.5);
 }
-/* Ya está para retirar: prendido, sobre blanco, con su tilde. */
+/* El ícono de la estación (`../ui/station-icon.tsx`): a este tamaño manda la silueta. */
+.pos-eat > svg {
+  width: 1.14em;
+  height: 1.14em;
+  opacity: 0.82;
+}
+/* Ya está para retirar: prendido, en tinta sobre blanco, con su tilde. */
 .pos-eat[data-state="ready"] {
   background: var(--pos-paper);
+  color: var(--pos-ink);
   box-shadow: 0 0 0 1.5px oklch(0.2 0.04 165 / 0.3);
-  filter: none;
+}
+.pos-eat[data-state="ready"] > svg {
+  opacity: 1;
 }
 .pos-eat i {
   position: absolute;

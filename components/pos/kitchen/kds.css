@@ -160,6 +160,11 @@ body:has(.kds) {
   line-height: 1;
   white-space: nowrap;
 }
+.kds-view > svg {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+}
 .kds-view[aria-pressed="true"] {
   background: color-mix(in oklab, var(--st, var(--kds-frame)) 78%, black);
   color: var(--pos-on-dark);
@@ -353,8 +358,12 @@ body:has(.kds) {
   white-space: nowrap;
 }
 .kds-pane-icon {
-  font-size: 1.05em;
-  line-height: 1;
+  display: grid;
+  flex: none;
+}
+.kds-pane-icon svg {
+  width: 1.04em;
+  height: 1.04em;
 }
 .kds-pane-counts {
   display: flex;
@@ -875,8 +884,15 @@ body:has(.kds) {
   align-items: center;
   gap: 0.22em;
 }
-.kds-card-others i {
-  font-style: normal;
+.kds-card-others svg {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+}
+/* El ícono de la otra estación, apenas más grande que el número que lo sigue. */
+.kds-card-others > span > svg:first-child {
+  width: 1.22em;
+  height: 1.22em;
 }
 .kds-card-others [data-status="queued"] {
   opacity: 0.62;
@@ -1211,6 +1227,11 @@ body:has(.kds) {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+.kds-key.is-pass > svg:first-child {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
 }
 .kds-key.is-pass {
   padding: 0 max(calc(var(--u) * 14), 10px);

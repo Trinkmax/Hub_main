@@ -883,9 +883,15 @@ tele de 42 pulgadas la cocina y las otras dos pantallas más chicas […] deben 
 ### Estaciones
 
 - Cada estación es una fila de `kitchen_stations` con su color, **de qué es** (`kind`: comida o bebida) y
-  **su dibujo** (`icon`, un emoji). Se editan en Carta › Cocina y aclaraciones › Editar estaciones. El
-  dibujo es el que va sobre la mesa en el mapa; el tipo decide si la comanda muestra los vasos y cómo se
-  le dice al mozo («para retirar en la barra»).
+  **su ícono** (`icon`). Se editan en Carta › Cocina y aclaraciones › Editar estaciones. El ícono es el
+  que va sobre la mesa en el mapa; el tipo decide si la comanda muestra los vasos y cómo se le dice al
+  mozo («para retirar en la barra»).
+- **Íconos, no emojis** (Nacho, 26/11: «los emojis no me gustan»). `icon` guarda la clave de un ícono
+  del catálogo (`STATION_ICON_KEYS` en `lib/pos/kitchen/station-kind.ts`: gorro de cocinero,
+  hamburguesa, pizza, copa…) y el dibujo lo pone `components/pos/ui/station-icon.tsx`: los de Lucide, a
+  dos tintas (trazo más un relleno suave) para que a 14 píxeles sobre una bandera se reconozca la forma.
+  Lo guardado el primer día como emoji se lee como el ícono que le corresponde (`stationIconKey`). El
+  texto de la notificación no lleva dibujo: dice la estación con su nombre.
 - **A dónde va cada cosa** se decide en la Carta (por rubro, o producto por producto). El reparto que
   pidió Nacho: cafetería, bebidas, tragos, botellas y vinos a **Barra**; las pizzas a **Pizzeros**; y
   la cocina en sus dos sectores, «así se divide»: **lomitos, hamburguesas y papas** (con los tostados,

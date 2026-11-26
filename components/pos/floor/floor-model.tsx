@@ -32,6 +32,7 @@ import {
 } from '@/lib/pos/table-state'
 import type { FloorElement } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
+import { StationIcon } from '../ui/station-icon'
 import './floor-move.css'
 import './floor-prep.css'
 import './table-quick.css'
@@ -714,7 +715,7 @@ export function FloorModel({
                     <span className="pos-eats">
                       {chips.map((chip) => (
                         <span key={chip.key} className="pos-eat" data-state={chip.state}>
-                          {chip.icon}
+                          <StationIcon icon={chip.icon} strokeWidth={2.4} />
                           {chip.state === 'ready' ? (
                             <i>
                               <Check aria-hidden strokeWidth={4} />

@@ -1,3 +1,4 @@
+import { stationIconKey } from '@/lib/pos/kitchen/station-kind'
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
@@ -202,7 +203,8 @@ export async function getKitchenSnapshot(tenantId: string): Promise<KitchenSnaps
     position: row.position ?? 0,
     active: row.active ?? true,
     kind: row.kind === 'drink' ? 'drink' : 'food',
-    icon: row.icon?.trim() || null,
+    // La clave del ícono; un emoji del primer día se lee como el ícono que le corresponde.
+    icon: stationIconKey(row.icon),
   }))
   const categories: CartaCategory[] = categoryRows.map((row) => ({
     id: row.id,

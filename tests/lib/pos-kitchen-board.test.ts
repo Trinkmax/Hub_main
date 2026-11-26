@@ -12,7 +12,15 @@ import {
   wallNeighbor,
   withHomeStation,
 } from '@/lib/pos/kitchen/board'
-import { glassesFor, stationGoods, stationIcon, stationKind } from '@/lib/pos/kitchen/station-kind'
+import {
+  glassesFor,
+  STATION_ICON_KEYS,
+  STATION_ICON_LABEL,
+  stationGoods,
+  stationIcon,
+  stationIconKey,
+  stationKind,
+} from '@/lib/pos/kitchen/station-kind'
 import type { KitchenItem, KitchenQueue, KitchenTicket, MenuStation } from '@/lib/pos/types'
 
 const NOW = Date.parse('2026-11-27T01:00:00.000Z')
@@ -359,13 +367,37 @@ describe('de qué es una estación', () => {
     expect(stationKind('otra')).toBe('food')
   })
 
-  it('el dibujo: el elegido, si no el del nombre, si no el del tipo', () => {
-    expect(stationIcon({ name: 'Cocina', kind: 'food', icon: '🍔' })).toBe('🍔')
-    expect(stationIcon({ name: 'Pizzeros', kind: 'food', icon: null })).toBe('🍕')
-    expect(stationIcon({ name: 'Plancha', kind: 'food', icon: null })).toBe('🍔')
-    expect(stationIcon({ name: 'Barra', kind: 'drink', icon: ' ' })).toBe('🍹')
-    expect(stationIcon({ name: 'Cocina', kind: null, icon: null })).toBe('🍽️')
-    expect(stationIcon(null)).toBe('🍽️')
+  it('el ícono: el elegido, si no el del nombre, si no el del tipo', () => {
+    expect(stationIcon({ name: 'Cocina', kind: 'food', icon: 'pot' })).toBe('pot')
+    expect(stationIcon({ name: 'Pizzeros', kind: 'food', icon: null })).toBe('pizza')
+    expect(stationIcon({ name: 'Plancha', kind: 'food', icon: null })).toBe('burger')
+    expect(stationIcon({ name: 'Barra', kind: 'drink', icon: ' ' })).toBe('cocktail')
+    expect(stationIcon({ name: 'Cocina', kind: null, icon: null })).toBe('chef')
+    expect(stationIcon({ name: 'Sector 2', kind: null, icon: null })).toBe('plate')
+    expect(stationIcon({ name: 'Sector 3', kind: 'drink', icon: null })).toBe('cocktail')
+    expect(stationIcon(null)).toBe('plate')
+  })
+
+  it('un emoji del primer día vale como el ícono que le corresponde; lo desconocido, no', () => {
+    expect(stationIconKey('🍔')).toBe('burger')
+    expect(stationIconKey('🍳')).toBe('chef')
+    expect(stationIconKey(' 🍕 ')).toBe('pizza')
+    expect(stationIconKey('cocktail')).toBe('cocktail')
+    expect(stationIconKey('🦄')).toBeNull()
+    expect(stationIconKey('no-existe')).toBeNull()
+    expect(stationIconKey('')).toBeNull()
+    expect(stationIconKey(null)).toBeNull()
+    // Un valor guardado que no es del catálogo cae al del nombre.
+    expect(stationIcon({ name: 'Barra', kind: 'drink', icon: '🦄' })).toBe('cocktail')
+  })
+
+  it('cada ícono del catálogo tiene cómo decirse, y las claves entran en la columna', () => {
+    expect(new Set(STATION_ICON_KEYS).size).toBe(STATION_ICON_KEYS.length)
+    for (const key of STATION_ICON_KEYS) {
+      expect(STATION_ICON_LABEL[key].length).toBeGreaterThan(2)
+      // `kitchen_stations.icon` admite hasta 16 caracteres.
+      expect(key.length).toBeLessThanOrEqual(16)
+    }
   })
 
   it('una mesa de 6 son 6 vasos, solo en una estación de bebidas', () => {
