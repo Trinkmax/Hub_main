@@ -24,6 +24,7 @@ import {
 import { glassesFor, stationIcon } from '@/lib/pos/kitchen/station-kind'
 import type { MenuStation } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
+import { StationIcon } from '../ui/station-icon'
 
 /**
  * Una comanda del muro: lo que una mesa tiene pedido en ESTA estación.
@@ -286,7 +287,7 @@ function PassCardImpl({
               data-status={other.status}
               title={`${other.name}: ${other.quantity} · ${OTHER_STATUS_LABEL[other.status]}`}
             >
-              <i aria-hidden>{stationIcon(other)}</i>
+              <StationIcon icon={stationIcon(other)} strokeWidth={2.5} />
               <span className="sr-only">{other.name}: </span>
               {other.quantity}
               {other.status === 'ready' || other.status === 'served' ? (

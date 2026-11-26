@@ -32,7 +32,7 @@ describe('cómo se dice un aviso de cocina', () => {
   it('listo: la mesa, de dónde se retira y qué es', () => {
     expect(noticeText(notice())).toMatchObject({
       title: 'Mesa 12 · para retirar',
-      body: '🍹 Barra: 4 Mojito · 2 Stella',
+      body: 'Barra: 4 Mojito · 2 Stella',
       strong: true,
     })
   })
@@ -47,7 +47,7 @@ describe('cómo se dice un aviso de cocina', () => {
       }),
     )
     expect(text.title).toBe('Mesa 12 · en preparación')
-    expect(text.body).toBe('🍔 Cocina empezó: 4 Mojito · 2 Stella')
+    expect(text.body).toBe('Cocina empezó: 4 Mojito · 2 Stella')
     expect(text.strong).toBe(false)
     expect(text.vibrate.length).toBe(1)
   })
@@ -87,14 +87,15 @@ describe('cómo se dice un aviso de cocina', () => {
     ).toBe('3 × 7up · 4 Mojito')
   })
 
-  it('una estación sin dibujo toma el de su nombre o su tipo', () => {
-    expect(noticeText(notice({ station_icon: null })).body.startsWith('🍹')).toBe(true)
-    expect(
-      noticeText(
-        notice({ station_icon: null, station_name: 'Pizzeros', station_kind: 'food' }),
-      ).body.startsWith('🍕'),
-    ).toBe(true)
-    expect(noticeText(notice({ items: [] })).body).toBe('🍹 Ya está en Barra.')
+  it('el texto no lleva dibujos: dice la estación con su nombre', () => {
+    // Sin emojis (Nacho, 26/11): el ícono lo dibuja la app; en la notificación va solo texto.
+    for (const kind of ['ready', 'preparing', 'not_ready'] as const) {
+      const text = noticeText(notice({ kind, station_icon: '🍹' }))
+      expect(`${text.title} ${text.body}`).not.toMatch(/\p{Extended_Pictographic}/u)
+      expect(text.body.startsWith('Barra')).toBe(true)
+    }
+    expect(noticeText(notice({ items: [] })).body).toBe('Ya está en Barra.')
+    expect(noticeText(notice({ station_name: null, items: [] })).body).toBe('Ya está en Cocina.')
   })
 })
 

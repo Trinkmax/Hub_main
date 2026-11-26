@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod'
+import { stationIconKey } from '@/lib/pos/kitchen/station-kind'
 import { nodeKey } from './types'
 
 /** `kitchen_stations.name`: de 1 a 30 letras. */
@@ -44,13 +45,13 @@ const color = z
   .transform((hex) => hex.toLowerCase())
 const deltaCents = z.number().int().min(0).max(OPTION_DELTA_MAX_CENTS)
 const stationKind = z.enum(['food', 'drink'])
-/** Un emoji (pueden ser varios caracteres pegados); vacío = sin dibujo propio. */
+/** La clave de un ícono del catálogo; vacío (o algo que no es del catálogo) = sin ícono propio. */
 const stationIcon = z
   .string()
   .trim()
   .max(16)
   .nullable()
-  .transform((value) => (value ? value : null))
+  .transform((value) => stationIconKey(value))
 
 /** Un campo que cambia: lo que la persona veía y lo que tiene que quedar. */
 const change = <Schema extends z.ZodType>(schema: Schema) => z.object({ from: schema, to: schema })

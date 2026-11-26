@@ -2,6 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
+import { StationIcon } from '@/components/pos/ui/station-icon'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { moveBy } from '@/lib/menu/kitchen/order'
@@ -14,7 +15,11 @@ import {
   STATION_COLORS,
 } from '@/lib/menu/kitchen/suggest'
 import type { KitchenStation } from '@/lib/menu/kitchen/types'
-import { STATION_ICON_CHOICES, stationIcon } from '@/lib/pos/kitchen/station-kind'
+import {
+  STATION_ICON_CHOICES,
+  STATION_ICON_LABEL,
+  stationIcon,
+} from '@/lib/pos/kitchen/station-kind'
 import { cn } from '@/lib/utils'
 import { InlineText } from './inline-fields'
 import { SideSheet, SideSheetBody } from './side-sheet'
@@ -138,7 +143,7 @@ export function StationsSheet({
                   onIcon={(icon) =>
                     commit(
                       { type: 'station.patch', id: station.id, patch: { icon } },
-                      { say: `${station.name}: dibujo cambiado`, toastId: `icon:${station.id}` },
+                      { say: `${station.name}: ícono cambiado`, toastId: `icon:${station.id}` },
                     )
                   }
                   onActive={(active) =>
@@ -275,11 +280,11 @@ function StationRow({
         <button
           type="button"
           aria-expanded={palette}
-          aria-label={`Color, tipo y dibujo de ${station.name}`}
+          aria-label={`Color, tipo e ícono de ${station.name}`}
           onClick={() => setPalette((current) => !current)}
-          className="relative flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
+          className="relative flex size-9 shrink-0 items-center justify-center rounded-md outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
         >
-          <span aria-hidden>{stationIcon(station)}</span>
+          <StationIcon icon={stationIcon(station)} className="size-5" />
           <span
             aria-hidden
             className="kc-ink kc-dot absolute right-0.5 bottom-0.5 size-2.5 ring-2 ring-card"
@@ -362,7 +367,7 @@ function StationRow({
             <span className="text-xs text-muted-foreground">
               {station.kind === 'drink'
                 ? 'Su comanda muestra los vasos de la mesa.'
-                : 'En el mapa del salón va con su dibujo.'}
+                : 'En el mapa del salón va con su ícono.'}
             </span>
           </fieldset>
           <div className="flex flex-wrap gap-1.5">
@@ -373,17 +378,19 @@ function StationRow({
                   key={icon}
                   type="button"
                   aria-pressed={chosen}
-                  aria-label={`Dibujo ${icon}`}
+                  aria-label={STATION_ICON_LABEL[icon]}
+                  title={STATION_ICON_LABEL[icon]}
                   disabled={saving}
                   onClick={() => {
                     if (station.icon !== icon) onIcon(icon)
                   }}
                   className={cn(
-                    'flex size-9 items-center justify-center rounded-md text-lg leading-none outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11',
-                    chosen && 'bg-secondary ring-2 ring-foreground',
+                    'flex size-10 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11',
+                    chosen &&
+                      'bg-foreground text-background hover:bg-foreground hover:text-background',
                   )}
                 >
-                  {icon}
+                  <StationIcon icon={icon} className="size-5" />
                 </button>
               )
             })}

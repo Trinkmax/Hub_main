@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { buzz } from '@/components/pos/order/haptics'
+import { StationIcon } from '@/components/pos/ui/station-icon'
 import { BARE } from '@/components/shell/salon/salon-main'
 import { stationIcon } from '@/lib/pos/kitchen/station-kind'
 import { wantsNotice } from '@/lib/pos/notices/prefs'
@@ -154,15 +155,17 @@ export function WaiterNotices({ slug, userId, branchIds, askOnEntry }: Props) {
       toast(text.title, {
         // Un aviso nuevo de la misma mesa y estación reemplaza al anterior.
         id: text.tag,
-        description: text.body.replace(/^\S+\s/, ''),
+        description: text.body,
         icon: (
-          <span aria-hidden style={{ fontSize: '1.25rem', lineHeight: 1 }}>
-            {stationIcon({
+          <StationIcon
+            icon={stationIcon({
               name: notice.station_name ?? '',
               kind: notice.station_kind,
               icon: notice.station_icon,
             })}
-          </span>
+            width={22}
+            height={22}
+          />
         ),
         duration: text.strong ? 14_000 : 5000,
         action: {

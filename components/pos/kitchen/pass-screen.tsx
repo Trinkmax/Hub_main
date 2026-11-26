@@ -59,6 +59,7 @@ import type { KitchenQueue, MenuStation, PrepStatus } from '@/lib/pos/types'
 import type { LiveStatus } from '@/lib/pos/use-poke'
 import { cn } from '@/lib/utils'
 import { PosBrand, type PosBrandInfo } from '../ui/pos-brand'
+import { StationIcon } from '../ui/station-icon'
 import { KeypadHelp } from './keypad-help'
 import { useServerNow, useWakeLock } from './kitchen-hooks'
 import { type DragPayload, GREW_LABEL } from './pass-card'
@@ -906,7 +907,7 @@ export function PassScreen({
                       style={{ ['--st' as string]: station.color }}
                       onClick={() => onView([station.id])}
                     >
-                      <span aria-hidden>{stationIcon(station)}</span>
+                      <StationIcon icon={stationIcon(station)} strokeWidth={2.3} />
                       {station.name}
                     </button>
                   )
@@ -1106,7 +1107,7 @@ export function PassScreen({
                       }
                       aria-label={`Pasar ${current.spoken} a ${pane.station.name}`}
                     >
-                      <span aria-hidden>{stationIcon(pane.station)}</span>
+                      <StationIcon icon={stationIcon(pane.station)} strokeWidth={2.4} />
                       {pane.station.name}
                       <ArrowRight aria-hidden strokeWidth={3} />
                     </button>
