@@ -169,14 +169,12 @@ export function ClubSheet({
   open,
   onClose,
   tenantName,
-  tenantSlug,
   logoUrl,
   linkSlug,
 }: {
   open: boolean
   onClose: () => void
   tenantName: string
-  tenantSlug: string
   logoUrl: string | null
   linkSlug: string | null
 }): React.JSX.Element {
@@ -272,12 +270,14 @@ export function ClubSheet({
 
   useDismissOnBack(open, handleClose)
 
+  // Vuelve a la carta desde la que se abrió: la de siempre (`/carta/<bar>`) o la nueva, que mientras
+  // tanto vive en `/carta/<bar>/nueva`.
   const goToWallet = () => {
-    window.location.assign(`/carta/${tenantSlug}?wallet=1`)
+    window.location.assign(`${window.location.pathname}?wallet=1`)
   }
   const stayInMenu = () => {
     // Recarga sin parámetros: toma la cookie y muestra "Mi billetera" en la barra.
-    window.location.assign(`/carta/${tenantSlug}`)
+    window.location.assign(window.location.pathname)
   }
 
   const goTo = (next: Mode) => {

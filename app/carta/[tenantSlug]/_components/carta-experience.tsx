@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, SearchX, UtensilsCrossed } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MenuItem } from '@/lib/menu/queries'
+import type { CartaSponsor } from '@/lib/menu/sponsors'
 import type { MenuTreeNode } from '@/lib/menu/tree'
 import { CartaBrand } from './carta-brand'
 import { CartaSearch } from './carta-search'
@@ -12,6 +13,7 @@ import { ClubSheet } from './club-sheet'
 import { FeaturedCarousel } from './featured-carousel'
 import { ItemCard } from './item-card'
 import { ItemDetailSheet } from './item-detail-sheet'
+import { SponsorsBand, SponsorsLine } from './sponsors'
 import { WalletDrawer, type WalletSummary } from './wallet-drawer'
 
 /** Estado de apertura pasado por deep-link (?club / ?wallet). */
@@ -65,9 +67,11 @@ export function CartaExperience(props: {
   walletContent: React.ReactNode | null
   walletSummary: WalletSummary | null
   initialSheet: InitialSheet
+  /** Las marcas que acompañan al bar (`tenants.settings.carta_sponsors`). Sin ninguna, no se ve nada. */
+  sponsors: CartaSponsor[]
 }): React.JSX.Element {
   const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, walletContent } = props
-  const { walletSummary } = props
+  const { walletSummary, sponsors } = props
 
   const [storedPath, setPath] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -218,6 +222,8 @@ export function CartaExperience(props: {
                 ) : (
                   <CardGrid nodes={rootNodes} onOpen={openCategory} />
                 )}
+                {/* Los sponsors: en el inicio van en su franja, debajo de los rubros. */}
+                <SponsorsBand sponsors={sponsors} className="rounded-2xl" />
               </div>
             ) : (
               <div className="flex flex-col gap-6">
@@ -245,6 +251,11 @@ export function CartaExperience(props: {
         )}
 
         <footer className="mt-12 border-t border-border/50 pt-5 text-center">
+          {/* Adentro de un rubro o buscando, los sponsors acompañan desde el pie (en el inicio ya está
+              la franja). */}
+          {isSearching || path.length > 0 ? (
+            <SponsorsLine sponsors={sponsors} className="mb-6 mt-2" />
+          ) : null}
           <p className="font-serif text-sm text-foreground/70">Carta de {tenantName}</p>
           <p className="mt-1 text-[11px] tracking-wide text-muted-foreground/70">Hecho con HUB</p>
         </footer>
@@ -272,7 +283,6 @@ export function CartaExperience(props: {
         open={sheet === 'club'}
         onClose={() => setSheet('none')}
         tenantName={tenantName}
-        tenantSlug={tenantSlug}
         logoUrl={logoUrl}
         linkSlug={captureLinkSlug}
       />

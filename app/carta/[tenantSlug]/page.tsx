@@ -1,48 +1,15 @@
 import type { Metadata } from 'next'
-import { cookies } from 'next/headers'
-import { notFound } from 'next/navigation'
-import QRCode from 'qrcode'
-import { cache } from 'react'
-import { preconnect } from 'react-dom'
-import { WalletShell } from '@/app/c/[token]/_components/wallet-shell'
-import { BrandAccent } from '@/components/theme/brand-accent-provider'
-import { getAppUrl } from '@/lib/app-url'
-import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
-import { walletCookieName } from '@/lib/capture/cookie'
-import { getSupabaseClientEnv } from '@/lib/env'
-import { visibleNow } from '@/lib/menu/availability'
-import { listActiveMenuPublic } from '@/lib/menu/queries'
-import { getMenuRev } from '@/lib/menu/revision'
-import { buildCategoryTree } from '@/lib/menu/tree'
-import { createServiceClient } from '@/lib/supabase/service'
-import { getWalletByToken, type WalletData } from '@/lib/wallet/queries'
+import nextDynamic from 'next/dynamic'
 import { CartaExperience } from './_components/carta-experience'
-import { CartaFreshness } from './_components/carta-freshness'
+import { CartaFrame, cartaMetadata, loadCarta } from './_lib/carta-page'
 
 export const dynamic = 'force-dynamic'
 
-type TenantRow = {
-  id: string
-  name: string
-  logo_url: string | null
-  brand_accent: string | null
-  timezone: string | null
-}
-
-/** La hora del bar si la fila viniera sin zona. */
-const DEFAULT_TIME_ZONE = 'America/Argentina/Cordoba'
-
-// `cache` de React: generateMetadata y la page piden el mismo tenant en el
-// mismo request; sin esto son dos hops idénticos a Supabase por render.
-const resolveTenant = cache(async (slug: string): Promise<TenantRow | null> => {
-  const service = createServiceClient()
-  const { data } = await service
-    .from('tenants')
-    .select('id, name, logo_url, brand_accent, timezone')
-    .eq('slug', slug)
-    .maybeSingle()
-  return (data as TenantRow | null) ?? null
-})
+// La carta nueva solo se baja en esta dirección si el bar la tiene prendida («Carta nueva»): mientras
+// tanto, quien abre la de siempre no carga con su código.
+const CartaNueva = nextDynamic(() =>
+  import('./nueva/_components/carta-experience').then((module) => module.CartaExperience),
+)
 
 export async function generateMetadata({
   params,
@@ -50,24 +17,13 @@ export async function generateMetadata({
   params: Promise<{ tenantSlug: string }>
 }): Promise<Metadata> {
   const { tenantSlug } = await params
-  const tenant = await resolveTenant(tenantSlug)
-  if (!tenant) return { title: 'Carta' }
-  return {
-    title: `Carta · ${tenant.name}`,
-    description: `La carta de ${tenant.name}.`,
-  }
+  return cartaMetadata(tenantSlug)
 }
 
-/** Lee la cookie de identidad y devuelve la wallet sólo si es del mismo tenant. */
-async function resolveWallet(tenantId: string): Promise<WalletData | null> {
-  const store = await cookies()
-  const token = store.get(walletCookieName(tenantId))?.value
-  if (!token) return null
-  const wallet = await getWalletByToken(token)
-  if (!wallet || wallet.tenant.id !== tenantId) return null
-  return wallet
-}
-
+/**
+ * La carta del bar: la dirección del QR. Muestra la de siempre, o la nueva si el bar tiene prendido el
+ * interruptor «Carta nueva» (`docs/features/carta-rediseno.md`).
+ */
 export default async function CartaPage({
   params,
   searchParams,
@@ -76,98 +32,26 @@ export default async function CartaPage({
   searchParams: Promise<{ club?: string; wallet?: string }>
 }) {
   const { tenantSlug } = await params
-  const sp = await searchParams
-
-  // Todas las fotos vienen de Supabase Storage: abrir DNS + TLS contra ese host
-  // desde el <head> ahorra ~100–300 ms en la primera imagen en 4G.
-  preconnect(new URL(getSupabaseClientEnv().url).origin)
-
-  const tenant = await resolveTenant(tenantSlug)
-  if (!tenant) notFound()
-
-  // La versión de la carta (docs/features/carta-al-dia.md) va en el mismo viaje y primera: si un
-  // cambio cae justo mientras se arma la página, lo probable es número viejo con carta nueva (un
-  // refresh de más en el celular) y no al revés.
-  const [menuRev, { categories, items }, wallet, captureLinkSlug] = await Promise.all([
-    getMenuRev(tenant.id),
-    listActiveMenuPublic({ tenantId: tenant.id }),
-    resolveWallet(tenant.id),
-    getCanonicalCaptureLink(tenant.id),
-  ])
-  // Los rubros con horario (el menú del mediodía, el del fin de semana) se sacan acá, con la hora del
-  // bar: ni sus subcategorías ni sus productos llegan al celular, así tampoco salen en el buscador ni
-  // en los destacados. La página no se guarda en el servidor (`force-dynamic`), así que cada pedido
-  // se arma con la hora de ese momento; `changeInMs` le dice a la carta abierta cuándo volver a pedirse.
-  const renderedAt = Date.now()
-  const visible = visibleNow(
-    { categories, items },
-    renderedAt,
-    tenant.timezone || DEFAULT_TIME_ZONE,
-  )
-  const tree = buildCategoryTree(visible.categories, visible.items)
-
-  let walletContent: React.ReactNode = null
-  if (wallet) {
-    const appUrl = await getAppUrl()
-    const qrDataUrl = await QRCode.toDataURL(`${appUrl}/c/${wallet.customer.qrToken}`, {
-      width: 360,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#000000', light: '#ffffff' },
-    })
-    walletContent = <WalletShell data={wallet} qrDataUrl={qrDataUrl} embedded />
-  }
-
-  // Resumen serializable para el header del sheet (logo, saludo, nivel).
-  const walletSummary = wallet
-    ? {
-        tenantName: wallet.tenant.name,
-        logoUrl: wallet.tenant.logoUrl,
-        firstName: wallet.customer.firstName,
-        tierName: wallet.tier.current?.name ?? null,
-        tierColor: wallet.tier.current?.color ?? null,
-      }
-    : null
-
-  const wantsClub = sp.club != null
-  const wantsWallet = sp.wallet != null
-  const initialSheet: 'none' | 'club' | 'wallet' =
-    wantsWallet && wallet ? 'wallet' : wantsClub ? (wallet ? 'wallet' : 'club') : 'none'
-
-  // Las fotos/videos vienen de Supabase Storage: preconnect para ahorrar el
-  // handshake TLS en la primera imagen. React 19 hoistea los <link> al <head>.
-  let storageOrigin: string | null = null
-  try {
-    storageOrigin = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin
-  } catch {
-    storageOrigin = null
+  const data = await loadCarta(tenantSlug, await searchParams)
+  const shared = {
+    tenantName: data.tenant.name,
+    logoUrl: data.tenant.logoUrl,
+    tree: data.tree,
+    tenantSlug,
+    captureLinkSlug: data.captureLinkSlug,
+    walletContent: data.walletContent,
+    walletSummary: data.walletSummary,
+    initialSheet: data.initialSheet,
+    sponsors: data.sponsors,
   }
 
   return (
-    <BrandAccent accent={tenant.brand_accent} className="force-light min-h-[100dvh] bg-background">
-      {storageOrigin ? (
-        <>
-          <link rel="preconnect" href={storageOrigin} />
-          <link rel="dns-prefetch" href={storageOrigin} />
-        </>
-      ) : null}
-      {/* La carta abierta en el celular pregunta si cambió al volver a mirarla y se refresca sola. */}
-      <CartaFreshness
-        tenantId={tenant.id}
-        rev={menuRev}
-        renderedAt={renderedAt}
-        changeInMs={visible.changeInMs}
-      />
-      <CartaExperience
-        tenantName={tenant.name}
-        logoUrl={tenant.logo_url}
-        tree={tree}
-        tenantSlug={tenantSlug}
-        captureLinkSlug={captureLinkSlug}
-        walletContent={walletContent}
-        walletSummary={walletSummary}
-        initialSheet={initialSheet}
-      />
-    </BrandAccent>
+    <CartaFrame data={data}>
+      {data.nuevaParaTodos ? (
+        <CartaNueva {...shared} daypart={data.daypart} />
+      ) : (
+        <CartaExperience {...shared} />
+      )}
+    </CartaFrame>
   )
 }
