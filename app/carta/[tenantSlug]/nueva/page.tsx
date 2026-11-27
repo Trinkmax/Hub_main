@@ -1,31 +1,47 @@
 import type { Metadata } from 'next'
-import { CartaFrame, cartaMetadata, loadCarta } from '../_lib/carta-page'
+import {
+  CartaFrame,
+  type CartaSearchParams,
+  cartaMetadata,
+  loadCarta,
+  resolveCarta,
+} from '../_lib/carta-page'
 import { CartaExperience } from './_components/carta-experience'
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<CartaSearchParams>
 }): Promise<Metadata> {
   const { tenantSlug } = await params
-  return cartaMetadata(tenantSlug, { preview: true })
+  const { sucursal } = await searchParams
+  return cartaMetadata(tenantSlug, { preview: true, sucursal })
 }
 
 /**
  * La carta nueva (`docs/features/carta-rediseno.md`), en su propia dirección: para verla y seguir
- * trabajándola mientras los clientes siguen con la de siempre en `/carta/<bar>`.
+ * trabajándola mientras los clientes siguen con la de siempre en `/carta/<bar>`. No pasa por el selector
+ * de sucursal: con `?sucursal=<slug>` muestra la carta de esa sucursal y, sin él, la del bar entera.
  */
 export default async function CartaNuevaPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<{ club?: string; wallet?: string }>
+  searchParams: Promise<CartaSearchParams>
 }) {
   const { tenantSlug } = await params
-  const data = await loadCarta(tenantSlug, await searchParams)
+  const sp = await searchParams
+  const entry = await resolveCarta(tenantSlug, sp)
+  const data = await loadCarta(
+    tenantSlug,
+    sp,
+    entry.kind === 'carta' ? entry : { branch: null, choosable: false },
+  )
 
   return (
     <CartaFrame data={data}>

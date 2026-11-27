@@ -280,3 +280,196 @@ html:has(.carta)::view-transition-new(root) {
     animation: none;
   }
 }
+
+/* ─── Sucursales e inauguración (docs/features/carta-por-sucursal.md) ───────────────────────────────────
+   El selector de sucursal y la fiesta del día que abre una. Sin capa, como lo de arriba: las utilidades de
+   Tailwind ponen el lugar y el tamaño; acá va solo lo que ellas no tienen (la cinta, el sello, las entradas). */
+
+.carta-pick-in {
+  animation: carta-rise 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* La luz de las tarjetas de color: un brillo arriba a la derecha y un poco de sombra abajo, donde va el nombre. */
+.carta-pick-light,
+.carta-fiesta-light {
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgb(255 255 255 / 0.2), transparent 55%),
+    linear-gradient(to top, rgb(0 0 0 / 0.2), transparent 62%);
+}
+
+.carta-fiesta {
+  animation: carta-rise 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* La cinta: dos mitades de raso dorado y el moño encima del corte. */
+.carta-ribbon {
+  height: 26px;
+  pointer-events: none;
+}
+
+.carta-ribbon-half {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    #f8e3a3 0%,
+    #e6b653 42%,
+    #c48a2c 56%,
+    #e9c066 78%,
+    #f6dc95 100%
+  );
+  box-shadow:
+    0 6px 14px -6px rgb(40 20 0 / 0.45),
+    inset 0 1px 0 rgb(255 250 230 / 0.6),
+    inset 0 -1px 0 rgb(120 80 20 / 0.45);
+}
+
+.carta-ribbon-left {
+  left: 0;
+  transform-origin: 0% 50%;
+}
+
+.carta-ribbon-right {
+  right: 0;
+  transform-origin: 100% 50%;
+}
+
+/* Un brillo que corre por el raso cada tanto: lo que invita a tocarla. */
+.carta-ribbon-half::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.65) 46%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  animation: carta-ribbon-sheen 3.6s cubic-bezier(0.45, 0, 0.25, 1) 0.9s infinite;
+}
+
+.carta-ribbon-right::after {
+  animation-delay: 1.25s;
+}
+
+.carta-ribbon-bow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 98px;
+  transform: translate(-50%, -46%);
+  filter: drop-shadow(0 7px 8px rgb(40 20 0 / 0.32));
+  animation: carta-bow-breathe 2.6s ease-in-out infinite;
+}
+
+/* El corte: cada mitad se descuelga desde su punta, gira y cae; el moño salta y se va. */
+[data-cut] .carta-ribbon-left {
+  animation: carta-ribbon-fall-left 780ms cubic-bezier(0.45, 0, 0.85, 0.4) forwards;
+}
+
+[data-cut] .carta-ribbon-right {
+  animation: carta-ribbon-fall-right 780ms cubic-bezier(0.45, 0, 0.85, 0.4) forwards;
+}
+
+[data-cut] .carta-ribbon-half::after {
+  animation: none;
+}
+
+[data-cut] .carta-ribbon-bow {
+  animation: carta-bow-pop 560ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+/* El sello gira despacio, como el «coffee & bar» del logo. */
+.carta-stamp-ring {
+  animation: carta-stamp-spin 28s linear infinite;
+}
+
+.carta-stamp-core {
+  animation: carta-twinkle 2.8s ease-in-out infinite;
+}
+
+@keyframes carta-ribbon-sheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  45%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes carta-bow-breathe {
+  50% {
+    transform: translate(-50%, -46%) scale(1.045) rotate(-1.5deg);
+  }
+}
+
+@keyframes carta-ribbon-fall-left {
+  0% {
+    transform: none;
+  }
+  28% {
+    transform: translateX(-4px) rotate(14deg);
+  }
+  100% {
+    transform: translate(-18px, 170px) rotate(52deg);
+    opacity: 0;
+  }
+}
+
+@keyframes carta-ribbon-fall-right {
+  0% {
+    transform: none;
+  }
+  28% {
+    transform: translateX(4px) rotate(-14deg);
+  }
+  100% {
+    transform: translate(18px, 170px) rotate(-52deg);
+    opacity: 0;
+  }
+}
+
+@keyframes carta-bow-pop {
+  0% {
+    transform: translate(-50%, -46%) scale(1);
+    opacity: 1;
+  }
+  35% {
+    transform: translate(-50%, -70%) scale(1.22) rotate(-7deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, 20%) scale(0.45) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes carta-stamp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Con `scale` y no `transform`: el centrado lo pone Tailwind con `translate`, y así no se pisan. */
+@keyframes carta-twinkle {
+  50% {
+    scale: 0.86;
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carta-pick-in,
+  .carta-fiesta,
+  .carta-ribbon-half::after,
+  .carta-ribbon-bow,
+  .carta-stamp-ring,
+  .carta-stamp-core {
+    animation: none;
+  }
+}

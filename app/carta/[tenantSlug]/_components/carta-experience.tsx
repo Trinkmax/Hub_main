@@ -1,15 +1,19 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, SearchX, UtensilsCrossed } from 'lucide-react'
+import { ArrowLeftRight, ChevronLeft, ChevronRight, SearchX, UtensilsCrossed } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type CartaBranchView, celebrationSeenKey } from '@/lib/menu/carta-branch'
 import type { MenuItem } from '@/lib/menu/queries'
 import type { CartaSponsor } from '@/lib/menu/sponsors'
 import type { MenuTreeNode } from '@/lib/menu/tree'
 import { CartaBrand } from './carta-brand'
 import { CartaSearch } from './carta-search'
 import { CategoryHubCard } from './category-hub-card'
+import { OpeningBanner } from './celebration'
 import { ClubLip } from './club-lip'
 import { ClubSheet } from './club-sheet'
+import { confettiShower } from './confetti'
 import { FeaturedCarousel } from './featured-carousel'
 import { ItemCard } from './item-card'
 import { ItemDetailSheet } from './item-detail-sheet'
@@ -69,9 +73,17 @@ export function CartaExperience(props: {
   initialSheet: InitialSheet
   /** Las marcas que acompañan al bar (`tenants.settings.carta_sponsors`). Sin ninguna, no se ve nada. */
   sponsors: CartaSponsor[]
+  /**
+   * La sucursal de esta carta, si el bar tiene para elegir (docs/features/carta-por-sucursal.md): arriba va su
+   * nombre para cambiar de sucursal y, el día que abre, la bienvenida con papel picado.
+   */
+  branch?: CartaBranchView | null
 }): React.JSX.Element {
   const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, walletContent } = props
   const { walletSummary, sponsors } = props
+  const branch = props.branch ?? null
+  const branchSlug = branch?.slug ?? null
+  const isOpeningDay = branch?.celebration === 'opening'
 
   const [storedPath, setPath] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -79,13 +91,37 @@ export function CartaExperience(props: {
   const [sheet, setSheet] = useState<SheetState>(props.initialSheet === 'club' ? 'club' : 'none')
   const walletInitiallyOpen = props.initialSheet === 'wallet'
 
-  // El sheet inicial ya se sembró desde ?club/?wallet; limpiamos el query de la
-  // URL para que al cerrar y recargar/compartir no se vuelva a abrir solo.
+  // El sheet inicial ya se sembró desde ?club/?wallet; limpiamos eso de la URL para que al cerrar y
+  // recargar/compartir no se vuelva a abrir solo. El resto se queda: `?sucursal=` es la carta que se mira.
   useEffect(() => {
-    if (props.initialSheet !== 'none' && typeof window !== 'undefined') {
-      window.history.replaceState(window.history.state, '', window.location.pathname)
-    }
+    if (props.initialSheet === 'none' || typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.delete('club')
+    url.searchParams.delete('wallet')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
   }, [props.initialSheet])
+
+  // El día que abre la sucursal, la carta recibe con papel picado una vez por pestaña. Quien cortó la cinta
+  // en el selector ya tuvo el suyo (y le sigue cayendo encima mientras abre esto).
+  useEffect(() => {
+    if (!isOpeningDay || !branchSlug) return
+    const key = celebrationSeenKey(branchSlug)
+    try {
+      if (sessionStorage.getItem(key)) return
+    } catch {
+      // Sin almacenamiento: festeja igual.
+    }
+    // La marca va cuando sale el papel y no antes: si el efecto se desarma antes de tiempo, la próxima vez festeja.
+    const timer = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(key, '1')
+      } catch {
+        // Sin almacenamiento: a lo sumo, otra lluvia al recargar.
+      }
+      confettiShower()
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [isOpeningDay, branchSlug])
 
   const openItem = useCallback((item: MenuItem) => setActiveItem(item), [])
 
@@ -152,11 +188,28 @@ export function CartaExperience(props: {
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto w-full max-w-2xl px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)]">
           <div className="flex items-center gap-3 py-2">
-            {/* Sólo el logo (sin duplicar el nombre) + el rótulo de la página. */}
+            {/* Sólo el logo (sin duplicar el nombre) + el rótulo de la página, o la sucursal (que lleva
+                al selector para cambiarla). */}
             <CartaBrand tenantName={tenantName} logoUrl={logoUrl} />
-            <span className="ml-auto text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              Carta
-            </span>
+            {branch ? (
+              <Link
+                href={branch.pickerHref}
+                aria-label={`Estás en ${branch.name}. Cambiar de sucursal`}
+                className="ml-auto inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card/80 pl-3 pr-2.5 text-[13px] font-medium text-foreground shadow-[0_4px_12px_-8px_rgba(20,28,24,0.4)] transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: branch.color }}
+                />
+                <span className="max-w-[9.5rem] truncate">{branch.name}</span>
+                <ArrowLeftRight aria-hidden className="size-3.5 text-muted-foreground" />
+              </Link>
+            ) : (
+              <span className="ml-auto text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Carta
+              </span>
+            )}
           </div>
 
           <CartaSearch value={query} onChange={setQuery} className="mt-1" />
@@ -216,6 +269,9 @@ export function CartaExperience(props: {
           <div key={path.join('/') || 'root'} className="animate-in fade-in duration-200">
             {path.length === 0 ? (
               <div className="flex flex-col gap-8">
+                {isOpeningDay && branch ? (
+                  <OpeningBanner branchName={branch.name} color={branch.color} />
+                ) : null}
                 <FeaturedCarousel items={featured} onOpen={openItem} />
                 {rootNodes.length === 0 ? (
                   <EmptyMenu />
