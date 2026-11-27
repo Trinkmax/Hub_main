@@ -27,6 +27,8 @@ type Props = {
   slug: string
   branchId: string
   timeZone: string
+  /** El logo del bar, arriba de cada comanda. */
+  logoUrl?: string | null
 }
 
 const POLL_MS = 15_000
@@ -45,7 +47,7 @@ async function exclusive<T>(name: string, task: () => Promise<T>): Promise<T> {
   return locks.request(name, task) as Promise<T>
 }
 
-function Runner({ slug, branchId, timeZone }: Props) {
+function Runner({ slug, branchId, timeZone, logoUrl = null }: Props) {
   const busy = useRef(false)
   /** Llegó otro aviso mientras se estaba leyendo: al terminar se lee de nuevo. */
   const again = useRef(false)
@@ -76,6 +78,7 @@ function Runner({ slug, branchId, timeZone }: Props) {
       try {
         await printJob({
           paper: settings.paper,
+          logo: logoUrl,
           docs: comandaDocs(claimed, {
             branch: queue.branch.name,
             timeZone,
@@ -101,7 +104,7 @@ function Runner({ slug, branchId, timeZone }: Props) {
     } finally {
       release()
     }
-  }, [slug, branchId, timeZone])
+  }, [slug, branchId, timeZone, logoUrl])
 
   const run = useCallback(async () => {
     if (busy.current) {

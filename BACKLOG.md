@@ -1970,3 +1970,20 @@ Detalle en `docs/features/ingreso-del-equipo.md`.
   con 4G lenta, son varios segundos.
 - **[BAJA] La base llama a la app también por los avisos «en preparación»**, que ya no mandan
   notificación: se podría filtrar en el disparador y ahorrar esas llamadas.
+
+## Comanderas por WiFi («HUB Impresoras») — lo que queda (27/11/2026)
+
+Detalle en `docs/features/impresoras-wifi.md`.
+
+- **[ALTA] Probar con las impresoras de verdad del bar.** Se probó con impresoras de mentira: los bytes
+  son ESC/POS estándar, pero cada marca tiene sus mañas (página de códigos, cortador, ancho real).
+- **[MEDIA] Dos compus con el programa imprimen dos veces.** Correrlo en una sola. Si hace falta tener
+  uno de respaldo, sumar un candado en la base.
+- **[MEDIA] No se sabe si la impresora se quedó sin papel:** el programa sabe que mandó el tique, no que
+  salió. Algunas impresoras contestan su estado (`DLE EOT`): se podría avisar en la pantalla de cocina.
+- **[BAJA] El archivo del programa se arma a mano** (`node scripts/hub-impresoras/build.mjs`) y queda en
+  `public/`: si cambia el tique y no se vuelve a armar, el programa imprime el diseño viejo. Se podría
+  armar en el `build` de Vercel.
+- **[BAJA] Configurar desde el panel** (qué imprime cada impresora) en vez de la terminal, y ver desde el
+  panel si el programa está andando.
+- **[BAJA] El logo tiene que ser PNG.** Si el bar sube un JPG o un SVG, los tiques salen sin logo.

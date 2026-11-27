@@ -15,6 +15,7 @@
       "!supabase/.temp",
       "!coverage",
       "!types/database.ts",
+      "!public/impresoras",
       "!app/globals.css"
     ]
   },

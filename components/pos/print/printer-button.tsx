@@ -270,6 +270,50 @@ export function PrinterButton({ slug, branchId, branchName, timeZone, variant = 
               </ol>
             </details>
 
+            {/* Las comanderas que están en la red del bar (WiFi o cable): el navegador no les puede
+                hablar, así que las maneja un programa chico en una compu del bar
+                (`scripts/hub-impresoras`, ver docs/features/impresoras-wifi.md). */}
+            <details className="prn-how" data-testid="printer-wifi">
+              <summary>
+                Comanderas por WiFi (cocina, barra, pizza) <ChevronDown aria-hidden />
+              </summary>
+              <p>
+                Las imprime un programa que corre en una compu del bar conectada al mismo WiFi que
+                las impresoras (la de la caja sirve). Imprime cada pedido apenas sale, en la
+                impresora de su estación, aunque no haya ninguna pantalla abierta.
+              </p>
+              <ol>
+                <li>
+                  En esa compu instalá <b>Node.js</b>: entrá a <b>nodejs.org</b>, bajá la versión
+                  «LTS» e instalala con «Siguiente».
+                </li>
+                <li>
+                  Bajá el programa y guardalo en una carpeta (por ejemplo, Documentos › HUB):{' '}
+                  <a href="/impresoras/hub-impresoras.js" download="hub-impresoras.js">
+                    Descargar HUB Impresoras
+                  </a>
+                  .
+                </li>
+                <li>
+                  Abrí esa carpeta, escribí <code>cmd</code> en la barra de dirección y apretá
+                  Enter. En la ventana negra escribí <code>node hub-impresoras.js</code>.
+                </li>
+                <li>
+                  Entrá con la cuenta de la <b>cocina</b>. El programa busca las impresoras e
+                  imprime un número en cada una; decile qué imprime cada una (la de la cocina:
+                  Cocina y Plancha). Sale un tique de prueba en cada una.
+                </li>
+                <li>
+                  Para que arranque solo al prender la compu:{' '}
+                  <code>node hub-impresoras.js instalar</code>.
+                </li>
+              </ol>
+              <p>
+                Conviene que cada impresora tenga <b>IP fija</b>: si después de un corte de luz
+                cambia de dirección, corré <code>node hub-impresoras.js configurar</code>.
+              </p>
+            </details>
+
             <div className="prn-foot">
               <button
                 type="button"

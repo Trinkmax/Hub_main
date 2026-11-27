@@ -309,3 +309,15 @@
     transition: none;
   }
 }
+.prn-how > p {
+  margin: 0.4rem 0 0.2rem;
+  color: var(--pos-ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.prn-how a {
+  color: var(--pos-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
