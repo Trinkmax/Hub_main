@@ -1,9 +1,9 @@
 /**
  * El tablero de la cocina: una pantalla por estación — PURO y testeado (`tests/lib/pos-kitchen-board.test.ts`).
  *
- * Cada estación (cocina, barra, pizzeros) tiene su muro de comandas. Una pantalla muestra una sola
- * (el monitor de la barra) o varias a la vez: «el pase», la tele del encargado, con una estación
- * grande y las demás más chicas al costado, todas a la vista y todas manejables desde ahí.
+ * Cada estación (cocina, barra, pizzeros, plancha) tiene su muro de comandas. La barra va sola en su
+ * pantalla; cocina, plancha y pizza se ven todas en «el pase», cada pantalla con lo suyo grande y lo de
+ * las otras más chico al costado (`viewLayout`).
  *
  * Una comanda sigue siendo una mesa (`buildTableCards`): en la pantalla de la barra están sus bebidas,
  * en la de la cocina su comida, y al pie de cada una lo que la mesa espera de las otras estaciones.
@@ -11,7 +11,10 @@
 import type { KitchenItem, KitchenQueue, MenuStation } from '../types'
 import { buildTableCards, byArrival, hasExpired, type KitchenCard } from './cards'
 
-/** Qué estaciones muestra una pantalla, en orden (la primera es la grande). Vacío = todas: el pase. */
+/**
+ * Las estaciones GRANDES de una pantalla; la primera es la de esa pantalla. Vacío = el pase con la
+ * primera estación de comida grande. Ver `viewLayout`.
+ */
 export type BoardView = readonly string[]
 
 export type PaneCounts = {
@@ -25,7 +28,7 @@ export type PaneCounts = {
 
 export type BoardPane = {
   station: MenuStation
-  /** La estación grande de la pantalla (la que maneja el teclado al arrancar). */
+  /** Va grande. La primera de la pantalla es la que maneja el teclado al arrancar. */
   main: boolean
   /** Sin terminar, por orden de llegada: lo que va en el muro. */
   wall: KitchenCard[]
@@ -71,42 +74,79 @@ export const SINGLE_STATION: MenuStation = {
   kind: 'food',
 }
 
+/** La barra (o cualquier estación de bebida) no va al pase: tiene su pantalla aparte. */
+export function inPass(station: MenuStation): boolean {
+  return station.kind !== 'drink'
+}
+
+export type ViewLayout = {
+  /** Los paneles, de izquierda a derecha: primero los grandes. */
+  shown: MenuStation[]
+  /** Los que van grandes. */
+  big: ReadonlySet<string>
+}
+
 /**
- * Las estaciones de una pantalla, en el orden pedido. Las que ya no existen se descartan; si no queda
- * ninguna (o no se pidió ninguna), son todas, en el orden del bar.
+ * Qué muestra una pantalla. Pedido de Nacho (27/11/2026): «en el pase no aparezca barra, barra es más
+ * independiente; lo importante es que cocina, plancha y pizza estén enterados de lo que pasa entre sí;
+ * en pizza se ven más grandes las pizzas y en cocina lo de cocina y plancha, pizza más chico».
+ *
+ *   · La lista de la pantalla son las estaciones GRANDES; la primera es la de esa pantalla.
+ *   · Una estación de bebida (la barra) va sola.
+ *   · Cualquier otra arma el pase: las grandes primero y, más chicas, las demás de comida. La barra no.
+ *   · Sin elegir nada: el pase, con la primera estación de comida grande.
+ *   · Una lista de antes del 27/11 traía todas, barra incluida, en orden: de esa solo se agranda la primera.
  */
-export function viewStations(
-  view: BoardView,
-  stations: readonly MenuStation[],
-): readonly MenuStation[] {
-  if (stations.length === 0) return [SINGLE_STATION]
+export function viewLayout(view: BoardView, stations: readonly MenuStation[]): ViewLayout {
+  if (stations.length === 0) return { shown: [SINGLE_STATION], big: new Set([SINGLE_STATION.id]) }
   const byId = new Map(stations.map((station) => [station.id, station]))
   const picked: MenuStation[] = []
   for (const id of view) {
     const station = byId.get(id)
     if (station && !picked.includes(station)) picked.push(station)
   }
-  return picked.length > 0 ? picked : stations
+  const first = picked[0]
+  if (first && !inPass(first)) return { shown: [first], big: new Set([first.id]) }
+  const pass = stations.filter(inPass)
+  if (pass.length === 0) {
+    const shown = picked.length > 0 ? picked : [...stations]
+    return { shown, big: new Set(shown[0] ? [shown[0].id] : []) }
+  }
+  const legacy = picked.some((station) => !inPass(station))
+  let bigs = picked.filter(inPass)
+  if (legacy) bigs = bigs.slice(0, 1)
+  if (bigs.length === 0) bigs = pass.slice(0, 1)
+  return {
+    shown: [...bigs, ...pass.filter((station) => !bigs.includes(station))],
+    big: new Set(bigs.map((station) => station.id)),
+  }
 }
 
-/** Deja la lista como se guarda: solo estaciones que existen; «todas en su orden» es la lista vacía. */
+/** Las estaciones de una pantalla, de izquierda a derecha. */
+export function viewStations(
+  view: BoardView,
+  stations: readonly MenuStation[],
+): readonly MenuStation[] {
+  return viewLayout(view, stations).shown
+}
+
+/** Deja la lista como se guarda: solo estaciones que existen, sin repetir. */
 export function normalizeView(view: BoardView, stations: readonly MenuStation[]): string[] {
   const known = new Set(stations.map((station) => station.id))
-  const picked = [...new Set(view)].filter((id) => known.has(id))
-  if (picked.length === 0) return []
-  const all = stations.map((station) => station.id)
-  return picked.length === all.length && picked.every((id, at) => id === all[at]) ? [] : picked
+  return [...new Set(view)].filter((id) => known.has(id))
 }
 
-/** Poner una estación como la grande: pasa adelante y las demás quedan como estaban. */
-export function promoteStation(
+/** Agrandar o achicar un panel del pase. Siempre queda al menos uno grande. */
+export function toggleBig(
   view: BoardView,
   stationId: string,
   stations: readonly MenuStation[],
 ): string[] {
-  const shown = viewStations(view, stations).map((station) => station.id)
-  if (!shown.includes(stationId)) return normalizeView(view, stations)
-  return normalizeView([stationId, ...shown.filter((id) => id !== stationId)], stations)
+  const { shown, big } = viewLayout(view, stations)
+  if (!shown.some((station) => station.id === stationId)) return normalizeView(view, stations)
+  const bigs = shown.filter((station) => big.has(station.id)).map((station) => station.id)
+  if (!big.has(stationId)) return [...bigs, stationId]
+  return bigs.length > 1 ? bigs.filter((id) => id !== stationId) : bigs
 }
 
 function byWaiting(a: KitchenCard, b: KitchenCard): number {
@@ -119,15 +159,15 @@ function byWaiting(a: KitchenCard, b: KitchenCard): number {
  */
 export function buildBoard(queue: KitchenQueue, view: BoardView, nowMs: number): BoardPane[] {
   const normal = withHomeStation(queue)
-  const shown = viewStations(view, normal.stations)
-  return shown.map((station, at) => {
+  const { shown, big } = viewLayout(view, normal.stations)
+  return shown.map((station) => {
     const filter = station.id === '' ? [] : [station.id]
     const cards = buildTableCards(normal, filter).filter((card) => !hasExpired(card, nowMs))
     const wall = cards.filter((card) => card.status !== 'ready')
     const done = cards.filter((card) => card.status === 'ready').sort(byWaiting)
     return {
       station,
-      main: at === 0,
+      main: big.has(station.id),
       wall,
       done,
       counts: {

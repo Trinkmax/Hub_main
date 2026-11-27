@@ -1,6 +1,6 @@
 'use client'
 
-import { AlarmClock, BellRing, Check, Expand } from 'lucide-react'
+import { AlarmClock, BellRing, Check, Expand, Shrink } from 'lucide-react'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ageLevel, elapsedMinutes, formatElapsed } from '@/lib/pos/kitchen/age'
 import { type BoardPane, packWall } from '@/lib/pos/kitchen/board'
@@ -74,7 +74,10 @@ type Props = {
   onAdvance: (stationId: string, cardId: string) => void
   onLine: (stationId: string, cardId: string, line: CardLine) => void
   onDropItems: (payload: DragPayload, stationId: string) => void
+  /** Agrandar o achicar este panel en el pase. */
   onPromote: (stationId: string) => void
+  /** Este panel es grande y hay otro grande: se puede achicar. */
+  canShrink?: boolean
 }
 
 export function PassPane({
@@ -96,6 +99,7 @@ export function PassPane({
   onLine,
   onDropItems,
   onPromote,
+  canShrink = false,
 }: Props) {
   const { station, wall, done, main } = pane
   const stationId = station.id
@@ -325,15 +329,19 @@ export function PassPane({
             </span>
           ) : null}
         </p>
-        {multi && !main ? (
+        {multi && (!main || canShrink) ? (
           <button
             type="button"
             className="kds-pane-grow"
             onClick={() => onPromote(stationId)}
-            aria-label={`Agrandar ${station.name}`}
-            title={`Agrandar ${station.name}`}
+            aria-label={`${main ? 'Achicar' : 'Agrandar'} ${station.name}`}
+            title={`${main ? 'Achicar' : 'Agrandar'} ${station.name}`}
           >
-            <Expand aria-hidden strokeWidth={2.6} />
+            {main ? (
+              <Shrink aria-hidden strokeWidth={2.6} />
+            ) : (
+              <Expand aria-hidden strokeWidth={2.6} />
+            )}
           </button>
         ) : null}
       </header>

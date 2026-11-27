@@ -44,7 +44,7 @@ lo prende un superadmin por bar).
 | La Proyección de Administración toma estas ventas | `withPosSales`, `projectionUsesPos` (sin cambios en la base) | hecho |
 | El cierre del día arranca precargado con lo cobrado | `posCloseFill`, `getPosCloseDay` (sin cambios en la base) | hecho |
 | Comandas, cuenta y cierre de caja por la comandera | `lib/pos/print/*`, `components/pos/print/*` (sin cambios en la base) | hecho |
-| El pase: una pantalla por estación (Cocina, Barra, Pizzeros, Plancha) con teclado numérico y mouse | `/[bar]/salon/tele`, `components/pos/kitchen/pass-*`, `lib/pos/kitchen/{board,keypad,station-kind}.ts`, RPC `pos_kitchen_move` | hecho (26/11) |
+| El pase: una pantalla por estación (Cocina, Barra, Pizzeros, Plancha) con teclado numérico y mouse; desde el 27/11 la barra va aparte y cada pantalla agranda lo suyo | `/[bar]/salon/tele`, `components/pos/kitchen/pass-*`, `lib/pos/kitchen/{board,keypad,station-kind}.ts`, RPC `pos_kitchen_move` | hecho (26/11) |
 | De quién es cada mesa (el mozo ve las suyas; las de otro, tomadas) | `table_sessions.waiter_id`, `lib/pos/floor/waiter.ts`, RPC `pos_assign_waiter` y `pos_floor_team` | hecho (26/11) |
 | Dibujos de comida y bebida sobre cada mesa | `lib/pos/floor/prep.ts`, `floor-model.tsx` | hecho (26/11) |
 | Avisos al mozo: con la app abierta y notificación con el celular bloqueado | `pos_notices`, `push_subscriptions`, `lib/pos/notices/*`, `lib/push/*`, `/api/cron/pos-push` | hecho (26/11) |
@@ -909,12 +909,16 @@ tele de 42 pulgadas la cocina y las otras dos pantallas más chicas […] deben 
 
 ### Qué se ve
 
-- **El pase** (la tele del encargado): la estación principal ocupa media pantalla y las otras van al
-  costado, cada una en su columna de arriba a abajo, con la letra un 20 % más chica. Con tres al costado
-  (Barra, Pizzeros y Plancha) cada una queda de una columna de comandas y su encabezado muestra solo lo
-  que falta empezar y lo demorado. Cada monitor de
-  estación muestra solo la suya. Qué estaciones muestra cada pantalla queda guardado en ese equipo y en
-  la dirección (`?estaciones=`); «Agrandar» pasa una del costado al medio.
+- **El pase, sin la barra** (pedido de Nacho del 27/11: «barra es más independiente; lo importante es que
+  cocina, plancha y pizza estén enterados de lo que pasa entre sí»): las pantallas de Cocina, Plancha y
+  Pizzeros muestran las tres, cada una con lo suyo **grande** y las otras más chicas al costado. La Barra
+  va sola en su pantalla. Arriba se elige de qué estación es la pantalla (Cocina, Barra, Pizzeros,
+  Plancha); el botón del panel agranda o achica cada estación del pase (siempre queda una grande). En HUB:
+  la tele de Cocina con Cocina y Plancha grandes y Pizzeros chica; el monitor de Pizzeros con las pizzas
+  grandes. Las grandes reparten el ancho: una sola, más de la mitad; dos, el 40 % cada una. Queda guardado
+  en ese equipo y en la dirección (`?estaciones=` = las grandes, la primera es la de la pantalla).
+  `lib/pos/kitchen/board.ts` (`viewLayout`, `toggleBig`). Una pantalla guardada antes del 27/11 (con
+  todas, barra incluida) sigue andando: solo se agranda la primera.
 - **Una pared de comandas, no una fila**: las comandas se acomodan solas en columnas, siempre en la más
   corta, sin cambiar el orden de llegada (`packWall`, con la altura real de cada una). Una comanda
   gigante toma dos columnas o se achica hasta entrar; nunca se corta. A 1920 × 1080 entran unas 23

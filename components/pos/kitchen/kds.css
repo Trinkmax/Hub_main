@@ -422,27 +422,34 @@ body:has(.kds) {
 }
 /* Con tres estaciones al costado cada una es angosta: quedan lo que falta empezar y lo demorado (el
    total ya lo dice «En cola»), más apretado, y el nombre cede antes de que algo se encime. */
-.kds[data-mode="pass"][data-panes="4"] .kds-pane:not(.is-main) .kds-pane-head {
+.kds[data-mode="pass"]:is([data-panes="3"], [data-panes="4"]) .kds-pane:not(.is-main)
+  .kds-pane-head {
   gap: calc(var(--ps) * 10);
   padding: 0 calc(var(--ps) * 12);
 }
-.kds[data-mode="pass"][data-panes="4"] .kds-pane:not(.is-main) .kds-pane-name {
+.kds[data-mode="pass"]:is([data-panes="3"], [data-panes="4"])
+  .kds-pane:not(.is-main)
+  .kds-pane-name {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
 }
-.kds[data-mode="pass"][data-panes="4"] .kds-pane:not(.is-main) .kds-pane-counts {
+.kds[data-mode="pass"]:is([data-panes="3"], [data-panes="4"])
+  .kds-pane:not(.is-main)
+  .kds-pane-counts {
   flex: none;
   gap: calc(var(--ps) * 6);
   font-size: calc(var(--ps) * 20);
 }
-.kds[data-mode="pass"][data-panes="4"]
+.kds[data-mode="pass"]:is([data-panes="3"], [data-panes="4"])
   .kds-pane:not(.is-main)
   .kds-pane-counts
   > span:not(.is-new):not(.is-late) {
   display: none;
 }
-.kds[data-mode="pass"][data-panes="4"] .kds-pane:not(.is-main) .kds-pane-grow {
+.kds[data-mode="pass"]:is([data-panes="3"], [data-panes="4"])
+  .kds-pane:not(.is-main)
+  .kds-pane-grow {
   flex: none;
   margin-right: 0;
 }

@@ -9,7 +9,6 @@ import {
   Check,
   CornerDownLeft,
   Keyboard,
-  LayoutPanelLeft,
   TriangleAlert,
   Undo2,
   Volume1,
@@ -26,7 +25,7 @@ import {
   buildBoard,
   cardForCode,
   cardKey,
-  promoteStation,
+  toggleBig,
   type WallRect,
   wallNeighbor,
 } from '@/lib/pos/kitchen/board'
@@ -823,7 +822,13 @@ export function PassScreen({
     const to = paneById.get(stationId)?.station
     if (to) reroute(payload, payload.station, to)
   }
-  const onPromote = (stationId: string) => onView(promoteStation(view, stationId, queue.stations))
+  const onPromote = (stationId: string) => onView(toggleBig(view, stationId, queue.stations))
+  const bigCount = panes.filter((pane) => pane.main).length
+  // Los grandes ocupan más: con uno solo grande, la mitad de la pantalla; con dos, el 40 % cada uno.
+  const bigShare = bigCount > 1 ? 2 : panes.length >= 3 ? 2.4 : 1.7
+  const columns = multi
+    ? panes.map((pane) => `minmax(0, ${pane.main ? bigShare : 1}fr)`).join(' ')
+    : undefined
 
   const SoundIcon = soundIcon(sound.state, sound.level)
   const soundNote =
@@ -835,7 +840,6 @@ export function PassScreen({
   const loud = sound.state !== 'muted' && sound.level === 'loud'
   const scale = DENSITIES[density] ?? 1
   const unit = screen.unit ?? 1
-  const single = !multi ? (panes[0]?.station ?? null) : null
 
   return (
     <div
@@ -892,12 +896,12 @@ export function PassScreen({
               </p>
             </div>
 
-            {/* Qué muestra esta pantalla: una estación, o todas a la vez (el pase). Queda guardado en el
-                dispositivo y en la dirección, que es la que se copia para armar cada monitor. */}
+            {/* De qué estación es esta pantalla. La barra va sola; cocina, plancha y pizza abren el pase con
+                lo suyo grande (Nacho, 27/11). Queda guardado en el dispositivo y en la dirección. */}
             {queue.stations.length > 1 ? (
-              <nav className="kds-views" aria-label="Qué muestra esta pantalla">
+              <nav className="kds-views" aria-label="De qué estación es esta pantalla">
                 {queue.stations.map((station) => {
-                  const on = single?.id === station.id
+                  const on = panes[0]?.station.id === station.id
                   return (
                     <button
                       key={station.id}
@@ -912,15 +916,6 @@ export function PassScreen({
                     </button>
                   )
                 })}
-                <button
-                  type="button"
-                  className="kds-view is-all"
-                  aria-pressed={multi}
-                  onClick={() => onView([])}
-                >
-                  <LayoutPanelLeft aria-hidden strokeWidth={2.4} />
-                  El pase
-                </button>
               </nav>
             ) : (
               <span />
@@ -984,7 +979,7 @@ export function PassScreen({
 
       {help && !screen.list ? <KeypadHelp multi={multi} onClose={() => setHelp(false)} /> : null}
 
-      <main className="kds-panes">
+      <main className="kds-panes" style={columns ? { gridTemplateColumns: columns } : undefined}>
         {panes.map((pane) => {
           const id = pane.station.id
           const prefix = `${id}:`
@@ -1017,6 +1012,7 @@ export function PassScreen({
               onLine={onLine}
               onDropItems={onDropItems}
               onPromote={onPromote}
+              canShrink={pane.main && bigCount > 1}
             />
           )
         })}
