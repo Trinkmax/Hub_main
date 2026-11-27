@@ -53,7 +53,7 @@ export function AppShellSalon({
    * sola las comandas desde cualquier pantalla del salón. No dibuja nada, y no hace nada en un
    * dispositivo que no prendió «Imprimir las comandas acá» (se guarda por sucursal en cada uno).
    */
-  printStation?: { branchIds: string[]; timeZone: string } | null
+  printStation?: { branchIds: string[]; timeZone: string; logoUrl?: string | null } | null
   /**
    * Con el punto de venta, para quien atiende mesas: los avisos de cocina de SUS mesas (suena, vibra y
    * muestra el aviso, se mire la pantalla del salón que se mire). No dibuja nada.
@@ -98,6 +98,7 @@ export function AppShellSalon({
               slug={tenant.slug}
               branchId={branchId}
               timeZone={printStation.timeZone}
+              logoUrl={printStation.logoUrl ?? null}
             />
           ))}
           {waiterNotices ? (

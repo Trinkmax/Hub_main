@@ -36,8 +36,17 @@ function marksHtml(marks: readonly string[]): string {
   return marks.map((mark) => `<span class="mark">${escapeHtml(mark)}</span>`).join('')
 }
 
-function lineHtml(line: PrintLine): string {
+function lineHtml(line: PrintLine, logo: string | null): string {
   switch (line.kind) {
+    case 'logo':
+      return logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="">` : ''
+    case 'hero': {
+      const long = Array.from(line.text).length > 4
+      return `${line.caption ? `<p class="hero-cap">${escapeHtml(line.caption)}</p>` : ''}<p${classes(
+        'hero',
+        long && 'hero-long',
+      )}>${escapeHtml(line.text)}</p>`
+    }
     case 'text':
       return `<p${classes(
         't',
@@ -78,8 +87,8 @@ function lineHtml(line: PrintLine): string {
   }
 }
 
-function docHtml(doc: PrintDoc): string {
-  return `<section class="ticket">${doc.lines.map(lineHtml).join('')}<div class="tail"></div></section>`
+function docHtml(doc: PrintDoc, logo: string | null): string {
+  return `<section class="ticket">${doc.lines.map((line) => lineHtml(line, logo)).join('')}<div class="tail"></div></section>`
 }
 
 /**
@@ -131,6 +140,10 @@ body {
 .vqty { flex: none; min-width: 7mm; font-size: 12pt; font-weight: 800; line-height: 1.15; white-space: nowrap; }
 .vmarks { flex: 1 1 auto; min-width: 0; }
 .item.done .name { text-decoration: line-through; }
+.logo { display: block; margin: 0 auto 1.8mm; max-width: 42mm; max-height: 16mm; object-fit: contain; filter: grayscale(1) contrast(1.8); }
+.hero-cap { margin-top: 1mm; text-align: center; font-size: 15pt; font-weight: 800; line-height: 1; text-transform: uppercase; letter-spacing: 0.14em; }
+.hero { text-align: center; font-size: 66pt; font-weight: 900; line-height: 0.95; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.hero-long { font-size: 32pt; line-height: 1.05; }
 .banner { margin: 1.2mm 0; padding: 1.2mm 1.5mm; background: #000; color: #fff; font-size: 13pt; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: 0.03em; overflow-wrap: anywhere; }
 .rule { border: 0; margin: 1.6mm 0; height: 0; }
 .r-solid { border-top: 1.5px solid #000; }
@@ -152,5 +165,5 @@ export function renderPrintJob(job: PrintJob): string {
   const title = escapeHtml(job.docs[0]?.title ?? 'Tique')
   return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><title>${title}</title><style>${ticketCss(
     width,
-  )}</style></head><body>${job.docs.map(docHtml).join('')}</body></html>`
+  )}</style></head><body>${job.docs.map((doc) => docHtml(doc, job.logo ?? null)).join('')}</body></html>`
 }

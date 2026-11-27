@@ -1,11 +1,11 @@
 /**
  * Un tique para la comandera, como una lista de renglones — PURO.
  *
- * La comandera es una impresora térmica de rollo conectada por USB a una compu. Se le imprime por el
- * camino de siempre del sistema (el navegador manda la hoja a la impresora instalada), así sirve
- * cualquier marca con su driver: no hace falta hablarle en su idioma.
+ * Se imprime por dos caminos: por el navegador, con el driver de una impresora enchufada a la compu
+ * (`html.ts`), o directo en el idioma de la impresora térmica por la red del bar (`escpos.ts`, lo usa
+ * el programa «HUB Impresoras» para las comanderas por WiFi).
  *
- * Acá se arma QUÉ dice el tique (comanda, cuenta, cierre de caja); cómo se dibuja está en `html.ts`.
+ * Acá se arma QUÉ dice el tique (comanda, cuenta, cierre de caja); cómo se dibuja está en cada camino.
  * Reglas del papel térmico: todo en negro pleno (los grises salen punteados y no se leen), letra
  * grande, y lo importante en negativo o entre rayas.
  */
@@ -51,6 +51,13 @@ export type PrintLine =
     }
   /** Una franja en negativo: lo que no se puede pasar por alto (celíaco, PRÁCTICA). */
   | { kind: 'banner'; text: string }
+  /** El logo del bar. Sin logo cargado (o si la impresora no lo puede dibujar), no ocupa lugar. */
+  | { kind: 'logo' }
+  /**
+   * Lo que se busca con la vista desde lejos, gigante: el número de mesa. `caption` va arriba en
+   * chico («MESA»); sin número (un nombre, «Delivery») va sin rótulo.
+   */
+  | { kind: 'hero'; caption: string | null; text: string }
   | { kind: 'rule'; style?: 'solid' | 'dashed' | 'double' }
   | { kind: 'space'; lines?: number }
   /** Un casillero para escribir a mano (firma, contado). */
@@ -66,6 +73,8 @@ export type PrintDoc = {
 export type PrintJob = {
   paper: PaperWidth
   docs: PrintDoc[]
+  /** El logo del bar (dirección de la imagen), para el renglón `logo`. */
+  logo?: string | null
 }
 
 /** Atajos para armar renglones sin repetir `kind`. */

@@ -129,6 +129,7 @@ export default async function SalonLayout({
           ? {
               branchIds: printBranches,
               timeZone: access.tenant.timezone || 'America/Argentina/Cordoba',
+              logoUrl: access.tenant.logo_url ?? null,
             }
           : null
       }

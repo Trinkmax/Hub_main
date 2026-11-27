@@ -519,6 +519,11 @@ Queda para probar con dos dispositivos a la vez y sin señal (pasos 12 a 15 del 
 
 ## La comandera (comandas, cuenta y cierre en papel)
 
+> **Comanderas por WiFi o cable de red (27/11/2026):** las maneja el programa «HUB Impresoras», que corre
+> en una compu del bar. Ver [`impresoras-wifi.md`](./impresoras-wifi.md). Lo de abajo es para las que van
+> enchufadas por USB a una compu. El tique de la comanda es el mismo en los dos caminos: logo, estación,
+> la MESA gigante, el mozo y lo pedido.
+
 Pedido del 16/11/2026: «se necesitan comandas en ticket, con cable USB; va a haber dos compus, una
 afuera y otra adentro» y «cierre de caja: imprimir una planilla en la comandera».
 

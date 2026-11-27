@@ -106,6 +106,7 @@ const textOf = (doc: PrintDoc): string =>
   doc.lines
     .map((entry: PrintLine) => {
       if (entry.kind === 'text' || entry.kind === 'banner') return entry.text
+      if (entry.kind === 'hero') return [entry.caption, entry.text].filter(Boolean).join(' ')
       if (entry.kind === 'row') return `${entry.left} | ${entry.right}`
       if (entry.kind === 'item') {
         const variants = entry.variants.map((v) => `${v.qty} ${v.marks.join(', ')}`).join(' / ')
@@ -136,13 +137,27 @@ describe('la comanda en papel', () => {
       [],
     )
     if (!card) throw new Error('sin comanda')
-    const text = textOf(comandaDoc(card, CONTEXT))
-    expect(text).toContain('Mesa 12')
-    expect(text).toContain('Salón · 4 personas · Tanda 2')
-    expect(text).toContain('Pedido 21:55')
+    const doc = comandaDoc(card, CONTEXT)
+    const text = textOf(doc)
+    // Lo justo para que el mozo sepa de qué mesa es (Nacho, 27/11): el logo, la mesa gigante, la hora.
+    expect(doc.lines[0]).toEqual({ kind: 'logo' })
+    expect(doc.lines.find((line) => line.kind === 'hero')).toEqual({
+      kind: 'hero',
+      caption: 'Mesa',
+      text: '12',
+    })
+    expect(text).toContain('21:55 · Tanda 2')
     expect(text).toContain('x2 Cheese Burger')
     expect(text).toContain('x2 Lomito x1 Sin TACC / x1 Papas rústicas, «bien cocido»')
-    expect(text).toContain('4 productos')
+    // Lo que no hace falta para identificar la mesa ya no va.
+    expect(text).not.toContain('personas')
+    expect(text).not.toContain('productos')
+  })
+
+  it('dice quién atiende la mesa', () => {
+    const [card] = buildCards(queue([ticket({ waiter: 'Sofía Giménez' })]), [])
+    if (!card) throw new Error('sin comanda')
+    expect(textOf(comandaDoc(card, CONTEXT))).toContain('Mozo: Sofía Giménez')
   })
 
   it('entre varias formas, la que no lleva nada dice «Común»', () => {
@@ -188,7 +203,8 @@ describe('la comanda en papel', () => {
     const [card] = buildCards(queue([ticket()]), [PLANCHA])
     if (!card) throw new Error('sin comanda')
     const text = textOf(comandaDoc(card, { ...CONTEXT, stationLabel: 'Plancha', reprint: true }))
-    expect(text.split('\n')[0]).toBe('Plancha · Cerro')
+    // Arriba, la estación de donde sale, en negativo.
+    expect(text.split('\n')[0]).toBe('Plancha')
     expect(text).toContain('Reimpresión')
   })
 })
