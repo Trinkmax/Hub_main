@@ -12,6 +12,7 @@ import {
   weekdayOf,
 } from '@/lib/dates'
 import { resolveReservationAlerts, SERVICE_ALERT_META, type ServiceAlert } from '@/lib/salon/alerts'
+import { isoDayInCordoba } from '@/lib/salon/date-presets'
 import type { RangeTotals } from '@/lib/salon/day-counter'
 import { activeDaySegments } from '@/lib/salon/day-counter'
 import { DEPOSIT_METHOD_LABELS, depositMethodLabel } from '@/lib/salon/deposit-method'
@@ -194,11 +195,13 @@ function cakeText(r: ReservationWithJoins): string | null {
 /** Una fila de cualquier lista. Sin teléfono, mail ni Instagram. */
 export function reservationRow(
   r: ReservationWithJoins,
-  opts: { distinguish?: string; withDate?: boolean } = {},
+  opts: { distinguish?: string; withDate?: boolean; withLoaded?: boolean } = {},
 ) {
   return compact({
     id: r.id,
     fecha: opts.withDate ? dayText(r.reservation_date) : null,
+    // El día en que se cargó: lo guarda sola cada reserva (`created_at`).
+    cargada: opts.withLoaded ? loadedDay(r.created_at) : null,
     hora: hhmm(r.reservation_time_local),
     nombre: redactContacts(r.guest_name),
     distingue: opts.distinguish ?? null,
@@ -222,10 +225,17 @@ export function reservationRow(
   })
 }
 
+/** «22/11/2026», en el calendario del bar. `null` si no vino. */
+function loadedDay(createdAt: string | null | undefined): string | null {
+  return createdAt ? dayText(isoDayInCordoba(createdAt)) : null
+}
+
 /** La ficha de una reserva: lo mismo que una fila y lo que se mira de a una. */
 export function reservationCard(r: ReservationWithJoins) {
+  const loadedAt = timeInCordoba(r.created_at)
   return compact({
     ...reservationRow(r, { withDate: true }),
+    cargada_el: r.created_at ? `${loadedDay(r.created_at)}${loadedAt ? ` ${loadedAt}` : ''}` : null,
     dia_semana: weekdayName(r.reservation_date),
     hasta: r.reservation_end_time_local ? hhmm(r.reservation_end_time_local) : null,
     reservadas: r.estimated_guests,
@@ -572,7 +582,7 @@ export function eventCard(e: ScheduledEventWithTemplate, rows: readonly Reservat
   const used = active.reduce((sum, r) => sum + coversOf(r), 0)
   const distinguish = nameDisambiguation(rows)
   const list = sortForBoard(rows.filter((r) => r.status !== 'cancelled')).map((r) =>
-    reservationRow(r, { distinguish: distinguish.get(r.id) }),
+    reservationRow(r, { distinguish: distinguish.get(r.id), withLoaded: true }),
   )
   const { filas, hay_mas } = cappedBySize(list, LIST_MAX, LIST_MAX_CHARS)
   const cancelled = rows.length - rows.filter((r) => r.status !== 'cancelled').length
@@ -801,6 +811,95 @@ export function depositsData(report: DepositsReport, label: string, basis: Depos
   })
 }
 
+// ─── Cuándo se cargaron las reservas ─────────────────────────────────────────
+
+export type LoadedReservationRow = {
+  scheduled_event_id: string | null
+  estimated_guests: number
+  actual_guests: number | null
+  /** Lo guarda sola cada reserva al cargarse (`timestamptz`). */
+  created_at: string
+  origin: string | null
+}
+
+type LoadCount = { reservas: number; personas: number; web: number }
+
+const emptyLoad = (): LoadCount => ({ reservas: 0, personas: 0, web: 0 })
+
+/**
+ * Las reservas en pie de cada evento, partidas por el día en que se cargaron: antes de `cut` y desde
+ * `cut` (ese día incluido, en el calendario del bar). Pedido de Nacho Badra (26/11/2026): «cuántas
+ * reservas tenía antes del domingo 22 y cuántas tengo después, que es cuando activé la pauta». Las
+ * cuentas van hechas: quien lo lee no suma.
+ *
+ * `films`: el título de la película de cada formato, si se pudo leer (el formato del calendario puede
+ * llamarse distinto que la película).
+ */
+export function loadSplitData(input: {
+  events: readonly ScheduledEventWithTemplate[]
+  rows: readonly LoadedReservationRow[]
+  cut: string
+  label: string
+  films?: ReadonlyMap<string, string>
+}) {
+  const { events, rows, cut, label, films } = input
+  const byEvent = new Map<string, { before: LoadCount; since: LoadCount }>()
+  for (const e of events) byEvent.set(e.id, { before: emptyLoad(), since: emptyLoad() })
+  for (const r of rows) {
+    const bucket = r.scheduled_event_id ? byEvent.get(r.scheduled_event_id) : undefined
+    if (!bucket) continue
+    const side = isoDayInCordoba(r.created_at) < cut ? bucket.before : bucket.since
+    side.reservas += 1
+    side.personas += r.actual_guests ?? r.estimated_guests
+    if (r.origin === 'web') side.web += 1
+  }
+  const total = { before: emptyLoad(), since: emptyLoad() }
+  const sorted = [...events].sort((a, b) =>
+    `${a.event_date}${a.starts_at_local}` < `${b.event_date}${b.starts_at_local}` ? -1 : 1,
+  )
+  const list = sorted.map((e) => {
+    const { before, since } = byEvent.get(e.id) ?? { before: emptyLoad(), since: emptyLoad() }
+    for (const key of ['reservas', 'personas', 'web'] as const) {
+      total.before[key] += before[key]
+      total.since[key] += since[key]
+    }
+    const name = eventDisplayName(e)
+    const film = films?.get(e.template_id) ?? null
+    return compact({
+      evento_id: e.id,
+      nombre: name,
+      pelicula: film && normalizeText(film) !== normalizeText(name) ? film : null,
+      fecha: dayText(e.event_date),
+      dia: weekdayName(e.event_date),
+      cupo: e.capacity,
+      antes_reservas: before.reservas,
+      antes_personas: before.personas,
+      desde_reservas: since.reservas,
+      desde_personas: since.personas,
+      desde_por_la_web: since.web > 0 ? since.web : null,
+      total_reservas: before.reservas + since.reservas,
+      total_personas: before.personas + since.personas,
+    })
+  })
+  const { filas, hay_mas } = cappedBySize(list, 40, LIST_MAX_CHARS)
+  return compact({
+    eventos: label,
+    corte: `${weekdayName(cut)} ${dayText(cut)}`,
+    como_se_cuenta:
+      'Reservas en pie (sin las canceladas ni las que no vinieron), por el día en que se cargaron. «Antes» es hasta el día anterior al corte; «desde», del corte en adelante.',
+    cuantos_eventos: events.length,
+    total: {
+      antes_reservas: total.before.reservas,
+      antes_personas: total.before.personas,
+      desde_reservas: total.since.reservas,
+      desde_personas: total.since.personas,
+      desde_por_la_web: total.since.web > 0 ? total.since.web : null,
+    },
+    filas,
+    hay_mas,
+  })
+}
+
 // ─── Entradas ────────────────────────────────────────────────────────────────
 
 export type SeatReservationRow = {
@@ -872,6 +971,7 @@ function functionsOf(
   events: readonly ScheduledEventWithTemplate[],
   counts: ReadonlyMap<string, SeatCount>,
   nowLocal: string,
+  paused: ReadonlySet<string>,
 ) {
   const minParty = Math.max(1, experience.min_party_size ?? 1)
   return events
@@ -890,7 +990,7 @@ function functionsOf(
         time: formatTime(e.starts_at_local),
         capacity: e.capacity,
         left,
-        state: functionState(left, e.capacity, minParty),
+        state: functionState(left, e.capacity, minParty, paused.has(e.id)),
         taken: count.taken,
         held: count.held,
         sold: count.sold,
@@ -907,12 +1007,15 @@ export function entradasData(input: {
   canSell: boolean
   publicUrl: string
   wanted?: string
+  /** Las funciones con la venta frenada (Ventas online › Funciones y cupos). */
+  paused?: ReadonlySet<string>
 }) {
   const { experiences, events, counts, nowLocal, canSell, publicUrl, wanted } = input
+  const paused = input.paused ?? new Set<string>()
   const films = experiences.map((experience) => ({
     experience,
     published: experience.published,
-    functions: functionsOf(experience, events, counts, nowLocal),
+    functions: functionsOf(experience, events, counts, nowLocal, paused),
   }))
   const summary = carteleraSummary(films)
   const key = wanted ? normalizeText(wanted) : null
@@ -942,7 +1045,11 @@ export function entradasData(input: {
           guardados: fn.held > 0 ? fn.held : null,
           quedan: fn.left,
           vendidas_online: fn.sold,
-          estado: availabilityLabel(fn),
+          // Frenada: tiene lugar pero el bar le cortó la venta online; la gente ve «Próximamente».
+          estado:
+            fn.state === 'paused'
+              ? 'Venta frenada (en la cartelera dice «Próximamente»)'
+              : availabilityLabel(fn),
         }),
       ),
     }),
@@ -955,6 +1062,7 @@ export function entradasData(input: {
     apagadas: summary.drafts,
     funciones_a_la_venta: summary.onSale,
     funciones_agotadas: summary.soldOut,
+    funciones_frenadas: summary.paused > 0 ? summary.paused : null,
     filas,
     hay_mas,
   })

@@ -39,6 +39,9 @@ Cargar una reserva no le manda nada al cliente. La excepción: con un flow «Se 
 ## Señas
 Es un monto anotado en la reserva: el sistema no guarda cuándo se cobró ni si se devolvió. El reporte se lee por día de la reserva o por día de carga, y dan distinto. Las canceladas y las que no vinieron suman, y van aparte. Cancelar no devuelve ni borra la seña.
 
+## Cuándo se cargó una reserva
+Cada reserva guarda sola cuándo se cargó. Con eso cuento cuántas se sumaron desde una fecha (por ejemplo, desde que arrancó una pauta).
+
 ## Eventos y formatos
 Un formato es el molde, con su nombre y su cupo; un evento es ese formato en una fecha, con su propio cupo. Un formato va una vez por día. Un evento con reservas activas no se mueve de día ni se borra. Cancelar un evento es borrarlo; si tiene pauta cargada, la saca primero un dueño.
 Grupo privado: ocupa cupo, pero no sale en los reportes de eventos. Un cumple o una reserva especial pueden pedir un formato que ese día no está: se programa solo, como grupo privado.
@@ -49,10 +52,11 @@ Solo las ven los dueños. Cada formato puede tener una página de venta (la «pe
 - Quedan = cupo − reservas en pie − lugares guardados por compras en curso. Con menos lugares que el mínimo, figura agotada. Las reservas a mano solo avisan; la venta online corta.
 - Al aprobarse el pago, la reserva se crea sola: sin planta, a nombre del gestor de venta online y con una nota de cuánto resta cobrar. La entrada lleva un QR para la puerta.
 - Si Mercado Pago rechaza, se puede transferir: alguien del bar lo confirma a mano.
+- Una fecha puede tener la venta online frenada: en la cartelera dice «Próximamente» y no se compra; las reservas a mano entran igual.
 - Cancelar la reserva de una compra deja sin valor la entrada, pero no devuelve la plata.
 
 ## Lo que no hago y llevo a la pantalla
-Devolver plata, confirmar transferencias y anular entradas (Entradas › Ventas online); conectar Mercado Pago y editar una película (Entradas); cargar fechas con Excel (Calendario); Pasar lista de toda una noche (Reservas); marcar comisiones pagadas (Estadísticas › Comisiones); tarifas y qué gestores cobran (Configuración › Comisiones); sumar puntos a una mesa (Operativo). Tampoco borro nada en bloque.
+Devolver plata, confirmar transferencias y anular entradas (Entradas › Ventas online); frenar o prender la venta de una fecha (Ventas online › Funciones y cupos); conectar Mercado Pago y editar una película (Entradas); cargar fechas con Excel (Calendario); Pasar lista de toda una noche (Reservas); marcar comisiones pagadas (Estadísticas › Comisiones); tarifas y qué gestores cobran (Configuración › Comisiones); sumar puntos a una mesa (Operativo). Tampoco borro nada en bloque.
 
 ## Palabras
 Cubierto = persona. Reserva normal = sin evento. Apartado = lo que se guarda un evento. Función = una fecha de una película. Sin contar = nadie cargó cuántos vinieron.

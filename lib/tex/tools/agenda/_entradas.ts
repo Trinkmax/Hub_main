@@ -34,6 +34,8 @@ export type CarteleraRead = {
   events: ScheduledEventWithTemplate[]
   reservations: SeatReservationRow[]
   orders: SeatOrderRow[]
+  /** Las funciones con la venta online frenada (Ventas online › Funciones y cupos). */
+  paused: Set<string>
 }
 
 export async function readCartelera(ctx: TexToolContext): Promise<CarteleraRead> {
@@ -57,9 +59,11 @@ export async function readCartelera(ctx: TexToolContext): Promise<CarteleraRead>
   const templateIds = new Set(experiences.map((e) => e.template_id))
   const events = allEvents.filter((e) => templateIds.has(e.template_id) && !e.private_group)
   const eventIds = events.map((e) => e.id)
-  if (eventIds.length === 0) return { experiences, events, reservations: [], orders: [] }
+  if (eventIds.length === 0) {
+    return { experiences, events, reservations: [], orders: [], paused: new Set() }
+  }
 
-  const [reservations, orders] = await Promise.all([
+  const [reservations, orders, pausedRows] = await Promise.all([
     collectPages<SeatReservationRow>((from, to) =>
       supabase
         .from('salon_reservations')
@@ -80,6 +84,16 @@ export async function readCartelera(ctx: TexToolContext): Promise<CarteleraRead>
         .order('id', { ascending: true })
         .range(from, to),
     ),
+    // Cuáles tienen la venta frenada. Si no se puede leer, ninguna: es un dato de más, no la cuenta.
+    supabase
+      .from('scheduled_events')
+      .select('id')
+      .eq('tenant_id', ctx.tenantId)
+      .in('id', eventIds)
+      .eq('online_sales_paused', true),
   ])
-  return { experiences, events, reservations, orders }
+  const paused = new Set<string>(
+    ((pausedRows?.data as Array<{ id: string }> | null) ?? []).map((row) => row.id),
+  )
+  return { experiences, events, reservations, orders, paused }
 }
