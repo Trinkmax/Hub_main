@@ -6,7 +6,7 @@ import {
   homeStationId,
   normalizeView,
   packWall,
-  promoteStation,
+  toggleBig,
   viewStations,
   type WallRect,
   wallNeighbor,
@@ -98,22 +98,53 @@ function queue(tickets: KitchenTicket[], stations: MenuStation[] = STATIONS): Ki
   }
 }
 
+const PLANCHA: MenuStation = {
+  id: 'st-plancha',
+  name: 'Plancha',
+  color: '#0e7490',
+  kind: 'food',
+  icon: 'burger',
+}
+const HUB = [COCINA, BARRA, PIZZA, PLANCHA]
+const names = (view: string[], stations = HUB) => viewStations(view, stations).map((s) => s.name)
+const bigs = (view: string[], stations = HUB) =>
+  buildBoard(queue([], stations), view, NOW)
+    .filter((pane) => pane.main)
+    .map((pane) => pane.station.name)
+
 describe('qué estaciones muestra una pantalla', () => {
-  it('sin elegir nada son todas, en el orden del bar (el pase)', () => {
-    expect(viewStations([], STATIONS).map((s) => s.name)).toEqual(['Cocina', 'Barra', 'Pizzeros'])
+  it('la barra no va al pase: va sola, en su pantalla (Nacho, 27/11)', () => {
+    expect(names([])).toEqual(['Cocina', 'Pizzeros', 'Plancha'])
+    expect(names([BARRA.id])).toEqual(['Barra'])
+    expect(bigs([BARRA.id])).toEqual(['Barra'])
   })
 
-  it('la primera de la lista es la grande', () => {
-    expect(viewStations([BARRA.id, COCINA.id], STATIONS).map((s) => s.name)).toEqual([
-      'Barra',
+  it('en la de pizza, las pizzas grandes y cocina y plancha más chicas', () => {
+    expect(names([PIZZA.id])).toEqual(['Pizzeros', 'Cocina', 'Plancha'])
+    expect(bigs([PIZZA.id])).toEqual(['Pizzeros'])
+  })
+
+  it('en la de cocina, cocina y plancha grandes y pizza más chica', () => {
+    expect(names([COCINA.id, PLANCHA.id])).toEqual(['Cocina', 'Plancha', 'Pizzeros'])
+    expect(bigs([COCINA.id, PLANCHA.id])).toEqual(['Cocina', 'Plancha'])
+  })
+
+  it('sin elegir nada: el pase, con la primera estación de comida grande', () => {
+    expect(bigs([])).toEqual(['Cocina'])
+  })
+
+  it('una lista de antes del 27/11 (todas, barra incluida) solo agranda la primera', () => {
+    expect(names([PIZZA.id, COCINA.id, BARRA.id, PLANCHA.id])).toEqual([
+      'Pizzeros',
       'Cocina',
+      'Plancha',
     ])
-    expect(viewStations([BARRA.id], STATIONS).map((s) => s.name)).toEqual(['Barra'])
+    expect(bigs([PIZZA.id, COCINA.id, BARRA.id, PLANCHA.id])).toEqual(['Pizzeros'])
   })
 
-  it('una estación que ya no existe se descarta; si no queda ninguna, son todas', () => {
-    expect(viewStations(['otra', PIZZA.id], STATIONS).map((s) => s.name)).toEqual(['Pizzeros'])
-    expect(viewStations(['otra'], STATIONS)).toHaveLength(3)
+  it('una estación que ya no existe se descarta', () => {
+    expect(names(['otra', PIZZA.id])).toEqual(['Pizzeros', 'Cocina', 'Plancha'])
+    expect(names(['otra'])).toEqual(['Cocina', 'Pizzeros', 'Plancha'])
   })
 
   it('un bar sin estaciones tiene una sola pantalla, con todo', () => {
@@ -122,22 +153,23 @@ describe('qué estaciones muestra una pantalla', () => {
     expect(panes[0]?.wall).toHaveLength(1)
   })
 
-  it('«todas en su orden» se guarda como lista vacía; otro orden se conserva', () => {
-    expect(normalizeView([COCINA.id, BARRA.id, PIZZA.id], STATIONS)).toEqual([])
-    expect(normalizeView([BARRA.id, COCINA.id, PIZZA.id], STATIONS)).toEqual([
-      BARRA.id,
-      COCINA.id,
-      PIZZA.id,
-    ])
-    expect(normalizeView(['x', BARRA.id, BARRA.id], STATIONS)).toEqual([BARRA.id])
-    expect(normalizeView(['x'], STATIONS)).toEqual([])
+  it('un bar con solo barra la muestra igual', () => {
+    expect(names([], [BARRA])).toEqual(['Barra'])
   })
 
-  it('agrandar una estación la pasa adelante y deja las demás', () => {
-    expect(promoteStation([], BARRA.id, STATIONS)).toEqual([BARRA.id, COCINA.id, PIZZA.id])
-    // Volver a agrandar la primera del bar deja «todas en su orden».
-    expect(promoteStation([BARRA.id, COCINA.id, PIZZA.id], COCINA.id, STATIONS)).toEqual([])
-    expect(promoteStation([BARRA.id], PIZZA.id, STATIONS)).toEqual([BARRA.id])
+  it('se guarda sin repetidas ni estaciones que no existen', () => {
+    expect(normalizeView(['x', PIZZA.id, PIZZA.id, COCINA.id], HUB)).toEqual([PIZZA.id, COCINA.id])
+    expect(normalizeView(['x'], HUB)).toEqual([])
+  })
+
+  it('agrandar suma un panel a los grandes; achicar lo saca, pero siempre queda uno', () => {
+    expect(toggleBig([COCINA.id], PLANCHA.id, HUB)).toEqual([COCINA.id, PLANCHA.id])
+    expect(toggleBig([COCINA.id, PLANCHA.id], PLANCHA.id, HUB)).toEqual([COCINA.id])
+    expect(toggleBig([COCINA.id], COCINA.id, HUB)).toEqual([COCINA.id])
+    // Desde lo de fábrica (la primera grande) también.
+    expect(toggleBig([], PIZZA.id, HUB)).toEqual([COCINA.id, PIZZA.id])
+    // La barra no está en el pase: no se agranda ahí.
+    expect(toggleBig([COCINA.id], BARRA.id, HUB)).toEqual([COCINA.id])
   })
 })
 
@@ -165,12 +197,14 @@ describe('el tablero', () => {
     ])
 
   it('cada estación tiene lo suyo: la comida en cocina, la bebida en la barra, la pizza con los pizzeros', () => {
-    const [cocina, barra, pizza] = buildBoard(mixed(), [], NOW)
+    // El pase (cocina y pizza) y, aparte, la pantalla de la barra.
+    const [cocina, pizza] = buildBoard(mixed(), [], NOW)
+    const [barra] = buildBoard(mixed(), [BARRA.id], NOW)
     expect(cocina?.wall.map((c) => c.lines.map((l) => l.name))).toEqual([['Lomito']])
     expect(barra?.wall.map((c) => c.lines.map((l) => l.name))).toEqual([['Mojito']])
     expect(pizza?.wall.map((c) => c.lines.map((l) => l.name))).toEqual([['Muzzarella']])
     expect(cocina?.main).toBe(true)
-    expect(barra?.main).toBe(false)
+    expect(pizza?.main).toBe(false)
   })
 
   it('lo listo va aparte (esperando al mozo), y los contadores lo dicen', () => {
@@ -206,7 +240,8 @@ describe('el tablero', () => {
       COCINA.id,
       COCINA.id,
     ])
-    const [cocina, barra, pizza] = buildBoard(q, [], NOW)
+    const [cocina, pizza] = buildBoard(q, [], NOW)
+    const [barra] = buildBoard(q, [BARRA.id], NOW)
     expect(cocina?.wall[0]?.lines.map((l) => l.name)).toEqual(['Suelto', 'Viejo'])
     expect(barra?.wall).toHaveLength(0)
     expect(pizza?.wall).toHaveLength(0)
