@@ -45,6 +45,7 @@ import { nowLocalIn } from '@/lib/ticketing/dates'
 import { getTicketingSettings, listRecentOrders } from '@/lib/ticketing/queries'
 import { cappedBySize, periodFields, texPeriod } from '../read/common'
 import { capped, defineTool, type TexToolContext, type TexToolResult } from '../types'
+import { readFilmTitles, readLoadedReservations } from './_carga'
 import { readCartelera } from './_entradas'
 import {
   agendaRange,
@@ -62,6 +63,7 @@ import {
   eventCard,
   eventRow,
   filterDayRows,
+  loadSplitData,
   managerRow,
   monthsOfRange,
   ORDER_FILTERS,
@@ -387,6 +389,79 @@ export const agendaReadTools = [
   }),
 
   defineTool({
+    name: 'ver_carga_reservas',
+    description:
+      'Cuántas reservas y personas tiene cada evento según el día en que se cargaron, antes y desde una fecha de corte. Para «¿cuántas se sumaron desde que arrancó la pauta?» o «¿cuántas tenía Coraline antes del domingo 22?». Sin período, de hoy a 60 días.',
+    input: z.object({
+      corte: realDay(
+        'El día de corte, yyyy-MM-dd: «antes» es hasta el día anterior y «desde», de ese día en adelante.',
+      ),
+      evento: z
+        .string()
+        .trim()
+        .min(1)
+        .optional()
+        .describe('Parte del nombre del evento, del formato o de la película.'),
+      ...periodFields,
+      proximos: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .optional()
+        .describe('Solo los primeros N eventos del período («los próximos 3»).'),
+    }),
+    need: { roles: RESERVATION_STAFF_ROLES },
+    doing: () => 'Contando cuándo se cargaron las reservas',
+    done: () => 'Conté cuándo se cargaron las reservas',
+    run: async (input, ctx) => {
+      const period = agendaRange(input, ctx.today)
+      if (!period.ok) return fail(period.message)
+      const [events, films] = await Promise.all([
+        listScheduledEventsForDateRange({
+          tenantId: ctx.tenantId,
+          from: period.from,
+          to: period.to,
+        }),
+        readFilmTitles(ctx),
+      ])
+      const key = input.evento ? normalizeText(input.evento) : null
+      // Los grupos privados no son funciones abiertas: no se cuentan.
+      const matching = events
+        .filter((e) => !e.private_group)
+        .filter(
+          (e) =>
+            !key ||
+            [eventDisplayName(e), e.template?.name ?? '', films.get(e.template_id) ?? ''].some(
+              (name) => name && normalizeText(name).includes(key),
+            ),
+        )
+        .sort((a, b) =>
+          `${a.event_date}${a.starts_at_local}` < `${b.event_date}${b.starts_at_local}` ? -1 : 1,
+        )
+      const shown = input.proximos ? matching.slice(0, input.proximos) : matching
+      if (shown.length === 0) {
+        return fail(
+          input.evento
+            ? `No encontré eventos de «${input.evento}» en ${period.label}.`
+            : `No hay eventos en ${period.label}.`,
+        )
+      }
+      const rows = await readLoadedReservations(
+        ctx,
+        shown.map((e) => e.id),
+      )
+      const label = `${input.evento ? `«${input.evento}» · ` : ''}${
+        input.proximos ? `los próximos ${shown.length}` : period.label
+      }`
+      return {
+        kind: 'data',
+        data: loadSplitData({ events: shown, rows, cut: input.corte, label, films }),
+      }
+    },
+  }),
+
+  defineTool({
     name: 'ver_formatos',
     description:
       'Los formatos de evento: el catálogo que se programa en el calendario, con su cupo y su servicio. Usala antes de programar un evento si no sabés cómo se llama el formato.',
@@ -600,6 +675,7 @@ export const agendaReadTools = [
           canSell: Boolean(settings.mp_connected_at),
           publicUrl: `${appUrl}/entradas/${ctx.slug}`,
           wanted: input.pelicula,
+          paused: cartelera.paused,
         }),
       }
     },

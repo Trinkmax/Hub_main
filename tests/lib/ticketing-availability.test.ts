@@ -5,9 +5,11 @@ import {
   firstAvailable,
   functionState,
   isOnSale,
+  isOpen,
   lastSeatsThreshold,
   maxSelectable,
   partySizeError,
+  saleStatus,
   seatsLeft,
 } from '@/lib/ticketing/availability'
 import type { PublicFunction } from '@/lib/ticketing/types'
@@ -47,6 +49,18 @@ describe('functionState', () => {
     expect(functionState(1, 50)).toBe('last')
   })
 
+  it('con la venta frenada y lugar: «paused»; sin lugar sigue siendo agotada', () => {
+    // Pedido de Nacho Badra (26/11/2026): frena las fechas lejanas para llenar la próxima.
+    expect(functionState(30, 50, 2, true)).toBe('paused')
+    // Aunque queden pocos: frenada no avisa «Últimos».
+    expect(functionState(4, 50, 2, true)).toBe('paused')
+    // Frenar no cambia lo que ya no se podía comprar.
+    expect(functionState(0, 50, 2, true)).toBe('sold_out')
+    expect(functionState(1, 50, 2, true)).toBe('sold_out')
+    // Sin frenar, igual que siempre.
+    expect(functionState(30, 50, 2, false)).toBe('available')
+  })
+
   it('el umbral de «últimos» es el 20 % con techo 10 y piso 1', () => {
     expect(lastSeatsThreshold(50)).toBe(10)
     expect(lastSeatsThreshold(120)).toBe(10)
@@ -61,6 +75,10 @@ describe('availabilityLabel', () => {
     expect(availabilityLabel({ left: 1, state: 'last' })).toBe('Último lugar')
     expect(availabilityLabel({ left: 4, state: 'last' })).toBe('Últimos 4')
     expect(availabilityLabel({ left: 30, state: 'available' })).toBeNull()
+  })
+
+  it('la frenada dice «Próximamente», nunca «Agotado»: todavía tiene lugar', () => {
+    expect(availabilityLabel({ left: 30, state: 'paused' })).toBe('Próximamente')
   })
 })
 
@@ -78,6 +96,30 @@ describe('selección', () => {
     expect(firstAvailable(list)?.eventId).toBe('b')
     expect(allSoldOut(list)).toBe(false)
     expect(allSoldOut([fn({ state: 'sold_out', left: 0 })])).toBe(true)
+  })
+
+  it('la frenada no se compra ni se preselecciona', () => {
+    const paused = fn({ eventId: 'a', state: 'paused', left: 40 })
+    expect(isOpen(paused)).toBe(false)
+    expect(isOpen(fn({ state: 'sold_out', left: 0 }))).toBe(false)
+    expect(isOpen(fn({ state: 'last', left: 3 }))).toBe(true)
+    expect(isOpen(fn({}))).toBe(true)
+    expect(firstAvailable([paused, fn({ eventId: 'b' })])?.eventId).toBe('b')
+    expect(firstAvailable([paused])).toBeNull()
+    // No está agotada: «Se agotaron todas las fechas» sería mentira.
+    expect(allSoldOut([paused])).toBe(false)
+  })
+
+  it('cómo viene la venta de una película, mirando todas sus fechas', () => {
+    const open = fn({ eventId: 'o' })
+    const paused = fn({ eventId: 'p', state: 'paused', left: 40 })
+    const gone = fn({ eventId: 'g', state: 'sold_out', left: 0 })
+    expect(saleStatus([])).toBe('none')
+    expect(saleStatus([gone, open, paused])).toBe('open')
+    // Nada para comprar ahora, pero a alguna le queda lugar: «Próximamente».
+    expect(saleStatus([gone, paused])).toBe('soon')
+    expect(saleStatus([paused])).toBe('soon')
+    expect(saleStatus([gone])).toBe('sold_out')
   })
 
   it('no deja elegir más personas que lugares ni que el máximo por compra', () => {

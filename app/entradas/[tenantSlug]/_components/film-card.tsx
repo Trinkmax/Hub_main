@@ -1,7 +1,7 @@
 import { ArrowRight, Clock, MessageCircle, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { buildWaMeUrl } from '@/lib/phone'
-import { allSoldOut } from '@/lib/ticketing/availability'
+import { type SaleStatus, saleStatus } from '@/lib/ticketing/availability'
 import { filmHref, previewImage, stepsSummary } from '@/lib/ticketing/catalog'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import type { PublicExperience } from '@/lib/ticketing/types'
@@ -20,7 +20,7 @@ export function FilmCard({
   whatsapp,
   venueName,
   priority = false,
-  soldOut: soldOutProp,
+  sale: saleProp,
   onlyAvailable = false,
   branch = null,
   branchLabel,
@@ -31,8 +31,11 @@ export function FilmCard({
   whatsapp: string | null
   venueName: string
   priority?: boolean
-  /** ¿Se agotó la película entera? Con un filtro, `experience` trae solo parte de las fechas. */
-  soldOut?: boolean
+  /**
+   * Cómo viene la venta de la película entera (agotada, «Próximamente»…). Con un filtro,
+   * `experience` trae solo parte de las fechas.
+   */
+  sale?: SaleStatus
   /** La cartelera está filtrada por «Disponibles»: la película tampoco muestra las agotadas. */
   onlyAvailable?: boolean
   /** La sucursal elegida arriba: la película arranca con una función de ahí. */
@@ -42,15 +45,19 @@ export function FilmCard({
 }) {
   const href = filmHref(tenantSlug, experience.slug, { onlyAvailable, branch })
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
-  const soldOut =
-    soldOutProp ?? (experience.functions.length > 0 && allSoldOut(experience.functions))
+  const sale = saleProp ?? saleStatus(experience.functions)
+  const soldOut = sale === 'sold_out'
+  // A lo que le queda lugar, el bar le frenó la venta: sale «Próximamente».
+  const comingSoon = sale === 'soon'
   const steps = stepsSummary(experience.steps)
   const firstTime = experience.functions[0]?.time ?? null
   const waitlist =
-    soldOut && whatsapp
+    (soldOut || comingSoon) && whatsapp
       ? buildWaMeUrl(
           whatsapp,
-          `¡Hola ${venueName}! Quería ir a ${experience.title} pero está todo agotado. ¿Me avisan si se libera un lugar o si suman fechas?`,
+          soldOut
+            ? `¡Hola ${venueName}! Quería ir a ${experience.title} pero está todo agotado. ¿Me avisan si se libera un lugar o si suman fechas?`
+            : `¡Hola ${venueName}! Quiero ir a ${experience.title}. ¿Me avisan cuando salgan a la venta las próximas fechas?`,
         )
       : null
 
@@ -158,9 +165,9 @@ export function FilmCard({
       )}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        {soldOut ? (
+        {soldOut || comingSoon ? (
           <p className="text-sm text-(--ent-cream-2)">
-            Se agotaron todas las fechas.
+            {soldOut ? 'Se agotaron todas las fechas.' : 'Muy pronto, a la venta.'}
             {waitlist ? (
               <>
                 {' '}
@@ -171,7 +178,7 @@ export function FilmCard({
                   className="inline-flex items-center gap-1 font-semibold text-(--ent-gold) underline-offset-4 hover:underline"
                 >
                   <MessageCircle className="size-3.5" aria-hidden />
-                  Avisame si se libera un lugar
+                  {soldOut ? 'Avisame si se libera un lugar' : 'Avisame cuando abra la venta'}
                 </a>
               </>
             ) : null}

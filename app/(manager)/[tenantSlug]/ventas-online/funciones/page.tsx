@@ -23,6 +23,10 @@ export const dynamic = 'force-dynamic'
  * Las funciones que vienen, con cuántos entran y cómo van. Pedido de los socios del
  * 11/11/2026: el cupo del cine es 54, pero a veces van a 100 y a veces a menos, y lo tiene que
  * poder cambiar Luz. Entran el dueño y la anfitriona, igual que a las ventas.
+ *
+ * Desde el 26/11/2026 cada fecha tiene además su interruptor de venta (pedido de Nacho Badra):
+ * frenada, sigue en la cartelera con «Próximamente» y no se puede comprar, para llenar primero la
+ * función más cercana.
  */
 export default async function FuncionesPage({
   params,
@@ -56,7 +60,7 @@ export default async function FuncionesPage({
       <PageHeader
         eyebrow="Entradas"
         title="Ventas online"
-        description="Cuántas personas entran en cada función. Si cambiás un cupo, la cartelera se actualiza sola, y lo que queda se recalcula con cada venta y con cada reserva que se carga a mano."
+        description="Cuántas personas entran en cada función y cuáles están a la venta. Si cambiás un cupo o frenás una fecha, la cartelera se actualiza sola, y lo que queda se recalcula con cada venta y con cada reserva que se carga a mano."
       />
       <SalesTabs tenantSlug={tenantSlug} active="funciones" />
       <CapacityList

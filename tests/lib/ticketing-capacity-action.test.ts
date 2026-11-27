@@ -34,6 +34,7 @@ const state = vi.hoisted(() => ({
     capacity: number
     reserved: number
     paying: number
+    paused: boolean
     branchId: string | null
   } | null,
   /** Las sucursales que ve quien guarda (`getBranchScope`). */
@@ -89,12 +90,12 @@ vi.mock('@/lib/tenant', async (actual) => ({
 }))
 
 import { logAudit } from '@/lib/audit'
-import { setFunctionCapacity } from '@/lib/ticketing/actions'
+import { setFunctionCapacity, setFunctionSales } from '@/lib/ticketing/actions'
 import { getCapacityFunction } from '@/lib/ticketing/queries'
 
 beforeEach(() => {
   state.role = 'host'
-  state.fn = { capacity: 54, reserved: 48, paying: 2, branchId: ALTA }
+  state.fn = { capacity: 54, reserved: 48, paying: 2, paused: false, branchId: ALTA }
   state.scope = { branches: [branch(ALTA, 'Alta')], unrestricted: false }
   state.readFails = false
   state.updateResult = { data: { id: 'x' }, error: null }
@@ -130,7 +131,7 @@ describe('setFunctionCapacity', () => {
 
   it('el dueño también; justo en lo reservado corta la venta', async () => {
     state.role = 'owner'
-    state.fn = { capacity: 54, reserved: 48, paying: 0, branchId: ALTA }
+    state.fn = { capacity: 54, reserved: 48, paying: 0, paused: false, branchId: ALTA }
     const result = await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 48 })
     expect(result).toEqual({ ok: true, message: 'Ahora entran 48. Quedan 0 lugares a la venta.' })
     expect(state.updates).toHaveLength(1)
@@ -162,7 +163,7 @@ describe('setFunctionCapacity', () => {
   })
 
   it('la anfitriona de Alta no toca el cupo del Cerro; un dueño sí', async () => {
-    state.fn = { capacity: 54, reserved: 10, paying: 0, branchId: CERRO }
+    state.fn = { capacity: 54, reserved: 10, paying: 0, paused: false, branchId: CERRO }
     const result = await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 60 })
     expect(result).toEqual({
       ok: false,
@@ -216,6 +217,141 @@ describe('setFunctionCapacity', () => {
 
     state.readFails = true
     expect(await setFunctionCapacity('bar', { event_id: EVENT_ID, capacity: 60 })).toEqual({
+      ok: false,
+      message: 'No pudimos leer la función. Probá de nuevo.',
+    })
+  })
+})
+
+/**
+ * Frenar o volver a prender la venta online de una fecha (pedido de Nacho Badra, 26/11/2026).
+ * Lo que se fija: lo hacen el dueño y la anfitriona con su sesión, solo en funciones de la
+ * cartelera y de su sucursal, queda auditado, y repetir lo que ya estaba no escribe nada.
+ */
+describe('setFunctionSales', () => {
+  it('la anfitriona frena una fecha: se guarda con su sesión y queda en la auditoría', async () => {
+    const result = await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })
+    expect(result).toEqual({
+      ok: true,
+      message: 'Venta frenada: en la cartelera dice «Próximamente» y no se puede comprar.',
+    })
+    expect(state.updates).toEqual([
+      {
+        table: 'scheduled_events',
+        values: { online_sales_paused: true },
+        filters: [
+          ['tenant_id', TENANT],
+          ['id', EVENT_ID],
+        ],
+      },
+    ])
+    expect(logAudit).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      userId: USER,
+      action: 'scheduled_event.sales_paused',
+      entity: 'scheduled_event',
+      entityId: EVENT_ID,
+      payload: { capacity: 54, reserved: 48, left: 4, source: 'ventas_online' },
+    })
+  })
+
+  it('el dueño la vuelve a prender y dice cuánto queda a la venta', async () => {
+    state.role = 'owner'
+    state.fn = { capacity: 54, reserved: 48, paying: 2, paused: true, branchId: ALTA }
+    const result = await setFunctionSales('bar', { event_id: EVENT_ID, paused: false })
+    expect(result).toEqual({ ok: true, message: 'Venta prendida: quedan 4 lugares a la venta.' })
+    expect(state.updates[0]?.values).toEqual({ online_sales_paused: false })
+    expect(vi.mocked(logAudit).mock.calls[0]?.[0]).toMatchObject({
+      action: 'scheduled_event.sales_resumed',
+    })
+  })
+
+  it('una agotada se puede frenar, y se avisa que la cartelera sigue diciendo «Agotado»', async () => {
+    state.fn = { capacity: 54, reserved: 54, paying: 0, paused: false, branchId: ALTA }
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
+      ok: true,
+      message:
+        'Venta frenada. Ya estaba agotada, así que en la cartelera sigue diciendo «Agotado».',
+    })
+    state.fn = { capacity: 54, reserved: 54, paying: 0, paused: true, branchId: ALTA }
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: false })).toEqual({
+      ok: true,
+      message: 'Venta prendida, pero no le quedan lugares: sigue «Agotado».',
+    })
+  })
+
+  it('lo que ya estaba: no escribe ni audita', async () => {
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: false })).toEqual({
+      ok: true,
+      message: 'La venta ya estaba prendida.',
+    })
+    state.fn = { capacity: 54, reserved: 48, paying: 2, paused: true, branchId: ALTA }
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
+      ok: true,
+      message: 'La venta ya estaba frenada.',
+    })
+    expect(state.updates).toEqual([])
+    expect(logAudit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'cashier',
+    'waiter',
+    'kitchen',
+    'editor',
+    'accountant',
+  ])('%s no puede, y no se toca nada', async (role) => {
+    state.role = role
+    const result = await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })
+    expect(result.ok).toBe(false)
+    expect(state.updates).toEqual([])
+    expect(getCapacityFunction).not.toHaveBeenCalled()
+  })
+
+  it('la anfitriona de Alta no frena una fecha del Cerro; un dueño sí', async () => {
+    state.fn = { capacity: 54, reserved: 10, paying: 0, paused: false, branchId: CERRO }
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
+      ok: false,
+      message: 'Esa función es de una sucursal que no tenés asignada.',
+    })
+    expect(state.updates).toEqual([])
+
+    state.role = 'owner'
+    state.scope = { branches: [branch(ALTA, 'Alta')], unrestricted: true }
+    expect((await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).ok).toBe(true)
+    expect(state.updates).toHaveLength(1)
+  })
+
+  it('una función que ya empezó o que no es de la cartelera, no', async () => {
+    state.fn = null
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
+      ok: false,
+      message: 'Esa función ya empezó o no está en la cartelera.',
+    })
+    expect(state.updates).toEqual([])
+  })
+
+  it.each([
+    [{ event_id: 'no-es-un-id', paused: true }],
+    [{ event_id: EVENT_ID, paused: 'sí' as unknown as boolean }],
+    [{ event_id: EVENT_ID } as unknown as { event_id: string; paused: boolean }],
+  ])('un dato que no sirve no llega a la base: %o', async (input) => {
+    const result = await setFunctionSales('bar', input)
+    expect(result.ok).toBe(false)
+    expect(getCapacityFunction).not.toHaveBeenCalled()
+    expect(state.updates).toEqual([])
+  })
+
+  it('si la base falla, lo dice y no audita', async () => {
+    state.updateResult = { data: null, error: { code: '42501' } }
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
+      ok: false,
+      message: 'No pudimos guardar el cambio. Probá de nuevo.',
+    })
+    expect(logAudit).not.toHaveBeenCalled()
+
+    state.readFails = true
+    expect(await setFunctionSales('bar', { event_id: EVENT_ID, paused: true })).toEqual({
       ok: false,
       message: 'No pudimos leer la función. Probá de nuevo.',
     })

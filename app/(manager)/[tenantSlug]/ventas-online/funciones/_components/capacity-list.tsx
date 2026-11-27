@@ -2,7 +2,14 @@
 
 import { CalendarPlus, Loader2, Minus, Pencil, Plus, TriangleAlert, Users } from 'lucide-react'
 import Link from 'next/link'
-import { type CSSProperties, type FormEvent, useId, useState, useTransition } from 'react'
+import {
+  type CSSProperties,
+  type FormEvent,
+  useId,
+  useOptimistic,
+  useState,
+  useTransition,
+} from 'react'
 import { toast } from 'sonner'
 import { BranchTag } from '@/components/branches/branch-tag'
 import { Button } from '@/components/ui/button'
@@ -10,8 +17,9 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Switch } from '@/components/ui/switch'
 import { eventInk } from '@/lib/salon/event-ink'
-import { setFunctionCapacity } from '@/lib/ticketing/actions'
+import { setFunctionCapacity, setFunctionSales } from '@/lib/ticketing/actions'
 import {
   type CapacityTone,
   capacityBelowReserved,
@@ -37,9 +45,9 @@ const TONE_CLASS: Record<CapacityTone, string> = {
 }
 
 /**
- * Las funciones que vienen, mes por mes, con su cupo a un toque. Arriba, una película por chip
- * para ver solo esa (`?pelicula=`). Cada cupo se guarda solo y la página se vuelve a pedir con
- * los números nuevos.
+ * Las funciones que vienen, mes por mes, con su cupo a un toque y el interruptor de su venta.
+ * Arriba, una película por chip para ver solo esa (`?pelicula=`). Cada cambio se guarda solo y
+ * la página se vuelve a pedir con los números nuevos.
  */
 export function CapacityList({
   tenantSlug,
@@ -182,17 +190,37 @@ function whenLabel(fn: Pick<CapacityFunction, 'date' | 'time'>): string {
 }
 
 /**
- * Una función: cuándo, qué película, la barrita de lo reservado con la tinta de la película, y
- * el cupo a la derecha, que se toca para cambiarlo. Mirando «Todas», la sucursal al final de la
- * primera línea: el cupo es de esa sala.
+ * Una función: cuándo, qué película, la barrita de lo reservado con la tinta de la película, y a
+ * la derecha el interruptor de su venta y el cupo, que se toca para cambiarlo. Mirando «Todas»,
+ * la sucursal al final de la primera línea: el cupo es de esa sala.
+ *
+ * Con la venta frenada la fila lo dice («Frenada», y qué ve la gente en la cartelera): el
+ * interruptor cambia al toque y, si no se pudo guardar, vuelve solo a como estaba.
  */
 function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunction }) {
+  const [pending, startTransition] = useTransition()
+  const [paused, setPaused] = useOptimistic(fn.paused)
   const view = capacityView(fn)
   const ink = eventInk(fn.accent)
+  // Frenada y con lugar: lo que cambia para la gente. Una agotada sigue diciendo «Agotado».
+  const frozen = paused && fn.left > 0
+
+  function setSales(onSale: boolean) {
+    startTransition(async () => {
+      setPaused(!onSale)
+      const result = await setFunctionSales(tenantSlug, { event_id: fn.eventId, paused: !onSale })
+      if (result.ok) {
+        toast.success(`${fn.title}, ${whenLabel(fn)}`, { description: result.message })
+      } else {
+        toast.error(result.message)
+      }
+    })
+  }
+
   return (
     <div
       style={ink ? ({ '--ev-l': ink.light, '--ev-d': ink.dark } as CSSProperties) : undefined}
-      className="ev-ink flex items-start justify-between gap-4 px-4 py-3.5 sm:px-5"
+      className="ev-ink flex items-start justify-between gap-3 px-4 py-3.5 sm:gap-4 sm:px-5"
     >
       <div className="min-w-0 flex-1 space-y-1.5">
         <div>
@@ -208,6 +236,11 @@ function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunct
                 Apagada
               </span>
             )}
+            {paused ? (
+              <span className="shrink-0 rounded-full border border-warning-text/40 px-1.5 text-[10px] font-medium uppercase leading-4 tracking-wide text-warning-text">
+                Frenada
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex max-w-sm items-center gap-2.5">
@@ -216,6 +249,7 @@ function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunct
               className={cn(
                 'h-full rounded-full',
                 view.tone === 'full' || view.tone === 'over' ? 'bg-destructive' : 'bg-(--ev)',
+                frozen && 'opacity-45',
               )}
               style={{ width: `${capacityPercent(fn)}%` }}
             />
@@ -224,11 +258,54 @@ function FunctionRow({ tenantSlug, fn }: { tenantSlug: string; fn: CapacityFunct
             <span className="font-medium text-foreground">{fn.reserved}</span> reservados
           </span>
         </div>
-        <p className={cn('text-xs tabular-nums', TONE_CLASS[view.tone])}>{view.label}</p>
+        <p className={cn('text-xs tabular-nums', TONE_CLASS[view.tone])}>
+          {view.label}
+          {frozen ? (
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              · en la cartelera dice «Próximamente»
+            </span>
+          ) : null}
+        </p>
       </div>
 
-      <CapacityEditor tenantSlug={tenantSlug} fn={fn} />
+      <div className="flex shrink-0 items-start gap-2">
+        <SalesSwitch fn={fn} onSale={!paused} pending={pending} onChange={setSales} />
+        <CapacityEditor tenantSlug={tenantSlug} fn={fn} />
+      </div>
     </div>
+  )
+}
+
+/**
+ * La venta online de esa fecha, a un toque (pedido de Nacho Badra, 26/11/2026: frenar las fechas
+ * lejanas para llenar primero la próxima). Apagado, la fecha sigue en la cartelera con
+ * «Próximamente» y no se puede comprar; lo que se carga a mano entra igual.
+ */
+function SalesSwitch({
+  fn,
+  onSale,
+  pending,
+  onChange,
+}: {
+  fn: CapacityFunction
+  onSale: boolean
+  pending: boolean
+  onChange: (onSale: boolean) => void
+}) {
+  return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: el control es el Switch de adentro (un botón de Radix)
+    <label className="flex h-14 min-w-[4.75rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-border bg-background px-3 transition-colors hover:bg-secondary sm:h-12">
+      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        Venta
+      </span>
+      <Switch
+        checked={onSale}
+        onCheckedChange={onChange}
+        disabled={pending}
+        aria-label={`Venta online de ${fn.title}, ${whenLabel(fn)}: ${onSale ? 'prendida' : 'frenada'}`}
+      />
+    </label>
   )
 }
 

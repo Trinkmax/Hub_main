@@ -179,6 +179,7 @@ import {
   eventCard,
   filterDayRows,
   HEALTH_ALERT_NOTE,
+  loadSplitData,
   managerRow,
   monthsOfRange,
   ordersData,
@@ -776,6 +777,7 @@ describe('la anfitriona', () => {
       'ver_tortas',
       'ver_gestores',
       'ver_mis_numeros',
+      'ver_carga_reservas',
       'preparar_reserva',
       'preparar_cambio_reserva',
       'preparar_estado_reserva',
@@ -846,14 +848,16 @@ describe('las herramientas', () => {
     }
   })
 
-  it('las lecturas sueltas filtran por el bar', () => {
-    const source = readFileSync(
-      resolve(__dirname, '../../lib/tex/tools/agenda/_entradas.ts'),
-      'utf8',
-    )
+  it.each([
+    // Las películas, las reservas, las compras y las fechas con la venta frenada.
+    ['_entradas.ts', 4],
+    // Las reservas con cuándo se cargaron y los títulos de las películas.
+    ['_carga.ts', 2],
+  ])('las lecturas sueltas de %s filtran por el bar', (file, reads) => {
+    const source = readFileSync(resolve(__dirname, `../../lib/tex/tools/agenda/${file}`), 'utf8')
     const from = source.match(/\.from\('/g)?.length ?? 0
     const tenant = source.match(/\.eq\('tenant_id', ctx\.tenantId\)/g)?.length ?? 0
-    expect(from).toBe(3)
+    expect(from).toBe(reads)
     expect(tenant).toBe(from)
   })
 })
@@ -934,6 +938,8 @@ describe('los datos de contacto no viajan', () => {
       telefono_termina_en: '…4567',
       tiene_mail: true,
       tiene_instagram: true,
+      // Lo guarda sola la reserva: 12:00 UTC son las 9 en Córdoba.
+      cargada_el: '01/11/2026 09:00',
     })
     // Lo de salud no viaja a la API: Tex sabe que hay un aviso y lleva a verlo.
     expect(reservationRow(full)).toMatchObject({ avisos: [HEALTH_ALERT_NOTE] })
@@ -2963,6 +2969,36 @@ describe('entradas', () => {
     expect(result.filas[0]?.funciones[1]).not.toHaveProperty('estado')
   })
 
+  it('la fecha con la venta frenada lo dice y se cuenta aparte; una agotada sigue agotada', () => {
+    const result = entradasData({
+      experiences: [film],
+      events: [
+        event({ id: EVENT, capacity: 40 }),
+        event({ id: RES2, event_date: '2026-11-14', capacity: 40 }),
+      ],
+      counts: new Map([
+        [EVENT, { taken: 10, held: 0, sold: 4 }],
+        [RES2, { taken: 40, held: 0, sold: 0 }],
+      ]),
+      nowLocal: '2026-11-05 12:00',
+      canSell: true,
+      publicUrl: 'https://bar.test/entradas/bar',
+      paused: new Set([EVENT, RES2]),
+    }) as Record<string, unknown> & {
+      filas: Array<Record<string, unknown> & { funciones: Array<Record<string, unknown>> }>
+    }
+    expect(result).toMatchObject({
+      funciones_a_la_venta: 0,
+      funciones_frenadas: 1,
+      funciones_agotadas: 1,
+    })
+    expect(result.filas[0]?.funciones[0]).toMatchObject({
+      quedan: 30,
+      estado: 'Venta frenada (en la cartelera dice «Próximamente»)',
+    })
+    expect(result.filas[0]?.funciones[1]).toMatchObject({ estado: 'Agotado' })
+  })
+
   it('sin grupos privados ni lo que ya arrancó', () => {
     const result = data(
       [
@@ -3070,6 +3106,139 @@ describe('entradas', () => {
     for (const table of Object.keys(tables)) {
       expect(eq).toHaveBeenCalledWith(table, 'tenant_id', TENANT)
     }
+  })
+})
+
+// ─── Cuándo se cargaron las reservas ─────────────────────────────────────────
+
+describe('cuándo se cargaron las reservas', () => {
+  const caroline = (patch: Partial<ScheduledEventWithTemplate> = {}) =>
+    event({
+      template: {
+        ...(event().template as NonNullable<ScheduledEventWithTemplate['template']>),
+        name: 'Caroline',
+      },
+      ...patch,
+    })
+
+  const row = (eventId: string, createdAt: string, guests: number, origin = 'whatsapp') => ({
+    scheduled_event_id: eventId,
+    estimated_guests: guests,
+    actual_guests: null,
+    created_at: createdAt,
+    origin,
+  })
+
+  it('parte por el día de carga en el reloj del bar, con las cuentas hechas', () => {
+    const data = loadSplitData({
+      events: [
+        caroline({ id: RES2, event_date: '2026-12-09' }),
+        caroline({ id: EVENT, event_date: '2026-12-02' }),
+      ],
+      rows: [
+        // 21/11 a las 23:30 en Córdoba: antes del domingo 22.
+        row(EVENT, '2026-11-22T02:30:00Z', 2),
+        // 22/11 a las 00:10 en Córdoba: ya cuenta desde el 22. Vinieron 3 de 4: cuentan 3.
+        { ...row(EVENT, '2026-11-22T03:10:00Z', 4, 'web'), actual_guests: 3 },
+        row(RES2, '2026-11-25T15:00:00Z', 2, 'web'),
+        // De un evento que no se pidió: no entra.
+        row(RES, '2026-11-25T15:00:00Z', 9, 'web'),
+      ],
+      cut: '2026-11-22',
+      label: '«coraline» · los próximos 2',
+      films: new Map([[TEMPLATE, 'Coraline']]),
+    }) as Record<string, unknown> & { filas: Array<Record<string, unknown>> }
+    expect(data).toMatchObject({
+      eventos: '«coraline» · los próximos 2',
+      corte: 'domingo 22/11/2026',
+      cuantos_eventos: 2,
+      total: {
+        antes_reservas: 1,
+        antes_personas: 2,
+        desde_reservas: 2,
+        desde_personas: 5,
+        desde_por_la_web: 2,
+      },
+    })
+    // En orden de fecha, y con la película cuando el formato se llama distinto.
+    expect(data.filas[0]).toMatchObject({
+      evento_id: EVENT,
+      nombre: 'Caroline',
+      pelicula: 'Coraline',
+      fecha: '02/12/2026',
+      antes_reservas: 1,
+      antes_personas: 2,
+      desde_reservas: 1,
+      desde_personas: 3,
+      desde_por_la_web: 1,
+      total_reservas: 2,
+      total_personas: 5,
+    })
+    expect(data.filas[1]).toMatchObject({
+      evento_id: RES2,
+      antes_reservas: 0,
+      desde_reservas: 1,
+      desde_personas: 2,
+    })
+  })
+
+  it('ver_carga_reservas busca también por la película, sin grupos privados, y lee con la sesión', async () => {
+    const chain = (rows: unknown[]) => {
+      const builder = Object.assign(
+        Promise.resolve({ data: rows, error: null }),
+      ) as unknown as Record<string, unknown>
+      for (const method of ['select', 'eq', 'in', 'not', 'order', 'range']) {
+        builder[method] = vi.fn(() => builder)
+      }
+      return builder
+    }
+    const eq = vi.fn()
+    const tables: Record<string, unknown[]> = {
+      event_experiences: [{ template_id: TEMPLATE, title: 'Coraline' }],
+      salon_reservations: [
+        row(EVENT, '2026-11-20T15:00:00Z', 2),
+        row(EVENT, '2026-11-23T15:00:00Z', 4, 'web'),
+      ],
+    }
+    const { createClient } = await import('@/lib/supabase/server')
+    vi.mocked(createClient).mockResolvedValue({
+      from: (table: string) => {
+        const builder = chain(tables[table] ?? [])
+        const original = builder.eq as (...args: unknown[]) => unknown
+        builder.eq = (...args: unknown[]) => {
+          eq(table, ...args)
+          return original(...args)
+        }
+        return builder
+      },
+    } as never)
+    vi.mocked(listScheduledEventsForDateRange).mockResolvedValue([
+      // Un grupo privado del mismo formato, antes: no es una función abierta.
+      caroline({ id: RES, event_date: '2026-11-28', private_group: true }),
+      caroline({ id: EVENT, event_date: '2026-12-02' }),
+      caroline({ id: RES2, event_date: '2026-12-09' }),
+    ])
+
+    const result = asData(
+      await run(
+        'ver_carga_reservas',
+        { corte: '2026-11-22', evento: 'coraline', proximos: 1 },
+        HOST,
+      ),
+    ) as Record<string, unknown> & { filas: Array<Record<string, unknown>> }
+    expect(result).toMatchObject({
+      eventos: '«coraline» · los próximos 1',
+      cuantos_eventos: 1,
+      total: { antes_reservas: 1, desde_reservas: 1, desde_por_la_web: 1 },
+    })
+    expect(result.filas.map((f) => f.evento_id)).toEqual([EVENT])
+    for (const table of Object.keys(tables)) {
+      expect(eq).toHaveBeenCalledWith(table, 'tenant_id', TENANT)
+    }
+
+    expect(
+      asError(await run('ver_carga_reservas', { corte: '2026-11-22', evento: 'shrek' }, HOST)),
+    ).toContain('No encontré eventos de «shrek»')
   })
 })
 

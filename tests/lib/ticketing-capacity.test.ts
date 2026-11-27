@@ -6,8 +6,10 @@ import {
   FUNCTION_CAPACITY_MAX,
   filmsOf,
   functionCapacitySchema,
+  functionSalesSchema,
   groupByMonth,
   parseCapacityDraft,
+  salesToggleMessage,
 } from '@/lib/ticketing/capacity'
 
 /**
@@ -149,5 +151,43 @@ describe('filmsOf y groupByMonth', () => {
       ['2026-11', 'Noviembre 2026', 3],
       ['2026-12', 'Diciembre 2026', 1],
     ])
+  })
+})
+
+/**
+ * Frenar la venta online de una fecha (pedido de Nacho Badra, 26/11/2026): para llenar primero la
+ * función más cercana, las lejanas se frenan y después se van prendiendo.
+ */
+describe('functionSalesSchema', () => {
+  it('pide la función y si queda frenada o prendida', () => {
+    expect(functionSalesSchema.safeParse({ event_id: EVENT_ID, paused: true }).success).toBe(true)
+    expect(functionSalesSchema.safeParse({ event_id: EVENT_ID, paused: false }).success).toBe(true)
+    expect(functionSalesSchema.safeParse({ event_id: 'x', paused: true }).success).toBe(false)
+    expect(functionSalesSchema.safeParse({ event_id: EVENT_ID }).success).toBe(false)
+    expect(functionSalesSchema.safeParse({ event_id: EVENT_ID, paused: 'true' }).success).toBe(
+      false,
+    )
+  })
+})
+
+describe('salesToggleMessage', () => {
+  it('al frenar dice qué ve la gente en la cartelera', () => {
+    expect(salesToggleMessage(true, 46)).toBe(
+      'Venta frenada: en la cartelera dice «Próximamente» y no se puede comprar.',
+    )
+  })
+
+  it('frenar una agotada no cambia lo que dice la cartelera, y lo avisa', () => {
+    expect(salesToggleMessage(true, 0)).toBe(
+      'Venta frenada. Ya estaba agotada, así que en la cartelera sigue diciendo «Agotado».',
+    )
+  })
+
+  it('al prender dice cuánto queda a la venta', () => {
+    expect(salesToggleMessage(false, 46)).toBe('Venta prendida: quedan 46 lugares a la venta.')
+    expect(salesToggleMessage(false, 1)).toBe('Venta prendida: queda 1 lugar a la venta.')
+    expect(salesToggleMessage(false, 0)).toBe(
+      'Venta prendida, pero no le quedan lugares: sigue «Agotado».',
+    )
   })
 })

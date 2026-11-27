@@ -127,7 +127,7 @@ export const agendaScreens: readonly TexScreenDef[] = [
   {
     id: 'ventas.funciones',
     label: 'Ventas online › Funciones y cupos',
-    what: 'Las funciones que vienen de cada película: cuántos entran, cuántos reservaron y cuánto queda a la venta. El cupo de cada una se cambia ahí, nunca por debajo de lo reservado, y la cartelera se actualiza sola.',
+    what: 'Las funciones que vienen de cada película: cuántos entran, cuántos reservaron y cuánto queda a la venta. El cupo de cada una se cambia ahí, nunca por debajo de lo reservado, y cada fecha tiene su interruptor de venta: frenada, en la cartelera dice «Próximamente» y no se puede comprar. La cartelera se actualiza sola.',
     path: '/ventas-online/funciones',
     root: true,
     roles: ['owner', 'host'],

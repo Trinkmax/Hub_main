@@ -10,6 +10,8 @@ export type CheckoutResult =
       message: string
       field?: string
       seatsLeft?: number
+      /** El bar frenó la venta de esa fecha mientras la persona la tenía abierta. */
+      paused?: true
       /**
        * Falló algo nuestro (la base, Mercado Pago), no un dato de la persona:
        * la entrada ofrece escribir por WhatsApp para no perder la reserva.
@@ -38,6 +40,14 @@ export function createOrderErrorMessage(message: string, details: string | null)
     const left = Number.parseInt(details ?? '0', 10)
     const seatsLeft = Number.isFinite(left) ? Math.max(0, left) : 0
     return { ok: false, message: seatsMessage(seatsLeft), field: 'party_size', seatsLeft }
+  }
+  if (message.includes('ticketing_event_paused')) {
+    return {
+      ok: false,
+      message: 'Esta fecha todavía no está a la venta. Elegí otra.',
+      field: 'event_id',
+      paused: true,
+    }
   }
   if (message.includes('ticketing_event_started')) {
     return { ok: false, message: 'Esta función ya empezó. Elegí otra fecha.', field: 'event_id' }

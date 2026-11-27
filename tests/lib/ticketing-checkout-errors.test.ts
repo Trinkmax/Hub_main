@@ -32,6 +32,15 @@ describe('createOrderErrorMessage', () => {
     }
   })
 
+  it('la fecha que el bar frenó mientras la persona la tenía abierta: se le dice y se marca', () => {
+    expect(createOrderErrorMessage('ticketing_event_paused', null)).toEqual({
+      ok: false,
+      message: 'Esta fecha todavía no está a la venta. Elegí otra.',
+      field: 'event_id',
+      paused: true,
+    })
+  })
+
   it('un error que no conocemos es nuestro: no culpa a la fecha y ofrece WhatsApp', () => {
     const result = createOrderErrorMessage('canceling statement due to lock timeout', null)
     expect(result).toMatchObject({ ok: false, unexpected: true })

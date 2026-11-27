@@ -1,5 +1,6 @@
 import { clampBranchFilter, inBranchFilter } from '@/lib/branches/filter'
 import { type BranchScope, branchShortLabel } from '@/lib/branches/types'
+import { isOpen } from './availability'
 import type { PublicBranch, PublicFunction } from './types'
 
 /**
@@ -102,13 +103,14 @@ export function parseBranchParam(raw: string | string[] | null | undefined): str
 /**
  * La función con la que arranca la página de una película: la del día pedido (`?fecha=`) en la
  * sucursal pedida (`?sucursal=`: la misma película puede ir la misma noche en las dos), si no la
- * de ese día, si no la primera con lugar de esa sucursal y, si no, la primera con lugar.
+ * de ese día, si no la primera con lugar de esa sucursal y, si no, la primera con lugar. Las
+ * agotadas y las que tienen la venta frenada no se eligen nunca.
  */
 export function pickFunction<F extends Pick<PublicFunction, 'date' | 'state' | 'branch'>>(
   functions: ReadonlyArray<F>,
   wanted: { date: string | null; branch: string | null },
 ): F | null {
-  const open = functions.filter((fn) => fn.state !== 'sold_out')
+  const open = functions.filter(isOpen)
   const inBranch = (fn: F) => !wanted.branch || fn.branch === wanted.branch
   if (wanted.date) {
     const match =

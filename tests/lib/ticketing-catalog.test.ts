@@ -213,6 +213,21 @@ describe('filtros de la cartelera', () => {
     expect(visible[1]?.functions.map((f) => f.eventId)).toEqual(['s1', 's3'])
   })
 
+  it('la fecha con la venta frenada no es «Disponible» ni «Agotada»: solo se ve en «Todas»', () => {
+    const paused: PublicFunction = { ...fn('2026-11-10', 40, 'p1'), state: 'paused' }
+    const withPaused = [
+      exp({ slug: 'grinch', title: 'El Grinch', functions: [paused, fn('2026-11-17', 30, 'g2')] }),
+      exp({ slug: 'frenada', title: 'Frenada', functions: [{ ...paused, eventId: 'p2' }] }),
+    ]
+    const available = filterCatalog(withPaused, { ...NO_FILTERS, availability: 'available' })
+    expect(available.map((e) => e.slug)).toEqual(['grinch'])
+    expect(available[0]?.functions.map((f) => f.eventId)).toEqual(['g2'])
+    expect(filterCatalog(withPaused, { ...NO_FILTERS, availability: 'sold_out' })).toEqual([])
+    expect(
+      filterCatalog(withPaused, NO_FILTERS).flatMap((e) => e.functions.map((f) => f.eventId)),
+    ).toEqual(['p1', 'g2', 'p2'])
+  })
+
   it('por mes: cada película con sus fechas de ese mes, y sin las que no tienen', () => {
     const visible = filterCatalog(cartelera, { ...NO_FILTERS, month: '2026-10' })
     expect(visible.map((e) => e.slug)).toEqual(['shrek-2'])

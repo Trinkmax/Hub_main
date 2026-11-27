@@ -407,6 +407,22 @@
     text-decoration-color: rgb(229 83 61 / 0.7);
   }
 
+  /* Con la venta frenada («Próximamente»): apagada como la agotada, pero sin
+   tachar: la fecha sigue en pie, solo que todavía no se vende. El sello va en
+   dorado, en el lugar del mes. */
+  .ent-stub[data-state="paused"] {
+    background: rgb(246 239 220 / 0.14);
+    color: rgb(243 236 218 / 0.6);
+  }
+
+  .ent-stub[data-state="paused"] .ent-stub-month {
+    visibility: hidden;
+  }
+
+  .ent-stub[data-state="paused"] .ent-stub-day {
+    color: rgb(243 236 218 / 0.82);
+  }
+
   /* Dónde es la función, arriba del talón, cuando el bar vende en más de una
    sucursal. En el óxido del bar sobre papel; sobre la elegida, crema. */
   .ent-stub-branch {
@@ -421,7 +437,7 @@
     color: #fffaf0;
   }
 
-  .ent-stub[data-state="sold_out"] .ent-stub-branch {
+  .ent-stub:is([data-state="sold_out"], [data-state="paused"]) .ent-stub-branch {
     color: inherit;
   }
 
@@ -449,6 +465,16 @@
     color: rgb(26 37 31 / 0.45);
   }
 
+  .ent-form .ent-stub[data-state="paused"] {
+    background: rgb(26 37 31 / 0.05);
+    box-shadow: none;
+    color: rgb(26 37 31 / 0.5);
+  }
+
+  .ent-form .ent-stub[data-state="paused"] .ent-stub-day {
+    color: rgb(26 37 31 / 0.62);
+  }
+
   /* El sello de goma «AGOTADO». Va sobre la parte de abajo del talón: el
    número del día tiene que leerse (tachado) para saber QUÉ fecha se agotó. */
   .ent-stamp {
@@ -473,6 +499,21 @@
 
   .ent-form .ent-stamp {
     background: #fffaf0;
+  }
+
+  /* El sello «PRONTO» de una fecha con la venta frenada: dorado y derecho, para
+   que no se confunda con el rojo torcido de «AGOTADO». */
+  .ent-stamp.ent-stamp-soon {
+    border-color: var(--ent-gold);
+    color: var(--ent-gold);
+    box-shadow: 0 0 0 1px rgb(231 189 108 / 0.25) inset;
+    transform: translate(-50%, -50%) rotate(-4deg);
+  }
+
+  .ent-form .ent-stamp.ent-stamp-soon {
+    border-color: #8a4b05;
+    color: #8a4b05;
+    box-shadow: 0 0 0 1px rgb(138 75 5 / 0.2) inset;
   }
 
   .ent-last {

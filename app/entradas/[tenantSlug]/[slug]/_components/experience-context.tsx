@@ -9,7 +9,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { functionState } from '@/lib/ticketing/availability'
+import { functionState, isOpen } from '@/lib/ticketing/availability'
 import { functionAddress, pickFunction, publicBranchLabel } from '@/lib/ticketing/branches'
 import type { PublicBranch, PublicFunction } from '@/lib/ticketing/types'
 
@@ -23,7 +23,8 @@ import type { PublicBranch, PublicFunction } from '@/lib/ticketing/types'
  * ?sucursal= (la misma película puede ir la misma noche en las dos).
  *
  * Si la compra descubre que quedaban menos lugares (otro compró en el medio),
- * `reportSeats` corrige esa función acá mismo sin recargar.
+ * `reportSeats` corrige esa función acá mismo sin recargar; y si el bar le
+ * frenó la venta mientras tanto, `reportPaused`.
  */
 
 type Ctx = {
@@ -31,6 +32,8 @@ type Ctx = {
   selected: PublicFunction | null
   select: (eventId: string) => void
   reportSeats: (eventId: string, left: number) => void
+  /** El bar frenó la venta de esa fecha: pasa a «Próximamente» y se elige otra. */
+  reportPaused: (eventId: string) => void
   /** Hay que decir en qué sucursal es cada función (más de una vende en la cartelera). */
   showBranches: boolean
   /** La sucursal de una función, o null si no se sabe. */
@@ -108,7 +111,7 @@ export function ExperienceProvider({
   const select = useCallback(
     (eventId: string) => {
       const fn = functions.find((f) => f.eventId === eventId)
-      if (!fn || fn.state === 'sold_out') return
+      if (!fn || !isOpen(fn)) return
       setSelectedId(eventId)
     },
     [functions],
@@ -122,7 +125,7 @@ export function ExperienceProvider({
             ? {
                 ...f,
                 left: Math.max(0, left),
-                state: functionState(left, f.capacity, minPartySize),
+                state: functionState(left, f.capacity, minPartySize, f.state === 'paused'),
               }
             : f,
         ),
@@ -131,9 +134,23 @@ export function ExperienceProvider({
     [minPartySize],
   )
 
-  // Si la elegida se agotó, pasar a la próxima con lugar (de la misma sucursal, si hay).
+  const reportPaused = useCallback(
+    (eventId: string) => {
+      setFunctions((prev) =>
+        prev.map((f) =>
+          f.eventId === eventId
+            ? { ...f, state: functionState(f.left, f.capacity, minPartySize, true) }
+            : f,
+        ),
+      )
+    },
+    [minPartySize],
+  )
+
+  // Si la elegida se agotó o le frenaron la venta, pasar a la próxima que se puede comprar (de
+  // la misma sucursal, si hay).
   useEffect(() => {
-    if (selected?.state !== 'sold_out') return
+    if (!selected || isOpen(selected)) return
     setSelectedId(pickFunction(functions, { date: null, branch: selected.branch })?.eventId ?? null)
   }, [functions, selected])
 
@@ -143,12 +160,23 @@ export function ExperienceProvider({
       selected,
       select,
       reportSeats,
+      reportPaused,
       showBranches,
       branchOf,
       branchLabelOf,
       addressOf,
     }),
-    [functions, selected, select, reportSeats, showBranches, branchOf, branchLabelOf, addressOf],
+    [
+      functions,
+      selected,
+      select,
+      reportSeats,
+      reportPaused,
+      showBranches,
+      branchOf,
+      branchLabelOf,
+      addressOf,
+    ],
   )
   return <ExperienceContext.Provider value={value}>{children}</ExperienceContext.Provider>
 }

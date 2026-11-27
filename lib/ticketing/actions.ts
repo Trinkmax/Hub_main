@@ -29,7 +29,10 @@ import { branchVisible } from './branches'
 import {
   capacityBelowReserved,
   type FunctionCapacityInput,
+  type FunctionSalesInput,
   functionCapacitySchema,
+  functionSalesSchema,
+  salesToggleMessage,
 } from './capacity'
 import { getMercadoPagoCredentials } from './credentials'
 import { centsToMercadoPagoAmount, formatPesos, pesosToCents } from './pricing'
@@ -1203,4 +1206,77 @@ export async function setFunctionCapacity(
     ok: true,
     message: `Ahora entran ${capacity}. ${left === 1 ? 'Queda 1 lugar' : `Quedan ${left} lugares`} a la venta.`,
   }
+}
+
+/**
+ * Frenar o volver a prender la venta online de una fecha (Ventas online › Funciones y cupos).
+ * Pedido de Nacho Badra del 26/11/2026: la gente reserva para fechas lejanas y él necesita llenar
+ * la próxima, así que frena las otras y las va prendiendo. La frenada sigue en la cartelera, con
+ * «Próximamente», y no se puede comprar (lo controla también `ticketing_create_order`). Las
+ * reservas que se cargan a mano y las compras que ya estaban pagando no cambian.
+ *
+ * Lo hacen el dueño y la anfitriona, como el cupo, y queda en audit_log con quién fue.
+ */
+export async function setFunctionSales(
+  slug: string,
+  input: FunctionSalesInput,
+): Promise<TicketingActionState> {
+  const access = await authorizeRoles(slug, TICKET_SALES_ROLES)
+  if (!access) {
+    return { ok: false, message: 'Tu usuario no puede frenar la venta. Pedíselo a un dueño.' }
+  }
+  const parsed = functionSalesSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Revisá la función.' }
+  }
+  const tenantId = access.tenant.id
+  const { event_id: eventId, paused } = parsed.data
+
+  let fn: Awaited<ReturnType<typeof getCapacityFunction>>
+  try {
+    fn = await getCapacityFunction(tenantId, eventId)
+  } catch {
+    return { ok: false, message: 'No pudimos leer la función. Probá de nuevo.' }
+  }
+  if (!fn) return { ok: false, message: 'Esa función ya empezó o no está en la cartelera.' }
+  if (!(await seesBranch(slug, fn.branchId))) {
+    return { ok: false, message: 'Esa función es de una sucursal que no tenés asignada.' }
+  }
+  const left = seatsLeft(fn.capacity, fn.reserved, fn.paying)
+  if (fn.paused === paused) {
+    return {
+      ok: true,
+      message: paused ? 'La venta ya estaba frenada.' : 'La venta ya estaba prendida.',
+    }
+  }
+
+  // Con la sesión de quien guarda: la RLS del calendario decide quién puede.
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('scheduled_events')
+    .update({ online_sales_paused: paused })
+    .eq('tenant_id', tenantId)
+    .eq('id', eventId)
+    .select('id')
+    .maybeSingle()
+  if (error || !data) {
+    if (error) console.error('[ticketing.setFunctionSales]', { tenantId, code: error.code })
+    return { ok: false, message: 'No pudimos guardar el cambio. Probá de nuevo.' }
+  }
+  await logAudit({
+    tenantId,
+    userId: access.user.id,
+    action: paused ? 'scheduled_event.sales_paused' : 'scheduled_event.sales_resumed',
+    entity: 'scheduled_event',
+    entityId: eventId,
+    payload: {
+      capacity: fn.capacity,
+      reserved: fn.reserved,
+      left,
+      source: 'ventas_online',
+    },
+  })
+  revalidateTicketing(slug)
+  revalidatePath(`/${slug}/ventas-online/funciones`)
+  return { ok: true, message: salesToggleMessage(paused, left) }
 }
