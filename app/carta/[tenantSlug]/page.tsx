@@ -1,7 +1,15 @@
 import type { Metadata } from 'next'
 import nextDynamic from 'next/dynamic'
+import { BranchPicker } from './_components/branch-picker'
 import { CartaExperience } from './_components/carta-experience'
-import { CartaFrame, cartaMetadata, loadCarta } from './_lib/carta-page'
+import {
+  CartaFrame,
+  CartaPickerFrame,
+  type CartaSearchParams,
+  cartaMetadata,
+  loadCarta,
+  resolveCarta,
+} from './_lib/carta-page'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,26 +21,43 @@ const CartaNueva = nextDynamic(() =>
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<CartaSearchParams>
 }): Promise<Metadata> {
   const { tenantSlug } = await params
-  return cartaMetadata(tenantSlug)
+  const { sucursal } = await searchParams
+  return cartaMetadata(tenantSlug, { sucursal })
 }
 
 /**
- * La carta del bar: la dirección del QR. Muestra la de siempre, o la nueva si el bar tiene prendido el
- * interruptor «Carta nueva» (`docs/features/carta-rediseno.md`).
+ * La carta del bar: la dirección del QR. Si el bar tiene dos o más sucursales, primero se elige la
+ * sucursal y cada una muestra su carta (`?sucursal=<slug>`, docs/features/carta-por-sucursal.md).
+ * Muestra la de siempre, o la nueva si el bar tiene prendido el interruptor «Carta nueva»
+ * (`docs/features/carta-rediseno.md`).
  */
 export default async function CartaPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<{ club?: string; wallet?: string }>
+  searchParams: Promise<CartaSearchParams>
 }) {
   const { tenantSlug } = await params
-  const data = await loadCarta(tenantSlug, await searchParams)
+  const sp = await searchParams
+  const entry = await resolveCarta(tenantSlug, sp)
+
+  if (entry.kind === 'picker') {
+    const { tenant, branches } = entry.data
+    return (
+      <CartaPickerFrame brandAccent={tenant.brandAccent}>
+        <BranchPicker tenantName={tenant.name} logoUrl={tenant.logoUrl} branches={branches} />
+      </CartaPickerFrame>
+    )
+  }
+
+  const data = await loadCarta(tenantSlug, sp, entry)
   const shared = {
     tenantName: data.tenant.name,
     logoUrl: data.tenant.logoUrl,
@@ -50,7 +75,7 @@ export default async function CartaPage({
       {data.nuevaParaTodos ? (
         <CartaNueva {...shared} daypart={data.daypart} />
       ) : (
-        <CartaExperience {...shared} />
+        <CartaExperience {...shared} branch={data.branch} />
       )}
     </CartaFrame>
   )

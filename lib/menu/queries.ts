@@ -1,8 +1,11 @@
 import 'server-only'
+import { parseBranchRefs } from '@/lib/branches/parse'
+import type { BranchRef } from '@/lib/branches/types'
 import { getTagsByTenant, type ItemTag } from '@/lib/item-tags/queries'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { type Availability, parseAvailability } from './availability'
+import type { ItemBranchOverride } from './carta-branch'
 
 export type MenuCategory = {
   id: string
@@ -181,6 +184,55 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
     categories: cats,
     items: mergedItems,
   }
+}
+
+/**
+ * Las sucursales activas del bar, para el selector de la carta pública (la principal primero). Si la lectura falla
+ * devuelve `[]` y la carta se muestra entera, como en un bar de una sola sucursal: la carta nunca se rompe por esto.
+ */
+export async function listCartaBranches(tenantId: string): Promise<BranchRef[]> {
+  const { data, error } = await createServiceClient()
+    .from('branches')
+    .select(
+      'id, name, short_name, slug, color, address, position, is_default, opened_on, seat_capacity',
+    )
+    .eq('tenant_id', tenantId)
+    .eq('active', true)
+  if (error) {
+    console.error('[menu.listCartaBranches]', error.code, error.message)
+    return []
+  }
+  return parseBranchRefs(data)
+}
+
+/**
+ * Lo que la carta de una sucursal tiene de distinto (`menu_item_branches`): qué no se vende ahí y qué tiene precio
+ * propio. Si la lectura falla devuelve `[]`: la sucursal ve la carta del bar entera antes que una carta rota.
+ */
+export async function listItemBranchOverrides(
+  tenantId: string,
+  branchId: string,
+): Promise<ItemBranchOverride[]> {
+  const { data, error } = await createServiceClient()
+    .from('menu_item_branches')
+    .select('menu_item_id, price_cents, available')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+  if (error) {
+    console.error('[menu.listItemBranchOverrides]', error.code, error.message)
+    return []
+  }
+  const out: ItemBranchOverride[] = []
+  for (const row of data ?? []) {
+    if (typeof row.menu_item_id !== 'string' || typeof row.available !== 'boolean') continue
+    const price = row.price_cents === null ? null : Number(row.price_cents)
+    out.push({
+      menu_item_id: row.menu_item_id,
+      price_cents: price !== null && Number.isFinite(price) && price >= 0 ? price : null,
+      available: row.available,
+    })
+  }
+  return out
 }
 
 export async function listActiveMenu(opts: { tenantId: string }): Promise<{
