@@ -10343,6 +10343,7 @@ export type Database = {
           meal_type: Database["public"]["Enums"]["meal_type"]
           name_override: string | null
           notes: string | null
+          online_sales_paused: boolean
           private_group: boolean
           starts_at_local: string
           template_id: string
@@ -10361,6 +10362,7 @@ export type Database = {
           meal_type: Database["public"]["Enums"]["meal_type"]
           name_override?: string | null
           notes?: string | null
+          online_sales_paused?: boolean
           private_group?: boolean
           starts_at_local: string
           template_id: string
@@ -10379,6 +10381,7 @@ export type Database = {
           meal_type?: Database["public"]["Enums"]["meal_type"]
           name_override?: string | null
           notes?: string | null
+          online_sales_paused?: boolean
           private_group?: boolean
           starts_at_local?: string
           template_id?: string
