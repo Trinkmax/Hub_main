@@ -7,7 +7,7 @@ import PhoneInput from 'react-phone-number-input'
 import countryNames from 'react-phone-number-input/locale/es.json'
 import 'react-phone-number-input/style.css'
 import { buildWaMeUrl, canonicalPhone, formatPhoneInternational, phoneProblem } from '@/lib/phone'
-import { allSoldOut, maxSelectable } from '@/lib/ticketing/availability'
+import { maxSelectable, saleStatus } from '@/lib/ticketing/availability'
 import { startCheckout } from '@/lib/ticketing/checkout-actions'
 import { checkoutHelpMessage } from '@/lib/ticketing/copy'
 import { formatLongDate, formatShortDate } from '@/lib/ticketing/dates'
@@ -107,7 +107,7 @@ export function TicketCheckout({
   venue: VenueInfo
   preview: boolean
 }) {
-  const { functions, selected, reportSeats, branchLabelOf, branchOf, showBranches } =
+  const { functions, selected, reportSeats, reportPaused, branchLabelOf, branchOf, showBranches } =
     useExperience()
   // Con funciones en más de una sucursal, la entrada dice dónde es la elegida.
   const where = selected ? branchLabelOf(selected) : null
@@ -199,8 +199,11 @@ export function TicketCheckout({
     })
   }
 
-  const soldOutAll = functions.length > 0 && allSoldOut(functions)
-  const noFunctions = functions.length === 0
+  // Sin nada para comprar: no hay fechas, se agotaron todas, o a las que les queda lugar el bar
+  // les frenó la venta («Próximamente»).
+  const sale = saleStatus(functions)
+  const soldOutAll = sale === 'sold_out'
+  const comingSoon = sale === 'soon'
   const busy = pending || redirecting
 
   function waLink(text: string): string | null {
@@ -256,6 +259,7 @@ export function TicketCheckout({
         return
       }
       if (result.seatsLeft !== undefined) reportSeats(selected.eventId, result.seatsLeft)
+      if (result.paused) reportPaused(selected.eventId)
       const failure: CheckoutError = {
         message: result.message,
         field: result.field,
@@ -272,11 +276,13 @@ export function TicketCheckout({
   }
 
   // ── Estados sin venta ─────────────────────────
-  if (noFunctions || soldOutAll) {
+  if (sale !== 'open') {
     const wa = waLink(
       soldOutAll
         ? `¡Hola ${venue.tenantName}! Quería ir a ${experience.title} pero está agotado. ¿Me avisan si se libera un lugar o si suman fechas?`
-        : `¡Hola ${venue.tenantName}! ¿Cuándo hay nuevas fechas de ${experience.title}?`,
+        : comingSoon
+          ? `¡Hola ${venue.tenantName}! Quiero ir a ${experience.title}. ¿Me avisan cuando salgan a la venta las próximas fechas?`
+          : `¡Hola ${venue.tenantName}! ¿Cuándo hay nuevas fechas de ${experience.title}?`,
     )
     return (
       <TicketShell title={experience.title} badge={soldOutAll ? 'Agotado' : 'Próximamente'}>
@@ -285,7 +291,11 @@ export function TicketCheckout({
             <span className="ent-stamp ent-stamp-inline px-3 py-1 text-sm">Agotado</span>
           ) : null}
           <p className="ent-display mt-5 text-3xl text-balance">
-            {soldOutAll ? 'Se agotaron todas las fechas.' : 'Muy pronto, nuevas fechas.'}
+            {soldOutAll
+              ? 'Se agotaron todas las fechas.'
+              : comingSoon
+                ? 'Muy pronto, a la venta.'
+                : 'Muy pronto, nuevas fechas.'}
           </p>
           <p className="mx-auto mt-3 max-w-xs text-sm text-(--ent-ink-2)">
             {soldOutAll

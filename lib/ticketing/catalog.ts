@@ -1,3 +1,4 @@
+import { isOpen } from './availability'
 import { parseBranchParam } from './branches'
 import { monthLong } from './dates'
 import { balanceCashOnly, paymentOptions } from './pricing'
@@ -299,7 +300,7 @@ export function sanitizeCatalogFilters(
 function functionMatches(fn: PublicFunction, filters: CatalogFilters): boolean {
   if (filters.branch && fn.branch !== filters.branch) return false
   if (filters.month && monthKey(fn.date) !== filters.month) return false
-  if (filters.availability === 'available' && fn.state === 'sold_out') return false
+  if (filters.availability === 'available' && !isOpen(fn)) return false
   if (filters.availability === 'sold_out' && fn.state !== 'sold_out') return false
   return true
 }

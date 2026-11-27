@@ -1,4 +1,4 @@
-import { allSoldOut } from '@/lib/ticketing/availability'
+import { isOpen, saleStatus } from '@/lib/ticketing/availability'
 import { footerPlaces, functionAddress, showBranchNames } from '@/lib/ticketing/branches'
 import type { PublicExperiencePage } from '@/lib/ticketing/queries'
 import { youtubeVideoId } from '@/lib/ticketing/video'
@@ -27,19 +27,20 @@ export function ExperienceView({
   sucursal?: string | null
   /**
    * Llegó desde la cartelera filtrada por «Disponibles» (?ver=disponibles):
-   * las fechas agotadas no se muestran, ni arriba ni en la entrada. Si no
-   * queda ninguna con lugar, se muestran todas (y la entrada dice «Agotado»).
+   * las fechas agotadas (y las que tienen la venta frenada) no se muestran,
+   * ni arriba ni en la entrada. Si no queda ninguna para comprar, se muestran
+   * todas (y la entrada dice «Agotado» o «Próximamente»).
    */
   onlyAvailable?: boolean
 }) {
   const { experience, venue, others, preview } = page
-  const withSeats = experience.functions.filter((fn) => fn.state !== 'sold_out')
+  const withSeats = experience.functions.filter(isOpen)
   const hideSoldOut = onlyAvailable && withSeats.length > 0
   const functions = hideSoldOut ? withSeats : experience.functions
   const hiddenSoldOut = experience.functions.length - functions.length
   const scenes = experience.gallery.filter((g) => g.kind === 'scene')
   const venuePhotos = experience.gallery.filter((g) => g.kind === 'venue')
-  const soldOut = experience.functions.length > 0 && allSoldOut(experience.functions)
+  const sale = saleStatus(experience.functions)
   const fromCents = experience.depositCents > 0 ? experience.depositCents : experience.priceCents
   const videoId = youtubeVideoId(experience.videoUrl)
   // Dónde es: la película es del bar; cada función, de una sucursal. Con más de una vendiendo en
@@ -223,7 +224,7 @@ export function ExperienceView({
             venue.address,
           )}
         />
-        <StickyCta fromCents={fromCents} soldOut={soldOut} />
+        <StickyCta fromCents={fromCents} sale={sale} />
       </div>
     </ExperienceProvider>
   )

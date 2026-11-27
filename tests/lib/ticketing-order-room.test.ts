@@ -14,6 +14,7 @@ type Event = {
   starts_at_local: string
   capacity: number
   private_group: boolean
+  online_sales_paused?: boolean | null
 }
 
 const CORALINE: Event = {
@@ -102,6 +103,20 @@ describe('orderHasRoom', () => {
     )
     expect(await orderHasRoom(service, 't1', EVENT_ID, 2, TZ)).toBe(false)
     expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('con la venta frenada no se ofrece comprar de nuevo, aunque haya lugar', async () => {
+    const { service, rpc } = fakeService(
+      { ...CORALINE, online_sales_paused: true },
+      { taken: 0, held: 0 },
+    )
+    expect(await orderHasRoom(service, 't1', EVENT_ID, 2, TZ)).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+    // Vuelta a prender (o una base sin la columna): como siempre.
+    const again = fakeService({ ...CORALINE, online_sales_paused: false }, { taken: 0, held: 0 })
+    expect(await orderHasRoom(again.service, 't1', EVENT_ID, 2, TZ)).toBe(true)
+    const old = fakeService({ ...CORALINE, online_sales_paused: null }, { taken: 0, held: 0 })
+    expect(await orderHasRoom(old.service, 't1', EVENT_ID, 2, TZ)).toBe(true)
   })
 
   it('una función que ya empezó, no', async () => {

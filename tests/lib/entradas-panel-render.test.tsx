@@ -137,7 +137,7 @@ describe('Tu cartelera', () => {
     const html = renderToString(
       createElement(CarteleraCard, {
         publicUrl: 'https://hubbar.com.ar/entradas/hub',
-        summary: { published: 2, drafts: 1, onSale: 5, soldOut: 1 },
+        summary: { published: 2, drafts: 1, onSale: 5, soldOut: 1, paused: 0 },
         canSell: true,
       }),
     )
@@ -154,7 +154,7 @@ describe('Tu cartelera', () => {
     const html = renderToString(
       createElement(CarteleraCard, {
         publicUrl: 'https://hubbar.com.ar/entradas/hub',
-        summary: { published: 0, drafts: 1, onSale: 0, soldOut: 0 },
+        summary: { published: 0, drafts: 1, onSale: 0, soldOut: 0, paused: 0 },
         canSell: false,
       }),
     )

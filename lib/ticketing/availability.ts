@@ -21,20 +21,42 @@ export function lastSeatsThreshold(capacity: number): number {
   return Math.max(1, Math.min(10, Math.ceil(capacity * 0.2)))
 }
 
+/** Lo que dice la cartelera de una fecha con la venta frenada. */
+export const PAUSED_LABEL = 'Próximamente'
+
 /**
  * `minParty` es el mínimo de personas de la película: con menos lugares que
  * eso (Cine y degustación se vende de a 2 y queda 1), para la venta online la
  * función ya está agotada.
+ *
+ * `paused`: el bar frenó la venta de esa fecha. Una fecha sin lugar es
+ * «Agotado» esté frenada o no: frenar solo cambia lo que todavía se podía
+ * comprar.
  */
-export function functionState(left: number, capacity: number, minParty = 1): FunctionState {
+export function functionState(
+  left: number,
+  capacity: number,
+  minParty = 1,
+  paused = false,
+): FunctionState {
   if (left <= 0 || left < minParty) return 'sold_out'
+  if (paused) return 'paused'
   if (left <= lastSeatsThreshold(capacity)) return 'last'
   return 'available'
 }
 
-/** «Agotado» · «Último lugar» · «Últimos 4» · null (hay de sobra: no se dice). */
+/** ¿Se puede comprar ahora? Tiene lugar y el bar no le frenó la venta. */
+export function isOpen(fn: Pick<PublicFunction, 'state'>): boolean {
+  return fn.state === 'available' || fn.state === 'last'
+}
+
+/**
+ * «Agotado» · «Próximamente» · «Último lugar» · «Últimos 4» · null (hay de
+ * sobra: no se dice).
+ */
 export function availabilityLabel(fn: Pick<PublicFunction, 'left' | 'state'>): string | null {
   if (fn.state === 'sold_out') return 'Agotado'
+  if (fn.state === 'paused') return PAUSED_LABEL
   if (fn.state === 'last') return fn.left === 1 ? 'Último lugar' : `Últimos ${fn.left}`
   return null
 }
@@ -47,14 +69,31 @@ export function isOnSale(date: string, time: string, nowLocal: string): boolean 
   return `${date} ${time.slice(0, 5)}` > nowLocal
 }
 
-/** La primera función con lugar, para preseleccionarla. */
+/** La primera función que se puede comprar, para preseleccionarla. */
 export function firstAvailable(functions: PublicFunction[]): PublicFunction | null {
-  return functions.find((f) => f.state !== 'sold_out') ?? null
+  return functions.find(isOpen) ?? null
 }
 
 /** Todas agotadas (o ninguna a la venta). */
 export function allSoldOut(functions: PublicFunction[]): boolean {
   return functions.every((f) => f.state === 'sold_out')
+}
+
+/**
+ * Cómo viene la venta de una película, mirando todas sus fechas:
+ *
+ *   open       hay al menos una fecha para comprar;
+ *   soon       no hay ninguna para comprar ahora, pero a alguna le queda lugar
+ *              y tiene la venta frenada: sale «Próximamente»;
+ *   sold_out   se agotaron todas;
+ *   none       no tiene fechas.
+ */
+export type SaleStatus = 'open' | 'soon' | 'sold_out' | 'none'
+
+export function saleStatus(functions: ReadonlyArray<Pick<PublicFunction, 'state'>>): SaleStatus {
+  if (functions.length === 0) return 'none'
+  if (functions.some(isOpen)) return 'open'
+  return functions.some((f) => f.state === 'paused') ? 'soon' : 'sold_out'
 }
 
 /** Máximo de personas que se pueden elegir para una función. */

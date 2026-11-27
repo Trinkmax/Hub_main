@@ -1,15 +1,16 @@
 import { ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { availabilityLabel } from '@/lib/ticketing/availability'
+import { availabilityLabel, isOpen, PAUSED_LABEL } from '@/lib/ticketing/availability'
 import { type AgendaMonth, filmHref, previewImage } from '@/lib/ticketing/catalog'
 import { dayNumber, monthShort, relativeDay, weekdayShort } from '@/lib/ticketing/dates'
 import { cn } from '@/lib/utils'
 
 /**
  * «Por fecha»: para el que sabe CUÁNDO puede ir antes que QUÉ quiere ver.
- * Cada fila es una función; las agotadas quedan apagadas y no se tocan. Con
- * funciones en más de una sucursal, cada fila dice dónde.
+ * Cada fila es una función; las agotadas y las que tienen la venta frenada
+ * («Próximamente») quedan apagadas y no se tocan. Con funciones en más de una
+ * sucursal, cada fila dice dónde.
  */
 export function AgendaList({
   months,
@@ -44,6 +45,8 @@ export function AgendaList({
           <ul className="space-y-2.5">
             {month.rows.map(({ fn, experience }) => {
               const soldOut = fn.state === 'sold_out'
+              const paused = fn.state === 'paused'
+              const open = isOpen(fn)
               const label = availabilityLabel(fn)
               const rel = relativeDay(fn.date, today)
               const where = branchLabel?.(fn.branch) ?? null
@@ -91,13 +94,17 @@ export function AgendaList({
                       <span className="rounded-md border border-(--ent-red)/70 px-2 py-1 text-(--ent-red) ent-mono text-[0.6rem]">
                         Agotado
                       </span>
+                    ) : paused ? (
+                      <span className="rounded-md border border-(--ent-gold)/60 px-2 py-1 text-(--ent-gold) ent-mono text-[0.6rem]">
+                        {PAUSED_LABEL}
+                      </span>
                     ) : label ? (
                       <span className="inline-flex items-center gap-1.5 text-(--ent-gold)">
                         <span className="ent-pulse" aria-hidden />
                         {label}
                       </span>
                     ) : null}
-                    {!soldOut ? (
+                    {open ? (
                       <ArrowRight className="size-4 text-(--ent-cream-2)" aria-hidden />
                     ) : null}
                   </div>
@@ -107,14 +114,16 @@ export function AgendaList({
                 'flex items-center gap-3 rounded-2xl border border-(--ent-line) bg-(--ent-bg-2) p-2.5 pr-4 sm:gap-4',
                 soldOut
                   ? 'opacity-55'
-                  : 'ent-press transition-colors hover:border-(--ent-line-strong) hover:bg-(--ent-surface)',
+                  : paused
+                    ? 'opacity-75'
+                    : 'ent-press transition-colors hover:border-(--ent-line-strong) hover:bg-(--ent-surface)',
               )
               return (
                 <li
                   key={fn.eventId}
                   style={{ '--accent': experience.accent } as React.CSSProperties}
                 >
-                  {soldOut ? (
+                  {!open ? (
                     <div className={rowClass}>{content}</div>
                   ) : (
                     <Link

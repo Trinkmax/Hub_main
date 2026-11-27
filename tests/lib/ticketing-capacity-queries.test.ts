@@ -160,6 +160,7 @@ describe('listCapacityFunctions', () => {
       title: 'Coraline',
       accent: '#2f4f7f',
       published: true,
+      paused: false,
       branchId: ALTA,
     })
     // Con más reservas que cupo no quedan lugares negativos.
@@ -172,6 +173,19 @@ describe('listCapacityFunctions', () => {
       branchId: CERRO,
     })
     expect(db.tenantFilters.every(([, tenant]) => tenant === T)).toBe(true)
+  })
+
+  it('la que tiene la venta frenada lo dice; las demás, no', async () => {
+    db.events = db.events.map((e) => (e.id === id(2) ? { ...e, online_sales_paused: true } : e))
+    const list = await listCapacityFunctions(T)
+    expect(list.map((fn) => [fn.eventId, fn.paused])).toEqual([
+      [id(4), false],
+      [id(1), false],
+      [id(2), true],
+    ])
+    // Una base que todavía no tiene la columna (o la trae vacía) no frena nada.
+    db.events = db.events.map((e) => ({ ...e, online_sales_paused: null }))
+    expect((await listCapacityFunctions(T)).some((fn) => fn.paused)).toBe(false)
   })
 
   it('mirando una sucursal, solo sus funciones (el cupo nunca se suma entre dos)', async () => {
@@ -195,8 +209,14 @@ describe('getCapacityFunction', () => {
       capacity: 54,
       reserved: 46,
       paying: 2,
+      paused: false,
       branchId: ALTA,
     })
+  })
+
+  it('y si su venta está frenada', async () => {
+    db.events = db.events.map((e) => (e.id === id(1) ? { ...e, online_sales_paused: true } : e))
+    expect(await getCapacityFunction(T, id(1))).toMatchObject({ paused: true, capacity: 54 })
   })
 
   it('la que ya empezó, la privada, la que no es película o la de otro bar: no', async () => {

@@ -186,6 +186,17 @@ describe('la función con la que arranca la película', () => {
     expect(pickFunction(functions, { date: null, branch: 'otra' })?.eventId).toBe('c1')
     expect(pickFunction([functions[0] as PublicFunction], { date: null, branch: null })).toBeNull()
   })
+
+  it('la que tiene la venta frenada no se elige, ni pidiéndola por fecha', () => {
+    const list = [
+      fn('p1', '2026-12-01', 'cerro', 'paused'),
+      fn('p2', '2026-12-05', 'cerro', 'paused'),
+      fn('o1', '2026-12-09', 'cerro'),
+    ]
+    expect(pickFunction(list, { date: '2026-12-05', branch: 'cerro' })?.eventId).toBe('o1')
+    expect(pickFunction(list, { date: null, branch: null })?.eventId).toBe('o1')
+    expect(pickFunction(list.slice(0, 2), { date: null, branch: null })).toBeNull()
+  })
 })
 
 const exp = (slug: string, functions: PublicFunction[]): PublicExperience => ({

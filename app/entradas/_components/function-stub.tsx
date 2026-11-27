@@ -8,8 +8,9 @@ import { cn } from '@/lib/utils'
  * El talón de una función: «MAR · 01 · DIC», con su disponibilidad.
  *
  * Tres formas: link (la cartelera lleva a la película con la fecha elegida),
- * botón (la película cambia la fecha de la entrada) o quieto (agotada: ni se
- * puede tocar, lleva el sello).
+ * botón (la película cambia la fecha de la entrada) o quieto (agotada, o con
+ * la venta frenada por el bar: ni se puede tocar, lleva su sello: «Agotado» o
+ * «Pronto»).
  *
  * `branchLabel`: con funciones en más de una sucursal, arriba dice dónde es.
  */
@@ -35,6 +36,7 @@ export function FunctionStub({
   className?: string
 }) {
   const soldOut = fn.state === 'sold_out'
+  const paused = fn.state === 'paused'
   const label = availabilityLabel(fn)
   const a11y = `${formatLongDate(fn.date)}, ${fn.time}${branchLabel ? `, en ${branchLabel}` : ''}${label ? `, ${label}` : ''}`
 
@@ -73,23 +75,28 @@ export function FunctionStub({
           Agotado
         </span>
       ) : null}
+      {paused ? (
+        <span className="ent-stamp ent-stamp-soon" aria-hidden>
+          Pronto
+        </span>
+      ) : null}
     </>
   )
 
   const classes = cn(
     'ent-stub ent-notched',
-    !soldOut && !selected && 'ent-paper',
+    !soldOut && !paused && !selected && 'ent-paper',
     compact && 'min-w-[3.6rem] px-1.5 py-1.5',
     className,
   )
 
-  if (soldOut) {
+  if (soldOut || paused) {
     return (
       <span
         className={classes}
-        data-state="sold_out"
+        data-state={fn.state}
         aria-disabled="true"
-        aria-label={`${a11y}. Sin lugares.`}
+        aria-label={`${a11y}. ${soldOut ? 'Sin lugares.' : 'Todavía no está a la venta.'}`}
         role="img"
       >
         {body}

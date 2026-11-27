@@ -22,6 +22,18 @@ export const functionCapacitySchema = z.object({
 
 export type FunctionCapacityInput = z.infer<typeof functionCapacitySchema>
 
+/**
+ * Frenar o volver a prender la venta online de una fecha. Pedido de Nacho Badra del 26/11/2026:
+ * «tengo tres de Coraline, tengo que llenar la próxima, entonces freno las otras dos […] después
+ * le activo otra y así». La fecha frenada sigue en la cartelera con «Próximamente».
+ */
+export const functionSalesSchema = z.object({
+  event_id: z.string().uuid('Esa función no existe.'),
+  paused: z.boolean({ error: 'Decí si la venta queda frenada o prendida.' }),
+})
+
+export type FunctionSalesInput = z.infer<typeof functionSalesSchema>
+
 /** Lo que se escribió en el cupo: un número entero que sirva, o por qué no. */
 export function parseCapacityDraft(
   raw: string,
@@ -52,6 +64,22 @@ export function capacityBelowReserved(capacity: number, reserved: number): strin
 export type CapacityTone = 'open' | 'last' | 'full' | 'over'
 
 type CapacityNumbers = { capacity: number; reserved: number; paying: number; left: number }
+
+/**
+ * Lo que queda dicho al frenar o prender la venta de una fecha. Si ya no le quedan lugares, se
+ * avisa: prenderla no la pone a la venta, y frenarla no cambia lo que dice la cartelera.
+ */
+export function salesToggleMessage(paused: boolean, left: number): string {
+  if (paused) {
+    return left > 0
+      ? 'Venta frenada: en la cartelera dice «Próximamente» y no se puede comprar.'
+      : 'Venta frenada. Ya estaba agotada, así que en la cartelera sigue diciendo «Agotado».'
+  }
+  if (left <= 0) return 'Venta prendida, pero no le quedan lugares: sigue «Agotado».'
+  return left === 1
+    ? 'Venta prendida: queda 1 lugar a la venta.'
+    : `Venta prendida: quedan ${left} lugares a la venta.`
+}
 
 /**
  * Cómo viene la función, para la línea debajo de la barrita: «Quedan 6», «Agotado»,

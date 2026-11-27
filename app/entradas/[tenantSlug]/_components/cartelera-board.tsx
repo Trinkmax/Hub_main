@@ -2,7 +2,7 @@
 
 import { ChevronDown, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
-import { allSoldOut } from '@/lib/ticketing/availability'
+import { saleStatus } from '@/lib/ticketing/availability'
 import { publicBranchLabel } from '@/lib/ticketing/branches'
 import {
   type AvailabilityFilter,
@@ -231,14 +231,11 @@ export function CarteleraBoard({
                   <Reveal key={experience.id} index={i % 2} className="min-w-0">
                     <FilmCard
                       experience={experience}
-                      // El número y el «Se agotaron todas» son de la película
-                      // entera, no de lo que dejó ver el filtro.
+                      // El número y el «Se agotaron todas» (o el «Muy pronto, a
+                      // la venta») son de la película entera, no de lo que dejó
+                      // ver el filtro.
                       index={original?.i ?? i}
-                      soldOut={
-                        original
-                          ? original.e.functions.length > 0 && allSoldOut(original.e.functions)
-                          : undefined
-                      }
+                      sale={original ? saleStatus(original.e.functions) : undefined}
                       onlyAvailable={onlyAvailable}
                       branch={filters.branch}
                       branchLabel={branchLabel}

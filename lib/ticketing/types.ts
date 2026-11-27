@@ -131,7 +131,12 @@ export type TicketingSettingsView = {
   updated_at: string | null
 }
 
-export type FunctionState = 'available' | 'last' | 'sold_out'
+/**
+ * Cómo está una función para quien la quiere comprar. `paused`: el bar frenó la venta online de
+ * esa fecha (Ventas online › Funciones y cupos): todavía tiene lugar, se ve en la cartelera con
+ * «Próximamente» y no se puede comprar hasta que la vuelvan a prender.
+ */
+export type FunctionState = 'available' | 'last' | 'sold_out' | 'paused'
 
 /** Una función (fecha) a la venta, con su disponibilidad. */
 export type PublicFunction = {

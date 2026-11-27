@@ -77,6 +77,8 @@ type EventRow = {
   event_date: string
   starts_at_local: string
   capacity: number
+  /** El bar frenó la venta online de esta fecha (Ventas online › Funciones y cupos). */
+  online_sales_paused?: boolean | null
 }
 
 const BRANCH_COLUMNS = 'id, slug, name, short_name, address, color, is_default, position, active'
@@ -165,6 +167,8 @@ type FunctionSeats = {
   taken: number
   /** Compras que se están pagando: su lugar queda guardado mientras tanto. */
   held: number
+  /** La venta online de esta fecha está frenada: se ve en la cartelera, no se compra. */
+  paused: boolean
 }
 
 /**
@@ -185,7 +189,9 @@ async function loadFunctionSeats(
   const { data: events, error } = await applyBranchFilter(
     service
       .from('scheduled_events')
-      .select('id, template_id, branch_id, event_date, starts_at_local, capacity')
+      .select(
+        'id, template_id, branch_id, event_date, starts_at_local, capacity, online_sales_paused',
+      )
       .eq('tenant_id', tenantId)
       .in('template_id', templateIds)
       .eq('private_group', false)
@@ -224,6 +230,7 @@ async function loadFunctionSeats(
       capacity: s?.capacity ?? event.capacity,
       taken: s?.taken ?? 0,
       held: s?.held ?? 0,
+      paused: event.online_sales_paused === true,
     }
   })
 }
@@ -247,7 +254,7 @@ async function loadFunctions(
 ): Promise<Map<string, AdminFunction[]>> {
   const byTemplate = new Map<string, AdminFunction[]>()
   const rows = await loadFunctionSeats(service, tenantId, templateIds, tz, branch)
-  for (const { event: e, capacity, taken, held } of rows) {
+  for (const { event: e, capacity, taken, held, paused } of rows) {
     const left = seatsLeft(capacity, taken, held)
     const fn: AdminFunction = {
       eventId: e.id,
@@ -255,7 +262,7 @@ async function loadFunctions(
       time: formatTime(e.starts_at_local),
       capacity,
       left,
-      state: functionState(left, capacity),
+      state: functionState(left, capacity, 1, paused),
       branchId: e.branch_id ?? null,
     }
     const list = byTemplate.get(e.template_id) ?? []
@@ -310,10 +317,11 @@ function toPublicExperience<F extends Omit<PublicFunction, 'branch'>>(
     maxPartySize: row.max_party_size,
     priceNote: row.price_note,
     terms: row.terms,
-    // Con menos lugares que el mínimo, para la venta online es «Agotado».
+    // Con menos lugares que el mínimo, para la venta online es «Agotado». La que tiene la venta
+    // frenada lo sigue estando.
     functions: functions.map((fn) => ({
       ...fn,
-      state: functionState(fn.left, fn.capacity, minPartySize),
+      state: functionState(fn.left, fn.capacity, minPartySize, fn.state === 'paused'),
     })),
     draft: !row.published,
   }
@@ -597,8 +605,8 @@ export function isOrderExpired(
 /**
  * ¿La función todavía tiene lugar para esta compra? Para el pago rechazado con el lugar
  * ya vencido: mientras haya, la entrada sigue mostrando cómo transferir. La misma cuenta
- * que la cartelera (funciones abiertas, sin empezar, con lugar para todo el grupo). Ante
- * cualquier duda, no: mostrar la cuenta de más termina en sobrecupo.
+ * que la cartelera (funciones abiertas, sin empezar, a la venta y con lugar para todo el grupo).
+ * Ante cualquier duda, no: mostrar la cuenta de más termina en sobrecupo.
  */
 export async function orderHasRoom(
   service: SBAny,
@@ -610,7 +618,7 @@ export async function orderHasRoom(
   if (!eventId) return false
   const { data: event, error } = await service
     .from('scheduled_events')
-    .select('event_date, starts_at_local, capacity, private_group')
+    .select('event_date, starts_at_local, capacity, private_group, online_sales_paused')
     .eq('tenant_id', tenantId)
     .eq('id', eventId)
     .maybeSingle()
@@ -623,10 +631,13 @@ export async function orderHasRoom(
     starts_at_local: string
     capacity: number
     private_group: boolean
+    online_sales_paused: boolean | null
   } | null
   if (!ev || ev.private_group || !isOnSale(ev.event_date, ev.starts_at_local, nowLocalIn(tz))) {
     return false
   }
+  // Con la venta frenada no se ofrece comprar de nuevo: el lugar ya venció y esa fecha no se vende.
+  if (ev.online_sales_paused === true) return false
   const { data: seats, error: seatsError } = await service.rpc('ticketing_event_seats', {
     p_tenant_id: tenantId,
     p_event_ids: [eventId],
@@ -1123,6 +1134,11 @@ export type CapacityFunction = {
   accent: string
   /** La película está apagada: no se vende, pero el cupo se puede dejar listo. */
   published: boolean
+  /**
+   * La venta online de esta fecha está frenada: en la cartelera dice «Próximamente» y no se
+   * puede comprar. Las reservas que se cargan a mano entran igual.
+   */
+  paused: boolean
   /** La sucursal de la función: el cupo es de esa sala y nunca se suma con el de otra. */
   branchId: string | null
 }
@@ -1182,7 +1198,7 @@ export async function listCapacityFunctions(
   const service = createServiceClient() as SBAny
   const films = await loadFilmsByTemplate(service, tenantId)
   const rows = await loadFunctionSeats(service, tenantId, [...films.keys()], DEFAULT_TZ, branch)
-  return rows.flatMap(({ event: e, capacity, taken, held }) => {
+  return rows.flatMap(({ event: e, capacity, taken, held, paused }) => {
     const film = films.get(e.template_id)
     if (!film) return []
     return [
@@ -1198,6 +1214,7 @@ export async function listCapacityFunctions(
         title: film.title,
         accent: film.accent,
         published: film.published,
+        paused,
         branchId: e.branch_id ?? null,
       },
     ]
@@ -1206,12 +1223,16 @@ export async function listCapacityFunctions(
 
 /**
  * Una función de la cartelera que todavía se puede tocar (es de una película, no es de un grupo
- * privado y no empezó) con sus lugares y su sucursal, para cambiarle el cupo. `null` si no lo es.
+ * privado y no empezó) con sus lugares y su sucursal, para cambiarle el cupo o frenarle la venta.
+ * `null` si no lo es.
  */
 export async function getCapacityFunction(
   tenantId: string,
   eventId: string,
-): Promise<Pick<CapacityFunction, 'capacity' | 'reserved' | 'paying' | 'branchId'> | null> {
+): Promise<Pick<
+  CapacityFunction,
+  'capacity' | 'reserved' | 'paying' | 'paused' | 'branchId'
+> | null> {
   const service = createServiceClient() as SBAny
   const { data, error } = await service
     .from('scheduled_events')
@@ -1234,6 +1255,7 @@ export async function getCapacityFunction(
     capacity: row.capacity,
     reserved: row.taken,
     paying: row.held,
+    paused: row.paused,
     branchId: row.event.branch_id ?? null,
   }
 }

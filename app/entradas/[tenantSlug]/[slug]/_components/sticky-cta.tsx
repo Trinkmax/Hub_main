@@ -2,6 +2,7 @@
 
 import { Ticket } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { SaleStatus } from '@/lib/ticketing/availability'
 import { formatShortDate } from '@/lib/ticketing/dates'
 import { formatPesos } from '@/lib/ticketing/pricing'
 import { cn } from '@/lib/utils'
@@ -15,9 +16,13 @@ import { useExperience } from './experience-context'
  *
  * En la compu solo aparece en pantallas bajas, donde la entrada no va fija
  * al costado (.ent-sticky-cta en entradas.css), y va abajo a la derecha.
+ *
+ * Sin nada para comprar (todo agotado, o la venta de lo que queda frenada)
+ * ofrece «Avisame» en vez de «Reservar».
  */
-export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: boolean }) {
+export function StickyCta({ fromCents, sale }: { fromCents: number; sale: SaleStatus }) {
   const { selected, branchLabelOf } = useExperience()
+  const closed = sale === 'sold_out' || sale === 'soon'
   const where = selected ? branchLabelOf(selected) : null
   const [heroGone, setHeroGone] = useState(false)
   const [ticketVisible, setTicketVisible] = useState(false)
@@ -57,13 +62,15 @@ export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: 
       <div className="flex items-center gap-3 rounded-2xl border border-(--ent-line-strong) bg-(--ent-bg-2)/95 p-2 pl-4 shadow-[0_-10px_40px_rgb(0_0_0/0.5)] backdrop-blur-md">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-(--ent-cream)">
-            {soldOut
+            {sale === 'sold_out'
               ? 'Fechas agotadas'
-              : selected
-                ? `${formatShortDate(selected.date)} · ${selected.time} hs${where ? ` · ${where}` : ''}`
-                : 'Elegí una fecha'}
+              : sale === 'soon'
+                ? 'Próximamente a la venta'
+                : selected
+                  ? `${formatShortDate(selected.date)} · ${selected.time} hs${where ? ` · ${where}` : ''}`
+                  : 'Elegí una fecha'}
           </p>
-          {!soldOut ? (
+          {!closed ? (
             <p className="text-xs text-(--ent-muted)">Reservás con {formatPesos(fromCents)} c/u</p>
           ) : null}
         </div>
@@ -74,7 +81,7 @@ export function StickyCta({ fromCents, soldOut }: { fromCents: number; soldOut: 
           className="ent-press inline-flex h-12 items-center gap-2 rounded-xl bg-(--ent-cream) px-5 text-sm font-semibold text-(--ent-ink)"
         >
           <Ticket className="size-4" aria-hidden />
-          {soldOut ? 'Avisame' : 'Reservar'}
+          {closed ? 'Avisame' : 'Reservar'}
         </button>
       </div>
     </div>

@@ -16,10 +16,12 @@ export type CarteleraSummary = {
   published: number
   /** Películas apagadas (borradores). */
   drafts: number
-  /** Funciones de las publicadas que todavía tienen lugar. */
+  /** Funciones de las publicadas que se pueden comprar ahora. */
   onSale: number
   /** Funciones de las publicadas sin lugar. */
   soldOut: number
+  /** Funciones de las publicadas con lugar y la venta frenada: en la cartelera, «Próximamente». */
+  paused: number
 }
 
 type ExperienceForSummary = {
@@ -30,7 +32,7 @@ type ExperienceForSummary = {
 export function carteleraSummary(
   experiences: ReadonlyArray<ExperienceForSummary>,
 ): CarteleraSummary {
-  const summary: CarteleraSummary = { published: 0, drafts: 0, onSale: 0, soldOut: 0 }
+  const summary: CarteleraSummary = { published: 0, drafts: 0, onSale: 0, soldOut: 0, paused: 0 }
   for (const experience of experiences) {
     if (!experience.published) {
       summary.drafts += 1
@@ -39,6 +41,7 @@ export function carteleraSummary(
     summary.published += 1
     for (const fn of experience.functions) {
       if (fn.state === 'sold_out') summary.soldOut += 1
+      else if (fn.state === 'paused') summary.paused += 1
       else summary.onSale += 1
     }
   }
@@ -49,9 +52,9 @@ export function carteleraSummary(
 export type SummaryPart = { value: string; label: string }
 
 /**
- * «2 películas publicadas · 5 funciones a la venta · 1 agotada». Las funciones
- * solo se cuentan si hay algo publicado: las de una película apagada no están
- * a la venta.
+ * «2 películas publicadas · 5 funciones a la venta · 2 frenadas · 1 agotada».
+ * Las funciones solo se cuentan si hay algo publicado: las de una película
+ * apagada no están a la venta.
  */
 export function carteleraSummaryParts(summary: CarteleraSummary): SummaryPart[] {
   if (summary.published === 0) return [{ value: 'Ninguna', label: 'película publicada' }]
@@ -67,6 +70,12 @@ export function carteleraSummaryParts(summary: CarteleraSummary): SummaryPart[] 
           label: summary.onSale === 1 ? 'función a la venta' : 'funciones a la venta',
         },
   ]
+  if (summary.paused > 0) {
+    parts.push({
+      value: String(summary.paused),
+      label: summary.paused === 1 ? 'frenada' : 'frenadas',
+    })
+  }
   if (summary.soldOut > 0) {
     parts.push({
       value: String(summary.soldOut),
@@ -107,8 +116,10 @@ export function occupancyPercent(fn: Pick<PublicFunction, 'left' | 'capacity'>):
 
 /**
  * Lo que se lee debajo de la barrita: «Agotado», «Último lugar»,
- * «Últimos 4» o, con lugar de sobra, «Quedan 32 de 40».
+ * «Últimos 4» o, con lugar de sobra, «Quedan 32 de 40». Con la venta frenada
+ * dice cuánto queda sin vender (en la cartelera esa fecha dice «Próximamente»).
  */
 export function seatsText(fn: Pick<PublicFunction, 'left' | 'capacity' | 'state'>): string {
+  if (fn.state === 'paused') return `Quedan ${fn.left} de ${fn.capacity}`
   return availabilityLabel(fn) ?? `Quedan ${fn.left} de ${fn.capacity}`
 }

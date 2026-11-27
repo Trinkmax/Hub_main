@@ -21,6 +21,7 @@
 | `/[bar]/entradas` | `owner` | Panel: la cartelera (link para mandar), la cuenta de Mercado Pago, las películas y la configuración. |
 | `/[bar]/entradas/[id]` | `owner` | El editor de la página de una película. |
 | `/[bar]/ventas-online?hasta=` | `owner`, `host` | Las compras, día por día, con «Confirmar transferencia». Devolver y anular, solo el dueño. |
+| `/[bar]/ventas-online/funciones` | `owner`, `host` | Funciones y cupos: cada función que viene con su cupo y el interruptor de su venta online. |
 
 Entra por **Marketing** en el sidebar (pestaña `Entradas`). Las ventas tienen su propia entrada, **Ventas online**, debajo de Calendario.
 
@@ -40,6 +41,46 @@ los días, no solo los últimos. Antes la lista eran las últimas 60 compras: en
   Pago y la configuración. Ella lee con su sesión (policy `ticket_orders_host_select`, migración
   `20261106190000`); el «¿hay alias?» se lee con service_role porque la configuración es del dueño
   y el alias igual es público. Los «Deshacer» de la puerta los ve solo el dueño (`audit_log`).
+
+### Frenar la venta de una fecha (26/11/2026)
+
+Pedido de Nacho Badra (audio y video): la gente reservaba para fechas lejanas y la próxima quedaba
+a medio llenar. «Tengo tres de Coraline, tengo que llenar la próxima, entonces freno las otras dos
+[…] después le activo otra y así».
+
+- **Dónde.** Ventas online › Funciones y cupos: cada función tiene su interruptor «Venta», al lado
+  del cupo. Lo usan el dueño y la anfitriona (`setFunctionSales`, con su sesión: la policy
+  `sev_staff_write` del calendario, la misma del cupo). Queda en `audit_log` como
+  `scheduled_event.sales_paused` / `sales_resumed`.
+- **Qué ve la gente.** La fecha sigue en la cartelera, apagada y con el sello dorado «PRONTO» (en
+  «Por fecha», «Próximamente»), y no se puede elegir. No dice «Agotado»: todavía tiene lugar. Si
+  todas las fechas de una película están agotadas o frenadas y queda alguna frenada, la película
+  dice «Muy pronto, a la venta» y ofrece «Avisame cuando abra la venta» por WhatsApp. «Disponibles»
+  no muestra las frenadas.
+- **La base también la frena** (`scheduled_events.online_sales_paused`, migración
+  `20261127004826_ticketing_sales_pause`): `ticketing_create_order` la rechaza con
+  `ticketing_event_paused`, por si alguien tenía la página abierta; la entrada le dice «Esta fecha
+  todavía no está a la venta. Elegí otra.» y pasa a la próxima. Una compra que ya se estaba pagando
+  termina igual, y un pago rechazado con el lugar vencido no ofrece transferir para una fecha frenada
+  (`orderHasRoom`).
+- **Lo que no cambia.** Las reservas que se cargan a mano, el cupo y la cuenta de lugares. Una fecha
+  sin lugar sigue diciendo «Agotado» esté frenada o no.
+- **El estado** es `'paused'` en `FunctionState` (`lib/ticketing/availability.ts`): `isOpen` dice si
+  se puede comprar y `saleStatus` cómo viene la venta de una película entera.
+
+### Cuándo se cargó cada reserva (26/11/2026)
+
+Pedido de Nacho Badra: saber cuántas reservas se sumaron desde que arrancó la pauta de Coraline. Tex
+le había contestado que el sistema no lo guardaba. Sí lo guarda: cada reserva tiene `created_at`
+desde siempre, sin que nadie lo cargue (la ficha lo muestra en «Recorrido › Se cargó»). Lo que faltaba
+era que Tex lo leyera:
+
+- `ver_carga_reservas` parte las reservas en pie de cada evento por el día en que se cargaron, en el
+  reloj del bar: antes de un día de corte y de ese día en adelante, con personas, totales y cuántas
+  entraron por la web. Busca por el nombre del evento, del formato o de la película (en HUB el
+  formato se llama «Caroline») y puede quedarse con los próximos N.
+- La ficha de una reserva (`ver_reserva`) dice `cargada_el` y las reservas de un evento
+  (`ver_evento`), el día en que se cargó cada una.
 
 ### Sucursales (18/11/2026)
 
@@ -197,7 +238,8 @@ guardados = Σ party_size de los pedidos pending/rejected con el lugar todavía 
 quedan    = cupo − ocupados − guardados
 ```
 
-«Últimos N» aparece desde el 20 % del cupo (techo 10). La compra
+«Últimos N» aparece desde el 20 % del cupo (techo 10). Una fecha con la venta frenada no
+se vende aunque tenga lugar (ver «Frenar la venta de una fecha»). La compra
 (`ticketing_create_order`) bloquea la fila del evento (`FOR NO KEY UPDATE`): dos
 personas pidiendo los últimos lugares a la vez no pueden pasar las dos. Las reservas
 que carga el bar a mano siguen sin bloqueo (como siempre: avisa, no bloquea).
