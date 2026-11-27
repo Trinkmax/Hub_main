@@ -8,7 +8,7 @@ import {
   escposJob,
   heroScale,
   type Raster,
-  ruleRaster,
+  ruleBytes,
   wrap,
 } from '@/lib/pos/print/escpos'
 import { decodePng } from '@/lib/pos/print/png'
@@ -118,18 +118,20 @@ describe('el tique', () => {
     expect(has(bytes, [...ascii('x2 CL'), 0xb5, ...ascii('SICA TRIPLE')])).toBe(true)
   })
 
-  it('el logo va como dibujo, y sin logo no ocupa lugar', () => {
+  it('el logo va como dibujo, y sin logo no hay ningún dibujo', () => {
     const withLogo = escposJob({ paper: 80, docs: [doc] }, { logo })
     expect(has(withLogo, [GS, 0x76, 0x30, 0, 2, 0, 2, 0, 0xff, 0x00, 0x0f, 0xf0])).toBe(true)
     const without = escposJob({ paper: 80, docs: [doc] })
-    // Sin logo, el único dibujo es la raya doble (72 bytes de ancho en el rollo de 80).
-    expect(count(without, [GS, 0x76, 0x30, 0])).toBe(1)
-    expect(has(without, [GS, 0x76, 0x30, 0, 72, 0, 6, 0])).toBe(true)
+    // Las rayas van en letras: sin logo, el tique no lleva ningún dibujo.
+    expect(count(without, [GS, 0x76, 0x30, 0])).toBe(0)
+    expect(has(without, [...Array.from({ length: 48 }, () => 0xcd), 0x0a])).toBe(true)
   })
 
   it('cada tique se corta; sin cortador, se deja papel', () => {
     const two = escposJob({ paper: 80, docs: [doc, doc] })
     expect(count(two, [GS, 0x56, 0x42, 0])).toBe(2)
+    // Cada tique arranca de fábrica.
+    expect(count(two, [ESC, 0x40])).toBe(2)
     const loose = escposJob({ paper: 58, docs: [doc] }, { cut: false })
     expect(has(loose, [GS, 0x56])).toBe(false)
     expect(has(loose, [ESC, 0x64, 5])).toBe(true)
@@ -145,15 +147,11 @@ describe('el tique', () => {
     expect(COLUMNS[80]).toBe(48)
   })
 
-  it('las rayas son dibujos del ancho del papel', () => {
-    const solid = ruleRaster(80, 'solid')
-    expect(solid.width).toBe(576)
-    expect(solid.height).toBe(3)
-    expect([...solid.data].every((byte) => byte === 0xff)).toBe(true)
-    const dashed = ruleRaster(58, 'dashed')
-    expect(dashed.width).toBe(384)
-    expect(dashed.data[0]).toBe(0xff)
-    expect(dashed.data[1]).toBe(0)
+  it('las rayas son letras de lado a lado', () => {
+    expect(ruleBytes(80, 'double', 'cp850')).toEqual(Array.from({ length: 48 }, () => 0xcd))
+    expect(ruleBytes(58, 'solid', 'cp850')).toEqual(Array.from({ length: 32 }, () => 0xc4))
+    expect(ruleBytes(58, 'double', 'ascii')).toEqual(Array.from({ length: 32 }, () => 0x3d))
+    expect(ruleBytes(80, 'dashed', 'cp850').slice(0, 4)).toEqual([0x2d, 0x20, 0x2d, 0x20])
   })
 })
 

@@ -9,7 +9,9 @@
  * Decisiones para que salga igual en cualquier marca:
  *   · Letra A (12×24 puntos): 48 columnas en el rollo de 80 y 32 en el de 58.
  *   · Los tamaños son multiplicadores de esa letra (`GS !`): la mesa sale de hasta 8 veces.
- *   · Las rayas y el logo van como imagen (`GS v 0`): salen parejas en todas las marcas.
+ *   · El logo va como imagen (`GS v 0`); las rayas, en letras (`─`, `═`): pesan diez veces menos.
+ *   · UN TIQUE POR CONEXIÓN: dos tiques pegados trababan la comandera de HUB (27/11): el segundo le
+ *     llegaba mientras cortaba el primero. Quien manda (`scripts/hub-impresoras`) los manda de a uno.
  *   · Antes de imprimir se apaga el modo chino (`FS .`): en las comanderas chinas, sin eso, las letras
  *     con tilde salen como ideogramas.
  *   · Las tildes van en la página de códigos 850 (`ESC t 2`, la misma en Epson y en las chinas). Si
@@ -277,20 +279,18 @@ function image(out: Bytes, raster: Raster) {
   align(out, 'left')
 }
 
-/** Una raya del ancho del papel, como dibujo (sale pareja en cualquier marca). */
-export function ruleRaster(paper: PaperWidth, style: 'solid' | 'dashed' | 'double'): Raster {
-  const width = DOTS[paper]
-  const bytesPerRow = width / 8
-  const pattern = style === 'double' ? [1, 1, 0, 0, 1, 1] : style === 'dashed' ? [1, 1] : [1, 1, 1]
-  const data = new Uint8Array(bytesPerRow * pattern.length)
-  pattern.forEach((on, row) => {
-    for (let column = 0; column < bytesPerRow; column++) {
-      // La rayada: 8 puntos sí, 8 no.
-      const ink = on === 1 && (style !== 'dashed' || column % 2 === 0)
-      data[row * bytesPerRow + column] = ink ? 0xff : 0
-    }
-  })
-  return { width, height: pattern.length, data }
+/** Una raya de lado a lado, en letras (`─` o `═` de la página 850; `-` o `=` sin ella). */
+export function ruleBytes(
+  paper: PaperWidth,
+  style: 'solid' | 'dashed' | 'double',
+  codepage: Codepage,
+): number[] {
+  const columns = COLUMNS[paper]
+  if (style === 'dashed')
+    return Array.from({ length: columns }, (_, index) => (index % 2 === 0 ? 0x2d : 0x20))
+  const char =
+    codepage === 'cp850' ? (style === 'double' ? 0xcd : 0xc4) : style === 'double' ? 0x3d : 0x2d
+  return Array.from({ length: columns }, () => char)
 }
 
 // ─── Cada renglón ────────────────────────────────────────────────────────────
@@ -394,6 +394,11 @@ function item(ctx: Ctx, line: Extract<PrintLine, { kind: 'item' }>) {
   bold(ctx.out, false)
 }
 
+function rule(ctx: Ctx, style: 'solid' | 'dashed' | 'double') {
+  align(ctx.out, 'left')
+  ctx.out.push(...ruleBytes(ctx.paper, style, ctx.codepage), LF)
+}
+
 function lineBytes(ctx: Ctx, line: PrintLine) {
   switch (line.kind) {
     case 'logo':
@@ -418,9 +423,7 @@ function lineBytes(ctx: Ctx, line: PrintLine) {
     case 'banner':
       return banner(ctx, line.text)
     case 'rule':
-      image(ctx.out, ruleRaster(ctx.paper, line.style ?? 'solid'))
-      ctx.out.push(LF)
-      return
+      return rule(ctx, line.style ?? 'solid')
     case 'space':
       return feed(ctx.out, Math.max(1, Math.min(8, line.lines ?? 1)))
     case 'blank': {
@@ -442,6 +445,7 @@ function reset(ctx: Ctx) {
 }
 
 function docBytes(ctx: Ctx, doc: PrintDoc, cut: boolean) {
+  reset(ctx)
   for (const line of doc.lines) lineBytes(ctx, line)
   if (cut) {
     // Sube el papel hasta el cortador y corta (casi entero: el tique no se cae al piso).
@@ -460,7 +464,6 @@ export function escposJob(job: PrintJob, options: EscPosOptions = {}): Uint8Arra
     codepage: options.codepage ?? 'cp850',
     logo: options.logo ?? null,
   }
-  reset(ctx)
   for (const doc of job.docs) docBytes(ctx, doc, options.cut !== false)
   return ctx.out.toUint8Array()
 }

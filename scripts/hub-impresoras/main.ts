@@ -39,7 +39,6 @@ import { toRaster } from '@/lib/pos/print/raster'
 import { sampleCard } from '@/lib/pos/print/sample'
 import {
   comandaDocs,
-  type DuePrint,
   duePrints,
   type PrintedLog,
   type PrinterSettings,
@@ -92,6 +91,8 @@ type PrinterConfig = {
   paper: PaperWidth
   /** Desde cuándo imprime (hora del servidor, ms). */
   since: number
+  /** La pausa entre un tique y el siguiente (ms). Sin dato, se calcula por el tamaño del tique. */
+  pauseMs?: number
 }
 
 type AgentConfig = {
@@ -272,49 +273,62 @@ async function scanNetwork(): Promise<string[]> {
   const queue = [...hosts]
   const worker = async () => {
     for (let host = queue.shift(); host !== undefined; host = queue.shift()) {
-      if (await probe(host, PRINTER_PORT, 700)) found.push(host)
+      if (await probe(host, PRINTER_PORT, 1_500)) found.push(host)
     }
   }
-  await Promise.all(Array.from({ length: 64 }, worker))
+  await Promise.all(Array.from({ length: 96 }, worker))
   return found.sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop()))
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 /**
- * Manda un trabajo a una impresora. Resuelve cuando los bytes salieron de esta compu (si la impresora
- * no tiene papel, eso no se puede saber por acá: se ve en la pantalla de cocina que el pedido entró).
+ * Le manda UN tique a una impresora. Resuelve cuando los bytes salieron de esta compu y la conexión se
+ * cerró (si la impresora no tiene papel, eso no se sabe por acá).
+ *
+ * Lo que mande la impresora (algunas avisan su estado) se lee y se descarta: con datos sin leer, al cerrar
+ * Windows corta la conexión de golpe y la impresora puede quedarse con el tique a medias.
  */
-function sendBytes(host: string, port: number, bytes: Uint8Array): Promise<void> {
+function transmit(host: string, port: number, bytes: Uint8Array): Promise<void> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host, port })
-    let finished = false
-    const fail = (error: Error) => {
-      if (finished) return
-      finished = true
+    let sent = false
+    let done = false
+    const finish = (error?: Error) => {
+      if (done) return
+      done = true
+      clearTimeout(hard)
       socket.destroy()
-      reject(error)
+      if (error && !sent) reject(error)
+      else resolve()
     }
-    socket.setTimeout(6000, () => fail(new Error('no contesta')))
-    socket.once('error', (error) => fail(error))
+    // Pase lo que pase con la impresora, nunca más que esto por tique.
+    const hard = setTimeout(() => finish(new Error('no contesta')), 30_000)
+    socket.setNoDelay(true)
+    socket.setTimeout(8_000, () => finish(new Error('no contesta')))
+    socket.on('error', (error) => finish(error))
+    socket.on('data', () => undefined)
+    socket.on('close', () => finish())
     socket.once('connect', () => {
       socket.write(Buffer.from(bytes), (error) => {
-        if (error) return fail(error)
+        if (error) return finish(error)
+        sent = true
         socket.end()
-        finished = true
-        resolve()
-        // Algunas impresoras no cierran su lado: a los pocos segundos se suelta igual.
-        setTimeout(() => socket.destroy(), 3000).unref()
+        // Casi todas cierran solas cuando terminaron de recibir; si no, se cierra a los 2,5 segundos.
+        setTimeout(() => finish(), 2_500).unref()
       })
     })
   })
 }
 
-/** De a un trabajo por impresora: algunas atienden una sola conexión a la vez. */
-const printerTurns = new Map<string, Promise<unknown>>()
-function inTurn(printerId: string, task: () => Promise<void>): Promise<void> {
-  const previous = printerTurns.get(printerId) ?? Promise.resolve()
-  const next = previous.catch(() => undefined).then(task)
-  printerTurns.set(printerId, next)
-  return next
+/**
+ * Cuánto esperar después de un tique antes de mandar el siguiente a la MISMA impresora: que lo termine de
+ * recibir, lo imprima y lo corte. Dos tiques pegados trababan la comandera de HUB (27/11): el segundo le
+ * llegaba mientras cortaba el primero.
+ */
+function pauseAfter(printer: PrinterConfig, bytes: number): number {
+  if (typeof printer.pauseMs === 'number' && printer.pauseMs > 0) return printer.pauseMs
+  return 2_000 + Math.ceil(bytes / 1024) * 700
 }
 
 // ─── La cuenta y los datos del bar ───────────────────────────────────────────
@@ -326,6 +340,7 @@ function supabaseClient(): SupabaseClient {
     )
   }
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { fetch: timedFetch },
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -346,6 +361,19 @@ function supabaseClient(): SupabaseClient {
   })
 }
 
+/** `fetch` con un límite: un pedido que no vuelve no puede dejar al programa esperando para siempre. */
+const timedFetch: typeof fetch = (input, init) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error('el servidor no contesta')), 20_000)
+  timer.unref()
+  const outer = init?.signal
+  if (outer) {
+    if (outer.aborted) controller.abort(outer.reason)
+    else outer.addEventListener('abort', () => controller.abort(outer.reason), { once: true })
+  }
+  return fetch(input, { ...init, signal: controller.signal })
+}
+
 async function readQueue(supabase: SupabaseClient, branchId: string): Promise<KitchenQueue> {
   const { data, error } = await supabase.rpc('pos_kitchen_queue', { p_branch_id: branchId })
   if (error) throw new Error(error.message || error.code || 'error')
@@ -363,7 +391,7 @@ async function loadLogo(logoUrl: string | null): Promise<Record<PaperWidth, Rast
     const image = decodePng(new Uint8Array(await response.arrayBuffer()), (data) =>
       Uint8Array.from(inflateSync(data)),
     )
-    return { 80: toRaster(image, 320, 150), 58: toRaster(image, 240, 110) }
+    return { 80: toRaster(image, 256, 110), 58: toRaster(image, 200, 90) }
   } catch {
     say('No pude leer el logo del bar (tiene que ser un PNG). Los tiques salen sin logo.')
     return none
@@ -488,47 +516,68 @@ async function configure(existing: AgentConfig | null): Promise<AgentConfig> {
   }
   const logo = await loadLogo(config.tenant.logoUrl)
 
+  const before = existing?.branch.id === branch.id ? existing.printers : []
   console.log('\nBuscando impresoras en la red… (unos segundos)')
-  let hosts = await scanNetwork()
-  if (hosts.length === 0) {
+  const found = await scanNetwork()
+  let hosts = [...new Set([...before.map((printer) => printer.host), ...found])]
+  if (before.length > 0) {
     console.log(
-      'No encontré ninguna. Fijate que estén prendidas y en el mismo WiFi que esta compu.',
+      `Las que ya estaban: ${before.map((printer) => `${printer.host} (${printer.name})`).join(', ')}`,
     )
-  } else {
+  }
+  const fresh = found.filter((host) => !before.some((printer) => printer.host === host))
+  if (found.length === 0) {
+    console.log('No encontré ninguna en la red (algunas no contestan a la búsqueda).')
+  } else if (fresh.length > 0) {
     console.log(
-      `Encontré ${hosts.length}. Imprimo un número en cada una para que sepas cuál es cuál.`,
+      `Encontré ${fresh.length} más. Imprimo un número en cada una para que sepas cuál es cuál.`,
     )
-    for (const [index, host] of hosts.entries()) {
+    for (const host of fresh) {
+      const number = hosts.indexOf(host) + 1
       try {
-        await sendBytes(
+        await transmit(
           host,
           PRINTER_PORT,
           escposJob(
-            { paper: 80, docs: [identifyDoc(index + 1, host)] },
+            { paper: 80, docs: [identifyDoc(number, host)] },
             { codepage: config.codepage, logo: logo[80] },
           ),
         )
-        console.log(`  ${index + 1}) ${host} ✓`)
+        console.log(`  ${number}) ${host} ✓`)
       } catch {
-        console.log(`  ${index + 1}) ${host} — no aceptó el tique (puede no ser una impresora)`)
+        console.log(`  ${number}) ${host} — no aceptó el tique (puede no ser una impresora)`)
       }
     }
   }
   const extra = await ask(
-    '\nSi alguna no apareció, escribí su IP (varias separadas por coma), o Enter para seguir: ',
+    '\nSi falta alguna, escribí su IP (varias separadas por coma), o Enter para seguir: ',
   )
   for (const host of extra.split(',').map((value) => value.trim())) {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && !hosts.includes(host)) hosts = [...hosts, host]
+  }
+  if (hosts.length === 0) {
+    throw new Error(
+      'No hay ninguna impresora. La IP sale en la hoja de autoprueba (apagada, mantené FEED y prendela).',
+    )
   }
 
   const paper: PaperWidth = (await yes('\n¿El rollo es de 80 mm?')) ? 80 : 58
   const legend = stations.map((station, index) => `${index + 1}) ${station.name}`).join('   ')
   const now = Date.parse(queue.now) || Date.now()
   for (const [index, host] of hosts.entries()) {
-    console.log(`\nImpresora ${index + 1} (${host}). Estaciones: ${legend}`)
-    const answer = await ask(
-      '¿Qué imprime? Números separados por coma (por ejemplo «1,4»), o Enter si no la usamos: ',
+    const previous = before.find((printer) => printer.host === host)
+    console.log(
+      `\nImpresora ${index + 1} (${host})${previous ? ` · ya imprimía: ${previous.name}` : ''}. Estaciones: ${legend}`,
     )
+    const answer = await ask(
+      previous
+        ? '¿Qué imprime? Enter = lo mismo que antes, 0 = ya no la usamos: '
+        : '¿Qué imprime? Números separados por coma (por ejemplo «1,4»), o Enter si no la usamos: ',
+    )
+    if (previous && answer === '') {
+      config.printers.push({ ...previous, paper })
+      continue
+    }
     const picked = [
       ...new Set(
         answer
@@ -540,7 +589,7 @@ async function configure(existing: AgentConfig | null): Promise<AgentConfig> {
     if (picked.length === 0) continue
     const split = picked.length > 1 ? await yes('¿Un tique aparte por estación?') : false
     config.printers.push({
-      id: `p${index + 1}-${host}`,
+      id: previous?.id ?? `p${index + 1}-${host}`,
       name: picked.map((station) => station.name).join(' + '),
       host,
       port: PRINTER_PORT,
@@ -549,6 +598,7 @@ async function configure(existing: AgentConfig | null): Promise<AgentConfig> {
       copies: 1,
       paper,
       since: now,
+      ...(previous?.pauseMs ? { pauseMs: previous.pauseMs } : {}),
     })
   }
   if (config.printers.length === 0) throw new Error('No elegiste ninguna impresora.')
@@ -570,7 +620,7 @@ async function printTests(config: AgentConfig) {
   const logo = await loadLogo(config.tenant.logoUrl)
   for (const printer of config.printers) {
     try {
-      await sendBytes(
+      await transmit(
         printer.host,
         printer.port,
         escposJob(
@@ -601,7 +651,81 @@ function settingsOf(printer: PrinterConfig): PrinterSettings {
   }
 }
 
+/** Un tique en la fila de una impresora: la clave con la que queda anotado y lo que se imprime. */
+type Ticket = { key: string; label: string; docs: PrintDoc[] }
+
+type PrinterState = {
+  printer: PrinterConfig
+  /** Lo que está en la fila y todavía no salió (para no ponerlo dos veces). */
+  pending: Set<string>
+  queue: Ticket[]
+  busy: boolean
+}
+
+/** El candado para no andar dos veces en la misma compu: dos copias imprimirían todo dos veces. */
+const LOCK_PORT = 47913
+
+function takeLock(): Promise<net.Server | null> {
+  return new Promise((resolve) => {
+    const server = net.createServer((socket) => socket.destroy())
+    server.once('error', () => resolve(null))
+    server.listen(LOCK_PORT, '127.0.0.1', () => resolve(server))
+  })
+}
+
+/**
+ * En Windows, un clic en la ventana negra la pone en «Seleccionar» y el programa queda en pausa hasta que
+ * se apriete una tecla: deja de imprimir. Se apaga esa función («modo de edición rápida») en esta ventana.
+ */
+function disableQuickEdit() {
+  if (process.platform !== 'win32' || !process.stdout.isTTY) return
+  const script = [
+    "$code = @'",
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class HubConsole {',
+    '  [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int h);',
+    '  [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m);',
+    '  [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);',
+    '}',
+    "'@",
+    'Add-Type -TypeDefinition $code',
+    '$h = [HubConsole]::GetStdHandle(-10)',
+    '$m = [uint32]0',
+    'if ([HubConsole]::GetConsoleMode($h, [ref]$m)) { [void][HubConsole]::SetConsoleMode($h, [uint32](($m -band 0xFFBF) -bor 0x80)) }',
+  ].join('\n')
+  try {
+    spawnSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-EncodedCommand',
+        Buffer.from(script, 'utf16le').toString('base64'),
+      ],
+      { stdio: ['inherit', 'ignore', 'ignore'], timeout: 20_000 },
+    )
+  } catch {
+    // Si no se puede, sigue igual: solo hay que no hacer clic en la ventana.
+  }
+}
+
 async function run(config: AgentConfig) {
+  let lock = await takeLock()
+  for (let attempt = 0; !lock && attempt < 5; attempt++) {
+    await sleep(600)
+    lock = await takeLock()
+  }
+  if (!lock) {
+    console.log(
+      '\nHUB Impresoras ya está andando en esta compu (en otra ventana). No hace falta abrirlo de nuevo:\ncon dos abiertos, cada tique sale dos veces.',
+    )
+    return
+  }
+  disableQuickEdit()
+
   const supabase = supabaseClient()
   const { data } = await supabase.auth.getSession()
   if (!data.session) {
@@ -611,55 +735,91 @@ async function run(config: AgentConfig) {
   const printed: Record<string, PrintedLog> = {}
   const saved = readJson(PRINTED_FILE) as Record<string, unknown> | null
   for (const printer of config.printers) printed[printer.id] = parsePrinted(saved?.[printer.id])
-  const savePrinted = () => writeJson(PRINTED_FILE, printed)
+  const savePrinted = () => {
+    try {
+      writeJson(PRINTED_FILE, printed)
+    } catch {
+      complain('impresos', 'No pude guardar la lista de lo impreso. Sigo igual.')
+    }
+  }
+  const mark = (printerId: string, key: string) => {
+    printed[printerId] = rememberPrinted(printed[printerId] ?? {}, [key], Date.now())
+    savePrinted()
+  }
+  const unmark = (printerId: string, key: string) => {
+    const log = printed[printerId]
+    if (!log) return
+    delete log[key]
+    savePrinted()
+  }
 
   console.log(`\nHUB Impresoras ${VERSION} · ${config.tenant.name} · ${config.branch.name}`)
   for (const printer of config.printers) console.log(`  ${printer.name} → ${printer.host}`)
   console.log('Dejá esta ventana abierta (podés minimizarla). Para cortar: Ctrl+C.\n')
 
-  async function printFor(printer: PrinterConfig, queue: KitchenQueue) {
+  const states = new Map<string, PrinterState>(
+    config.printers.map((printer) => [
+      printer.id,
+      { printer, pending: new Set<string>(), queue: [], busy: false },
+    ]),
+  )
+
+  /** Cada impresora imprime su fila de a un tique, con una pausa entre uno y otro. */
+  async function work(state: PrinterState) {
+    if (state.busy) return
+    state.busy = true
+    try {
+      for (let ticket = state.queue[0]; ticket; ticket = state.queue[0]) {
+        // Se anota ANTES de mandar: si el programa se corta en el medio, no sale dos veces.
+        mark(state.printer.id, ticket.key)
+        try {
+          for (const doc of ticket.docs) {
+            const bytes = escposJob(
+              { paper: state.printer.paper, docs: [doc] },
+              { codepage: config.codepage, logo: logo[state.printer.paper] },
+            )
+            await transmit(state.printer.host, state.printer.port, bytes)
+            await sleep(pauseAfter(state.printer, bytes.length))
+          }
+          state.queue.shift()
+          state.pending.delete(ticket.key)
+          say(`${ticket.label} ✓`)
+        } catch (error) {
+          // No salió: se desanota, y lo que quedaba en la fila vuelve a entrar en la próxima lectura.
+          unmark(state.printer.id, ticket.key)
+          for (const rest of state.queue) state.pending.delete(rest.key)
+          state.queue = []
+          complain(
+            state.printer.id,
+            `No pude imprimir en ${state.printer.name} (${state.printer.host}): ${error instanceof Error ? error.message : 'error'}. ¿Está prendida y en el WiFi? Lo reintento solo.`,
+          )
+          break
+        }
+      }
+    } finally {
+      state.busy = false
+    }
+  }
+
+  function plan(state: PrinterState, queue: KitchenQueue) {
     const serverNow = Date.parse(queue.now) || Date.now()
-    const log = printed[printer.id] ?? {}
-    const due = duePrints(queue, settingsOf(printer), log).filter(
-      (entry: DuePrint) => serverNow - entry.card.firedMs <= MAX_AGE_MS,
+    const due = duePrints(queue, settingsOf(state.printer), printed[state.printer.id] ?? {}).filter(
+      (entry) => serverNow - entry.card.firedMs <= MAX_AGE_MS && !state.pending.has(entry.key),
     )
-    if (due.length === 0) return
-    // Se anota ANTES de mandar: si el programa se corta en el medio, no sale dos veces.
-    printed[printer.id] = rememberPrinted(
-      log,
-      due.map((entry) => entry.key),
-      Date.now(),
-    )
-    savePrinted()
-    const bytes = escposJob(
-      {
-        paper: printer.paper,
-        docs: comandaDocs(due, {
+    for (const entry of due) {
+      const where = entry.card.titleFit === 'small' ? entry.card.title : `Mesa ${entry.card.title}`
+      state.pending.add(entry.key)
+      state.queue.push({
+        key: entry.key,
+        label: `${where} → ${entry.stationLabel ?? state.printer.name}`,
+        docs: comandaDocs([entry], {
           branch: queue.branch.name,
           timeZone: config.tenant.timeZone,
-          copies: printer.copies,
+          copies: state.printer.copies,
         }),
-      },
-      { codepage: config.codepage, logo: logo[printer.paper] },
-    )
-    try {
-      await inTurn(printer.id, () => sendBytes(printer.host, printer.port, bytes))
-      for (const entry of due) {
-        const where =
-          entry.card.titleFit === 'small' ? entry.card.title : `Mesa ${entry.card.title}`
-        say(`${where} → ${entry.stationLabel ?? printer.name} ✓`)
-      }
-    } catch (error) {
-      // No salió: se desanota y en la próxima vuelta se intenta de nuevo.
-      const current = printed[printer.id] ?? {}
-      for (const entry of due) delete current[entry.key]
-      printed[printer.id] = current
-      savePrinted()
-      complain(
-        printer.id,
-        `No pude imprimir en ${printer.name} (${printer.host}): ${error instanceof Error ? error.message : 'error'}. ¿Está prendida y en el WiFi? Lo reintento solo.`,
-      )
+      })
     }
+    if (state.queue.length > 0) void work(state)
   }
 
   let reading = false
@@ -677,7 +837,7 @@ async function run(config: AgentConfig) {
         try {
           const queue = await readQueue(supabase, config.branch.id)
           lastRead = Date.now()
-          await Promise.all(config.printers.map((printer) => printFor(printer, queue)))
+          for (const state of states.values()) plan(state, queue)
         } catch (error) {
           const message = error instanceof Error ? error.message : 'error'
           complain(
@@ -716,7 +876,7 @@ async function run(config: AgentConfig) {
 
   const tick = async () => {
     await read()
-    setTimeout(tick, live ? POLL_LIVE_MS : POLL_ALONE_MS)
+    setTimeout(() => void tick(), live ? POLL_LIVE_MS : POLL_ALONE_MS)
   }
   void tick()
 
@@ -727,6 +887,14 @@ async function run(config: AgentConfig) {
     )
   }, 30 * 60_000)
 }
+
+// Un error suelto no puede dejar las impresoras sin programa.
+process.on('unhandledRejection', (reason) => {
+  console.error(`[${clock()}] ⚠ ${reason instanceof Error ? reason.message : String(reason)}`)
+})
+process.on('uncaughtException', (error) => {
+  console.error(`[${clock()}] ⚠ ${error.message}`)
+})
 
 // ─── Que arranque solo ───────────────────────────────────────────────────────
 
@@ -810,7 +978,7 @@ async function main() {
     const logo = await loadLogo(config?.tenant.logoUrl ?? null)
     for (const [index, host] of hosts.entries()) {
       try {
-        await sendBytes(
+        await transmit(
           host,
           PRINTER_PORT,
           escposJob(

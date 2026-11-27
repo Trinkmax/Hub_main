@@ -55,6 +55,25 @@ impresora). Si cambia, alcanza con `configurar` de nuevo.
 - Una impresora que imprime dos estaciones (la cocina: Cocina y Plancha) puede sacar **un tique por
   estación**, para darle a cada sector el suyo.
 
+## De a un tique por vez (27/11, la comandera se trababa)
+
+En HUB la comandera de cocina sacaba un tique y se trababa: el programa le mandaba varios tiques pegados en
+una misma conexión y el segundo le llegaba mientras cortaba el primero. Las pruebas andaban porque van de a
+uno. Desde entonces:
+
+- **un tique por conexión**, empezando de fábrica (`ESC @`) y terminando con el corte;
+- entre un tique y el siguiente a la **misma** impresora, una pausa para que lo imprima y lo corte
+  (2 s + 0,7 s por KB, unos 5 s; se puede fijar por impresora con `pauseMs` en `hub-impresoras.json`);
+- cada impresora tiene su fila: una lenta o apagada no frena a las otras;
+- el tique pesa la mitad (~3,8 KB): las rayas van en letras (`─`, `═`) y el logo es más chico;
+- **no se puede abrir dos veces** en la misma compu (candado en el puerto local 47913): con dos copias
+  cada tique salía dos veces;
+- en la ventana de Windows se apaga el «modo de edición rápida»: un clic en la ventana la pausaba y
+  dejaba de imprimir;
+- cada pedido al servidor tiene 20 s de límite: un pedido colgado no deja al programa esperando;
+- `configurar` muestra las impresoras que ya estaban y Enter las deja como estaban (antes, si no se
+  volvía a escribir la IP de una, dejaba de imprimir ahí).
+
 ## El tique
 
 Lo justo para que el mozo sepa de qué mesa es (`comandaDoc`, el mismo para WiFi y para el navegador):
