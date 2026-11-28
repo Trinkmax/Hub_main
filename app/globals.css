@@ -1735,7 +1735,8 @@ html[data-tex-drag] [data-tex-ui] {
   background:
     radial-gradient(120% 90% at 50% 0%, color-mix(in oklch, var(--pos-board) 100%, white 6%) 0%, var(--pos-board) 42%, var(--pos-board-2) 100%);
   color: var(--pos-board-ink);
-  touch-action: manipulation;
+  /* Sin pellizcar: el gesto achicaba la página entera (también en el iPhone, que ignora el bloqueo del viewport). */
+  touch-action: pan-x pan-y;
 }
 
 .pos-solid { stroke-linejoin: round; vector-effect: non-scaling-stroke; }
@@ -1902,6 +1903,8 @@ html[data-tex-drag] [data-tex-ui] {
 html:has(.pos-floor-screen),
 html:has(.pos-floor-screen) body {
   overscroll-behavior: none;
+  /* Nada se sale de costado: con algo más ancho que la pantalla, el navegador deja achicar la página. */
+  overflow-x: clip;
 }
 /* Pantalla del salón: franja de la sucursal, pestañas de sector y la maqueta ocupando el resto. */
 .pos-floor-screen {
