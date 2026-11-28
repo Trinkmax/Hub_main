@@ -1807,6 +1807,7 @@ html[data-tex-drag] [data-tex-ui] {
   font-variant-numeric: tabular-nums;
 }
 .pos-num small { display: block; margin-top: 0.14em; font-size: 0.52em; font-weight: 600; font-stretch: 88%; color: var(--pos-carbon); letter-spacing: 0; }
+.pos-num small.pos-num-name { font-size: 0.42em; font-weight: 800; color: var(--pos-ink); white-space: nowrap; max-width: 9em; overflow: hidden; text-overflow: ellipsis; margin-inline: auto; }
 .pos-num.pos-is-free { color: color-mix(in oklch, var(--pos-ink) 62%, var(--pos-card)); font-weight: 700; }
 
 /* La bandera: color + ícono + palabra, parada sobre la mesa. */

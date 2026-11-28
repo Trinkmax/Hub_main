@@ -54,7 +54,8 @@ export function OpenTableSheet({
     }
   }, [table])
 
-  // Primero la reserva de ESTA mesa; después las que están por llegar sin mesa (o con otra), por cercanía.
+  // La reserva de ESTA mesa; después, las que llegan sin mesa, por cercanía. Una reserva con otra mesa no se ofrece:
+  // nadie sienta a un grupo en una mesa que no es la suya (Nacho, 27/11: «no deben poder elegir quién va en las mesas»).
   const suggestions = useMemo(() => {
     if (!table) return []
     const wanted = table.label.trim().toLowerCase()
@@ -65,7 +66,11 @@ export function OpenTableSheet({
         const mine = tablesOfLabel(r.table_label).includes(wanted)
         return { r, away, mine }
       })
-      .filter(({ away, mine, r }) => mine || r.status === 'arrived' || (away <= 60 && away >= -90))
+      .filter(
+        ({ away, mine, r }) =>
+          mine ||
+          (!r.table_label?.trim() && (r.status === 'arrived' || (away <= 60 && away >= -90))),
+      )
       .sort(
         (a, b) =>
           Number(b.mine) - Number(a.mine) ||
