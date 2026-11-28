@@ -189,6 +189,8 @@ export function FloorLive({
   const [switching, startSwitch] = useTransition()
   const [branchMenu, setBranchMenu] = useState(false)
   const [focus, setFocus] = useState<FocusKey | null>(null)
+  /** La última mesa a la que llevó la ficha del resumen: el próximo toque va a la siguiente. */
+  const [tourAt, setTourAt] = useState<string | null>(null)
   const [moving, setMoving] = useState<Moving | null>(null)
   const [merging, setMerging] = useState<Merging | null>(null)
   const [mergeBusy, setMergeBusy] = useState(false)
@@ -807,18 +809,59 @@ export function FloorLive({
   // Si lo que estaba filtrando ya se resolvió, el filtro se va solo.
   const focusAlive = focus !== null && chips.some((chip) => chip.key === focus)
   useEffect(() => {
-    if (focus !== null && !focusAlive) setFocus(null)
+    if (focus !== null && !focusAlive) {
+      setFocus(null)
+      setTourAt(null)
+    }
   }, [focus, focusAlive])
 
+  /**
+   * Las mesas de una ficha del resumen, en el orden en que se recorren: la que más espera primero; a igual
+   * espera, por sector. Pedido de Nacho (27/11): «a medida que voy apretando, que vaya desplazándose entre
+   * las que hay que servir, no que solo me muestre una».
+   */
+  const areaOrder = useMemo(
+    () => new Map(snapshot.areas.map((area, at) => [area.id, at])),
+    [snapshot.areas],
+  )
+  const focusTour = (key: FocusKey): TableEntry[] =>
+    entries
+      .filter((entry) => entry.areaId !== null && matchesFocus(entry, key))
+      .sort(
+        (a, b) =>
+          (b.state.minutes ?? -1) - (a.state.minutes ?? -1) ||
+          (areaOrder.get(a.areaId ?? '') ?? 0) - (areaOrder.get(b.areaId ?? '') ?? 0),
+      )
+
+  /**
+   * Llevar a una mesa del recorrido: su sector, con esa mesa sola encendida. No abre su ficha (taparía el
+   * resumen y no se podría seguir recorriendo): para operarla, se la toca.
+   */
+  const tourTo = (entry: TableEntry) => {
+    setTourAt(entry.tableId)
+    setPicked(null)
+    if (entry.areaId) setAreaId(entry.areaId)
+  }
+
+  /** Tocar una ficha: filtra y lleva a la primera mesa; cada toque más, a la siguiente; después de la última, todo. */
   const toggleFocus = (key: FocusKey) => {
-    const next = focus === key ? null : key
-    setFocus(next)
-    if (!next || view === 'list') return
-    // Si en este sector no hay ninguna, salta al primero que tenga.
-    const here = entries.some((e) => e.areaId === activeArea?.id && matchesFocus(e, next))
-    if (here) return
-    const first = entries.find((e) => e.areaId && matchesFocus(e, next))
-    if (first?.areaId) setAreaId(first.areaId)
+    const tour = view === 'list' ? [] : focusTour(key)
+    if (focus !== key) {
+      setFocus(key)
+      setTourAt(null)
+      const first = tour[0]
+      if (first) tourTo(first)
+      return
+    }
+    const at = tour.findIndex((entry) => entry.tableId === tourAt)
+    const next = tour[at + 1]
+    if (!next) {
+      setFocus(null)
+      setTourAt(null)
+      setPicked(null)
+      return
+    }
+    tourTo(next)
   }
 
   const dimmed = useMemo(() => {
@@ -833,10 +876,17 @@ export function FloorLive({
       )
     }
     if (!focusAlive || focus === null) return null
+    // Recorriendo una ficha: solo la mesa a la que llevó queda encendida.
+    if (tourAt && entries.some((e) => e.tableId === tourAt && matchesFocus(e, focus))) {
+      return new Set(entries.filter((e) => e.tableId !== tourAt).map((e) => e.tableId))
+    }
     return new Set(entries.filter((e) => !matchesFocus(e, focus)).map((e) => e.tableId))
-  }, [entries, focus, focusAlive, moving, moveTargets])
+  }, [entries, focus, focusAlive, moving, moveTargets, tourAt])
 
   const focusChip = focusAlive ? (chips.find((chip) => chip.key === focus) ?? null) : null
+  const tour = focusChip && view !== 'list' ? focusTour(focusChip.key) : []
+  const tourIndex = tourAt ? tour.findIndex((entry) => entry.tableId === tourAt) : -1
+  const tourStop = tourIndex >= 0 ? tour[tourIndex] : undefined
   const visibleList =
     focusAlive && focus !== null ? listed.filter((e) => matchesFocus(e, focus)) : listed
   const occupancy = `${summary.people} ${summary.people === 1 ? 'persona' : 'personas'} · ${summary.open} de ${summary.tables} mesas`
@@ -1103,9 +1153,15 @@ export function FloorLive({
           ) : (
             <p className={cn('pos-caption', focusChip && 'is-focus')}>
               {focusChip
-                ? focusChip.key === 'mine'
-                  ? `Solo tus ${focusChip.count === 1 ? 'mesa' : `${focusChip.count} mesas`}. Tocá la ficha de nuevo para ver todo.`
-                  : `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
+                ? tourStop
+                  ? `Mesa ${tourStop.label} · ${tourIndex + 1} de ${tour.length}. ${
+                      tourIndex + 1 < tour.length
+                        ? 'Tocá la ficha de nuevo para ir a la siguiente.'
+                        : 'Era la última: tocá la ficha de nuevo para ver todo.'
+                    }`
+                  : focusChip.key === 'mine'
+                    ? `Solo tus ${focusChip.count === 1 ? 'mesa' : `${focusChip.count} mesas`}. Tocá la ficha de nuevo para ver todo.`
+                    : `Solo ${focusChip.count} ${focusChip.label}. Tocá la ficha de nuevo para ver todo.`
                 : occupancy}
             </p>
           )}
