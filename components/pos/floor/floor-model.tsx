@@ -620,6 +620,7 @@ export function FloorModel({
                 aria-hidden
               >
                 {anchor.label}
+                {anchor.caption ? <small className="pos-num-name">{anchor.caption}</small> : null}
                 {open && table?.partySize && tablePx >= 60 ? (
                   <small>×{table.partySize}</small>
                 ) : null}

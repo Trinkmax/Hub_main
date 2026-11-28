@@ -89,6 +89,11 @@ export type TableAnchor = {
   tableId: string
   elementId: string
   label: string
+  /**
+   * El nombre de la mesa para los mozos (la pieza del plano): «Piojo» debajo del 90. La comanda y la cocina
+   * dicen solo el número (Nacho, 27/11: «a los mozos les aparece nombre y número»).
+   */
+  caption: string | null
   capacity: number | null
   /** Centro de la tapa en pantalla. */
   x: number
@@ -496,6 +501,7 @@ function layoutScene(
         tableId: el.table_id,
         elementId: el.id,
         label: el.table_label ?? '',
+        caption: el.label?.trim() ? el.label.trim() : null,
         capacity: el.capacity,
         x: center.x,
         y: center.y,
