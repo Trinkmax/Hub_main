@@ -27,6 +27,7 @@ import { printJob } from '@/components/pos/print/print-frame'
 import { readPrinter } from '@/components/pos/print/use-printer'
 import { PosTopbar } from '@/components/pos/ui/pos-topbar'
 import { useHoldReload } from '@/components/shell/hold-reload'
+import { sendBillToComandera } from '@/lib/pos/actions'
 import {
   type Bill,
   type BillDiscount,
@@ -669,16 +670,22 @@ export function PayScreen({
     }
   }
 
-  /** La cuenta en papel, por la comandera de esta compu. */
+  /**
+   * La cuenta en papel: por la comandera de la red (la de la barra, que maneja el programa «HUB Impresoras»;
+   * Nacho, 27/11). Si no se pudo mandar, por la impresora de esta compu, como antes.
+   */
   const printBill = async () => {
+    const doc = billDoc(bill, { barName: place, branch: null, timeZone })
+    const sent = await sendBillToComandera(slug, bill.session.id, doc).catch(() => null)
+    if (sent?.ok) {
+      toast.success('Cuenta mandada a la comandera')
+      return
+    }
     try {
-      await printJob({
-        paper: readPrinter(bill.session.branch_id).paper,
-        docs: [billDoc(bill, { barName: place, branch: null, timeZone })],
-      })
+      await printJob({ paper: readPrinter(bill.session.branch_id).paper, docs: [doc] })
     } catch {
-      toast.error('No se pudo mandar a la impresora', {
-        description: 'Fijate que esté prendida y con papel.',
+      toast.error('No se pudo imprimir la cuenta', {
+        description: sent?.message ?? 'Fijate que la comandera esté prendida y con papel.',
       })
     }
   }

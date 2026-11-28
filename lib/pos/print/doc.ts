@@ -134,3 +134,132 @@ export function ticketDateTime(iso: string | number | Date, timeZone: string): s
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
   return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`
 }
+
+const TEXT_SIZES: ReadonlySet<string> = new Set(['sm', 'md', 'lg', 'xl', 'xxl'])
+const RULE_STYLES: ReadonlySet<string> = new Set(['solid', 'dashed', 'double'])
+const MAX_LINES = 400
+const MAX_TEXT = 400
+
+function str(value: unknown, max = MAX_TEXT): string | null {
+  return typeof value === 'string' ? value.slice(0, max) : null
+}
+function strs(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 40) return null
+  const out: string[] = []
+  for (const each of value) {
+    const text = str(each)
+    if (text === null) return null
+    out.push(text)
+  }
+  return out
+}
+const sizeOf = (value: unknown): TextSize | undefined =>
+  typeof value === 'string' && TEXT_SIZES.has(value) ? (value as TextSize) : undefined
+
+/**
+ * Un tique que llega de afuera —la cuenta que la app le manda a la comandera por el canal en vivo—,
+ * leído sin confiar en su forma: solo los renglones que se conocen y con un límite de largo. `null` si
+ * algo no cierra (no se imprime nada a medias).
+ */
+export function parsePrintDoc(raw: unknown): PrintDoc | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const value = raw as { title?: unknown; lines?: unknown }
+  if (!Array.isArray(value.lines) || value.lines.length === 0 || value.lines.length > MAX_LINES) {
+    return null
+  }
+  const lines: PrintLine[] = []
+  for (const item of value.lines) {
+    if (typeof item !== 'object' || item === null) return null
+    const line = item as Record<string, unknown>
+    switch (line.kind) {
+      case 'text': {
+        const text = str(line.text)
+        if (text === null) return null
+        lines.push({
+          kind: 'text',
+          text,
+          align: line.align === 'center' || line.align === 'right' ? line.align : 'left',
+          bold: line.bold === true,
+          size: sizeOf(line.size),
+          upper: line.upper === true,
+          indent: line.indent === true,
+        })
+        break
+      }
+      case 'row': {
+        const left = str(line.left)
+        const right = str(line.right)
+        if (left === null || right === null) return null
+        lines.push({
+          kind: 'row',
+          left,
+          right,
+          bold: line.bold === true,
+          size: sizeOf(line.size),
+          dots: line.dots === true,
+        })
+        break
+      }
+      case 'item': {
+        const qty = str(line.qty, 20)
+        const name = str(line.name)
+        const marks = strs(line.marks)
+        if (qty === null || name === null || marks === null || !Array.isArray(line.variants)) {
+          return null
+        }
+        const variants: { qty: string; marks: string[] }[] = []
+        for (const raw of line.variants.slice(0, 40)) {
+          const variant = raw as { qty?: unknown; marks?: unknown } | null
+          const vqty = str(variant?.qty, 20)
+          const vmarks = strs(variant?.marks)
+          if (vqty === null || vmarks === null) return null
+          variants.push({ qty: vqty, marks: vmarks })
+        }
+        lines.push({ kind: 'item', qty, name, marks, variants, done: line.done === true })
+        break
+      }
+      case 'banner': {
+        const text = str(line.text)
+        if (text === null) return null
+        lines.push({ kind: 'banner', text })
+        break
+      }
+      case 'logo':
+        lines.push({ kind: 'logo' })
+        break
+      case 'hero': {
+        const text = str(line.text, 40)
+        if (text === null) return null
+        lines.push({ kind: 'hero', caption: str(line.caption, 40), text })
+        break
+      }
+      case 'rule':
+        lines.push({
+          kind: 'rule',
+          style:
+            typeof line.style === 'string' && RULE_STYLES.has(line.style)
+              ? (line.style as 'solid' | 'dashed' | 'double')
+              : 'solid',
+        })
+        break
+      case 'space':
+        lines.push({
+          kind: 'space',
+          lines:
+            typeof line.lines === 'number' && Number.isFinite(line.lines)
+              ? Math.max(1, Math.min(8, Math.round(line.lines)))
+              : 1,
+        })
+        break
+      case 'blank': {
+        const label = str(line.label, 60)
+        if (label === null) return null
+        lines.push({ kind: 'blank', label })
+        break
+      }
+      default:
+        return null
+    }
+  }
+  return { title: str(value.title, 120) ?? 'Tique', lines }
+}

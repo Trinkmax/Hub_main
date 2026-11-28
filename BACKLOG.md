@@ -1987,3 +1987,8 @@ Detalle en `docs/features/impresoras-wifi.md`.
 - **[BAJA] Configurar desde el panel** (qué imprime cada impresora) en vez de la terminal, y ver desde el
   panel si el programa está andando.
 - **[BAJA] El logo tiene que ser PNG.** Si el bar sube un JPG o un SVG, los tiques salen sin logo.
+- **[MEDIA] La cuenta por la comandera no confirma que salió** (27/11): la pantalla dice «mandada a la
+  comandera» aunque el programa esté apagado. Con una política de envío en `realtime.messages` (migración) el
+  programa podría contestar «impresa», y la app usaría la impresora de la compu si nadie contesta.
+- **[MEDIA] El programa de las comanderas no se actualiza solo**: cada cambio obliga a bajarlo de nuevo en la
+  compu del bar. Sumarle que se actualice solo (bajar, probar que arranca, reemplazarse).
