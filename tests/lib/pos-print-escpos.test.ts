@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { deflateSync, inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { type PrintDoc, p } from '@/lib/pos/print/doc'
+import { type PrintDoc, p, parsePrintDoc } from '@/lib/pos/print/doc'
 import {
   COLUMNS,
   encodeText,
@@ -259,5 +259,56 @@ describe('el logo', () => {
     expect(raster?.height).toBe(20)
     // Una imagen sin nada que imprimir no da dibujo.
     expect(toRaster({ width: 4, height: 4, data: new Uint8Array(64) }, 32)).toBeNull()
+  })
+})
+
+describe('la cuenta que llega por el canal en vivo', () => {
+  it('se lee igual que salió de la app', () => {
+    const doc: PrintDoc = {
+      title: 'Cuenta Mesa 31',
+      lines: [
+        p.center('HUB', { size: 'xl', upper: true }),
+        p.row('2 Fernet', '$ 18.000', { dots: true }),
+        {
+          kind: 'item',
+          qty: 'x2',
+          name: 'Lomito',
+          marks: ['sin sal'],
+          variants: [{ qty: 'x1', marks: ['Común'] }],
+        },
+        p.rule('double'),
+        p.row('Total', '$ 41.500', { bold: true, size: 'lg' }),
+        p.banner('Documento no válido como factura'),
+        p.space(2),
+      ],
+    }
+    expect(parsePrintDoc(JSON.parse(JSON.stringify(doc)))).toEqual({
+      ...doc,
+      lines: doc.lines.map((line) =>
+        line.kind === 'text'
+          ? { indent: false, upper: false, bold: false, size: undefined, align: 'left', ...line }
+          : line.kind === 'row'
+            ? { bold: false, size: undefined, dots: false, ...line }
+            : line.kind === 'item'
+              ? { done: false, ...line }
+              : line,
+      ),
+    })
+  })
+
+  it('lo que no tiene forma de tique no se imprime', () => {
+    expect(parsePrintDoc(null)).toBeNull()
+    expect(parsePrintDoc({ title: 'x', lines: [] })).toBeNull()
+    expect(parsePrintDoc({ title: 'x', lines: [{ kind: 'script', text: 'x' }] })).toBeNull()
+    expect(parsePrintDoc({ title: 'x', lines: [{ kind: 'text', text: 3 }] })).toBeNull()
+    expect(
+      parsePrintDoc({ lines: Array.from({ length: 401 }, () => ({ kind: 'logo' })) }),
+    ).toBeNull()
+  })
+
+  it('los textos largos se cortan', () => {
+    const parsed = parsePrintDoc({ lines: [{ kind: 'text', text: 'a'.repeat(5000) }] })
+    expect(parsed?.lines[0]?.kind === 'text' && parsed.lines[0].text.length).toBe(400)
+    expect(parsed?.title).toBe('Tique')
   })
 })

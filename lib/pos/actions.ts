@@ -24,6 +24,8 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { toPosError } from './errors'
+import { broadcastToBranch } from './print/broadcast'
+import { parsePrintDoc } from './print/doc'
 import {
   branchCookieName,
   getFloorSnapshot,
@@ -102,6 +104,50 @@ async function call<T>(
 const invalid = { ok: false as const, message: 'Faltan datos o hay alguno mal.', code: 'invalid' }
 
 const id = z.uuid()
+
+/**
+ * La cuenta en papel por la comandera de la red (la de la barra), en vez de la impresora de esta compu.
+ * El programa «HUB Impresoras» la recibe por el canal en vivo de la sucursal y la imprime de a un tique,
+ * en la fila de esa impresora. Si el programa no está andando, la cuenta no sale: la pantalla lo dice como
+ * «mandada», no «impresa».
+ */
+export async function sendBillToComandera(
+  slug: string,
+  sessionId: string,
+  doc: unknown,
+): Promise<ActionResult> {
+  const access = await authorize(slug, POS_VIEW_ROLES)
+  if (isDenied(access)) return access
+  if (!id.safeParse(sessionId).success) return invalid
+  const parsed = parsePrintDoc(doc)
+  if (!parsed) return { ok: false, message: 'La cuenta no se pudo armar.', code: 'invalid' }
+  // La mesa tiene que ser del bar de quien manda (la política de la tabla lo asegura).
+  const { data: session, error } = await access.supabase
+    .from('table_sessions')
+    .select('id, branch_id, tenant_id')
+    .eq('id', sessionId)
+    .eq('tenant_id', access.tenantId)
+    .maybeSingle()
+  if (error || !session?.branch_id) {
+    return { ok: false, message: 'No encontré esa mesa.', code: 'not_found' }
+  }
+  try {
+    const sent = await broadcastToBranch(session.branch_id as string, 'print', {
+      id: crypto.randomUUID(),
+      kind: 'bill',
+      doc: parsed,
+    })
+    if (!sent) throw new Error('broadcast')
+    return { ok: true }
+  } catch (cause) {
+    console.error('[pos.print.bill]', cause instanceof Error ? cause.message : 'unknown')
+    return {
+      ok: false,
+      message: 'No pude mandar la cuenta a la comandera.',
+      code: 'unavailable',
+    }
+  }
+}
 const partySize = z.number().int().min(1).max(100)
 
 // ─── Sucursal ───────────────────────────────────────────────────────────────

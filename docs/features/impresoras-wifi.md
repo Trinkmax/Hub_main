@@ -74,6 +74,21 @@ uno. Desde entonces:
 - `configurar` muestra las impresoras que ya estaban y Enter las deja como estaban (antes, si no se
   volvía a escribir la IP de una, dejaba de imprimir ahí).
 
+## La cuenta por la comandera de la barra (27/11)
+
+Pedido de Nacho: «cuando quiero imprimir la cuenta debe imprimirse en la comandera 2» (la de la barra).
+«Imprimir la cuenta» en la pantalla de cobro arma la misma cuenta de siempre y se la manda al programa por
+el canal en vivo de la sucursal (evento `print`, `sendBillToComandera` en `lib/pos/actions.ts`); el programa
+la imprime en la impresora que tiene la estación de bebida (la barra), en la fila de esa impresora, de a un
+tique. Si no se pudo mandar, sale por la impresora de la compu, como antes.
+
+- El canal solo deja escuchar a los teléfonos: manda el servidor con la clave de servicio por la API de
+  Realtime (`lib/pos/print/broadcast.ts`). Excepción documentada, como el ingreso con PIN. Una política de
+  envío en `realtime.messages` lo resolvería sin la clave (necesita migración).
+- El programa lee lo que llega sin confiar en su forma (`parsePrintDoc`) y no imprime dos veces la misma.
+- Si el programa no está andando, la cuenta no sale y la pantalla igual dice «mandada»: todavía no hay
+  confirmación de vuelta.
+
 ## El tique
 
 Lo justo para que el mozo sepa de qué mesa es (`comandaDoc`, el mismo para WiFi y para el navegador):

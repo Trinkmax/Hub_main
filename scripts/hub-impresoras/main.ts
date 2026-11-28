@@ -32,7 +32,7 @@ import readline from 'node:readline'
 import { inflateSync } from 'node:zlib'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { comandaDoc } from '@/lib/pos/print/comanda'
-import { type PaperWidth, type PrintDoc, p } from '@/lib/pos/print/doc'
+import { type PaperWidth, type PrintDoc, p, parsePrintDoc } from '@/lib/pos/print/doc'
 import { type Codepage, escposJob, type Raster } from '@/lib/pos/print/escpos'
 import { decodePng } from '@/lib/pos/print/png'
 import { toRaster } from '@/lib/pos/print/raster'
@@ -825,6 +825,47 @@ async function run(config: AgentConfig) {
   let reading = false
   let again = false
   let lastRead = 0
+  let drinkStations = new Set<string>()
+
+  /**
+   * La impresora de las cuentas: la de la barra (Nacho, 27/11: «la cuenta debe imprimirse en la comandera 2»,
+   * la de barra). La que imprime una estación de bebida; si no hay, la que se llama «Barra»; si no, la primera.
+   */
+  const billPrinter = (): PrinterState | null => {
+    const list = [...states.values()]
+    return (
+      list.find((state) => state.printer.stations.some((id) => drinkStations.has(id))) ??
+      list.find((state) => /barra/i.test(state.printer.name)) ??
+      list[0] ??
+      null
+    )
+  }
+
+  /** Lo que llega para imprimir por el canal en vivo (la cuenta que se pide desde la app). */
+  const seenPrints = new Set<string>()
+  const onPrint = (raw: unknown) => {
+    const payload = raw as { id?: unknown; kind?: unknown; doc?: unknown } | null
+    if (!payload || typeof payload.id !== 'string' || payload.kind !== 'bill') return
+    if (seenPrints.has(payload.id)) return
+    seenPrints.add(payload.id)
+    if (seenPrints.size > 500) seenPrints.clear()
+    const doc = parsePrintDoc(payload.doc)
+    if (!doc) {
+      complain('cuenta', 'Llegó una cuenta que no se pudo leer.')
+      return
+    }
+    const state = billPrinter()
+    if (!state) {
+      complain('cuenta', 'Llegó una cuenta pero no hay ninguna impresora configurada.')
+      return
+    }
+    state.queue.push({
+      key: `cuenta:${payload.id}`,
+      label: `${doc.title} → ${state.printer.name}`,
+      docs: [doc],
+    })
+    void work(state)
+  }
   const read = async () => {
     if (reading) {
       again = true
@@ -837,6 +878,11 @@ async function run(config: AgentConfig) {
         try {
           const queue = await readQueue(supabase, config.branch.id)
           lastRead = Date.now()
+          drinkStations = new Set(
+            queue.stations
+              .filter((station) => station.kind === 'drink')
+              .map((station) => station.id),
+          )
           for (const state of states.values()) plan(state, queue)
         } catch (error) {
           const message = error instanceof Error ? error.message : 'error'
@@ -864,6 +910,7 @@ async function run(config: AgentConfig) {
         const what = (message.payload as { what?: string } | undefined)?.what
         if (!what || what === 'kitchen' || what === 'floor') void read()
       })
+      .on('broadcast', { event: 'print' }, (message) => onPrint(message.payload))
       .subscribe((status) => {
         const wasLive = live
         live = status === 'SUBSCRIBED'
