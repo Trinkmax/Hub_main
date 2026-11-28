@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
 import { FloorLive } from '@/components/pos/floor/floor-live'
@@ -18,6 +18,22 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { cn } from '@/lib/utils'
+
+/**
+ * En el mapa, el gesto de pellizcar NO agranda ni achica la página (27/11, inauguración del Cerro: «esto está
+ * pasando mucho»): el mozo pellizca sobre el mapa, el navegador achica toda la página y el mapa queda angosto a
+ * la izquierda con el resto en blanco. Solo acá: el resto del salón se sigue pudiendo agrandar (WCAG 1.4.4).
+ * Con la escala fija, una página que ya había quedado achicada vuelve a la normal al recargar.
+ */
+export const viewport: Viewport = {
+  themeColor: '#f5edd7',
+  width: 'device-width',
+  initialScale: 1,
+  minimumScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+}
 
 export const metadata: Metadata = { title: 'Salón' }
 
